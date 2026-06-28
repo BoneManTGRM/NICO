@@ -4,9 +4,11 @@ on:
   pull_request:
     branches:
       - main
+      - upgrade/repair-first-foundation
   push:
     branches:
       - upgrade/repair-first-foundation
+      - upgrade/security-swarm-foundations
   workflow_dispatch:
 
 permissions:
@@ -60,6 +62,16 @@ jobs:
           python -m nico memory
           python -m nico policy show
           python -m nico scanner-availability
+          python -m nico swarm policy
+          python -m nico agent-security scan-demo
+          python -m nico vault demo
+          python -m nico connector policy
+          python -m nico sandbox scanner-demo
+          python -m nico audit latest
+          python -m nico approvals pending
+          python -m nico tenant demo
+          python -m nico cyber-twin demo
+          python -m nico bench demo
 
       - name: Validate API import
         run: python -c "from nico.api.main import app; print(app.title)"
