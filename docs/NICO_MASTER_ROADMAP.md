@@ -52,3 +52,7 @@ GitHub first, then Docker, Supabase/Firebase, Cloudflare, Stripe/Mercado Pago, V
 ## Future Phase E — Production Hardening
 
 Auth, RBAC, tenant isolation, encrypted secrets, sandboxing, rate limits, audit logs, signed webhooks, backup/restore, kill switch, approval workflows, and secure report permissions.
+
+## Future Phase F — Security Regression Tests
+
+Add tests proving fake raw secrets are never emitted in generated reports, API JSON responses, CLI output, or frontend fields.
