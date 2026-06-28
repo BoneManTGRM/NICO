@@ -86,3 +86,4 @@ Passed locally:
 Known limitation:
 
 - The exact remote branch should still be checked out and run on a developer machine or Codex environment before merging because this environment cannot clone from GitHub.
+- Keep PR #1 as draft until exact-branch validation is complete.
