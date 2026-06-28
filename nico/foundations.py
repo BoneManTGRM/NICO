@@ -144,4 +144,5 @@ def cyber_twin_demo() -> dict:
 def bench_demo() -> dict:
     payload = run_bench_demo()
     payload["mode"] = LOCAL_ONLY_NOTICE
+    payload["benchmark_claim"] = "no_production_benchmark_claimed"
     return payload
