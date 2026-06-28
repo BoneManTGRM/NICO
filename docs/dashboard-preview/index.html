@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NICO Command Center Preview</title>
+  <style>
+    :root{--bg:#070b14;--panel:#0f172a;--panel2:#111827;--line:#263244;--text:#e5e7eb;--muted:#94a3b8;--accent:#38bdf8;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444;--violet:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#14213f,#070b14 46%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Arial,sans-serif}.shell{display:flex;min-height:100vh}.sidebar{width:280px;background:rgba(15,23,42,.92);border-right:1px solid var(--line);padding:26px;position:sticky;top:0;height:100vh}.brand{font-size:32px;font-weight:900;letter-spacing:.1em}.tag{color:var(--muted);font-size:13px;line-height:1.5;margin:8px 0 26px}.nav a{display:block;color:var(--muted);text-decoration:none;padding:11px 12px;border-radius:12px;margin:5px 0}.nav a:hover,.nav a.active{background:#172033;color:#fff}.main{flex:1;padding:30px;max-width:1500px}.topbar{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:24px}.topbar h1{margin:0;font-size:30px}.muted{color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:#0b1220}.dot{width:9px;height:9px;border-radius:999px;background:var(--good)}.grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:16px;margin-bottom:20px}.card{background:linear-gradient(180deg,rgba(17,24,39,.96),rgba(15,23,42,.96));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 48px rgba(0,0,0,.24)}.metric{font-size:38px;font-weight:900;margin-top:8px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}.btn{border:1px solid #2a3a55;background:#172033;color:#fff;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700}.btn.primary{background:#0369a1;border-color:#38bdf8}.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:11px 9px;font-size:13px}th{color:#cbd5e1}.sev-critical{color:#fecdd3}.sev-high{color:#fdba74}.sev-medium{color:#fde68a}.sev-low{color:#bbf7d0}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:#0b1220;display:inline-block}pre{white-space:pre-wrap;background:#050914;border:1px solid var(--line);padding:14px;border-radius:14px;overflow:auto;color:#cbd5e1}.section{margin-top:18px}.warning{border-color:#7c2d12;background:rgba(124,45,18,.16)}.ok{border-color:#14532d;background:rgba(20,83,45,.18)}.footer{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.6}@media(max-width:1000px){.shell{display:block}.sidebar{position:relative;width:auto;height:auto}.grid,.layout{grid-template-columns:1fr}.main{padding:18px}.topbar{display:block}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">NICO</div>
+      <div class="tag">Neural Intelligence Cyber Operations<br/>Autonomous cyber defense through Reparodynamics.</div>
+      <nav class="nav">
+        <a class="active" href="#mission">Mission Control</a>
+        <a href="#findings">Findings</a>
+        <a href="#repairs">Repair Queue</a>
+        <a href="#verification">Verification</a>
+        <a href="#memory">Repair Memory</a>
+        <a href="#reports">Reports</a>
+        <a href="#policy">Policy / Autonomy</a>
+        <a href="#settings">Scanner Availability</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>NICO Command Center</h1>
+          <div class="muted">Static preview of the local repair-first dashboard. No live scans or secrets are connected here.</div>
+        </div>
+        <span class="badge"><span class="dot"></span> Local Safe Mode Preview</span>
+      </div>
+
+      <section id="mission" class="grid">
+        <div class="card"><div class="muted">Findings</div><div class="metric">9</div><div class="muted">normalized drift findings</div></div>
+        <div class="card"><div class="muted">Drift</div><div class="metric">3</div><div class="muted">new cyber drift events</div></div>
+        <div class="card"><div class="muted">Repairs</div><div class="metric">27</div><div class="muted">TGRM repair candidates</div></div>
+        <div class="card"><div class="muted">Autonomy</div><div class="metric">L1</div><div class="muted">human approval required</div></div>
+      </section>
+
+      <div class="actions">
+        <button class="btn primary">Run Test Lab Scan</button>
+        <button class="btn">Run Drift Demo</button>
+        <button class="btn">Export Reports</button>
+        <button class="btn">Verify Latest</button>
+      </div>
+
+      <div class="layout">
+        <section id="findings" class="card">
+          <h2>Findings</h2>
+          <table>
+            <thead><tr><th>Severity</th><th>Category</th><th>RYE</th><th>Finding</th><th>Masked Evidence</th></tr></thead>
+            <tbody>
+              <tr><td class="sev-critical">critical</td><td>unsafe_eval</td><td>94.2</td><td>Unsafe eval usage</td><td><span class="pill">eval(request.args...)</span></td></tr>
+              <tr><td class="sev-high">high</td><td>secret_exposure</td><td>88.7</td><td>Potential secret detected</td><td><span class="pill">FAKE…7890</span></td></tr>
+              <tr><td class="sev-high">high</td><td>insecure_webhook</td><td>81.4</td><td>Webhook signature missing</td><td><span class="pill">TODO: verify signature</span></td></tr>
+              <tr><td class="sev-medium">medium</td><td>missing_rate_limit</td><td>58.9</td><td>Rate limiting TODO</td><td><span class="pill">TODO: add rate limiting</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="repairs" class="card">
+          <h2>Top TGRM Repair</h2>
+          <p><strong>RYE 94.2:</strong> Unsafe eval usage</p>
+          <pre>Fix only the Unsafe eval usage issue in app.py.
+Do not rewrite unrelated code.
+Replace eval with a safe parser or explicit allowlist.
+Add the smallest relevant tests.
+Run local tests or a NICO rescan.
+Return a short verification summary.
+Never expose raw secrets.</pre>
+        </section>
+      </div>
+
+      <div class="layout section">
+        <section id="verification" class="card ok">
+          <h2>Verification</h2>
+          <p><strong>Status:</strong> verification observed</p>
+          <p><strong>Checks:</strong> scan available, findings masked, governance enabled, repair candidates present.</p>
+          <p class="muted">Baseline updates remain blocked until verified repair results pass.</p>
+        </section>
+
+        <section id="memory" class="card">
+          <h2>Repair Memory</h2>
+          <p>Recurring drift category observed: <strong>secret_exposure</strong></p>
+          <p>Fragile module signal: <strong>webhook.py</strong></p>
+          <p class="muted">NICO stores which repairs work, fail, recur, or regress.</p>
+        </section>
+      </div>
+
+      <div class="layout section">
+        <section id="reports" class="card">
+          <h2>Reports</h2>
+          <ul>
+            <li>Owner Report</li>
+            <li>Developer Report</li>
+            <li>Reparodynamic Report</li>
+            <li>Compliance Report</li>
+          </ul>
+        </section>
+
+        <section id="policy" class="card warning">
+          <h2>Policy / Autonomy</h2>
+          <p><strong>Allowed:</strong> scan, report, score, repair plan, verify.</p>
+          <p><strong>Blocked:</strong> exploit, credential theft, phishing, malware, evasion, persistence, unauthorized scanning.</p>
+        </section>
+      </div>
+
+      <section id="settings" class="card section">
+        <h2>Scanner Availability</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Purpose</th><th>Mode</th></tr></thead>
+          <tbody>
+            <tr><td>gitleaks</td><td>secret scanning</td><td>optional external / fallback available</td></tr>
+            <tr><td>semgrep</td><td>code security scanning</td><td>optional external / fallback available</td></tr>
+            <tr><td>pip-audit</td><td>Python dependency scanning</td><td>optional external / fallback available</td></tr>
+            <tr><td>npm audit</td><td>npm dependency scanning</td><td>optional external / fallback available</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="footer">
+        This is a static public dashboard preview. The full dashboard runs locally from <code>apps/web</code> and connects to the local FastAPI backend at <code>http://localhost:8000</code>. Production SaaS deployment should wait until PR #1 is green and merged.
+      </div>
+    </main>
+  </div>
+</body>
+</html>
