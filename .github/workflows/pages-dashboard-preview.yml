@@ -1,12 +1,11 @@
 name: Deploy NICO Dashboard Preview
 
+# Manual-only safety valve.
+# The public preview is already mirrored into root index.html, docs/dashboard-preview/index.html,
+# and gh-pages/index.html. Do not auto-deploy from this workflow unless the repository
+# Pages source is intentionally configured to GitHub Actions.
+
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - docs/dashboard-preview/**
-      - .github/workflows/pages-dashboard-preview.yml
   workflow_dispatch:
 
 permissions:
