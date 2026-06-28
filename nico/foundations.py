@@ -4,10 +4,14 @@ from nico.access.permissions import ROLE_PERMISSIONS
 from nico.agent_security.models import AgentConfig
 from nico.agent_security.report import agent_security_report
 from nico.agent_security.scanner import scan_agent_config
+from nico.approvals.store import ApprovalRequest, LocalApprovalSQLiteStore
 from nico.approvals.workflow import evaluate_action
+from nico.audit.local_sqlite import LocalAuditRecord, LocalAuditSQLiteStore
+from nico.bench import run_bench_demo
 from nico.connectors.base import ConnectorRequest
 from nico.connectors.guard import evaluate_connector_request
 from nico.connectors.github import GITHUB_CONNECTOR_POLICY
+from nico.cyber_twin import build_demo_cyber_twin
 from nico.scanners.adapters import adapter_status
 from nico.scanners.sandbox import SandboxPlan, safe_scanner_output, validate_sandbox_plan
 from nico.security.vault import LocalDemoVault
@@ -72,7 +76,7 @@ def connector_policy_demo() -> dict:
 
 def sandbox_scanner_demo() -> dict:
     allowed = SandboxPlan(command="python -m pytest tests", working_directory=".")
-    blocked = SandboxPlan(command="rm -rf /", working_directory=".")
+    blocked = SandboxPlan(command="shutdown now", working_directory=".")
     return {
         "mode": LOCAL_ONLY_NOTICE,
         "adapter_status": adapter_status(),
@@ -83,18 +87,40 @@ def sandbox_scanner_demo() -> dict:
 
 
 def audit_latest_demo(records: list[dict] | None = None) -> dict:
+    store = LocalAuditSQLiteStore()
+    persisted = store.latest(limit=10)
+    if not persisted:
+        store.append(
+            LocalAuditRecord(
+                action="local_foundation_demo",
+                detail={"note": "masked local audit fixture", "reference": "DEMO_PLACEHOLDER_VALUE"},
+                approval_required=False,
+            )
+        )
+        persisted = store.latest(limit=10)
     return {
         "mode": LOCAL_ONLY_NOTICE,
         "records": records or [],
-        "note": "Audit records are local and masked where sensitive values appear.",
+        "persistent_records": persisted,
+        "note": "Audit records are local SQLite-backed and masked where sensitive values appear.",
     }
 
 
 def approvals_pending_demo() -> dict:
+    store = LocalApprovalSQLiteStore()
+    store.create_request(
+        ApprovalRequest(
+            request_id="approval-demo-report-export",
+            action="report_export",
+            reason="local demo approval boundary",
+            detail={"reference": "DEMO_PLACEHOLDER_VALUE"},
+        )
+    )
     actions = ["production_mutation", "external_connector_access", "report_export", "high_risk_swarm_action"]
     return {
         "mode": LOCAL_ONLY_NOTICE,
-        "pending": [evaluate_action(action).__dict__ for action in actions],
+        "pending": store.pending(),
+        "policy_preview": [evaluate_action(action).__dict__ for action in actions],
     }
 
 
@@ -110,33 +136,12 @@ def tenant_demo() -> dict:
 
 
 def cyber_twin_demo() -> dict:
-    return {
-        "mode": LOCAL_ONLY_NOTICE,
-        "nodes": [
-            {"id": "asset:local-demo", "type": "asset", "label": "Local Demo Workspace"},
-            {"id": "file:webhook", "type": "file", "label": "webhook fixture"},
-            {"id": "finding:masked", "type": "finding", "label": "masked local finding"},
-            {"id": "repair:tgrm", "type": "repair", "label": "targeted repair plan"},
-            {"id": "verification:pending", "type": "verification", "label": "local verification step"},
-        ],
-        "edges": [
-            {"from": "asset:local-demo", "to": "file:webhook", "type": "contains"},
-            {"from": "file:webhook", "to": "finding:masked", "type": "has_finding"},
-            {"from": "finding:masked", "to": "repair:tgrm", "type": "has_repair_plan"},
-            {"from": "repair:tgrm", "to": "verification:pending", "type": "requires_verification"},
-        ],
-    }
+    payload = build_demo_cyber_twin()
+    payload["mode"] = LOCAL_ONLY_NOTICE
+    return payload
 
 
 def bench_demo() -> dict:
-    checks = [
-        {"metric": "finding_quality", "status": "planned_fixture"},
-        {"metric": "masking_success", "status": "demo_checked"},
-        {"metric": "repair_plan_quality", "status": "planned_fixture"},
-        {"metric": "approval_boundary_success", "status": "demo_checked"},
-        {"metric": "verification_success", "status": "planned_fixture"},
-        {"metric": "false_positive_control", "status": "planned_fixture"},
-        {"metric": "swarm_risk_control", "status": "demo_checked"},
-        {"metric": "regression_safety", "status": "planned_fixture"},
-    ]
-    return {"mode": LOCAL_ONLY_NOTICE, "benchmark_claim": "no_production_benchmark_claimed", "checks": checks}
+    payload = run_bench_demo()
+    payload["mode"] = LOCAL_ONLY_NOTICE
+    return payload
