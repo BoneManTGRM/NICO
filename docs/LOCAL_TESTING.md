@@ -83,8 +83,15 @@ Passed locally:
 - Frontend `npm run build` passed after the frontend config was kept compatible with Next's automatic JSX runtime.
 - Frontend `npm run dev` started successfully.
 
+CI cleanup applied:
+
+- Added `httpx>=0.27` so FastAPI `TestClient` tests have their required runtime dependency in CI.
+- Updated NICO Repair-First CI frontend setup to run from `apps/web`, use `npm install`, and avoid missing lockfile cache failures.
+- Replaced the broad Node matrix workflow with a NICO-specific frontend workflow that runs only lint/build from `apps/web`.
+- Kept CodeQL unchanged because CodeQL passed.
+
 Known limitation:
 
 - The exact remote branch should still be checked out and run on a developer machine or Codex environment before merging because this environment cannot clone from GitHub.
-- Keep PR #1 as draft until exact-branch validation is complete.
+- Keep PR #1 as draft until exact-branch validation and GitHub Actions are green.
 - Add explicit no-raw-secret report/API regression tests in the next hardening pass before marking ready for review.
