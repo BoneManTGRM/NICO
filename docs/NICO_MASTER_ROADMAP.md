@@ -23,7 +23,7 @@ Validation status:
 - Frontend lint, build, and dev startup passed after TypeScript target modernization.
 - The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
 
-## Next hardening pass
+## Next required step before merge
 
 Before marking PR #1 ready for review:
 
@@ -31,6 +31,7 @@ Before marking PR #1 ready for review:
 - rerun backend, API, and frontend checks
 - add explicit no-raw-secret regression tests for reports/API responses
 - confirm generated runtime files are not committed
+- update the PR with exact-branch results
 
 ## Future Phase A — Cyber Twin
 
