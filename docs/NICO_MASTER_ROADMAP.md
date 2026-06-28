@@ -23,10 +23,9 @@ Validation status:
 - Frontend lint, build, and dev startup passed after TypeScript target modernization.
 - The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
 
-## Next required step before merge
+## Required before merge
 
-Before marking PR #1 ready for review:
-
+- keep PR #1 as a draft
 - check out `upgrade/repair-first-foundation` directly
 - rerun backend, API, and frontend checks
 - add explicit no-raw-secret regression tests for reports/API responses
