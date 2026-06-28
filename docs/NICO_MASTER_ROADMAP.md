@@ -1,6 +1,8 @@
 # NICO Master Roadmap
 
-## Current implementation pass
+## Current implementation pass — PR #1
+
+Implemented in the repair-first foundation branch:
 
 - stabilize MVP
 - normalized findings
@@ -11,6 +13,24 @@
 - owner/developer/reparodynamic/compliance reports
 - focused UI improvements
 - module foundation
+- scanner availability detection
+- validation and hardening documentation
+
+Validation status:
+
+- Backend CLI checks passed on a local equivalent checkout.
+- API endpoint checks passed on a local equivalent checkout.
+- Frontend lint, build, and dev startup passed after TypeScript target modernization.
+- The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
+
+## Next hardening pass
+
+Before marking PR #1 ready for review:
+
+- check out `upgrade/repair-first-foundation` directly
+- rerun backend, API, and frontend checks
+- add explicit no-raw-secret regression tests for reports/API responses
+- confirm generated runtime files are not committed
 
 ## Future Phase A — Cyber Twin
 
