@@ -8,11 +8,24 @@ from pathlib import Path
 from typing import Any
 
 from nico.cli import DB_PATH
-from nico.security.masking import mask_text
+from nico.security.masking import mask_secret_value, mask_text
+
+SENSITIVE_DETAIL_KEYS = ("api", "key", "secret", "token", "password", "jwt", "private")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_detail(detail: dict[str, Any]) -> dict[str, str]:
+    safe = {}
+    for key, value in detail.items():
+        text = str(value)
+        if any(marker in key.lower() for marker in SENSITIVE_DETAIL_KEYS):
+            safe[key] = mask_secret_value(text)
+        else:
+            safe[key] = mask_text(text)
+    return safe
 
 
 @dataclass(frozen=True)
@@ -55,7 +68,7 @@ class LocalAuditSQLiteStore:
             )
 
     def append(self, record: LocalAuditRecord) -> dict:
-        safe_detail = {key: mask_text(str(value)) for key, value in record.detail.items()}
+        safe_detail = _safe_detail(record.detail)
         with self.db() as db:
             cursor = db.execute(
                 """
