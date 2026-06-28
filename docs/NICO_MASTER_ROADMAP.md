@@ -25,6 +25,7 @@ Validation status:
 - Frontend lint, build, and dev startup passed after TypeScript target modernization and Next JSX config compatibility update.
 - CodeQL passed before the CI cleanup pass.
 - NICO Repair-First CI and Node.js CI were patched to remove the known setup failures.
+- The root Node.js workflow on `main` was aligned with the PR branch to remove the add/add workflow conflict from the earlier template workflow.
 - The latest GitHub Actions runs must still be confirmed green before merge.
 - The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
 
