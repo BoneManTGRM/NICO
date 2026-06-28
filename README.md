@@ -8,6 +8,12 @@ NICO is a local-first defensive cybersecurity platform. It scans authorized loca
 
 NICO is defensive only. It does not perform unauthorized scanning, exploitation, credential theft, phishing, malware, stealth, evasion, persistence, destructive activity, authentication bypass, or offensive attack automation.
 
+## Public preview
+
+Public preview documentation: [`docs/PUBLIC_PREVIEW.md`](docs/PUBLIC_PREVIEW.md)
+
+The GitHub Pages preview is static only. It does not run scans, store data, call the backend, or represent a live SaaS deployment.
+
 ## Quick start
 
 ```bash
