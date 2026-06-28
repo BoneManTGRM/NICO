@@ -16,17 +16,22 @@ Implemented in the repair-first foundation branch:
 - scanner availability detection
 - validation and hardening documentation
 - frontend TypeScript configuration hardening
+- CI workflow cleanup for backend and frontend validation
 
 Validation status:
 
 - Backend CLI checks passed on a local equivalent checkout.
 - API endpoint checks passed on a local equivalent checkout.
 - Frontend lint, build, and dev startup passed after TypeScript target modernization and Next JSX config compatibility update.
+- CodeQL passed before the CI cleanup pass.
+- NICO Repair-First CI and Node.js CI were patched to remove the known setup failures.
+- The latest GitHub Actions runs must still be confirmed green before merge.
 - The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
 
 ## Required before merge
 
 - keep PR #1 as a draft
+- confirm latest GitHub Actions are green
 - check out `upgrade/repair-first-foundation` directly
 - rerun backend, API, and frontend checks
 - add explicit no-raw-secret regression tests for reports/API responses
