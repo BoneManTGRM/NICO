@@ -45,6 +45,7 @@ reports/generated/
 scan_output/
 logs/
 *.log
+nico/test_lab/
 
 # OS/editor
 .DS_Store
