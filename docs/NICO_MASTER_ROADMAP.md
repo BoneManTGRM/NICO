@@ -15,12 +15,13 @@ Implemented in the repair-first foundation branch:
 - module foundation
 - scanner availability detection
 - validation and hardening documentation
+- frontend TypeScript configuration hardening
 
 Validation status:
 
 - Backend CLI checks passed on a local equivalent checkout.
 - API endpoint checks passed on a local equivalent checkout.
-- Frontend lint, build, and dev startup passed after TypeScript target modernization.
+- Frontend lint, build, and dev startup passed after TypeScript target modernization and Next JSX config compatibility update.
 - The exact remote branch still needs one final developer-machine or Codex checkout because this environment cannot resolve `github.com` for cloning.
 
 ## Required before merge
