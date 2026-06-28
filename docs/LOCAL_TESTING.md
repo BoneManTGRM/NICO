@@ -80,7 +80,7 @@ Passed locally:
 - FastAPI started through `python run_local.py`.
 - API endpoints listed above returned HTTP 200 using generated finding and repair IDs.
 - Frontend `npm run lint` passed after the TypeScript target was modernized.
-- Frontend `npm run build` passed.
+- Frontend `npm run build` passed after the frontend config was kept compatible with Next's automatic JSX runtime.
 - Frontend `npm run dev` started successfully.
 
 Known limitation:
