@@ -16,3 +16,7 @@ Validation cleanup applied in this pass:
 - TypeScript target was modernized from `es5` to `es2017`.
 - Frontend config was kept compatible with the Next automatic JSX runtime.
 - PR #1 should remain a draft until the exact remote branch is checked out and validated outside this container.
+
+Next hardening priority:
+
+- Add explicit tests proving raw fake secret values do not appear in generated reports, API JSON responses, or frontend-displayed fields.
