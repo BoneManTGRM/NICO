@@ -1,0 +1,88 @@
+name: NICO Repair-First CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - upgrade/repair-first-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend repair-first validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Run NICO backend smoke checks
+        run: |
+          python -m nico scan-test-lab
+          python -m nico scan-drift-demo
+          python -m nico scan ./nico/test_lab/sample_repo
+          python -m nico report latest
+          python -m nico report owner
+          python -m nico report developer
+          python -m nico report reparodynamic
+          python -m nico report compliance
+          python -m nico verify latest
+          python -m nico memory
+          python -m nico policy show
+          python -m nico scanner-availability
+
+      - name: Validate API import
+        run: python -c "from nico.api.main import app; print(app.title)"
+
+      - name: Check generated runtime files are ignored
+        run: |
+          git status --short
+          ! git status --short | grep -E '(^| )\.nico/|(^| )nico/test_lab/|\.sqlite3|\.env|node_modules/'
+
+  frontend:
+    name: Frontend validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm install
+
+      - name: Lint frontend
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: npm run build
