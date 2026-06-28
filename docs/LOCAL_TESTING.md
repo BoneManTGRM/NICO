@@ -88,6 +88,7 @@ CI cleanup applied:
 - Added `httpx>=0.27` so FastAPI `TestClient` tests have their required runtime dependency in CI.
 - Updated NICO Repair-First CI frontend setup to run from `apps/web`, use `npm install`, and avoid missing lockfile cache failures.
 - Replaced the broad Node matrix workflow with a NICO-specific frontend workflow that runs only lint/build from `apps/web`.
+- Updated the matching Node.js workflow on `main` so the PR no longer has an add/add workflow conflict.
 - Kept CodeQL unchanged because CodeQL passed.
 
 Known limitation:
