@@ -1,130 +1,155 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NICO Command Center Preview</title>
-  <style>
-    :root{--bg:#070b14;--panel:#0f172a;--panel2:#111827;--line:#263244;--text:#e5e7eb;--muted:#94a3b8;--accent:#38bdf8;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444;--violet:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#14213f,#070b14 46%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Arial,sans-serif}.shell{display:flex;min-height:100vh}.sidebar{width:280px;background:rgba(15,23,42,.92);border-right:1px solid var(--line);padding:26px;position:sticky;top:0;height:100vh}.brand{font-size:32px;font-weight:900;letter-spacing:.1em}.tag{color:var(--muted);font-size:13px;line-height:1.5;margin:8px 0 26px}.nav a{display:block;color:var(--muted);text-decoration:none;padding:11px 12px;border-radius:12px;margin:5px 0}.nav a:hover,.nav a.active{background:#172033;color:#fff}.main{flex:1;padding:30px;max-width:1500px}.topbar{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:24px}.topbar h1{margin:0;font-size:30px}.muted{color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:#0b1220}.dot{width:9px;height:9px;border-radius:999px;background:var(--good)}.grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:16px;margin-bottom:20px}.card{background:linear-gradient(180deg,rgba(17,24,39,.96),rgba(15,23,42,.96));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 48px rgba(0,0,0,.24)}.metric{font-size:38px;font-weight:900;margin-top:8px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}.btn{border:1px solid #2a3a55;background:#172033;color:#fff;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700}.btn.primary{background:#0369a1;border-color:#38bdf8}.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:11px 9px;font-size:13px}th{color:#cbd5e1}.sev-critical{color:#fecdd3}.sev-high{color:#fdba74}.sev-medium{color:#fde68a}.sev-low{color:#bbf7d0}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:#0b1220;display:inline-block}pre{white-space:pre-wrap;background:#050914;border:1px solid var(--line);padding:14px;border-radius:14px;overflow:auto;color:#cbd5e1}.section{margin-top:18px}.warning{border-color:#7c2d12;background:rgba(124,45,18,.16)}.ok{border-color:#14532d;background:rgba(20,83,45,.18)}.footer{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.6}@media(max-width:1000px){.shell{display:block}.sidebar{position:relative;width:auto;height:auto}.grid,.layout{grid-template-columns:1fr}.main{padding:18px}.topbar{display:block}}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NICO Command Center | Repair-First Cyber Defense</title>
+<meta name="description" content="NICO is Neural Intelligence Cyber Operations: a static preview of a repair-first cybersecurity command center." />
+<style>
+:root{--bg:#050813;--bg2:#0a1020;--panel:#0e1728;--panel2:#111d33;--line:#26364f;--line2:#33506f;--text:#edf4ff;--muted:#95a4ba;--soft:#cbd5e1;--accent:#38bdf8;--accent2:#7c3aed;--green:#22c55e;--amber:#f59e0b;--red:#fb7185;--shadow:0 24px 70px rgba(0,0,0,.35)}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at top left,rgba(56,189,248,.18),transparent 34%),radial-gradient(circle at top right,rgba(124,58,237,.18),transparent 28%),linear-gradient(180deg,var(--bg),#03050b 72%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif}.shell{display:flex;min-height:100vh}.sidebar{width:292px;background:rgba(8,13,26,.82);border-right:1px solid var(--line);padding:28px;position:sticky;top:0;height:100vh;backdrop-filter:blur(18px)}.brand{font-size:34px;font-weight:950;letter-spacing:.12em}.tag{color:var(--muted);font-size:13px;line-height:1.55;margin:10px 0 24px}.nav a{display:block;color:var(--muted);text-decoration:none;padding:11px 12px;border-radius:13px;margin:5px 0;border:1px solid transparent}.nav a:hover,.nav a.active{background:rgba(56,189,248,.08);border-color:rgba(56,189,248,.18);color:white}.main{flex:1;padding:34px;max-width:1540px;margin:0 auto}.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:stretch;margin-bottom:28px}.hero-card,.card{background:linear-gradient(180deg,rgba(17,29,51,.92),rgba(10,16,32,.94));border:1px solid var(--line);border-radius:24px;padding:24px;box-shadow:var(--shadow)}.hero h1{font-size:56px;line-height:.96;margin:0 0 14px;letter-spacing:-.05em}.eyebrow{display:inline-flex;gap:8px;align-items:center;color:#bdefff;border:1px solid rgba(56,189,248,.22);background:rgba(56,189,248,.08);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:750;margin-bottom:18px}.subtitle{font-size:21px;color:#dbeafe;margin:0 0 12px}.value{font-size:16px;color:var(--muted);line-height:1.65;max-width:780px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.btn{appearance:none;border:1px solid var(--line2);background:#121d31;color:white;border-radius:14px;padding:11px 14px;text-decoration:none;font-weight:800;display:inline-flex}.btn.primary{background:linear-gradient(135deg,#0284c7,#7c3aed);border-color:rgba(56,189,248,.55)}.btn:hover{transform:translateY(-1px)}.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.status{padding:16px;border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}.status strong{display:block;font-size:26px}.muted{color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:#0a1222;color:#cbd5e1;font-size:12px;font-weight:750}.dot{width:8px;height:8px;border-radius:99px;background:var(--green)}.section{margin-top:24px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:10px 0 16px}.section h2{font-size:30px;margin:0}.section p{color:var(--muted);line-height:1.6}.grid{display:grid;gap:16px}.grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}.grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{font-size:36px;font-weight:950;margin:8px 0}.card h3{margin:0 0 8px}.mini{font-size:13px;color:var(--muted);line-height:1.55}.module-card{min-height:180px}.module-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:10px}.pill{border:1px solid var(--line);background:#081122;border-radius:999px;padding:4px 8px;font-size:12px;color:#cbd5e1;display:inline-block}.good{color:#86efac}.warn{color:#fcd34d}.hot{color:#fecdd3}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.table{width:100%;border-collapse:collapse;min-width:850px;background:rgba(8,17,34,.5)}.table th,.table td{text-align:left;border-bottom:1px solid var(--line);padding:13px 12px;font-size:13px}.table th{color:#cbd5e1;background:rgba(15,23,42,.72)}.table tr:last-child td{border-bottom:0}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:16px}.list{margin:12px 0 0;padding-left:19px;color:var(--muted);line-height:1.7}.code{background:#050914;border:1px solid var(--line);border-radius:18px;padding:16px;color:#dbeafe;overflow:auto;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;line-height:1.55}.roadmap{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.phase{padding:16px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.032)}.phase b{display:block;margin-bottom:7px}.trust{border-color:rgba(34,197,94,.25);background:linear-gradient(180deg,rgba(20,83,45,.18),rgba(15,23,42,.92))}.future{border-color:rgba(245,158,11,.25);background:linear-gradient(180deg,rgba(120,53,15,.18),rgba(15,23,42,.92))}.footer{padding:30px 0;color:var(--muted);font-size:12px;line-height:1.6}.mobile-note{display:none}@media(max-width:1080px){.shell{display:block}.sidebar{position:relative;width:auto;height:auto}.main{padding:20px}.hero,.comparison,.grid.cols-4,.grid.cols-3,.grid.cols-2,.roadmap{grid-template-columns:1fr}.hero h1{font-size:42px}.mobile-note{display:block}.status-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.status-grid{grid-template-columns:1fr}.hero h1{font-size:36px}.section-head{display:block}.actions .btn{width:100%;justify-content:center}}
+</style>
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">NICO</div>
-      <div class="tag">Neural Intelligence Cyber Operations<br/>Autonomous cyber defense through Reparodynamics.</div>
-      <nav class="nav">
-        <a class="active" href="#mission">Mission Control</a>
-        <a href="#findings">Findings</a>
-        <a href="#repairs">Repair Queue</a>
-        <a href="#verification">Verification</a>
-        <a href="#memory">Repair Memory</a>
-        <a href="#reports">Reports</a>
-        <a href="#policy">Policy / Autonomy</a>
-        <a href="#settings">Scanner Availability</a>
-      </nav>
-    </aside>
-    <main class="main">
-      <div class="topbar">
-        <div>
-          <h1>NICO Command Center</h1>
-          <div class="muted">Static preview of the local repair-first dashboard. No live scans or secrets are connected here.</div>
-        </div>
-        <span class="badge"><span class="dot"></span> Local Safe Mode Preview</span>
-      </div>
+<div class="shell">
+<aside class="sidebar">
+<div class="brand">NICO</div>
+<div class="tag">Neural Intelligence Cyber Operations<br>Autonomous cyber defense through Reparodynamics.</div>
+<nav class="nav">
+<a class="active" href="#top">Mission Control</a>
+<a href="#how">How it works</a>
+<a href="#dashboard">Dashboard</a>
+<a href="#different">Why different</a>
+<a href="#trust">Safety</a>
+<a href="#quickstart">Quick Start</a>
+<a href="#roadmap">Roadmap</a>
+<a href="#deployment">Future hosting</a>
+</nav>
+</aside>
+<main class="main" id="top">
+<section class="hero">
+<div class="hero-card">
+<div class="eyebrow"><span class="dot"></span> Static public preview · Local safe mode</div>
+<h1>NICO Command Center</h1>
+<p class="subtitle">Autonomous cyber defense through Reparodynamics.</p>
+<p class="value">Detect drift. Rank repairs. Generate targeted fixes. Verify outcomes. Store repair memory. NICO is designed for authorized repositories, local systems, and teams that need a clear path from finding to verified fix.</p>
+<div class="actions">
+<a class="btn primary" href="#dashboard">View Dashboard Preview</a>
+<a class="btn" href="#quickstart">Run NICO Locally</a>
+<a class="btn" href="https://github.com/BoneManTGRM/NICO">View GitHub Repo</a>
+<a class="btn" href="#roadmap">Read Roadmap</a>
+</div>
+</div>
+<div class="hero-card">
+<div class="status-grid">
+<div class="status"><span class="muted">System Mode</span><strong>Local Safe</strong><span class="badge">static preview</span></div>
+<div class="status"><span class="muted">Autonomy</span><strong>L1</strong><span class="badge">approval gated</span></div>
+<div class="status"><span class="muted">Demo Findings</span><strong>9</strong><span class="badge">all masked</span></div>
+<div class="status"><span class="muted">Repair Candidates</span><strong>27</strong><span class="badge">TGRM plans</span></div>
+</div>
+</div>
+</section>
 
-      <section id="mission" class="grid">
-        <div class="card"><div class="muted">Findings</div><div class="metric">9</div><div class="muted">normalized drift findings</div></div>
-        <div class="card"><div class="muted">Drift</div><div class="metric">3</div><div class="muted">new cyber drift events</div></div>
-        <div class="card"><div class="muted">Repairs</div><div class="metric">27</div><div class="muted">TGRM repair candidates</div></div>
-        <div class="card"><div class="muted">Autonomy</div><div class="metric">L1</div><div class="muted">human approval required</div></div>
-      </section>
+<section class="section" id="how">
+<div class="section-head"><div><h2>How NICO works</h2><p>One repair-first loop from scan to memory.</p></div><span class="badge">Scan → Drift → RYE → TGRM → Verify → Memory</span></div>
+<div class="grid cols-3">
+<div class="card"><h3>1. Scan</h3><p>NICO reviews authorized local repositories and safe test fixtures.</p></div>
+<div class="card"><h3>2. Detect Drift</h3><p>NICO identifies new risk patterns, configuration drift, and repair candidates.</p></div>
+<div class="card"><h3>3. Score with RYE</h3><p>NICO ranks what to fix first by repair value, risk, effort, and verification yield.</p></div>
+<div class="card"><h3>4. Generate TGRM Repair</h3><p>NICO creates targeted repair plans instead of broad rewrites.</p></div>
+<div class="card"><h3>5. Verify</h3><p>NICO checks whether scan outputs, plans, and governance checks are valid.</p></div>
+<div class="card"><h3>6. Store Repair Memory</h3><p>NICO remembers recurring drift, fragile modules, and previous repair outcomes.</p></div>
+</div>
+</section>
 
-      <div class="actions">
-        <button class="btn primary">Run Test Lab Scan</button>
-        <button class="btn">Run Drift Demo</button>
-        <button class="btn">Export Reports</button>
-        <button class="btn">Verify Latest</button>
-      </div>
+<section class="section" id="dashboard">
+<div class="section-head"><div><h2>Dashboard preview</h2><p>Demo data only. The public page does not run scans, store data, or connect to private systems.</p></div><span class="badge">NICO demo fixture</span></div>
+<div class="grid cols-4">
+<div class="card module-card"><div class="module-top"><h3>Mission Control</h3><span class="pill good">online</span></div><div class="metric">L1</div><p class="mini">Local Safe Mode · latest scan demo fixture · 27 repair candidates.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Findings</h3><span class="pill warn">review</span></div><div class="metric">9</div><p class="mini">4 high-priority findings. All evidence is masked.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Drift</h3><span class="pill warn">3 events</span></div><div class="metric">+3</div><p class="mini">Risk score increased and new categories were detected.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Repair Queue</h3><span class="pill hot">approval</span></div><div class="metric">94.2</div><p class="mini">Top RYE score. Production changes require human approval.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Verification</h3><span class="pill good">observed</span></div><p class="mini">Scan available, findings masked, repair candidates present, governance enabled.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Repair Memory</h3><span class="pill">learning</span></div><p class="mini">Recurring credential-like fixture. Fragile module: webhook.py. Repair history available.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Reports</h3><span class="pill">4 types</span></div><p class="mini">Owner, developer, reparodynamic, and compliance report previews.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Policy / Autonomy</h3><span class="pill good">defensive</span></div><p class="mini">Defensive-only actions. Production changes require review.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Scanner Availability</h3><span class="pill">fallback</span></div><p class="mini">Built-in fallback active. Optional external scanners supported later.</p></div>
+<div class="card module-card"><div class="module-top"><h3>Audit Log</h3><span class="pill">tracked</span></div><p class="mini">scan.run · reports.generate · verification.latest · policy.read.</p></div>
+</div>
+<div class="section table-wrap">
+<table class="table">
+<thead><tr><th>Priority</th><th>Category</th><th>RYE</th><th>Demo finding</th><th>Masked evidence</th><th>TGRM plan</th></tr></thead>
+<tbody>
+<tr><td class="hot">Critical</td><td>AI-agent permission drift</td><td>94.2</td><td>Over-broad local tool permission fixture</td><td>masked permission fixture</td><td>Restrict to least-privilege local actions and verify.</td></tr>
+<tr><td class="hot">High</td><td>Secret exposure fixture</td><td>88.7</td><td>Credential-like demo value detected</td><td>FAKE…7890</td><td>Move to environment configuration and rescan.</td></tr>
+<tr><td class="hot">High</td><td>Webhook validation gap</td><td>81.4</td><td>Signature validation missing in demo handler</td><td>mock-token…demo</td><td>Add signature validation and replay checks.</td></tr>
+<tr><td class="warn">Medium</td><td>Missing rate limit</td><td>58.9</td><td>Traffic control TODO in fixture</td><td>masked route fixture</td><td>Add throttling and abuse detection.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
 
-      <div class="layout">
-        <section id="findings" class="card">
-          <h2>Findings</h2>
-          <table>
-            <thead><tr><th>Severity</th><th>Category</th><th>RYE</th><th>Finding</th><th>Masked Evidence</th></tr></thead>
-            <tbody>
-              <tr><td class="sev-critical">critical</td><td>unsafe_eval</td><td>94.2</td><td>Unsafe eval usage</td><td><span class="pill">eval(request.args...)</span></td></tr>
-              <tr><td class="sev-high">high</td><td>secret_exposure</td><td>88.7</td><td>Potential secret detected</td><td><span class="pill">FAKE…7890</span></td></tr>
-              <tr><td class="sev-high">high</td><td>insecure_webhook</td><td>81.4</td><td>Webhook signature missing</td><td><span class="pill">TODO: verify signature</span></td></tr>
-              <tr><td class="sev-medium">medium</td><td>missing_rate_limit</td><td>58.9</td><td>Rate limiting TODO</td><td><span class="pill">TODO: add rate limiting</span></td></tr>
-            </tbody>
-          </table>
-        </section>
+<section class="section" id="different">
+<div class="section-head"><div><h2>Why NICO is different</h2><p>Most tools find issues. NICO turns findings into prioritized, verified repair work.</p></div></div>
+<div class="comparison">
+<div class="card"><h3>Traditional scanner</h3><ul class="list"><li>Finds issues</li><li>Produces alerts</li><li>Leaves prioritization to humans</li><li>Does not verify repair value</li><li>Does not remember repair outcomes</li></ul></div>
+<div class="card"><h3>NICO</h3><ul class="list"><li>Detects cyber drift</li><li>Ranks repairs with RYE</li><li>Generates targeted TGRM repair plans</li><li>Verifies outcomes</li><li>Stores repair memory</li><li>Uses defensive autonomy boundaries</li></ul></div>
+</div>
+</section>
 
-        <section id="repairs" class="card">
-          <h2>Top TGRM Repair</h2>
-          <p><strong>RYE 94.2:</strong> Unsafe eval usage</p>
-          <pre>Fix only the Unsafe eval usage issue in app.py.
-Do not rewrite unrelated code.
-Replace eval with a safe parser or explicit allowlist.
-Add the smallest relevant tests.
-Run local tests or a NICO rescan.
-Return a short verification summary.
-Never expose raw secrets.</pre>
-        </section>
-      </div>
+<section class="section" id="positioning">
+<div class="section-head"><div><h2>Built for teams without a full security department</h2><p>A repair-first cybersecurity assistant for authorized systems.</p></div></div>
+<div class="grid cols-3">
+<div class="card"><h3>Best fit</h3><p>Early teams that need practical security visibility, repair prioritization, and a clear path from finding to verified fix.</p></div>
+<div class="card"><h3>Users</h3><p>AI-built apps, solo founders, small SaaS teams, agencies, non-technical owners, internal tools, and businesses without a dedicated security team.</p></div>
+<div class="card"><h3>Boundary</h3><p>NICO helps owners improve systems they are authorized to protect. It does not promise guaranteed security.</p></div>
+</div>
+</section>
 
-      <div class="layout section">
-        <section id="verification" class="card ok">
-          <h2>Verification</h2>
-          <p><strong>Status:</strong> verification observed</p>
-          <p><strong>Checks:</strong> scan available, findings masked, governance enabled, repair candidates present.</p>
-          <p class="muted">Baseline updates remain blocked until verified repair results pass.</p>
-        </section>
+<section class="section" id="trust">
+<div class="card trust"><h2>Defensive by design</h2><p>NICO is designed for authorized systems only. It does not support unauthorized access, credential misuse, harmful code, stealth behavior, destructive operations, or bypassing controls. Human approval is required for production changes.</p><p>This public page is a static preview. It does not run scans, store data, or connect to private systems.</p></div>
+</section>
 
-        <section id="memory" class="card">
-          <h2>Repair Memory</h2>
-          <p>Recurring drift category observed: <strong>secret_exposure</strong></p>
-          <p>Fragile module signal: <strong>webhook.py</strong></p>
-          <p class="muted">NICO stores which repairs work, fail, recur, or regress.</p>
-        </section>
-      </div>
+<section class="section" id="quickstart">
+<div class="section-head"><div><h2>Run NICO locally</h2><p>The full working dashboard runs locally with the FastAPI backend.</p></div></div>
+<div class="grid cols-2">
+<div class="card"><h3>Backend</h3><div class="code">git clone https://github.com/BoneManTGRM/NICO.git
+cd NICO
+pip install -r requirements.txt
+python -m nico scan-test-lab
+python -m nico scan-drift-demo
+python -m nico report latest
+python -m nico verify latest
+python run_local.py</div></div>
+<div class="card"><h3>Frontend</h3><div class="code">cd apps/web
+npm install
+npm run dev
 
-      <div class="layout section">
-        <section id="reports" class="card">
-          <h2>Reports</h2>
-          <ul>
-            <li>Owner Report</li>
-            <li>Developer Report</li>
-            <li>Reparodynamic Report</li>
-            <li>Compliance Report</li>
-          </ul>
-        </section>
+Dashboard:
+http://localhost:3000
 
-        <section id="policy" class="card warning">
-          <h2>Policy / Autonomy</h2>
-          <p><strong>Allowed:</strong> scan, report, score, repair plan, verify.</p>
-          <p><strong>Blocked:</strong> exploit, credential theft, phishing, malware, evasion, persistence, unauthorized scanning.</p>
-        </section>
-      </div>
+API docs:
+http://localhost:8000/docs</div></div>
+</div>
+</section>
 
-      <section id="settings" class="card section">
-        <h2>Scanner Availability</h2>
-        <table>
-          <thead><tr><th>Tool</th><th>Purpose</th><th>Mode</th></tr></thead>
-          <tbody>
-            <tr><td>gitleaks</td><td>secret scanning</td><td>optional external / fallback available</td></tr>
-            <tr><td>semgrep</td><td>code security scanning</td><td>optional external / fallback available</td></tr>
-            <tr><td>pip-audit</td><td>Python dependency scanning</td><td>optional external / fallback available</td></tr>
-            <tr><td>npm audit</td><td>npm dependency scanning</td><td>optional external / fallback available</td></tr>
-          </tbody>
-        </table>
-      </section>
+<section class="section" id="roadmap">
+<div class="section-head"><div><h2>NICO roadmap</h2><p>Future phases after the repair-first foundation is green and production hardening begins.</p></div></div>
+<div class="roadmap">
+<div class="phase"><b>Phase A — Cyber Twin</b>Graph-backed assets, files, routes, dependencies, findings, and repair relationships.</div>
+<div class="phase"><b>Phase B — AI Agent Security</b>Tool permission scanner, memory risk scanner, connector exposure review, prompt-injection surface review, and autonomous action checks.</div>
+<div class="phase"><b>Phase C — NICO-Bench Local</b>Local benchmark fixtures and comparison reports.</div>
+<div class="phase"><b>Phase D — Connectors</b>GitHub first, then Docker, Supabase/Firebase, Cloudflare, Stripe/Mercado Pago, Vercel/Render/Railway, PostgreSQL, logs, identity, and workflow tools.</div>
+<div class="phase"><b>Phase E — Production Hardening</b>Auth, RBAC, tenant isolation, encrypted server-side secret storage, sandboxing, audit trails, approval workflows, and secure report permissions.</div>
+<div class="phase"><b>Phase F — Security Regression Tests</b>Proof that fake raw sensitive values never appear in reports, API JSON, CLI output, or frontend fields.</div>
+</div>
+</section>
 
-      <div class="footer">
-        This is a static public dashboard preview. The full dashboard runs locally from <code>apps/web</code> and connects to the local FastAPI backend at <code>http://localhost:8000</code>. Production SaaS deployment should wait until PR #1 is green and merged.
-      </div>
-    </main>
-  </div>
+<section class="section" id="deployment">
+<div class="card future"><h2>Future hosted deployment</h2><p>This is not active yet. Do not deploy the live API dashboard until PR #1 is green, merged, and production hardening is complete.</p><div class="grid cols-4"><div><span class="muted">Frontend</span><br><b>Vercel</b></div><div><span class="muted">Backend</span><br><b>Render / Railway / Fly.io</b></div><div><span class="muted">Database</span><br><b>Supabase / PostgreSQL</b></div><div><span class="muted">Auth</span><br><b>Supabase Auth / Clerk</b></div></div><div class="section"><span class="badge">Static public preview: available</span> <span class="badge">Local dashboard: available</span> <span class="badge">Live backend dashboard: not deployed</span> <span class="badge">SaaS mode: future phase</span></div></div>
+</section>
+
+<footer class="footer">NICO public dashboard preview · static page only · no API calls · no private data · no trackers. Full local dashboard runs from apps/web with the FastAPI backend.</footer>
+</main>
+</div>
 </body>
 </html>
