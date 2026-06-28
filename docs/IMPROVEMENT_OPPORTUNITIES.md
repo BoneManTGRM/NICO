@@ -11,4 +11,8 @@
 | Add NICO-Bench Local | tests/reports | medium | Enables proof against disconnected tools | No benchmark command in this pass | Build benchmark fixtures and optional external comparison | Later | No |
 | Add production auth and RBAC | API/UI | critical | Required before hosted SaaS | Local API has no production identity layer | Add auth, RBAC, tenant isolation, and encrypted secrets | Before SaaS | No for local MVP |
 
-PR #1 should remain a draft until the exact remote branch is checked out and validated outside this container.
+Validation cleanup applied in this pass:
+
+- TypeScript target was modernized from `es5` to `es2017`.
+- Frontend config was kept compatible with the Next automatic JSX runtime.
+- PR #1 should remain a draft until the exact remote branch is checked out and validated outside this container.
