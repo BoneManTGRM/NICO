@@ -34,7 +34,17 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run tests
-        run: pytest -q
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest-output.txt
+
+      - name: Upload pytest failure output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-output
+          path: pytest-output.txt
 
       - name: Run NICO backend smoke checks
         run: |
