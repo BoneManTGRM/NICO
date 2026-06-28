@@ -17,6 +17,7 @@ def test_secret_masking():
 
 
 def test_verify_and_report():
+    scan_test_lab()
     assert verify_latest()['passed'] is True
     assert generate_reports()
 
