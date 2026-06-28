@@ -2,6 +2,7 @@
 
 | Issue or opportunity | Affected area | Severity | Business impact | Technical impact | Recommended fix | Required now? | Blocks MVP? |
 |---|---|---:|---|---|---|---|---|
+| Confirm latest GitHub Actions after CI cleanup | validation | high | Prevents merging a branch with failing checks | CI workflow fixes were pushed and need final green confirmation | Wait for or manually trigger latest `NICO Repair-First CI`, `Node.js CI`, and `CodeQL Advanced` runs | Before merge | Yes |
 | Run exact remote-branch validation on a developer machine | validation | medium | Reduces merge risk | Container could not clone from GitHub, so validation used a local equivalent checkout | Check out `upgrade/repair-first-foundation` directly and rerun backend/frontend/API checks | Before merge | Yes for final merge confidence |
 | Add explicit raw-secret regression tests for reports/API output | tests/security | high | Prevents trust-damaging secret leakage | Current tests cover masking but should expand across report files and API responses | Add no-raw-secret assertions for report content, API JSON, and frontend state | Before ready-for-review | No |
 | Complete deeper module split | backend | medium | Improves maintainability and testability | Current pass adds module foundations while keeping CLI orchestration compatible | Move remaining orchestration logic into dedicated scanner/reparodynamics/report modules | Later | No |
@@ -15,7 +16,9 @@ Validation cleanup applied in this pass:
 
 - TypeScript target was modernized from `es5` to `es2017`.
 - Frontend config was kept compatible with the Next automatic JSX runtime.
-- PR #1 should remain a draft until the exact remote branch is checked out and validated outside this container.
+- `httpx>=0.27` was added for FastAPI `TestClient` compatibility in CI.
+- Node workflows now use one frontend validation job under `apps/web` instead of a broad root-level Node matrix.
+- PR #1 should remain a draft until the latest GitHub Actions checks pass.
 
 Next hardening priority:
 
