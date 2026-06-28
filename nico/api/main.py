@@ -18,6 +18,18 @@ from nico.cli import (
     verify_latest,
     verify_repair_by_id,
 )
+from nico.foundations import (
+    agent_security_scan_demo,
+    approvals_pending_demo,
+    audit_latest_demo,
+    bench_demo,
+    connector_policy_demo,
+    cyber_twin_demo,
+    sandbox_scanner_demo,
+    swarm_policy_demo,
+    tenant_demo,
+    vault_demo,
+)
 
 class LocalScanRequest(BaseModel):
     path: str
@@ -25,7 +37,7 @@ class LocalScanRequest(BaseModel):
 class PolicyLevelRequest(BaseModel):
     level: int
 
-app = FastAPI(title="NICO API", version="0.2.0", description="Local-first defensive repair-first cybersecurity API")
+app = FastAPI(title="NICO API", version="0.3.0", description="Local-first defensive repair-first cybersecurity API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("NICO_ALLOWED_ORIGINS", "http://localhost:3000").split(","),
@@ -43,7 +55,7 @@ def report_body(kind: str) -> str:
     return ""
 
 @app.get("/health")
-def health(): return {"status":"ok","system":"NICO","mode":"local","version":"0.2.0"}
+def health(): return {"status":"ok","system":"NICO","mode":"local","version":"0.3.0"}
 @app.post("/scan/test-lab")
 def api_scan_test_lab(): return scan_test_lab()
 @app.post("/scan/drift-demo")
@@ -102,6 +114,27 @@ def set_policy(req: PolicyLevelRequest):
 def audit_log(): return Store().rows("audit_log")
 @app.get("/scanner-availability")
 def api_scanner_availability(): return scanner_availability()
+
+@app.get("/swarm/policy")
+def api_swarm_policy(): return swarm_policy_demo()
+@app.post("/agent-security/scan-demo")
+def api_agent_security_scan_demo(): return agent_security_scan_demo()
+@app.get("/vault/demo")
+def api_vault_demo(): return vault_demo()
+@app.get("/connector/policy")
+def api_connector_policy(): return connector_policy_demo()
+@app.post("/sandbox/scanner-demo")
+def api_sandbox_scanner_demo(): return sandbox_scanner_demo()
+@app.get("/audit/latest")
+def api_audit_latest(): return audit_latest_demo(Store().rows("audit_log")[:25])
+@app.get("/approvals/pending")
+def api_approvals_pending(): return approvals_pending_demo()
+@app.get("/tenant/demo")
+def api_tenant_demo(): return tenant_demo()
+@app.get("/cyber-twin/demo")
+def api_cyber_twin_demo(): return cyber_twin_demo()
+@app.get("/bench/demo")
+def api_bench_demo(): return bench_demo()
 
 def start():
     uvicorn.run("nico.api.main:app", host=os.getenv("NICO_API_HOST","127.0.0.1"), port=int(os.getenv("NICO_API_PORT","8000")), reload=False)
