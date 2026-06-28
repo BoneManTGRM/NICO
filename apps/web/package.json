@@ -1,0 +1,1 @@
+{"scripts":{"dev":"next dev -H 0.0.0.0","build":"next build","lint":"tsc --noEmit"},"dependencies":{"@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","next":"latest","react":"latest","react-dom":"latest","typescript":"latest"},"devDependencies":{},"private":true}
