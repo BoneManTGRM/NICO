@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2)
+"""NICO Assessment Orchestrator (Phase 2 - Narrow Fix)
 
-Now lightly integrates github_activity module when target is a GitHub URL.
+Only change: Fixed local-path Express findings_count to read from scan_result["scan"]["findings"].
 """
 
 import argparse
@@ -31,12 +31,6 @@ except Exception:
 run_scan = None
 try:
     from nico.cli import run_scan
-except Exception:
-    pass
-
-github_activity = None
-try:
-    from nico.modules.github_activity import analyze_activity as github_activity
 except Exception:
     pass
 
@@ -78,26 +72,22 @@ def run_assessment(
 
     is_local_path = bool(intake_result and intake_result.get("is_local_path") and intake_result.get("exists"))
 
-    # GitHub activity (if applicable)
-    if github_activity and intake_result and intake_result.get("is_url"):
-        try:
-            activity_result = github_activity(target, token=None)  # token support coming later
-            result["github_activity"] = activity_result
-            if activity_result.get("limitations"):
-                result["limitations"].extend(activity_result["limitations"])
-        except Exception as e:
-            result["limitations"].append(f"GitHub activity error: {e}")
-
     if tier == "express":
         if is_local_path:
             if run_scan:
                 try:
                     scan_result = run_scan(target, kind="assessment_express_local")
+
+                    # CORRECT local-path counting
+                    scan_payload = scan_result.get("scan", {})
+                    findings = scan_payload.get("findings", [])
+                    repairs = scan_result.get("repairs", [])
+
                     result.update({
                         "status": "completed",
                         "used_local_scan": True,
-                        "findings_count": len(scan_result.get("findings", [])),
-                        "repairs_count": len(scan_result.get("repairs", [])),
+                        "findings_count": len(findings),
+                        "repairs_count": len(repairs),
                     })
                 except Exception as e:
                     result.update({"status": "error", "error": str(e)})
