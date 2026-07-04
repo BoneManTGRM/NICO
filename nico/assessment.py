@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2 skeleton)
+"""NICO Assessment Orchestrator (Phase 2)
 
-Supports:
-    python -m nico.assessment <repo_url_or_path> --tier express|mid|full
+Current capabilities:
+- Parses all new assessment arguments
+- Express tier: delegates to existing working auditor
+- Mid/Full: honest placeholders
+- Basic JSON report writing when --output is provided
 
-Currently a thin wrapper. Real logic will be added module by module.
+This is still skeleton stage. Real module logic comes later.
 """
 
 import argparse
-import sys
+import json
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -27,27 +31,38 @@ def run_assessment(
     output_dir: str | None = None,
 ) -> dict:
     """
-    Main entry point for Technical Health Assessment.
-    Currently delegates to existing auditor for Express tier.
-    Other tiers return structured placeholder.
+    Main assessment entry point.
     """
+    started_at = datetime.utcnow().isoformat()
+
     result = {
+        "assessment_id": f"assessment_{int(datetime.utcnow().timestamp())}",
         "target": target,
         "tier": tier,
         "mode": mode,
+        "started_at": started_at,
         "status": "started",
+        "findings_count": 0,
+        "repairs_count": 0,
         "limitations": [],
+        "evidence_sources": ["static_analysis"],
     }
 
     if tier == "express":
         if auditor_audit is None:
             result["status"] = "error"
-            result["error"] = "nico.auditor not available"
+            result["error"] = "nico.auditor not importable"
+            result["limitations"].append("Existing auditor unavailable")
             return result
 
-        # Delegate to existing working auditor for now
         try:
-            audit_result = auditor_audit(target, tier="full", mode=mode, use_swarm=use_swarm)
+            # Delegate to existing working auditor
+            audit_result = auditor_audit(
+                target,
+                tier="full",  # temporary delegation
+                mode=mode,
+                use_swarm=use_swarm,
+            )
             result.update({
                 "status": "completed",
                 "delegated_to": "nico.auditor",
@@ -59,14 +74,18 @@ def run_assessment(
             result["error"] = str(e)
 
     else:
-        # Placeholder for Mid / Full tiers
         result["status"] = "not_implemented_yet"
-        result["limitations"].append(f"{tier} tier not fully implemented in Phase 2")
-        result["limitations"].append("Requires client_context, QA artifacts, and stakeholder input for Mid tier")
+        result["limitations"].append(f"{tier.upper()} tier is placeholder in current Phase 2")
+        result["limitations"].append("Requires client_context, QA artifacts, stakeholder input, and module implementations")
 
+    # Basic report writing
     if output_dir:
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-        # Future: write JSON/Markdown reports here
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        report_path = out_path / f"assessment_{result['assessment_id']}.json"
+        report_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        result["report_written"] = str(report_path)
 
     return result
 
@@ -74,7 +93,7 @@ def run_assessment(
 def main():
     parser = argparse.ArgumentParser(
         prog="nico.assessment",
-        description="NICO Technical Health Assessment (Express / Mid / Full)"
+        description="NICO Technical Health Assessment"
     )
     parser.add_argument("target", help="GitHub repo URL or local path")
     parser.add_argument("--tier", default="express", choices=["express", "mid", "full"])
@@ -82,7 +101,7 @@ def main():
     parser.add_argument("--swarm", action="store_true")
     parser.add_argument("--github-token-env", default=None)
     parser.add_argument("--client-context", default=None)
-    parser.add_argument("--output", default=None)
+    parser.add_argument("--output", default=None, help="Directory to write JSON report")
 
     args = parser.parse_args()
 
@@ -96,7 +115,7 @@ def main():
         output_dir=args.output,
     )
 
-    print(result)
+    print(json.dumps(result, indent=2, default=str))
     return result
 
 
