@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NICO Assessment Orchestrator (Phase 2)
 
-Lightly integrated basic CI/CD audit.
+Integrated basic architecture/technical debt analysis.
 """
 
 import argparse
@@ -52,6 +52,12 @@ try:
 except Exception:
     pass
 
+architecture_audit = None
+try:
+    from nico.modules.architecture_audit import audit_architecture as architecture_audit
+except Exception:
+    pass
+
 
 def run_assessment(
     target: str,
@@ -86,7 +92,6 @@ def run_assessment(
         except Exception as e:
             result["limitations"].append(f"Intake error: {e}")
 
-    # Dependency audit
     if dependency_audit:
         try:
             dep_result = dependency_audit(target)
@@ -96,7 +101,6 @@ def run_assessment(
         except Exception as e:
             result["limitations"].append(f"Dependency audit error: {e}")
 
-    # CI/CD audit (basic)
     if cicd_audit:
         try:
             cicd_result = cicd_audit(target)
@@ -105,6 +109,15 @@ def run_assessment(
                 result["limitations"].extend(cicd_result["limitations"])
         except Exception as e:
             result["limitations"].append(f"CI/CD audit error: {e}")
+
+    if architecture_audit:
+        try:
+            arch_result = architecture_audit(target)
+            result["architecture_audit"] = arch_result
+            if arch_result.get("limitations"):
+                result["limitations"].extend(arch_result["limitations"])
+        except Exception as e:
+            result["limitations"].append(f"Architecture audit error: {e}")
 
     is_local_path = bool(result.get("intake") and result["intake"].get("is_local_path") and result["intake"].get("exists"))
 
