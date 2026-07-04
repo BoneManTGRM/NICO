@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Real MalamuteNICO-Auditor (local, no server)
-Uses restored CLI from PR #1 for actual scans + RYE + reports."""
+
+Usage (recommended):
+    python -m nico.auditor <url> --tier full --swarm
+
+Or add 'auditor' subcommand to cli.py for `python -m nico auditor ...`"""
 
 import argparse
 import json
@@ -16,18 +20,12 @@ try:
         rye_score, Store
     )
 except ImportError:
-    # Fallback if run as standalone
     print("Importing from nico.cli... ensure PYTHONPATH or installed package")
     raise
 
 def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: bool = False) -> dict:
-    """
-    Real audit for any public GitHub repo URL.
-    Clones locally, runs NICO scan + RYE + repairs.
-    """
     print(f"\n🚀 Starting {tier.upper()} audit for {repo_url} (local mode)")
 
-    # Clone to temp local dir (safe, no server)
     repo_name = repo_url.rstrip("/").split("/")[-1]
     workdir = Path("/tmp/nico_audit") / repo_name
     if workdir.exists():
@@ -42,17 +40,14 @@ def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: boo
     except subprocess.CalledProcessError as e:
         return {"error": f"Clone failed: {e.stderr}", "semaphore": "Red"}
 
-    # Run real NICO scan + RYE
     result = run_scan(str(workdir), kind="url_audit")
     findings = result.get("scan", {}).get("findings", [])
     repairs = result.get("repairs", [])
 
-    # Apply extra RYE if swarm requested
     if use_swarm:
         for f in findings:
             f["rye"] = rye_score(f)
 
-    # Generate full reports
     report_paths = generate_reports()
 
     report = {
@@ -81,7 +76,7 @@ def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: boo
 
 def main():
     parser = argparse.ArgumentParser(description="MalamuteNICO-Auditor - Real local agent")
-    parser.add_argument("url", help="Public GitHub repo URL (iOS/Android or any)")
+    parser.add_argument("url", help="Public GitHub repo URL")
     parser.add_argument("--tier", default="full", choices=["express", "mid", "full"])
     parser.add_argument("--mode", default="audit", choices=["audit", "retainer"])
     parser.add_argument("--swarm", action="store_true")
