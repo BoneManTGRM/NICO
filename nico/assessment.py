@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2 - Narrow Fix)
+"""NICO Assessment Orchestrator (Phase 2)
 
-Only change: Fixed local-path Express findings_count to read from scan_result["scan"]["findings"].
+Now delegates report writing to nico/modules/reporting.py
 """
 
 import argparse
@@ -19,6 +19,12 @@ except Exception:
 repo_intake = None
 try:
     from nico.modules.repo_intake import intake as repo_intake
+except Exception:
+    pass
+
+write_assessment_reports = None
+try:
+    from nico.modules.reporting import write_assessment_reports
 except Exception:
     pass
 
@@ -60,7 +66,6 @@ def run_assessment(
     }
 
     # Intake
-    intake_result = None
     if repo_intake:
         try:
             intake_result = repo_intake(target)
@@ -70,15 +75,13 @@ def run_assessment(
         except Exception as e:
             result["limitations"].append(f"Intake error: {e}")
 
-    is_local_path = bool(intake_result and intake_result.get("is_local_path") and intake_result.get("exists"))
+    is_local_path = bool(result.get("intake") and result["intake"].get("is_local_path") and result["intake"].get("exists"))
 
     if tier == "express":
         if is_local_path:
             if run_scan:
                 try:
                     scan_result = run_scan(target, kind="assessment_express_local")
-
-                    # CORRECT local-path counting
                     scan_payload = scan_result.get("scan", {})
                     findings = scan_payload.get("findings", [])
                     repairs = scan_result.get("repairs", [])
@@ -119,19 +122,13 @@ def run_assessment(
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier placeholder")
 
-    if generate_reports and output_dir:
+    # Delegate report writing to reporting module
+    if write_assessment_reports and output_dir:
         try:
-            report_result = generate_reports(result)
+            report_result = write_assessment_reports(result, output_dir)
             result["reports"] = report_result
         except Exception as e:
-            result["limitations"].append(f"Report error: {e}")
-
-    if output_dir:
-        out_path = Path(output_dir)
-        out_path.mkdir(parents=True, exist_ok=True)
-        report_path = out_path / f"assessment_{result.get('assessment_id')}.json"
-        report_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-        result["report_written"] = str(report_path)
+            result["limitations"].append(f"Report writing error: {e}")
 
     return result
 
