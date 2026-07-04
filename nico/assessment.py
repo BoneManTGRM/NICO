@@ -2,12 +2,12 @@
 """NICO Assessment Orchestrator (Phase 2)
 
 Current capabilities:
-- Parses all new assessment arguments
-- Express tier: delegates to existing working auditor
-- Mid/Full: honest placeholders
-- Basic JSON report writing when --output is provided
+- Argument parsing for new assessment commands
+- Express tier delegates to existing working auditor
+- Basic JSON report when --output is provided
+- Honest placeholders for Mid/Full
 
-This is still skeleton stage. Real module logic comes later.
+Error handling improved in this version.
 """
 
 import argparse
@@ -30,9 +30,6 @@ def run_assessment(
     client_context: str | None = None,
     output_dir: str | None = None,
 ) -> dict:
-    """
-    Main assessment entry point.
-    """
     started_at = datetime.utcnow().isoformat()
 
     result = {
@@ -50,40 +47,52 @@ def run_assessment(
 
     if tier == "express":
         if auditor_audit is None:
-            result["status"] = "error"
-            result["error"] = "nico.auditor not importable"
-            result["limitations"].append("Existing auditor unavailable")
+            result.update({
+                "status": "error",
+                "error": "nico.auditor not importable",
+                "limitations": ["Existing auditor unavailable"]
+            })
             return result
 
         try:
-            # Delegate to existing working auditor
             audit_result = auditor_audit(
                 target,
-                tier="full",  # temporary delegation
+                tier="full",
                 mode=mode,
                 use_swarm=use_swarm,
             )
-            result.update({
-                "status": "completed",
-                "delegated_to": "nico.auditor",
-                "findings_count": audit_result.get("findings_count", 0),
-                "repairs_count": audit_result.get("repairs_count", 0),
-            })
+
+            # Proper error handling for auditor failures (e.g. clone/network error)
+            if isinstance(audit_result, dict) and audit_result.get("error"):
+                result.update({
+                    "status": "completed_with_limitations",
+                    "error": audit_result["error"],
+                    "limitations": ["Auditor reported error (likely clone/network failure)"]
+                })
+            else:
+                result.update({
+                    "status": "completed",
+                    "delegated_to": "nico.auditor",
+                    "findings_count": audit_result.get("findings_count", 0),
+                    "repairs_count": audit_result.get("repairs_count", 0),
+                })
+
         except Exception as e:
-            result["status"] = "error"
-            result["error"] = str(e)
+            result.update({
+                "status": "error",
+                "error": str(e),
+                "limitations": ["Unexpected error during assessment"]
+            })
 
     else:
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier is placeholder in current Phase 2")
         result["limitations"].append("Requires client_context, QA artifacts, stakeholder input, and module implementations")
 
-    # Basic report writing
     if output_dir:
         out_path = Path(output_dir)
         out_path.mkdir(parents=True, exist_ok=True)
-
-        report_path = out_path / f"assessment_{result['assessment_id']}.json"
+        report_path = out_path / f"assessment_{result.get('assessment_id', 'unknown')}.json"
         report_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
         result["report_written"] = str(report_path)
 
