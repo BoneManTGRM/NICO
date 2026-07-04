@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2)
+"""NICO Assessment Orchestrator (Phase 2 - Stabilized)
 
-Now integrates basic repo_intake.py for better target handling.
+Key improvements:
+- Separate guarded imports (failure in one module doesn't break others)
+- Proper local path handling for Express tier (uses run_scan instead of auditor)
+- Still preserves all existing commands
 """
 
 import argparse
@@ -9,15 +12,35 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# Guarded imports - each can fail independently
+
+auditor_audit = None
+auditor_error = None
 try:
     from nico.auditor import audit as auditor_audit
+except Exception as e:
+    auditor_error = str(e)
+
+repo_intake = None
+repo_intake_error = None
+try:
     from nico.modules.repo_intake import intake as repo_intake
+except Exception as e:
+    repo_intake_error = str(e)
+
+generate_reports = None
+generate_reports_error = None
+try:
     from nico.modules.reporting import generate_reports
-except ImportError as e:
-    print(f"Import error: {e}")
-    auditor_audit = None
-    repo_intake = None
-    generate_reports = None
+except Exception as e:
+    generate_reports_error = str(e)
+
+run_scan = None
+run_scan_error = None
+try:
+    from nico.cli import run_scan
+except Exception as e:
+    run_scan_error = str(e)
 
 
 def run_assessment(
@@ -44,48 +67,82 @@ def run_assessment(
         "evidence_sources": ["static_analysis"],
     }
 
-    # Run basic intake
+    # Record import issues as limitations
+    if auditor_error:
+        result["limitations"].append(f"auditor import issue: {auditor_error}")
+    if repo_intake_error:
+        result["limitations"].append(f"repo_intake import issue: {repo_intake_error}")
+    if generate_reports_error:
+        result["limitations"].append(f"reporting import issue: {generate_reports_error}")
+    if run_scan_error:
+        result["limitations"].append(f"run_scan import issue: {run_scan_error}")
+
+    # Run intake if available
+    intake_result = None
     if repo_intake:
-        intake_result = repo_intake(target)
-        result["intake"] = intake_result
-        if intake_result.get("limitations"):
-            result["limitations"].extend(intake_result["limitations"])
+        try:
+            intake_result = repo_intake(target)
+            result["intake"] = intake_result
+            if intake_result.get("limitations"):
+                result["limitations"].extend(intake_result["limitations"])
+        except Exception as e:
+            result["limitations"].append(f"Intake failed: {e}")
+
+    is_local_path = False
+    if intake_result and intake_result.get("is_local_path") and intake_result.get("exists"):
+        is_local_path = True
 
     if tier == "express":
-        if auditor_audit is None:
-            result.update({"status": "error", "error": "nico.auditor not importable"})
-            return result
-
-        try:
-            audit_result = auditor_audit(target, tier="full", mode=mode, use_swarm=use_swarm)
-
-            if isinstance(audit_result, dict) and audit_result.get("error"):
-                result.update({
-                    "status": "completed_with_limitations",
-                    "error": audit_result["error"],
-                    "limitations": result.get("limitations", []) + ["Auditor reported error"]
-                })
+        if is_local_path:
+            # Local path → use run_scan directly
+            if run_scan:
+                try:
+                    scan_result = run_scan(target, kind="assessment_express_local")
+                    result.update({
+                        "status": "completed",
+                        "used_local_scan": True,
+                        "findings_count": len(scan_result.get("findings", [])),
+                        "repairs_count": len(scan_result.get("repairs", [])),
+                    })
+                except Exception as e:
+                    result.update({"status": "error", "error": str(e)})
             else:
-                result.update({
-                    "status": "completed",
-                    "delegated_to": "nico.auditor",
-                    "findings_count": audit_result.get("findings_count", 0),
-                    "repairs_count": audit_result.get("repairs_count", 0),
-                })
-        except Exception as e:
-            result.update({"status": "error", "error": str(e)})
+                result.update({"status": "error", "error": "run_scan not available for local path"})
+        else:
+            # URL or non-existing local → use auditor (clone-based)
+            if auditor_audit:
+                try:
+                    audit_result = auditor_audit(target, tier="full", mode=mode, use_swarm=use_swarm)
+
+                    if isinstance(audit_result, dict) and audit_result.get("error"):
+                        result.update({
+                            "status": "completed_with_limitations",
+                            "error": audit_result["error"],
+                            "limitations": result.get("limitations", []) + ["Auditor reported error (likely clone/network)"]
+                        })
+                    else:
+                        result.update({
+                            "status": "completed",
+                            "delegated_to": "nico.auditor",
+                            "findings_count": audit_result.get("findings_count", 0),
+                            "repairs_count": audit_result.get("repairs_count", 0),
+                        })
+                except Exception as e:
+                    result.update({"status": "error", "error": str(e)})
+            else:
+                result.update({"status": "error", "error": "auditor not available"})
 
     else:
         result["status"] = "not_implemented_yet"
-        result["limitations"].append(f"{tier.upper()} tier is placeholder")
+        result["limitations"].append(f"{tier.upper()} tier is placeholder in Phase 2")
 
-    # Generate reports
+    # Generate reports if available
     if generate_reports and output_dir:
         try:
             report_result = generate_reports(result)
             result["reports"] = report_result
         except Exception as e:
-            result["limitations"].append(f"Report generation failed: {e}")
+            result["limitations"].append(f"Report generation error: {e}")
 
     if output_dir:
         out_path = Path(output_dir)
