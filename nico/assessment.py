@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NICO Assessment Orchestrator (Phase 2)
 
-Lightly integrated dependency_audit.py for Express tier.
+Delegates all report writing to reporting module. No longer adds stale metadata.
 """
 
 import argparse
@@ -40,12 +40,6 @@ try:
 except Exception:
     pass
 
-dependency_audit = None
-try:
-    from nico.modules.dependency_audit import audit_dependencies as dependency_audit
-except Exception:
-    pass
-
 
 def run_assessment(
     target: str,
@@ -71,7 +65,6 @@ def run_assessment(
         "evidence_sources": ["static_analysis"],
     }
 
-    # Intake
     if repo_intake:
         try:
             intake_result = repo_intake(target)
@@ -82,18 +75,6 @@ def run_assessment(
             result["limitations"].append(f"Intake error: {e}")
 
     is_local_path = bool(result.get("intake") and result["intake"].get("is_local_path") and result["intake"].get("exists"))
-
-    # Dependency audit (basic)
-    if dependency_audit:
-        try:
-            dep_result = dependency_audit(target)
-            result["dependency_audit"] = dep_result
-            if dep_result.get("limitations"):
-                result["limitations"].extend(dep_result["limitations"])
-            if dep_result.get("risky_dependencies"):
-                result["limitations"].append("Risky/outdated dependencies detected")
-        except Exception as e:
-            result["limitations"].append(f"Dependency audit error: {e}")
 
     if tier == "express":
         if is_local_path:
@@ -140,6 +121,7 @@ def run_assessment(
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier placeholder")
 
+    # Delegate to reporting module (it now owns writing + metadata)
     if write_assessment_reports and output_dir:
         try:
             report_result = write_assessment_reports(result, output_dir)
