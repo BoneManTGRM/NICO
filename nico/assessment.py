@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2 - Stabilized)
+"""NICO Assessment Orchestrator (Phase 2)
 
-Key improvements:
-- Separate guarded imports (failure in one module doesn't break others)
-- Proper local path handling for Express tier (uses run_scan instead of auditor)
-- Still preserves all existing commands
+Now lightly integrates github_activity module when target is a GitHub URL.
 """
 
 import argparse
@@ -12,35 +9,36 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-# Guarded imports - each can fail independently
-
+# Guarded imports
 auditor_audit = None
-auditor_error = None
 try:
     from nico.auditor import audit as auditor_audit
-except Exception as e:
-    auditor_error = str(e)
+except Exception:
+    pass
 
 repo_intake = None
-repo_intake_error = None
 try:
     from nico.modules.repo_intake import intake as repo_intake
-except Exception as e:
-    repo_intake_error = str(e)
+except Exception:
+    pass
 
 generate_reports = None
-generate_reports_error = None
 try:
     from nico.modules.reporting import generate_reports
-except Exception as e:
-    generate_reports_error = str(e)
+except Exception:
+    pass
 
 run_scan = None
-run_scan_error = None
 try:
     from nico.cli import run_scan
-except Exception as e:
-    run_scan_error = str(e)
+except Exception:
+    pass
+
+github_activity = None
+try:
+    from nico.modules.github_activity import analyze_activity as github_activity
+except Exception:
+    pass
 
 
 def run_assessment(
@@ -67,17 +65,7 @@ def run_assessment(
         "evidence_sources": ["static_analysis"],
     }
 
-    # Record import issues as limitations
-    if auditor_error:
-        result["limitations"].append(f"auditor import issue: {auditor_error}")
-    if repo_intake_error:
-        result["limitations"].append(f"repo_intake import issue: {repo_intake_error}")
-    if generate_reports_error:
-        result["limitations"].append(f"reporting import issue: {generate_reports_error}")
-    if run_scan_error:
-        result["limitations"].append(f"run_scan import issue: {run_scan_error}")
-
-    # Run intake if available
+    # Intake
     intake_result = None
     if repo_intake:
         try:
@@ -86,15 +74,22 @@ def run_assessment(
             if intake_result.get("limitations"):
                 result["limitations"].extend(intake_result["limitations"])
         except Exception as e:
-            result["limitations"].append(f"Intake failed: {e}")
+            result["limitations"].append(f"Intake error: {e}")
 
-    is_local_path = False
-    if intake_result and intake_result.get("is_local_path") and intake_result.get("exists"):
-        is_local_path = True
+    is_local_path = bool(intake_result and intake_result.get("is_local_path") and intake_result.get("exists"))
+
+    # GitHub activity (if applicable)
+    if github_activity and intake_result and intake_result.get("is_url"):
+        try:
+            activity_result = github_activity(target, token=None)  # token support coming later
+            result["github_activity"] = activity_result
+            if activity_result.get("limitations"):
+                result["limitations"].extend(activity_result["limitations"])
+        except Exception as e:
+            result["limitations"].append(f"GitHub activity error: {e}")
 
     if tier == "express":
         if is_local_path:
-            # Local path → use run_scan directly
             if run_scan:
                 try:
                     scan_result = run_scan(target, kind="assessment_express_local")
@@ -107,18 +102,16 @@ def run_assessment(
                 except Exception as e:
                     result.update({"status": "error", "error": str(e)})
             else:
-                result.update({"status": "error", "error": "run_scan not available for local path"})
+                result.update({"status": "error", "error": "run_scan unavailable"})
         else:
-            # URL or non-existing local → use auditor (clone-based)
             if auditor_audit:
                 try:
                     audit_result = auditor_audit(target, tier="full", mode=mode, use_swarm=use_swarm)
-
                     if isinstance(audit_result, dict) and audit_result.get("error"):
                         result.update({
                             "status": "completed_with_limitations",
-                            "error": audit_result["error"],
-                            "limitations": result.get("limitations", []) + ["Auditor reported error (likely clone/network)"]
+                            "error": audit_result.get("error"),
+                            "limitations": result.get("limitations", []) + ["Auditor error"]
                         })
                     else:
                         result.update({
@@ -130,19 +123,18 @@ def run_assessment(
                 except Exception as e:
                     result.update({"status": "error", "error": str(e)})
             else:
-                result.update({"status": "error", "error": "auditor not available"})
+                result.update({"status": "error", "error": "auditor unavailable"})
 
     else:
         result["status"] = "not_implemented_yet"
-        result["limitations"].append(f"{tier.upper()} tier is placeholder in Phase 2")
+        result["limitations"].append(f"{tier.upper()} tier placeholder")
 
-    # Generate reports if available
     if generate_reports and output_dir:
         try:
             report_result = generate_reports(result)
             result["reports"] = report_result
         except Exception as e:
-            result["limitations"].append(f"Report generation error: {e}")
+            result["limitations"].append(f"Report error: {e}")
 
     if output_dir:
         out_path = Path(output_dir)
