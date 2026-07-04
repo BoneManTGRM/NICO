@@ -1,6 +1,6 @@
-"""Reporting Module (Phase 2 - Fixed Metadata Timing)
+"""Reporting Module (Phase 2)
 
-write_assessment_reports now ensures JSON files contain their own reports metadata.
+write_assessment_reports with improved Markdown/HTML including audit sections.
 """
 
 import json
@@ -15,7 +15,6 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         assessment_id = result.get("assessment_id", "unknown")
 
-        # Build paths first
         json_latest = out_path / "assessment_latest.json"
         json_timestamped = out_path / f"assessment_{assessment_id}.json"
         md_path = out_path / "assessment_latest.md"
@@ -34,28 +33,70 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             "limitations": []
         }
 
-        # Create final result that includes reports metadata
         final_result = dict(result)
         final_result["reports"] = report_result
 
-        # Write final_result (with reports) to JSON files
+        # Write JSONs
         json_content = json.dumps(final_result, indent=2, default=str)
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Simple Markdown
-        md_content = f"# NICO Assessment Report\n\n**Target:** {final_result.get('target')}\n**Tier:** {final_result.get('tier')}\n**Status:** {final_result.get('status')}\n**Findings:** {final_result.get('findings_count', 0)}\n**Repairs:** {final_result.get('repairs_count', 0)}\n"
-        md_path.write_text(md_content, encoding="utf-8")
+        # Build richer Markdown
+        md_lines = [
+            "# NICO Assessment Report\n",
+            f"**Target:** {final_result.get('target')}",
+            f"**Tier:** {final_result.get('tier')}",
+            f"**Status:** {final_result.get('status')}",
+            f"**Findings:** {final_result.get('findings_count', 0)}",
+            f"**Repairs:** {final_result.get('repairs_count', 0)}",
+            ""
+        ]
 
-        # Simple HTML
-        html_content = f"""<html><body>
-<h1>NICO Assessment Report</h1>
-<p><b>Target:</b> {final_result.get('target')}</p>
-<p><b>Tier:</b> {final_result.get('tier')}</p>
-<p><b>Status:</b> {final_result.get('status')}</p>
-<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>
-</body></html>"""
-        html_path.write_text(html_content, encoding="utf-8")
+        # Add sections from audits if present
+        if final_result.get("dependency_audit"):
+            dep = final_result["dependency_audit"]
+            md_lines.append("## Dependency Audit")
+            md_lines.append(f"Status: {dep.get('status')}")
+            if dep.get("risky_dependencies"):
+                md_lines.append("Risky dependencies found:")
+                for r in dep["risky_dependencies"]:
+                    md_lines.append(f"- {r.get('dependency')}: {r.get('reason')}")
+            md_lines.append("")
+
+        if final_result.get("cicd_audit"):
+            cicd = final_result["cicd_audit"]
+            md_lines.append("## CI/CD Audit")
+            md_lines.append(f"Has CI: {cicd.get('has_ci')}")
+            if cicd.get("workflows"):
+                md_lines.append("Workflow files found:")
+                for w in cicd["workflows"]:
+                    md_lines.append(f"- {w}")
+            md_lines.append("")
+
+        if final_result.get("architecture_audit"):
+            arch = final_result["architecture_audit"]
+            md_lines.append("## Architecture & Debt")
+            if arch.get("debt_signals"):
+                md_lines.append("Debt signals:")
+                for s in arch["debt_signals"]:
+                    md_lines.append(f"- {s}")
+            md_lines.append("")
+
+        if final_result.get("limitations"):
+            md_lines.append("## Limitations")
+            for lim in final_result["limitations"]:
+                md_lines.append(f"- {lim}")
+
+        md_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+        # Basic HTML version
+        html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
+        html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
+        html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
+        html_lines.append(f"<p><b>Status:</b> {final_result.get('status')}</p>")
+        html_lines.append(f"<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>")
+        html_lines.append("</body></html>")
+        html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
         # Evidence manifest
         evidence_content = json.dumps({
@@ -76,7 +117,4 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
 
 def generate_reports(result: dict) -> dict:
-    return {
-        "status": "delegated",
-        "note": "Use write_assessment_reports() for full output"
-    }
+    return {"status": "delegated"}
