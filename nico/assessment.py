@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NICO Assessment Orchestrator (Phase 2)
 
-Delegates all report writing to reporting module. No longer adds stale metadata.
+Lightly integrated basic CI/CD audit.
 """
 
 import argparse
@@ -40,6 +40,18 @@ try:
 except Exception:
     pass
 
+dependency_audit = None
+try:
+    from nico.modules.dependency_audit import audit_dependencies as dependency_audit
+except Exception:
+    pass
+
+cicd_audit = None
+try:
+    from nico.modules.cicd_audit import audit_cicd as cicd_audit
+except Exception:
+    pass
+
 
 def run_assessment(
     target: str,
@@ -73,6 +85,26 @@ def run_assessment(
                 result["limitations"].extend(intake_result["limitations"])
         except Exception as e:
             result["limitations"].append(f"Intake error: {e}")
+
+    # Dependency audit
+    if dependency_audit:
+        try:
+            dep_result = dependency_audit(target)
+            result["dependency_audit"] = dep_result
+            if dep_result.get("limitations"):
+                result["limitations"].extend(dep_result["limitations"])
+        except Exception as e:
+            result["limitations"].append(f"Dependency audit error: {e}")
+
+    # CI/CD audit (basic)
+    if cicd_audit:
+        try:
+            cicd_result = cicd_audit(target)
+            result["cicd_audit"] = cicd_result
+            if cicd_result.get("limitations"):
+                result["limitations"].extend(cicd_result["limitations"])
+        except Exception as e:
+            result["limitations"].append(f"CI/CD audit error: {e}")
 
     is_local_path = bool(result.get("intake") and result["intake"].get("is_local_path") and result["intake"].get("exists"))
 
@@ -121,7 +153,6 @@ def run_assessment(
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier placeholder")
 
-    # Delegate to reporting module (it now owns writing + metadata)
     if write_assessment_reports and output_dir:
         try:
             report_result = write_assessment_reports(result, output_dir)
