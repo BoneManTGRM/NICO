@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NICO Assessment Orchestrator (Phase 2)
 
-Now delegates report writing to nico/modules/reporting.py
+Lightly integrated dependency_audit.py for Express tier.
 """
 
 import argparse
@@ -37,6 +37,12 @@ except Exception:
 run_scan = None
 try:
     from nico.cli import run_scan
+except Exception:
+    pass
+
+dependency_audit = None
+try:
+    from nico.modules.dependency_audit import audit_dependencies as dependency_audit
 except Exception:
     pass
 
@@ -76,6 +82,18 @@ def run_assessment(
             result["limitations"].append(f"Intake error: {e}")
 
     is_local_path = bool(result.get("intake") and result["intake"].get("is_local_path") and result["intake"].get("exists"))
+
+    # Dependency audit (basic)
+    if dependency_audit:
+        try:
+            dep_result = dependency_audit(target)
+            result["dependency_audit"] = dep_result
+            if dep_result.get("limitations"):
+                result["limitations"].extend(dep_result["limitations"])
+            if dep_result.get("risky_dependencies"):
+                result["limitations"].append("Risky/outdated dependencies detected")
+        except Exception as e:
+            result["limitations"].append(f"Dependency audit error: {e}")
 
     if tier == "express":
         if is_local_path:
@@ -122,13 +140,12 @@ def run_assessment(
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier placeholder")
 
-    # Delegate report writing to reporting module
     if write_assessment_reports and output_dir:
         try:
             report_result = write_assessment_reports(result, output_dir)
             result["reports"] = report_result
         except Exception as e:
-            result["limitations"].append(f"Report writing error: {e}")
+            result["limitations"].append(f"Report error: {e}")
 
     return result
 
