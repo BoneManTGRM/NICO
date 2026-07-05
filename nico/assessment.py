@@ -267,26 +267,27 @@ def run_assessment(
         result["status"] = "not_implemented_yet"
         result["limitations"].append(f"{tier.upper()} tier placeholder")
 
-    if write_assessment_reports and output_dir:
-        try:
-            report_result = write_assessment_reports(result, output_dir)
-            result["reports"] = report_result
-        except Exception as e:
-            result["limitations"].append(f"Report error: {e}")
-
     if write_express_assessment_pack and output_dir:
         try:
-            express_pack_result = write_express_assessment_pack(result, output_dir)
+            express_pack_dir = Path(output_dir) / "express_pack"
+            express_pack_result = write_express_assessment_pack(result, str(express_pack_dir))
             existing_reports = result.get("reports")
             if isinstance(existing_reports, dict):
                 result["reports"]["express_pack"] = express_pack_result
             else:
-                result["reports"] = {
-                    "standard": existing_reports,
-                    "express_pack": express_pack_result,
-                }
+                result["reports"] = {"express_pack": express_pack_result}
         except Exception as e:
             result["limitations"].append(f"Express pack error: {e}")
+
+    if write_assessment_reports and output_dir:
+        try:
+            existing_reports = result.get("reports")
+            report_result = write_assessment_reports(result, output_dir)
+            if isinstance(existing_reports, dict) and "express_pack" in existing_reports:
+                report_result["express_pack"] = existing_reports["express_pack"]
+            result["reports"] = report_result
+        except Exception as e:
+            result["limitations"].append(f"Report error: {e}")
 
     return result
 
