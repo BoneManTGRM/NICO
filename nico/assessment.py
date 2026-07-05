@@ -29,6 +29,12 @@ try:
 except Exception:
     pass
 
+write_express_assessment_pack = None
+try:
+    from nico.modules.express_pack import write_express_assessment_pack
+except Exception:
+    pass
+
 run_scan = None
 try:
     from nico.cli import run_scan
@@ -267,6 +273,20 @@ def run_assessment(
             result["reports"] = report_result
         except Exception as e:
             result["limitations"].append(f"Report error: {e}")
+
+    if write_express_assessment_pack and output_dir:
+        try:
+            express_pack_result = write_express_assessment_pack(result, output_dir)
+            existing_reports = result.get("reports")
+            if isinstance(existing_reports, dict):
+                result["reports"]["express_pack"] = express_pack_result
+            else:
+                result["reports"] = {
+                    "standard": existing_reports,
+                    "express_pack": express_pack_result,
+                }
+        except Exception as e:
+            result["limitations"].append(f"Express pack error: {e}")
 
     return result
 
