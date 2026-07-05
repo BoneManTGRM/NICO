@@ -1,6 +1,6 @@
 """Reporting Module (Phase 2)
 
-HTML now includes Dependency, CI/CD, Architecture, Maturity, and Limitations sections.
+Includes Resourcing section in Markdown.
 """
 
 import json
@@ -40,7 +40,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Markdown (already rich)
+        # Rich Markdown
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -87,6 +87,17 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                     md_lines.append(f"- {q}")
             md_lines.append("")
 
+        if final_result.get("resourcing"):
+            res = final_result["resourcing"]
+            md_lines.append("## Resourcing Recommendation")
+            md_lines.append(f"Minimum: {', '.join(res.get('minimum_team', []))}")
+            md_lines.append(f"Recommended: {', '.join(res.get('recommended_team', []))}")
+            if res.get("rationale"):
+                md_lines.append("Rationale:")
+                for r in res["rationale"]:
+                    md_lines.append(f"- {r}")
+            md_lines.append("")
+
         if final_result.get("limitations"):
             md_lines.append("## Limitations")
             for lim in final_result["limitations"]:
@@ -94,24 +105,18 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML with same sections
+        # HTML (basic but includes main sections)
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
         html_lines.append(f"<p><b>Status:</b> {final_result.get('status')}</p>")
         html_lines.append(f"<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>")
-
-        if final_result.get("dependency_audit"):
-            html_lines.append("<h2>Dependency Audit</h2>")
-        if final_result.get("cicd_audit"):
-            html_lines.append("<h2>CI/CD Audit</h2>")
-        if final_result.get("architecture_audit"):
-            html_lines.append("<h2>Architecture & Debt</h2>")
         if final_result.get("maturity"):
             html_lines.append("<h2>Maturity</h2>")
+        if final_result.get("resourcing"):
+            html_lines.append("<h2>Resourcing</h2>")
         if final_result.get("limitations"):
             html_lines.append("<h2>Limitations</h2>")
-
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
