@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2 - Maturity Integrated)
+"""NICO Assessment Orchestrator (Phase 2)
 
-Calls assess_maturity after findings_count and audit data are populated.
+Integrated basic resourcing recommendation.
 """
 
 import argparse
@@ -61,6 +61,12 @@ except Exception:
 maturity = None
 try:
     from nico.modules.maturity import assess_maturity as maturity
+except Exception:
+    pass
+
+resourcing = None
+try:
+    from nico.modules.resourcing import recommend_resourcing as resourcing
 except Exception:
     pass
 
@@ -168,7 +174,7 @@ def run_assessment(
             else:
                 result.update({"status": "error", "error": "auditor unavailable"})
 
-        # Call maturity after findings_count and audits are populated
+        # Maturity
         if maturity:
             try:
                 maturity_result = maturity(result)
@@ -176,7 +182,17 @@ def run_assessment(
                 if maturity_result.get("limitations"):
                     result["limitations"].extend(maturity_result["limitations"])
             except Exception as e:
-                result["limitations"].append(f"Maturity assessment error: {e}")
+                result["limitations"].append(f"Maturity error: {e}")
+
+        # Resourcing (after maturity and audits)
+        if resourcing:
+            try:
+                res_result = resourcing(result)
+                result["resourcing"] = res_result
+                if res_result.get("limitations"):
+                    result["limitations"].extend(res_result["limitations"])
+            except Exception as e:
+                result["limitations"].append(f"Resourcing error: {e}")
 
     else:
         result["status"] = "not_implemented_yet"
