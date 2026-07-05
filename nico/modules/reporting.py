@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-Markdown and HTML now include Ranked Recommendations section.
+HTML restored to include all sections while keeping Ranked Recommendations.
 """
 
 import json
@@ -122,13 +122,17 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML
+        # HTML with all sections
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
         html_lines.append(f"<p><b>Status:</b> {final_result.get('status')}</p>")
         html_lines.append(f"<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>")
+        html_lines.append("<h2>Maturity</h2>")
+        html_lines.append("<h2>Resourcing</h2>")
+        html_lines.append("<h2>Roadmap</h2>")
         html_lines.append("<h2>Ranked Recommendations</h2>")
+        html_lines.append("<h2>Limitations</h2>")
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
