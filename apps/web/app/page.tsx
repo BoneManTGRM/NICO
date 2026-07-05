@@ -1,3 +1,1 @@
-"use client";
-
-export default function Page(){return <main><h1>NICO Command Center</h1><p>Local-first defensive cyber operations.</p></main>}
+export default function Page(){return <main className="shell"><section className="hero"><p className="eyebrow">NICO Hosted Web App</p><h1>NICO Command Center</h1><p className="lead">The Vercel link is live. Custom domain setup is pending.</p><div className="grid"><article><b>Online</b><span>Frontend deployed</span></article><article><b>Safari Ready</b><span>Works on phone and desktop</span></article><article><b>Domain Pending</b><span>Connect app.nicoaudit.com next</span></article><article><b>Next Step</b><span>Add Vercel DNS record in Cloudflare</span></article></div></section></main>}
