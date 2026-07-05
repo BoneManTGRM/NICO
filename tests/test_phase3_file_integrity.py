@@ -1,89 +1,98 @@
 """Phase 3 File Integrity Regression Test
 
-Prevents future truncation or corruption of critical files.
+Guards against accidental truncation or fragmentation of critical orchestrator files.
 """
 
 import ast
-
+import py_compile
 from pathlib import Path
 
-
-ASSESSMENT_PATH = Path("nico/assessment.py")
-REPORTING_PATH = Path("nico/modules/reporting.py")
-
-
-def _get_source_tree(path: Path):
-    with open(path, "r", encoding="utf-8") as f:
-        return ast.parse(f.read(), filename=str(path))
+ASSESSMENT = Path("nico/assessment.py")
+REPORTING = Path("nico/modules/reporting.py")
 
 
 def test_assessment_has_run_assessment():
-    tree = _get_source_tree(ASSESSMENT_PATH)
-    func_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-    assert "run_assessment" in func_names
+    with open(ASSESSMENT, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "def run_assessment(" in content
 
 
 def test_assessment_has_main():
-    tree = _get_source_tree(ASSESSMENT_PATH)
-    func_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-    assert "main" in func_names
+    with open(ASSESSMENT, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "def main(" in content
 
 
-def test_assessment_imports_token_health():
-    with open(ASSESSMENT_PATH, "r", encoding="utf-8") as f:
+def test_assessment_contains_all_key_modules():
+    with open(ASSESSMENT, "r", encoding="utf-8") as f:
         content = f.read()
     assert "github_token_health" in content
-
-
-def test_assessment_imports_github_activity():
-    with open(ASSESSMENT_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
     assert "github_activity" in content
+    assert "dependency_audit" in content
+    assert "cicd_audit" in content
+    assert "architecture_audit" in content
+    assert "maturity" in content
+    assert "resourcing" in content
+    assert "roadmap" in content
+    assert "synthesis" in content
+    assert "write_assessment_reports" in content
+    assert "github_token_env=github_token_env" in content
+    assert 'parser.add_argument("--github-token-env"' in content
 
 
-def test_assessment_calls_cicd_with_token_env():
-    with open(ASSESSMENT_PATH, "r", encoding="utf-8") as f:
+def test_assessment_file_size_and_start():
+    with open(ASSESSMENT, "r", encoding="utf-8") as f:
         content = f.read()
-    assert "cicd_audit(target, github_token_env=github_token_env)" in content
+    assert len(content.splitlines()) > 200
+    # Must start with shebang or docstring/imports, not indented fragment
+    first_lines = content.splitlines()[:3]
+    assert any(line.startswith(("#!/", "\"\"\"", "import ", "from ")) for line in first_lines)
 
 
 def test_reporting_has_write_assessment_reports():
-    tree = _get_source_tree(REPORTING_PATH)
-    func_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-    assert "write_assessment_reports" in func_names
+    with open(REPORTING, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "def write_assessment_reports(" in content
 
 
-def test_reporting_writes_assessment_latest_json():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
+def test_reporting_writes_all_output_files():
+    with open(REPORTING, "r", encoding="utf-8") as f:
         content = f.read()
     assert "assessment_latest.json" in content
-
-
-def test_reporting_writes_assessment_latest_md():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
     assert "assessment_latest.md" in content
-
-
-def test_reporting_writes_assessment_latest_html():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
     assert "assessment_latest.html" in content
-
-
-def test_reporting_writes_evidence_manifest_json():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
     assert "evidence_manifest.json" in content
 
 
-def test_reporting_contains_cicd_details():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
+def test_reporting_contains_all_sections():
+    with open(REPORTING, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "## CI/CD Audit" in content
+    assert "## GitHub Activity" in content
+    assert "## GitHub Token Health" in content
+    assert "## Ranked Recommendations" in content
+
+
+def test_reporting_contains_details_objects():
+    with open(REPORTING, "r", encoding="utf-8") as f:
         content = f.read()
     assert "cicd_details" in content
-
-
-def test_reporting_contains_github_token_health_details():
-    with open(REPORTING_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
     assert "github_token_health_details" in content
+    assert "module_statuses" in content
+    assert "ranked_recommendations_with_evidence" in content
+
+
+def test_reporting_file_size_and_start():
+    with open(REPORTING, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert len(content.splitlines()) > 180
+    first_lines = content.splitlines()[:3]
+    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+
+
+def test_pycompile_assessment():
+    py_compile.compile(str(ASSESSMENT), doraise=True)
+
+
+def test_pycompile_reporting():
+    py_compile.compile(str(REPORTING), doraise=True)
