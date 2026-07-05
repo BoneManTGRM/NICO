@@ -2,6 +2,11 @@ name: APPSEC Source Clean
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/ci-final-pytest-failures
+    paths:
+      - .github/workflows/appsec-source-clean.yml
 
 permissions:
   contents: write
