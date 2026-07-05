@@ -26,6 +26,7 @@ jobs:
     - name: Compile critical files
       run: |
         python -m py_compile nico/assessment.py
+        python -m py_compile nico/cli.py
         python -m py_compile nico/modules/reporting.py
         python -m py_compile nico/modules/dependency_audit.py
         python -m py_compile nico/modules/synthesis.py
