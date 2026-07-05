@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-CI/CD run history surfaced in Markdown and evidence manifest.
+Bugfix: module_statuses.dependency_audit now reads from correct source.
 """
 
 import json
@@ -40,7 +40,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Full Markdown
+        # Full Markdown (same as previous good version)
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -69,7 +69,6 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             else:
                 md_lines.append("Has CI config: No")
 
-            # Dynamic workflow run history
             if cicd.get("workflow_runs_count", 0) > 0:
                 md_lines.append(f"Workflow Runs (recent 50): {cicd.get('workflow_runs_count')}")
                 md_lines.append(f"Recent Failures: {cicd.get('failed_runs_recent', 0)}")
@@ -165,7 +164,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Evidence manifest with richer CI/CD info
+        # Evidence manifest - BUG FIXED
         ranked_with_evidence = []
         for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
             src = r.get("source", "unknown")
@@ -185,7 +184,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             "overall_status": final_result.get("status"),
             "total_evidence_weight": final_result.get("synthesis", {}).get("overall_evidence_weight", 0),
             "module_statuses": {
-                "dependency_audit": cicd.get("status", "unknown"),  # keep for backward compat if needed
+                "dependency_audit": final_result.get("dependency_audit", {}).get("status", "unknown"),
                 "cicd_audit": cicd.get("status", "unknown"),
                 "architecture_audit": final_result.get("architecture_audit", {}).get("status", "unknown"),
                 "maturity": final_result.get("maturity", {}).get("semaphore", "unknown"),
