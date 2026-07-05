@@ -964,6 +964,12 @@ def main(argv: list[str] | None = None) -> None:
     policy_parser = sub.add_parser("policy")
     policy_parser.add_argument("action", nargs="?", default="show")
     sub.add_parser("scanner-availability")
+    assessment_parser = sub.add_parser("assessment")
+    assessment_parser.add_argument("target")
+    assessment_parser.add_argument("--tier", default="express", choices=["express", "mid", "full"])
+    assessment_parser.add_argument("--mode", default="audit", choices=["audit", "retainer"])
+    assessment_parser.add_argument("--swarm", action="store_true")
+    assessment_parser.add_argument("--output", default=None)
 
     args = parser.parse_args(argv)
     store = Store()
@@ -1004,6 +1010,21 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "scanner-availability":
         print(json.dumps(scanner_availability(), indent=2))
+        return
+
+    if args.cmd == "assessment":
+        try:
+            from nico.assessment import run_assessment
+            result = run_assessment(
+                target=args.target,
+                tier=args.tier,
+                mode=args.mode,
+                use_swarm=args.swarm,
+                output_dir=args.output,
+            )
+            print(json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            print({"error": str(e)})
         return
 
     parser.print_help()
