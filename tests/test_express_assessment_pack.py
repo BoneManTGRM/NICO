@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from nico.assessment import run_assessment
 from nico.modules.express_pack import PACK_FILENAMES, write_express_assessment_pack
 
 
@@ -147,3 +148,30 @@ def test_express_report_contains_required_sections(tmp_path):
         "Resourcing",
     ]:
         assert section in report
+
+
+def test_run_assessment_writes_standard_reports_and_express_pack(tmp_path):
+    output = tmp_path / "assessment_latest"
+    result = run_assessment("./nico/test_lab", tier="express", output_dir=str(output))
+
+    reports = result.get("reports")
+    assert isinstance(reports, dict)
+    assert "express_pack" in reports
+    assert reports["express_pack"]["status"] == "completed"
+
+    for filename in PACK_FILENAMES:
+        path = output / filename
+        assert path.exists(), filename
+        assert path.read_text(encoding="utf-8").strip(), filename
+
+    for filename in ["assessment_latest.json", "assessment_latest.md", "assessment_latest.html"]:
+        path = output / filename
+        assert path.exists(), filename
+        assert path.read_text(encoding="utf-8").strip(), filename
+
+    forbidden = ["placeholder", "fake", "invented"]
+    for path in output.iterdir():
+        if path.is_file():
+            lowered = path.read_text(encoding="utf-8").lower()
+            for word in forbidden:
+                assert word not in lowered, f"{word} found in {path.name}"
