@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2)
+"""NICO Assessment Orchestrator (Phase 2 - Roadmap Integrated)
 
-Integrated basic resourcing recommendation.
+Calls build_roadmap after maturity and resourcing.
 """
 
 import argparse
@@ -67,6 +67,12 @@ except Exception:
 resourcing = None
 try:
     from nico.modules.resourcing import recommend_resourcing as resourcing
+except Exception:
+    pass
+
+roadmap = None
+try:
+    from nico.modules.roadmap import build_roadmap as roadmap
 except Exception:
     pass
 
@@ -184,7 +190,7 @@ def run_assessment(
             except Exception as e:
                 result["limitations"].append(f"Maturity error: {e}")
 
-        # Resourcing (after maturity and audits)
+        # Resourcing
         if resourcing:
             try:
                 res_result = resourcing(result)
@@ -193,6 +199,16 @@ def run_assessment(
                     result["limitations"].extend(res_result["limitations"])
             except Exception as e:
                 result["limitations"].append(f"Resourcing error: {e}")
+
+        # Roadmap (after maturity + resourcing)
+        if roadmap:
+            try:
+                roadmap_result = roadmap(result)
+                result["roadmap"] = roadmap_result
+                if roadmap_result.get("limitations"):
+                    result["limitations"].extend(roadmap_result["limitations"])
+            except Exception as e:
+                result["limitations"].append(f"Roadmap error: {e}")
 
     else:
         result["status"] = "not_implemented_yet"
