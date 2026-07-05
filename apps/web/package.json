@@ -1,1 +1,1 @@
-{"scripts":{"dev":"next dev -H 0.0.0.0","build":"next build","lint":"tsc --noEmit"},"dependencies":{"@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","next":"latest","react":"latest","react-dom":"latest","typescript":"latest"},"devDependencies":{},"private":true}
+{"scripts":{"dev":"next dev -H 0.0.0.0","build":"next build","lint":"tsc --noEmit"},"dependencies":{"@types/node":"20.17.10","@types/react":"18.3.18","@types/react-dom":"18.3.5","next":"14.2.23","react":"18.3.1","react-dom":"18.3.1","typescript":"5.6.3"},"devDependencies":{},"private":true}
