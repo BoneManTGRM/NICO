@@ -109,7 +109,7 @@ def test_no_placeholder_text_in_pack_outputs(tmp_path):
     write_express_assessment_pack(_sample_result(), str(output))
 
     forbidden = ["placeholder", "fake", "invented"]
-    for path in output.iterdir():
+    for path in output.rglob("*"):
         if path.is_file():
             text = path.read_text(encoding="utf-8")
             lowered = text.lower()
@@ -159,18 +159,31 @@ def test_run_assessment_writes_standard_reports_and_express_pack(tmp_path):
     assert "express_pack" in reports
     assert reports["express_pack"]["status"] == "completed"
 
+    express_output = output / "express_pack"
+    assert reports["express_pack"]["output_dir"] == str(express_output)
+
     for filename in PACK_FILENAMES:
+        path = express_output / filename
+        assert path.exists(), filename
+        assert path.read_text(encoding="utf-8").strip(), filename
+
+    for filename in ["assessment_latest.json", "assessment_latest.md", "assessment_latest.html", "evidence_manifest.json"]:
         path = output / filename
         assert path.exists(), filename
         assert path.read_text(encoding="utf-8").strip(), filename
 
-    for filename in ["assessment_latest.json", "assessment_latest.md", "assessment_latest.html"]:
-        path = output / filename
-        assert path.exists(), filename
-        assert path.read_text(encoding="utf-8").strip(), filename
+    standard_manifest = json.loads((output / "evidence_manifest.json").read_text(encoding="utf-8"))
+    express_manifest = json.loads((express_output / "evidence_manifest.json").read_text(encoding="utf-8"))
+    saved_assessment = json.loads((output / "assessment_latest.json").read_text(encoding="utf-8"))
+
+    assert "total_evidence_weight" in standard_manifest
+    assert "generated_at" in express_manifest
+    assert standard_manifest != express_manifest
+    assert saved_assessment["reports"]["express_pack"]["status"] == "completed"
+    assert saved_assessment["reports"]["express_pack"]["output_dir"] == str(express_output)
 
     forbidden = ["placeholder", "fake", "invented"]
-    for path in output.iterdir():
+    for path in output.rglob("*"):
         if path.is_file():
             lowered = path.read_text(encoding="utf-8").lower()
             for word in forbidden:
