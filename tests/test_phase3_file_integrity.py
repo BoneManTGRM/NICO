@@ -210,3 +210,20 @@ def test_pycompile_all_critical_files():
     py_compile.compile(str(MATURITY), doraise=True)
     py_compile.compile(str(ROADMAP), doraise=True)
     py_compile.compile(str(CLI), doraise=True)
+
+
+def test_appsec_patterns_source_tuples_are_7_values():
+    import ast
+
+    tree = ast.parse(CLI.read_text(encoding="utf-8"))
+    appsec = None
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "APPSEC_PATTERNS":
+                    appsec = ast.literal_eval(node.value)
+
+    assert appsec is not None, "APPSEC_PATTERNS not found"
+    bad = [item for item in appsec if len(item) != 7]
+    assert not bad, f"APPSEC_PATTERNS contains non-7-value tuples: {bad}"
