@@ -1,5 +1,7 @@
 from pathlib import Path
+
 from nico.assessment import run_assessment
+
 
 def test_html_contains_sections():
     # Run assessment first
