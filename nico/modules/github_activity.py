@@ -1,33 +1,125 @@
-"""GitHub Activity Module (Phase 2)
+"""GitHub Activity Module (Phase 3)
 
-Basic structure for analyzing recent engineering activity.
-Real GitHub API usage will be added later when token is provided.
+Safe GitHub activity analysis for public repos. Requires token for reliable/private data.
 """
 
-from datetime import datetime, timedelta
+import os
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 
-def analyze_activity(target: str, token: str | None = None, months: int = 6) -> dict:
+def _is_github_url(target: str) -> bool:
+    try:
+        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
+        return 'github.com' in p.netloc and len([x for x in p.path.strip('/').split('/') if x]) >= 2
+    except Exception:
+        return False
+
+
+def _parse_repo(target: str):
+    try:
+        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
+        parts = [x for x in p.path.strip('/').split('/') if x]
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+    except Exception:
+        pass
+    return None, None
+
+
+def analyze_github_activity(target: str, months: int = 6, github_token_env: str | None = None) -> dict:
     result = {
-        "target": target,
-        "period_months": months,
-        "status": "limited",
-        "activity": {},
+        "status": "unavailable",
+        "lookback_months": months,
+        "is_github_target": False,
+        "commit_count": 0,
+        "pr_count": 0,
+        "active_authors_count": 0,
+        "signals": [],
+        "velocity_classification": "unknown",
+        "consistency_classification": "unknown",
         "limitations": []
     }
 
-    if not target.startswith("https://github.com"):
-        result["limitations"].append("GitHub activity analysis only supports GitHub URLs")
-        result["status"] = "not_applicable"
+    if not _is_github_url(target):
+        result["limitations"].append("Not a GitHub repository URL")
         return result
 
+    result["is_github_target"] = True
+    owner, repo = _parse_repo(target)
+    if not owner or not repo:
+        result["limitations"].append("Could not parse owner/repo")
+        return result
+
+    if not HAS_REQUESTS:
+        result["status"] = "limited"
+        result["limitations"].append("requests not installed; install it for GitHub activity analysis")
+        return result
+
+    token = os.getenv(github_token_env) if github_token_env else None
     if not token:
-        result["limitations"].append("No GitHub token provided — activity data is limited to static analysis")
-        result["limitations"].append("Recent commits/PRs require --github-token-env or GITHUB_TOKEN")
-        result["activity"]["note"] = "Token required for real commit/PR history"
-        return result
+        token = os.getenv("GITHUB_TOKEN")
 
-    # Placeholder for future real implementation
-    result["status"] = "not_implemented_yet"
-    result["limitations"].append("Real GitHub API call not yet implemented in Phase 2")
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "NICO-Assessment"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    since_dt = datetime.now(timezone.utc) - timedelta(days=30 * months)
+    since = since_dt.isoformat()
+
+    try:
+        # Commits
+        commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits?since={since}&per_page=100"
+        resp = requests.get(commits_url, headers=headers, timeout=20)
+        if resp.status_code == 200:
+            commits = resp.json() or []
+            result["commit_count"] = len(commits)
+            authors = {c.get("author", {}).get("login") or c.get("commit", {}).get("author", {}).get("name") for c in commits if c.get("author") or c.get("commit")}
+            result["active_authors_count"] = len([a for a in authors if a])
+        elif resp.status_code in (401, 403, 404):
+            result["status"] = "limited"
+            result["limitations"].append("Repository may be private or token/rate limit issue")
+            return result
+        else:
+            result["status"] = "limited"
+            result["limitations"].append(f"GitHub commits API returned {resp.status_code}")
+            return result
+
+        # PRs
+        prs_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=all&sort=updated&direction=desc&per_page=100"
+        resp = requests.get(prs_url, headers=headers, timeout=20)
+        if resp.status_code == 200:
+            prs = resp.json() or []
+            recent_prs = [p for p in prs if p.get("updated_at", "") >= since]
+            result["pr_count"] = len(recent_prs)
+
+        # Classification (conservative)
+        if result["commit_count"] == 0 and result["pr_count"] == 0:
+            result["signals"].append("No recent activity detected")
+            result["velocity_classification"] = "low"
+            result["consistency_classification"] = "stale"
+        elif result["pr_count"] < 5:
+            result["signals"].append("Low PR activity in last 6 months")
+            result["velocity_classification"] = "low"
+        else:
+            result["velocity_classification"] = "moderate"
+
+        if result["active_authors_count"] >= 3:
+            result["signals"].append("Multiple active contributors")
+
+        result["status"] = "completed" if token else "limited"
+
+        if not token:
+            result["limitations"].append("No GITHUB_TOKEN; data limited to public unauthenticated API (rate limits apply)")
+
+    except Exception as e:
+        result["status"] = "error"
+        result["limitations"].append(f"GitHub activity fetch error: {str(e)[:200]}")
+
     return result
