@@ -81,6 +81,17 @@ Open the local frontend at:
 http://localhost:3000
 ```
 
+## Hosted Safari App
+
+For a phone/desktop browser setup without localhost, deploy the frontend and backend separately:
+
+- Frontend: Vercel or another Next.js host using `apps/web`
+- Backend API: a Python web service host
+- Frontend environment: `NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST`
+- Backend environment: `NICO_CORS_ORIGINS=https://YOUR-NICO-FRONTEND-HOST`
+
+See `docs/SAFARI_HOSTED_APP.md` for the full hosted setup.
+
 ## CLI Commands
 
 ```bash
@@ -88,29 +99,7 @@ python -m nico scan <local-path>
 python -m nico scan-test-lab
 python -m nico scan-drift-demo
 python -m nico report latest
-python -m nico report owner
-python -m nico report developer
-python -m nico report reparodynamic
-python -m nico report compliance
 python -m nico verify latest
-python -m nico verify --repair-id <repair_id>
 python -m nico memory
 python -m nico policy show
-python -m nico scanner-availability
-python -m nico assessment <target> --tier express --mode audit
 ```
-
-## Current Limitations
-
-- NICO is an early local-first defensive platform foundation.
-- External scanners are optional and depend on local installation and environment availability.
-- Mid-tier and full-tier assessment paths are still future phases unless implemented by active modules.
-- Compliance reports are local mapping reports only and are not certifications.
-- Hosted SaaS features such as authentication, RBAC, tenant isolation, billing, and encrypted cloud secret storage are not part of the current local-first foundation.
-- NICO should not be used against third-party systems without explicit written authorization.
-
-## License
-
-Copyright © 2026 Cody Ryan Jenkins. All rights reserved.
-
-This repository is public for visibility and development tracking. No license is granted to copy, modify, distribute, sublicense, or use this software commercially without written permission.

@@ -1,12 +1,21 @@
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
+
+
+def cors_origins():
+    configured = os.getenv('NICO_CORS_ORIGINS', '')
+    origins = [origin.strip() for origin in configured.split(',') if origin.strip()]
+    return origins or ['http://localhost:3000']
+
+
 class LocalScanRequest(BaseModel): path: str
 class PolicyLevelRequest(BaseModel): level: int
 app=FastAPI(title='NICO API',version='0.1.0',description='Local-first defensive cybersecurity API')
-app.add_middleware(CORSMiddleware,allow_origins=['http://localhost:3000'],allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
+app.add_middleware(CORSMiddleware,allow_origins=cors_origins(),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 @app.get('/health')
 def health(): return {'status':'ok','system':'NICO','mode':'local'}
 @app.post('/scan/test-lab')
