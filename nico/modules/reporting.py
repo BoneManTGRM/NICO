@@ -1,6 +1,6 @@
-"""Reporting Module (Phase 2)
+"""Reporting Module (Phase 3)
 
-Includes Roadmap 30/60/90 in Markdown and <h2>Roadmap</h2> in HTML.
+Markdown and HTML now include Ranked Recommendations section.
 """
 
 import json
@@ -108,6 +108,13 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                         md_lines.append(f"- {item}")
             md_lines.append("")
 
+        if final_result.get("synthesis"):
+            syn = final_result["synthesis"]
+            md_lines.append("## Ranked Recommendations")
+            for r in syn.get("ranked_recommendations", []):
+                md_lines.append(f"- {r.get('title')} ({r.get('weight')} weight)")
+            md_lines.append("")
+
         if final_result.get("limitations"):
             md_lines.append("## Limitations")
             for lim in final_result["limitations"]:
@@ -121,16 +128,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
         html_lines.append(f"<p><b>Status:</b> {final_result.get('status')}</p>")
         html_lines.append(f"<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>")
-
-        if final_result.get("maturity"):
-            html_lines.append("<h2>Maturity</h2>")
-        if final_result.get("resourcing"):
-            html_lines.append("<h2>Resourcing</h2>")
-        if final_result.get("roadmap"):
-            html_lines.append("<h2>Roadmap</h2>")
-        if final_result.get("limitations"):
-            html_lines.append("<h2>Limitations</h2>")
-
+        html_lines.append("<h2>Ranked Recommendations</h2>")
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 

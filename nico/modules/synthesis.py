@@ -1,26 +1,26 @@
-"""Synthesis Module (Phase 3 Start)
+"""Synthesis Module (Phase 3)
 
-Evidence weighting + recommendation ranking for existing Express output.
+Improved evidence weighting + weight-sorted ranking.
 """
 
 def synthesize_recommendations(result: dict) -> dict:
-    findings_weight = min(100, result.get("findings_count", 0) * 5)
-    debt_weight = 30 if result.get("architecture_audit", {}).get("debt_signals") else 0
-    dep_weight = 25 if result.get("dependency_audit", {}).get("risky_dependencies") else 0
-    ci_weight = 20 if not result.get("cicd_audit", {}).get("has_ci") else 0
+    weights = {}
+    weights["scanner"] = min(100, result.get("findings_count", 0) * 4)
+    weights["architecture"] = 30 if result.get("architecture_audit", {}).get("debt_signals") else 0
+    weights["dependency"] = 25 if result.get("dependency_audit", {}).get("risky_dependencies") else 0
+    weights["cicd"] = 20 if not result.get("cicd_audit", {}).get("has_ci") else 0
 
-    total_weight = findings_weight + debt_weight + dep_weight + ci_weight
+    total_weight = sum(weights.values())
 
-    ranked = [
-        {"priority": 1, "recommendation": "Address highest RYE scanner findings", "weight": findings_weight, "evidence": "scanner findings"},
+    recs = [
+        {"title": "Address highest RYE scanner findings", "weight": weights["scanner"], "source": "scanner"},
+        {"title": "Review architecture debt signals", "weight": weights["architecture"], "source": "architecture"},
+        {"title": "Update risky dependencies", "weight": weights["dependency"], "source": "dependency"},
+        {"title": "Implement basic CI workflow", "weight": weights["cicd"], "source": "cicd"},
     ]
 
-    if debt_weight > 0:
-        ranked.append({"priority": 2, "recommendation": "Review architecture debt signals", "weight": debt_weight, "evidence": "large files + TODO clusters"})
-    if dep_weight > 0:
-        ranked.append({"priority": 3, "recommendation": "Update risky dependencies", "weight": dep_weight, "evidence": "static dep scan"})
-    if ci_weight > 0:
-        ranked.append({"priority": 4, "recommendation": "Implement basic CI pipeline", "weight": ci_weight, "evidence": "missing CI files"})
+    # Sort descending by weight and filter zero-weight
+    ranked = sorted([r for r in recs if r["weight"] > 0], key=lambda r: r["weight"], reverse=True)
 
     return {
         "status": "completed",
