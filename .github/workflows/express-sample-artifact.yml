@@ -26,7 +26,53 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Generate Express assessment sample
-        run: python -m nico.assessment ./nico/test_lab --tier express --output assessment_latest
+        run: |
+          rm -rf assessment_latest
+          python -m nico.assessment . --tier express --output assessment_latest
+
+      - name: Verify sample output structure
+        run: |
+          test -s assessment_latest/assessment_latest.json
+          test -s assessment_latest/assessment_latest.md
+          test -s assessment_latest/assessment_latest.html
+          test -s assessment_latest/evidence_manifest.json
+          test -d assessment_latest/express_pack
+          test -s assessment_latest/express_pack/executive_summary.md
+          test -s assessment_latest/express_pack/technical_health_report.md
+          test -s assessment_latest/express_pack/evidence_manifest.json
+          test -s assessment_latest/express_pack/dependency_audit.json
+          test -s assessment_latest/express_pack/cicd_audit.json
+          test -s assessment_latest/express_pack/architecture_audit.json
+          test -s assessment_latest/express_pack/github_activity.json
+          test -s assessment_latest/express_pack/maturity_scorecard.json
+          test -s assessment_latest/express_pack/roadmap_30_60_90.md
+          test -s assessment_latest/express_pack/resourcing_plan.md
+          test -s assessment_latest/express_pack/limitations.md
+
+      - name: Verify report metadata and manifest separation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("assessment_latest")
+          saved = json.loads((root / "assessment_latest.json").read_text(encoding="utf-8"))
+          standard_manifest = json.loads((root / "evidence_manifest.json").read_text(encoding="utf-8"))
+          express_manifest = json.loads((root / "express_pack" / "evidence_manifest.json").read_text(encoding="utf-8"))
+
+          assert saved["reports"]["express_pack"]["status"] == "completed"
+          assert saved["reports"]["express_pack"]["output_dir"] == "assessment_latest/express_pack"
+          assert "total_evidence_weight" in standard_manifest
+          assert "generated_at" in express_manifest
+          assert standard_manifest != express_manifest
+          PY
+
+      - name: Check for weak or forbidden sample language
+        run: |
+          if grep -RniE "placeholder|fake|invented|produced by the module|produced by synthesis|available modules|Local path does not exist|Target path does not exist|Target does not exist|Auditor error" assessment_latest; then
+            echo "Weak, placeholder, or internal output language found."
+            exit 1
+          fi
 
       - name: Upload Express assessment sample
         uses: actions/upload-artifact@v4
