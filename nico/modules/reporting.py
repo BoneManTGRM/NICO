@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-Evidence manifest now includes module statuses + total weight as compact audit summary.
+GitHub Activity section + module_statuses update.
 """
 
 import json
@@ -40,7 +40,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Full Markdown (unchanged)
+        # Full Markdown
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -108,6 +108,23 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                         md_lines.append(f"- {item}")
             md_lines.append("")
 
+        # GitHub Activity section
+        if final_result.get("github_activity"):
+            gh = final_result["github_activity"]
+            md_lines.append("## GitHub Activity")
+            md_lines.append(f"Status: {gh.get('status')}")
+            md_lines.append(f"Lookback Months: {gh.get('lookback_months')}")
+            md_lines.append(f"Commits: {gh.get('commit_count', 0)}")
+            md_lines.append(f"PRs: {gh.get('pr_count', 0)}")
+            md_lines.append(f"Active Authors: {gh.get('active_authors_count', 0)}")
+            md_lines.append(f"Velocity: {gh.get('velocity_classification')}")
+            md_lines.append(f"Consistency: {gh.get('consistency_classification')}")
+            if gh.get("signals"):
+                md_lines.append("Signals:")
+                for s in gh["signals"]:
+                    md_lines.append(f"- {s}")
+            md_lines.append("")
+
         if final_result.get("synthesis"):
             syn = final_result["synthesis"]
             md_lines.append("## Ranked Recommendations")
@@ -136,7 +153,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Rich evidence manifest + module statuses (compact audit summary)
+        # Rich evidence manifest + module statuses
         ranked_with_evidence = []
         for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
             src = r.get("source", "unknown")
@@ -144,7 +161,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                 "module": src,
                 "signal": r.get("title"),
                 "weight": r.get("weight"),
-                "limitation": "Heuristic weight" if src in ["scanner", "architecture", "dependency", "cicd"] else "Requires human review"
+                "limitation": "Heuristic weight" if src in ["scanner", "architecture", "dependency", "cicd", "github_activity"] else "Requires human review"
             }
             ranked_with_evidence.append(evidence_obj)
 
@@ -159,6 +176,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                 "cicd_audit": final_result.get("cicd_audit", {}).get("status", "unknown"),
                 "architecture_audit": final_result.get("architecture_audit", {}).get("status", "unknown"),
                 "maturity": final_result.get("maturity", {}).get("semaphore", "unknown"),
+                "github_activity": final_result.get("github_activity", {}).get("status", "unknown"),
             },
             "ranked_recommendations_with_evidence": ranked_with_evidence,
             "limitations": final_result.get("limitations", [])
