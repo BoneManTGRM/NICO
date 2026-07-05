@@ -1,6 +1,6 @@
-"""Phase 3 HTML Regression Test
+"""Phase 3 HTML Regression Test (updated)
 
-Ensures HTML report contains all main headings.
+Ensures all main HTML headings are present, including GitHub Activity.
 """
 
 from pathlib import Path
@@ -15,5 +15,6 @@ def test_html_contains_all_sections():
     assert "Maturity" in content
     assert "Resourcing" in content
     assert "Roadmap" in content
+    assert "GitHub Activity" in content
     assert "Ranked Recommendations" in content
     assert "Limitations" in content

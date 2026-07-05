@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-GitHub Activity section + module_statuses update.
+GitHub Activity HTML heading added + regression test updated.
 """
 
 import json
@@ -108,7 +108,6 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
                         md_lines.append(f"- {item}")
             md_lines.append("")
 
-        # GitHub Activity section
         if final_result.get("github_activity"):
             gh = final_result["github_activity"]
             md_lines.append("## GitHub Activity")
@@ -139,7 +138,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML
+        # HTML - all headings including GitHub Activity
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
@@ -148,12 +147,13 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("<h2>Maturity</h2>")
         html_lines.append("<h2>Resourcing</h2>")
         html_lines.append("<h2>Roadmap</h2>")
+        html_lines.append("<h2>GitHub Activity</h2>")
         html_lines.append("<h2>Ranked Recommendations</h2>")
         html_lines.append("<h2>Limitations</h2>")
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Rich evidence manifest + module statuses
+        # Rich evidence manifest
         ranked_with_evidence = []
         for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
             src = r.get("source", "unknown")
