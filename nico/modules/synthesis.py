@@ -1,6 +1,6 @@
 """Synthesis Module (Phase 3)
 
-Evidence weighting + GitHub activity integration.
+Added CI/CD run-history weighting.
 """
 
 def synthesize_recommendations(result: dict) -> dict:
@@ -23,13 +23,35 @@ def synthesize_recommendations(result: dict) -> dict:
 
     weights["github_activity"] = gh_weight
 
+    # CI/CD run-history weighting (new)
+    cicd = result.get("cicd_audit", {})
+    cicd_weight = weights.get("cicd", 0)
+
+    if cicd.get("workflow_runs_count", 0) > 0:
+        failures = cicd.get("failed_runs_recent", 0)
+        success_rate = cicd.get("success_rate")
+
+        if failures >= 5:
+            cicd_weight = max(cicd_weight, 40)
+        elif failures >= 2:
+            cicd_weight = max(cicd_weight, 25)
+
+        if success_rate is not None and success_rate < 70:
+            cicd_weight = max(cicd_weight, 30)
+
+        if failures > 0:
+            cicd_weight = max(cicd_weight, 15)
+
+    weights["cicd"] = cicd_weight
+
     total_weight = sum(weights.values())
 
     recs = [
         {"title": "Address highest RYE scanner findings", "weight": weights["scanner"], "source": "scanner"},
         {"title": "Review architecture debt signals", "weight": weights["architecture"], "source": "architecture"},
         {"title": "Update risky dependencies", "weight": weights["dependency"], "source": "dependency"},
-        {"title": "Implement basic CI workflow", "weight": weights["cicd"], "source": "cicd"},
+        {"title": "Investigate recent CI/CD failures", "weight": weights["cicd"], "source": "cicd"},
+        {"title": "Implement basic CI workflow", "weight": weights.get("cicd_static", 0), "source": "cicd"},
     ]
 
     if gh_weight > 0:
