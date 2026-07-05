@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 3 Start)
+"""NICO Assessment Orchestrator (Phase 3)
 
-Added evidence weighting + ranked recommendations via synthesis module.
+GitHub Activity integration for Express tier.
 """
 
 import argparse
@@ -76,6 +76,12 @@ try:
 except Exception:
     pass
 
+github_activity = None
+try:
+    from nico.modules.github_activity import analyze_github_activity as github_activity
+except Exception:
+    pass
+
 
 def run_assessment(
     target: str,
@@ -109,6 +115,18 @@ def run_assessment(
                 result["limitations"].extend(intake_result["limitations"])
         except Exception as e:
             result["limitations"].append(f"Intake error: {e}")
+
+    # GitHub Activity (early, after intake)
+    if github_activity:
+        try:
+            gh_result = github_activity(target, months=6, github_token_env=github_token_env)
+            result["github_activity"] = gh_result
+            if gh_result.get("limitations"):
+                result["limitations"].extend(gh_result["limitations"])
+            if gh_result.get("status") in ("completed", "limited"):
+                result["evidence_sources"].append("github_activity")
+        except Exception as e:
+            result["limitations"].append(f"GitHub activity error: {e}")
 
     if dependency_audit:
         try:
@@ -210,7 +228,7 @@ def run_assessment(
             except Exception as e:
                 result["limitations"].append(f"Roadmap error: {e}")
 
-        # Evidence weighting + ranking (new)
+        # Evidence weighting + ranking
         if synthesis:
             try:
                 synthesis_result = synthesis(result)
