@@ -1,6 +1,6 @@
 """Reporting Module (Phase 2)
 
-write_assessment_reports with improved Markdown/HTML including audit sections.
+HTML now includes Dependency, CI/CD, Architecture, Maturity, and Limitations sections.
 """
 
 import json
@@ -36,12 +36,11 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         final_result = dict(result)
         final_result["reports"] = report_result
 
-        # Write JSONs
         json_content = json.dumps(final_result, indent=2, default=str)
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Build richer Markdown
+        # Markdown (already rich)
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -52,13 +51,11 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             ""
         ]
 
-        # Add sections from audits if present
         if final_result.get("dependency_audit"):
             dep = final_result["dependency_audit"]
             md_lines.append("## Dependency Audit")
             md_lines.append(f"Status: {dep.get('status')}")
             if dep.get("risky_dependencies"):
-                md_lines.append("Risky dependencies found:")
                 for r in dep["risky_dependencies"]:
                     md_lines.append(f"- {r.get('dependency')}: {r.get('reason')}")
             md_lines.append("")
@@ -68,7 +65,6 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             md_lines.append("## CI/CD Audit")
             md_lines.append(f"Has CI: {cicd.get('has_ci')}")
             if cicd.get("workflows"):
-                md_lines.append("Workflow files found:")
                 for w in cicd["workflows"]:
                     md_lines.append(f"- {w}")
             md_lines.append("")
@@ -77,9 +73,18 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             arch = final_result["architecture_audit"]
             md_lines.append("## Architecture & Debt")
             if arch.get("debt_signals"):
-                md_lines.append("Debt signals:")
                 for s in arch["debt_signals"]:
                     md_lines.append(f"- {s}")
+            md_lines.append("")
+
+        if final_result.get("maturity"):
+            mat = final_result["maturity"]
+            md_lines.append("## Maturity")
+            md_lines.append(f"Semaphore: {mat.get('semaphore')} (Score: {mat.get('score')})")
+            if mat.get("quick_wins"):
+                md_lines.append("Quick Wins:")
+                for q in mat["quick_wins"]:
+                    md_lines.append(f"- {q}")
             md_lines.append("")
 
         if final_result.get("limitations"):
@@ -89,16 +94,27 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # Basic HTML version
+        # HTML with same sections
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
         html_lines.append(f"<p><b>Status:</b> {final_result.get('status')}</p>")
         html_lines.append(f"<p><b>Findings:</b> {final_result.get('findings_count', 0)}</p>")
+
+        if final_result.get("dependency_audit"):
+            html_lines.append("<h2>Dependency Audit</h2>")
+        if final_result.get("cicd_audit"):
+            html_lines.append("<h2>CI/CD Audit</h2>")
+        if final_result.get("architecture_audit"):
+            html_lines.append("<h2>Architecture & Debt</h2>")
+        if final_result.get("maturity"):
+            html_lines.append("<h2>Maturity</h2>")
+        if final_result.get("limitations"):
+            html_lines.append("<h2>Limitations</h2>")
+
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Evidence manifest
         evidence_content = json.dumps({
             "assessment_id": assessment_id,
             "evidence_sources": final_result.get("evidence_sources", []),

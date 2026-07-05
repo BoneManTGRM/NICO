@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2)
+"""NICO Assessment Orchestrator (Phase 2 - Maturity Integrated)
 
-Integrated basic architecture/technical debt analysis.
+Calls assess_maturity after findings_count and audit data are populated.
 """
 
 import argparse
@@ -55,6 +55,12 @@ except Exception:
 architecture_audit = None
 try:
     from nico.modules.architecture_audit import audit_architecture as architecture_audit
+except Exception:
+    pass
+
+maturity = None
+try:
+    from nico.modules.maturity import assess_maturity as maturity
 except Exception:
     pass
 
@@ -161,6 +167,16 @@ def run_assessment(
                     result.update({"status": "error", "error": str(e)})
             else:
                 result.update({"status": "error", "error": "auditor unavailable"})
+
+        # Call maturity after findings_count and audits are populated
+        if maturity:
+            try:
+                maturity_result = maturity(result)
+                result["maturity"] = maturity_result
+                if maturity_result.get("limitations"):
+                    result["limitations"].extend(maturity_result["limitations"])
+            except Exception as e:
+                result["limitations"].append(f"Maturity assessment error: {e}")
 
     else:
         result["status"] = "not_implemented_yet"
