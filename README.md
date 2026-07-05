@@ -1,5 +1,8 @@
-NICO - Malamute Auditor
+# NICO - Neural Intelligence for Cyber Operations
 
-CI guard: runs file-integrity and regression tests on every push and PR.
+Autonomous repair-first cybersecurity platform.
 
-Autonomous iOS/Android code auditor with RYE scoring and reparodynamics.
+## Status
+CI guard active and passing.
+
+Last verified: 2026-07-05
