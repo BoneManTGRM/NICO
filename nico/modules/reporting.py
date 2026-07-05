@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-Full Markdown sections restored + evidence manifest with source links.
+Richer evidence objects in manifest (module, signal, weight, limitation).
 """
 
 import json
@@ -40,7 +40,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Full Markdown sections
+        # Full Markdown (preserved)
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -122,7 +122,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML (headings preserved)
+        # HTML (headings)
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
@@ -136,19 +136,23 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Improved evidence manifest with source links
+        # Rich evidence manifest
+        ranked_with_evidence = []
+        for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
+            src = r.get("source", "unknown")
+            evidence_obj = {
+                "module": src,
+                "signal": r.get("title"),
+                "weight": r.get("weight"),
+                "limitation": "Heuristic weight" if src in ["scanner", "architecture", "dependency", "cicd"] else "Requires human review"
+            }
+            ranked_with_evidence.append(evidence_obj)
+
         evidence_manifest = {
             "assessment_id": assessment_id,
             "evidence_sources": final_result.get("evidence_sources", []),
             "limitations": final_result.get("limitations", []),
-            "ranked_recs_with_sources": [
-                {
-                    "rec": r.get("title"),
-                    "weight": r.get("weight"),
-                    "source": r.get("source", "unknown")
-                }
-                for r in final_result.get("synthesis", {}).get("ranked_recommendations", [])
-            ]
+            "ranked_recommendations_with_evidence": ranked_with_evidence
         }
         evidence_content = json.dumps(evidence_manifest, indent=2)
         evidence_path.write_text(evidence_content, encoding="utf-8")
