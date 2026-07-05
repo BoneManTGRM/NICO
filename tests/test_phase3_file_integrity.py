@@ -12,6 +12,7 @@ DEPENDENCY = Path("nico/modules/dependency_audit.py")
 SYNTHESIS = Path("nico/modules/synthesis.py")
 MATURITY = Path("nico/modules/maturity.py")
 ROADMAP = Path("nico/modules/roadmap.py")
+CLI = Path("nico/cli.py")
 
 
 def test_assessment_file_size_and_start():
@@ -169,6 +170,32 @@ def test_roadmap_contains_key_elements():
     assert "vulnerabilities_found" in content
 
 
+def test_cli_file_size_and_start():
+    with open(CLI, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert len(content.splitlines()) > 700
+    first_lines = content.splitlines()[:3]
+    assert any(line.startswith(("from __future__ import", "import ", "from ")) for line in first_lines)
+
+
+def test_cli_contains_key_symbols():
+    with open(CLI, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "from __future__ import annotations" in content
+    assert "class Store" in content
+    assert "def run_scan" in content
+    assert "def apply_rye" in content
+    assert "def repairs_for" in content
+    assert "def generate_reports" in content
+    assert "def scan_test_lab" in content
+    assert "def scan_drift_demo" in content
+    assert "def verify_latest" in content
+    assert "def rye_score" in content
+    assert "def main" in content
+    assert "APPSEC_PATTERNS" in content
+    assert "REPAIR_LIBRARY" in content
+
+
 def test_pycompile_all_critical_files():
     py_compile.compile(str(ASSESSMENT), doraise=True)
     py_compile.compile(str(REPORTING), doraise=True)
@@ -176,3 +203,4 @@ def test_pycompile_all_critical_files():
     py_compile.compile(str(SYNTHESIS), doraise=True)
     py_compile.compile(str(MATURITY), doraise=True)
     py_compile.compile(str(ROADMAP), doraise=True)
+    py_compile.compile(str(CLI), doraise=True)
