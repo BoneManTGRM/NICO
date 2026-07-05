@@ -1,6 +1,6 @@
-"""Evidence Manifest Regression Test
+"""Evidence Manifest Regression Test (fixed)
 
-Catches module_statuses key errors (e.g. dependency_audit pointing to wrong module).
+Reads the correct evidence_manifest.json file.
 """
 
 from nico.assessment import run_assessment
@@ -12,18 +12,17 @@ import json
 
 def test_evidence_manifest_module_statuses_correct():
     run_assessment("./nico/test_lab", tier="express", output_dir="/tmp/nico_manifest_test")
-    manifest_path = Path("/tmp/nico_manifest_test/assessment_latest.json")
+
+    # Correct file: evidence_manifest.json (not assessment_latest.json)
+    manifest_path = Path("/tmp/nico_manifest_test/evidence_manifest.json")
 
     with open(manifest_path) as f:
-        data = json.load(f)
-
-    manifest = data.get("evidence_manifest") or data  # support both wrapped and direct
+        manifest = json.load(f)
 
     module_statuses = manifest.get("module_statuses", {})
 
-    # These must come from the correct modules
     assert "dependency_audit" in module_statuses
-    assert module_statuses["dependency_audit"] in ("completed", "limited", "unavailable", "unknown")
+    assert module_statuses.get("dependency_audit") in ("completed", "limited", "unavailable", "unknown")
 
-    # Sanity: cicd_audit should also be present and different
     assert "cicd_audit" in module_statuses
+    assert "github_activity" in module_statuses
