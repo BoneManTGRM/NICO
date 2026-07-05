@@ -4,9 +4,13 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - "apps/web/**"
   push:
     branches:
       - upgrade/repair-first-foundation
+    paths:
+      - "apps/web/**"
   workflow_dispatch:
 
 permissions:
