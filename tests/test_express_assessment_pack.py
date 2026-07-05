@@ -189,3 +189,34 @@ def test_run_assessment_writes_standard_reports_and_express_pack(tmp_path):
             lowered = path.read_text(encoding="utf-8").lower()
             for word in forbidden:
                 assert word not in lowered, f"{word} found in {path.name}"
+
+
+def test_express_pack_fallback_language_is_client_facing(tmp_path):
+    output = tmp_path / "assessment_latest"
+    minimal = {
+        "assessment_id": "assessment_minimal",
+        "target": "./sample-app",
+        "tier": "express",
+        "status": "completed",
+        "findings_count": 0,
+        "repairs_count": 0,
+        "limitations": [],
+    }
+    write_express_assessment_pack(minimal, str(output))
+
+    combined = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in output.rglob("*")
+        if path.is_file()
+    )
+    forbidden_phrases = [
+        "produced by the module",
+        "produced by synthesis",
+        "available modules",
+        "Minimum Team: \n",
+        "Recommended Team: \n",
+        "Aggressive Team: \n",
+    ]
+    for phrase in forbidden_phrases:
+        assert phrase not in combined
+    assert "Not available from current evidence" in combined
