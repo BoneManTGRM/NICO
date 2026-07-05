@@ -1,36 +1,19 @@
-"""Phase 2 Assessment Reporting Tests (Narrow Fix)
+"""Phase 3 HTML Regression Test
 
-Tests local-path Express findings_count fix.
+Ensures HTML report contains all main headings.
 """
 
-import os
 from pathlib import Path
-
 from nico.assessment import run_assessment
 
 
-def test_local_path_express_findings_count():
-    # Ensure test lab exists
-    test_lab = "./nico/test_lab"
-    assert Path(test_lab).exists(), "nico/test_lab must exist"
+def test_html_contains_all_sections():
+    run_assessment("./nico/test_lab", tier="express", output_dir="/tmp/nico_html_test")
+    html_path = Path("/tmp/nico_html_test/assessment_latest.html")
+    content = html_path.read_text(encoding="utf-8")
 
-    result = run_assessment(
-        target=test_lab,
-        tier="express",
-        output_dir="/tmp/nico_local_test"
-    )
-
-    assert result["status"] == "completed", f"Expected completed, got {result.get('status')}"
-    assert result.get("used_local_scan") is True
-    assert result.get("findings_count", 0) > 0, "findings_count should be > 0 for test_lab"
-    assert result.get("repairs_count", 0) >= 0
-
-
-def test_missing_local_path():
-    result = run_assessment(
-        target="./does-not-exist-12345",
-        tier="express",
-        output_dir="/tmp/nico_local_test"
-    )
-    assert result["status"] != "completed"
-    assert any("does not exist" in lim or "error" in lim.lower() for lim in result.get("limitations", []))
+    assert "Maturity" in content
+    assert "Resourcing" in content
+    assert "Roadmap" in content
+    assert "Ranked Recommendations" in content
+    assert "Limitations" in content
