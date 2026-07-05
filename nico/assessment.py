@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NICO Assessment Orchestrator (Phase 2 - Roadmap Integrated)
+"""NICO Assessment Orchestrator (Phase 3 Start)
 
-Calls build_roadmap after maturity and resourcing.
+Added evidence weighting + ranked recommendations via synthesis module.
 """
 
 import argparse
@@ -25,12 +25,6 @@ except Exception:
 write_assessment_reports = None
 try:
     from nico.modules.reporting import write_assessment_reports
-except Exception:
-    pass
-
-generate_reports = None
-try:
-    from nico.modules.reporting import generate_reports
 except Exception:
     pass
 
@@ -73,6 +67,12 @@ except Exception:
 roadmap = None
 try:
     from nico.modules.roadmap import build_roadmap as roadmap
+except Exception:
+    pass
+
+synthesis = None
+try:
+    from nico.modules.synthesis import synthesize_recommendations as synthesis
 except Exception:
     pass
 
@@ -200,7 +200,7 @@ def run_assessment(
             except Exception as e:
                 result["limitations"].append(f"Resourcing error: {e}")
 
-        # Roadmap (after maturity + resourcing)
+        # Roadmap
         if roadmap:
             try:
                 roadmap_result = roadmap(result)
@@ -209,6 +209,16 @@ def run_assessment(
                     result["limitations"].extend(roadmap_result["limitations"])
             except Exception as e:
                 result["limitations"].append(f"Roadmap error: {e}")
+
+        # Evidence weighting + ranking (new)
+        if synthesis:
+            try:
+                synthesis_result = synthesis(result)
+                result["synthesis"] = synthesis_result
+                if synthesis_result.get("limitations"):
+                    result["limitations"].extend(synthesis_result["limitations"])
+            except Exception as e:
+                result["limitations"].append(f"Synthesis error: {e}")
 
     else:
         result["status"] = "not_implemented_yet"
