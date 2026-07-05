@@ -175,7 +175,11 @@ def test_roadmap_contains_key_elements():
 def test_cli_file_size_and_start():
     with open(CLI, "r", encoding="utf-8") as f:
         content = f.read()
-    assert len(content.splitlines()) > 700
+    assert len(content.splitlines()) > 900
+    assert "[targeted tuple edit]" not in content
+    assert "[full content" not in content
+    assert "...fixed tuple..." not in content
+    assert "placeholder" not in content.lower()
     first_lines = content.splitlines()[:3]
     assert any(line.startswith(("from __future__ import", "import ", "from ")) for line in first_lines)
 
