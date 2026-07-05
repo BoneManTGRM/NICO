@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+
 from nico.assessment import run_assessment
+
 
 def test_evidence_manifest_module_statuses_correct():
     run_assessment("./nico/test_lab", tier="express", output_dir="/tmp/nico_manifest_test")
