@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-Richer evidence objects in manifest (module, signal, weight, limitation).
+Evidence manifest now includes module statuses + total weight as compact audit summary.
 """
 
 import json
@@ -40,7 +40,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         json_latest.write_text(json_content, encoding="utf-8")
         json_timestamped.write_text(json_content, encoding="utf-8")
 
-        # Full Markdown (preserved)
+        # Full Markdown (unchanged)
         md_lines = [
             "# NICO Assessment Report\n",
             f"**Target:** {final_result.get('target')}",
@@ -122,7 +122,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML (headings)
+        # HTML
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
@@ -136,7 +136,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Rich evidence manifest
+        # Rich evidence manifest + module statuses (compact audit summary)
         ranked_with_evidence = []
         for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
             src = r.get("source", "unknown")
@@ -150,9 +150,18 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         evidence_manifest = {
             "assessment_id": assessment_id,
-            "evidence_sources": final_result.get("evidence_sources", []),
-            "limitations": final_result.get("limitations", []),
-            "ranked_recommendations_with_evidence": ranked_with_evidence
+            "target": final_result.get("target"),
+            "tier": final_result.get("tier"),
+            "overall_status": final_result.get("status"),
+            "total_evidence_weight": final_result.get("synthesis", {}).get("overall_evidence_weight", 0),
+            "module_statuses": {
+                "dependency_audit": final_result.get("dependency_audit", {}).get("status", "unknown"),
+                "cicd_audit": final_result.get("cicd_audit", {}).get("status", "unknown"),
+                "architecture_audit": final_result.get("architecture_audit", {}).get("status", "unknown"),
+                "maturity": final_result.get("maturity", {}).get("semaphore", "unknown"),
+            },
+            "ranked_recommendations_with_evidence": ranked_with_evidence,
+            "limitations": final_result.get("limitations", [])
         }
         evidence_content = json.dumps(evidence_manifest, indent=2)
         evidence_path.write_text(evidence_content, encoding="utf-8")
