@@ -1,96 +1,59 @@
 "use client";
 
 import {useEffect, useState} from "react";
-import type {ButtonHTMLAttributes, ReactNode} from "react";
 import {API, getJSON, postJSON} from "../lib/api";
 
-type View = "dashboard" | "scan" | "findings" | "repairs" | "drift" | "verification" | "reports" | "policy" | "memory" | "audit";
-
-type State = {
-  health: Record<string, unknown>;
-  latestScan: Record<string, unknown>;
-  findings: unknown[];
-  drift: unknown[];
-  repairs: unknown[];
-  verification: Record<string, unknown>;
-  memory: unknown[];
-  reports: unknown[];
-  latestReport: Record<string, unknown>;
-  policy: Record<string, unknown>;
-  audit: unknown[];
-};
-
-const initialState: State = {
-  health: {},
-  latestScan: {},
-  findings: [],
-  drift: [],
-  repairs: [],
-  verification: {},
-  memory: [],
-  reports: [],
-  latestReport: {},
-  policy: {},
-  audit: [],
-};
-
-const views: {key: View; label: string}[] = [
-  {key: "dashboard", label: "Mission Control"},
-  {key: "scan", label: "Run Scans"},
-  {key: "findings", label: "Findings"},
-  {key: "repairs", label: "Repairs"},
-  {key: "drift", label: "Drift"},
-  {key: "verification", label: "Verification"},
-  {key: "reports", label: "Reports"},
-  {key: "policy", label: "Policy"},
-  {key: "memory", label: "Memory"},
-  {key: "audit", label: "Audit Log"},
+const views = [
+  ["dashboard", "Mission Control"],
+  ["scan", "Run Scans"],
+  ["findings", "Findings"],
+  ["repairs", "Repairs"],
+  ["drift", "Drift"],
+  ["verification", "Verification"],
+  ["reports", "Reports"],
+  ["policy", "Policy"],
+  ["memory", "Memory"],
+  ["audit", "Audit Log"],
 ];
 
-function asArray(value: unknown): unknown[] {
+function toArray(value: any) {
   return Array.isArray(value) ? value : [];
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function field(item: unknown, key: string): string {
-  const object = asObject(item);
-  const value = object[key];
+function valueOf(item: any, key: string) {
+  const value = item && typeof item === "object" ? item[key] : undefined;
   return value === undefined || value === null || value === "" ? "-" : String(value);
 }
 
-function Card({title, children}: {title?: string; children: ReactNode}) {
+function Card({title, children}: any) {
   return <section className="card">{title ? <h2>{title}</h2> : null}{children}</section>;
 }
 
-type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {primary?: boolean};
-function ActionButton({children, primary, className = "", ...props}: ActionButtonProps) {
+function Button({children, primary, className = "", ...props}: any) {
   return <button className={`btn ${primary ? "primary" : ""} ${className}`} {...props}>{children}</button>;
 }
 
-function Badge({children, tone = "low"}: {children: ReactNode; tone?: string}) {
-  return <span className={`badge ${tone.toLowerCase()}`}>{children}</span>;
+function Badge({children, tone = "low"}: any) {
+  return <span className={`badge ${String(tone || "low").toLowerCase()}`}>{children}</span>;
 }
 
-function Empty({children}: {children: ReactNode}) {
+function Empty({children}: any) {
   return <div className="empty">{children}</div>;
 }
 
-function Json({value}: {value: unknown}) {
-  return <pre>{JSON.stringify(value, null, 2)}</pre>;
+function Json({value}: any) {
+  return <pre>{JSON.stringify(value ?? {}, null, 2)}</pre>;
 }
 
-function Sidebar({view, setView}: {view: View; setView: (view: View) => void}) {
+function Sidebar({view, setView}: any) {
   return (
     <aside className="sidebar">
       <div className="brand">NICO</div>
       <div className="tag">Neural Intelligence Cyber Operations</div>
       <nav className="nav" aria-label="NICO navigation">
-        {views.map((item) => (
-          <button key={item.key} className={view === item.key ? "active" : ""} onClick={() => setView(item.key)}>
-            {item.label}
+        {views.map(([key, label]) => (
+          <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
+            {label}
           </button>
         ))}
       </nav>
@@ -98,7 +61,7 @@ function Sidebar({view, setView}: {view: View; setView: (view: View) => void}) {
   );
 }
 
-function Metric({label, value, detail}: {label: string; value: string | number; detail?: string}) {
+function Metric({label, value, detail}: any) {
   return (
     <Card>
       <div className="muted">{label}</div>
@@ -108,22 +71,23 @@ function Metric({label, value, detail}: {label: string; value: string | number; 
   );
 }
 
-function FindingsTable({items}: {items: unknown[]}) {
-  if (!items.length) return <Empty>No findings yet. Run a scan to populate this table.</Empty>;
+function FindingsTable({items}: any) {
+  const rows = toArray(items);
+  if (!rows.length) return <Empty>No findings yet. Run a scan to populate this table.</Empty>;
   return (
     <div className="tableWrap">
       <table>
         <thead><tr><th>Severity</th><th>Category</th><th>Title</th><th>File</th><th>Evidence</th></tr></thead>
         <tbody>
-          {items.slice(0, 80).map((item, index) => {
-            const severity = field(item, "severity");
+          {rows.slice(0, 80).map((item: any, index: number) => {
+            const severity = valueOf(item, "severity");
             return (
-              <tr key={`${field(item, "id")}-${index}`}>
+              <tr key={`${valueOf(item, "id")}-${index}`}>
                 <td><Badge tone={severity}>{severity}</Badge></td>
-                <td>{field(item, "category")}</td>
-                <td>{field(item, "title") !== "-" ? field(item, "title") : field(item, "description")}</td>
-                <td>{field(item, "file_path") !== "-" ? field(item, "file_path") : field(item, "affected_file")}</td>
-                <td className="evidence">{field(item, "masked_evidence") !== "-" ? field(item, "masked_evidence") : field(item, "evidence")}</td>
+                <td>{valueOf(item, "category")}</td>
+                <td>{valueOf(item, "title") !== "-" ? valueOf(item, "title") : valueOf(item, "description")}</td>
+                <td>{valueOf(item, "file_path") !== "-" ? valueOf(item, "file_path") : valueOf(item, "affected_file")}</td>
+                <td className="evidence">{valueOf(item, "masked_evidence") !== "-" ? valueOf(item, "masked_evidence") : valueOf(item, "evidence")}</td>
               </tr>
             );
           })}
@@ -133,19 +97,20 @@ function FindingsTable({items}: {items: unknown[]}) {
   );
 }
 
-function RepairsTable({items}: {items: unknown[]}) {
-  if (!items.length) return <Empty>No repair plans yet. Run a scan first.</Empty>;
+function RepairsTable({items}: any) {
+  const rows = toArray(items);
+  if (!rows.length) return <Empty>No repair plans yet. Run a scan first.</Empty>;
   return (
     <div className="tableWrap">
       <table>
         <thead><tr><th>Status</th><th>Finding</th><th>Repair</th><th>Verification</th></tr></thead>
         <tbody>
-          {items.slice(0, 80).map((item, index) => (
-            <tr key={`${field(item, "id")}-${index}`}>
-              <td><Badge tone="medium">{field(item, "status")}</Badge></td>
-              <td>{field(item, "finding_id") !== "-" ? field(item, "finding_id") : field(item, "category")}</td>
-              <td>{field(item, "recommendation") !== "-" ? field(item, "recommendation") : field(item, "repair")}</td>
-              <td>{field(item, "verification_command") !== "-" ? field(item, "verification_command") : "Manual verification required"}</td>
+          {rows.slice(0, 80).map((item: any, index: number) => (
+            <tr key={`${valueOf(item, "id")}-${index}`}>
+              <td><Badge tone="medium">{valueOf(item, "status")}</Badge></td>
+              <td>{valueOf(item, "finding_id") !== "-" ? valueOf(item, "finding_id") : valueOf(item, "category")}</td>
+              <td>{valueOf(item, "recommendation") !== "-" ? valueOf(item, "recommendation") : valueOf(item, "repair")}</td>
+              <td>{valueOf(item, "verification_command") !== "-" ? valueOf(item, "verification_command") : "Manual verification required"}</td>
             </tr>
           ))}
         </tbody>
@@ -155,17 +120,16 @@ function RepairsTable({items}: {items: unknown[]}) {
 }
 
 export default function Page() {
-  const [view, setView] = useState<View>("dashboard");
-  const [data, setData] = useState<State>(initialState);
+  const [view, setView] = useState("dashboard");
+  const [data, setData] = useState<any>({health: {}, findings: [], drift: [], repairs: [], verification: {}, memory: [], reports: [], latestReport: {}, policy: {}, audit: []});
   const [localPath, setLocalPath] = useState(".");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function load() {
     setLoading(true);
-    const [health, latestScan, findings, drift, repairs, verification, memory, reports, latestReport, policy, audit] = await Promise.all([
-      getJSON("/health").catch((error) => ({status: "offline", error: String(error?.message || error)})),
-      getJSON("/scans/latest").catch(() => ({})),
+    const [health, findings, drift, repairs, verification, memory, reports, latestReport, policy, audit] = await Promise.all([
+      getJSON("/health").catch((error: any) => ({status: "offline", error: String(error?.message || error)})),
       getJSON("/findings").catch(() => []),
       getJSON("/drift").catch(() => []),
       getJSON("/repairs").catch(() => []),
@@ -176,37 +140,25 @@ export default function Page() {
       getJSON("/policy").catch(() => ({})),
       getJSON("/audit-log").catch(() => []),
     ]);
-    setData({
-      health: asObject(health),
-      latestScan: asObject(latestScan),
-      findings: asArray(findings),
-      drift: asArray(drift),
-      repairs: asArray(repairs),
-      verification: asObject(verification),
-      memory: asArray(memory),
-      reports: asArray(reports),
-      latestReport: asObject(latestReport),
-      policy: asObject(policy),
-      audit: asArray(audit),
-    });
+    setData({health, findings: toArray(findings), drift: toArray(drift), repairs: toArray(repairs), verification, memory: toArray(memory), reports: toArray(reports), latestReport, policy, audit: toArray(audit)});
     setLoading(false);
   }
 
-  async function runAction(label: string, action: () => Promise<unknown>) {
+  async function runAction(label: string, action: any) {
     setNotice(`${label} started...`);
     try {
       await action();
       await load();
       setNotice(`${label} completed.`);
-    } catch (error: unknown) {
-      setNotice(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+    } catch (error: any) {
+      setNotice(`${label} failed: ${error?.message || String(error)}`);
     }
   }
 
   useEffect(() => { void load(); }, []);
 
-  const healthStatus = String(data.health.status || "unknown");
-  const autonomy = String(data.policy.autonomy_level || 1);
+  const healthStatus = String(data.health?.status || "unknown");
+  const autonomy = String(data.policy?.autonomy_level || 1);
 
   return (
     <div className="shell">
@@ -219,7 +171,7 @@ export default function Page() {
           </div>
           <div className="topActions">
             {loading ? <span className="fine">Loading...</span> : null}
-            <ActionButton onClick={() => { void load(); }}>Refresh</ActionButton>
+            <Button onClick={() => { void load(); }}>Refresh</Button>
             <Badge tone={healthStatus === "ok" ? "low" : "high"}>{healthStatus}</Badge>
           </div>
         </div>
@@ -229,7 +181,7 @@ export default function Page() {
         {view === "dashboard" ? (
           <>
             <div className="grid metrics">
-              <Metric label="API" value={healthStatus} detail={String(data.health.mode || "local")} />
+              <Metric label="API" value={healthStatus} detail={String(data.health?.mode || "local")} />
               <Metric label="Findings" value={data.findings.length} detail="Current stored findings" />
               <Metric label="Repairs" value={data.repairs.length} detail="Current repair plans" />
               <Metric label="Autonomy" value={`L${autonomy}`} detail="Policy level" />
@@ -237,10 +189,10 @@ export default function Page() {
             <div className="section twoCol">
               <Card title="Operator Actions">
                 <div className="actionGrid">
-                  <ActionButton primary onClick={() => { void runAction("Test lab scan", () => postJSON("/scan/test-lab")); }}>Run Test Lab Scan</ActionButton>
-                  <ActionButton onClick={() => { void runAction("Drift demo", () => postJSON("/scan/drift-demo")); }}>Run Drift Demo</ActionButton>
-                  <ActionButton onClick={() => { void runAction("Generate reports", () => postJSON("/reports/generate")); }}>Generate Reports</ActionButton>
-                  <ActionButton onClick={() => { void runAction("Verify latest", () => postJSON("/verification/latest")); }}>Verify Latest</ActionButton>
+                  <Button primary onClick={() => { void runAction("Test lab scan", () => postJSON("/scan/test-lab")); }}>Run Test Lab Scan</Button>
+                  <Button onClick={() => { void runAction("Drift demo", () => postJSON("/scan/drift-demo")); }}>Run Drift Demo</Button>
+                  <Button onClick={() => { void runAction("Generate reports", () => postJSON("/reports/generate")); }}>Generate Reports</Button>
+                  <Button onClick={() => { void runAction("Verify latest", () => postJSON("/verification/latest")); }}>Verify Latest</Button>
                 </div>
               </Card>
               <Card title="System State">
@@ -259,12 +211,12 @@ export default function Page() {
           <Card title="Run Scans">
             <p className="muted">Only scan systems and paths you are authorized to assess. The local path is evaluated by the NICO API process.</p>
             <div className="actionGrid">
-              <ActionButton primary onClick={() => { void runAction("Test lab scan", () => postJSON("/scan/test-lab")); }}>Run Test Lab Scan</ActionButton>
-              <ActionButton onClick={() => { void runAction("Drift demo", () => postJSON("/scan/drift-demo")); }}>Run Drift Demo</ActionButton>
+              <Button primary onClick={() => { void runAction("Test lab scan", () => postJSON("/scan/test-lab")); }}>Run Test Lab Scan</Button>
+              <Button onClick={() => { void runAction("Drift demo", () => postJSON("/scan/drift-demo")); }}>Run Drift Demo</Button>
             </div>
             <div className="formRow">
-              <label>Local path<input value={localPath} onChange={(event) => setLocalPath(event.target.value)} /></label>
-              <ActionButton onClick={() => { void runAction("Local scan", () => postJSON("/scan/local", {path: localPath})); }}>Run Local Scan</ActionButton>
+              <label>Local path<input value={localPath} onChange={(event: any) => setLocalPath(event.target.value)} /></label>
+              <Button onClick={() => { void runAction("Local scan", () => postJSON("/scan/local", {path: localPath})); }}>Run Local Scan</Button>
             </div>
           </Card>
         ) : null}
@@ -273,7 +225,7 @@ export default function Page() {
         {view === "repairs" ? <Card title="Repair Queue"><RepairsTable items={data.repairs} /></Card> : null}
         {view === "drift" ? <Card title="Drift Events">{data.drift.length ? <Json value={data.drift} /> : <Empty>No drift events yet.</Empty>}</Card> : null}
         {view === "verification" ? <Card title="Verification"><Json value={data.verification} /></Card> : null}
-        {view === "reports" ? <Card title="Reports"><ActionButton primary onClick={() => { void runAction("Generate reports", () => postJSON("/reports/generate")); }}>Generate Reports</ActionButton>{data.reports.length ? <Json value={data.reports} /> : <Empty>No reports yet.</Empty>}<h2>Latest Report</h2><Json value={data.latestReport} /></Card> : null}
+        {view === "reports" ? <Card title="Reports"><Button primary onClick={() => { void runAction("Generate reports", () => postJSON("/reports/generate")); }}>Generate Reports</Button>{data.reports.length ? <Json value={data.reports} /> : <Empty>No reports yet.</Empty>}<h2>Latest Report</h2><Json value={data.latestReport} /></Card> : null}
         {view === "policy" ? <Card title="Policy"><Json value={data.policy} /></Card> : null}
         {view === "memory" ? <Card title="Memory">{data.memory.length ? <Json value={data.memory} /> : <Empty>No memory records yet.</Empty>}</Card> : null}
         {view === "audit" ? <Card title="Audit Log">{data.audit.length ? <Json value={data.audit} /> : <Empty>No audit records yet.</Empty>}</Card> : null}
