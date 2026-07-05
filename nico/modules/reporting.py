@@ -1,6 +1,6 @@
 """Reporting Module (Phase 3)
 
-GitHub Activity HTML heading added + regression test updated.
+CI/CD run history surfaced in Markdown and evidence manifest.
 """
 
 import json
@@ -63,10 +63,22 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         if final_result.get("cicd_audit"):
             cicd = final_result["cicd_audit"]
             md_lines.append("## CI/CD Audit")
-            md_lines.append(f"Has CI: {cicd.get('has_ci')}")
-            if cicd.get("workflows"):
-                for w in cicd["workflows"]:
-                    md_lines.append(f"- {w}")
+            md_lines.append(f"Status: {cicd.get('status')}")
+            if cicd.get("has_ci"):
+                md_lines.append(f"Has CI config: Yes ({len(cicd.get('workflows', []))} files)")
+            else:
+                md_lines.append("Has CI config: No")
+
+            # Dynamic workflow run history
+            if cicd.get("workflow_runs_count", 0) > 0:
+                md_lines.append(f"Workflow Runs (recent 50): {cicd.get('workflow_runs_count')}")
+                md_lines.append(f"Recent Failures: {cicd.get('failed_runs_recent', 0)}")
+                if cicd.get("success_rate") is not None:
+                    md_lines.append(f"Approx Success Rate: {cicd.get('success_rate')}%")
+                if cicd.get("last_run_status"):
+                    md_lines.append(f"Last Run Status: {cicd.get('last_run_status')}")
+            else:
+                md_lines.append("Workflow run history: Not available (no token or local path)")
             md_lines.append("")
 
         if final_result.get("architecture_audit"):
@@ -138,7 +150,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
 
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-        # HTML - all headings including GitHub Activity
+        # HTML
         html_lines = ["<html><body>", "<h1>NICO Assessment Report</h1>"]
         html_lines.append(f"<p><b>Target:</b> {final_result.get('target')}</p>")
         html_lines.append(f"<p><b>Tier:</b> {final_result.get('tier')}</p>")
@@ -153,7 +165,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_lines.append("</body></html>")
         html_path.write_text("\n".join(html_lines), encoding="utf-8")
 
-        # Rich evidence manifest
+        # Evidence manifest with richer CI/CD info
         ranked_with_evidence = []
         for r in final_result.get("synthesis", {}).get("ranked_recommendations", []):
             src = r.get("source", "unknown")
@@ -165,6 +177,7 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             }
             ranked_with_evidence.append(evidence_obj)
 
+        cicd = final_result.get("cicd_audit", {})
         evidence_manifest = {
             "assessment_id": assessment_id,
             "target": final_result.get("target"),
@@ -172,11 +185,18 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             "overall_status": final_result.get("status"),
             "total_evidence_weight": final_result.get("synthesis", {}).get("overall_evidence_weight", 0),
             "module_statuses": {
-                "dependency_audit": final_result.get("dependency_audit", {}).get("status", "unknown"),
-                "cicd_audit": final_result.get("cicd_audit", {}).get("status", "unknown"),
+                "dependency_audit": cicd.get("status", "unknown"),  # keep for backward compat if needed
+                "cicd_audit": cicd.get("status", "unknown"),
                 "architecture_audit": final_result.get("architecture_audit", {}).get("status", "unknown"),
                 "maturity": final_result.get("maturity", {}).get("semaphore", "unknown"),
                 "github_activity": final_result.get("github_activity", {}).get("status", "unknown"),
+            },
+            "cicd_details": {
+                "has_ci_config": cicd.get("has_ci", False),
+                "workflow_runs_analyzed": cicd.get("workflow_runs_count", 0),
+                "recent_failures": cicd.get("failed_runs_recent", 0),
+                "success_rate": cicd.get("success_rate"),
+                "last_run_status": cicd.get("last_run_status"),
             },
             "ranked_recommendations_with_evidence": ranked_with_evidence,
             "limitations": final_result.get("limitations", [])
