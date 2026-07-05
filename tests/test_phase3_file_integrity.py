@@ -15,6 +15,8 @@ SYNTHESIS = Path("nico/modules/synthesis.py")
 MATURITY = Path("nico/modules/maturity.py")
 ROADMAP = Path("nico/modules/roadmap.py")
 CLI = Path("nico/cli.py")
+PACKAGE_INIT = Path("nico/__init__.py")
+SITECUSTOMIZE = Path("sitecustomize.py")
 
 
 def test_assessment_file_size_and_start():
@@ -210,6 +212,7 @@ def test_pycompile_all_critical_files():
     py_compile.compile(str(MATURITY), doraise=True)
     py_compile.compile(str(ROADMAP), doraise=True)
     py_compile.compile(str(CLI), doraise=True)
+    py_compile.compile(str(PACKAGE_INIT), doraise=True)
 
 
 def test_appsec_patterns_source_tuples_are_7_values():
@@ -227,3 +230,12 @@ def test_appsec_patterns_source_tuples_are_7_values():
     assert appsec is not None, "APPSEC_PATTERNS not found"
     bad = [item for item in appsec if len(item) != 7]
     assert not bad, f"APPSEC_PATTERNS contains non-7-value tuples: {bad}"
+
+
+def test_appsec_runtime_normalizers_removed():
+    init_content = PACKAGE_INIT.read_text(encoding="utf-8")
+    assert "__version__" in init_content
+    assert "_normalize_appsec_patterns" not in init_content
+    assert "APPSEC_PATTERNS" not in init_content
+    assert "sitecustomize" not in init_content.lower()
+    assert not SITECUSTOMIZE.exists(), "sitecustomize.py runtime normalizer should be removed"
