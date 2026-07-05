@@ -160,6 +160,7 @@ def test_run_assessment_writes_standard_reports_and_express_pack(tmp_path):
     assert reports["express_pack"]["status"] == "completed"
 
     express_output = output / "express_pack"
+    assert express_output.exists()
     assert reports["express_pack"]["output_dir"] == str(express_output)
 
     for filename in PACK_FILENAMES:
