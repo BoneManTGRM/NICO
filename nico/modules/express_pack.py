@@ -45,6 +45,11 @@ def _as_list(value) -> list:
     return [value]
 
 
+def _join_or_unavailable(value) -> str:
+    items = [str(item).strip() for item in _as_list(value) if str(item).strip()]
+    return ", ".join(items) if items else "Not available from current evidence"
+
+
 def _dedupe(items: list[str]) -> list[str]:
     seen = set()
     out = []
@@ -125,11 +130,11 @@ def _limitations(result: dict) -> list[str]:
     if not token or token.get("repo_access") is not True:
         limitations.append("GitHub read-only API access was not fully verified; repository, PR, and Actions evidence may be limited.")
     if not cicd:
-        limitations.append("CI/CD module evidence was not produced; pipeline reliability cannot be fully assessed.")
+        limitations.append("CI/CD evidence was not available; pipeline reliability cannot be fully assessed.")
     elif cicd.get("has_ci") is not True:
         limitations.append("CI/CD configuration or run history is missing or limited in the available evidence.")
     if not activity:
-        limitations.append("GitHub activity module evidence was not produced; velocity analysis is limited.")
+        limitations.append("GitHub activity evidence was not available; velocity analysis is limited.")
     if not result.get("client_context"):
         limitations.append("Technical documentation and client-specific product context were not supplied as structured input.")
 
@@ -208,7 +213,7 @@ def _write_executive_summary(path: Path, result: dict, manifest: dict) -> None:
             evidence = rec.get("evidence", {})
             lines.append(f"- {rec.get('title')} | Source: {rec.get('source')} | Evidence: {evidence.get('summary')}")
     else:
-        lines.append("- No ranked recommendations were produced by the available modules.")
+        lines.append("- No ranked recommendations were available from the current evidence set.")
     lines.extend([
         "",
         "## Scope Boundary",
@@ -235,7 +240,7 @@ def _write_technical_health_report(path: Path, result: dict, manifest: dict) -> 
         f"Score: {mat.get('score', 'unavailable')}",
         "Drivers:",
     ]
-    for item in _as_list(mat.get("drivers")) or ["No maturity drivers were produced by the module."]:
+    for item in _as_list(mat.get("drivers")) or ["No specific maturity drivers were available from the current evidence set."]:
         lines.append(f"- {item}")
 
     lines.extend([
@@ -264,7 +269,7 @@ def _write_technical_health_report(path: Path, result: dict, manifest: dict) -> 
         f"Status: {_module_status(arch)}",
         "Debt Signals:",
     ])
-    for item in _as_list(arch.get("debt_signals")) or ["No debt signals were produced by the module."]:
+    for item in _as_list(arch.get("debt_signals")) or ["No architecture debt signals were identified in the current static evidence."]:
         lines.append(f"- {item}")
 
     lines.append("")
@@ -272,18 +277,18 @@ def _write_technical_health_report(path: Path, result: dict, manifest: dict) -> 
     phases = roadmap.get("phases", {}) if isinstance(roadmap, dict) else {}
     for phase in ["30_days", "60_days", "90_days"]:
         lines.append(f"### {phase.replace('_', ' ').title()}")
-        for item in _as_list(phases.get(phase)) or ["No roadmap items were produced for this phase."]:
+        for item in _as_list(phases.get(phase)) or ["No roadmap items were available for this phase from the current assessment evidence."]:
             lines.append(f"- {item}")
 
     lines.extend([
         "",
         "## Resourcing",
-        f"Minimum Team: {', '.join(_as_list(res.get('minimum_team')))}",
-        f"Recommended Team: {', '.join(_as_list(res.get('recommended_team')))}",
-        f"Aggressive Team: {', '.join(_as_list(res.get('aggressive_team')))}",
+        f"Minimum Team: {_join_or_unavailable(res.get('minimum_team'))}",
+        f"Recommended Team: {_join_or_unavailable(res.get('recommended_team'))}",
+        f"Aggressive Team: {_join_or_unavailable(res.get('aggressive_team'))}",
         "Rationale:",
     ])
-    for item in _as_list(res.get("rationale")) or ["No resourcing rationale was produced by the module."]:
+    for item in _as_list(res.get("rationale")) or ["No resourcing rationale was available from the current assessment evidence."]:
         lines.append(f"- {item}")
 
     lines.extend(["", "## Evidence-Backed Recommendations"])
@@ -293,7 +298,7 @@ def _write_technical_health_report(path: Path, result: dict, manifest: dict) -> 
             evidence = rec.get("evidence", {})
             lines.append(f"- {rec.get('title')} | Evidence: {evidence.get('module')} / {evidence.get('summary')}")
     else:
-        lines.append("- No ranked recommendations were produced by synthesis.")
+        lines.append("- No ranked recommendations were available from the current synthesis evidence.")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -304,7 +309,7 @@ def _write_roadmap(path: Path, result: dict) -> None:
     lines = ["# Roadmap 30/60/90", ""]
     for phase in ["30_days", "60_days", "90_days"]:
         lines.append(f"## {phase.replace('_', ' ').title()}")
-        for item in _as_list(phases.get(phase)) or ["No roadmap items were produced for this phase."]:
+        for item in _as_list(phases.get(phase)) or ["No roadmap items were available for this phase from the current assessment evidence."]:
             lines.append(f"- {item}")
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -315,13 +320,13 @@ def _write_resourcing(path: Path, result: dict) -> None:
     lines = [
         "# Resourcing Plan",
         "",
-        f"Minimum Team: {', '.join(_as_list(res.get('minimum_team')))}",
-        f"Recommended Team: {', '.join(_as_list(res.get('recommended_team')))}",
-        f"Aggressive Team: {', '.join(_as_list(res.get('aggressive_team')))}",
+        f"Minimum Team: {_join_or_unavailable(res.get('minimum_team'))}",
+        f"Recommended Team: {_join_or_unavailable(res.get('recommended_team'))}",
+        f"Aggressive Team: {_join_or_unavailable(res.get('aggressive_team'))}",
         "",
         "## Rationale",
     ]
-    for item in _as_list(res.get("rationale")) or ["No resourcing rationale was produced by the module."]:
+    for item in _as_list(res.get("rationale")) or ["No resourcing rationale was available from the current assessment evidence."]:
         lines.append(f"- {item}")
     if res.get("when_retainer_makes_sense"):
         lines.extend(["", "## Retainer Signal", str(res.get("when_retainer_makes_sense"))])
@@ -330,7 +335,7 @@ def _write_resourcing(path: Path, result: dict) -> None:
 
 def _write_limitations(path: Path, result: dict) -> None:
     lines = ["# Limitations", ""]
-    for item in _as_list(result.get("limitations")) or ["No limitations were recorded by the available modules."]:
+    for item in _as_list(result.get("limitations")) or ["No limitations were identified from the current evidence set."]:
         lines.append(f"- {item}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
