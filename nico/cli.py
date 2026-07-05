@@ -131,6 +131,7 @@ APPSEC_PATTERNS = [
         "AI over-permission fixture",
         "over_permissive_tools = True",
         "Restrict AI-agent tools to least privilege.",
+        "Over-permissioned AI tools can exceed intended access boundaries.",
         "OWASP-LLM-A06",
     ),
 ]

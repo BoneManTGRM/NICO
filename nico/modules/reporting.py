@@ -21,6 +21,8 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
         html_path = out_path / "assessment_latest.html"
         evidence_path = out_path / "evidence_manifest.json"
 
+        final_result = dict(result)
+        existing_reports = final_result.get("reports") if isinstance(final_result.get("reports"), dict) else {}
         report_result = {
             "status": "completed",
             "paths": {
@@ -32,8 +34,10 @@ def write_assessment_reports(result: dict, output_dir: str) -> dict:
             },
             "limitations": []
         }
+        for key, value in existing_reports.items():
+            if key not in report_result:
+                report_result[key] = value
 
-        final_result = dict(result)
         final_result["reports"] = report_result
 
         json_content = json.dumps(final_result, indent=2, default=str)
