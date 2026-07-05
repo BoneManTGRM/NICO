@@ -6,6 +6,8 @@ Comprehensive guard against truncation of all critical NICO files.
 import py_compile
 from pathlib import Path
 
+from nico.assessment import run_assessment
+
 ASSESSMENT = Path("nico/assessment.py")
 REPORTING = Path("nico/modules/reporting.py")
 DEPENDENCY = Path("nico/modules/dependency_audit.py")
