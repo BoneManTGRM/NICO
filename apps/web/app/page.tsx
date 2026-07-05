@@ -63,8 +63,8 @@ function Card({children, className = ""}: {children: any; className?: string}) {
 }
 
 function Button(props: any) {
-  const {className = "", primary, danger, ...rest} = props;
-  return <button className={`btn ${primary ? "primary" : ""} ${danger ? "danger" : ""} ${className}`} {...rest}>{props.children}</button>;
+  const {className = "", primary, danger, children, ...rest} = props;
+  return <button className={`btn ${primary ? "primary" : ""} ${danger ? "danger" : ""} ${className}`} {...rest}>{children}</button>;
 }
 
 function Badge({children, tone = "low"}: {children: any; tone?: string}) {
