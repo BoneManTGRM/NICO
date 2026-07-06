@@ -77,6 +77,26 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS client_jobs (
+  job_id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS client_job_exports (
+  export_id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  customer_id TEXT,
+  project_id TEXT,
+  format TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS approval_queue_items (
   approval_id TEXT PRIMARY KEY,
   customer_id TEXT NOT NULL,
@@ -150,6 +170,8 @@ class Storage:
             "scanner_runs": {},
             "evidence_items": {},
             "reports": {},
+            "client_jobs": {},
+            "client_job_exports": {},
             "approvals": {},
             "draft_pr_records": {},
             "audit_log": {},
