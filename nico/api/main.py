@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
 from nico.hosted_assessment import run_github_assessment
-from nico.service_workflows import build_mid_assessment, build_retainer_ops
+from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 
 
 _LAST_HOSTED_ASSESSMENT = {}
@@ -58,7 +58,7 @@ class RetainerOpsRequest(BaseModel):
     roadmap_notes: str = ''
 
 
-app=FastAPI(title='NICO API',version='0.3.0',description='Local-first and hosted defensive cybersecurity assessment API')
+app=FastAPI(title='NICO API',version='0.4.0',description='Local-first and hosted defensive technical assessment API')
 app.add_middleware(CORSMiddleware,allow_origins=cors_origins(),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
 
@@ -68,13 +68,32 @@ def health():
         'status':'ok',
         'system':'NICO',
         'mode':'local-first-hosted-ready',
-        'coverage_targets': {
-            'express':'90-95%',
-            'mid':'75-85%',
-            'retainer':'55-70%',
-            'client_ready_with_human_review':'75-85%',
+        'coverage_targets': COVERAGE_TARGETS,
+        'workflows': {
+            'express': bool(_LAST_HOSTED_ASSESSMENT),
+            'mid': bool(_LAST_MID_ASSESSMENT),
+            'retainer': bool(_LAST_RETAINER_OPS),
         },
         'cors_origins': cors_origins(),
+    }
+
+
+@app.get('/targets')
+def targets():
+    return {
+        'status': 'ok',
+        'coverage_targets': COVERAGE_TARGETS,
+        'truth_rules': [
+            'Evidence-bound scoring only',
+            'Missing evidence is marked unavailable',
+            'Client delivery requires human review',
+            'Production-impacting actions require human approval',
+        ],
+        'workflow_endpoints': [
+            'POST /assessment/github',
+            'POST /assessment/mid',
+            'POST /retainer/ops',
+        ],
     }
 
 
