@@ -16,11 +16,14 @@ EXPRESS_SCOPE = [
 
 ARTIFACT_EVIDENCE_PATTERNS = {
     "unverified_output": "The product artifact reports that the output is not verified.",
+    "no_verified_picks": "No verified picks were available in the product artifact.",
     "provider_gate": "A provider/data-source gate blocked publishable output.",
+    "current_provider_gate": "Current provider gate blocked publishable output.",
     "provider_not_matched": "Provider data did not match a current source row.",
     "data_unavailable": "Required product or market metrics were unavailable.",
     "research_only": "Final recommendation was research-only rather than client-publishable.",
     "enrichment_unverified": "Operational enrichment evidence was not verified.",
+    "lineup_injury_unverified": "Lineup or injury evidence was not verified.",
     "snapshot_missing": "Live snapshot evidence was not returned.",
 }
 
@@ -57,16 +60,19 @@ def product_artifact_findings(product_evidence_text: str) -> list[dict[str, str]
     findings: list[dict[str, str]] = []
     checks = {
         "unverified_output": ("not verified", "no verified"),
+        "no_verified_picks": ("no verified picks",),
         "provider_gate": ("provider gate", "source gate"),
+        "current_provider_gate": ("current provider gate",),
         "provider_not_matched": ("provider not matched", "source not matched", "not matched to a live provider"),
         "data_unavailable": ("data unavailable", "metric unavailable", "status unavailable"),
         "research_only": ("research only",),
         "enrichment_unverified": ("not verified update", "verify before", "unverified update"),
+        "lineup_injury_unverified": ("no verified lineup", "verify lineup", "injury update"),
         "snapshot_missing": ("no live snapshot", "no live team snapshot"),
     }
     for key, needles in checks.items():
         if _contains(text, *needles):
-            severity = "high" if key in {"unverified_output", "provider_gate", "research_only"} else "medium"
+            severity = "high" if key in {"unverified_output", "no_verified_picks", "provider_gate", "current_provider_gate", "research_only"} else "medium"
             findings.append({"id": key, "finding": ARTIFACT_EVIDENCE_PATTERNS[key], "severity": severity})
     return findings
 
