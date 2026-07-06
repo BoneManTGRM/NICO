@@ -4,7 +4,7 @@ import os
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 
 POSTGRES_SCHEMA = """
@@ -108,6 +108,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
 """
 
 
+class StorageAdapter(Protocol):
+    def status(self) -> dict[str, Any]: ...
+    def schema(self) -> str: ...
+    def put(self, table: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def get(self, table: str, item_id: str) -> dict[str, Any] | None: ...
+    def list(self, table: str, customer_id: str | None = None, project_id: str | None = None) -> list[dict[str, Any]]: ...
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -117,18 +125,20 @@ def new_id(prefix: str) -> str:
 
 
 class Storage:
-    """Small storage abstraction.
+    """Storage facade with a safe memory fallback and a Postgres adapter contract.
 
-    Production can wire DATABASE_URL to a Postgres implementation later. This class keeps
-    NICO safe today by falling back to in-memory storage rather than failing deploys.
+    DATABASE_URL can be configured without breaking deploys. Until a DB driver is
+    explicitly enabled, the facade keeps using memory and reports persistence as
+    unavailable instead of pretending customer data is durable.
     """
 
     def __init__(self) -> None:
         self.database_url = os.getenv("DATABASE_URL", "").strip()
-        self.mode = "postgres_unavailable" if self.database_url else "memory"
+        self.mode = "postgres_configured_memory_fallback" if self.database_url else "memory"
         self.persistence_available = False
+        self.adapter_name = "memory"
         self.persistence_note = (
-            "DATABASE_URL is configured, but this safe MVP uses the in-memory fallback until the Postgres adapter is enabled."
+            "DATABASE_URL is configured, but the safe memory fallback remains active until the Postgres adapter is explicitly enabled."
             if self.database_url else
             "DATABASE_URL is not configured; using in-memory fallback and marking persistence unavailable."
         )
@@ -148,13 +158,27 @@ class Storage:
     def status(self) -> dict[str, Any]:
         return {
             "mode": self.mode,
+            "adapter": self.adapter_name,
+            "database_url_configured": bool(self.database_url),
             "persistence_available": self.persistence_available,
             "persistence_note": self.persistence_note,
             "schema_available": True,
+            "adapter_contract_available": True,
+            "migration_endpoint_available": True,
         }
 
     def schema(self) -> str:
         return POSTGRES_SCHEMA
+
+    def migration_plan(self) -> dict[str, Any]:
+        return {
+            "status": "planned",
+            "safe_default": "memory_fallback",
+            "database_url_configured": bool(self.database_url),
+            "requires_driver": "psycopg or asyncpg can be added later without changing API handlers.",
+            "tests_without_database_url": "required",
+            "schema": POSTGRES_SCHEMA,
+        }
 
     def put(self, table: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if table not in self._tables:
