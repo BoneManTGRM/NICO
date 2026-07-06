@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+
+COVERAGE_TARGETS = {
+    "express": "90-95%",
+    "mid": "75-85%",
+    "retainer": "55-70%",
+    "client_ready_with_human_review": "75-85%",
+}
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def lines(value: str | None) -> list[str]:
+    return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+def status(score: int) -> str:
+    if score >= 75:
+        return "green"
+    if score >= 45:
+        return "yellow"
+    return "red"
+
+
+def section(section_id: str, label: str, score: int, summary: str, evidence: list[str], findings: list[str] | None = None, unavailable: list[str] | None = None) -> dict[str, Any]:
+    score = max(0, min(100, int(score)))
+    return {
+        "id": section_id,
+        "label": label,
+        "score": score,
+        "status": status(score),
+        "summary": summary,
+        "evidence": evidence,
+        "findings": findings or [],
+        "unavailable": unavailable or [],
+    }
+
+
+def require_authorized(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("authorized"):
+        return None
+    return {
+        "status": "blocked",
+        "error": "Explicit authorization is required before NICO runs this workflow.",
+        "safety_boundary": "Defensive-only, authorized systems only, read-only by default, human approval for production-impacting actions.",
+    }
+
+
+def maturity(sections: list[dict[str, Any]]) -> dict[str, Any]:
+    score = round(sum(item["score"] for item in sections) / len(sections)) if sections else 0
+    level = "Senior" if score >= 82 else "Mid" if score >= 58 else "Junior"
+    return {"level": level, "score": score, "summary": "Evidence-bound maturity estimate. Final client-facing conclusions require human review."}
+
+
+def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
+    blocked = require_authorized(payload)
+    if blocked:
+        return blocked
+
+    qa = lines(payload.get("qa_evidence"))
+    parity = lines(payload.get("parity_notes"))
+    stakeholders = lines(payload.get("stakeholder_notes"))
+    roadmap = lines(payload.get("roadmap_notes"))
+    risks = lines(payload.get("known_risks"))
+
+    qa_score = 35 + min(35, len(qa) * 5)
+    parity_score = 30 + min(40, len(parity) * 6)
+    stakeholder_score = 30 + min(40, len(stakeholders) * 5)
+    roadmap_score = 35 + min(35, len(roadmap) * 6)
+    risk_score = 70 if risks else 45
+
+    sections = [
+        section(
+            "qa_functional",
+            "QA / Functional Review",
+            qa_score,
+            "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.",
+            [f"QA evidence items supplied: {len(qa)}."] + qa[:12],
+            [] if qa else ["No QA evidence supplied yet."],
+            [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."],
+        ),
+        section(
+            "platform_parity",
+            "Platform Parity",
+            parity_score,
+            "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.",
+            [f"Parity evidence items supplied: {len(parity)}."] + parity[:12],
+            [] if parity else ["No parity comparison evidence supplied yet."],
+            [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."],
+        ),
+        section(
+            "stakeholder_discovery",
+            "Stakeholder Discovery",
+            stakeholder_score,
+            "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.",
+            [f"Stakeholder evidence items supplied: {len(stakeholders)}."] + stakeholders[:12],
+            [] if stakeholders else ["No stakeholder notes supplied yet."],
+            [] if stakeholders else ["Interview notes or questionnaire responses are needed for stronger roadmap confidence."],
+        ),
+        section(
+            "roadmap_planning",
+            "Six-Month Roadmap Planning",
+            roadmap_score,
+            "Roadmap score is based on supplied milestones, priorities, dependencies, and constraints.",
+            [f"Roadmap evidence items supplied: {len(roadmap)}."] + roadmap[:12],
+            [] if roadmap else ["No roadmap evidence supplied yet."],
+            [] if roadmap else ["Roadmap milestones and sequencing assumptions are unavailable."],
+        ),
+        section(
+            "risk_register",
+            "Mid Risk Register",
+            risk_score,
+            "Risk score is based on explicit known-risk inputs and whether they are available for planning.",
+            [f"Known risks supplied: {len(risks)}."] + risks[:12],
+            [] if risks else ["Known product, technical, timeline, or team risks have not been supplied."],
+        ),
+    ]
+    mat = maturity(sections)
+    return {
+        "status": "complete",
+        "workflow": "mid_technical_health_assessment",
+        "target_coverage": COVERAGE_TARGETS["mid"],
+        "generated_at": now_iso(),
+        "client_name": payload.get("client_name") or "",
+        "project_name": payload.get("project_name") or "",
+        "maturity_signal": mat,
+        "maturity_semaphore": {item["label"]: item["status"] for item in sections},
+        "sections": sections,
+        "qa_checklist": [
+            "Critical user flows tested",
+            "Authentication/login/logout tested",
+            "Error states tested",
+            "Payment or subscription behavior tested if applicable",
+            "Notifications tested if applicable",
+            "Regression-risk areas identified",
+        ],
+        "parity_checklist": [
+            "Feature exists on each platform",
+            "Same copy and labels",
+            "Same permissions behavior",
+            "Same error handling",
+            "Same onboarding/account behavior",
+            "Same analytics or tracking expectations",
+        ],
+        "six_month_roadmap": [
+            "Month 1: stabilize critical bugs, evidence gaps, and release readiness",
+            "Months 2-3: improve QA automation, CI checks, and platform parity",
+            "Months 4-6: execute roadmap milestones, reduce debt, and improve delivery predictability",
+        ],
+        "human_review_required": True,
+        "safety_boundary": "Defensive-only and evidence-bound. NICO does not replace stakeholder judgment or final consultant review.",
+    }
+
+
+def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
+    blocked = require_authorized(payload)
+    if blocked:
+        return blocked
+
+    commits = lines(payload.get("commit_summary"))
+    prs = lines(payload.get("pr_summary"))
+    issues = lines(payload.get("issue_summary"))
+    blockers = lines(payload.get("blockers"))
+    releases = lines(payload.get("release_notes"))
+    roadmap = lines(payload.get("roadmap_notes"))
+
+    delivery_score = 40 + min(35, (len(commits) + len(prs)) * 4)
+    backlog_score = 35 + min(35, len(issues) * 5)
+    release_score = 35 + min(35, len(releases) * 6)
+    strategy_score = 35 + min(35, len(roadmap) * 5)
+    blocker_score = 85 if not blockers else max(45, 75 - len(blockers) * 5)
+
+    sections = [
+        section("weekly_delivery", "Weekly Delivery Status", delivery_score, "Delivery status uses supplied commit and PR summaries.", [f"Commit items: {len(commits)}.", f"PR items: {len(prs)}."] + commits[:8] + prs[:8], [] if commits or prs else ["No delivery evidence supplied."]),
+        section("backlog_health", "Backlog Health", backlog_score, "Backlog health uses supplied issue, bug, and task evidence.", [f"Backlog/issue items: {len(issues)}."] + issues[:12], [] if issues else ["No backlog evidence supplied."]),
+        section("release_readiness", "Release Readiness", release_score, "Release readiness uses supplied release notes and deployment-risk evidence.", [f"Release evidence items: {len(releases)}."] + releases[:12], [] if releases else ["No release evidence supplied."]),
+        section("monthly_strategy", "Monthly Strategy", strategy_score, "Strategy score uses roadmap progress, risks, and business-context notes.", [f"Roadmap evidence items: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap progress evidence supplied."]),
+        section("blockers", "Blockers / Approval Needs", blocker_score, "Blocker score reflects unresolved blockers and approval needs.", [f"Blocker items: {len(blockers)}."] + blockers[:12], blockers[:12]),
+    ]
+    mat = maturity(sections)
+    approval_queue = [
+        "Production deployment approval",
+        "Issue/task creation approval",
+        "Major dependency upgrade approval",
+        "Customer-facing roadmap commitment approval",
+    ]
+    if blockers:
+        approval_queue.extend(blockers[:8])
+
+    return {
+        "status": "complete",
+        "workflow": "ongoing_product_engineering_retainer",
+        "target_coverage": COVERAGE_TARGETS["retainer"],
+        "generated_at": now_iso(),
+        "client_name": payload.get("client_name") or "",
+        "project_name": payload.get("project_name") or "",
+        "maturity_signal": mat,
+        "maturity_semaphore": {item["label"]: item["status"] for item in sections},
+        "sections": sections,
+        "weekly_status_report": [
+            "What changed: summarize commits, PRs, issues, releases, and bugs from supplied evidence.",
+            "What is blocked: escalate blockers and approval needs.",
+            "What is next: prioritize highest-risk repair and delivery tasks.",
+        ],
+        "monthly_strategy_report": [
+            "Roadmap progress",
+            "Technical debt trend",
+            "Release reliability",
+            "Team velocity signal",
+            "Next-month focus",
+        ],
+        "release_checklist": [
+            "Tests/lint/build reviewed",
+            "Known risks reviewed",
+            "Rollback path identified",
+            "Human approval recorded",
+            "Client-facing communication prepared if needed",
+        ],
+        "human_approval_queue": approval_queue,
+        "human_review_required": True,
+        "safety_boundary": "Retainer Ops is advisory by default. Production-impacting changes require human approval.",
+    }
