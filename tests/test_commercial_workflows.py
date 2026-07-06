@@ -4,6 +4,7 @@ from nico.api.main import app
 from nico.approval_queue import create_approval, draft_pr_request, transition_approval
 from nico.customer_access import can
 from nico.evidence import validate_content_type
+from nico.repair_intelligence import repair_quality_policy, suggest_repair
 from nico.scanner_worker import start_scan
 from nico.storage import STORE
 from nico.tenancy import authorization_record, enforce_scope
@@ -36,6 +37,24 @@ def test_approval_queue_allows_draft_pr_stub_after_approval():
     assert draft["approval_id"] == item["approval_id"]
 
 
+def test_repair_intelligence_suggests_evidence_bound_fix():
+    result = suggest_repair({
+        "issue": "missing dependency causes test failure",
+        "evidence": ["CI reports missing package"],
+        "affected_files": ["requirements.txt"],
+        "customer_id": "c1",
+        "project_id": "p1",
+    })
+    assert result["status"] == "complete"
+    assert result["human_review_required"] is True
+    assert result["strategy"] == "dependency_fix"
+    assert result["test_plan"]
+    assert result["rollback_plan"]
+    policy = repair_quality_policy()
+    assert policy["status"] == "ok"
+    assert policy["quality_checklist"]
+
+
 def test_storage_fallback_and_schema_available():
     status = STORE.status()
     assert "persistence_available" in status
@@ -64,7 +83,7 @@ def test_customer_roles():
     assert can("viewer", "approve") is False
 
 
-def test_health_and_targets_endpoints():
+def test_health_targets_and_usage_endpoints():
     client = TestClient(app)
     health = client.get("/health")
     assert health.status_code == 200
@@ -72,3 +91,7 @@ def test_health_and_targets_endpoints():
     targets = client.get("/targets")
     assert targets.status_code == 200
     assert "coverage_targets" in targets.json()
+    guide = client.get("/usage/guide")
+    assert guide.status_code == 200
+    assert guide.json()["status"] == "ok"
+    assert "How to Use NICO" in guide.json()["content"]
