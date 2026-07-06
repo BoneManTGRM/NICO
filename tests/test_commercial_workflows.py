@@ -5,9 +5,21 @@ from nico.approval_queue import create_approval, draft_pr_request, transition_ap
 from nico.customer_access import can
 from nico.evidence import validate_content_type
 from nico.repair_intelligence import repair_quality_policy, suggest_repair
-from nico.scanner_worker import start_scan
+from nico.scanner_worker import SHELL_EXECUTION_ALLOWED, redact, start_scan
 from nico.storage import STORE
 from nico.tenancy import authorization_record, enforce_scope
+
+
+def authorized_scan_payload():
+    return {
+        "authorized": True,
+        "repository": "BoneManTGRM/NICO",
+        "customer_id": "c1",
+        "project_id": "p1",
+        "authorized_by": "tester",
+        "authorization_scope": "repository assessment only",
+        "tools": ["definitely-not-installed"],
+    }
 
 
 def test_worker_scan_requires_authorization():
@@ -15,11 +27,25 @@ def test_worker_scan_requires_authorization():
     assert result["status"] == "blocked"
 
 
-def test_worker_scan_records_safe_mvp_job():
-    result = start_scan({"authorized": True, "repository": "BoneManTGRM/NICO", "customer_id": "c1", "project_id": "p1"})
+def test_worker_scan_requires_authorized_by():
+    result = start_scan({"authorized": True, "repository": "BoneManTGRM/NICO", "authorization_scope": "repo"})
+    assert result["status"] == "blocked"
+    assert "authorized_by" in result["error"]
+
+
+def test_worker_scan_records_safe_job():
+    result = start_scan(authorized_scan_payload())
     assert result["status"] in {"queued", "running", "complete"}
     assert result["code_modification_allowed"] is False
     assert result["scan_id"].startswith("scan_")
+    assert result["human_review_required"] is True
+
+
+def test_scanner_redacts_sensitive_output_and_disables_shell():
+    output, changed = redact("token='abc12345678900000000'\nnormal line")
+    assert changed is True
+    assert "abc12345678900000000" not in output
+    assert SHELL_EXECUTION_ALLOWED is False
 
 
 def test_approval_queue_blocks_draft_pr_without_approval():
@@ -86,7 +112,7 @@ def test_customer_roles():
     assert can("viewer", "approve") is False
 
 
-def test_health_targets_and_usage_endpoints():
+def test_health_targets_worker_and_usage_endpoints():
     client = TestClient(app)
     health = client.get("/health")
     assert health.status_code == 200
@@ -94,6 +120,9 @@ def test_health_targets_and_usage_endpoints():
     targets = client.get("/targets")
     assert targets.status_code == 200
     assert "coverage_targets" in targets.json()
+    scan = client.post("/worker/scan", json=authorized_scan_payload())
+    assert scan.status_code == 200
+    assert scan.json()["scan_id"].startswith("scan_")
     guide = client.get("/usage/guide")
     assert guide.status_code == 200
     assert guide.json()["status"] == "ok"
