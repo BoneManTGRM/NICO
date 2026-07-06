@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from datetime import datetime, timezone
 from typing import Any
 
@@ -58,6 +59,88 @@ def maturity(sections: list[dict[str, Any]]) -> dict[str, Any]:
     return {"level": level, "score": score, "summary": "Evidence-bound maturity estimate. Final client-facing conclusions require human review."}
 
 
+def evidence_gap_score(sections: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(sections)
+    complete = sum(1 for item in sections if item.get("evidence") and not item.get("unavailable"))
+    partial = sum(1 for item in sections if item.get("evidence") and item.get("unavailable"))
+    missing = sum(1 for item in sections if not item.get("evidence") or item.get("unavailable"))
+    readiness = round(((complete + partial * 0.5) / max(1, total)) * 100)
+    return {
+        "readiness_score": readiness,
+        "complete_sections": complete,
+        "partial_sections": partial,
+        "missing_or_blocked_sections": missing,
+        "summary": "Evidence readiness measures whether NICO has enough supplied proof to support the workflow without inventing facts.",
+    }
+
+
+def build_markdown_report(result: dict[str, Any]) -> str:
+    title = result.get("workflow", "nico_workflow").replace("_", " ").title()
+    lines_out = [
+        f"# NICO {title}",
+        "",
+        f"Generated: {result.get('generated_at', '')}",
+        f"Client: {result.get('client_name') or 'Not specified'}",
+        f"Project: {result.get('project_name') or 'Not specified'}",
+        f"Target coverage: {result.get('target_coverage') or 'Not specified'}",
+        "",
+        "## Human Review Requirement",
+        "NICO drafts evidence-bound workflow output. Final client-facing delivery, roadmap commitments, and resourcing decisions require human review.",
+        "",
+        "## Maturity Signal",
+        f"{result.get('maturity_signal', {}).get('level', 'Unknown')} — {result.get('maturity_signal', {}).get('score', 0)}/100",
+        "",
+        "## Evidence Readiness",
+        f"{result.get('evidence_readiness', {}).get('readiness_score', 0)}/100",
+        "",
+        "## Sections",
+    ]
+    for item in result.get("sections", []):
+        lines_out += [
+            f"### {item['label']} — {item['status'].upper()} ({item['score']}/100)",
+            item["summary"],
+            "Evidence:",
+        ]
+        lines_out.extend([f"- {entry}" for entry in item.get("evidence", [])])
+        if item.get("findings"):
+            lines_out.append("Findings:")
+            lines_out.extend([f"- {entry}" for entry in item.get("findings", [])])
+        if item.get("unavailable"):
+            lines_out.append("Unavailable:")
+            lines_out.extend([f"- {entry}" for entry in item.get("unavailable", [])])
+        lines_out.append("")
+    for key, label in [
+        ("qa_checklist", "QA Checklist"),
+        ("parity_checklist", "Parity Checklist"),
+        ("six_month_roadmap", "Six-Month Roadmap"),
+        ("weekly_status_report", "Weekly Status Report"),
+        ("monthly_strategy_report", "Monthly Strategy Report"),
+        ("release_checklist", "Release Checklist"),
+        ("human_approval_queue", "Human Approval Queue"),
+    ]:
+        values = result.get(key)
+        if values:
+            lines_out += [f"## {label}"]
+            lines_out.extend([f"- {entry}" for entry in values])
+            lines_out.append("")
+    return "\n".join(lines_out).strip() + "\n"
+
+
+def build_html_report(markdown: str) -> str:
+    safe = html.escape(markdown)
+    return f"""<!doctype html>
+<html lang=\"en\">
+<head><meta charset=\"utf-8\"><title>NICO Workflow Report</title><style>body{{font-family:Arial,sans-serif;max-width:980px;margin:40px auto;padding:0 20px;line-height:1.55;color:#111827}}pre{{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:24px}}</style></head>
+<body><pre>{safe}</pre></body>
+</html>"""
+
+
+def attach_reports(result: dict[str, Any]) -> dict[str, Any]:
+    markdown = build_markdown_report(result)
+    result["reports"] = {"markdown": markdown, "html": build_html_report(markdown)}
+    return result
+
+
 def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
     blocked = require_authorized(payload)
     if blocked:
@@ -69,60 +152,21 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
     roadmap = lines(payload.get("roadmap_notes"))
     risks = lines(payload.get("known_risks"))
 
-    qa_score = 35 + min(35, len(qa) * 5)
-    parity_score = 30 + min(40, len(parity) * 6)
-    stakeholder_score = 30 + min(40, len(stakeholders) * 5)
-    roadmap_score = 35 + min(35, len(roadmap) * 6)
-    risk_score = 70 if risks else 45
+    qa_score = 35 + min(40, len(qa) * 5)
+    parity_score = 30 + min(45, len(parity) * 6)
+    stakeholder_score = 30 + min(45, len(stakeholders) * 5)
+    roadmap_score = 35 + min(40, len(roadmap) * 6)
+    risk_score = 78 if risks else 45
 
     sections = [
-        section(
-            "qa_functional",
-            "QA / Functional Review",
-            qa_score,
-            "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.",
-            [f"QA evidence items supplied: {len(qa)}."] + qa[:12],
-            [] if qa else ["No QA evidence supplied yet."],
-            [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."],
-        ),
-        section(
-            "platform_parity",
-            "Platform Parity",
-            parity_score,
-            "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.",
-            [f"Parity evidence items supplied: {len(parity)}."] + parity[:12],
-            [] if parity else ["No parity comparison evidence supplied yet."],
-            [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."],
-        ),
-        section(
-            "stakeholder_discovery",
-            "Stakeholder Discovery",
-            stakeholder_score,
-            "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.",
-            [f"Stakeholder evidence items supplied: {len(stakeholders)}."] + stakeholders[:12],
-            [] if stakeholders else ["No stakeholder notes supplied yet."],
-            [] if stakeholders else ["Interview notes or questionnaire responses are needed for stronger roadmap confidence."],
-        ),
-        section(
-            "roadmap_planning",
-            "Six-Month Roadmap Planning",
-            roadmap_score,
-            "Roadmap score is based on supplied milestones, priorities, dependencies, and constraints.",
-            [f"Roadmap evidence items supplied: {len(roadmap)}."] + roadmap[:12],
-            [] if roadmap else ["No roadmap evidence supplied yet."],
-            [] if roadmap else ["Roadmap milestones and sequencing assumptions are unavailable."],
-        ),
-        section(
-            "risk_register",
-            "Mid Risk Register",
-            risk_score,
-            "Risk score is based on explicit known-risk inputs and whether they are available for planning.",
-            [f"Known risks supplied: {len(risks)}."] + risks[:12],
-            [] if risks else ["Known product, technical, timeline, or team risks have not been supplied."],
-        ),
+        section("qa_functional", "QA / Functional Review", qa_score, "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.", [f"QA evidence items supplied: {len(qa)}."] + qa[:12], [] if qa else ["No QA evidence supplied yet."], [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."]),
+        section("platform_parity", "Platform Parity", parity_score, "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.", [f"Parity evidence items supplied: {len(parity)}."] + parity[:12], [] if parity else ["No parity comparison evidence supplied yet."], [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."]),
+        section("stakeholder_discovery", "Stakeholder Discovery", stakeholder_score, "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.", [f"Stakeholder evidence items supplied: {len(stakeholders)}."] + stakeholders[:12], [] if stakeholders else ["No stakeholder notes supplied yet."], [] if stakeholders else ["Interview notes or questionnaire responses are needed for stronger roadmap confidence."]),
+        section("roadmap_planning", "Six-Month Roadmap Planning", roadmap_score, "Roadmap score is based on supplied milestones, priorities, dependencies, and constraints.", [f"Roadmap evidence items supplied: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap evidence supplied yet."], [] if roadmap else ["Roadmap milestones and sequencing assumptions are unavailable."]),
+        section("risk_register", "Mid Risk Register", risk_score, "Risk score is based on explicit known-risk inputs and whether they are available for planning.", [f"Known risks supplied: {len(risks)}."] + risks[:12], [] if risks else ["Known product, technical, timeline, or team risks have not been supplied."]),
     ]
     mat = maturity(sections)
-    return {
+    result = {
         "status": "complete",
         "workflow": "mid_technical_health_assessment",
         "target_coverage": COVERAGE_TARGETS["mid"],
@@ -130,6 +174,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
         "client_name": payload.get("client_name") or "",
         "project_name": payload.get("project_name") or "",
         "maturity_signal": mat,
+        "evidence_readiness": evidence_gap_score(sections),
         "maturity_semaphore": {item["label"]: item["status"] for item in sections},
         "sections": sections,
         "qa_checklist": [
@@ -138,6 +183,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
             "Error states tested",
             "Payment or subscription behavior tested if applicable",
             "Notifications tested if applicable",
+            "Analytics and tracking expectations reviewed if applicable",
             "Regression-risk areas identified",
         ],
         "parity_checklist": [
@@ -146,6 +192,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
             "Same permissions behavior",
             "Same error handling",
             "Same onboarding/account behavior",
+            "Same payment or subscription behavior if applicable",
             "Same analytics or tracking expectations",
         ],
         "six_month_roadmap": [
@@ -156,6 +203,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "safety_boundary": "Defensive-only and evidence-bound. NICO does not replace stakeholder judgment or final consultant review.",
     }
+    return attach_reports(result)
 
 
 def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
@@ -170,17 +218,17 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
     releases = lines(payload.get("release_notes"))
     roadmap = lines(payload.get("roadmap_notes"))
 
-    delivery_score = 40 + min(35, (len(commits) + len(prs)) * 4)
-    backlog_score = 35 + min(35, len(issues) * 5)
-    release_score = 35 + min(35, len(releases) * 6)
-    strategy_score = 35 + min(35, len(roadmap) * 5)
-    blocker_score = 85 if not blockers else max(45, 75 - len(blockers) * 5)
+    delivery_score = 40 + min(40, (len(commits) + len(prs)) * 4)
+    backlog_score = 35 + min(40, len(issues) * 5)
+    release_score = 35 + min(40, len(releases) * 6)
+    strategy_score = 35 + min(40, len(roadmap) * 5)
+    blocker_score = 88 if not blockers else max(45, 78 - len(blockers) * 5)
 
     sections = [
-        section("weekly_delivery", "Weekly Delivery Status", delivery_score, "Delivery status uses supplied commit and PR summaries.", [f"Commit items: {len(commits)}.", f"PR items: {len(prs)}."] + commits[:8] + prs[:8], [] if commits or prs else ["No delivery evidence supplied."]),
-        section("backlog_health", "Backlog Health", backlog_score, "Backlog health uses supplied issue, bug, and task evidence.", [f"Backlog/issue items: {len(issues)}."] + issues[:12], [] if issues else ["No backlog evidence supplied."]),
-        section("release_readiness", "Release Readiness", release_score, "Release readiness uses supplied release notes and deployment-risk evidence.", [f"Release evidence items: {len(releases)}."] + releases[:12], [] if releases else ["No release evidence supplied."]),
-        section("monthly_strategy", "Monthly Strategy", strategy_score, "Strategy score uses roadmap progress, risks, and business-context notes.", [f"Roadmap evidence items: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap progress evidence supplied."]),
+        section("weekly_delivery", "Weekly Delivery Status", delivery_score, "Delivery status uses supplied commit and PR summaries.", [f"Commit items: {len(commits)}.", f"PR items: {len(prs)}."] + commits[:8] + prs[:8], [] if commits or prs else ["No delivery evidence supplied."], [] if commits or prs else ["Commit or PR evidence is needed for stronger delivery status."]),
+        section("backlog_health", "Backlog Health", backlog_score, "Backlog health uses supplied issue, bug, and task evidence.", [f"Backlog/issue items: {len(issues)}."] + issues[:12], [] if issues else ["No backlog evidence supplied."], [] if issues else ["Issue or bug evidence is needed for stronger backlog scoring."]),
+        section("release_readiness", "Release Readiness", release_score, "Release readiness uses supplied release notes and deployment-risk evidence.", [f"Release evidence items: {len(releases)}."] + releases[:12], [] if releases else ["No release evidence supplied."], [] if releases else ["Release notes, test summaries, or deployment notes are needed for stronger release scoring."]),
+        section("monthly_strategy", "Monthly Strategy", strategy_score, "Strategy score uses roadmap progress, risks, and business-context notes.", [f"Roadmap evidence items: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap progress evidence supplied."], [] if roadmap else ["Roadmap progress notes are needed for stronger strategy scoring."]),
         section("blockers", "Blockers / Approval Needs", blocker_score, "Blocker score reflects unresolved blockers and approval needs.", [f"Blocker items: {len(blockers)}."] + blockers[:12], blockers[:12]),
     ]
     mat = maturity(sections)
@@ -193,7 +241,7 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
     if blockers:
         approval_queue.extend(blockers[:8])
 
-    return {
+    result = {
         "status": "complete",
         "workflow": "ongoing_product_engineering_retainer",
         "target_coverage": COVERAGE_TARGETS["retainer"],
@@ -201,6 +249,7 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
         "client_name": payload.get("client_name") or "",
         "project_name": payload.get("project_name") or "",
         "maturity_signal": mat,
+        "evidence_readiness": evidence_gap_score(sections),
         "maturity_semaphore": {item["label"]: item["status"] for item in sections},
         "sections": sections,
         "weekly_status_report": [
@@ -226,3 +275,4 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "safety_boundary": "Retainer Ops is advisory by default. Production-impacting changes require human approval.",
     }
+    return attach_reports(result)
