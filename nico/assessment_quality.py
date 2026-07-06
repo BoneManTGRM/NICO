@@ -7,6 +7,9 @@ import re
 from typing import Any
 
 
+PDF_STYLE_VERSION = "professional_report_v10"
+
+
 def _unique(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
@@ -32,6 +35,7 @@ def _notes_limited(item: dict[str, Any] | None) -> bool:
 
 def _friendly_note(value: Any) -> str:
     text = str(value or "").replace("\u2014", "-").replace("\u2013", "-").replace("\u2022", "-")
+    text = re.sub(r"<\s*br\s*/?\s*>", " ", text, flags=re.IGNORECASE)
     lower = text.lower()
     if "github returned 403" in lower or "github returned 429" in lower or "api rate" in lower or "abuse detection" in lower:
         prefix = "GitHub metadata was rate-limited during this run."
@@ -90,10 +94,10 @@ def _client_verdict(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _p(text: Any, style: Any) -> Any:
+def _p(text: Any, style: Any, limit: int = 1200) -> Any:
     from reportlab.platypus import Paragraph
 
-    return Paragraph(html.escape(_clean_text(text)).replace("\n", "<br/>"), style)
+    return Paragraph(html.escape(_clean_text(text, limit)), style)
 
 
 def _bullets(items: list[str], style: Any, max_items: int = 6) -> list[Any]:
@@ -101,7 +105,7 @@ def _bullets(items: list[str], style: Any, max_items: int = 6) -> list[Any]:
         return [_p("No evidence returned.", style)]
     flowables: list[Any] = []
     for item in _sanitize_list(items)[:max_items]:
-        flowables.append(_p(f"- {_clean_text(item, 520)}", style))
+        flowables.append(_p(f"- {_clean_text(item, 520)}", style, limit=560))
     if len(items) > max_items:
         flowables.append(_p(f"- {len(items) - max_items} additional item(s) omitted from PDF; use Markdown/HTML for full detail.", style))
     return flowables
@@ -121,75 +125,168 @@ def _draw_footer(canvas: Any, doc: Any) -> None:
     canvas.restoreState()
 
 
+def _metric_card(label: str, value: Any, value_style: Any, label_style: Any) -> list[Any]:
+    return [_p(label, label_style), _p(str(value), value_style)]
+
+
 def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str | None]:
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import KeepTogether, PageBreak, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import KeepTogether, SimpleDocTemplate, Spacer, Table, TableStyle
     except Exception as exc:
         return None, f"PDF polish unavailable because reportlab is not installed: {exc}"
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=0.62 * inch, leftMargin=0.62 * inch, topMargin=0.58 * inch, bottomMargin=0.72 * inch, title="NICO Express Technical Health Assessment", author="NICO")
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.58 * inch,
+        leftMargin=0.58 * inch,
+        topMargin=0.52 * inch,
+        bottomMargin=0.72 * inch,
+        title="NICO Express Technical Health Assessment",
+        author="NICO",
+    )
     styles = getSampleStyleSheet()
-    brand = ParagraphStyle("Brand", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=30, leading=33, textColor=colors.HexColor("#0f172a"), spaceAfter=2)
-    powered = ParagraphStyle("Powered", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.5, leading=12, textColor=colors.HexColor("#0284c7"), spaceAfter=12, uppercase=True)
-    title = ParagraphStyle("Title", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=colors.HexColor("#0f172a"), spaceAfter=8)
-    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13.5, leading=17, textColor=colors.HexColor("#0f172a"), spaceBefore=10, spaceAfter=5)
-    h3 = ParagraphStyle("H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.5, leading=13, textColor=colors.HexColor("#111827"), spaceBefore=6, spaceAfter=3)
-    body = ParagraphStyle("Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.8, leading=12.0, textColor=colors.HexColor("#334155"), spaceAfter=4)
-    small = ParagraphStyle("Small", parent=body, fontSize=8.0, leading=10.6, textColor=colors.HexColor("#475569"), spaceAfter=2.5)
-    callout = ParagraphStyle("Callout", parent=body, fontName="Helvetica-Bold", fontSize=9.1, leading=12, textColor=colors.HexColor("#075985"), backColor=colors.HexColor("#e0f2fe"), borderColor=colors.HexColor("#7dd3fc"), borderWidth=0.7, borderPadding=8, spaceAfter=10)
-    warn = ParagraphStyle("Warn", parent=body, fontName="Helvetica-Bold", fontSize=9.0, leading=12, textColor=colors.HexColor("#854d0e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=0.7, borderPadding=8, spaceAfter=10)
+    hero_brand = ParagraphStyle("HeroBrand", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=34, leading=36, textColor=colors.white, alignment=1, spaceAfter=1)
+    hero_powered = ParagraphStyle("HeroPowered", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.5, leading=11, textColor=colors.HexColor("#67e8f9"), alignment=1, spaceAfter=4)
+    hero_title = ParagraphStyle("HeroTitle", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=15.5, leading=19, textColor=colors.HexColor("#e0f2fe"), alignment=1, spaceAfter=0)
+    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12.7, leading=15.5, textColor=colors.HexColor("#0f172a"), spaceBefore=8, spaceAfter=4, keepWithNext=True)
+    h3 = ParagraphStyle("H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=9.6, leading=11.5, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2, keepWithNext=True)
+    body = ParagraphStyle("Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.35, leading=10.8, textColor=colors.HexColor("#334155"), spaceAfter=3.0)
+    small = ParagraphStyle("Small", parent=body, fontSize=7.55, leading=9.3, textColor=colors.HexColor("#475569"), spaceAfter=1.8)
+    label_style = ParagraphStyle("MetricLabel", parent=small, fontName="Helvetica-Bold", textColor=colors.HexColor("#64748b"), fontSize=7.1, leading=8.4, spaceAfter=1)
+    metric_style = ParagraphStyle("MetricValue", parent=body, fontName="Helvetica-Bold", fontSize=11.0, leading=13.0, textColor=colors.HexColor("#0f172a"), spaceAfter=0)
+    badge = ParagraphStyle("Badge", parent=small, fontName="Helvetica-Bold", fontSize=7.6, leading=9.0, textColor=colors.white, alignment=1, spaceAfter=0)
+    callout = ParagraphStyle("Callout", parent=body, fontName="Helvetica-Bold", fontSize=8.5, leading=10.8, textColor=colors.HexColor("#075985"), backColor=colors.HexColor("#e0f2fe"), borderColor=colors.HexColor("#7dd3fc"), borderWidth=0.7, borderPadding=7, spaceAfter=7)
+    warn = ParagraphStyle("Warn", parent=body, fontName="Helvetica-Bold", fontSize=8.35, leading=10.6, textColor=colors.HexColor("#854d0e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=0.7, borderPadding=7, spaceAfter=7)
 
-    repo = result.get("repository") or "Not specified"
-    generated = result.get("generated_at") or "Not specified"
+    repo = _clean_text(result.get("repository") or "Not specified")
+    generated = _clean_text(result.get("generated_at") or "Not specified")
+    client = _clean_text(result.get("client_name") or "Not specified")
+    project = _clean_text(result.get("project_name") or "Not specified")
     maturity = result.get("maturity_signal") or {}
     sections = [item for item in result.get("sections", []) if isinstance(item, dict)]
     verdict = _client_verdict(result)
+    counts = {
+        "green": sum(1 for item in sections if item.get("status") == "green"),
+        "yellow": sum(1 for item in sections if item.get("status") == "yellow"),
+        "red": sum(1 for item in sections if item.get("status") == "red"),
+        "gray": sum(1 for item in sections if item.get("status") == "gray"),
+    }
+
+    hero = Table(
+        [[_p("NICO", hero_brand)], [_p("POWERED BY REPARODYNAMICS", hero_powered)], [_p("Express Technical Health Assessment", hero_title)]],
+        colWidths=[7.08 * inch],
+    )
+    hero.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+        ("BOX", (0, 0), (-1, -1), 0.0, colors.HexColor("#0f172a")),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+    ]))
+
+    metadata = Table(
+        [
+            [_p("Repository", label_style), _p(repo, small), _p("Client", label_style), _p(client, small)],
+            [_p("Project", label_style), _p(project, small), _p("Generated", label_style), _p(generated, small)],
+        ],
+        colWidths=[0.95 * inch, 2.45 * inch, 0.85 * inch, 2.83 * inch],
+    )
+    metadata.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ef")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
+    status_color = colors.HexColor(_status_color("red" if verdict["red_sections"] else "yellow" if verdict["blockers"] else "green"))
+    metric_table = Table(
+        [[
+            _metric_card("MATURITY", maturity.get("level", "Unknown"), metric_style, label_style),
+            _metric_card("SCORE", f"{maturity.get('score', 'N/A')}/100", metric_style, label_style),
+            _metric_card("CONFIDENCE", verdict["confidence"], metric_style, label_style),
+            [_p("DELIVERY VERDICT", label_style), Table([[_p(str(verdict["status"]).replace("_", " ").upper(), badge)]], colWidths=[1.55 * inch], style=TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_color), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))],
+        ]],
+        colWidths=[1.65 * inch, 1.45 * inch, 1.55 * inch, 2.43 * inch],
+    )
+    metric_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#dbe3ef")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+
+    score_rows = [[_p("Area", label_style), _p("Status", label_style), _p("Score", label_style), _p("Summary", label_style)]]
+    for item in sections:
+        status = str(item.get("status") or "unknown").upper()
+        score = str(item.get("score", "N/A"))
+        score_rows.append([
+            _p(item.get("label") or item.get("id") or "Section", small),
+            _p(status, small),
+            _p(score, small),
+            _p(item.get("summary") or "", small, limit=190),
+        ])
+    scorecard = Table(score_rows, colWidths=[1.7 * inch, 0.82 * inch, 0.55 * inch, 4.01 * inch], repeatRows=1)
+    score_styles = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#075985")),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dbe3ef")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for row_idx, item in enumerate(sections, start=1):
+        score_styles.append(("TEXTCOLOR", (1, row_idx), (2, row_idx), colors.HexColor(_status_color(str(item.get("status") or "")))))
+    scorecard.setStyle(TableStyle(score_styles))
 
     story: list[Any] = [
-        _p("NICO", brand),
-        _p("POWERED BY REPARODYNAMICS", powered),
-        _p("Express Technical Health Assessment", title),
-        _p(f"Repository: {repo}<br/>Client: {result.get('client_name') or 'Not specified'}<br/>Project: {result.get('project_name') or 'Not specified'}<br/>Generated: {generated}", body),
+        hero,
+        Spacer(1, 0.08 * inch),
+        metadata,
+        Spacer(1, 0.08 * inch),
+        metric_table,
+        Spacer(1, 0.08 * inch),
         _p("Human review is required before client-facing delivery. Missing evidence is shown as unavailable, not invented.", callout),
     ]
     if verdict["blockers"]:
         story.append(_p("Delivery verdict: human review required. " + " ".join(verdict["blockers"]), warn))
-
-    summary_data = [
-        [_p("Maturity", small), _p(str(maturity.get("level", "Unknown")), small), _p("Score", small), _p(str(maturity.get("score", "N/A")), small)],
-        [_p("Confidence", small), _p(str(verdict["confidence"]), small), _p("Assessment quality", small), _p(str(result.get("assessment_quality") or "standard"), small)],
+    story += [
+        _p("Executive Summary", h2),
+        _p(result.get("executive_summary") or "No executive summary returned.", body, limit=900),
+        _p("Section Scorecard", h2),
+        scorecard,
+        Spacer(1, 0.10 * inch),
+        _p(f"Score mix: green={counts['green']}, yellow={counts['yellow']}, red={counts['red']}, unavailable={counts['gray']}.", small),
     ]
-    table = Table(summary_data, colWidths=[1.05 * inch, 2.0 * inch, 1.2 * inch, 2.45 * inch])
-    table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")), ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ef")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    story += [table, Spacer(1, 0.12 * inch), _p("Executive Summary", h2), _p(result.get("executive_summary") or "No executive summary returned.", body)]
 
-    story.append(_p("Section Scorecard", h2))
     for item in sections:
         status = str(item.get("status") or "unknown").upper()
         score = item.get("score", "N/A")
-        label = item.get("label") or item.get("id") or "Section"
-        card = Table([[_p(f"{label}", h3), _p(f"{status} - {score}/100", h3)], [_p(item.get("summary") or "", small), _p("", small)]], colWidths=[4.65 * inch, 1.75 * inch])
-        card.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#dbe3ef")), ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ffffff")), ("TEXTCOLOR", (1, 0), (1, 0), colors.HexColor(_status_color(str(item.get("status") or "")))), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("SPAN", (0, 1), (1, 1)), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-        story += [card, Spacer(1, 0.07 * inch)]
-
-    story.append(PageBreak())
-    for item in sections:
-        status = str(item.get("status") or "unknown").upper()
-        score = item.get("score", "N/A")
-        block: list[Any] = [_p(f"{item.get('label') or item.get('id')} - {status} {score}/100", h2), _p(item.get("summary") or "", body), _p("Evidence", h3)]
-        block.extend(_bullets(list(item.get("evidence", []) or []), small, max_items=5))
+        section_title = f"{item.get('label') or item.get('id')} - {status} {score}/100"
+        intro = [_p(section_title, h2), _p(item.get("summary") or "", body), _p("Evidence", h3)]
+        story.append(KeepTogether(intro))
+        story.extend(_bullets(list(item.get("evidence", []) or []), small, max_items=5))
         if item.get("findings"):
-            block.append(_p("Findings", h3))
-            block.extend(_bullets(list(item.get("findings", []) or []), small, max_items=4))
+            story.append(_p("Findings", h3))
+            story.extend(_bullets(list(item.get("findings", []) or []), small, max_items=4))
         if item.get("unavailable"):
-            block.append(_p("Unavailable data", h3))
-            block.extend(_bullets(list(item.get("unavailable", []) or []), small, max_items=4))
-        story.append(KeepTogether(block))
+            story.append(_p("Unavailable data", h3))
+            story.extend(_bullets(list(item.get("unavailable", []) or []), small, max_items=4))
         story.append(Spacer(1, 0.08 * inch))
 
     for title_text, key in [("Quick Wins", "quick_wins"), ("Medium-Term Plan", "medium_term_plan"), ("Resourcing Recommendation", "resourcing_recommendation"), ("Risk Register", "risk_register"), ("Verification Checklist", "verification_checklist")]:
@@ -198,6 +295,7 @@ def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str 
             block = [_p(title_text, h2)]
             block.extend(_bullets(list(items), small, max_items=6))
             story.append(KeepTogether(block))
+            story.append(Spacer(1, 0.05 * inch))
 
     doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
     return base64.b64encode(buffer.getvalue()).decode("ascii"), None
@@ -209,7 +307,7 @@ def _polish_pdf_report(result: dict[str, Any]) -> None:
     if pdf:
         reports["pdf_base64"] = pdf
         reports["pdf_filename"] = f"nico-express-{str(result.get('repository') or 'assessment').replace('/', '-')}.pdf"
-        reports["pdf_style"] = "client_ready_readable"
+        reports["pdf_style"] = PDF_STYLE_VERSION
     elif error:
         reports.setdefault("pdf_error", error)
 
