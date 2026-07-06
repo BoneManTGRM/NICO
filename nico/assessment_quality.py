@@ -48,20 +48,24 @@ def _status_color(status: str) -> str:
     return "#64748b"
 
 
+def _status_label(item: dict[str, Any]) -> str:
+    return f"{str(item.get('status') or 'unknown').upper()} · {item.get('score', 'N/A')}/100"
+
+
 def _p(text: Any, style: Any) -> Any:
     from reportlab.platypus import Paragraph
 
     return Paragraph(html.escape(_clean_text(text)).replace("\n", "<br/>"), style)
 
 
-def _bullets(items: list[str], style: Any, max_items: int = 8) -> list[Any]:
+def _bullets(items: list[str], style: Any, max_items: int = 6, limit: int = 520) -> list[Any]:
     if not items:
         return [_p("No evidence returned.", style)]
     flowables: list[Any] = []
     for item in items[:max_items]:
-        flowables.append(_p(f"- {_clean_text(item, 650)}", style))
+        flowables.append(_p(f"• {_clean_text(item, limit)}", style))
     if len(items) > max_items:
-        flowables.append(_p(f"- {len(items) - max_items} additional item(s) omitted from PDF; see Markdown/HTML for full detail.", style))
+        flowables.append(_p(f"• {len(items) - max_items} additional item(s) omitted from PDF; use Markdown/HTML for full detail.", style))
     return flowables
 
 
@@ -74,9 +78,27 @@ def _draw_footer(canvas: Any, doc: Any) -> None:
     canvas.line(doc.leftMargin, 0.52 * inch, doc.pagesize[0] - doc.rightMargin, 0.52 * inch)
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(colors.HexColor("#64748b"))
-    canvas.drawString(doc.leftMargin, 0.33 * inch, "NICO - authorized assessment - evidence-bound - human review required")
+    canvas.drawString(doc.leftMargin, 0.33 * inch, "NICO · Powered by Reparodynamics · evidence-bound · human review required")
     canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, 0.33 * inch, f"Page {doc.page}")
     canvas.restoreState()
+
+
+def _panel(rows: list[list[Any]], widths: list[float], background: str = "#ffffff") -> Any:
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+
+    table = Table(rows, colWidths=widths, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(background)),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#dbe3ef")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#eef2f7")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return table
 
 
 def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -85,7 +107,7 @@ def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str 
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import PageBreak, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import HRFlowable, KeepTogether, PageBreak, SimpleDocTemplate, Spacer, Table, TableStyle
     except Exception as exc:
         return None, f"PDF polish unavailable because reportlab is not installed: {exc}"
 
@@ -93,116 +115,90 @@ def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str 
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        rightMargin=0.55 * inch,
-        leftMargin=0.55 * inch,
-        topMargin=0.55 * inch,
+        rightMargin=0.62 * inch,
+        leftMargin=0.62 * inch,
+        topMargin=0.58 * inch,
         bottomMargin=0.72 * inch,
         title="NICO Express Technical Health Assessment",
         author="NICO",
     )
     styles = getSampleStyleSheet()
-    title = ParagraphStyle("NicoTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.HexColor("#0f172a"), spaceAfter=10)
-    subtitle = ParagraphStyle("NicoSubtitle", parent=styles["Normal"], fontName="Helvetica", fontSize=10.5, leading=14, textColor=colors.HexColor("#334155"), spaceAfter=8)
-    h2 = ParagraphStyle("NicoH2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=colors.HexColor("#0f172a"), spaceBefore=12, spaceAfter=6)
-    body = ParagraphStyle("NicoBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.2, leading=12.5, textColor=colors.HexColor("#1f2937"), spaceAfter=5)
-    small = ParagraphStyle("NicoSmall", parent=body, fontSize=8.1, leading=10.5, textColor=colors.HexColor("#475569"), spaceAfter=3)
-    callout = ParagraphStyle("NicoCallout", parent=body, fontName="Helvetica-Bold", fontSize=9.4, leading=12.5, textColor=colors.HexColor("#075985"), backColor=colors.HexColor("#e0f2fe"), borderColor=colors.HexColor("#7dd3fc"), borderWidth=0.7, borderPadding=8, spaceAfter=10)
+    brand = ParagraphStyle("NicoBrand", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=11.5, leading=14, textColor=colors.HexColor("#0369a1"), alignment=1, spaceAfter=2)
+    title = ParagraphStyle("NicoTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=19, leading=23, textColor=colors.HexColor("#0f172a"), alignment=1, spaceAfter=7)
+    subtitle = ParagraphStyle("NicoSubtitle", parent=styles["Normal"], fontName="Helvetica", fontSize=9.4, leading=12.5, textColor=colors.HexColor("#334155"), alignment=1, spaceAfter=5)
+    h2 = ParagraphStyle("NicoH2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13.5, leading=17, textColor=colors.HexColor("#0f172a"), spaceBefore=12, spaceAfter=6)
+    h3 = ParagraphStyle("NicoH3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10, leading=12.5, textColor=colors.HexColor("#0f172a"), spaceBefore=8, spaceAfter=3)
+    body = ParagraphStyle("NicoBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.8, leading=12, textColor=colors.HexColor("#1f2937"), spaceAfter=5)
+    small = ParagraphStyle("NicoSmall", parent=body, fontSize=7.8, leading=10.3, textColor=colors.HexColor("#475569"), spaceAfter=3)
+    label_style = ParagraphStyle("NicoLabel", parent=small, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"), spaceAfter=2)
+    callout = ParagraphStyle("NicoCallout", parent=body, fontName="Helvetica-Bold", fontSize=8.8, leading=12, textColor=colors.HexColor("#075985"), backColor=colors.HexColor("#e0f2fe"), borderColor=colors.HexColor("#7dd3fc"), borderWidth=0.7, borderPadding=7, alignment=1, spaceAfter=8)
+    section_title = ParagraphStyle("NicoSectionTitle", parent=h2, fontSize=12.5, leading=15.5, spaceBefore=9, spaceAfter=4)
 
     generated = result.get("generated_at") or "Not specified"
     repo = result.get("repository") or "Not specified"
     maturity = result.get("maturity_signal") or {}
     quality = result.get("assessment_quality") or "standard"
     sections = result.get("sections") or []
+    target = (result.get("coverage_targets") or {}).get("express_technical_health_assessment", {}).get("target") or "90-95%"
 
     story: list[Any] = [
-        _p("NICO Express Technical Health Assessment", title),
+        _p("NICO · Powered by Reparodynamics", brand),
+        _p("Express Technical Health Assessment", title),
         _p(f"Repository: {repo}", subtitle),
-        _p(f"Generated: {generated} | Client: {result.get('client_name') or 'Not specified'} | Project: {result.get('project_name') or 'Not specified'}", subtitle),
+        _p(f"Client: {result.get('client_name') or 'Not specified'} · Project: {result.get('project_name') or 'Not specified'}", subtitle),
+        _p(f"Generated: {generated}", subtitle),
         _p("Human review is required before client-facing delivery. Missing evidence is shown as unavailable, not invented.", callout),
     ]
 
     summary_rows = [
-        ["Maturity", _clean_text(maturity.get("level") or "Unknown"), "Score", _clean_text(maturity.get("score") or "N/A")],
-        ["Assessment quality", _clean_text(quality), "Coverage target", _clean_text((result.get("coverage_targets") or {}).get("express_technical_health_assessment", {}).get("target") or "90-95%")],
+        [_p("Maturity", label_style), _p(maturity.get("level") or "Unknown", body), _p("Score", label_style), _p(maturity.get("score") or "N/A", body)],
+        [_p("Assessment quality", label_style), _p(quality, body), _p("Target", label_style), _p(target, body)],
     ]
-    summary_table = Table(summary_rows, colWidths=[1.45 * inch, 2.0 * inch, 1.05 * inch, 2.25 * inch])
-    summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#cbd5e1")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-    ]))
-    story += [summary_table, Spacer(1, 0.16 * inch), _p("Executive Summary", h2), _p(result.get("executive_summary") or "No executive summary returned.", body)]
-
-    semaphore = result.get("maturity_semaphore") or {}
-    if semaphore:
-        story.append(_p("Maturity Semaphore", h2))
-        sem_rows = [[_p("Signal", small), _p("Status", small)]] + [[_p(key, small), _p(value, small)] for key, value in semaphore.items()]
-        sem_table = Table(sem_rows, colWidths=[2.2 * inch, 4.55 * inch], repeatRows=1)
-        sem_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#ffffff")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
-        story += [sem_table, Spacer(1, 0.12 * inch)]
+    story += [_panel(summary_rows, [1.25 * inch, 2.05 * inch, 0.85 * inch, 2.1 * inch], "#f8fafc"), Spacer(1, 0.12 * inch)]
+    story += [_p("Executive Summary", h2), _p(result.get("executive_summary") or "No executive summary returned.", body)]
 
     if sections:
-        story.append(_p("Section Scorecard", h2))
-        rows: list[list[Any]] = [[_p("Section", small), _p("Status", small), _p("Score", small), _p("Summary", small)]]
+        story += [_p("Section Scorecard", h2)]
         for item in sections:
-            rows.append([_p(item.get("label") or item.get("id"), small), _p((item.get("status") or "unknown").upper(), small), _p(f"{item.get('score', 'N/A')}/100", small), _p(item.get("summary") or "", small)])
-        score_table = Table(rows, colWidths=[1.8 * inch, 0.8 * inch, 0.75 * inch, 3.4 * inch], repeatRows=1)
-        table_style = [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ef")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]
-        for row_idx, item in enumerate(sections, start=1):
-            table_style.append(("TEXTCOLOR", (1, row_idx), (2, row_idx), colors.HexColor(_status_color(item.get("status", "")))))
-            if row_idx % 2 == 0:
-                table_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f8fafc")))
-        score_table.setStyle(TableStyle(table_style))
-        story += [score_table, PageBreak()]
+            status_color = colors.HexColor(_status_color(item.get("status", "")))
+            rows = [[_p(item.get("label") or item.get("id"), label_style), _p(_status_label(item), label_style)], [_p(item.get("summary") or "No summary returned.", small), ""]]
+            card = Table(rows, colWidths=[4.3 * inch, 1.95 * inch], hAlign="LEFT")
+            card.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ffffff")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#dbe3ef")),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.35, colors.HexColor("#e5e7eb")),
+                ("TEXTCOLOR", (1, 0), (1, 0), status_color),
+                ("SPAN", (0, 1), (1, 1)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]))
+            story += [card, Spacer(1, 0.06 * inch)]
+        story += [PageBreak()]
 
     for item in sections:
-        status = str(item.get("status") or "unknown").upper()
-        story.append(_p(f"{item.get('label') or item.get('id')} - {status} {item.get('score', 'N/A')}/100", h2))
-        story.append(_p(item.get("summary") or "", body))
-        story.append(_p("Evidence", subtitle))
-        story.extend(_bullets(list(item.get("evidence", []) or []), small, max_items=7))
+        heading = _p(f"{item.get('label') or item.get('id')} · {_status_label(item)}", section_title)
+        intro = _p(item.get("summary") or "", body)
+        story += [KeepTogether([heading, intro])]
+        story.append(_p("Evidence", h3))
+        story.extend(_bullets(list(item.get("evidence", []) or []), small, max_items=5, limit=430))
         if item.get("findings"):
-            story.append(_p("Findings", subtitle))
-            story.extend(_bullets(list(item.get("findings", []) or []), small, max_items=5))
+            story.append(_p("Findings", h3))
+            story.extend(_bullets(list(item.get("findings", []) or []), small, max_items=4, limit=420))
         if item.get("unavailable"):
-            story.append(_p("Unavailable data", subtitle))
-            story.extend(_bullets(list(item.get("unavailable", []) or []), small, max_items=5))
-        story.append(Spacer(1, 0.08 * inch))
+            story.append(_p("Unavailable data", h3))
+            story.extend(_bullets(list(item.get("unavailable", []) or []), small, max_items=4, limit=420))
+        story += [Spacer(1, 0.07 * inch), HRFlowable(width="100%", thickness=0.35, color=colors.HexColor("#e5e7eb"))]
 
-    for title_text, key in [("Quick Wins", "quick_wins"), ("Medium-Term Plan", "medium_term_plan"), ("Resourcing Recommendation", "resourcing_recommendation"), ("Risk Register", "risk_register"), ("Verification Checklist", "verification_checklist")]:
+    action_blocks = [("Quick Wins", "quick_wins"), ("Medium-Term Plan", "medium_term_plan"), ("Resourcing Recommendation", "resourcing_recommendation"), ("Risk Register", "risk_register"), ("Verification Checklist", "verification_checklist")]
+    for title_text, key in action_blocks:
         items = result.get(key) or []
         if items:
-            story.append(_p(title_text, h2))
-            story.extend(_bullets(list(items), small, max_items=8))
+            block = [_p(title_text, h2)] + _bullets(list(items), small, max_items=7, limit=460)
+            story.append(KeepTogether(block[:3]))
+            story.extend(block[3:])
 
     doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
     return base64.b64encode(buffer.getvalue()).decode("ascii"), None
@@ -214,7 +210,7 @@ def _polish_pdf_report(result: dict[str, Any]) -> None:
     if pdf:
         reports["pdf_base64"] = pdf
         reports["pdf_filename"] = f"nico-express-{str(result.get('repository') or 'assessment').replace('/', '-')}.pdf"
-        reports["pdf_style"] = "client_ready_polished"
+        reports["pdf_style"] = "client_ready_polished_v2"
     elif error:
         reports.setdefault("pdf_error", error)
 
