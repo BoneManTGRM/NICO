@@ -5,18 +5,54 @@ import {useEffect} from "react";
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const PRIVATE_DEFAULTS = new Set(["BoneManTGRM/NICO", "bonemantgrm/nico"]);
 const GENERIC_REPOSITORY_EXAMPLE = "your-org/your-repo";
-const HERO_COPY = {eyebrow: "NICO", title: "Authorized assessment & repair intelligence", lead: "Evidence-bound code, dependency, CI/CD, QA, scanner, report, and repair workflows for authorized systems only.", actions: ["Run Assessment", "Scanner Worker", "Repair Intelligence", "How to Use"]};
+const HERO_COPY = {
+  eyebrow: "NICO",
+  poweredBy: "Powered by Reparodynamics",
+  title: "Repair intelligence for authorized systems",
+  lead: "Evidence-bound technical assessments, scanner workflows, client-ready reports, and approval-gated repair planning.",
+  actions: ["Run Assessment", "Scanner Worker", "Repair Intelligence", "How to Use"],
+};
 
-type RuntimeConfig = {hero_eyebrow?: string; hero_headline?: string; hero_lead?: string; default_repository_example?: string; primary_cta?: string; secondary_cta?: string; maintenance_banner?: string; source?: string; version?: number; feature_flags?: Record<string, boolean>};
+type RuntimeConfig = {
+  hero_eyebrow?: string;
+  hero_powered_by?: string;
+  hero_headline?: string;
+  hero_lead?: string;
+  default_repository_example?: string;
+  primary_cta?: string;
+  secondary_cta?: string;
+  maintenance_banner?: string;
+  source?: string;
+  version?: number;
+  feature_flags?: Record<string, boolean>;
+};
 
 function escapeHtml(value: unknown) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[char] || char)); }
 function setNativeInputValue(input: HTMLInputElement, value: string) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set; setter?.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); input.dispatchEvent(new Event("change", {bubbles: true})); }
 function applyGenericRepositoryExample(example = GENERIC_REPOSITORY_EXAMPLE) { document.querySelectorAll<HTMLInputElement>("input").forEach((input) => { const value = input.value.trim(); if (PRIVATE_DEFAULTS.has(value)) setNativeInputValue(input, example); if (input.placeholder === "owner/repo" || input.placeholder === GENERIC_REPOSITORY_EXAMPLE) input.placeholder = example; }); }
 
+function ensurePoweredByLine(hero: HTMLElement, eyebrow: HTMLElement | null, text: string) {
+  let powered = hero.querySelector<HTMLElement>(".hero-powered-by");
+  if (!powered) {
+    powered = document.createElement("p");
+    powered.className = "hero-powered-by";
+    if (eyebrow?.nextSibling) eyebrow.parentNode?.insertBefore(powered, eyebrow.nextSibling);
+    else hero.insertBefore(powered, hero.querySelector("h1"));
+  }
+  powered.textContent = text;
+  powered.style.margin = "0.35rem 0 0.85rem";
+  powered.style.fontSize = "0.92rem";
+  powered.style.letterSpacing = "0.16em";
+  powered.style.textTransform = "uppercase";
+  powered.style.fontWeight = "800";
+  powered.style.color = "#7dd3fc";
+}
+
 function applyHeroCopy(config?: RuntimeConfig) {
   const hero = document.querySelector<HTMLElement>(".hero"); if (!hero) return;
   const eyebrow = hero.querySelector<HTMLElement>(".eyebrow"); const title = hero.querySelector<HTMLElement>("h1"); const lead = hero.querySelector<HTMLElement>(".lead");
   if (eyebrow) eyebrow.textContent = config?.hero_eyebrow || HERO_COPY.eyebrow;
+  ensurePoweredByLine(hero, eyebrow, config?.hero_powered_by || HERO_COPY.poweredBy);
   if (title) title.textContent = config?.hero_headline || HERO_COPY.title;
   if (lead) lead.textContent = config?.hero_lead || HERO_COPY.lead;
   const actions = [config?.primary_cta || HERO_COPY.actions[0], config?.secondary_cta || HERO_COPY.actions[1], HERO_COPY.actions[2], HERO_COPY.actions[3]];
