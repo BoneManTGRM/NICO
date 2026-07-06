@@ -30,7 +30,7 @@ def test_metadata_limited_sections_are_degraded_not_red():
                 "summary": "Code audit uses metadata and source review.",
                 "evidence": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
                 "findings": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
-                "unavailable": ["Commit activity unavailable: GitHub returned 403: {\"documentation_url\": \"https://docs.github.com/rest\", \"message\": \"API rate limit exceeded\"}"],
+                "unavailable": ["Commit activity unavailable: GitHub returned 403: rate limit exceeded"],
             },
             {
                 "id": "ci_cd",
@@ -40,38 +40,11 @@ def test_metadata_limited_sections_are_degraded_not_red():
                 "summary": "CI/CD maturity is based on workflow evidence.",
                 "evidence": ["No GitHub Actions workflow files were available for analysis."],
                 "findings": ["No CI/CD workflow files were found through GitHub contents access."],
-                "unavailable": ["Workflow run history unavailable: GitHub returned 429: {\"documentation_url\": \"https://developer.github.com/v3/#abuse-rate-limits\", \"message\": \"You have triggered an abuse detection mechanism.\"}"],
+                "unavailable": ["Workflow run history unavailable: GitHub returned 429: abuse detection"],
             },
-            {
-                "id": "architecture_debt",
-                "label": "Architecture & Technical Debt",
-                "score": 76,
-                "status": "green",
-                "summary": "Repository layout supports architecture review.",
-                "evidence": ["Repository root contains .github/."],
-                "findings": [],
-                "unavailable": [],
-            },
-            {
-                "id": "velocity_complexity",
-                "label": "Velocity / Complexity",
-                "score": 51,
-                "status": "yellow",
-                "summary": "Velocity is estimated from metadata.",
-                "evidence": ["Commit velocity: 0 commits over 180 days (0.0/week).", "Pull request traceability ratio: 0 PRs / 0 commits = 0."],
-                "findings": [],
-                "unavailable": [],
-            },
-            {
-                "id": "dependency_health",
-                "label": "Dependency / Library Ecosystem",
-                "score": 30,
-                "status": "red",
-                "summary": "Dependency manifests were inspected.",
-                "evidence": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."],
-                "findings": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."],
-                "unavailable": [],
-            },
+            {"id": "architecture_debt", "label": "Architecture & Technical Debt", "score": 76, "status": "green", "summary": "Repository layout supports architecture review.", "evidence": ["Repository root contains .github/."], "findings": [], "unavailable": []},
+            {"id": "velocity_complexity", "label": "Velocity / Complexity", "score": 51, "status": "yellow", "summary": "Velocity is estimated from metadata.", "evidence": ["Commit velocity: 0 commits over 180 days (0.0/week).", "Pull request traceability ratio: 0 PRs / 0 commits = 0."], "findings": [], "unavailable": []},
+            {"id": "dependency_health", "label": "Dependency / Library Ecosystem", "score": 30, "status": "red", "summary": "Dependency manifests were inspected.", "evidence": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."], "findings": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."], "unavailable": []},
         ],
     }
 
@@ -87,11 +60,11 @@ def test_metadata_limited_sections_are_degraded_not_red():
     assert code["status"] == "yellow"
     assert code["score"] >= 55
     assert not any("No recent pull-request evidence" in note for note in code["findings"])
-    assert not any("documentation_url" in note or "GitHub returned" in note for note in code["unavailable"])
+    assert not any("GitHub returned" in note for note in code["unavailable"])
     assert ci["status"] == "yellow"
     assert ci["score"] >= 50
     assert not any("No CI/CD workflow files" in note for note in ci["findings"])
-    assert not any("documentation_url" in note or "GitHub returned" in note for note in ci["unavailable"])
+    assert not any("GitHub returned" in note for note in ci["unavailable"])
     assert velocity["score"] >= 55
     assert not any("0 commits over" in note for note in velocity["evidence"])
     assert deps["evidence"].count("OSV returned 2 records for streamlit.") == 1
@@ -109,9 +82,7 @@ def test_polished_pdf_is_generated_for_complete_assessment():
         "maturity_signal": {"level": "Mid", "score": 67},
         "maturity_semaphore": {"code": "yellow"},
         "coverage_targets": {"express_technical_health_assessment": {"target": "90-95%"}},
-        "sections": [
-            {"id": "code_audit", "label": "Code Audit", "score": 67, "status": "yellow", "summary": "Useful evidence.", "evidence": ["Evidence item."], "findings": ["Finding item."], "unavailable": ["Unavailable item."]}
-        ],
+        "sections": [{"id": "code_audit", "label": "Code Audit", "score": 67, "status": "yellow", "summary": "Useful evidence.", "evidence": ["Evidence item."], "findings": ["Finding item."], "unavailable": ["Unavailable item."]}],
         "quick_wins": ["Quick win."],
         "medium_term_plan": ["Medium plan."],
         "resourcing_recommendation": ["Review."],
@@ -121,7 +92,8 @@ def test_polished_pdf_is_generated_for_complete_assessment():
     }
     polished = polish_express_result(result)
     pdf_base64 = polished["reports"]["pdf_base64"]
-    assert polished["reports"]["pdf_style"] == "client_ready_readable"
+    pdf_bytes = base64.b64decode(pdf_base64)
+    assert polished["reports"]["pdf_style"] == "professional_report_v10"
     assert polished["reports"]["pdf_filename"] == "nico-express-owner-repo.pdf"
-    assert base64.b64decode(pdf_base64).startswith(b"%PDF")
-    assert len(base64.b64decode(pdf_base64)) > 2500
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 3000
