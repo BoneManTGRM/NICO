@@ -31,13 +31,21 @@ const assessmentAreas = [
   "Code Audit",
   "Dependency / Library Ecosystem",
   "Secrets Exposure Review",
+  "Static Analysis",
   "CI/CD Analysis",
   "Architecture & Technical Debt",
-  "Passive URL Review, if used",
+  "Velocity / Complexity",
   "Bug-Risk Findings",
   "Repair Recommendations",
   "Verification Checklist",
-  "Markdown / HTML Reports",
+  "Markdown / HTML / PDF Reports",
+];
+
+const targetCards = [
+  ["Express Technical Health Assessment", "90–95%", "Highest automation target after scanner/report upgrades"],
+  ["Mid Technical Health Assessment", "75–85%", "Requires QA, parity, stakeholder intake, and roadmap evidence"],
+  ["Ongoing Product Engineering Retainer", "55–70%", "Requires backlog, sprint, release, and status-report workflows"],
+  ["Full client-ready replacement", "75–85%", "Requires human validation before client delivery"],
 ];
 
 type Health = {
@@ -56,8 +64,9 @@ type AssessmentResult = {
   sections?: Array<{id: string; label: string; score: number; status: string; summary: string; evidence: string[]; unavailable?: string[]}>;
   findings?: string[];
   repairs?: string[];
-  reports?: {markdown?: string; html?: string};
+  reports?: {markdown?: string; html?: string; pdf_base64?: string; pdf_filename?: string};
   safety_boundary?: string;
+  human_review_required?: boolean;
 };
 
 function statusClass(status?: string) {
@@ -146,17 +155,45 @@ export default function Page() {
     setCopied(`${kind.toUpperCase()} report copied`);
   }
 
+  function downloadPdf() {
+    const encoded = assessment?.reports?.pdf_base64;
+    if (!encoded) return;
+    const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+    const blob = new Blob([bytes], {type: "application/pdf"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = assessment?.reports?.pdf_filename || "nico-assessment.pdf";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="shell">
       <section className="hero">
         <p className="eyebrow">NICO Hosted Command Center</p>
-        <h1>Authorized bug assessment with Railway backend</h1>
+        <h1>Higher-end realistic assessment targets</h1>
         <p className="lead">
-          NICO can now use the Railway FastAPI backend for authorized GitHub repository assessments. Local CLI mode remains available for no-server testing.
+          NICO now pushes Express toward the 90–95% realistic target with deeper hosted repository inspection, OSV dependency checks where versions are available, static risk patterns, secret-pattern review, workflow history, and PDF export.
         </p>
         <div className="hero-actions">
           <a href="#hosted" className="primary-link">Run hosted assessment</a>
-          <a href="#commands" className="secondary-link">CLI commands</a>
+          <a href="#targets" className="secondary-link">Coverage targets</a>
+        </div>
+      </section>
+
+      <section id="targets" className="section panel status-panel">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Coverage Targets</p>
+            <h2>Realistic upper-end goals</h2>
+          </div>
+          <span className="status blue">Human review required</span>
+        </div>
+        <div className="grid four target-grid">
+          {targetCards.map(([title, target, note]) => (
+            <article key={title}><b>{title}</b><span className="target-number">{target}</span><small>{note}</small></article>
+          ))}
         </div>
       </section>
 
@@ -182,7 +219,7 @@ export default function Page() {
       <section id="hosted" className="section panel">
         <div className="section-head">
           <div>
-            <p className="eyebrow">Hosted Assessment</p>
+            <p className="eyebrow">Express Assessment</p>
             <h2>Assess an authorized GitHub repository</h2>
           </div>
           <span className="status gray">Read-only</span>
@@ -222,6 +259,7 @@ export default function Page() {
           </div>
           <span className={assessment?.maturity_signal?.level ? "status blue" : "status gray"}>{assessment?.status || "No report"}</span>
         </div>
+        {assessment?.human_review_required ? <p className="warning-box">Human review is required before client-facing delivery. NICO provides evidence and draft conclusions; a consultant must validate context, recommendations, Q&A, and resourcing.</p> : null}
         {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
         <div className="results-grid">
           {assessment?.sections?.map((item) => (
@@ -244,8 +282,23 @@ export default function Page() {
         <div className="report-actions">
           <button type="button" disabled={!assessment?.reports?.markdown} onClick={() => copyReport("markdown")}>Copy Markdown</button>
           <button type="button" disabled={!assessment?.reports?.html} onClick={() => copyReport("html")}>Copy HTML</button>
+          <button type="button" disabled={!assessment?.reports?.pdf_base64} onClick={downloadPdf}>Download PDF</button>
           {copied ? <span className="muted">{copied}</span> : null}
         </div>
+      </section>
+
+      <section className="section panel">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Mid + Retainer Next</p>
+            <h2>Next modules to reach the remaining targets</h2>
+          </div>
+          <span className="status gray">Planned</span>
+        </div>
+        <div className="scope-grid">
+          {assessmentAreas.map((area) => <div className="scope-card" key={area}>{area}</div>)}
+        </div>
+        <p className="muted">Mid and Retainer coverage require QA intake, platform parity, stakeholder notes, roadmap generation, weekly/monthly reports, backlog health, and approval-gated task creation. NICO now shows these targets while Express is upgraded first.</p>
       </section>
 
       <section id="commands" className="section panel">
