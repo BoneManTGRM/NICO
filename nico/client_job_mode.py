@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import base64
+import html
+import json
+from datetime import datetime, timezone
+from io import BytesIO
 from typing import Any
+from uuid import uuid4
+
+from nico.storage import STORE
 
 
 EXPRESS_SCOPE = [
@@ -27,10 +35,20 @@ ARTIFACT_EVIDENCE_PATTERNS = {
     "snapshot_missing": "Live snapshot evidence was not returned.",
 }
 
+SUPPORTED_EXPORT_FORMATS = {"json", "markdown", "html", "pdf"}
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
 
 def _contains(text: str, *needles: str) -> bool:
     value = text.lower()
     return any(needle.lower() in value for needle in needles)
+
+
+def _clean(value: Any) -> str:
+    return " ".join(str(value or "").split())
 
 
 def quote_facts(quote_text: str) -> dict[str, Any]:
@@ -46,7 +64,7 @@ def quote_facts(quote_text: str) -> dict[str, Any]:
         facts["client_responsibilities"].append("Read-only repository access")
     if _contains(text, "ci/cd", "pipelines"):
         facts["client_responsibilities"].append("CI/CD configuration and logs")
-    if _contains(text, "documentación técnica", "technical documentation"):
+    if _contains(text, "documentacion tecnica", "documentación técnica", "technical documentation"):
         facts["client_responsibilities"].append("Technical documentation")
     if _contains(text, "q&a"):
         facts["client_responsibilities"].append("Q&A session with development or technical leadership")
@@ -125,13 +143,19 @@ def build_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
         or assessment.get("evidence_readiness", {}).get("existing_worker_evidence_attached")
     )
     findings = product_artifact_findings(product_evidence_text)
+    job_id = str(payload.get("job_id") or f"client_job_{uuid4().hex[:16]}")
     return {
         "status": "ok",
-        "mode": "client_job_mode_v7",
+        "mode": "client_job_mode_v8",
+        "job_id": job_id,
+        "customer_id": payload.get("customer_id") or "default_customer",
+        "project_id": payload.get("project_id") or "default_project",
         "client_name": payload.get("client_name") or "Client",
         "project_name": payload.get("project_name") or "Project",
         "repository": payload.get("repository") or "",
         "service_scope": "Express Technical Health Assessment",
+        "source_scope": payload.get("source_scope") or "authorized technical assessment",
+        "authorization_statement": payload.get("authorization_statement") or "Client package is valid only for explicitly authorized customer/project scope.",
         "scope_remap_note": "For non-mobile products, map the quoted iOS/Android audit categories to the real backend, frontend, CI/CD, data-provider, and report-export surfaces.",
         "quote_facts": quote_facts(quote_text),
         "express_scope": EXPRESS_SCOPE,
@@ -154,6 +178,144 @@ def build_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
             "Resourcing Recommendation",
             "Human Review Required",
         ],
+        "assessment": assessment,
         "human_review_required": True,
         "delivery_verdict": "draft_ready_for_human_review" if assessment else "needs_scanner_express_evidence",
+        "available_export_formats": sorted(SUPPORTED_EXPORT_FORMATS),
+        "created_at": now_iso(),
     }
+
+
+def create_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
+    package = build_client_job_package(payload)
+    STORE.put("client_jobs", package["job_id"], package)
+    STORE.audit("client_job.created", {"job_id": package["job_id"], "delivery_verdict": package["delivery_verdict"]}, customer_id=package["customer_id"], project_id=package["project_id"])
+    return package
+
+
+def get_client_job_package(job_id: str) -> dict[str, Any]:
+    package = STORE.get("client_jobs", job_id)
+    if not package:
+        return {"status": "not_found", "job_id": job_id}
+    return package
+
+
+def client_job_markdown(package: dict[str, Any]) -> str:
+    lines = [
+        "# NICO Client Job Package",
+        "",
+        "**Powered by Reparodynamics**",
+        "",
+        f"Generated: {now_iso()}",
+        f"Job ID: {package.get('job_id')}",
+        f"Client: {package.get('client_name')}",
+        f"Project: {package.get('project_name')}",
+        f"Repository/source: {package.get('repository') or package.get('source_scope')}",
+        "",
+        "## Delivery Verdict",
+        f"Verdict: **{package.get('delivery_verdict')}**",
+        f"Human review required: **{package.get('human_review_required')}**",
+        "",
+        "## Authorization Statement",
+        _clean(package.get("authorization_statement")),
+        "",
+        "## Quote Facts",
+    ]
+    quote = package.get("quote_facts") or {}
+    for key, value in quote.items():
+        lines.append(f"- **{key}**: {_clean(value)}")
+    lines += ["", "## Express Scope"]
+    for item in package.get("express_scope") or []:
+        lines.append(f"- {_clean(item)}")
+    lines += ["", "## Deliverable Checklist"]
+    for item in package.get("deliverable_checklist") or []:
+        lines.append(f"- **{item.get('deliverable')}**: {item.get('status')} — {_clean(item.get('required_evidence'))}")
+    lines += ["", "## Product Artifact Findings"]
+    for item in package.get("product_artifact_findings") or [{"finding": "No product artifact findings returned.", "severity": "none"}]:
+        lines.append(f"- **{item.get('severity')}**: {_clean(item.get('finding'))}")
+    lines += ["", "## Root-Cause Prompts"]
+    for item in package.get("provider_gate_root_cause_prompts") or ["No root-cause prompts generated."]:
+        lines.append(f"- {_clean(item)}")
+    lines += ["", "## Report Outline"]
+    for item in package.get("report_outline") or []:
+        lines.append(f"- {_clean(item)}")
+    lines += ["", "## Required Human Review", "This package is a draft until a qualified human reviewer validates evidence, unavailable data, findings, and delivery language."]
+    return "\n".join(lines).strip() + "\n"
+
+
+def client_job_html(package: dict[str, Any]) -> str:
+    safe = html.escape(client_job_markdown(package))
+    return f"""<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>NICO Client Job Package</title><style>body{{font-family:Arial,sans-serif;background:#f8fafc;color:#111827;margin:0}}main{{max-width:980px;margin:34px auto;padding:0 20px 50px}}.hero{{background:#0f172a;color:white;border-radius:28px;padding:30px;margin-bottom:22px}}.hero b{{color:#67e8f9;text-transform:uppercase;letter-spacing:.14em}}pre{{white-space:pre-wrap;background:white;border:1px solid #e5e7eb;border-radius:18px;padding:24px;line-height:1.55}}</style></head><body><main><section class=\"hero\"><b>NICO - Powered by Reparodynamics</b><h1>Client Job Package</h1><p>Evidence-bound draft package. Human review required.</p></section><pre>{safe}</pre></main></body></html>"""
+
+
+def client_job_pdf_base64(package: dict[str, Any]) -> str:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    y = height - 54
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(54, y, "NICO Client Job Package")
+    y -= 24
+    pdf.setFont("Helvetica", 9)
+    for raw_line in client_job_markdown(package).splitlines():
+        line = raw_line.replace("**", "")
+        if not line:
+            y -= 8
+            continue
+        if y < 54:
+            pdf.showPage()
+            pdf.setFont("Helvetica", 9)
+            y = height - 54
+        pdf.drawString(54, y, line[:110])
+        y -= 12
+    pdf.save()
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def render_client_job_export(package: dict[str, Any], export_format: str = "json") -> dict[str, Any]:
+    fmt = (export_format or "json").lower()
+    if fmt not in SUPPORTED_EXPORT_FORMATS:
+        return {"status": "unavailable", "job_id": package.get("job_id"), "format": fmt, "available_formats": sorted(SUPPORTED_EXPORT_FORMATS)}
+    filename = f"{package.get('job_id', 'client_job')}.{ 'md' if fmt == 'markdown' else fmt }"
+    if fmt == "json":
+        rendered = {"content": json.dumps(package, indent=2), "mime_type": "application/json"}
+    elif fmt == "markdown":
+        rendered = {"content": client_job_markdown(package), "mime_type": "text/markdown"}
+    elif fmt == "html":
+        rendered = {"content": client_job_html(package), "mime_type": "text/html"}
+    else:
+        rendered = {"content_base64": client_job_pdf_base64(package), "mime_type": "application/pdf"}
+    export_id = f"client_job_export_{uuid4().hex[:16]}"
+    result = {
+        "status": "complete",
+        "export_id": export_id,
+        "job_id": package.get("job_id"),
+        "format": fmt,
+        "filename": filename,
+        "human_review_required": True,
+        "created_at": now_iso(),
+        **rendered,
+    }
+    STORE.put("client_job_exports", export_id, result)
+    STORE.audit("client_job.exported", {"job_id": package.get("job_id"), "export_id": export_id, "format": fmt}, customer_id=package.get("customer_id"), project_id=package.get("project_id"))
+    return result
+
+
+def export_client_job_package(job_id: str, export_format: str = "json") -> dict[str, Any]:
+    package = get_client_job_package(job_id)
+    if package.get("status") == "not_found":
+        return package
+    return render_client_job_export(package, export_format)
+
+
+def export_client_job_payload(payload: dict[str, Any], export_format: str = "json") -> dict[str, Any]:
+    package = create_client_job_package(payload)
+    return render_client_job_export(package, export_format)
+
+
+def list_client_job_exports(job_id: str) -> dict[str, Any]:
+    exports = [item for item in STORE.list("client_job_exports") if item.get("job_id") == job_id]
+    return {"status": "ok", "job_id": job_id, "exports": exports, "available_formats": sorted(SUPPORTED_EXPORT_FORMATS)}
