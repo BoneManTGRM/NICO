@@ -1,291 +1,154 @@
-"use client";
+const quickStartCommands = `pip install -r requirements.txt
+python -m nico scan-test-lab
+python -m nico assess local nico/test_lab --authorized
+python -m nico assess report latest --format markdown
+python -m nico assess verify latest`;
 
-import {useEffect, useMemo, useState} from "react";
+const assessmentCommands = `python -m nico assess local /path/to/project --authorized
+python -m nico assess github owner/repo --authorized
+python -m nico assess archive ./project.zip --authorized
+python -m nico assess url https://staging.example.com --passive-only --authorized
+python -m nico assess report latest --format markdown
+python -m nico assess verify latest`;
 
-const DEFAULT_API_URL = process.env.NEXT_PUBLIC_NICO_API_URL || "http://localhost:8000";
+const safetyRules = [
+  "Defensive-only",
+  "Authorized systems only",
+  "No exploitation",
+  "No brute force",
+  "No authentication bypass",
+  "No credential theft",
+  "No destructive actions",
+];
 
-type Health = {
-  status?: string;
-  system?: string;
-  mode?: string;
-  cors_origins?: string[];
-};
-
-type AssessmentSection = {
-  id: string;
-  label: string;
-  score: number;
-  status: string;
-  summary: string;
-  evidence: string[];
-  unavailable: string[];
-};
-
-type AssessmentResult = {
-  status?: string;
-  repository?: string;
-  generated_at?: string;
-  executive_summary?: string;
-  maturity_signal?: {level?: string; score?: number; summary?: string};
-  maturity_semaphore?: Record<string, string>;
-  sections?: AssessmentSection[];
-  findings?: string[];
-  repairs?: string[];
-  quick_wins?: string[];
-  medium_term_plan?: string[];
-  resourcing_recommendation?: string[];
-  risk_register?: string[];
-  verification_checklist?: string[];
-  reports?: {markdown?: string; html?: string};
-  safety_boundary?: string;
-};
-
-function statusClass(status?: string) {
-  if (status === "green") return "status green";
-  if (status === "yellow") return "status yellow";
-  if (status === "red") return "status red";
-  return "status gray";
-}
-
-function ListBlock({items}: {items?: string[]}) {
-  if (!items?.length) return <p className="muted">No evidence available yet.</p>;
-  return (
-    <ul className="tight-list">
-      {items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
-    </ul>
-  );
-}
+const assessmentAreas = [
+  "Code Audit",
+  "Dependency / Library Ecosystem",
+  "Secrets Exposure Review",
+  "CI/CD Analysis",
+  "Architecture & Technical Debt",
+  "Passive URL Review, if used",
+  "Bug-Risk Findings",
+  "Repair Recommendations",
+  "Verification Checklist",
+  "Markdown / HTML Reports",
+];
 
 export default function Page() {
-  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
-  const [health, setHealth] = useState<Health | null>(null);
-  const [policy, setPolicy] = useState<Record<string, unknown> | null>(null);
-  const [connectionError, setConnectionError] = useState("");
-  const [repository, setRepository] = useState("BoneManTGRM/NICO");
-  const [clientName, setClientName] = useState("Bernardo Buendia");
-  const [projectName, setProjectName] = useState("NICO Technical Assessment");
-  const [timeframeDays, setTimeframeDays] = useState(180);
-  const [authorized, setAuthorized] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [assessment, setAssessment] = useState<AssessmentResult | null>(null);
-  const [assessmentError, setAssessmentError] = useState("");
-  const [copied, setCopied] = useState("");
-
-  const frontendUrl = "https://app.nicoaudit.com";
-  const backendReady = health?.status === "ok";
-
-  const commandAreas = useMemo(() => [
-    "Code Audit",
-    "Dependency / Library Ecosystem",
-    "CI/CD Analysis",
-    "Architecture & Technical Debt",
-    "Maturity Semaphore",
-    "Velocity / Complexity",
-    "Action Plan",
-    "Resourcing Plan",
-  ], []);
-
-  async function refreshHealth() {
-    setConnectionError("");
-    try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/health`, {cache: "no-store"});
-      if (!response.ok) throw new Error(`Health check returned ${response.status}`);
-      setHealth(await response.json());
-      try {
-        const policyResponse = await fetch(`${apiUrl.replace(/\/$/, "")}/policy`, {cache: "no-store"});
-        if (policyResponse.ok) setPolicy(await policyResponse.json());
-      } catch {
-        setPolicy(null);
-      }
-    } catch (error) {
-      setHealth(null);
-      setPolicy(null);
-      setConnectionError(error instanceof Error ? error.message : "Backend connection failed");
-    }
-  }
-
-  useEffect(() => {
-    refreshHealth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function runAssessment() {
-    setAssessmentError("");
-    setCopied("");
-    setLoading(true);
-    try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/assessment/github`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          repository,
-          authorized,
-          client_name: clientName,
-          project_name: projectName,
-          assessment_mode: "express",
-          timeframe_days: timeframeDays,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail?.error || data?.error || `Assessment failed with ${response.status}`);
-      setAssessment(data);
-    } catch (error) {
-      setAssessmentError(error instanceof Error ? error.message : "Assessment failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function copyReport(kind: "markdown" | "html") {
-    const report = assessment?.reports?.[kind];
-    if (!report) return;
-    await navigator.clipboard?.writeText(report);
-    setCopied(`${kind.toUpperCase()} report copied`);
-  }
-
   return (
     <main className="shell">
       <section className="hero">
-        <p className="eyebrow">NICO Hosted Command Center</p>
-        <h1>Defensive Technical Assessment System</h1>
+        <p className="eyebrow">NICO No-Server Command Center</p>
+        <h1>Authorized bug assessment without a hosted backend</h1>
         <p className="lead">
-          Hosted control surface for authorized repository assessments, evidence-bound reporting, repair planning, and verification.
+          NICO is ready for local-first defensive assessments from the CLI. The hosted site is a guide and status page until a backend is intentionally deployed later.
         </p>
         <div className="hero-actions">
-          <a href="#assessment" className="primary-link">Run assessment</a>
-          <a href="#reports" className="secondary-link">View reports</a>
+          <a href="#commands" className="primary-link">Copy commands</a>
+          <a href="#safety" className="secondary-link">Safety boundary</a>
         </div>
       </section>
 
-      <section className="section panel">
+      <section className="section panel status-panel">
         <div className="section-head">
           <div>
             <p className="eyebrow">System Status</p>
-            <h2>Frontend / Backend connection</h2>
+            <h2>Current operating mode</h2>
           </div>
-          <span className={backendReady ? "status green" : "status red"}>{backendReady ? "API online" : "API not connected"}</span>
+          <span className="status green">Server required: no</span>
         </div>
-        <div className="grid four">
-          <article><b>Frontend</b><span>{frontendUrl}</span></article>
-          <article><b>Backend</b><span>{apiUrl}</span></article>
-          <article><b>Health</b><span>{health?.status || connectionError || "Not checked"}</span></article>
-          <article><b>Autonomy</b><span>{String(policy?.autonomy_level ?? "Policy unavailable")}</span></article>
+        <div className="grid three">
+          <article><b>Current Mode</b><span>No-Server CLI Assessment</span></article>
+          <article><b>Backend</b><span>Optional Later</span></article>
+          <article><b>Testing Path</b><span>Local CLI / authorized repo / archive / passive URL</span></article>
         </div>
-        <div className="form-row single">
-          <label>
-            Backend API URL
-            <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} placeholder="https://your-nico-api-host" />
-          </label>
-          <button type="button" onClick={refreshHealth}>Check backend</button>
-        </div>
-        {connectionError ? <p className="error">{connectionError}</p> : null}
+        <p className="warning-box">
+          Browser mode cannot scan local files without a backend or local app. Real testing currently runs from the local CLI on systems you own or are explicitly authorized to assess.
+        </p>
       </section>
 
-      <section id="assessment" className="section panel">
+      <section id="commands" className="section panel">
         <div className="section-head">
           <div>
-            <p className="eyebrow">Authorized Assessment Setup</p>
-            <h2>Express Technical Health Assessment</h2>
+            <p className="eyebrow">How to test now</p>
+            <h2>Run NICO from your local CLI</h2>
           </div>
-          <span className="status gray">Read-only</span>
+          <span className="status blue">No server</span>
         </div>
-        <div className="form-grid">
-          <label>
-            Repository owner/name or URL
-            <input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repo" />
-          </label>
-          <label>
-            Client name
-            <input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Client" />
-          </label>
-          <label>
-            Project name
-            <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project" />
-          </label>
-          <label>
-            Timeframe days
-            <input type="number" min={30} max={365} value={timeframeDays} onChange={(event) => setTimeframeDays(Number(event.target.value))} />
-          </label>
+        <p className="muted">
+          Use these commands on your computer or Codespace. The <code>--authorized</code> flag confirms that you own the target or have explicit permission to assess it.
+        </p>
+        <div className="command-grid">
+          <div className="command-card">
+            <b>First test with NICO test lab</b>
+            <textarea readOnly defaultValue={quickStartCommands} aria-label="NICO quick start commands" />
+          </div>
+          <div className="command-card">
+            <b>Assess your authorized systems</b>
+            <textarea readOnly defaultValue={assessmentCommands} aria-label="NICO no-server assessment commands" />
+          </div>
         </div>
-        <label className="check-row">
-          <input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} />
-          I confirm I own this repository or am explicitly authorized to assess it. NICO will perform defensive read-only assessment only.
-        </label>
-        <button type="button" className="primary-button" disabled={loading || !authorized} onClick={runAssessment}>
-          {loading ? "Running assessment..." : "Run authorized assessment"}
-        </button>
-        {assessmentError ? <p className="error">{assessmentError}</p> : null}
       </section>
 
       <section className="section panel">
         <div className="section-head">
           <div>
-            <p className="eyebrow">Technical Health Assessment Dashboard</p>
-            <h2>Scope areas</h2>
+            <p className="eyebrow">Assessment Scope</p>
+            <h2>What the no-server engine checks</h2>
           </div>
-          {assessment?.maturity_signal?.level ? <span className="status blue">{assessment.maturity_signal.level}</span> : <span className="status gray">Awaiting run</span>}
+          <span className="status gray">Evidence-bound</span>
         </div>
         <div className="scope-grid">
-          {commandAreas.map((area) => <div className="scope-card" key={area}>{area}</div>)}
-        </div>
-        {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
-        <div className="results-grid">
-          {assessment?.sections?.map((item) => (
-            <article className="result-card" key={item.id}>
-              <div className="result-head">
-                <b>{item.label}</b>
-                <span className={statusClass(item.status)}>{item.status} · {item.score}/100</span>
-              </div>
-              <p>{item.summary}</p>
-              <h3>Evidence</h3>
-              <ListBlock items={item.evidence} />
-              {item.unavailable?.length ? <><h3>Unavailable data</h3><ListBlock items={item.unavailable} /></> : null}
-            </article>
-          ))}
+          {assessmentAreas.map((area) => <div className="scope-card" key={area}>{area}</div>)}
         </div>
       </section>
 
-      <section className="section two-col">
+      <section id="safety" className="section two-col">
         <div className="panel">
-          <p className="eyebrow">Findings</p>
-          <h2>Evidence-bound findings</h2>
-          <ListBlock items={assessment?.findings} />
+          <p className="eyebrow">Safety Boundary</p>
+          <h2>Allowed use</h2>
+          <p className="muted">
+            NICO is for defensive assessments of systems you own or are explicitly authorized to assess. It should not be used to scan unrelated internet targets.
+          </p>
+          <ul className="tight-list">
+            {safetyRules.map((rule) => <li key={rule}>{rule}</li>)}
+          </ul>
         </div>
         <div className="panel">
-          <p className="eyebrow">Repairs</p>
-          <h2>Human-approved repair candidates</h2>
-          <ListBlock items={assessment?.repairs} />
-        </div>
-      </section>
-
-      <section className="section two-col">
-        <div className="panel">
-          <p className="eyebrow">Policy</p>
-          <h2>Safety boundary</h2>
-          <p className="muted">{assessment?.safety_boundary || "Defensive-only. Authorized repositories only. Production-impacting actions require human approval."}</p>
-          <ListBlock items={assessment?.risk_register} />
-        </div>
-        <div className="panel">
-          <p className="eyebrow">Audit Log</p>
-          <h2>Verification checklist</h2>
-          <ListBlock items={assessment?.verification_checklist} />
+          <p className="eyebrow">Truth Rules</p>
+          <h2>No fake findings</h2>
+          <ul className="tight-list">
+            <li>No fake backend status.</li>
+            <li>No fake scan results.</li>
+            <li>No placeholder findings.</li>
+            <li>No invented vulnerabilities.</li>
+            <li>Missing tools are reported as unavailable.</li>
+            <li>Scores must cite scanned files, visible passive evidence, command output, or unavailable-data notes.</li>
+          </ul>
         </div>
       </section>
 
-      <section id="reports" className="section panel">
-        <div className="section-head">
-          <div>
-            <p className="eyebrow">Reports</p>
-            <h2>Markdown and HTML export</h2>
+      <section className="section panel">
+        <details>
+          <summary>
+            <span>
+              <p className="eyebrow">Optional Hosted Backend Later</p>
+              <h2>Backend health checking is not required now</h2>
+            </span>
+            <span className="status gray">Optional</span>
+          </summary>
+          <div className="details-body">
+            <p className="muted">
+              When a hosted dashboard is intentionally deployed, Vercel can point to a backend with <code>NEXT_PUBLIC_NICO_API_URL</code>. Until then, app.nicoaudit.com should not claim that browser-based assessments are running.
+            </p>
+            <div className="grid two">
+              <article><b>Frontend</b><span>https://app.nicoaudit.com</span></article>
+              <article><b>Backend</b><span>Not required for no-server CLI mode</span></article>
+            </div>
+            <pre className="code-block">NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST
+NICO_CORS_ORIGINS=https://app.nicoaudit.com,https://nicoaudit.vercel.app</pre>
           </div>
-          {assessment?.generated_at ? <span className="status green">Generated</span> : <span className="status gray">No report</span>}
-        </div>
-        <div className="report-actions">
-          <button type="button" disabled={!assessment?.reports?.markdown} onClick={() => copyReport("markdown")}>Copy Markdown</button>
-          <button type="button" disabled={!assessment?.reports?.html} onClick={() => copyReport("html")}>Copy HTML</button>
-          {copied ? <span className="muted">{copied}</span> : null}
-        </div>
-        <textarea readOnly value={assessment?.reports?.markdown || "Run an authorized assessment to generate the Express Technical Health Assessment report."} />
+        </details>
       </section>
     </main>
   );
