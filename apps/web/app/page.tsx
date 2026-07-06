@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useState} from "react";
+import type {ReactNode} from "react";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
@@ -31,7 +32,7 @@ function statusClass(status?: string) { if (status === "green") return "status g
 function ListBlock({items}: {items?: string[]}) { if (!items?.length) return <p className="muted">No evidence returned yet.</p>; return <ul className="tight-list">{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>; }
 function splitLines(value: string) { return value.split("\n").map((line) => line.trim()).filter(Boolean); }
 function extractBlock(text: string, label: string) { const pattern = new RegExp(`${label}:\\n([\\s\\S]*?)(?=\\n[A-Za-z /]+:|$)`, "i"); return text.match(pattern)?.[1]?.trim() || ""; }
-function HelpDetails({title, children}: {title: string; children: React.ReactNode}) { return <details className="help-details"><summary>{title}</summary><div className="help-body">{children}</div></details>; }
+function HelpDetails({title, children}: {title: string; children: ReactNode}) { return <details className="help-details"><summary>{title}</summary><div className="help-body">{children}</div></details>; }
 function ResultSections({result}: {result?: WorkflowResult | null}) { if (!result?.sections?.length) return null; return <div className="results-grid">{result.sections.map((item) => <article className="result-card" key={item.id}><div className="result-head"><b>{item.label}</b><span className={statusClass(item.status)}>{item.status} · {item.score}/100</span></div><p>{item.summary}</p><h3>Evidence</h3><ListBlock items={item.evidence} />{item.findings?.length ? <><h3>Findings</h3><ListBlock items={item.findings} /></> : null}{item.unavailable?.length ? <><h3>Unavailable</h3><ListBlock items={item.unavailable} /></> : null}</article>)}</div>; }
 
 export default function Page() {
