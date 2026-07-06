@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
-from nico.hosted_assessment_guarded import run_github_assessment
+from nico.hosted_assessment import run_github_assessment
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 from nico.scanner_worker import get_scan, start_scan
 from nico.storage import STORE
