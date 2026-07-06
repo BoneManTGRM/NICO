@@ -27,6 +27,17 @@ jobs:
       run: |
         python -m py_compile nico/assessment.py
         python -m py_compile nico/cli.py
+        python -m py_compile nico/api/main.py
+        python -m py_compile nico/hosted_assessment.py
+        python -m py_compile nico/service_workflows.py
+        python -m py_compile nico/storage.py
+        python -m py_compile nico/scanner_worker.py
+        python -m py_compile nico/evidence.py
+        python -m py_compile nico/approval_queue.py
+        python -m py_compile nico/reports.py
+        python -m py_compile nico/github_app.py
+        python -m py_compile nico/customer_access.py
+        python -m py_compile nico/tenancy.py
         python -m py_compile nico/modules/reporting.py
         python -m py_compile nico/modules/dependency_audit.py
         python -m py_compile nico/modules/synthesis.py
