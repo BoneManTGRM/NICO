@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from typing import Any
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -15,7 +16,11 @@ from nico.reports import build_report_package, export_report, get_report
 from nico.github_app import github_app_plan, installation_record
 from nico.customer_access import access_summary
 from nico.repair_intelligence import create_repair_approval, repair_quality_policy, suggest_repair
-
+from nico.runtime_config import preview_runtime_config, runtime_config, runtime_config_history, update_runtime_config
+from nico.report_templates import get_report_template, list_report_templates, update_report_template
+from nico.projects import create_customer, create_project, get_customer, get_project, list_customers, list_projects, project_approvals, project_evidence, project_latest, project_reports, project_runs, project_trends
+from nico.diagnostics import diagnostics, feature_diagnostics, latest_runs_diagnostics, storage_diagnostics
+from nico.admin_security import require_admin_write, safe_public_admin_status
 
 _LAST_HOSTED_ASSESSMENT = {}
 _LAST_MID_ASSESSMENT = {}
@@ -31,6 +36,13 @@ def cors_origins():
 
 class LocalScanRequest(BaseModel): path: str
 class PolicyLevelRequest(BaseModel): level: int
+class CustomerRequest(BaseModel): customer_id: str = ''; name: str = ''
+class ProjectRequest(BaseModel): project_id: str = ''; customer_id: str = 'default_customer'; name: str = ''; repository: str = ''
+class RuntimeConfigRequest(BaseModel):
+    config: dict[str, Any] = {}
+    updated_by: str = 'admin'
+    change_reason: str = ''
+class ReportTemplateRequest(BaseModel): template: dict[str, Any] = {}
 class GithubAssessmentRequest(BaseModel):
     repository: str
     authorized: bool = False
@@ -88,16 +100,8 @@ class ApprovalRequest(BaseModel):
     rollback_plan: str = ''
     requester: str = 'nico'
 
-class ApprovalTransitionRequest(BaseModel):
-    actor: str = 'human_reviewer'
-    note: str = ''
-
-class DraftPrRequest(BaseModel):
-    approval_id: str
-    repository: str
-    branch_name: str = ''
-    title: str = ''
-    body: str = ''
+class ApprovalTransitionRequest(BaseModel): actor: str = 'human_reviewer'; note: str = ''
+class DraftPrRequest(BaseModel): approval_id: str; repository: str; branch_name: str = ''; title: str = ''; body: str = ''
 
 class ReportRequest(BaseModel):
     customer_id: str = 'default_customer'
@@ -115,15 +119,8 @@ class ReportRequest(BaseModel):
     unavailable_data_notes: list = []
     next_steps: list = []
 
-class ReportExportRequest(BaseModel):
-    format: str = 'json'
-
-class GitHubInstallationRequest(BaseModel):
-    installation_id: str = ''
-    customer_id: str = 'default_customer'
-    selected_repositories: list[str] = []
-    permissions: dict = {}
-
+class ReportExportRequest(BaseModel): format: str = 'json'
+class GitHubInstallationRequest(BaseModel): installation_id: str = ''; customer_id: str = 'default_customer'; selected_repositories: list[str] = []; permissions: dict = {}
 class RepairSuggestionRequest(BaseModel):
     issue: str
     evidence: list[str] = []
@@ -134,43 +131,97 @@ class RepairSuggestionRequest(BaseModel):
     customer_id: str = 'default_customer'
     project_id: str = 'default_project'
 
-
-app=FastAPI(title='NICO API',version='0.6.0',description='Local-first and hosted defensive technical assessment API')
+app=FastAPI(title='NICO API',version='0.7.0',description='Local-first and hosted defensive technical assessment API')
 app.add_middleware(CORSMiddleware,allow_origins=cors_origins(),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
-
 
 @app.get('/health')
 def health():
-    return {
-        'status':'ok',
-        'system':'NICO',
-        'mode':'local-first-hosted-ready',
-        'coverage_targets': COVERAGE_TARGETS,
-        'storage': STORE.status(),
-        'customer_access': access_summary({'role':'owner'}),
-        'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},
-        'cors_origins': cors_origins(),
-    }
+    return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
 
 @app.get('/targets')
 def targets():
-    return {
-        'status': 'ok',
-        'coverage_targets': COVERAGE_TARGETS,
-        'storage': STORE.status(),
-        'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],
-        'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /evidence/upload','POST /repair/suggest','GET /approvals'],
-    }
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
 
 @app.get('/usage/guide')
 def usage_guide():
     path = Path(__file__).resolve().parents[2] / 'docs' / 'HOW_TO_USE_NICO.md'
-    if not path.exists():
-        return {'status':'unavailable','message':'HOW_TO_USE_NICO.md is missing.'}
+    if not path.exists(): return {'status':'unavailable','message':'HOW_TO_USE_NICO.md is missing.'}
     return {'status':'ok','format':'markdown','content':path.read_text(encoding='utf-8')}
 
+@app.get('/storage/status')
+def storage_status(): return {'status':'ok','storage':STORE.status()}
 @app.get('/storage/schema')
-def storage_schema(): return {'status':'ok','schema':STORE.schema(),'storage':STORE.status()}
+def storage_schema(): return {'status':'ok','schema':STORE.schema(),'storage':STORE.status(),'migration_plan':STORE.migration_plan()}
+@app.get('/storage/migration-plan')
+def storage_migration_plan(): return STORE.migration_plan()
+@app.post('/storage/apply-schema')
+def storage_apply_schema(x_nico_admin_token: str = Header(default='')):
+    allowed, blocked = require_admin_write(x_nico_admin_token)
+    if not allowed: return blocked
+    return {'status':'unavailable','mode':'manual_migration_required','message':'Automatic schema application is disabled in this safe hosted build. Use the schema from GET /storage/schema manually.'}
+
+@app.get('/config/runtime')
+def config_runtime(): return {'status':'ok','config':runtime_config()}
+@app.post('/config/runtime')
+def config_runtime_update(req: RuntimeConfigRequest, x_nico_admin_token: str = Header(default='')):
+    payload = dict(req.config or {})
+    payload['updated_by'] = req.updated_by
+    payload['change_reason'] = req.change_reason
+    return update_runtime_config(payload, admin_token=x_nico_admin_token)
+@app.get('/config/runtime/history')
+def config_runtime_history(): return runtime_config_history()
+@app.post('/config/runtime/preview')
+def config_runtime_preview(req: RuntimeConfigRequest): return preview_runtime_config(req.config or {})
+@app.post('/config/runtime/rollback')
+def config_runtime_rollback(x_nico_admin_token: str = Header(default='')):
+    allowed, blocked = require_admin_write(x_nico_admin_token)
+    if not allowed: return blocked
+    return {'status':'unavailable','message':'Runtime config rollback history exists, but automated rollback is not enabled in this safe build.'}
+
+@app.get('/report-templates')
+def report_templates(): return list_report_templates()
+@app.get('/report-templates/{template_id}')
+def report_template(template_id: str): return get_report_template(template_id)
+@app.post('/report-templates/{template_id}')
+def report_template_update(template_id: str, req: ReportTemplateRequest, x_nico_admin_token: str = Header(default='')): return update_report_template(template_id, req.template or {}, admin_token=x_nico_admin_token)
+
+@app.get('/customers')
+def customers(): return {'status':'ok','customers':list_customers()}
+@app.post('/customers')
+def customer_create(req: CustomerRequest, x_nico_admin_token: str = Header(default='')): return create_customer(req.model_dump(), admin_token=x_nico_admin_token)
+@app.get('/customers/{customer_id}')
+def customer_get(customer_id: str): return get_customer(customer_id)
+@app.get('/projects')
+def projects(customer_id: str = ''): return {'status':'ok','projects':list_projects(customer_id or None)}
+@app.post('/projects')
+def project_create(req: ProjectRequest, x_nico_admin_token: str = Header(default='')): return create_project(req.model_dump(), admin_token=x_nico_admin_token)
+@app.get('/projects/{project_id}')
+def project_get(project_id: str): return get_project(project_id)
+@app.get('/projects/{project_id}/runs')
+def project_runs_endpoint(project_id: str): return project_runs(project_id)
+@app.get('/projects/{project_id}/latest')
+def project_latest_endpoint(project_id: str): return project_latest(project_id)
+@app.get('/projects/{project_id}/trends')
+def project_trends_endpoint(project_id: str): return project_trends(project_id)
+@app.get('/projects/{project_id}/reports')
+def project_reports_endpoint(project_id: str): return project_reports(project_id)
+@app.get('/projects/{project_id}/approvals')
+def project_approvals_endpoint(project_id: str): return project_approvals(project_id)
+@app.get('/projects/{project_id}/evidence')
+def project_evidence_endpoint(project_id: str): return project_evidence(project_id)
+
+@app.get('/diagnostics')
+def diagnostics_endpoint(): return diagnostics()
+@app.get('/diagnostics/frontend-config')
+def diagnostics_frontend_config(): return {'status':'ok','runtime_config':runtime_config(),'admin':safe_public_admin_status()}
+@app.get('/diagnostics/backend-config')
+def diagnostics_backend_config(): return diagnostics()
+@app.get('/diagnostics/storage')
+def diagnostics_storage(): return storage_diagnostics()
+@app.get('/diagnostics/features')
+def diagnostics_features(): return feature_diagnostics()
+@app.get('/diagnostics/latest-runs')
+def diagnostics_latest_runs(): return latest_runs_diagnostics()
 
 @app.post('/scan/test-lab')
 def api_scan_test_lab(): return scan_test_lab()
@@ -246,7 +297,6 @@ def worker_scan(req: WorkerScanRequest):
     result = start_scan(req.model_dump())
     if result.get('status') == 'blocked': raise HTTPException(400, result)
     return result
-
 @app.get('/worker/scan/{scan_id}')
 def worker_scan_status(scan_id: str): return get_scan(scan_id)
 
@@ -255,7 +305,6 @@ async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form(
     result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
     if result.get('status') == 'blocked': raise HTTPException(400, result)
     return result
-
 @app.get('/evidence/{project_id}')
 def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
 

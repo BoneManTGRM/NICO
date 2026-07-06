@@ -45,75 +45,14 @@ def confidence_from_evidence(evidence: list[str], affected_files: list[str]) -> 
 def repair_strategy(issue: str) -> dict[str, Any]:
     lower = issue.lower()
     if "missing dependency" in lower or "module not found" in lower or "requires" in lower or "multipart" in lower:
-        return {
-            "strategy": "dependency_or_runtime_contract_fix",
-            "root_cause_hypothesis": "A new import, endpoint, or runtime path depends on a package that is not installed in the CI/runtime environment.",
-            "summary": "Add or pin the missing runtime/test dependency, then rerun compile, the smallest failing test, and the full test suite.",
-            "patch_steps": [
-                "Identify the exact import or framework feature that triggered the missing dependency.",
-                "Add the smallest required package to requirements.txt or package.json.",
-                "Prefer a pinned or bounded version when deployment reproducibility matters.",
-                "Add or update a regression test that imports the affected endpoint/module.",
-            ],
-            "test_plan": "Install dependencies, compile affected modules, run the failing test file, then run the full test suite and deployment smoke check.",
-            "rollback_plan": "Remove the dependency change and revert any related endpoint/import change if CI or deploy breaks.",
-        }
+        return {"strategy":"dependency_or_runtime_contract_fix","root_cause_hypothesis":"A new import, endpoint, or runtime path depends on a package that is not installed in the CI/runtime environment.","summary":"Add or pin the missing runtime/test dependency, then rerun compile, the smallest failing test, and the full test suite.","patch_steps":["Identify the exact import or framework feature that triggered the missing dependency.","Add the smallest required package to requirements.txt or package.json.","Prefer a pinned or bounded version when deployment reproducibility matters.","Add or update a regression test that imports the affected endpoint/module."],"test_plan":"Install dependencies, compile affected modules, run the failing test file, then run the full test suite and deployment smoke check.","rollback_plan":"Remove the dependency change and revert any related endpoint/import change if CI or deploy breaks."}
     if "type" in lower or "validation" in lower or "schema" in lower or "pydantic" in lower:
-        return {
-            "strategy": "interface_contract_fix",
-            "root_cause_hypothesis": "The request/response contract changed or accepts data that is not represented by the model/schema/tests.",
-            "summary": "Tighten request/response typing and add regression tests around the failing API or module contract.",
-            "patch_steps": [
-                "Identify the exact model, field, or endpoint contract that failed.",
-                "Make the model explicit and backwards-compatible where possible.",
-                "Add negative and positive test cases.",
-                "Update docs or frontend payload shape if the API changed.",
-            ],
-            "test_plan": "Run unit tests for the affected endpoint/module, schema validation tests, and a frontend/backend payload smoke check.",
-            "rollback_plan": "Revert the schema or typing change and restore the previous contract.",
-        }
+        return {"strategy":"interface_contract_fix","root_cause_hypothesis":"The request/response contract changed or accepts data that is not represented by the model/schema/tests.","summary":"Tighten request/response typing and add regression tests around the failing API or module contract.","patch_steps":["Identify the exact model, field, or endpoint contract that failed.","Make the model explicit and backwards-compatible where possible.","Add negative and positive test cases.","Update docs or frontend payload shape if the API changed."],"test_plan":"Run unit tests for the affected endpoint/module, schema validation tests, and a frontend/backend payload smoke check.","rollback_plan":"Revert the schema or typing change and restore the previous contract."}
     if "timeout" in lower or "slow" in lower or "long-running" in lower or "blocking" in lower:
-        return {
-            "strategy": "background_job_or_timeout_fix",
-            "root_cause_hypothesis": "Long-running work is being handled synchronously or without bounded timeout/status tracking.",
-            "summary": "Move long-running work to a background job and return a job ID with status polling and clear unavailable/error states.",
-            "patch_steps": [
-                "Create a job record before work starts.",
-                "Return job_id immediately.",
-                "Track queued/running/complete/failed states.",
-                "Apply per-task and total time limits.",
-            ],
-            "test_plan": "Run worker status tests, timeout tests, and API smoke tests for the job polling path.",
-            "rollback_plan": "Disable the worker path and return the prior synchronous behavior only if safe.",
-        }
+        return {"strategy":"background_job_or_timeout_fix","root_cause_hypothesis":"Long-running work is being handled synchronously or without bounded timeout/status tracking.","summary":"Move long-running work to a background job and return a job ID with status polling and clear unavailable/error states.","patch_steps":["Create a job record before work starts.","Return job_id immediately.","Track queued/running/complete/failed states.","Apply per-task and total time limits."],"test_plan":"Run worker status tests, timeout tests, and API smoke tests for the job polling path.","rollback_plan":"Disable the worker path and return the prior synchronous behavior only if safe."}
     if "ui" in lower or "dropdown" in lower or "how to use" in lower or "section" in lower:
-        return {
-            "strategy": "guided_user_experience_fix",
-            "root_cause_hypothesis": "Users need clearer step-by-step guidance at the point of action.",
-            "summary": "Add inline help, expandable details, examples, and section-specific warnings without hiding the core workflow.",
-            "patch_steps": [
-                "Add a reusable help/details component.",
-                "Place it directly inside each workflow section.",
-                "Include step-by-step use, required evidence, good output, and common mistakes.",
-                "Keep warnings visible for authorization and human review.",
-            ],
-            "test_plan": "Run frontend build or TypeScript compile and visually verify every details block opens and closes on mobile and desktop.",
-            "rollback_plan": "Remove the helper component and return sections to previous static text.",
-        }
-    return {
-        "strategy": "evidence_first_minimal_patch",
-        "root_cause_hypothesis": "The evidence points to a repair opportunity, but more context may be needed before changing code.",
-        "summary": "Collect the failing evidence, isolate the smallest reproducible case, then propose the smallest reversible patch.",
-        "patch_steps": [
-            "Collect exact error, failing test, report section, or customer evidence.",
-            "Identify affected files or systems.",
-            "Change only what is needed to resolve the verified issue.",
-            "Add or update a regression test when possible.",
-            "Create an approval item before any draft PR path.",
-        ],
-        "test_plan": "Run the smallest relevant regression test, then the full test suite and deployment smoke check.",
-        "rollback_plan": "Revert the patch branch and leave production/default branches unchanged.",
-    }
+        return {"strategy":"guided_user_experience_fix","root_cause_hypothesis":"Users need clearer step-by-step guidance at the point of action.","summary":"Add inline help, expandable details, examples, and section-specific warnings without hiding the core workflow.","patch_steps":["Add a reusable help/details component.","Place it directly inside each workflow section.","Include step-by-step use, required evidence, good output, and common mistakes.","Keep warnings visible for authorization and human review."],"test_plan":"Run frontend build or TypeScript compile and visually verify every details block opens and closes on mobile and desktop.","rollback_plan":"Remove the helper component and return sections to previous static text."}
+    return {"strategy":"evidence_first_minimal_patch","root_cause_hypothesis":"The evidence points to a repair opportunity, but more context may be needed before changing code.","summary":"Collect the failing evidence, isolate the smallest reproducible case, then propose the smallest reversible patch.","patch_steps":["Collect exact error, failing test, report section, or customer evidence.","Identify affected files or systems.","Change only what is needed to resolve the verified issue.","Add or update a regression test when possible.","Create an approval item before any draft PR path."],"test_plan":"Run the smallest relevant regression test, then the full test suite and deployment smoke check.","rollback_plan":"Revert the patch branch and leave production/default branches unchanged."}
 
 
 def build_patch_prompt(issue: str, strategy: dict[str, Any], affected_files: list[str]) -> str:
@@ -184,6 +123,12 @@ def create_repair_approval(payload: dict[str, Any]) -> dict[str, Any]:
         "customer_id": suggestion["customer_id"],
         "project_id": suggestion["project_id"],
         "requested_action": "draft_pr",
+        "issue": suggestion["issue"],
+        "root_cause_hypothesis": suggestion["root_cause_hypothesis"],
+        "confidence": suggestion["confidence"],
+        "suggested_fix_summary": suggestion["suggested_fix_summary"],
+        "patch_steps": suggestion["patch_steps"],
+        "patch_prompt": suggestion["patch_prompt"],
         "evidence": suggestion.get("evidence") or [suggestion["issue"]],
         "affected_files_or_systems": suggestion.get("affected_files_or_systems") or [],
         "risk_level": suggestion["risk_level"],
@@ -194,15 +139,4 @@ def create_repair_approval(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def repair_quality_policy() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "policy": "suggest_diff_approval_pr_review_merge",
-        "rules": [
-            "Do not edit protected branches automatically.",
-            "Do not create draft PRs without an approved approval item.",
-            "Do not present a suggestion as verified unless tests or evidence support it.",
-            "Every suggested repair must include evidence, risk, confidence, test plan, and rollback plan.",
-            "Prefer the smallest reversible patch that can be tested.",
-        ],
-        "quality_checklist": REPAIR_QUALITY_CHECKLIST,
-    }
+    return {"status":"ok","policy":"suggest_diff_approval_pr_review_merge","rules":["Do not edit protected branches automatically.","Do not create draft PRs without an approved approval item.","Do not present a suggestion as verified unless tests or evidence support it.","Every suggested repair must include evidence, risk, confidence, test plan, and rollback plan.","Prefer the smallest reversible patch that can be tested."],"quality_checklist": REPAIR_QUALITY_CHECKLIST}
