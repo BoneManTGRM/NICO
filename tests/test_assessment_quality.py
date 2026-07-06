@@ -22,56 +22,11 @@ def test_metadata_limited_sections_are_degraded_not_red():
         "risk_register": ["Metadata unavailable."],
         "verification_checklist": ["Rerun with authenticated GitHub metadata."],
         "sections": [
-            {
-                "id": "code_audit",
-                "label": "Code Audit",
-                "score": 36,
-                "status": "red",
-                "summary": "Code audit uses metadata and source review.",
-                "evidence": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
-                "findings": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
-                "unavailable": ["Commit activity unavailable: GitHub returned 403: API rate limit exceeded"],
-            },
-            {
-                "id": "ci_cd",
-                "label": "CI/CD Analysis",
-                "score": 20,
-                "status": "red",
-                "summary": "CI/CD maturity is based on workflow evidence.",
-                "evidence": ["No GitHub Actions workflow files were available for analysis."],
-                "findings": ["No CI/CD workflow files were found through GitHub contents access."],
-                "unavailable": ["Workflow run history unavailable: GitHub returned 403: API rate limit exceeded"],
-            },
-            {
-                "id": "architecture_debt",
-                "label": "Architecture & Technical Debt",
-                "score": 76,
-                "status": "green",
-                "summary": "Repository layout supports architecture review.",
-                "evidence": ["Repository root contains .github/."],
-                "findings": [],
-                "unavailable": [],
-            },
-            {
-                "id": "velocity_complexity",
-                "label": "Velocity / Complexity",
-                "score": 51,
-                "status": "yellow",
-                "summary": "Velocity is estimated from metadata.",
-                "evidence": ["Commit velocity: 0 commits over 180 days (0.0/week).", "Pull request traceability ratio: 0 PRs / 0 commits = 0."],
-                "findings": [],
-                "unavailable": [],
-            },
-            {
-                "id": "dependency_health",
-                "label": "Dependency / Library Ecosystem",
-                "score": 30,
-                "status": "red",
-                "summary": "Dependency manifests were inspected.",
-                "evidence": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."],
-                "findings": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."],
-                "unavailable": [],
-            },
+            {"id": "code_audit", "label": "Code Audit", "score": 36, "status": "red", "summary": "Code audit uses metadata and source review.", "evidence": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."], "findings": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."], "unavailable": ["Commit activity unavailable: GitHub returned 403: API rate limit exceeded"]},
+            {"id": "ci_cd", "label": "CI/CD Analysis", "score": 20, "status": "red", "summary": "CI/CD maturity is based on workflow evidence.", "evidence": ["No GitHub Actions workflow files were available for analysis."], "findings": ["No CI/CD workflow files were found through GitHub contents access."], "unavailable": ["Workflow run history unavailable: GitHub returned 403: API rate limit exceeded"]},
+            {"id": "architecture_debt", "label": "Architecture & Technical Debt", "score": 76, "status": "green", "summary": "Repository layout supports architecture review.", "evidence": ["Repository root contains .github/."], "findings": [], "unavailable": []},
+            {"id": "velocity_complexity", "label": "Velocity / Complexity", "score": 51, "status": "yellow", "summary": "Velocity is estimated from metadata.", "evidence": ["Commit velocity: 0 commits over 180 days (0.0/week).", "Pull request traceability ratio: 0 PRs / 0 commits = 0."], "findings": [], "unavailable": []},
+            {"id": "dependency_health", "label": "Dependency / Library Ecosystem", "score": 30, "status": "red", "summary": "Dependency manifests were inspected.", "evidence": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."], "findings": ["OSV returned 2 records for streamlit.", "OSV returned 2 records for streamlit."], "unavailable": []},
         ],
     }
 
@@ -117,7 +72,7 @@ def test_polished_pdf_is_generated_for_complete_assessment():
     }
     polished = polish_express_result(result)
     pdf_base64 = polished["reports"]["pdf_base64"]
-    assert polished["reports"]["pdf_style"] == "client_ready_polished"
+    assert polished["reports"]["pdf_style"] == "client_ready_polished_v2"
     assert polished["reports"]["pdf_filename"] == "nico-express-owner-repo.pdf"
     assert base64.b64decode(pdf_base64).startswith(b"%PDF")
     assert len(base64.b64decode(pdf_base64)) > 2500
