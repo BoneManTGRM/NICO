@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from nico.report_accuracy import apply_report_accuracy
 from nico.storage import STORE
 
 
@@ -29,21 +30,20 @@ def _status_counts(sections: list[Any]) -> dict[str, int]:
 
 
 def _delivery_readiness(payload: dict[str, Any]) -> dict[str, Any]:
-    sections = [item for item in payload.get("sections", []) if isinstance(item, dict)]
-    counts = _status_counts(sections)
-    unavailable_count = len(payload.get("unavailable_data_notes", []) or []) + sum(len(item.get("unavailable", []) or []) for item in sections)
-    blockers: list[str] = []
-    if counts["red"]:
-        blockers.append(f"{counts['red']} red section(s) require triage before client-final delivery.")
-    if unavailable_count:
-        blockers.append("Unavailable evidence must remain disclosed and reviewed.")
-    if payload.get("assessment_quality") == "degraded_metadata":
-        blockers.append("Source metadata was degraded; rerun with stronger source access before firm claims.")
-    verdict = "review_ready" if not blockers else "human_review_required"
-    return {"verdict": verdict, "status_counts": counts, "blockers": blockers, "unavailable_count": unavailable_count}
+    validated = apply_report_accuracy(payload)
+    verdict = validated.get("client_delivery_verdict") or {}
+    sections = [item for item in validated.get("sections", []) if isinstance(item, dict)]
+    return {
+        "verdict": verdict.get("status", "human_review_required"),
+        "confidence": verdict.get("confidence", "limited"),
+        "status_counts": _status_counts(sections),
+        "blockers": verdict.get("blockers", []),
+        "unavailable_count": verdict.get("unavailable_items", 0),
+    }
 
 
 def markdown_report(payload: dict[str, Any]) -> str:
+    payload = apply_report_accuracy(payload)
     sections = [item for item in payload.get("sections", []) if isinstance(item, dict)]
     readiness = _delivery_readiness(payload)
     maturity = payload.get("maturity_signal") or {}
@@ -59,6 +59,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
         "",
         "## Client Delivery Verdict",
         f"Verdict: **{readiness['verdict']}**",
+        f"Confidence: **{readiness['confidence']}**",
         f"Maturity: **{maturity.get('level', 'Unknown')}** | Score: **{maturity.get('score', 'N/A')}**",
         f"Section counts: green={readiness['status_counts']['green']}, yellow={readiness['status_counts']['yellow']}, red={readiness['status_counts']['red']}, unavailable/gray={readiness['status_counts']['gray']}",
         "",
@@ -78,9 +79,21 @@ def markdown_report(payload: dict[str, Any]) -> str:
     if sections:
         for item in sections:
             label = item.get("label") or item.get("id") or "Section"
-            lines.append(f"- **{label}** - {str(item.get('status') or 'unknown').upper()} {item.get('score', 'N/A')}/100: {item.get('summary') or 'No summary returned.'}")
+            lines.append(f"- **{label}** - {str(item.get('status') or 'unknown').upper()} {item.get('score', 'N/A')}/100; confidence={item.get('confidence', 'unknown')}: {item.get('summary') or 'No summary returned.'}")
     else:
         lines.append("- No section scorecard was supplied.")
+    lines += ["", "## Verified / Unverified Claims"]
+    for item in sections:
+        label = item.get("label") or item.get("id") or "Section"
+        lines.append(f"### {label}")
+        verified = item.get("verified_claims") or item.get("evidence") or []
+        unverified = item.get("unverified_claims") or item.get("unavailable") or []
+        lines.append("Verified/evidence-bound:")
+        for claim in verified[:6] or ["No verified claim returned."]:
+            lines.append(f"- {_clean(claim)}")
+        lines.append("Unverified/degraded/unavailable:")
+        for claim in unverified[:6] or ["No unverified claim returned."]:
+            lines.append(f"- {_clean(claim)}")
     lines += ["", "## Findings and Risks"]
     findings = payload.get("findings", []) or []
     if findings:
@@ -93,7 +106,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
     else:
         lines.append("- No findings returned.")
     lines += ["", "## Evidence Quality"]
-    lines.append(json.dumps({"maturity_signal": maturity, "evidence_readiness": payload.get("evidence_readiness") or {}, "assessment_quality": payload.get("assessment_quality", "standard")}, indent=2))
+    lines.append(json.dumps({"maturity_signal": maturity, "client_delivery_verdict": payload.get("client_delivery_verdict") or {}, "truthfulness_rules": payload.get("truthfulness_rules") or [], "assessment_quality": payload.get("assessment_quality", "standard")}, indent=2))
     lines += ["", "## Unavailable Data Notes"]
     unavailable = list(payload.get("unavailable_data_notes", []) or [])
     for item in sections:
@@ -113,6 +126,7 @@ def html_report(markdown: str) -> str:
 
 
 def build_report_package(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = apply_report_accuracy(payload)
     report_id = f"report_{uuid4().hex[:16]}"
     markdown = markdown_report(payload)
     package = {
