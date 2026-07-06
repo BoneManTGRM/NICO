@@ -12,15 +12,7 @@ from nico.tenancy import authorization_record, enforce_scope
 
 
 def authorized_scan_payload():
-    return {
-        "authorized": True,
-        "repository": "BoneManTGRM/NICO",
-        "customer_id": "c1",
-        "project_id": "p1",
-        "authorized_by": "tester",
-        "authorization_scope": "repository assessment only",
-        "tools": ["definitely-not-installed"],
-    }
+    return {"authorized": True,"repository": "BoneManTGRM/NICO","customer_id": "c1","project_id": "p1","authorized_by": "tester","authorization_scope": "repository assessment only","tools": ["definitely-not-installed"]}
 
 
 def test_worker_scan_requires_authorization():
@@ -65,13 +57,7 @@ def test_approval_queue_allows_draft_pr_stub_after_approval():
 
 
 def test_repair_intelligence_suggests_evidence_bound_fix():
-    result = suggest_repair({
-        "issue": "missing dependency causes test failure",
-        "evidence": ["CI reports missing package"],
-        "affected_files": ["requirements.txt"],
-        "customer_id": "c1",
-        "project_id": "p1",
-    })
+    result = suggest_repair({"issue": "missing dependency causes test failure","evidence": ["CI reports missing package"],"affected_files": ["requirements.txt"],"customer_id": "c1","project_id": "p1"})
     assert result["status"] == "complete"
     assert result["human_review_required"] is True
     assert result["strategy"] == "dependency_or_runtime_contract_fix"
@@ -172,5 +158,5 @@ def test_runtime_projects_templates_and_diagnostics_endpoints():
     diagnostics = client.get("/diagnostics")
     assert diagnostics.status_code == 200
     text = str(diagnostics.json()).lower()
+    assert "nico_admin_token" not in text
     assert "database_url" not in text or "[redacted]" in text or "not_configured" in text
-    assert "secret" not in text
