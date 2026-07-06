@@ -4,6 +4,8 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from nico.reparodynamics_engine import reparodynamic_loop
+
 RAW_GITHUB_ERROR_PATTERNS = [
     re.compile(r"GitHub returned\s+(403|429)\s*:\s*\{.*?\}", re.IGNORECASE),
     re.compile(r"\{\s*\"documentation_url\".*?\}", re.IGNORECASE),
@@ -190,6 +192,7 @@ def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
     output["maturity_signal"] = maturity_from_sections(sections)
     output["maturity_semaphore"] = {item.get("label") or item.get("id"): item.get("status") for item in sections}
     output["client_delivery_verdict"] = delivery_verdict(output)
+    output["reparodynamics"] = reparodynamic_loop(output)
     output["truthfulness_rules"] = [
         "Confirmed claims require direct evidence.",
         "Unavailable evidence stays visible.",
