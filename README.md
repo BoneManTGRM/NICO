@@ -13,6 +13,7 @@ Last verified: 2026-07-05
 ## Core Features
 
 - **Local-first repository scanning** - scans authorized local repositories and safe test fixtures without requiring a hosted service.
+- **No-server authorized assessment mode** - assesses authorized local folders, GitHub repositories, archives, and passive-only local/staging URLs without a public backend.
 - **Built-in defensive scanners** - detects secret exposure patterns, unsafe application-security markers, risky dependency fixtures, suspicious log patterns, identity-risk events, and AI-agent permission drift.
 - **Optional external scanner awareness** - checks availability for tools such as gitleaks, trufflehog, osv-scanner, pip-audit, npm, OpenSSF Scorecard, semgrep, bandit, and eslint.
 - **Drift detection** - compares current scan output against a stored baseline and flags risk-score drift or new drift categories.
@@ -20,7 +21,7 @@ Last verified: 2026-07-05
 - **TGRM repair candidates** - creates minimal, moderate, and strong repair options with verification commands, rollback guidance, and Codex-ready patch prompts.
 - **Verification workflow** - supports latest-scan verification and repair-specific verification tracking.
 - **Repair memory** - stores scans, findings, drift events, repair candidates, verification results, reports, policy state, and audit logs in a local SQLite-backed store.
-- **Multi-format reporting** - generates JSON, Markdown, HTML, owner, developer, reparodynamic, and compliance-oriented reports.
+- **Multi-format reporting** - generates JSON, Markdown, HTML, owner, developer, reparodynamic, compliance-oriented, and no-server Express Technical Health Assessment reports.
 - **Governance policy** - keeps allowed actions, approval-required actions, blocked actions, autonomy level, and kill-switch behavior explicit.
 - **Local API** - exposes FastAPI endpoints for local scans, findings, drift, repairs, verification, memory, reports, policy, and audit logs.
 - **Frontend foundation** - includes a local Next.js web app foundation under `apps/web`.
@@ -59,6 +60,25 @@ pytest
 python run_local.py
 ```
 
+## No-Server Authorized Assessment
+
+Run these commands without a hosted backend, paid server, Render, Railway, Fly.io, or `app.nicoaudit.com`.
+
+```bash
+python -m nico assess local /path/to/project --authorized
+python -m nico assess github owner/repo --authorized
+python -m nico assess archive ./project.zip --authorized
+python -m nico assess url https://staging.example.com --passive-only --authorized
+python -m nico assess latest
+python -m nico assess report latest --format markdown
+python -m nico assess report latest --format html
+python -m nico assess verify latest
+```
+
+Every non-demo assessment requires `--authorized`, confirming that you own the target or have explicit permission to assess it.
+
+See `docs/NO_SERVER_ASSESSMENT.md` for the full no-server workflow.
+
 Open local API docs at:
 
 ```text
@@ -90,6 +110,8 @@ For a phone/desktop browser setup without localhost, deploy the frontend and bac
 - Frontend environment: `NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST`
 - Backend environment: `NICO_CORS_ORIGINS=https://YOUR-NICO-FRONTEND-HOST`
 
+The hosted app is optional. The no-server assessment engine works locally first.
+
 See `docs/SAFARI_HOSTED_APP.md` for the full hosted setup.
 
 ## CLI Commands
@@ -98,6 +120,11 @@ See `docs/SAFARI_HOSTED_APP.md` for the full hosted setup.
 python -m nico scan <local-path>
 python -m nico scan-test-lab
 python -m nico scan-drift-demo
+python -m nico assess local <path> --authorized
+python -m nico assess github <owner/repo> --authorized
+python -m nico assess archive <archive-path> --authorized
+python -m nico assess url <url> --passive-only --authorized
+python -m nico assess report latest --format markdown
 python -m nico report latest
 python -m nico verify latest
 python -m nico memory
