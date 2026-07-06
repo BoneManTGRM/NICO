@@ -47,7 +47,10 @@ def test_repair_intelligence_suggests_evidence_bound_fix():
     })
     assert result["status"] == "complete"
     assert result["human_review_required"] is True
-    assert result["strategy"] == "dependency_fix"
+    assert result["strategy"] == "dependency_or_runtime_contract_fix"
+    assert result["root_cause_hypothesis"]
+    assert result["patch_steps"]
+    assert result["patch_prompt"]
     assert result["test_plan"]
     assert result["rollback_plan"]
     policy = repair_quality_policy()
