@@ -112,7 +112,7 @@ def test_customer_roles():
     assert can("viewer", "approve") is False
 
 
-def test_health_targets_worker_and_usage_endpoints():
+def test_health_targets_worker_approvals_reports_and_usage_endpoints():
     client = TestClient(app)
     health = client.get("/health")
     assert health.status_code == 200
@@ -123,6 +123,11 @@ def test_health_targets_worker_and_usage_endpoints():
     scan = client.post("/worker/scan", json=authorized_scan_payload())
     assert scan.status_code == 200
     assert scan.json()["scan_id"].startswith("scan_")
+    approvals = client.get("/approvals")
+    assert approvals.status_code == 200
+    report = client.post("/reports/package", json={"client_name": "Test Client", "project_name": "Test Project", "findings": ["Finding"], "next_steps": ["Review"]})
+    assert report.status_code == 200
+    assert report.json()["status"] == "complete"
     guide = client.get("/usage/guide")
     assert guide.status_code == 200
     assert guide.json()["status"] == "ok"
