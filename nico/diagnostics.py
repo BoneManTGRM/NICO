@@ -5,6 +5,7 @@ from typing import Any
 
 from nico.admin_security import safe_public_admin_status
 from nico.approval_queue import list_approvals
+from nico.github_diagnostics import github_auth_diagnostics
 from nico.runtime_config import runtime_config
 from nico.storage import STORE
 
@@ -63,12 +64,13 @@ def diagnostics() -> dict[str, Any]:
     return {
         "status": "ok",
         "app": "NICO",
-        "version": "0.7.0-commercial-no-redeploy",
+        "version": "0.8.0-accuracy-hardening",
         "git_commit": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("VERCEL_GIT_COMMIT_SHA") or "unavailable",
-        "backend_mode": "local-first-hosted-ready",
+        "backend_mode": "accuracy-hardening-hosted",
         "storage": storage_diagnostics(),
         "runtime_config": {"source": config.get("source"), "version": config.get("version")},
+        "github": github_auth_diagnostics(),
         "features": feature_diagnostics(),
         "latest_runs": latest_runs_diagnostics(),
-        "redaction": "Secrets and private connection strings are not returned by diagnostics.",
+        "redaction": "Private values and raw provider error JSON are not returned by diagnostics.",
     }
