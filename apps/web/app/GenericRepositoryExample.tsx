@@ -139,19 +139,29 @@ function trendRows(projectTrends?: Record<string, unknown>) {
   return rows.map(([key, value]) => `<div class="trend-row"><span class="trend-key">${escapeHtml(key)}</span><span class="trend-value">${escapeHtml(value)}</span></div>`).join("");
 }
 
-function ensureCommercialOpsPanel(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
-  ensureRuntimeOpsStyles();
-  const target = document.querySelector<HTMLElement>(".status-panel") || document.querySelector<HTMLElement>(".section.panel"); if (!target?.parentElement) return;
-  const flags = config?.feature_flags || {}; const banner = config?.maintenance_banner ? `<p class="warning-box">${escapeHtml(config.maintenance_banner)}</p>` : "";
-  let panel = document.getElementById("runtime-commercial-ops") as HTMLElement | null;
-  if (!panel) { panel = document.createElement("section"); panel.id = "runtime-commercial-ops"; panel.className = "section panel"; target.insertAdjacentElement("afterend", panel); }
-  panel.innerHTML = `
+function renderCommercialOpsMarkup(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
+  const flags = config?.feature_flags || {};
+  const banner = config?.maintenance_banner ? `<p class="warning-box">${escapeHtml(config.maintenance_banner)}</p>` : "";
+  return `
     <div class="section-head"><div><p class="eyebrow">Commercial Ops</p><h2>Runtime config, project history, and diagnostics</h2></div><span class="status blue">${escapeHtml(config?.source || "fallback")}</span></div>
     ${banner}
     <div class="grid three inset-grid"><article><b>Runtime config</b><span>Source: ${escapeHtml(config?.source || "fallback")} · Version: ${escapeHtml(config?.version || "default")}</span></article><article><b>Default repository</b><span>${escapeHtml(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE)}</span></article><article><b>Admin writes</b><span>Read-only unless server admin token is configured</span></article></div>
     <div class="two-col inset-grid"><div class="mini-panel"><p class="eyebrow">Feature visibility</p><ul class="tight-list">${Object.entries(flags).slice(0, 8).map(([key, value]) => `<li>${escapeHtml(key)}: ${value ? "on" : "off"}</li>`).join("") || "<li>Default feature set active</li>"}</ul></div><div class="mini-panel"><p class="eyebrow">Project trend baseline</p><div class="trend-card">${trendRows(projectTrends)}</div></div></div>
     <details class="help-details"><summary>Safe diagnostics</summary><div class="help-body"><pre class="json-block">${escapeHtml(JSON.stringify(diagnostics || {status:"unavailable"}, null, 2))}</pre></div></details>
     <details class="help-details"><summary>Admin Config / Runtime Settings</summary><div class="help-body"><p>Runtime config can update harmless public copy without redeploy. Write actions are read-only unless backend admin authentication is configured. Backend enforcement still controls authorization and approval gates.</p></div></details>`;
+}
+
+function setTrustedEscapedMarkup(target: HTMLElement, markup: string) {
+  target.textContent = "";
+  target.insertAdjacentHTML("afterbegin", markup);
+}
+
+function ensureCommercialOpsPanel(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
+  ensureRuntimeOpsStyles();
+  const target = document.querySelector<HTMLElement>(".status-panel") || document.querySelector<HTMLElement>(".section.panel"); if (!target?.parentElement) return;
+  let panel = document.getElementById("runtime-commercial-ops") as HTMLElement | null;
+  if (!panel) { panel = document.createElement("section"); panel.id = "runtime-commercial-ops"; panel.className = "section panel"; target.insertAdjacentElement("afterend", panel); }
+  setTrustedEscapedMarkup(panel, renderCommercialOpsMarkup(config, diagnostics, projectTrends));
 }
 
 async function fetchJson(path: string) { if (!API_URL) return null; const response = await fetch(`${API_URL}${path}`, {cache: "no-store"}); if (!response.ok) return null; return response.json(); }
