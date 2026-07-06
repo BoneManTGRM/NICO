@@ -1,5 +1,6 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
+import "../styles/brand.css";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 
 export const metadata = {
