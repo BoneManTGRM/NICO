@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 
@@ -15,14 +14,14 @@ EXPRESS_SCOPE = [
     "Resourcing recommendation",
 ]
 
-ABA_EVIDENCE_PATTERNS = {
-    "no_verified_picks": "No verified picks were available in the product artifact.",
-    "current_provider_gate": "Current provider gate blocked publishable output.",
-    "provider_not_matched": "Provider data did not match a live/current provider row.",
-    "data_unavailable": "Odds/confidence/edge/EV or other market metrics were unavailable.",
+ARTIFACT_EVIDENCE_PATTERNS = {
+    "unverified_output": "The product artifact reports that the output is not verified.",
+    "provider_gate": "A provider/data-source gate blocked publishable output.",
+    "provider_not_matched": "Provider data did not match a current source row.",
+    "data_unavailable": "Required product or market metrics were unavailable.",
     "research_only": "Final recommendation was research-only rather than client-publishable.",
-    "lineup_injury_unverified": "Lineup or injury evidence was not verified.",
-    "snapshot_missing": "Live team snapshot evidence was not returned.",
+    "enrichment_unverified": "Operational enrichment evidence was not verified.",
+    "snapshot_missing": "Live snapshot evidence was not returned.",
 }
 
 
@@ -57,17 +56,18 @@ def product_artifact_findings(product_evidence_text: str) -> list[dict[str, str]
     text = product_evidence_text or ""
     findings: list[dict[str, str]] = []
     checks = {
-        "no_verified_picks": ("no verified picks",),
-        "current_provider_gate": ("current provider gate",),
-        "provider_not_matched": ("provider not matched", "not matched to a live provider"),
-        "data_unavailable": ("data unavailable", "odds status", "no verified buyer picks"),
+        "unverified_output": ("not verified", "no verified"),
+        "provider_gate": ("provider gate", "source gate"),
+        "provider_not_matched": ("provider not matched", "source not matched", "not matched to a live provider"),
+        "data_unavailable": ("data unavailable", "metric unavailable", "status unavailable"),
         "research_only": ("research only",),
-        "lineup_injury_unverified": ("no verified lineup", "verify lineup", "injury update"),
-        "snapshot_missing": ("no live team snapshot",),
+        "enrichment_unverified": ("not verified update", "verify before", "unverified update"),
+        "snapshot_missing": ("no live snapshot", "no live team snapshot"),
     }
     for key, needles in checks.items():
         if _contains(text, *needles):
-            findings.append({"id": key, "finding": ABA_EVIDENCE_PATTERNS[key], "severity": "high" if key in {"no_verified_picks", "current_provider_gate", "research_only"} else "medium"})
+            severity = "high" if key in {"unverified_output", "provider_gate", "research_only"} else "medium"
+            findings.append({"id": key, "finding": ARTIFACT_EVIDENCE_PATTERNS[key], "severity": severity})
     return findings
 
 
@@ -75,6 +75,7 @@ def deliverable_checklist(assessment: dict[str, Any] | None, scanner_attached: b
     assessment = assessment or {}
     sections = {str(item.get("id") or item.get("label") or "").lower(): item for item in assessment.get("sections", []) if isinstance(item, dict)}
     unavailable_notes = assessment.get("unavailable_data_notes") or []
+
     def status_for(*keys: str) -> str:
         if not assessment:
             return "needs_evidence"
@@ -83,9 +84,10 @@ def deliverable_checklist(assessment: dict[str, Any] | None, scanner_attached: b
         if unavailable_notes:
             return "limited"
         return "needs_evidence"
+
     return [
         {"deliverable": "Code audit", "status": status_for("code_audit", "code audit"), "required_evidence": "Repository metadata, files, PR/commit patterns"},
-        {"deliverable": "Library/dependency health", "status": "complete_with_review" if scanner_attached else status_for("dependency_health", "library ecosystem"), "required_evidence": "pip-audit, npm audit, lockfiles, dependency manifests"},
+        {"deliverable": "Library/dependency health", "status": "complete_with_review" if scanner_attached else status_for("dependency_health", "library ecosystem"), "required_evidence": "scanner evidence, lockfiles, dependency manifests"},
         {"deliverable": "CI/CD analysis", "status": status_for("ci_cd", "ci/cd"), "required_evidence": "Workflow files, logs, check history, deployment signals"},
         {"deliverable": "Architecture and technical debt", "status": status_for("architecture", "technical debt"), "required_evidence": "Repo structure, modules, report pipeline, API boundaries"},
         {"deliverable": "Product/report pipeline review", "status": "needs_human_review", "required_evidence": "Generated reports, provider-gate behavior, stale data checks"},
@@ -99,11 +101,11 @@ def deliverable_checklist(assessment: dict[str, Any] | None, scanner_attached: b
 def provider_gate_root_cause_prompts() -> list[str]:
     return [
         "Confirm API keys are loaded and health checks pass without exposing secrets.",
-        "Trace buyer-pick gate rules and log why each candidate row is rejected.",
+        "Trace provider-gate rules and log why each candidate row is rejected.",
         "Check whether saved rows are stale, duplicated, or disconnected from current provider data.",
-        "Verify odds, market availability, lineup/injury, and team snapshot enrichments before export.",
+        "Verify source freshness, metric availability, enrichment data, and report timestamps before export.",
         "Ensure report exports drop unavailable sections or mark them unavailable instead of publishing placeholders.",
-        "Add evidence IDs for provider source, timestamp, market, and rejection reason.",
+        "Add evidence IDs for source, timestamp, provider, and rejection reason.",
     ]
 
 
