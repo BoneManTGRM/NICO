@@ -44,10 +44,12 @@ Hosted Mid workflow now supports the 75-85% target by accepting real evidence fo
 It generates:
 
 - Mid maturity signal
+- Evidence readiness score
 - QA checklist
 - Platform parity checklist
 - Six-month roadmap draft
 - Risk sections and unavailable-data notes
+- Markdown and HTML workflow reports
 
 Empty or missing evidence is marked as unavailable. NICO does not invent QA findings or stakeholder conclusions.
 
@@ -65,12 +67,14 @@ Hosted Retainer Ops now supports the 55-70% target by accepting real operating e
 It generates:
 
 - Weekly delivery status
+- Evidence readiness score
 - Backlog health
 - Release readiness
 - Monthly strategy signal
 - Blocker / approval needs
 - Release checklist
 - Human approval queue
+- Markdown and HTML workflow reports
 
 ## Safety and truth rules
 
@@ -87,6 +91,8 @@ It generates:
 ## Hosted endpoints
 
 ```text
+GET  /health
+GET  /targets
 POST /assessment/github
 POST /assessment/mid
 POST /retainer/ops
@@ -94,6 +100,16 @@ GET  /assessment/latest
 GET  /assessment/mid/latest
 GET  /retainer/ops/latest
 ```
+
+## Test coverage
+
+The high-end service workflow tests cover:
+
+- Authorization blocking
+- Mid workflow report generation
+- Mid evidence readiness
+- Retainer report generation
+- Retainer human approval queue
 
 ## Frontend sections
 
