@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from nico.report_accuracy import apply_report_accuracy
+from nico.scanner_evidence import enrich_payload_with_scanner_evidence
 from nico.storage import STORE
 
 
@@ -29,8 +30,12 @@ def _status_counts(sections: list[Any]) -> dict[str, int]:
     return counts
 
 
+def _guard_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return apply_report_accuracy(enrich_payload_with_scanner_evidence(payload))
+
+
 def _delivery_readiness(payload: dict[str, Any]) -> dict[str, Any]:
-    validated = apply_report_accuracy(payload)
+    validated = _guard_payload(payload)
     verdict = validated.get("client_delivery_verdict") or {}
     sections = [item for item in validated.get("sections", []) if isinstance(item, dict)]
     return {
@@ -43,7 +48,7 @@ def _delivery_readiness(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def markdown_report(payload: dict[str, Any]) -> str:
-    payload = apply_report_accuracy(payload)
+    payload = _guard_payload(payload)
     sections = [item for item in payload.get("sections", []) if isinstance(item, dict)]
     readiness = _delivery_readiness(payload)
     maturity = payload.get("maturity_signal") or {}
@@ -140,7 +145,7 @@ def html_report(markdown: str) -> str:
 
 
 def build_report_package(payload: dict[str, Any]) -> dict[str, Any]:
-    payload = apply_report_accuracy(payload)
+    payload = _guard_payload(payload)
     report_id = f"report_{uuid4().hex[:16]}"
     markdown = markdown_report(payload)
     package = {

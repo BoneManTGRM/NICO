@@ -29,6 +29,9 @@ SECTION_REQUIRED_SOURCES: dict[str, set[str]] = {
     "ci_cd": {"workflow_files", "workflow_runs"},
     "architecture_debt": {"repository_tree", "repository_files"},
     "velocity_complexity": {"github_metadata", "repository_tree"},
+    "scanner_worker_evidence": {"scanner_worker"},
+    "test_execution": {"test_execution"},
+    "build_execution": {"build_execution"},
 }
 
 
@@ -76,12 +79,18 @@ def source_from_text(value: Any) -> set[str]:
         sources.add("repository_files")
     if any(term in text for term in ["tree", "root contains", "source-file signal", "test-path signal"]):
         sources.add("repository_tree")
-    if "osv" in text or "pip-audit" in text or "npm audit" in text:
+    if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner"]):
         sources.add("dependency_intelligence")
-    if "secret" in text or "gitleaks" in text or "trufflehog" in text:
+    if any(term in text for term in ["secret", "gitleaks", "trufflehog"]):
         sources.add("secret_scanning")
     if any(term in text for term in ["semgrep", "bandit", "eslint", "typescript", "static", "risk-pattern"]):
         sources.add("static_analysis")
+    if any(term in text for term in ["scanner worker", "scanner-worker", "controlled_scanner_worker"]):
+        sources.add("scanner_worker")
+    if any(term in text for term in ["pytest", "npm-test", "test execution", "tests passed", "test run"]):
+        sources.add("test_execution")
+    if any(term in text for term in ["npm-build", "build execution", "production build", "build completed"]):
+        sources.add("build_execution")
     return sources
 
 
@@ -91,14 +100,14 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
     findings = sanitize_note_list(list(section.get("findings", []) or []))
     unavailable = sanitize_note_list(list(section.get("unavailable", []) or []))
 
-    evidence_sources: set[str] = set()
-    unavailable_sources: set[str] = set()
+    evidence_sources: set[str] = set(section.get("evidence_sources") or [])
+    unavailable_sources: set[str] = set(section.get("unavailable_sources") or [])
     for note in evidence + findings:
         evidence_sources.update(source_from_text(note))
     for note in unavailable:
         unavailable_sources.update(source_from_text(note))
 
-    required_sources = SECTION_REQUIRED_SOURCES.get(section_id, set())
+    required_sources = set(section.get("required_sources") or []) or SECTION_REQUIRED_SOURCES.get(section_id, set())
     missing_required = sorted(required_sources & unavailable_sources)
     metadata_limited = any(is_metadata_limited(note) for note in unavailable + evidence + findings)
 
