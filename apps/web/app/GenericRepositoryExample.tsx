@@ -6,10 +6,10 @@ const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const PRIVATE_DEFAULTS = new Set(["BoneManTGRM/NICO", "bonemantgrm/nico"]);
 const GENERIC_REPOSITORY_EXAMPLE = "your-org/your-repo";
 const HERO_COPY = {
-  eyebrow: "NICO",
+  eyebrow: "NICO Platform",
   poweredBy: "Powered by Reparodynamics",
-  title: "Repair intelligence for authorized systems",
-  lead: "Evidence-bound technical assessments, scanner workflows, client-ready reports, and approval-gated repair planning.",
+  title: "NICO",
+  lead: "Repair intelligence for authorized systems. Evidence-bound assessments, scanner workflows, client-ready reports, and approval-gated repair planning.",
   actions: ["Run Assessment", "Scanner Worker", "Repair Intelligence", "How to Use"],
 };
 
@@ -31,6 +31,14 @@ function escapeHtml(value: unknown) { return String(value ?? "").replace(/[&<>'"
 function setNativeInputValue(input: HTMLInputElement, value: string) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set; setter?.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); input.dispatchEvent(new Event("change", {bubbles: true})); }
 function applyGenericRepositoryExample(example = GENERIC_REPOSITORY_EXAMPLE) { document.querySelectorAll<HTMLInputElement>("input").forEach((input) => { const value = input.value.trim(); if (PRIVATE_DEFAULTS.has(value)) setNativeInputValue(input, example); if (input.placeholder === "owner/repo" || input.placeholder === GENERIC_REPOSITORY_EXAMPLE) input.placeholder = example; }); }
 
+function safeHeroHeadline(config?: RuntimeConfig) {
+  const configured = (config?.hero_headline || "").trim();
+  if (!configured) return HERO_COPY.title;
+  const lowered = configured.toLowerCase();
+  if (lowered.includes("repair intelligence") || lowered.includes("authorized systems")) return HERO_COPY.title;
+  return configured;
+}
+
 function ensurePoweredByLine(hero: HTMLElement, eyebrow: HTMLElement | null, text: string) {
   let powered = hero.querySelector<HTMLElement>(".hero-powered-by");
   if (!powered) {
@@ -40,12 +48,42 @@ function ensurePoweredByLine(hero: HTMLElement, eyebrow: HTMLElement | null, tex
     else hero.insertBefore(powered, hero.querySelector("h1"));
   }
   powered.textContent = text;
-  powered.style.margin = "0.35rem 0 0.85rem";
-  powered.style.fontSize = "0.92rem";
-  powered.style.letterSpacing = "0.16em";
+  powered.style.margin = "0.45rem 0 1rem";
+  powered.style.fontSize = "clamp(1.2rem, 4.8vw, 2rem)";
+  powered.style.lineHeight = "1.08";
+  powered.style.letterSpacing = "0.18em";
   powered.style.textTransform = "uppercase";
-  powered.style.fontWeight = "800";
-  powered.style.color = "#7dd3fc";
+  powered.style.fontWeight = "950";
+  powered.style.color = "#67e8f9";
+  powered.style.textShadow = "0 0 22px rgba(103,232,249,0.5)";
+}
+
+function styleHero(hero: HTMLElement, eyebrow: HTMLElement | null, title: HTMLElement | null, lead: HTMLElement | null) {
+  hero.style.paddingTop = "clamp(2.9rem, 7vw, 5.5rem)";
+  hero.style.paddingBottom = "clamp(2.6rem, 6vw, 4.8rem)";
+  if (eyebrow) {
+    eyebrow.style.margin = "0";
+    eyebrow.style.fontSize = "clamp(0.9rem, 2.9vw, 1.2rem)";
+    eyebrow.style.lineHeight = "1.1";
+    eyebrow.style.letterSpacing = "0.22em";
+    eyebrow.style.fontWeight = "900";
+    eyebrow.style.color = "#38bdf8";
+  }
+  if (title) {
+    title.style.margin = "0.85rem 0 0";
+    title.style.fontSize = "clamp(5.4rem, 26vw, 12rem)";
+    title.style.lineHeight = "0.82";
+    title.style.letterSpacing = "0.08em";
+    title.style.fontWeight = "950";
+    title.style.color = "#ffffff";
+    title.style.textShadow = "0 0 34px rgba(56,189,248,0.35), 0 12px 38px rgba(2,8,23,0.55)";
+  }
+  if (lead) {
+    lead.style.maxWidth = "850px";
+    lead.style.marginTop = "clamp(1.5rem, 4vw, 2.2rem)";
+    lead.style.fontSize = "clamp(1.25rem, 4vw, 2.1rem)";
+    lead.style.lineHeight = "1.34";
+  }
 }
 
 function applyHeroCopy(config?: RuntimeConfig) {
@@ -53,8 +91,9 @@ function applyHeroCopy(config?: RuntimeConfig) {
   const eyebrow = hero.querySelector<HTMLElement>(".eyebrow"); const title = hero.querySelector<HTMLElement>("h1"); const lead = hero.querySelector<HTMLElement>(".lead");
   if (eyebrow) eyebrow.textContent = config?.hero_eyebrow || HERO_COPY.eyebrow;
   ensurePoweredByLine(hero, eyebrow, config?.hero_powered_by || HERO_COPY.poweredBy);
-  if (title) title.textContent = config?.hero_headline || HERO_COPY.title;
+  if (title) title.textContent = safeHeroHeadline(config);
   if (lead) lead.textContent = config?.hero_lead || HERO_COPY.lead;
+  styleHero(hero, eyebrow, title, lead);
   const actions = [config?.primary_cta || HERO_COPY.actions[0], config?.secondary_cta || HERO_COPY.actions[1], HERO_COPY.actions[2], HERO_COPY.actions[3]];
   hero.querySelectorAll<HTMLAnchorElement>(".hero-actions a").forEach((anchor, index) => { if (actions[index]) anchor.textContent = actions[index]; });
 }
