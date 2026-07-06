@@ -8,6 +8,9 @@ import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
 from nico.hosted_assessment import run_github_assessment
 from nico.assessment_quality import polish_express_result
+from nico.assessment_attachment import attach_existing_worker_evidence
+from nico.report_accuracy import apply_report_accuracy
+from nico.scanner_evidence import enrich_payload_with_scanner_evidence
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 from nico.scanner_worker import get_scan, start_scan
 from nico.storage import STORE
@@ -269,8 +272,11 @@ def audit_log(): return Store().rows('audit_log')
 @app.post('/assessment/github')
 def hosted_github_assessment(req: GithubAssessmentRequest):
     global _LAST_HOSTED_ASSESSMENT
-    result = polish_express_result(run_github_assessment(req.model_dump()))
+    request_payload = req.model_dump()
+    result = polish_express_result(run_github_assessment(request_payload))
     if result.get('status') == 'blocked': raise HTTPException(400, result)
+    result = attach_existing_worker_evidence(result, request_payload)
+    result = apply_report_accuracy(enrich_payload_with_scanner_evidence(result))
     _LAST_HOSTED_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
