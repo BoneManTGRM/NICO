@@ -20,7 +20,7 @@ def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
 
 def _metadata_limited(text: str) -> bool:
     lower = text.lower()
-    return any(marker in lower for marker in ["github returned 403", "github returned 429", "api rate", "request limit", "abuse detection"])
+    return any(marker in lower for marker in ["github returned 403", "github returned 429", "api rate", "request limit", "abuse detection", "rate-limited", "rate limited"])
 
 
 def _notes_limited(item: dict[str, Any] | None) -> bool:
@@ -36,11 +36,11 @@ def _friendly_note(value: Any) -> str:
     if "github returned 403" in lower or "github returned 429" in lower or "api rate" in lower or "abuse detection" in lower:
         prefix = "GitHub metadata was rate-limited during this run."
         if "workflow" in lower or "ci/cd" in lower or ".github/workflows" in lower:
-            return f"Workflow metadata was unavailable because GitHub rate-limited the request. Treat this section as degraded and rerun later or use authenticated GitHub access."
+            return "Workflow metadata was unavailable because GitHub rate-limited the request. Treat this section as degraded and rerun later or use authenticated GitHub access."
         if "pull" in lower or "pr" in lower:
-            return f"Pull-request metadata was unavailable because GitHub rate-limited the request. Do not treat missing PR metadata as proof of direct-to-main work."
+            return "Pull-request metadata was unavailable because GitHub rate-limited the request. Do not treat missing PR metadata as proof of direct-to-main work."
         if "commit" in lower:
-            return f"Commit metadata was unavailable because GitHub rate-limited the request. Do not treat missing commit metadata as proof of inactivity."
+            return "Commit metadata was unavailable because GitHub rate-limited the request. Do not treat missing commit metadata as proof of inactivity."
         return f"{prefix} Rerun later or configure authenticated GitHub access for stronger confidence."
     text = re.sub(r"https?://\S+", "[link omitted]", text)
     text = re.sub(r"\{\s*\"documentation_url\".*", "GitHub returned a metadata access error; raw response omitted from client report.", text)
