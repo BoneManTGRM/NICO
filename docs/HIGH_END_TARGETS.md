@@ -13,6 +13,19 @@ NICO is being upgraded toward the highest realistic service coverage targets for
 
 These are not claims of 100% automation. Final client delivery still requires human validation, Q&A, stakeholder context, roadmap approval, and resourcing judgment.
 
+## Commercial MVP additions
+
+This phase adds safe commercial foundations without breaking the existing hosted deployment:
+
+- Storage abstraction with in-memory fallback and Postgres-compatible schema
+- Safe scanner-worker MVP with asynchronous job IDs and availability checks
+- Evidence upload metadata and text-preview handling
+- Approval queue with pending / approved / rejected / needs_more_evidence states
+- Draft PR request gate that blocks unless an approval item is approved
+- Client-ready Markdown / HTML / JSON report package helpers
+- Customer role helpers and tenant scoping helpers
+- GitHub App architecture stubs for selected-repository read-only install flow
+
 ## Express upgrades
 
 Hosted Express now aims at the 90-95% target by adding:
@@ -87,15 +100,32 @@ It generates:
 - No invented vulnerabilities
 - Missing evidence must be marked unavailable
 - Final client-ready delivery requires human review
+- Draft PR creation remains approval-gated and unavailable until write integration is explicitly enabled
 
 ## Hosted endpoints
 
 ```text
 GET  /health
 GET  /targets
+GET  /storage/schema
 POST /assessment/github
 POST /assessment/mid
 POST /retainer/ops
+POST /worker/scan
+GET  /worker/scan/{scan_id}
+POST /evidence/upload
+GET  /evidence/{project_id}
+POST /reports/package
+GET  /reports/{run_id}
+POST /reports/{run_id}/export
+GET  /approvals
+POST /approvals
+POST /approvals/{approval_id}/approve
+POST /approvals/{approval_id}/reject
+POST /approvals/{approval_id}/needs-more-evidence
+POST /github/draft-pr
+GET  /github/app/plan
+POST /github/app/installations
 GET  /assessment/latest
 GET  /assessment/mid/latest
 GET  /retainer/ops/latest
@@ -106,14 +136,21 @@ GET  /retainer/ops/latest
 The high-end service workflow tests cover:
 
 - Authorization blocking
+- Scanner worker authorization and job IDs
 - Mid workflow report generation
 - Mid evidence readiness
 - Retainer report generation
 - Retainer human approval queue
+- Approval blocking before draft PR requests
+- Storage fallback and schema availability
+- Evidence upload validation
+- Tenant scope helpers
+- Customer role helpers
+- Health and targets endpoints
 
 ## Frontend sections
 
-`app.nicoaudit.com` now exposes:
+`app.nicoaudit.com` currently exposes:
 
 - Express Assessment
 - Mid Assessment
@@ -122,3 +159,5 @@ The high-end service workflow tests cover:
 - Evidence-bound results
 - Download PDF for Express reports
 - Human approval and safety reminders
+
+Next frontend pass should expose the new worker, evidence, approvals, reports package, and GitHub App plan endpoints.
