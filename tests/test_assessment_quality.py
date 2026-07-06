@@ -30,7 +30,7 @@ def test_metadata_limited_sections_are_degraded_not_red():
                 "summary": "Code audit uses metadata and source review.",
                 "evidence": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
                 "findings": ["No recent pull-request evidence was found; direct-to-main work may reduce review traceability."],
-                "unavailable": ["Commit activity unavailable: GitHub returned 403: API rate limit exceeded"],
+                "unavailable": ["Commit activity unavailable: GitHub returned 403: {\"documentation_url\": \"https://docs.github.com/rest\", \"message\": \"API rate limit exceeded\"}"],
             },
             {
                 "id": "ci_cd",
@@ -40,7 +40,7 @@ def test_metadata_limited_sections_are_degraded_not_red():
                 "summary": "CI/CD maturity is based on workflow evidence.",
                 "evidence": ["No GitHub Actions workflow files were available for analysis."],
                 "findings": ["No CI/CD workflow files were found through GitHub contents access."],
-                "unavailable": ["Workflow run history unavailable: GitHub returned 403: API rate limit exceeded"],
+                "unavailable": ["Workflow run history unavailable: GitHub returned 429: {\"documentation_url\": \"https://developer.github.com/v3/#abuse-rate-limits\", \"message\": \"You have triggered an abuse detection mechanism.\"}"],
             },
             {
                 "id": "architecture_debt",
@@ -82,12 +82,16 @@ def test_metadata_limited_sections_are_degraded_not_red():
     deps = next(item for item in polished["sections"] if item["id"] == "dependency_health")
 
     assert polished["assessment_quality"] == "degraded_metadata"
+    assert polished["client_delivery_verdict"]["status"] == "human_review_required"
+    assert polished["client_delivery_verdict"]["confidence"] == "limited"
     assert code["status"] == "yellow"
     assert code["score"] >= 55
     assert not any("No recent pull-request evidence" in note for note in code["findings"])
+    assert not any("documentation_url" in note or "GitHub returned" in note for note in code["unavailable"])
     assert ci["status"] == "yellow"
     assert ci["score"] >= 50
     assert not any("No CI/CD workflow files" in note for note in ci["findings"])
+    assert not any("documentation_url" in note or "GitHub returned" in note for note in ci["unavailable"])
     assert velocity["score"] >= 55
     assert not any("0 commits over" in note for note in velocity["evidence"])
     assert deps["evidence"].count("OSV returned 2 records for streamlit.") == 1
@@ -117,7 +121,7 @@ def test_polished_pdf_is_generated_for_complete_assessment():
     }
     polished = polish_express_result(result)
     pdf_base64 = polished["reports"]["pdf_base64"]
-    assert polished["reports"]["pdf_style"] == "client_ready_polished"
+    assert polished["reports"]["pdf_style"] == "client_ready_readable"
     assert polished["reports"]["pdf_filename"] == "nico-express-owner-repo.pdf"
     assert base64.b64decode(pdf_base64).startswith(b"%PDF")
     assert len(base64.b64decode(pdf_base64)) > 2500
