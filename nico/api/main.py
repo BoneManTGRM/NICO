@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from nico.approval_queue import create_approval, draft_pr_request, list_approval
 from nico.reports import build_report_package, export_report, get_report
 from nico.github_app import github_app_plan, installation_record
 from nico.customer_access import access_summary
+from nico.repair_intelligence import create_repair_approval, repair_quality_policy, suggest_repair
 
 
 _LAST_HOSTED_ASSESSMENT = {}
@@ -122,8 +124,18 @@ class GitHubInstallationRequest(BaseModel):
     selected_repositories: list[str] = []
     permissions: dict = {}
 
+class RepairSuggestionRequest(BaseModel):
+    issue: str
+    evidence: list[str] = []
+    affected_files: list[str] = []
+    risk_level: str = ''
+    test_plan: str = ''
+    rollback_plan: str = ''
+    customer_id: str = 'default_customer'
+    project_id: str = 'default_project'
 
-app=FastAPI(title='NICO API',version='0.5.0',description='Local-first and hosted defensive technical assessment API')
+
+app=FastAPI(title='NICO API',version='0.6.0',description='Local-first and hosted defensive technical assessment API')
 app.add_middleware(CORSMiddleware,allow_origins=cors_origins(),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
 
@@ -147,8 +159,15 @@ def targets():
         'coverage_targets': COVERAGE_TARGETS,
         'storage': STORE.status(),
         'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],
-        'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /evidence/upload','GET /approvals'],
+        'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /evidence/upload','POST /repair/suggest','GET /approvals'],
     }
+
+@app.get('/usage/guide')
+def usage_guide():
+    path = Path(__file__).resolve().parents[2] / 'docs' / 'HOW_TO_USE_NICO.md'
+    if not path.exists():
+        return {'status':'unavailable','message':'HOW_TO_USE_NICO.md is missing.'}
+    return {'status':'ok','format':'markdown','content':path.read_text(encoding='utf-8')}
 
 @app.get('/storage/schema')
 def storage_schema(): return {'status':'ok','schema':STORE.schema(),'storage':STORE.status()}
@@ -239,6 +258,13 @@ async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form(
 
 @app.get('/evidence/{project_id}')
 def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
+
+@app.post('/repair/suggest')
+def repair_suggest(req: RepairSuggestionRequest): return suggest_repair(req.model_dump())
+@app.post('/repair/approval')
+def repair_approval(req: RepairSuggestionRequest): return create_repair_approval(req.model_dump())
+@app.get('/repair/policy')
+def repair_policy(): return repair_quality_policy()
 
 @app.post('/reports/package')
 def create_report_package(req: ReportRequest): return build_report_package(req.model_dump())
