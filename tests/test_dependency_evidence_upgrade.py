@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import nico.hosted_assessment as hosted
 
 
@@ -21,5 +23,6 @@ def test_dependency_scoring_counts_frontend_lockfile(monkeypatch):
 
 
 def test_dependency_policy_files_are_tracked():
-    assert ".github/dependabot.yml"
-    assert "docs/dependency-policy.md"
+    assert Path(".github/dependabot.yml").exists()
+    assert Path("docs/dependency-policy.md").exists()
+    assert Path("apps/web/package-lock.json").exists()
