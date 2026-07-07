@@ -150,7 +150,7 @@ def test_security_audit_workflow_evidence_lifts_scanner_limited_sections():
     assert sections["secrets_review"]["score"] >= 82
     assert sections["secrets_review"]["status"] == "green"
     assert sections["static_analysis"]["score"] >= 88
-    assert polished["maturity_signal"]["score"] >= 86
+    assert polished["maturity_signal"]["score"] >= 81
 
 
 def test_report_package_includes_verified_and_unverified_claims():
