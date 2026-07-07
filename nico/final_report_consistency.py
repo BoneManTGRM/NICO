@@ -6,6 +6,7 @@ from nico.client_acceptance_evidence import apply_client_acceptance_evidence
 from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
 from nico.i18n_es_mx import reports_es_mx, wants_es_mx
 from nico.project_trend_evidence import apply_project_trend_evidence
+from nico.score_details import attach_score_details
 
 
 def _wants_es_mx(result: dict[str, Any]) -> bool:
@@ -221,5 +222,6 @@ def finalize_express_result_consistency(result: dict[str, Any]) -> dict[str, Any
         "score": (result.get("maturity_signal") or {}).get("score"),
         "rule": "Executive summary and report exports are rebuilt after final scoring and polishing.",
     }
+    result = attach_score_details(result)
     _rebuild_reports(result)
     return result
