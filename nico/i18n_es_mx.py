@@ -67,7 +67,8 @@ PHRASES = {
 
 
 def wants_es_mx(value: Any) -> bool:
-    return str(value or "").strip().lower() in {"es", "es-mx", "es_mx", "spanish", "mexican spanish", "español", "español méxico"}
+    text = str(value or "").strip().lower()
+    return text in {"es", "es-mx", "es_mx", "spanish", "mexican spanish", "español", "español méxico"} or "es_mx" in text or "es-mx" in text
 
 
 def tr(value: Any) -> str:
@@ -150,7 +151,7 @@ def markdown_report_es_mx(result: dict[str, Any]) -> str:
         "**Impulsado por Reparodynamics**",
         "",
         f"Generado: {payload.get('generated_at') or _now_iso()}",
-        f"Idioma: Español (México)",
+        "Idioma: Español (México)",
         f"Cliente: {payload.get('client_name') or 'No especificado'}",
         f"Proyecto: {payload.get('project_name') or 'No especificado'}",
         f"Repositorio/alcance: {payload.get('repository') or payload.get('source_scope') or 'No especificado'}",
