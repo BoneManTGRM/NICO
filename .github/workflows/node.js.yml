@@ -8,6 +8,7 @@ on:
       - "apps/web/**"
   push:
     branches:
+      - main
       - upgrade/repair-first-foundation
     paths:
       - "apps/web/**"

@@ -6,6 +6,7 @@ from typing import Any
 
 from nico.artifact_evidence_v2 import apply_evidence_artifact_scoring
 from nico.reparodynamics_engine import reparodynamic_loop
+from nico.scanner_artifact_scoring import apply_scanner_artifact_scoring
 
 RAW_GITHUB_ERROR_PATTERNS = [
     re.compile(r"GitHub returned\s+(403|429)\s*:\s*\{.*?\}", re.IGNORECASE),
@@ -73,7 +74,7 @@ def source_from_text(value: Any) -> set[str]:
         sources.add("repository_tree")
     if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner", "dependency audit", "dependency artifact", "dependency vulnerabilit"]):
         sources.add("dependency_intelligence")
-    if any(term in text for term in ["secret", "gitleaks", "trufflehog", "sensitive scan"]):
+    if any(term in text for term in ["secret", "credential-scan", "gitleaks", "trufflehog", "sensitive scan"]):
         sources.add("secret_scanning")
     if any(term in text for term in ["semgrep", "bandit", "eslint", "typescript", "static", "risk-pattern"]):
         sources.add("static_analysis")
@@ -204,6 +205,7 @@ def delivery_verdict(result: dict[str, Any]) -> dict[str, Any]:
 
 def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
     output = apply_evidence_artifact_scoring(deepcopy(result))
+    output = apply_scanner_artifact_scoring(output)
     sections = []
     for section in output.get("sections", []) or []:
         if isinstance(section, dict):
