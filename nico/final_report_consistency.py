@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from nico.client_acceptance_evidence import apply_client_acceptance_evidence
 from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
 from nico.i18n_es_mx import reports_es_mx, wants_es_mx
 from nico.project_trend_evidence import apply_project_trend_evidence
@@ -123,8 +124,8 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
     if not velocity or not readiness["ready"]:
         return
     velocity.setdefault("evidence", [])
-    _append_unique(velocity["evidence"], "Release-readiness evidence: clean code markers, clean dependency artifacts, clean credential/gitleaks artifacts, static-analysis evidence, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
-    _append_unique(velocity["evidence"], "Why not higher: precise story-point estimates, reviewer seniority, business-value mapping, and client acceptance evidence still require human review.")
+    _append_unique(velocity["evidence"], "Release-readiness evidence: clean code markers, clean dependency artifacts, clean secret artifacts, static-analysis evidence, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
+    _append_unique(velocity["evidence"], "Why not higher: precise story-point estimates, reviewer seniority, business-value mapping, and acceptance evidence still require human review.")
     velocity["score"] = max(int(velocity.get("score") or 0), 90)
     velocity["status"] = _status_from_score(int(velocity["score"]))
     velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, and final release-readiness evidence from clean CI/security/dependency artifacts."
@@ -134,6 +135,7 @@ def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_code_audit_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_project_trend_evidence(result)
+    apply_client_acceptance_evidence(result)
     _recompute_maturity(result)
 
 
@@ -149,15 +151,15 @@ def _build_executive_summary(result: dict[str, Any]) -> str:
         return (
             f"NICO completó una Evaluación Express autorizada de salud técnica para {repo}. "
             f"La señal final de madurez es {level} ({score}/100). "
-            "El puntaje se basa en la evidencia final después de aplicar auditoría de código, dependencias, secretos, análisis estático, CI/CD, arquitectura, velocidad, evidencia de artefactos, historial de proyecto cuando está disponible y notas explícitas de datos no disponibles. "
+            "El puntaje se basa en la evidencia final después de aplicar auditoría de código, dependencias, secretos, análisis estático, CI/CD, arquitectura, velocidad, evidencia de artefactos, historial de proyecto cuando está disponible, aceptación cuando existe y notas explícitas de datos no disponibles. "
             "La entrega final a cliente todavía requiere revisión humana."
             + (" Algunos metadatos de GitHub no estuvieron disponibles, por lo que las secciones afectadas se degradan en vez de tratarse como evidencia negativa final." if quality_note else "")
         )
     return (
         f"NICO completed an authorized hosted Express Technical Health Assessment for {repo}. "
         f"The final maturity signal is {level} ({score}/100). "
-        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, retained project history when available, and explicit unavailable-data notes have been applied. "
-        "Final client delivery still requires human review."
+        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, retained project history when available, acceptance when approved, and explicit unavailable-data notes have been applied. "
+        "Final delivery still requires human review."
         + quality_note
     )
 
