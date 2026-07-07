@@ -108,7 +108,8 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
         unavailable_sources.update(source_from_text(note))
 
     required_sources = set(section.get("required_sources") or []) or SECTION_REQUIRED_SOURCES.get(section_id, set())
-    missing_required = sorted(required_sources & unavailable_sources)
+    missing_required = sorted(required_sources - evidence_sources)
+    optional_unavailable = sorted(unavailable_sources - set(missing_required))
     metadata_limited = any(is_metadata_limited(note) for note in unavailable + evidence + findings)
 
     if not evidence and not findings:
@@ -133,6 +134,8 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
     unverified_claims = unavailable[:]
     if confidence in {"limited", "unavailable"}:
         unverified_claims.append("This section cannot support firm client-facing claims until missing or degraded evidence is resolved.")
+    elif optional_unavailable:
+        unverified_claims.append("Some stronger external evidence is still unavailable, but this section has enough hosted evidence for a provisional score.")
     if section_id in {"secrets_review", "static_analysis"} and unavailable:
         unverified_claims.append("A clean built-in pattern check is not equivalent to a complete scanner-clean result.")
 
@@ -146,6 +149,8 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
         "evidence_sources": sorted(evidence_sources),
         "unavailable_sources": sorted(unavailable_sources),
         "required_sources": sorted(required_sources),
+        "missing_required_sources": missing_required,
+        "optional_unavailable_sources": optional_unavailable,
         "verified_claims": verified_claims,
         "unverified_claims": sanitize_note_list(unverified_claims),
         "human_review_required": True,
