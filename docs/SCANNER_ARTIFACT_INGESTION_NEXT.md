@@ -31,6 +31,12 @@ Raise NICO Express scores by consuming real scanner artifacts that already exist
 - Static analysis can move higher when Bandit/Semgrep artifacts prove clean or low-risk results.
 - CI/CD can move higher when workflow evidence artifacts are current and successful.
 
+## Requirements
+
+- Backend must have `NICO_GITHUB_TOKEN` or `GITHUB_TOKEN` configured for artifact access.
+- The assessed repository must be explicitly authorized.
+- Artifact contents must be parseable JSON.
+
 ## Safety boundary
 
 This remains defensive-only and authorized-repository only. NICO must not scan third-party systems or claim scanner-clean status without the corresponding parsed artifact contents.
