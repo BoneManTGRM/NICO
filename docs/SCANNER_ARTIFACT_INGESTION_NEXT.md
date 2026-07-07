@@ -1,10 +1,10 @@
-# Scanner Artifact Ingestion Follow-Up
+# Scanner Artifact Ingestion
 
 ## Goal
 
 Raise NICO Express scores by consuming real scanner artifacts that already exist in GitHub Actions output.
 
-## Artifacts to ingest
+## Artifacts ingested
 
 - `security-audit-evidence/credential-scan.json`
 - `security-audit-evidence/bandit.json`
@@ -13,12 +13,15 @@ Raise NICO Express scores by consuming real scanner artifacts that already exist
 - `security-audit-evidence/npm-audit.json`
 - `audit-evidence-results/pip-audit-results.json`
 - `audit-evidence-results/npm-audit-results.json`
+- `frontend-audit-results/npm-audit-results.json`
+- `audit-results/pip-audit-results.json`
 
 ## Section mapping
 
 - Clean `credential-scan.json` -> stronger Secrets Exposure Review evidence.
 - Clean `bandit.json` and `semgrep.json` -> stronger Static Analysis evidence.
 - Clean `pip-audit` and `npm-audit` artifacts -> stronger Dependency / Library Ecosystem evidence.
+- Current GitHub Actions artifact sets -> stronger CI/CD evidence.
 - Failed, stale, missing, or unavailable artifacts must remain visible and must not be treated as passing.
 
 ## Expected score effects
