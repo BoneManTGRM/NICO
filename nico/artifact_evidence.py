@@ -138,13 +138,7 @@ def _fetch_github_action_artifacts(payload: dict[str, Any]) -> list[dict[str, An
             if not name or name.lower() not in wanted_names:
                 continue
             content = _download_artifact_text(repo, int(artifact.get("id") or 0))
-            raw.append({
-                "artifact_name": name,
-                "workflow_name": workflow_name,
-                "timestamp": artifact.get("updated_at") or artifact.get("created_at") or run.get("updated_at"),
-                "status": run.get("conclusion") or run.get("status") or "",
-                "content": content,
-            })
+            raw.append({"artifact_name": name, "workflow_name": workflow_name, "timestamp": artifact.get("updated_at") or artifact.get("created_at") or run.get("updated_at"), "status": run.get("conclusion") or run.get("status") or "", "content": content})
     return raw
 
 
@@ -170,13 +164,17 @@ def _collect_raw_artifacts(payload: dict[str, Any]) -> list[Any]:
 
 
 def _detect_source(name: str, workflow_name: str, text: str) -> str:
-    haystack = f"{name} {workflow_name} {text[:400]}".lower()
+    name_l = name.lower()
+    workflow_l = workflow_name.lower()
+    haystack = f"{name_l} {workflow_l} {text[:400].lower()}"
+    if name_l == "audit-results" and workflow_l == "nico ci":
+        return "python_dependency_report"
+    if name_l == "frontend-audit-results" or "npm audit" in haystack or "npm-audit" in haystack or "frontend" in haystack or "package-lock" in haystack:
+        return "frontend_npm_audit"
+    if name_l == "audit-evidence-results" or "audit evidence" in haystack or "audit-evidence" in haystack:
+        return "audit_evidence_workflow"
     if "pip-audit" in haystack or "python" in haystack or "requirements" in haystack:
         return "python_dependency_report"
-    if "npm audit" in haystack or "npm-audit" in haystack or "frontend" in haystack or "package-lock" in haystack:
-        return "frontend_npm_audit"
-    if "audit evidence" in haystack or "audit-evidence" in haystack:
-        return "audit_evidence_workflow"
     return "unknown_artifact"
 
 
