@@ -20,11 +20,28 @@ jobs:
       with:
         python-version: "3.11"
 
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Install frontend dependencies
+      working-directory: apps/web
+      run: npm install --legacy-peer-deps
+
+    - name: Run frontend typecheck
+      working-directory: apps/web
+      run: npm run lint
+
+    - name: Run frontend production build
+      working-directory: apps/web
+      run: npm run build
 
     - name: Compile critical files
       run: |
@@ -54,6 +71,9 @@ jobs:
         mkdir -p audit-results
         python -m pip_audit --format json --output audit-results/pip-audit-results.json || true
         test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
+
+    - name: Run Docker build check
+      run: docker build -t nico-ci:ci .
 
     - name: Run file integrity regression test
       run: |
