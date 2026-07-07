@@ -18,6 +18,7 @@ from nico.storage import STORE
 from nico.evidence import list_evidence, upload_evidence
 from nico.approval_queue import create_approval, draft_pr_request, list_approvals, transition_approval
 from nico.reports import build_report_package, export_report, get_report
+from nico.final_review_workflow import final_review_status, request_final_review, transition_final_review
 from nico.client_job_mode import create_client_job_package, export_client_job_package, export_client_job_payload, get_client_job_package, list_client_job_exports
 from nico.github_app import github_app_plan, installation_record
 from nico.customer_access import access_summary
@@ -125,6 +126,18 @@ class ReportRequest(BaseModel):
     unavailable_data_notes: list = []
     next_steps: list = []
 
+class FinalReviewRequest(BaseModel):
+    customer_id: str = 'default_customer'
+    project_id: str = 'default_project'
+    report_id: str = ''
+    evidence: list[str] = []
+    requester: str = 'nico'
+    risk_level: str = ''
+    test_plan: str = ''
+    rollback_plan: str = ''
+
+class FinalReviewTransitionRequest(BaseModel): actor: str = 'human_reviewer'; note: str = ''
+
 class ClientJobPackageRequest(BaseModel):
     customer_id: str = 'default_customer'
     project_id: str = 'default_project'
@@ -162,7 +175,7 @@ def health():
 
 @app.get('/targets')
 def targets():
-    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
 
 @app.get('/usage/guide')
 def usage_guide():
@@ -362,6 +375,16 @@ def create_report_package(req: ReportRequest): return build_report_package(req.m
 def report_by_run(run_id: str): return get_report(run_id)
 @app.post('/reports/{run_id}/export')
 def report_export(run_id: str, req: ReportExportRequest): return export_report(run_id, req.format)
+@app.get('/reports/{run_id}/final-review')
+def report_final_review_status(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
+    return final_review_status(run_id, customer_id=customer_id, project_id=project_id)
+@app.post('/reports/{run_id}/final-review/request')
+def report_final_review_request(run_id: str, req: FinalReviewRequest):
+    payload = req.model_dump(); payload['run_id'] = run_id
+    return request_final_review(payload)
+@app.post('/reports/final-review/{approval_id}/{status}')
+def report_final_review_transition(approval_id: str, status: str, req: FinalReviewTransitionRequest):
+    return transition_final_review(approval_id, status, actor=req.actor, note=req.note)
 
 @app.post('/approval/create')
 def approval_create(req: ApprovalRequest): return create_approval(req.model_dump())
