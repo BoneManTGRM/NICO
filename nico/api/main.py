@@ -290,10 +290,12 @@ def audit_log(): return Store().rows('audit_log')
 def hosted_github_assessment(req: GithubAssessmentRequest):
     global _LAST_HOSTED_ASSESSMENT
     request_payload = req.model_dump()
-    result = polish_express_result(run_github_assessment(request_payload))
+    result = run_github_assessment(request_payload)
     if result.get('status') == 'blocked': raise HTTPException(400, result)
     result = attach_existing_worker_evidence(result, request_payload)
-    result = apply_report_accuracy(enrich_payload_with_scanner_evidence(result))
+    result = enrich_payload_with_scanner_evidence(result)
+    result = apply_report_accuracy(result)
+    result = polish_express_result(result)
     _LAST_HOSTED_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -359,29 +361,20 @@ def report_by_run(run_id: str): return get_report(run_id)
 @app.post('/reports/{run_id}/export')
 def report_export(run_id: str, req: ReportExportRequest): return export_report(run_id, req.format)
 
-@app.get('/approvals')
-def approvals(customer_id: str = '', project_id: str = ''): return list_approvals(customer_id=customer_id or None, project_id=project_id or None)
-@app.post('/approvals')
+@app.post('/approval/create')
 def approval_create(req: ApprovalRequest): return create_approval(req.model_dump())
-@app.post('/approvals/{approval_id}/approve')
-def approval_approve(approval_id: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, 'approved', actor=req.actor, note=req.note)
-@app.post('/approvals/{approval_id}/reject')
-def approval_reject(approval_id: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, 'rejected', actor=req.actor, note=req.note)
-@app.post('/approvals/{approval_id}/needs-more-evidence')
-def approval_more_evidence(approval_id: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, 'needs_more_evidence', actor=req.actor, note=req.note)
+@app.get('/approvals')
+def approvals(customer_id: str = '', project_id: str = ''): return {'status':'ok','approvals':list_approvals(customer_id or None, project_id or None)}
+@app.post('/approvals/{approval_id}/{status}')
+def approval_transition(approval_id: str, status: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, status, req.actor, req.note)
+@app.post('/approvals/{approval_id}/draft-pr')
+def approval_draft_pr(approval_id: str, req: DraftPrRequest):
+    payload = req.model_dump(); payload['approval_id'] = approval_id
+    return draft_pr_request(payload)
 
-@app.post('/github/draft-pr')
-def github_draft_pr(req: DraftPrRequest): return draft_pr_request(req.model_dump())
+@app.post('/github/installations')
+def github_installation(req: GitHubInstallationRequest, x_nico_admin_token: str = Header(default='')): return installation_record(req.model_dump(), admin_token=x_nico_admin_token)
 @app.get('/github/app/plan')
-def github_app_architecture(): return github_app_plan()
-@app.post('/github/app/installations')
-def github_app_installation(req: GitHubInstallationRequest): return installation_record(req.model_dump())
+def github_plan(): return github_app_plan()
 
-@app.get('/assessment/latest')
-def hosted_latest_assessment(): return _LAST_HOSTED_ASSESSMENT or {'status':'empty','message':'No hosted assessment has been run in this backend process.'}
-@app.get('/assessment/mid/latest')
-def hosted_latest_mid_assessment(): return _LAST_MID_ASSESSMENT or {'status':'empty','message':'No Mid assessment has been run in this backend process.'}
-@app.get('/retainer/ops/latest')
-def hosted_latest_retainer_ops(): return _LAST_RETAINER_OPS or {'status':'empty','message':'No Retainer Ops workflow has been run in this backend process.'}
-
-def start(): uvicorn.run('nico.api.main:app',host='127.0.0.1',port=8000,reload=False)
+if __name__=='__main__': uvicorn.run(app,host='0.0.0.0',port=8000)
