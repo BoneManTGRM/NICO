@@ -16,6 +16,47 @@ def _safe_score(value: Any) -> str:
     return str(value)
 
 
+def _status_from_score(score: int) -> str:
+    if score >= 75:
+        return "green"
+    if score >= 45:
+        return "yellow"
+    return "red"
+
+
+def _recompute_maturity(result: dict[str, Any]) -> None:
+    sections = [item for item in result.get("sections", []) if isinstance(item, dict) and item.get("status") != "gray"]
+    score = round(sum(int(item.get("score") or 0) for item in sections) / len(sections)) if sections else 0
+    if score >= 82:
+        level = "Senior"
+        summary = "Evidence suggests mature delivery foundations with documented structure, automation, and low-risk signals, pending human validation."
+    elif score >= 58:
+        level = "Mid"
+        summary = "Evidence suggests useful foundations exist, but operating maturity depends on closing traceability, test, dependency, or automation gaps."
+    else:
+        level = "Junior"
+        summary = "Evidence suggests early-stage maturity or missing access to the signals needed for confident assessment."
+    result["maturity_signal"] = {"level": level, "score": score, "summary": summary}
+    result["maturity_semaphore"] = {item.get("label", item.get("id", "Section")): item.get("status") for item in sections}
+    result["maturity_semaphore"]["Work vs Expected"] = level
+
+
+def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
+    for item in result.get("sections", []) or []:
+        if not isinstance(item, dict) or item.get("id") != "code_audit":
+            continue
+        evidence_text = "\n".join(str(note) for note in item.get("evidence", []) or [])
+        finding_text = "\n".join(str(note) for note in item.get("findings", []) or [])
+        has_clean_marker_evidence = "actionable TODO/FIXME/security markers=0" in evidence_text
+        has_actionable_marker_finding = "TODO/FIXME/security-note markers require triage" in finding_text
+        has_production_risk = "production-risk=" in evidence_text and "production-risk=0" not in evidence_text
+        if has_clean_marker_evidence and not has_actionable_marker_finding and not has_production_risk:
+            item["score"] = max(int(item.get("score") or 0), 86)
+            item["status"] = _status_from_score(int(item["score"]))
+            item["summary"] = "Code audit uses recent commit/PR metadata plus hosted source-pattern review from the authorized repository; generic security wording is excluded from actionable marker scoring."
+    _recompute_maturity(result)
+
+
 def _build_executive_summary(result: dict[str, Any]) -> str:
     maturity = result.get("maturity_signal") or {}
     level = maturity.get("level") or "Unknown"
@@ -90,6 +131,7 @@ def _rebuild_reports(result: dict[str, Any]) -> None:
 def finalize_express_result_consistency(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") != "complete":
         return result
+    _apply_final_score_adjustments(result)
     result["executive_summary"] = _build_executive_summary(result)
     result["score_source_of_truth"] = {
         "field": "maturity_signal",
