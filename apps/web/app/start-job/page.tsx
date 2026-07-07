@@ -33,8 +33,6 @@ function loadSaved(): FormState {
   }
 }
 
-function statusFor(value: string) { return value.trim() ? "status green" : "status yellow"; }
-
 export default function StartJobPage() {
   const [form, setForm] = useState<FormState>(defaults);
   const [saved, setSaved] = useState(false);
@@ -57,7 +55,7 @@ export default function StartJobPage() {
         <p className="eyebrow">NICO Start Job Wizard</p>
         <h1>Start a job</h1>
         <p className="lead">Choose the job type, capture authorization, save the scope, then move into the correct NICO workflow.</p>
-        <div className="hero-actions"><a className="primary-link" href={commandCenterLink}>Open command center</a><a className="secondary-link" href="/scanner-workflow">Scanner to Express</a><a className="secondary-link" href="/guided-workflow">Guided workflow</a></div>
+        <div className="hero-actions"><a className="primary-link" href={commandCenterLink}>Open command center</a><a className="secondary-link" href="/easy">Easy Mode</a><a className="secondary-link" href="/scanner-workflow">Scanner to Express</a><a className="secondary-link" href="/guided-workflow">Guided workflow</a></div>
       </section>
 
       <section className="section panel">
