@@ -19,12 +19,18 @@ def safe_env_flag(name: str) -> bool:
 
 def storage_diagnostics() -> dict[str, Any]:
     status = STORE.status()
+    warnings = []
+    if not status.get("persistence_available"):
+        warnings.append(status.get("durability_warning") or "Storage persistence is unavailable; retained evidence may not survive restart.")
+    if status.get("database_url_configured") and status.get("adapter") != "postgres":
+        warnings.append("DATABASE_URL is configured but Postgres is not active. Check driver availability, connectivity, and NICO_DISABLE_POSTGRES.")
     return {
         "status": "ok",
         "storage": status,
         "database_configured": bool(status.get("database_url_configured")),
         "persistence_available": bool(status.get("persistence_available")),
         "database_url": REDACTED if status.get("database_url_configured") else "not_configured",
+        "warnings": warnings,
     }
 
 
