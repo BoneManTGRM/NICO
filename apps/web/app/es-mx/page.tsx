@@ -5,7 +5,7 @@ import {useEffect, useState} from "react";
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
 const safetyRules = ["Solo uso defensivo", "Solo sistemas autorizados", "Sin explotación", "Sin fuerza bruta", "Sin bypass de autenticación", "Sin robo de credenciales", "Sin acciones destructivas"];
-const assessmentAreas = ["Auditoría de código", "Dependencias y ecosistema de librerías", "Revisión de secretos", "Análisis estático", "CI/CD", "Arquitectura y deuda técnica", "Velocidad y complejidad", "Reportes Markdown / HTML / PDF"];
+const assessmentAreas = ["Auditoría de código", "Dependencias y ecosistema de librerías", "Revisión de secretos", "Análisis estático", "CI/CD", "Arquitectura y deuda técnica", "Velocidad y complejidad", "Reportes en Markdown / HTML / PDF"];
 
 type Health = {status?: string; system?: string; mode?: string};
 type Section = {id: string; label: string; score: number; status: string; status_label?: string; summary: string; evidence: string[]; findings?: string[]; unavailable?: string[]};
@@ -118,8 +118,8 @@ export default function Page() {
       </section>
 
       <section className="section panel status-panel">
-        <div className="section-head"><div><p className="eyebrow">Estado del sistema</p><h2>Frontend / backend Railway</h2></div><span className={backendOnline ? "status green" : backendConfigured ? "status yellow" : "status red"}>{backendOnline ? "Backend en línea" : backendConfigured ? "Backend configurado" : "Backend faltante"}</span></div>
-        <div className="grid three"><article><b>Frontend</b><span>https://app.nicoaudit.com/es-mx</span></article><article><b>Backend URL</b><span>{API_URL || "No configurado"}</span></article><article><b>Health</b><span>{health?.status || healthError || "Revisando"}</span></article></div>
+        <div className="section-head"><div><p className="eyebrow">Estado del sistema</p><h2>Interfaz y backend en Railway</h2></div><span className={backendOnline ? "status green" : backendConfigured ? "status yellow" : "status red"}>{backendOnline ? "Backend en línea" : backendConfigured ? "Backend configurado" : "Backend faltante"}</span></div>
+        <div className="grid three"><article><b>Interfaz</b><span>https://app.nicoaudit.com/es-mx</span></article><article><b>URL del backend</b><span>{API_URL || "No configurado"}</span></article><article><b>Estado</b><span>{health?.status || healthError || "Revisando"}</span></article></div>
         <button type="button" className="small-button" onClick={checkBackend}>Revisar backend</button>
         {healthError ? <p className="error-box">{healthError}</p> : null}
       </section>
@@ -142,7 +142,7 @@ export default function Page() {
         <div className="report-actions"><button type="button" disabled={!assessment?.reports?.markdown} onClick={() => copyReport("markdown")}>Copiar Markdown</button><button type="button" disabled={!assessment?.reports?.html} onClick={() => copyReport("html")}>Copiar HTML</button><button type="button" disabled={!assessment?.reports?.pdf_base64} onClick={downloadPdf}>Descargar PDF</button>{copied ? <span className="muted">{copied}</span> : null}</div>
       </section>
 
-      <section className="section panel"><div className="section-head"><div><p className="eyebrow">Alcance de evaluación</p><h2>Checks basados en evidencia</h2></div><span className="status gray">Sin datos falsos</span></div><div className="scope-grid">{assessmentAreas.map((area) => <div className="scope-card" key={area}>{area}</div>)}</div></section>
+      <section className="section panel"><div className="section-head"><div><p className="eyebrow">Alcance de evaluación</p><h2>Revisiones basadas en evidencia</h2></div><span className="status gray">Sin datos falsos</span></div><div className="scope-grid">{assessmentAreas.map((area) => <div className="scope-card" key={area}>{area}</div>)}</div></section>
 
       <section id="safety" className="section two-col"><div className="panel"><p className="eyebrow">Límite de seguridad</p><h2>Uso permitido</h2><ul className="tight-list">{safetyRules.map((rule) => <li key={rule}>{rule}</li>)}</ul></div><div className="panel"><p className="eyebrow">Revisión humana</p><h2>Obligatoria para entrega a cliente</h2><ul className="tight-list"><li>Validar hechos y evidencia antes de entregar.</li><li>Confirmar contexto del cliente y stakeholders.</li><li>Aprobar cambios que impacten producción.</li><li>Revisar roadmap y recomendaciones de recursos.</li></ul></div></section>
     </main>
