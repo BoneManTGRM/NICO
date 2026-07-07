@@ -16,7 +16,7 @@ RAW_GITHUB_ERROR_PATTERNS = [
 
 METADATA_LIMIT_MARKERS = ("github returned 403", "github returned 429", "api rate", "request limit", "abuse detection", "rate-limited", "rate limited")
 CODE_MARKER_SUMMARY_RE = re.compile(r"Text files inspected for code-risk markers: TODO/FIXME/security notes=(\d+), risky pattern hits=(\d+), test-path signals=(\d+)\.", re.IGNORECASE)
-ACTIONABLE_CODE_MARKER_RE = re.compile(r"(?i)(\bTODO\b|\bFIXME\b|SECURITY\s*[:=\-]|security\s+(issue|risk|bug|vulnerability|credential|secret|fix|todo|fixme))")
+ACTIONABLE_CODE_MARKER_RE = re.compile(r"(?i)(\bTODO\b|\bFIXME\b|SECURITY\s*[:=]|security\s+(issue|risk|bug|vulnerability|credential|secret|fix|todo|fixme))")
 GENERIC_CODE_MARKER_FINDING = "TODO/FIXME/security-note markers require triage before client-ready delivery."
 
 SECTION_REQUIRED_SOURCES: dict[str, set[str]] = {
