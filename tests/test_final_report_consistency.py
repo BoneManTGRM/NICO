@@ -12,7 +12,7 @@ def _base_result(**overrides):
         "assessment_mode": "express",
         "coverage_targets": COVERAGE_TARGETS,
         "executive_summary": "NICO completed an assessment. The current maturity signal is Mid (71/100).",
-        "maturity_signal": {"level": "Mid", "score": 77, "summary": "Final score."},
+        "maturity_signal": {"level": "Mid", "score": 77, "summary": "Stale pre-final score."},
         "maturity_semaphore": {"Code Audit": "green"},
         "sections": [
             {
@@ -42,16 +42,17 @@ def _base_result(**overrides):
     return result
 
 
-def test_final_consistency_rebuilds_summary_and_reports_from_final_score():
+def test_final_consistency_rebuilds_summary_and_reports_from_final_sections():
     result = finalize_express_result_consistency(_base_result())
     assert "71/100" not in result["executive_summary"]
-    assert "77/100" in result["executive_summary"]
+    assert "80/100" in result["executive_summary"]
     assert result["score_source_of_truth"]["field"] == "maturity_signal"
-    assert result["score_source_of_truth"]["score"] == 77
+    assert result["score_source_of_truth"]["score"] == 80
+    assert result["maturity_signal"]["score"] == 80
     assert "71/100" not in result["reports"]["markdown"]
-    assert "77/100" in result["reports"]["markdown"]
+    assert "80/100" in result["reports"]["markdown"]
     assert "71/100" not in result["reports"]["html"]
-    assert "77/100" in result["reports"]["html"]
+    assert "80/100" in result["reports"]["html"]
 
 
 def test_final_consistency_preserves_blocked_results_without_rewriting():
@@ -61,11 +62,12 @@ def test_final_consistency_preserves_blocked_results_without_rewriting():
     assert result["executive_summary"] == "blocked old 71/100"
 
 
-def test_final_consistency_rebuilds_es_mx_reports_from_final_score():
+def test_final_consistency_rebuilds_es_mx_reports_from_final_sections():
     result = finalize_express_result_consistency(_base_result(assessment_mode="express_es_mx"))
-    assert result["score_source_of_truth"]["score"] == 77
+    assert result["score_source_of_truth"]["score"] == 80
+    assert result["maturity_signal"]["score"] == 80
     assert "71/100" not in result["executive_summary"]
-    assert "77/100" in result["executive_summary"]
+    assert "80/100" in result["executive_summary"]
     assert "71/100" not in result["reports"]["markdown"]
-    assert "Puntaje: **77/100**" in result["reports"]["markdown"]
+    assert "Puntaje: **80/100**" in result["reports"]["markdown"]
     assert 'lang="es-MX"' in result["reports"]["html"]
