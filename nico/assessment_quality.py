@@ -6,7 +6,6 @@ import io
 import re
 from typing import Any
 
-
 PDF_STYLE_VERSION = "professional_report_v10"
 
 
@@ -15,10 +14,7 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
-    for item in result.get("sections", []) or []:
-        if item.get("id") == section_id:
-            return item
-    return None
+    return next((item for item in result.get("sections", []) or [] if item.get("id") == section_id), None)
 
 
 def _metadata_limited(text: str) -> bool:
@@ -37,15 +33,14 @@ def _friendly_note(value: Any) -> str:
     text = str(value or "").replace("\u2014", "-").replace("\u2013", "-").replace("\u2022", "-")
     text = re.sub(r"<\s*br\s*/?\s*>", " ", text, flags=re.IGNORECASE)
     lower = text.lower()
-    if "github returned 403" in lower or "github returned 429" in lower or "api rate" in lower or "abuse detection" in lower:
-        prefix = "GitHub metadata was rate-limited during this run."
+    if _metadata_limited(text):
         if "workflow" in lower or "ci/cd" in lower or ".github/workflows" in lower:
             return "Workflow metadata was unavailable because GitHub rate-limited the request. Treat this section as degraded and rerun later or use authenticated GitHub access."
         if "pull" in lower or "pr" in lower:
             return "Pull-request metadata was unavailable because GitHub rate-limited the request. Do not treat missing PR metadata as proof of direct-to-main work."
         if "commit" in lower:
             return "Commit metadata was unavailable because GitHub rate-limited the request. Do not treat missing commit metadata as proof of inactivity."
-        return f"{prefix} Rerun later or configure authenticated GitHub access for stronger confidence."
+        return "GitHub metadata was rate-limited during this run. Rerun later or configure authenticated GitHub access for stronger confidence."
     text = re.sub(r"https?://\S+", "[link omitted]", text)
     text = re.sub(r"\{\s*\"documentation_url\".*", "GitHub returned a metadata access error; raw response omitted from client report.", text)
     return " ".join(text.split())
@@ -57,9 +52,7 @@ def _sanitize_list(items: list[Any]) -> list[str]:
 
 def _clean_text(value: Any, limit: int = 1200) -> str:
     text = _friendly_note(value)
-    if len(text) > limit:
-        return text[: max(0, limit - 18)].rstrip() + "... [truncated]"
-    return text
+    return text[: max(0, limit - 18)].rstrip() + "... [truncated]" if len(text) > limit else text
 
 
 def _status_from_score(score: int) -> str:
@@ -103,16 +96,16 @@ def _client_verdict(result: dict[str, Any]) -> dict[str, Any]:
 
 def _classify_secret_hit(note: str) -> str:
     lower = note.lower()
-    if any(marker in lower for marker in ["private_key", "aws_access_key", "github_token"]):
-        return "suspected_secret"
     if any(marker in lower for marker in ["tests/", "test_lab", "fake_", "fixture"]):
         return "test_fixture"
     if any(marker in lower for marker in ["docs/", ".env.example", "example"]):
         return "docs_example"
-    if "generic_secret_assignment" in lower and any(marker in lower for marker in ["toke...oken", "api/main.py", "token"]):
-        return "backend_token_variable"
-    if "generic_secret_assignment" in lower:
+    if any(marker in lower for marker in ["private_key", "aws_access_key", "github_token", "ghp_", "gho_", "ghu_", "ghs_"]):
         return "suspected_secret"
+    if "generic_secret_assignment" in lower:
+        if any(marker in lower for marker in ["nico/api/main.py", "header(default", "toke...oken", "token", "runtime_config", "admin_token"]):
+            return "backend_token_variable"
+        return "review_required"
     return "review_required"
 
 
@@ -131,7 +124,10 @@ def _classify_static_hit(note: str) -> str:
 
 def _is_broad_dependency_note(note: str) -> bool:
     lower = note.lower()
-    return "vulnerability record" in lower and any(op in note for op in [">=", "<=", "~=", ">", "<", "[standard]>="])
+    if "vulnerability record" not in lower:
+        return False
+    version_part = note.split("@", 1)[1] if "@" in note else note
+    return any(marker in version_part for marker in [">=", "<=", "~=", ">", "<", "[standard]>="])
 
 
 def _polish_secrets(item: dict[str, Any] | None) -> None:
@@ -141,15 +137,20 @@ def _polish_secrets(item: dict[str, Any] | None) -> None:
     hit_notes = [note for note in evidence if ": potential " in note]
     classes = [_classify_secret_hit(note) for note in hit_notes]
     suspected = sum(1 for label in classes if label in {"suspected_secret", "review_required"})
-    safe_review = len(classes) - suspected
-    if hit_notes and suspected == 0:
-        item["summary"] = "Secrets review classifies masked pattern hits before scoring so backend token variable names, fixtures, and examples are not treated as confirmed leaks."
-        item["evidence"] = _unique(evidence + [f"Secret-pattern classification: confirmed=0, review-only={safe_review}, total={len(hit_notes)}.", "No confirmed exposed secret was identified by hosted masked pattern review; full git-history scanning is still required for final assurance."])
+    review_only = len(classes) - suspected
+    if not hit_notes:
+        _apply_score(item, max(int(item.get("score", 0)), 88))
+        return
+    item["evidence"] = _unique(evidence + [f"Secret-pattern classification: suspected={suspected}, review-only={review_only}, total={len(hit_notes)}."])
+    if suspected == 0:
+        item["summary"] = "Secrets review classifies masked pattern hits before scoring; backend token parameter names, fixtures, and examples are review-only and are not treated as confirmed leaks."
         item["findings"] = []
-        _apply_score(item, max(int(item.get("score", 0)), 82))
-    elif suspected:
-        item["evidence"] = _unique(evidence + [f"Secret-pattern classification: suspected={suspected}, review-only={safe_review}, total={len(hit_notes)}."])
-        _apply_score(item, max(45, 75 - suspected * 12))
+        item["unavailable"] = _unique(list(item.get("unavailable", []) or []) + ["Full git-history secret scanning is still required before claiming the repository is scanner-clean."])
+        # Keep this yellow until gitleaks/trufflehog evidence exists; this is more accurate than a red false positive.
+        item["score"] = max(int(item.get("score", 0)), 74)
+        item["status"] = "yellow"
+    else:
+        _apply_score(item, max(45, 75 - suspected * 10))
 
 
 def _polish_dependencies(item: dict[str, Any] | None) -> None:
@@ -157,17 +158,21 @@ def _polish_dependencies(item: dict[str, Any] | None) -> None:
         return
     evidence = list(item.get("evidence", []) or [])
     findings = list(item.get("findings", []) or [])
-    broad = [note for note in _unique(evidence + findings) if _is_broad_dependency_note(note)]
-    lockfile_missing = any("no javascript lockfile" in note.lower() for note in findings)
+    combined = _unique(evidence + findings)
+    broad = [note for note in combined if _is_broad_dependency_note(note)]
+    lockfile_missing = any("no javascript lockfile" in note.lower() for note in findings + evidence)
     confirmed = [note for note in findings if "vulnerability record" in note.lower() and note not in broad]
     if broad:
-        item["evidence"] = _unique(evidence + ["Hosted OSV records based on manifest version ranges are broad-range warnings, not confirmed installed-package vulnerabilities. Use pip-audit/npm audit/lockfile evidence for client-final dependency claims."])
+        item["evidence"] = _unique(evidence + ["Hosted OSV records based on manifest version ranges are broad-range warnings, not confirmed installed-package vulnerabilities. Exact lockfile/audit evidence is required for client-final vulnerability claims."])
         item["findings"] = _unique([note for note in findings if note not in broad])
         if not confirmed:
-            target = 68 if lockfile_missing else 76
+            target = 72 if lockfile_missing else 78
             _apply_score(item, max(int(item.get("score", 0)), target))
     elif not confirmed and evidence:
-        _apply_score(item, max(int(item.get("score", 0)), 72))
+        target = 68 if lockfile_missing else 76
+        _apply_score(item, max(int(item.get("score", 0)), target))
+    if lockfile_missing:
+        item["unavailable"] = _unique(list(item.get("unavailable", []) or []) + ["JavaScript lockfile evidence is still missing; add a real generated lockfile or npm audit evidence before claiming full dependency assurance."])
 
 
 def _polish_static(item: dict[str, Any] | None) -> None:
@@ -296,6 +301,7 @@ def _build_polished_pdf_base64(result: dict[str, Any]) -> tuple[str | None, str 
     status_color = colors.HexColor(_status_color("red" if verdict["red_sections"] else "yellow" if verdict["blockers"] else "green"))
     metric_table = Table([[_metric_card("MATURITY", maturity.get("level", "Unknown"), metric_style, label_style), _metric_card("SCORE", f"{maturity.get('score', 'N/A')}/100", metric_style, label_style), _metric_card("CONFIDENCE", verdict["confidence"], metric_style, label_style), [_p("DELIVERY VERDICT", label_style), Table([[_p(str(verdict["status"]).replace("_", " ").upper(), badge)]], colWidths=[1.55 * inch], style=TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_color), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))]]], colWidths=[1.65 * inch, 1.45 * inch, 1.55 * inch, 2.43 * inch])
     metric_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.white), ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#dbe3ef")), ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e2e8f0")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
+
     score_rows = [[_p("Area", label_style), _p("Status", label_style), _p("Score", label_style), _p("Summary", label_style)]]
     for item in sections:
         score_rows.append([_p(item.get("label") or item.get("id") or "Section", small), _p(str(item.get("status") or "unknown").upper(), small), _p(str(item.get("score", "N/A")), small), _p(item.get("summary") or "", small, limit=190)])
