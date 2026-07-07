@@ -38,6 +38,43 @@ def test_limited_metadata_is_cleaned_and_regraded():
     assert not any("GitHub returned" in note for note in sections["code_audit"]["unavailable"])
 
 
+def test_dependency_range_warnings_and_backend_token_references_are_not_red_flags():
+    result = {
+        "status": "complete",
+        "repository": "BoneManTGRM/NICO",
+        "generated_at": "2026-07-07T00:00:00Z",
+        "client_name": "NICO",
+        "project_name": "NICO",
+        "executive_summary": "Assessment complete.",
+        "maturity_signal": {"level": "Mid", "score": 76},
+        "maturity_semaphore": {},
+        "coverage_targets": {"express_technical_health_assessment": {"target": "90-95%"}},
+        "quick_wins": [],
+        "medium_term_plan": [],
+        "resourcing_recommendation": [],
+        "risk_register": [],
+        "verification_checklist": [],
+        "sections": [
+            {"id": "code_audit", "label": "Code Audit", "score": 80, "status": "green", "summary": "Code.", "evidence": [], "findings": [], "unavailable": []},
+            {"id": "dependency_health", "label": "Dependency / Library Ecosystem", "score": 46, "status": "yellow", "summary": "Deps.", "evidence": ["OSV returned 4 vulnerability record(s) for PyPI:uvicorn@[standard]>=0.30: GHSA-33c7."], "findings": ["package.json exists but no JavaScript lockfile was found in the checked paths.", "OSV returned 4 vulnerability record(s) for PyPI:uvicorn@[standard]>=0.30: GHSA-33c7."], "unavailable": ["pip-audit, npm audit, and OSV Scanner CLI execution are not yet run inside a sandboxed worker."]},
+            {"id": "secrets_review", "label": "Secrets Exposure Review", "score": 51, "status": "yellow", "summary": "Secrets.", "evidence": ["Secret-pattern hits found in fetched text files: 6.", "nico/api/main.py:191: potential generic_secret_assignment evidence toke...oken", "nico/api/main.py:207: potential generic_secret_assignment evidence toke...oken", "nico/api/main.py:212: potential generic_secret_assignment evidence toke...oken"], "findings": ["Potential secret exposure requires immediate human review and credential rotation if confirmed."], "unavailable": ["Full git-history secret scanning requires a sandboxed worker with gitleaks or trufflehog."]},
+            {"id": "static_analysis", "label": "Static Analysis", "score": 86, "status": "green", "summary": "Static.", "evidence": [], "findings": [], "unavailable": []},
+            {"id": "ci_cd", "label": "CI/CD Analysis", "score": 95, "status": "green", "summary": "CI.", "evidence": [], "findings": [], "unavailable": []},
+            {"id": "architecture_debt", "label": "Architecture & Technical Debt", "score": 94, "status": "green", "summary": "Arch.", "evidence": [], "findings": [], "unavailable": []},
+            {"id": "velocity_complexity", "label": "Velocity / Complexity", "score": 83, "status": "green", "summary": "Velocity.", "evidence": [], "findings": [], "unavailable": []},
+        ],
+    }
+    polished = polish_express_result(result)
+    sections = {item["id"]: item for item in polished["sections"]}
+    assert sections["dependency_health"]["score"] >= 72
+    assert sections["dependency_health"]["status"] == "yellow"
+    assert not any("uvicorn@[standard]>=0.30" in note for note in sections["dependency_health"]["findings"])
+    assert sections["secrets_review"]["score"] >= 74
+    assert sections["secrets_review"]["status"] == "yellow"
+    assert sections["secrets_review"]["findings"] == []
+    assert polished["maturity_signal"]["score"] >= 83
+
+
 def test_polished_pdf_is_generated_for_complete_assessment():
     pytest.importorskip("reportlab")
     result = {
