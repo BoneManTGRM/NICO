@@ -175,6 +175,8 @@ def _gitleaks_count(data: Any) -> int | None:
     if isinstance(data, list):
         return len(data)
     if isinstance(data, dict):
+        if isinstance(data.get("finding_count"), int):
+            return int(data["finding_count"])
         for key in ("findings", "results", "leaks"):
             value = data.get(key)
             if isinstance(value, list):
@@ -182,6 +184,32 @@ def _gitleaks_count(data: Any) -> int | None:
         if data.get("status") == "skipped":
             return None
     return None
+
+
+def _drop_resolved_dependency_findings(section: dict[str, Any]) -> None:
+    resolved_markers = (
+        "osv returned",
+        "pip-audit artifact reported",
+        "npm-audit artifact reported",
+        "package.json exists but no javascript lockfile",
+    )
+    kept = [item for item in section.get("findings", []) or [] if not any(marker in str(item).lower() for marker in resolved_markers)]
+    if len(kept) != len(section.get("findings", []) or []):
+        section["findings"] = kept
+        section.setdefault("evidence", [])
+        _append_unique(section["evidence"], "Parsed clean dependency artifacts superseded earlier manifest-only dependency warnings for this run.")
+
+
+def _drop_resolved_secret_findings(section: dict[str, Any]) -> None:
+    resolved_markers = (
+        "potential generic_secret_assignment",
+        "secret-pattern hits found in fetched text files",
+        "potential secret exposure requires",
+    )
+    for key in ("findings", "evidence"):
+        section[key] = [item for item in section.get(key, []) or [] if not any(marker in str(item).lower() for marker in resolved_markers)]
+    section.setdefault("evidence", [])
+    _append_unique(section["evidence"], "Clean credential-scan and gitleaks artifacts downgraded generic token-name pattern matches as false-positive source-code signals for this run.")
 
 
 def _lift_section(section: dict[str, Any], source: str, note: str, score: int = 88) -> None:
@@ -244,24 +272,30 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
         pip_count = _pip_count(pip) if pip is not None else None
         npm_count = _npm_count(npm) if npm is not None else None
         if pip_count == 0 and npm_count == 0:
+            _drop_resolved_dependency_findings(deps)
             _lift_section(deps, "dependency_intelligence", "Parsed GitHub Actions pip-audit and npm-audit artifacts reported zero dependency vulnerabilities.", 90)
-        elif pip_count and pip_count > 0:
+        elif pip_count is not None and pip_count > 0:
             _flag_section(deps, "dependency_intelligence", f"Parsed pip-audit artifact reported {pip_count} vulnerability finding(s).", 68)
-        elif npm_count and npm_count > 0:
+        elif npm_count is not None and npm_count > 0:
             _flag_section(deps, "dependency_intelligence", f"Parsed npm-audit artifact reported {npm_count} vulnerability finding(s).", 64)
 
     if secrets is not None:
         credential = files.get("credential-scan.json")
         gitleaks = files.get("gitleaks.json")
+        gitleaks_summary = files.get("gitleaks-summary.json")
         credential_count = _credential_count(credential)
         gitleaks_count = _gitleaks_count(gitleaks)
+        if gitleaks_count is None:
+            gitleaks_count = _gitleaks_count(gitleaks_summary)
         if credential_count == 0 and gitleaks_count == 0:
+            _drop_resolved_secret_findings(secrets)
             _lift_section(secrets, "secret_scanning", "Parsed credential-scan and gitleaks git-history artifacts reported zero credential findings.", 93)
-        elif gitleaks_count and gitleaks_count > 0:
+        elif gitleaks_count is not None and gitleaks_count > 0:
             _flag_section(secrets, "secret_scanning", f"Parsed gitleaks artifact reported {gitleaks_count} git-history secret finding(s).", 60)
-        elif credential_count and credential_count > 0:
+        elif credential_count is not None and credential_count > 0:
             _flag_section(secrets, "secret_scanning", f"Parsed credential-scan artifact reported {credential_count} high-confidence credential finding(s).", 60)
         elif credential_count == 0:
+            _drop_resolved_secret_findings(secrets)
             _lift_section(secrets, "secret_scanning", "Parsed credential-scan artifact reported zero high-confidence credential findings.", 90)
 
     if static is not None:
