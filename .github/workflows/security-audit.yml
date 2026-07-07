@@ -64,7 +64,19 @@ jobs:
         run: |
           go install github.com/gitleaks/gitleaks/v8@latest
           "$HOME/go/bin/gitleaks" detect --source . --report-format json --report-path gitleaks.json --no-banner --redact || true
-          test -f gitleaks.json || echo '[]' > gitleaks.json
+          if [ ! -s gitleaks.json ]; then
+            echo '[]' > gitleaks.json
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          path = Path('gitleaks.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          count = len(data) if isinstance(data, list) else len(data.get('findings', []) or data.get('results', []) or data.get('leaks', []))
+          Path('gitleaks-summary.json').write_text(json.dumps({'scanner': 'gitleaks', 'finding_count': count, 'artifact_present': True}, indent=2), encoding='utf-8')
+          print(f'gitleaks finding count: {count}')
+          PY
+          ls -lah gitleaks.json gitleaks-summary.json
 
       - name: Built-in high-confidence credential scan
         run: |
@@ -120,5 +132,6 @@ jobs:
             bandit.json
             semgrep.json
             gitleaks.json
+            gitleaks-summary.json
             credential-scan.json
             npm-audit.json
