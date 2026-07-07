@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 ES_MX = "es-MX"
@@ -98,14 +100,19 @@ def tr(value: Any) -> str:
     return out
 
 
+def _clean(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def localize_section(section: dict[str, Any]) -> dict[str, Any]:
     item = deepcopy(section)
     section_id = str(item.get("id") or "")
     item["label"] = SECTION_LABELS.get(section_id, tr(item.get("label") or section_id))
-    if section_id in SUMMARY_BY_SECTION:
-        item["summary"] = SUMMARY_BY_SECTION[section_id]
-    else:
-        item["summary"] = tr(item.get("summary"))
+    item["summary"] = SUMMARY_BY_SECTION.get(section_id, tr(item.get("summary")))
     item["status_label"] = STATUS.get(str(item.get("status") or "").lower(), str(item.get("status") or "desconocido"))
     for key in ("evidence", "findings", "unavailable", "verified_claims", "unverified_claims"):
         if isinstance(item.get(key), list):
@@ -132,3 +139,80 @@ def localize_result(result: dict[str, Any]) -> dict[str, Any]:
     if output.get("safety_boundary"):
         output["safety_boundary"] = tr(output["safety_boundary"])
     return output
+
+
+def markdown_report_es_mx(result: dict[str, Any]) -> str:
+    payload = localize_result(result)
+    maturity = payload.get("maturity_signal") or {}
+    lines = [
+        f"# Paquete de reporte NICO — {payload.get('repository') or payload.get('source_scope') or 'sin repositorio'}",
+        "",
+        "**Impulsado por Reparodynamics**",
+        "",
+        f"Generado: {payload.get('generated_at') or _now_iso()}",
+        f"Idioma: Español (México)",
+        f"Cliente: {payload.get('client_name') or 'No especificado'}",
+        f"Proyecto: {payload.get('project_name') or 'No especificado'}",
+        f"Repositorio/alcance: {payload.get('repository') or payload.get('source_scope') or 'No especificado'}",
+        "",
+        "## Resumen ejecutivo",
+        payload.get("executive_summary") or "No se recibió resumen ejecutivo.",
+        "",
+        "## Señal de madurez",
+        f"Nivel: **{maturity.get('level', 'Desconocido')}**",
+        f"Puntaje: **{maturity.get('score', 'N/A')}/100**",
+        maturity.get("summary") or "La madurez depende de evidencia disponible y revisión humana.",
+        "",
+        "## Revisión humana obligatoria",
+        "La entrega final, conclusiones para cliente, decisiones de roadmap, presupuesto, recursos y cambios de código requieren revisión humana. La evidencia faltante se muestra y no se trata como verificada.",
+        "",
+        "## Semáforo de madurez",
+    ]
+    for key, value in (payload.get("maturity_semaphore") or {}).items():
+        lines.append(f"- **{key}**: {value}")
+    lines += ["", "## Secciones de evaluación"]
+    for item in payload.get("sections", []) or []:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status_label") or STATUS.get(str(item.get("status") or "").lower(), item.get("status", "desconocido"))
+        lines += [
+            f"### {item.get('label') or item.get('id') or 'Sección'} — {str(status).upper()} ({item.get('score', 'N/A')}/100)",
+            item.get("summary") or "Sin resumen.",
+            "",
+            "Evidencia:",
+        ]
+        for evidence in item.get("evidence", []) or ["No se recibió evidencia."]:
+            lines.append(f"- {_clean(evidence)}")
+        if item.get("findings"):
+            lines.append("Hallazgos:")
+            for finding in item.get("findings", []):
+                lines.append(f"- {_clean(finding)}")
+        if item.get("unavailable"):
+            lines.append("Datos no disponibles:")
+            for unavailable in item.get("unavailable", []):
+                lines.append(f"- {_clean(unavailable)}")
+        lines.append("")
+    for title, key in [
+        ("Acciones rápidas", "quick_wins"),
+        ("Plan de mediano plazo", "medium_term_plan"),
+        ("Recomendación de recursos", "resourcing_recommendation"),
+        ("Registro de riesgos", "risk_register"),
+        ("Checklist de verificación", "verification_checklist"),
+    ]:
+        lines.append(f"## {title}")
+        values = payload.get(key) or []
+        prefix = "- [ ]" if key == "verification_checklist" else "-"
+        for item in values or ["Revisión humana requerida."]:
+            lines.append(f"{prefix} {_clean(item)}")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def html_report_es_mx(markdown: str) -> str:
+    safe = html.escape(markdown)
+    return f"""<!doctype html><html lang=\"es-MX\"><head><meta charset=\"utf-8\"><title>Reporte NICO</title><style>body{{font-family:Arial,sans-serif;background:#f8fafc;color:#111827;margin:0}}main{{max-width:980px;margin:34px auto;padding:0 20px 50px}}.hero{{background:#0f172a;color:white;border-radius:28px;padding:30px;margin-bottom:22px}}.hero b{{color:#67e8f9;text-transform:uppercase;letter-spacing:.14em}}pre{{white-space:pre-wrap;background:white;border:1px solid #e5e7eb;border-radius:18px;padding:24px;line-height:1.55}}</style></head><body><main><section class=\"hero\"><b>NICO - Impulsado por Reparodynamics</b><h1>Paquete de reporte para cliente</h1><p>Salida basada en evidencia. Revisión humana requerida.</p></section><pre>{safe}</pre></main></body></html>"""
+
+
+def reports_es_mx(result: dict[str, Any]) -> dict[str, str]:
+    markdown = markdown_report_es_mx(result)
+    return {"markdown": markdown, "html": html_report_es_mx(markdown)}
