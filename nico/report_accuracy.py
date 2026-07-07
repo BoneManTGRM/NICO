@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
-from nico.artifact_evidence import apply_evidence_artifact_scoring
+from nico.artifact_evidence_v2 import apply_evidence_artifact_scoring
 from nico.reparodynamics_engine import reparodynamic_loop
 
 RAW_GITHUB_ERROR_PATTERNS = [
