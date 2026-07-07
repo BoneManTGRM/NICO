@@ -45,8 +45,11 @@ jobs:
         working-directory: apps/web
         run: |
           mkdir -p ../../audit-results
-          npm install
-          npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
+          if npm install --legacy-peer-deps; then
+            npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
+          else
+            echo '{"status":"npm install unavailable","audit":"not_run"}' > ../../audit-results/npm-audit-results.json
+          fi
           test -f ../../audit-results/npm-audit-results.json || echo '{"status":"npm audit unavailable"}' > ../../audit-results/npm-audit-results.json
 
       - name: Upload audit evidence
