@@ -106,7 +106,7 @@ export default function Page() {
   return (
     <main className="shell">
       <section className="hero">
-        <p className="eyebrow">NICO Command Center</p>
+        <p className="eyebrow">Centro de mando NICO</p>
         <h1>Evaluación técnica en Español de México</h1>
         <p className="lead">NICO genera evaluaciones defensivas y reportes basados en evidencia. La evidencia faltante se muestra claramente y nunca se trata como verificada.</p>
         <div className="hero-actions">
