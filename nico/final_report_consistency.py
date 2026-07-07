@@ -86,6 +86,25 @@ def _apply_code_audit_adjustment(result: dict[str, Any]) -> None:
         item["summary"] = "Code audit uses recent commit/PR metadata plus hosted source-pattern review from the authorized repository; generic security wording is excluded from actionable marker scoring."
 
 
+def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
+    item = _section(result, "dependency_health")
+    if not item:
+        return
+    text = _section_text(item).lower()
+    has_manifest_evidence = "requirements.txt found" in text and "package.json found" in text
+    has_lockfile_evidence = "lockfile evidence found" in text or "package-lock.json" in text or "pnpm-lock.yaml" in text or "yarn.lock" in text
+    has_clean_osv_evidence = "osv returned no vulnerability records" in text
+    if not (has_manifest_evidence and has_lockfile_evidence and has_clean_osv_evidence):
+        return
+    item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
+    item.setdefault("evidence", [])
+    _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
+    _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
+    item["score"] = max(int(item.get("score") or 0), 86)
+    item["status"] = _status_from_score(int(item["score"]))
+    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, and clean OSV no-vulnerability output while keeping scanner-worker limitations disclosed."
+
+
 def _release_readiness_signals(result: dict[str, Any]) -> dict[str, Any]:
     code = _section_score(result, "code_audit")
     deps = _section_score(result, "dependency_health")
@@ -134,6 +153,7 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
 
 def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_code_audit_adjustment(result)
+    _apply_dependency_evidence_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_project_trend_evidence(result)
     apply_client_acceptance_evidence(result)
