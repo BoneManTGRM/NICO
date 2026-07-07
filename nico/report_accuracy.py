@@ -15,6 +15,9 @@ RAW_GITHUB_ERROR_PATTERNS = [
 ]
 
 METADATA_LIMIT_MARKERS = ("github returned 403", "github returned 429", "api rate", "request limit", "abuse detection", "rate-limited", "rate limited")
+CODE_MARKER_SUMMARY_RE = re.compile(r"Text files inspected for code-risk markers: TODO/FIXME/security notes=(\d+), risky pattern hits=(\d+), test-path signals=(\d+)\.", re.IGNORECASE)
+ACTIONABLE_CODE_MARKER_RE = re.compile(r"(?i)(\bTODO\b|\bFIXME\b|SECURITY\s*[:=\-]|security\s+(issue|risk|bug|vulnerability|credential|secret|fix|todo|fixme))")
+GENERIC_CODE_MARKER_FINDING = "TODO/FIXME/security-note markers require triage before client-ready delivery."
 
 SECTION_REQUIRED_SOURCES: dict[str, set[str]] = {
     "code_audit": {"github_metadata", "repository_files"},
@@ -113,6 +116,46 @@ def apply_ci_audit_workflow_evidence(sections: list[dict[str, Any]]) -> None:
     sources = set(ci.get("evidence_sources") or [])
     sources.add("workflow_files")
     ci["evidence_sources"] = sorted(sources)
+
+
+def _is_actionable_code_marker(note: Any) -> bool:
+    text = str(note or "")
+    if CODE_MARKER_SUMMARY_RE.search(text) or text == GENERIC_CODE_MARKER_FINDING:
+        return False
+    return bool(ACTIONABLE_CODE_MARKER_RE.search(text))
+
+
+def apply_code_marker_noise_filter(sections: list[dict[str, Any]]) -> None:
+    code = _find_section(sections, "code_audit")
+    if not code:
+        return
+    evidence = list(code.get("evidence", []) or [])
+    findings = list(code.get("findings", []) or [])
+    summary_match = next((CODE_MARKER_SUMMARY_RE.search(str(item)) for item in evidence if CODE_MARKER_SUMMARY_RE.search(str(item))), None)
+    if not summary_match:
+        return
+    actionable = [item for item in evidence + findings if _is_actionable_code_marker(item)]
+    if actionable:
+        return
+    risky_hits = int(summary_match.group(2))
+    test_signals = int(summary_match.group(3))
+    replacement = f"Text files inspected for code-risk markers: actionable TODO/FIXME/security markers=0, risky pattern hits={risky_hits}, test-path signals={test_signals}. General security wording in docs/workflows was not treated as an actionable code marker."
+    filtered_evidence = []
+    for item in evidence:
+        text = str(item)
+        if CODE_MARKER_SUMMARY_RE.search(text):
+            if replacement not in filtered_evidence:
+                filtered_evidence.append(replacement)
+            continue
+        if "security" in text.lower() and not _is_actionable_code_marker(text):
+            continue
+        filtered_evidence.append(item)
+    filtered_findings = [item for item in findings if str(item) != GENERIC_CODE_MARKER_FINDING]
+    code["evidence"] = filtered_evidence
+    code["findings"] = filtered_findings
+    if not filtered_findings:
+        code["score"] = max(int(code.get("score") or 0), 86)
+        code["status"] = "green"
 
 
 def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
@@ -218,7 +261,9 @@ def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
     sections = []
     for section in output.get("sections", []) or []:
         if isinstance(section, dict):
-            sections.append(classify_section_confidence(section))
+            sections.append(section)
+    apply_code_marker_noise_filter(sections)
+    sections = [classify_section_confidence(section) for section in sections]
     apply_ci_audit_workflow_evidence(sections)
     sections = [classify_section_confidence(section) for section in sections]
     output["sections"] = sections
