@@ -1,0 +1,57 @@
+name: Audit Evidence
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-evidence:
+    name: Audit evidence collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Collect pip-audit evidence
+        run: |
+          mkdir -p audit-results
+          python -m pip_audit --format json --output audit-results/pip-audit-results.json || true
+          test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
+
+      - name: Collect npm audit evidence
+        working-directory: apps/web
+        run: |
+          mkdir -p ../../audit-results
+          npm install
+          npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
+          test -f ../../audit-results/npm-audit-results.json || echo '{"status":"npm audit unavailable"}' > ../../audit-results/npm-audit-results.json
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-evidence-results
+          path: audit-results/
