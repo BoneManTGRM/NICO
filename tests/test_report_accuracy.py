@@ -1,3 +1,4 @@
+from nico.artifact_evidence import normalize_evidence_artifacts
 from nico.report_accuracy import apply_report_accuracy, sanitize_client_note
 from nico.reports import build_report_package
 
@@ -161,7 +162,7 @@ def test_clean_npm_audit_artifact_lifts_dependency_evidence():
         "evidence_artifacts": [
             {
                 "artifact_name": "frontend-audit-results",
-                "workflow_name": "Node CI",
+                "workflow_name": "Audit Evidence",
                 "timestamp": "2026-07-07T00:00:00Z",
                 "content": {"metadata": {"vulnerabilities": {"total": 0}}},
             }
@@ -174,6 +175,32 @@ def test_clean_npm_audit_artifact_lifts_dependency_evidence():
     assert polished["evidence_artifact_summary"]["passed"] == 1
 
 
+def test_combined_audit_evidence_artifact_can_satisfy_python_npm_and_ci():
+    result = {
+        "status": "complete",
+        "generated_at": "2026-07-07T00:00:00Z",
+        "sections": [_dependency_section(), _ci_section()],
+        "evidence_artifacts": [
+            {
+                "artifact_name": "audit-evidence-results",
+                "workflow_name": "Audit Evidence",
+                "timestamp": "2026-07-07T00:00:00Z",
+                "status": "success",
+                "content": 'pip-audit-results.json {"dependencies":[{"name":"fastapi","vulns":[]}]} npm-audit-results.json {"metadata":{"vulnerabilities":{"total":0}}}',
+            }
+        ],
+    }
+    normalized = normalize_evidence_artifacts(result)
+    sources = {item["source"] for item in normalized["artifacts"]}
+    assert "python_dependency_report" in sources
+    assert "frontend_npm_audit" in sources
+    assert "audit_evidence_workflow" in sources
+    polished = apply_report_accuracy(result)
+    sections = {item["id"]: item for item in polished["sections"]}
+    assert sections["dependency_health"]["score"] >= 88
+    assert sections["ci_cd"]["score"] >= 88
+
+
 def test_vulnerable_npm_artifact_does_not_lift_score():
     result = {
         "status": "complete",
@@ -182,7 +209,7 @@ def test_vulnerable_npm_artifact_does_not_lift_score():
         "evidence_artifacts": [
             {
                 "artifact_name": "frontend-audit-results",
-                "workflow_name": "Node CI",
+                "workflow_name": "Audit Evidence",
                 "timestamp": "2026-07-07T00:00:00Z",
                 "content": {"metadata": {"vulnerabilities": {"total": 2}}},
             }
@@ -195,13 +222,13 @@ def test_vulnerable_npm_artifact_does_not_lift_score():
     assert any("reported 2" in item for item in section["findings"])
 
 
-def test_missing_artifacts_remain_visible_without_score_lift():
+def test_missing_artifacts_remain_visible_without_score_penalty():
     result = {"status": "complete", "sections": [_dependency_section()]}
     polished = apply_report_accuracy(result)
     section = polished["sections"][0]
     assert section["score"] == 72
     assert polished["evidence_artifact_summary"]["missing"] >= 3
-    assert any("status=missing" in item for item in section["unavailable"])
+    assert not any("status=missing" in item for item in section["unavailable"])
 
 
 def test_stale_artifact_is_not_current_proof():
@@ -232,7 +259,7 @@ def test_mixed_artifact_state_keeps_failed_evidence_visible():
         "sections": [_dependency_section()],
         "evidence_artifacts": [
             {"artifact_name": "audit-results", "workflow_name": "NICO CI", "timestamp": "2026-07-07T00:00:00Z", "content": {"dependencies": [{"name": "fastapi", "vulns": []}]}},
-            {"artifact_name": "frontend-audit-results", "workflow_name": "Node CI", "timestamp": "2026-07-07T00:00:00Z", "content": {"metadata": {"vulnerabilities": {"total": 1}}}},
+            {"artifact_name": "frontend-audit-results", "workflow_name": "Audit Evidence", "timestamp": "2026-07-07T00:00:00Z", "content": {"metadata": {"vulnerabilities": {"total": 1}}}},
         ],
     }
     polished = apply_report_accuracy(result)
