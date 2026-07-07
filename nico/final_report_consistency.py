@@ -4,6 +4,7 @@ from typing import Any
 
 from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
 from nico.i18n_es_mx import reports_es_mx, wants_es_mx
+from nico.project_trend_evidence import apply_project_trend_evidence
 
 
 def _wants_es_mx(result: dict[str, Any]) -> bool:
@@ -132,6 +133,7 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
 def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_code_audit_adjustment(result)
     _apply_release_readiness_adjustment(result)
+    apply_project_trend_evidence(result)
     _recompute_maturity(result)
 
 
@@ -147,14 +149,14 @@ def _build_executive_summary(result: dict[str, Any]) -> str:
         return (
             f"NICO completó una Evaluación Express autorizada de salud técnica para {repo}. "
             f"La señal final de madurez es {level} ({score}/100). "
-            "El puntaje se basa en la evidencia final después de aplicar auditoría de código, dependencias, secretos, análisis estático, CI/CD, arquitectura, velocidad, evidencia de artefactos y notas explícitas de datos no disponibles. "
+            "El puntaje se basa en la evidencia final después de aplicar auditoría de código, dependencias, secretos, análisis estático, CI/CD, arquitectura, velocidad, evidencia de artefactos, historial de proyecto cuando está disponible y notas explícitas de datos no disponibles. "
             "La entrega final a cliente todavía requiere revisión humana."
             + (" Algunos metadatos de GitHub no estuvieron disponibles, por lo que las secciones afectadas se degradan en vez de tratarse como evidencia negativa final." if quality_note else "")
         )
     return (
         f"NICO completed an authorized hosted Express Technical Health Assessment for {repo}. "
         f"The final maturity signal is {level} ({score}/100). "
-        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, and explicit unavailable-data notes have been applied. "
+        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, retained project history when available, and explicit unavailable-data notes have been applied. "
         "Final client delivery still requires human review."
         + quality_note
     )
