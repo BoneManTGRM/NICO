@@ -17,7 +17,7 @@ const HERO_COPY_ES_MX = {
   poweredBy: "Impulsado por Reparodynamics",
   title: "NICO",
   lead: "Inteligencia de reparación para sistemas autorizados. Evaluaciones basadas en evidencia, workflows de scanner, reportes listos para cliente y planeación de reparación con aprobación humana.",
-  actions: ["Correr evaluación", "Scanner worker", "Inteligencia de reparación", "Cómo usar"],
+  actions: ["Correr evaluación", "Worker del scanner", "Inteligencia de reparación", "Cómo usar"],
 };
 
 let runtimeOpsStylesInjected = false;
@@ -142,6 +142,8 @@ function valueToDisplay(value: unknown, isEsMx = false) {
   if (!isEsMx) return text;
   if (text.toLowerCase() === "unavailable") return "No disponible";
   if (text.toLowerCase() === "available") return "Disponible";
+  if (text.toLowerCase() === "fallback") return "respaldo";
+  if (text.toLowerCase() === "default") return "predeterminado";
   return text;
 }
 
@@ -153,21 +155,27 @@ function trendRows(projectTrends?: Record<string, unknown>, isEsMx = false) {
   return rows.map(([key, value]) => `<div class="trend-row"><span class="trend-key">${escapeHtml(key)}</span><span class="trend-value">${escapeHtml(value)}</span></div>`).join("");
 }
 
+function diagnosticsFallback(isEsMx: boolean) {
+  return isEsMx ? {estado: "no disponible", motivo: "La solicitud de diagnósticos no regresó datos."} : {status: "unavailable", reason: "Diagnostics request did not return data."};
+}
+
 function renderCommercialOpsMarkup(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
   const isEsMx = isEsMxRoute();
   const flags = config?.feature_flags || {};
   const banner = config?.maintenance_banner ? `<p class="warning-box">${escapeHtml(config.maintenance_banner)}</p>` : "";
+  const source = valueToDisplay(config?.source || "fallback", isEsMx);
+  const version = valueToDisplay(config?.version || "default", isEsMx);
   const labels = isEsMx ? {
-    eyebrow: "Operaciones comerciales", title: "Config runtime, historial del proyecto y diagnósticos", runtime: "Config runtime", source: "Fuente", version: "Versión", defaultRepo: "Repositorio default", admin: "Admin writes", adminText: "Solo lectura salvo que el token admin del backend esté configurado", feature: "Visibilidad de funciones", defaultFeature: "Set default de funciones activo", trends: "Línea base de tendencia del proyecto", diagnostics: "Diagnósticos seguros", settings: "Admin Config / Ajustes runtime", settingsText: "La config runtime puede actualizar copy público seguro sin redeploy. Las escrituras siguen en solo lectura salvo que la autenticación admin del backend esté configurada. El backend conserva los controles de autorización y aprobación."
+    eyebrow: "Operaciones comerciales", title: "Configuración de ejecución, historial del proyecto y diagnósticos", runtime: "Configuración de ejecución", source: "Fuente", version: "Versión", defaultRepo: "Repositorio predeterminado", admin: "Escrituras admin", adminText: "Solo lectura salvo que el token admin del backend esté configurado", feature: "Visibilidad de funciones", defaultFeature: "Set predeterminado de funciones activo", trends: "Línea base de tendencia del proyecto", diagnostics: "Diagnósticos seguros", settings: "Configuración admin / ajustes de ejecución", settingsText: "La configuración de ejecución puede actualizar texto público seguro sin redesplegar. Las escrituras siguen en solo lectura salvo que la autenticación admin del backend esté configurada. El backend conserva los controles de autorización y aprobación."
   } : {
     eyebrow: "Commercial Ops", title: "Runtime config, project history, and diagnostics", runtime: "Runtime config", source: "Source", version: "Version", defaultRepo: "Default repository", admin: "Admin writes", adminText: "Read-only unless server admin token is configured", feature: "Feature visibility", defaultFeature: "Default feature set active", trends: "Project trend baseline", diagnostics: "Safe diagnostics", settings: "Admin Config / Runtime Settings", settingsText: "Runtime config can update harmless public copy without redeploy. Write actions are read-only unless backend admin authentication is configured. Backend enforcement still controls authorization and approval gates."
   };
   return `
-    <div class="section-head"><div><p class="eyebrow">${labels.eyebrow}</p><h2>${labels.title}</h2></div><span class="status blue">${escapeHtml(config?.source || "fallback")}</span></div>
+    <div class="section-head"><div><p class="eyebrow">${labels.eyebrow}</p><h2>${labels.title}</h2></div><span class="status blue">${escapeHtml(source)}</span></div>
     ${banner}
-    <div class="grid three inset-grid"><article><b>${labels.runtime}</b><span>${labels.source}: ${escapeHtml(config?.source || "fallback")} · ${labels.version}: ${escapeHtml(config?.version || "default")}</span></article><article><b>${labels.defaultRepo}</b><span>${escapeHtml(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE)}</span></article><article><b>${labels.admin}</b><span>${labels.adminText}</span></article></div>
-    <div class="two-col inset-grid"><div class="mini-panel"><p class="eyebrow">${labels.feature}</p><ul class="tight-list">${Object.entries(flags).slice(0, 8).map(([key, value]) => `<li>${escapeHtml(key)}: ${value ? "on" : "off"}</li>`).join("") || `<li>${labels.defaultFeature}</li>`}</ul></div><div class="mini-panel"><p class="eyebrow">${labels.trends}</p><div class="trend-card">${trendRows(projectTrends, isEsMx)}</div></div></div>
-    <details class="help-details"><summary>${labels.diagnostics}</summary><div class="help-body"><pre class="json-block">${escapeHtml(JSON.stringify(diagnostics || {status:"unavailable", reason:"Diagnostics request did not return data."}, null, 2))}</pre></div></details>
+    <div class="grid three inset-grid"><article><b>${labels.runtime}</b><span>${labels.source}: ${escapeHtml(source)} · ${labels.version}: ${escapeHtml(version)}</span></article><article><b>${labels.defaultRepo}</b><span>${escapeHtml(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE)}</span></article><article><b>${labels.admin}</b><span>${labels.adminText}</span></article></div>
+    <div class="two-col inset-grid"><div class="mini-panel"><p class="eyebrow">${labels.feature}</p><ul class="tight-list">${Object.entries(flags).slice(0, 8).map(([key, value]) => `<li>${escapeHtml(key)}: ${value ? (isEsMx ? "activo" : "on") : (isEsMx ? "inactivo" : "off")}</li>`).join("") || `<li>${labels.defaultFeature}</li>`}</ul></div><div class="mini-panel"><p class="eyebrow">${labels.trends}</p><div class="trend-card">${trendRows(projectTrends, isEsMx)}</div></div></div>
+    <details class="help-details"><summary>${labels.diagnostics}</summary><div class="help-body"><pre class="json-block">${escapeHtml(JSON.stringify(diagnostics || diagnosticsFallback(isEsMx), null, 2))}</pre></div></details>
     <details class="help-details"><summary>${labels.settings}</summary><div class="help-body"><p>${labels.settingsText}</p></div></details>`;
 }
 
