@@ -7,6 +7,7 @@ from nico.admin_security import safe_public_admin_status
 from nico.approval_queue import list_approvals
 from nico.github_diagnostics import github_auth_diagnostics
 from nico.runtime_config import runtime_config
+from nico.scanner_artifact_scoring import scanner_artifact_access_status
 from nico.storage import STORE
 
 REDACTED = "[REDACTED]"
@@ -61,6 +62,7 @@ def latest_runs_diagnostics() -> dict[str, Any]:
 
 def diagnostics() -> dict[str, Any]:
     config = runtime_config()
+    default_repo = os.getenv("NICO_DEFAULT_REPOSITORY") or "BoneManTGRM/NICO"
     return {
         "status": "ok",
         "app": "NICO",
@@ -70,6 +72,7 @@ def diagnostics() -> dict[str, Any]:
         "storage": storage_diagnostics(),
         "runtime_config": {"source": config.get("source"), "version": config.get("version")},
         "github": github_auth_diagnostics(),
+        "scanner_artifacts": scanner_artifact_access_status(default_repo),
         "features": feature_diagnostics(),
         "latest_runs": latest_runs_diagnostics(),
         "redaction": "Private values and raw provider error JSON are not returned by diagnostics.",
