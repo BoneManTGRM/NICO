@@ -17,9 +17,9 @@ MAX_ARTIFACT_BYTES = 800_000
 MAX_FETCHED_RUNS = 20
 
 EXPECTED_ARTIFACTS = [
-    {"source": "python_dependency_report", "artifact_name": "audit-results", "workflow_name": "NICO CI", "section": "dependency_health", "summary": "Python dependency audit output from NICO CI."},
-    {"source": "frontend_npm_audit", "artifact_name": "frontend-audit-results", "workflow_name": "Node CI", "section": "dependency_health", "summary": "Frontend npm audit output from Node CI."},
-    {"source": "audit_evidence_workflow", "artifact_name": "audit-evidence-results", "workflow_name": "Audit Evidence", "section": "ci_cd", "summary": "Dedicated Audit Evidence workflow output."},
+    {"source": "python_dependency_report", "artifact_name": "audit-results", "workflow_name": "NICO CI", "summary": "Python dependency audit output."},
+    {"source": "frontend_npm_audit", "artifact_name": "frontend-audit-results", "workflow_name": "Audit Evidence", "summary": "Frontend npm audit output."},
+    {"source": "audit_evidence_workflow", "artifact_name": "audit-evidence-results", "workflow_name": "Audit Evidence", "summary": "Dedicated Audit Evidence workflow output."},
 ]
 
 DEPENDENCY_SOURCES = {"python_dependency_report", "frontend_npm_audit"}
@@ -86,11 +86,11 @@ def _artifact_fetch_enabled(payload: dict[str, Any]) -> bool:
     return bool(_github_token() and _normalize_repo(payload.get("repository") or payload.get("source_scope")))
 
 
-def _download_artifact_text(repo: str, artifact_id: int) -> str:
+def _download_artifact_files(repo: str, artifact_id: int) -> dict[str, str]:
     response = requests.get(f"{GITHUB_API}/repos/{repo}/actions/artifacts/{artifact_id}/zip", headers=_headers(), timeout=25)
     if response.status_code >= 400 or len(response.content) > MAX_ARTIFACT_BYTES:
-        return ""
-    texts: list[str] = []
+        return {}
+    files: dict[str, str] = {}
     try:
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             for name in archive.namelist():
@@ -99,10 +99,32 @@ def _download_artifact_text(repo: str, artifact_id: int) -> str:
                 data = archive.read(name)
                 if len(data) > MAX_ARTIFACT_BYTES:
                     continue
-                texts.append(data.decode("utf-8", errors="replace"))
+                files[name] = data.decode("utf-8", errors="replace")
     except Exception:
-        return ""
-    return "\n".join(texts)[:MAX_ARTIFACT_BYTES]
+        return {}
+    return files
+
+
+def _raw_artifact(source: str, artifact_name: str, workflow_name: str, timestamp: Any, status: Any, content: Any) -> dict[str, Any]:
+    return {"source": source, "artifact_name": artifact_name, "workflow_name": workflow_name, "timestamp": timestamp, "status": status or "", "content": content}
+
+
+def _entries_from_artifact_zip(name: str, workflow_name: str, timestamp: Any, status: Any, files: dict[str, str]) -> list[dict[str, Any]]:
+    name_l = name.lower()
+    entries: list[dict[str, Any]] = []
+    combined = "\n".join(files.values()) if files else ""
+    if name_l == "audit-evidence-results":
+        entries.append(_raw_artifact("audit_evidence_workflow", name, workflow_name, timestamp, status, "audit evidence workflow success" if str(status).lower() == "success" else combined))
+    for filename, content in files.items():
+        file_l = filename.lower()
+        if "pip-audit" in file_l:
+            entries.append(_raw_artifact("python_dependency_report", "audit-results", workflow_name, timestamp, status, content))
+        elif "npm-audit" in file_l or "npm" in file_l:
+            entries.append(_raw_artifact("frontend_npm_audit", "frontend-audit-results", workflow_name, timestamp, status, content))
+    if not entries:
+        source = _detect_source(name, workflow_name, combined)
+        entries.append(_raw_artifact(source, name, workflow_name, timestamp, status, combined))
+    return entries
 
 
 def _fetch_github_action_artifacts(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -117,7 +139,7 @@ def _fetch_github_action_artifacts(payload: dict[str, Any]) -> list[dict[str, An
     except Exception:
         return []
     raw: list[dict[str, Any]] = []
-    wanted_workflows = {item["workflow_name"].lower() for item in EXPECTED_ARTIFACTS}
+    wanted_workflows = {item["workflow_name"].lower() for item in EXPECTED_ARTIFACTS} | {"security audit evidence"}
     wanted_names = {item["artifact_name"].lower() for item in EXPECTED_ARTIFACTS}
     for run in runs:
         workflow_name = str(run.get("name") or "")
@@ -137,9 +159,26 @@ def _fetch_github_action_artifacts(payload: dict[str, Any]) -> list[dict[str, An
             name = str(artifact.get("name") or "")
             if not name or name.lower() not in wanted_names:
                 continue
-            content = _download_artifact_text(repo, int(artifact.get("id") or 0))
-            raw.append({"artifact_name": name, "workflow_name": workflow_name, "timestamp": artifact.get("updated_at") or artifact.get("created_at") or run.get("updated_at"), "status": run.get("conclusion") or run.get("status") or "", "content": content})
+            files = _download_artifact_files(repo, int(artifact.get("id") or 0))
+            raw.extend(_entries_from_artifact_zip(name, workflow_name, artifact.get("updated_at") or artifact.get("created_at") or run.get("updated_at"), run.get("conclusion") or run.get("status") or "", files))
     return raw
+
+
+def _expand_supplied_artifact(raw: Any) -> list[Any]:
+    if not isinstance(raw, dict):
+        return [raw]
+    name = str(raw.get("artifact_name") or raw.get("name") or raw.get("filename") or "")
+    workflow = str(raw.get("workflow_name") or raw.get("workflow") or raw.get("source_workflow") or "unknown")
+    content = raw.get("content") or raw.get("text") or raw.get("output") or raw.get("json") or raw.get("body")
+    text = _as_text(content)
+    if name.lower() != "audit-evidence-results":
+        return [raw]
+    expanded = [dict(raw, source="audit_evidence_workflow")]
+    if "pip-audit" in text.lower() or '"dependencies"' in text:
+        expanded.append(dict(raw, source="python_dependency_report", artifact_name="audit-results"))
+    if "npm-audit" in text.lower() or '"metadata"' in text:
+        expanded.append(dict(raw, source="frontend_npm_audit", artifact_name="frontend-audit-results"))
+    return expanded
 
 
 def _collect_raw_artifacts(payload: dict[str, Any]) -> list[Any]:
@@ -160,16 +199,19 @@ def _collect_raw_artifacts(payload: dict[str, Any]) -> list[Any]:
                 candidates.append(value)
     if not candidates:
         candidates.extend(_fetch_github_action_artifacts(payload))
-    return candidates
+    expanded: list[Any] = []
+    for candidate in candidates:
+        expanded.extend(_expand_supplied_artifact(candidate))
+    return expanded
 
 
 def _detect_source(name: str, workflow_name: str, text: str) -> str:
     name_l = name.lower()
     workflow_l = workflow_name.lower()
     haystack = f"{name_l} {workflow_l} {text[:400].lower()}"
-    if name_l == "audit-results" and workflow_l == "nico ci":
+    if name_l == "audit-results" and workflow_l in {"nico ci", "audit evidence", "security audit evidence"}:
         return "python_dependency_report"
-    if name_l == "frontend-audit-results" or "npm audit" in haystack or "npm-audit" in haystack or "frontend" in haystack or "package-lock" in haystack:
+    if name_l == "frontend-audit-results" or "npm audit" in haystack or "npm-audit" in haystack or "package-lock" in haystack:
         return "frontend_npm_audit"
     if name_l == "audit-evidence-results" or "audit evidence" in haystack or "audit-evidence" in haystack:
         return "audit_evidence_workflow"
@@ -213,6 +255,8 @@ def _status_from_content(source: str, text: str, declared_status: str) -> tuple[
         return "failed", ["Artifact producer reported a failed audit run."], "Artifact status indicates the audit did not pass."
     if not text.strip():
         return "unavailable", ["Artifact metadata exists but no parseable content was supplied."], "Workflow or artifact metadata alone is not proof that an audit passed."
+    if source == "audit_evidence_workflow" and declared_status == "success":
+        return "passed", [], "Audit Evidence workflow completed successfully and uploaded a parseable evidence artifact."
     if isinstance(data, dict) and str(data.get("status") or "").lower() in {"pip-audit unavailable", "npm audit unavailable", "unavailable"}:
         return "unavailable", [str(data.get("status"))], "Artifact content says the audit was unavailable."
     vuln_count: int | None = None
@@ -261,7 +305,7 @@ def normalize_evidence_artifacts(payload: dict[str, Any]) -> dict[str, Any]:
     seen = {item["source"] for item in artifacts}
     for expected in EXPECTED_ARTIFACTS:
         if expected["source"] not in seen:
-            artifacts.append({"source": expected["source"], "artifact_name": expected["artifact_name"], "workflow_name": expected["workflow_name"], "timestamp": None, "status": "missing", "summary": f"Missing expected artifact: {expected['summary']}", "findings": ["Expected evidence artifact was not supplied to the report payload."], "confidence": "limited", "missing": True, "stale": False, "affects_score": False})
+            artifacts.append({"source": expected["source"], "artifact_name": expected["artifact_name"], "workflow_name": expected["workflow_name"], "timestamp": None, "status": "missing", "summary": f"Missing expected artifact: {expected['summary']}", "findings": ["Expected evidence artifact was not supplied or fetchable."], "confidence": "limited", "missing": True, "stale": False, "affects_score": False})
     counts: dict[str, int] = {}
     for artifact in artifacts:
         counts[artifact["status"]] = counts.get(artifact["status"], 0) + 1
@@ -309,7 +353,7 @@ def apply_evidence_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
                 _append_unique(dependency["findings"], note)
                 for finding in findings:
                     _append_unique(dependency["findings"], str(finding))
-            elif status in {"missing", "stale", "unavailable"}:
+            elif status in {"stale", "unavailable"}:
                 _append_unique(dependency["unavailable"], note)
             dependency["evidence_sources"] = sorted(sources)
         if source == "audit_evidence_workflow" and ci is not None:
@@ -329,7 +373,7 @@ def apply_evidence_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
                     _append_unique(ci["findings"], str(finding))
                 ci["score"] = min(int(ci.get("score") or 0), 68)
                 ci["status"] = "yellow"
-            else:
+            elif status in {"stale", "unavailable"}:
                 _append_unique(ci["unavailable"], note)
             ci["evidence_sources"] = sorted(sources)
     if dependency is not None:
