@@ -15,7 +15,10 @@ def test_finalize_express_result_attaches_score_details():
         }
     )
 
+    section_ids = {item["id"] for item in result["score_details"]["sections"]}
+
     assert result["score_details"]["status"] == "ok"
-    assert result["score_details"]["section_count"] == 3
-    assert result["score_details"]["lowest_sections"][0]["id"] == "dependency_health"
+    assert result["score_details"]["section_count"] == len(result["sections"])
+    assert {"dependency_health", "ci_cd", "static_analysis"}.issubset(section_ids)
+    assert result["score_details"]["lowest_sections"][0]["id"] == "client_acceptance"
     assert result["score_source_of_truth"]["field"] == "maturity_signal"
