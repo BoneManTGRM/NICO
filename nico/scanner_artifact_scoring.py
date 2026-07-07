@@ -5,6 +5,7 @@ import json
 import os
 import re
 import zipfile
+from copy import deepcopy
 from typing import Any
 
 import requests
@@ -12,6 +13,7 @@ import requests
 GITHUB_API = "https://api.github.com"
 MAX_ARTIFACT_BYTES = 1_200_000
 MAX_RUNS = 30
+SCANNER_SECTION_IDS = ["dependency_health", "secrets_review", "static_analysis", "ci_cd"]
 
 
 def _token() -> str:
@@ -73,6 +75,19 @@ def _artifact_files(repo: str, artifact_id: int) -> dict[str, Any]:
     except Exception:
         return {}
     return files
+
+
+def scanner_artifact_access_status(repository: Any = "") -> dict[str, Any]:
+    repo = _repo(repository or os.getenv("NICO_DEFAULT_REPOSITORY") or "")
+    token_configured = bool(_token())
+    if not repo:
+        return {"status": "repo_unavailable", "token_configured": token_configured, "repository": "unavailable", "message": "Scanner artifact scoring needs an owner/name repository before it can inspect GitHub Actions artifacts."}
+    if not token_configured:
+        return {"status": "token_missing", "token_configured": False, "repository": repo, "message": "Set NICO_GITHUB_TOKEN or GITHUB_TOKEN in the deployed backend to let NICO read GitHub Actions artifacts for scoring."}
+    data = _get_json(f"{GITHUB_API}/repos/{repo}/actions/runs", {"per_page": 1})
+    if not isinstance(data, dict):
+        return {"status": "api_unavailable", "token_configured": True, "repository": repo, "message": "GitHub Actions artifact metadata could not be read with the configured token."}
+    return {"status": "ok", "token_configured": True, "repository": repo, "message": "GitHub Actions artifact metadata is accessible to the deployed backend."}
 
 
 def _fetch_recent_artifacts(repo: str) -> dict[str, Any]:
@@ -179,13 +194,28 @@ def _flag_section(section: dict[str, Any], source: str, note: str, score_cap: in
     section["status"] = "yellow"
 
 
-def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
-    repo = _repo(result.get("repository") or result.get("source_scope"))
-    artifacts = _fetch_recent_artifacts(repo)
-    if not artifacts:
-        return result
+def _mark_artifact_access_unavailable(sections: list[dict[str, Any]], status: dict[str, Any]) -> None:
+    message = str(status.get("message") or "GitHub Actions artifact access is unavailable; scanner artifacts cannot affect scoring.")
+    note = f"GitHub Actions artifact access unavailable: {message}"
+    for section_id in SCANNER_SECTION_IDS:
+        section = _section(sections, section_id)
+        if section is not None:
+            section.setdefault("unavailable", [])
+            _append_unique(section["unavailable"], note)
 
-    sections = [item for item in result.get("sections", []) or [] if isinstance(item, dict)]
+
+def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
+    output = deepcopy(result)
+    repo = _repo(output.get("repository") or output.get("source_scope"))
+    sections = [item for item in output.get("sections", []) or [] if isinstance(item, dict)]
+    access = scanner_artifact_access_status(repo)
+    artifacts = _fetch_recent_artifacts(repo) if access.get("status") == "ok" else {}
+    if not artifacts:
+        output["sections"] = sections
+        output["scanner_artifact_summary"] = {"status": "artifact_access_unavailable" if access.get("status") != "ok" else "no_recent_artifacts", "artifact_sets": [], "files": [], "access": access, "rule": "Scanner artifacts can affect scores only when current parseable GitHub Actions artifacts are available."}
+        _mark_artifact_access_unavailable(sections, access)
+        return output
+
     deps = _section(sections, "dependency_health")
     secrets = _section(sections, "secrets_review")
     static = _section(sections, "static_analysis")
@@ -230,6 +260,6 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
     if ci is not None:
         _lift_section(ci, "workflow_runs", f"Parsed {len(artifacts)} current GitHub Actions evidence artifact set(s) from authorized repository workflow runs.", 90)
 
-    result["sections"] = sections
-    result["scanner_artifact_summary"] = {"status": "parsed", "artifact_sets": sorted(artifacts.keys()), "files": sorted(files.keys())}
-    return result
+    output["sections"] = sections
+    output["scanner_artifact_summary"] = {"status": "parsed", "access": access, "artifact_sets": sorted(artifacts.keys()), "files": sorted(files.keys())}
+    return output
