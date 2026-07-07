@@ -8,6 +8,7 @@ import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
 from nico.hosted_assessment import run_github_assessment
 from nico.assessment_quality import polish_express_result
+from nico.final_report_consistency import finalize_express_result_consistency
 from nico.assessment_attachment import attach_existing_worker_evidence
 from nico.report_accuracy import apply_report_accuracy
 from nico.scanner_evidence import enrich_payload_with_scanner_evidence
@@ -296,6 +297,7 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = enrich_payload_with_scanner_evidence(result)
     result = apply_report_accuracy(result)
     result = polish_express_result(result)
+    result = finalize_express_result_consistency(result)
     _LAST_HOSTED_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
