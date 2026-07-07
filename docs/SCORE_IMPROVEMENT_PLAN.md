@@ -19,6 +19,8 @@ PR #38 also adds a scanner-artifact scoring bridge. When an authorized GitHub to
 - `pip-audit.json` and `npm-audit.json` -> Dependency / Library Ecosystem.
 - Current evidence artifact sets -> CI/CD Analysis.
 
+PR #38 also updates Node.js CI so frontend validation runs on `main` pushes, not only pull requests and the old foundation branch. This gives stronger current CI evidence after merge.
+
 ## Next improvements
 
 - Add committed lockfile evidence after generating it from a clean `npm install` in `apps/web`.
