@@ -171,6 +171,19 @@ def _credential_count(data: Any) -> int | None:
     return None
 
 
+def _gitleaks_count(data: Any) -> int | None:
+    if isinstance(data, list):
+        return len(data)
+    if isinstance(data, dict):
+        for key in ("findings", "results", "leaks"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return len(value)
+        if data.get("status") == "skipped":
+            return None
+    return None
+
+
 def _lift_section(section: dict[str, Any], source: str, note: str, score: int = 88) -> None:
     section.setdefault("evidence", [])
     section.setdefault("findings", [])
@@ -239,11 +252,17 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
 
     if secrets is not None:
         credential = files.get("credential-scan.json")
-        count = _credential_count(credential)
-        if count == 0:
+        gitleaks = files.get("gitleaks.json")
+        credential_count = _credential_count(credential)
+        gitleaks_count = _gitleaks_count(gitleaks)
+        if credential_count == 0 and gitleaks_count == 0:
+            _lift_section(secrets, "secret_scanning", "Parsed credential-scan and gitleaks git-history artifacts reported zero credential findings.", 93)
+        elif gitleaks_count and gitleaks_count > 0:
+            _flag_section(secrets, "secret_scanning", f"Parsed gitleaks artifact reported {gitleaks_count} git-history secret finding(s).", 60)
+        elif credential_count and credential_count > 0:
+            _flag_section(secrets, "secret_scanning", f"Parsed credential-scan artifact reported {credential_count} high-confidence credential finding(s).", 60)
+        elif credential_count == 0:
             _lift_section(secrets, "secret_scanning", "Parsed credential-scan artifact reported zero high-confidence credential findings.", 90)
-        elif count and count > 0:
-            _flag_section(secrets, "secret_scanning", f"Parsed credential-scan artifact reported {count} high-confidence credential finding(s).", 60)
 
     if static is not None:
         bandit = files.get("bandit.json")
@@ -258,7 +277,7 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
             _flag_section(static, "static_analysis", f"Parsed Semgrep artifact reported {semgrep_count} finding(s).", 70)
 
     if ci is not None:
-        _lift_section(ci, "workflow_runs", f"Parsed {len(artifacts)} current GitHub Actions evidence artifact set(s) from authorized repository workflow runs.", 90)
+        _lift_section(ci, "ci_artifacts", "Current GitHub Actions scanner artifact sets were fetched and parsed successfully.", 95)
 
     output["sections"] = sections
     output["scanner_artifact_summary"] = {"status": "parsed", "access": access, "artifact_sets": sorted(artifacts.keys()), "files": sorted(files.keys())}
