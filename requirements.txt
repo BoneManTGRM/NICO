@@ -6,7 +6,7 @@ httpx==0.28.1
 requests==2.33.0
 reportlab==4.4.10
 python-multipart==0.0.32
-psycopg==3.3.2
+psycopg>=3.2,<4
 pip-audit==2.10.1
 bandit==1.9.4
 semgrep==1.168.0
