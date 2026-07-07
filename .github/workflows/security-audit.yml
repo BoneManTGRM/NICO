@@ -1,0 +1,109 @@
+name: Security Audit Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: read
+
+jobs:
+  audit-evidence:
+    name: Audit evidence collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python audit tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit bandit semgrep
+
+      - name: Collect pip-audit evidence
+        continue-on-error: true
+        run: |
+          if [ -f requirements.txt ]; then
+            pip-audit -r requirements.txt --format json --output pip-audit.json || true
+          else
+            echo '{"status":"skipped","reason":"requirements.txt not found"}' > pip-audit.json
+          fi
+
+      - name: Collect Bandit evidence
+        continue-on-error: true
+        run: |
+          bandit -r nico -f json -o bandit.json || true
+
+      - name: Collect Semgrep evidence
+        continue-on-error: true
+        run: |
+          semgrep scan --config auto --json --output semgrep.json || true
+
+      - name: Built-in high-confidence credential scan
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+          skip = {'.git', 'node_modules', '.next', 'dist', 'build', '.venv', 'venv', '__pycache__'}
+          suffixes = {'.py','.js','.jsx','.ts','.tsx','.json','.yaml','.yml','.toml','.ini','.cfg','.txt','.md','.sh','.html','.css','.xml','.env','.example'}
+          patterns = {
+              'private_key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
+              'github_token': re.compile(r'gh[pousr]_[A-Za-z0-9_]{20,}'),
+              'aws_access_key': re.compile(r'AKIA[0-9A-Z]{16}'),
+          }
+          findings = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or any(part in skip for part in path.parts):
+                  continue
+              if path.suffix not in suffixes and path.name not in {'Dockerfile','Procfile','.env.example'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8', errors='replace')
+              except Exception:
+                  continue
+              for line_no, line in enumerate(text.splitlines(), 1):
+                  for name, pattern in patterns.items():
+                      if pattern.search(line):
+                          findings.append({'path': str(path), 'line': line_no, 'type': name})
+          Path('credential-scan.json').write_text(json.dumps({'findings': findings}, indent=2), encoding='utf-8')
+          if findings:
+              raise SystemExit(f'High-confidence credential findings detected: {len(findings)}')
+          PY
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Collect npm audit evidence
+        working-directory: apps/web
+        continue-on-error: true
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          npm audit --audit-level=critical --omit=dev --json > ../../npm-audit.json || true
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-audit-evidence
+          path: |
+            pip-audit.json
+            bandit.json
+            semgrep.json
+            credential-scan.json
+            npm-audit.json

@@ -35,6 +35,13 @@ jobs:
         working-directory: apps/web
         run: npm install
 
+      - name: Generate npm audit evidence
+        working-directory: apps/web
+        run: |
+          mkdir -p ../../audit-results
+          npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
+          test -f ../../audit-results/npm-audit-results.json || echo '{"status":"npm audit unavailable"}' > ../../audit-results/npm-audit-results.json
+
       - name: Lint frontend
         working-directory: apps/web
         run: npm run lint
@@ -42,3 +49,10 @@ jobs:
       - name: Build frontend
         working-directory: apps/web
         run: npm run build
+
+      - name: Upload frontend audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-audit-results
+          path: audit-results/
