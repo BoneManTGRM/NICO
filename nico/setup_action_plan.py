@@ -62,6 +62,17 @@ ACTION_METADATA = {
 }
 
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+ACTION_ORDER = {
+    "backend_url_configured": 0,
+    "backend_online": 1,
+    "persistence_active": 2,
+    "express_run_id_available": 3,
+    "final_review_url_available": 4,
+    "final_review_requested": 5,
+    "final_review_approved": 6,
+    "acceptance_green_after_rerun": 7,
+    "express_completion_present": 8,
+}
 
 
 def setup_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -82,7 +93,7 @@ def setup_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
                 "why": check.get("fix") or "This gate is required before max-target workflow validation.",
             }
         )
-    actions.sort(key=lambda item: (PRIORITY_ORDER.get(item["priority"], 9), item["id"]))
+    actions.sort(key=lambda item: (PRIORITY_ORDER.get(item["priority"], 9), ACTION_ORDER.get(item["id"], 999), item["id"]))
     return {
         "status": readiness.get("status"),
         "readiness_score": readiness.get("score"),
