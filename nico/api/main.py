@@ -12,6 +12,7 @@ from nico.final_report_consistency import finalize_express_result_consistency
 from nico.assessment_attachment import attach_existing_worker_evidence
 from nico.report_accuracy import apply_report_accuracy
 from nico.scanner_evidence import enrich_payload_with_scanner_evidence
+from nico.express_review_target import attach_express_review_target
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 from nico.scanner_worker import get_scan, start_scan
 from nico.storage import STORE
@@ -309,10 +310,12 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_existing_worker_evidence(result, request_payload)
     result = enrich_payload_with_scanner_evidence(result)
     result = apply_report_accuracy(result)
+    result = attach_express_review_target(result, request_payload)
     result = polish_express_result(result)
     result = finalize_express_result_consistency(result)
+    result = attach_express_review_target(result, request_payload)
     _LAST_HOSTED_ASSESSMENT = result
-    STORE.put('assessment_runs', result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
+    STORE.put('assessment_runs', result.get('run_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
 
 @app.post('/assessment/mid')
