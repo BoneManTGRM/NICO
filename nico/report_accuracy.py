@@ -4,6 +4,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from nico.artifact_evidence import apply_evidence_artifact_scoring
 from nico.reparodynamics_engine import reparodynamic_loop
 
 RAW_GITHUB_ERROR_PATTERNS = [
@@ -11,15 +12,7 @@ RAW_GITHUB_ERROR_PATTERNS = [
     re.compile(r"\{\s*\"documentation_url\".*?\}", re.IGNORECASE),
 ]
 
-METADATA_LIMIT_MARKERS = (
-    "github returned 403",
-    "github returned 429",
-    "api rate",
-    "request limit",
-    "abuse detection",
-    "rate-limited",
-    "rate limited",
-)
+METADATA_LIMIT_MARKERS = ("github returned 403", "github returned 429", "api rate", "request limit", "abuse detection", "rate-limited", "rate limited")
 
 SECTION_REQUIRED_SOURCES: dict[str, set[str]] = {
     "code_audit": {"github_metadata", "repository_files"},
@@ -53,8 +46,7 @@ def sanitize_client_note(value: Any) -> str:
         return "GitHub metadata was unavailable or degraded because metadata access was rate-limited or incomplete. Rerun with authenticated GitHub access before firm claims."
     for pattern in RAW_GITHUB_ERROR_PATTERNS:
         text = pattern.sub("GitHub metadata was unavailable; raw API response omitted from the client report.", text)
-    text = re.sub(r"https?://\S+", "[link omitted]", text)
-    return text.strip()
+    return re.sub(r"https?://\S+", "[link omitted]", text).strip()
 
 
 def sanitize_note_list(items: list[Any]) -> list[str]:
@@ -73,15 +65,15 @@ def source_from_text(value: Any) -> set[str]:
         sources.add("github_metadata")
     if any(term in text for term in ["workflow", "github actions", ".github/workflows"]):
         sources.add("workflow_files")
-        if "run" in text or "history" in text:
+        if "run" in text or "history" in text or "artifact" in text:
             sources.add("workflow_runs")
     if any(term in text for term in ["requirements.txt", "package.json", "lockfile", "repository files", "text files", "readme", "source-file"]):
         sources.add("repository_files")
     if any(term in text for term in ["tree", "root contains", "source-file signal", "test-path signal"]):
         sources.add("repository_tree")
-    if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner", "dependency audit"]):
+    if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner", "dependency audit", "dependency artifact", "dependency vulnerabilit"]):
         sources.add("dependency_intelligence")
-    if any(term in text for term in ["secret", "gitleaks", "trufflehog", "credential scan"]):
+    if any(term in text for term in ["secret", "gitleaks", "trufflehog", "sensitive scan"]):
         sources.add("secret_scanning")
     if any(term in text for term in ["semgrep", "bandit", "eslint", "typescript", "static", "risk-pattern"]):
         sources.add("static_analysis")
@@ -98,47 +90,27 @@ def _find_section(sections: list[dict[str, Any]], section_id: str) -> dict[str, 
     return next((item for item in sections if item.get("id") == section_id), None)
 
 
-def _has_security_audit_workflow(sections: list[dict[str, Any]]) -> bool:
+def _has_audit_workflow(sections: list[dict[str, Any]]) -> bool:
     ci = _find_section(sections, "ci_cd")
     if not ci:
         return False
     text = "\n".join(str(item) for item in ci.get("evidence", []) + ci.get("findings", [])).lower()
-    return "security-audit" in text or "security audit" in text
+    return "security-audit" in text or "security audit" in text or "audit evidence" in text
 
 
 def apply_ci_audit_workflow_evidence(sections: list[dict[str, Any]]) -> None:
-    if not _has_security_audit_workflow(sections):
+    if not _has_audit_workflow(sections):
         return
-    upgrades = {
-        "dependency_health": (
-            80,
-            "CI security audit workflow is configured to collect Python and npm dependency-audit evidence. Artifact review is still required before claiming dependency-clean status.",
-            "dependency_intelligence",
-        ),
-        "secrets_review": (
-            82,
-            "CI security audit workflow is configured to run a high-confidence credential-pattern scan on the current repository tree. Full history scanning is still stronger evidence.",
-            "secret_scanning",
-        ),
-        "static_analysis": (
-            88,
-            "CI security audit workflow is configured to collect Bandit and Semgrep static-analysis evidence. Artifact review is still required for final client claims.",
-            "static_analysis",
-        ),
-    }
-    for section_id, (target_score, note, source) in upgrades.items():
-        section = _find_section(sections, section_id)
-        if not section:
-            continue
-        section.setdefault("evidence", [])
-        if note not in section["evidence"]:
-            section["evidence"].append(note)
-        sources = set(section.get("evidence_sources") or [])
-        sources.add(source)
-        section["evidence_sources"] = sorted(sources)
-        if int(section.get("score") or 0) < target_score and not section.get("findings"):
-            section["score"] = target_score
-            section["status"] = "green" if target_score >= 75 else "yellow"
+    ci = _find_section(sections, "ci_cd")
+    if not ci:
+        return
+    note = "CI audit workflow configuration is present, but workflow presence alone does not prove clean dependency evidence. Parsed evidence artifacts are required before score lift."
+    ci.setdefault("evidence", [])
+    if note not in ci["evidence"]:
+        ci["evidence"].append(note)
+    sources = set(ci.get("evidence_sources") or [])
+    sources.add("workflow_files")
+    ci["evidence_sources"] = sorted(sources)
 
 
 def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
@@ -146,19 +118,16 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
     evidence = sanitize_note_list(list(section.get("evidence", []) or []))
     findings = sanitize_note_list(list(section.get("findings", []) or []))
     unavailable = sanitize_note_list(list(section.get("unavailable", []) or []))
-
     evidence_sources: set[str] = set(section.get("evidence_sources") or [])
     unavailable_sources: set[str] = set(section.get("unavailable_sources") or [])
     for note in evidence + findings:
         evidence_sources.update(source_from_text(note))
     for note in unavailable:
         unavailable_sources.update(source_from_text(note))
-
     required_sources = set(section.get("required_sources") or []) or SECTION_REQUIRED_SOURCES.get(section_id, set())
     missing_required = sorted(required_sources - evidence_sources)
     optional_unavailable = sorted(unavailable_sources - set(missing_required))
     metadata_limited = any(is_metadata_limited(note) for note in unavailable + evidence + findings)
-
     if not evidence and not findings:
         confidence = "unavailable"
     elif missing_required or metadata_limited:
@@ -167,7 +136,6 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
         confidence = "medium"
     else:
         confidence = "high"
-
     score = max(0, min(100, int(section.get("score") or 0)))
     status = str(section.get("status") or "unknown").lower()
     if confidence in {"limited", "unavailable"} and status == "green":
@@ -176,7 +144,6 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
     if confidence == "unavailable":
         status = "gray"
         score = min(score, 44)
-
     verified_claims = evidence + findings
     unverified_claims = unavailable[:]
     if confidence in {"limited", "unavailable"}:
@@ -185,7 +152,6 @@ def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
         unverified_claims.append("Some stronger external evidence is still unavailable, but this section has enough hosted evidence for a provisional score.")
     if section_id in {"secrets_review", "static_analysis"} and unavailable:
         unverified_claims.append("A clean built-in pattern check is not equivalent to a complete scanner-clean result.")
-
     section.update({
         "score": score,
         "status": status,
@@ -233,18 +199,11 @@ def delivery_verdict(result: dict[str, Any]) -> dict[str, Any]:
     if unavailable:
         blockers.append("Unavailable evidence remains disclosed and must be reviewed.")
     confidence = "high" if not blockers else ("limited" if limited else "medium")
-    return {
-        "status": "review_ready" if not blockers else "human_review_required",
-        "confidence": confidence,
-        "blockers": blockers,
-        "limited_sections": limited,
-        "red_sections": red,
-        "unavailable_items": len(unavailable),
-    }
+    return {"status": "review_ready" if not blockers else "human_review_required", "confidence": confidence, "blockers": blockers, "limited_sections": limited, "red_sections": red, "unavailable_items": len(unavailable)}
 
 
 def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
-    output = deepcopy(result)
+    output = apply_evidence_artifact_scoring(deepcopy(result))
     sections = []
     for section in output.get("sections", []) or []:
         if isinstance(section, dict):
@@ -261,6 +220,7 @@ def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
         "Unavailable evidence stays visible.",
         "Missing GitHub metadata is not treated as proof of no commits, no PRs, or no CI.",
         "Scanner-unavailable sections cannot claim full scanner-clean status.",
+        "CI workflow presence alone cannot lift scores; parsed evidence artifact contents are required.",
         "Human review is required before client-facing delivery.",
     ]
     output["human_review_required"] = True
