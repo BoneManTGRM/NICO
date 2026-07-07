@@ -12,13 +12,16 @@ This document tracks legitimate ways to raise NICO Express scores without weaken
 
 PR #38 upgrades the frontend Next.js dependency from `14.2.23` to `16.2.10`, the fix target reported by npm audit. This should reduce or remove the critical Next.js audit finding if CI confirms the major upgrade is compatible.
 
+PR #38 also adds a scanner-artifact scoring bridge. When an authorized GitHub token is configured, hosted Express scoring can read current GitHub Actions artifact JSON and map it into section evidence:
+
+- `credential-scan.json` -> Secrets Exposure Review.
+- `bandit.json` and `semgrep.json` -> Static Analysis.
+- `pip-audit.json` and `npm-audit.json` -> Dependency / Library Ecosystem.
+- Current evidence artifact sets -> CI/CD Analysis.
+
 ## Next improvements
 
 - Add committed lockfile evidence after generating it from a clean `npm install` in `apps/web`.
-- Ingest Security Audit Evidence artifacts into hosted Express scoring:
-  - `credential-scan.json` should support secret-scanning evidence.
-  - `bandit.json` and `semgrep.json` should support static-analysis evidence.
-  - `npm-audit.json` and `pip-audit.json` should support dependency evidence.
 - Add report UI fields showing which scanner artifacts directly affected each section score.
 - Keep unavailable, stale, or failed scanner artifacts visible and do not treat them as green.
 
