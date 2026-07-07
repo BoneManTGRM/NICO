@@ -37,6 +37,28 @@ def _approval_note(item: dict[str, Any]) -> str:
     return ""
 
 
+def _find_section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
+    return next((item for item in result.get("sections", []) or [] if isinstance(item, dict) and item.get("id") == section_id), None)
+
+
+def _acceptance_section(evidence: dict[str, Any]) -> dict[str, Any]:
+    accepted = evidence.get("status") == "accepted"
+    return {
+        "id": "client_acceptance",
+        "label": "Client / Human Acceptance",
+        "score": 96 if accepted else 0,
+        "status": "green" if accepted else "gray",
+        "summary": (
+            "Final report acceptance is supported by an approved same-project review record."
+            if accepted
+            else "Final report acceptance is not scored until an approved same-project review record exists."
+        ),
+        "evidence": list(evidence.get("notes") or []),
+        "findings": [] if accepted else ["Client/human acceptance evidence is unavailable for final delivery scoring."],
+        "unavailable": [] if accepted else ["No approved final report/client acceptance approval record was found for this project."],
+    }
+
+
 def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
     project_id = _project_id(result)
     customer_id = _customer_id(result)
@@ -85,7 +107,14 @@ def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
 def apply_client_acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
     evidence = acceptance_evidence(result)
     result["client_acceptance"] = evidence
-    velocity = next((item for item in result.get("sections", []) or [] if isinstance(item, dict) and item.get("id") == "velocity_complexity"), None)
+    sections = result.setdefault("sections", [])
+    acceptance = _find_section(result, "client_acceptance")
+    replacement = _acceptance_section(evidence)
+    if acceptance is None:
+        sections.append(replacement)
+    else:
+        acceptance.update(replacement)
+    velocity = _find_section(result, "velocity_complexity")
     if velocity is None:
         return result
     velocity.setdefault("evidence", [])
