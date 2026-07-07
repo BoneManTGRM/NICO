@@ -14,6 +14,7 @@ from nico.report_accuracy import apply_report_accuracy
 from nico.scanner_evidence import enrich_payload_with_scanner_evidence
 from nico.express_review_target import attach_express_review_target
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
+from nico.max_target_status import build_max_target_status
 from nico.scanner_worker import get_scan, start_scan
 from nico.storage import STORE
 from nico.evidence import list_evidence, upload_evidence
@@ -156,6 +157,7 @@ class ClientJobExportRequest(ClientJobPackageRequest):
     format: str = 'json'
 
 class ReportExportRequest(BaseModel): format: str = 'json'
+class MaxTargetStatusRequest(BaseModel): payload: dict[str, Any] = {}
 class GitHubInstallationRequest(BaseModel): installation_id: str = ''; customer_id: str = 'default_customer'; selected_repositories: list[str] = []; permissions: dict = {}
 class RepairSuggestionRequest(BaseModel):
     issue: str
@@ -170,13 +172,45 @@ class RepairSuggestionRequest(BaseModel):
 app=FastAPI(title='NICO API',version='0.8.0',description='Local-first and hosted defensive technical assessment API')
 app.add_middleware(CORSMiddleware,allow_origins=cors_origins(),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
+
+def _max_target_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if _LAST_HOSTED_ASSESSMENT:
+        payload.update(_LAST_HOSTED_ASSESSMENT)
+    if _LAST_MID_ASSESSMENT:
+        payload['mid_assessment'] = _LAST_MID_ASSESSMENT
+        payload.setdefault('qa_evidence', str(_LAST_MID_ASSESSMENT))
+        payload.setdefault('parity_notes', str(_LAST_MID_ASSESSMENT))
+        payload.setdefault('stakeholder_notes', str(_LAST_MID_ASSESSMENT))
+        payload.setdefault('roadmap_notes', str(_LAST_MID_ASSESSMENT))
+        payload.setdefault('known_risks', str(_LAST_MID_ASSESSMENT))
+    if _LAST_RETAINER_OPS:
+        payload['retainer_ops'] = _LAST_RETAINER_OPS
+        payload.setdefault('issue_summary', str(_LAST_RETAINER_OPS))
+        payload.setdefault('release_notes', str(_LAST_RETAINER_OPS))
+        payload.setdefault('client_update', str(_LAST_RETAINER_OPS))
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 @app.get('/health')
 def health():
     return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
 
 @app.get('/targets')
 def targets():
-    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','POST /worker/scan','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+
+@app.get('/max-target/status')
+def max_target_status():
+    payload = _max_target_payload()
+    return {'status':'ok','source':'latest_in_memory_assessments','has_sources': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'max_target_status': build_max_target_status(payload)}
+
+@app.post('/max-target/status')
+def max_target_status_from_payload(req: MaxTargetStatusRequest):
+    payload = _max_target_payload(req.payload or {})
+    return {'status':'ok','source':'latest_in_memory_plus_payload','max_target_status': build_max_target_status(payload)}
 
 @app.get('/usage/guide')
 def usage_guide():
