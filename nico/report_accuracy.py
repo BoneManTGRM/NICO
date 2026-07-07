@@ -79,9 +79,9 @@ def source_from_text(value: Any) -> set[str]:
         sources.add("repository_files")
     if any(term in text for term in ["tree", "root contains", "source-file signal", "test-path signal"]):
         sources.add("repository_tree")
-    if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner"]):
+    if any(term in text for term in ["osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner", "dependency audit"]):
         sources.add("dependency_intelligence")
-    if any(term in text for term in ["secret", "gitleaks", "trufflehog"]):
+    if any(term in text for term in ["secret", "gitleaks", "trufflehog", "credential scan"]):
         sources.add("secret_scanning")
     if any(term in text for term in ["semgrep", "bandit", "eslint", "typescript", "static", "risk-pattern"]):
         sources.add("static_analysis")
@@ -92,6 +92,53 @@ def source_from_text(value: Any) -> set[str]:
     if any(term in text for term in ["npm-build", "build execution", "production build", "build completed"]):
         sources.add("build_execution")
     return sources
+
+
+def _find_section(sections: list[dict[str, Any]], section_id: str) -> dict[str, Any] | None:
+    return next((item for item in sections if item.get("id") == section_id), None)
+
+
+def _has_security_audit_workflow(sections: list[dict[str, Any]]) -> bool:
+    ci = _find_section(sections, "ci_cd")
+    if not ci:
+        return False
+    text = "\n".join(str(item) for item in ci.get("evidence", []) + ci.get("findings", [])).lower()
+    return "security-audit" in text or "security audit" in text
+
+
+def apply_ci_audit_workflow_evidence(sections: list[dict[str, Any]]) -> None:
+    if not _has_security_audit_workflow(sections):
+        return
+    upgrades = {
+        "dependency_health": (
+            80,
+            "CI security audit workflow is configured to collect Python and npm dependency-audit evidence. Artifact review is still required before claiming dependency-clean status.",
+            "dependency_intelligence",
+        ),
+        "secrets_review": (
+            82,
+            "CI security audit workflow is configured to run a high-confidence credential-pattern scan on the current repository tree. Full history scanning is still stronger evidence.",
+            "secret_scanning",
+        ),
+        "static_analysis": (
+            88,
+            "CI security audit workflow is configured to collect Bandit and Semgrep static-analysis evidence. Artifact review is still required for final client claims.",
+            "static_analysis",
+        ),
+    }
+    for section_id, (target_score, note, source) in upgrades.items():
+        section = _find_section(sections, section_id)
+        if not section:
+            continue
+        section.setdefault("evidence", [])
+        if note not in section["evidence"]:
+            section["evidence"].append(note)
+        sources = set(section.get("evidence_sources") or [])
+        sources.add(source)
+        section["evidence_sources"] = sorted(sources)
+        if int(section.get("score") or 0) < target_score and not section.get("findings"):
+            section["score"] = target_score
+            section["status"] = "green" if target_score >= 75 else "yellow"
 
 
 def classify_section_confidence(section: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +249,8 @@ def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
     for section in output.get("sections", []) or []:
         if isinstance(section, dict):
             sections.append(classify_section_confidence(section))
+    apply_ci_audit_workflow_evidence(sections)
+    sections = [classify_section_confidence(section) for section in sections]
     output["sections"] = sections
     output["maturity_signal"] = maturity_from_sections(sections)
     output["maturity_semaphore"] = {item.get("label") or item.get("id"): item.get("status") for item in sections}
