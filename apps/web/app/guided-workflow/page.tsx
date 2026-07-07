@@ -33,7 +33,8 @@ export default function GuidedWorkflowPage() {
         <h1>Start here</h1>
         <p className="lead">A plain-language path for running NICO without guessing which paste box, endpoint, or report action comes next.</p>
         <div className="hero-actions">
-          <a className="primary-link" href="/">Open command center</a>
+          <a className="primary-link" href="/start-job">Start job wizard</a>
+          <a className="secondary-link" href="/">Open command center</a>
           <a className="secondary-link" href="/scanner-workflow">Scanner to Express</a>
           <a className="secondary-link" href="#steps">View steps</a>
         </div>
