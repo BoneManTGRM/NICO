@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from nico.artifact_evidence_v2 import apply_evidence_artifact_scoring
+from nico.i18n_es_mx import localize_result, reports_es_mx, wants_es_mx
 from nico.reparodynamics_engine import reparodynamic_loop
 from nico.scanner_artifact_scoring import apply_scanner_artifact_scoring
 
@@ -203,6 +204,14 @@ def delivery_verdict(result: dict[str, Any]) -> dict[str, Any]:
     return {"status": "review_ready" if not blockers else "human_review_required", "confidence": confidence, "blockers": blockers, "limited_sections": limited, "red_sections": red, "unavailable_items": len(unavailable)}
 
 
+def _apply_language(output: dict[str, Any]) -> dict[str, Any]:
+    if not any(wants_es_mx(output.get(key)) for key in ("report_language", "language", "assessment_mode")):
+        return output
+    localized = localize_result(output)
+    localized["reports"] = {**(output.get("reports") or {}), **reports_es_mx(localized)}
+    return localized
+
+
 def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
     output = apply_evidence_artifact_scoring(deepcopy(result))
     output = apply_scanner_artifact_scoring(output)
@@ -226,4 +235,4 @@ def apply_report_accuracy(result: dict[str, Any]) -> dict[str, Any]:
         "Human review is required before client-facing delivery.",
     ]
     output["human_review_required"] = True
-    return output
+    return _apply_language(output)
