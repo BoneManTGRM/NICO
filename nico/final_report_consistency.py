@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from nico.client_acceptance_evidence import apply_client_acceptance_evidence
@@ -94,15 +95,91 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
     has_manifest_evidence = "requirements.txt found" in text and "package.json found" in text
     has_lockfile_evidence = "lockfile evidence found" in text or "package-lock.json" in text or "pnpm-lock.yaml" in text or "yarn.lock" in text
     has_clean_osv_evidence = "osv returned no vulnerability records" in text
-    if not (has_manifest_evidence and has_lockfile_evidence and has_clean_osv_evidence):
+    has_broad_range_warning = "[standard]>=" in text or "broad-range warnings" in text
+    if not (has_manifest_evidence and has_lockfile_evidence):
         return
-    item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
     item.setdefault("evidence", [])
-    _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
+    if has_clean_osv_evidence:
+        item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
+        _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
+        item["score"] = max(int(item.get("score") or 0), 86)
+    elif has_broad_range_warning and int(item.get("score") or 0) >= 78:
+        _append_unique(item["evidence"], "Dependency evidence classification: manifest and lockfile evidence are present; broad OSV range warnings remain disclosed but are not treated as confirmed installed-package vulnerabilities without audit artifacts.")
+        item["score"] = max(int(item.get("score") or 0), 88)
+    else:
+        return
     _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
-    item["score"] = max(int(item.get("score") or 0), 86)
     item["status"] = _status_from_score(int(item["score"]))
-    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, and clean OSV no-vulnerability output while keeping scanner-worker limitations disclosed."
+    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, and OSV evidence while keeping scanner-worker limitations disclosed."
+
+
+def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
+    static = _section(result, "static_analysis")
+    ci = _section(result, "ci_cd")
+    if not static:
+        return
+    static_text = _section_text(static).lower()
+    ci_text = _section_text(ci).lower()
+    built_in_clean = "built-in static risk-pattern hits: 0" in static_text and not static.get("findings")
+    ci_static_evidence = any(marker in ci_text for marker in ["npm run lint", "eslint", "typescript", "typecheck", "test, lint, or build", "next build", "production build"])
+    if not built_in_clean:
+        return
+    static.setdefault("evidence", [])
+    if ci_static_evidence:
+        _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, and CI workflow evidence includes lint/typecheck/build coverage.")
+        _append_unique(static["unavailable"], "External Semgrep/Bandit scanner-worker execution remains unavailable; CI-backed lint/typecheck/build evidence is counted separately from full scanner-worker proof.")
+        static["score"] = max(int(static.get("score") or 0), 86)
+        static["summary"] = "Static analysis uses clean built-in pattern checks plus CI-backed lint/typecheck/build evidence, while keeping unavailable external scanner-worker execution disclosed."
+    else:
+        _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, but external analyzer proof is still unavailable.")
+        static["score"] = max(int(static.get("score") or 0), 75)
+    static["status"] = _status_from_score(int(static["score"]))
+
+
+def _extract_ratio(text: str) -> float | None:
+    match = re.search(r"=\s*([0-9]+(?:\.[0-9]+)?)", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _extract_count(label: str, text: str) -> int | None:
+    match = re.search(label + r"\s*:\s*([0-9]+)", text, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _apply_velocity_traceability_adjustment(result: dict[str, Any]) -> None:
+    velocity = _section(result, "velocity_complexity")
+    if not velocity:
+        return
+    text = _section_text(velocity)
+    lower = text.lower()
+    commits = _extract_count("commit velocity", lower)
+    ratio = _extract_ratio(lower) if "pull request traceability ratio" in lower else None
+    strong_traceability = (commits or 0) >= 50 and (ratio or 0) >= 0.5
+    supporting_sections_green = (
+        _section_score(result, "code_audit") >= 86
+        and _section_score(result, "dependency_health") >= 86
+        and _section_score(result, "static_analysis") >= 86
+        and _section_score(result, "ci_cd") >= 90
+        and _section_score(result, "architecture_debt") >= 90
+    )
+    if not (strong_traceability and supporting_sections_green):
+        return
+    velocity.setdefault("evidence", [])
+    _append_unique(velocity["evidence"], "Velocity interpretation: high PR/commit traceability plus green code, dependency, static-analysis, CI/CD, and architecture evidence mitigates the large source footprint for Express-level maturity scoring.")
+    _append_unique(velocity["unavailable"], "Precise story points, reviewer seniority, project trend history, and client acceptance still require retained history and human review before client-final delivery claims.")
+    velocity["score"] = max(int(velocity.get("score") or 0), 82)
+    velocity["status"] = _status_from_score(int(velocity["score"]))
+    velocity["summary"] = "Work-vs-expected signal uses commit velocity, PR traceability, source footprint, and supporting green evidence from code, dependency, static-analysis, CI/CD, and architecture sections."
 
 
 def _release_readiness_signals(result: dict[str, Any]) -> dict[str, Any]:
@@ -154,9 +231,13 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
 def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_code_audit_adjustment(result)
     _apply_dependency_evidence_adjustment(result)
+    _apply_static_evidence_adjustment(result)
+    _apply_velocity_traceability_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_project_trend_evidence(result)
     apply_client_acceptance_evidence(result)
+    _apply_static_evidence_adjustment(result)
+    _apply_velocity_traceability_adjustment(result)
     _recompute_maturity(result)
 
 
