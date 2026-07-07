@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -51,6 +53,18 @@ jobs:
         continue-on-error: true
         run: |
           semgrep scan --config auto --json --output semgrep.json || true
+
+      - name: Set up Go for gitleaks
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Collect gitleaks git-history evidence
+        continue-on-error: true
+        run: |
+          go install github.com/gitleaks/gitleaks/v8@latest
+          "$HOME/go/bin/gitleaks" detect --source . --report-format json --report-path gitleaks.json --no-banner --redact || true
+          test -f gitleaks.json || echo '[]' > gitleaks.json
 
       - name: Built-in high-confidence credential scan
         run: |
@@ -105,5 +119,6 @@ jobs:
             pip-audit.json
             bandit.json
             semgrep.json
+            gitleaks.json
             credential-scan.json
             npm-audit.json

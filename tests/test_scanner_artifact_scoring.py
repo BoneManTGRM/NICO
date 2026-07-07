@@ -1,4 +1,5 @@
 from nico.scanner_artifact_scoring import apply_scanner_artifact_scoring, scanner_artifact_access_status
+import nico.scanner_artifact_scoring as scanner
 
 
 def _sections():
@@ -45,3 +46,50 @@ def test_scanner_artifact_scoring_does_not_mutate_input_when_access_missing(monk
     scored = apply_scanner_artifact_scoring(result)
     assert scored is not result
     assert result["sections"][0]["unavailable"] == []
+
+
+def test_clean_gitleaks_and_credential_artifacts_lift_secret_review(monkeypatch):
+    monkeypatch.setattr(scanner, "scanner_artifact_access_status", lambda repo: {"status": "ok", "repository": repo, "token_configured": True})
+    monkeypatch.setattr(
+        scanner,
+        "_fetch_recent_artifacts",
+        lambda repo: {
+            "security-audit-evidence": {
+                "workflow": "Security Audit Evidence",
+                "conclusion": "success",
+                "files": {
+                    "credential-scan.json": {"findings": []},
+                    "gitleaks.json": [],
+                },
+            }
+        },
+    )
+    scored = apply_scanner_artifact_scoring({"repository": "BoneManTGRM/NICO", "sections": _sections()})
+    secret = next(section for section in scored["sections"] if section["id"] == "secrets_review")
+    assert secret["status"] == "green"
+    assert secret["score"] >= 93
+    assert any("gitleaks git-history" in item for item in secret["evidence"])
+    assert "gitleaks.json" in scored["scanner_artifact_summary"]["files"]
+
+
+def test_gitleaks_findings_keep_secret_review_yellow(monkeypatch):
+    monkeypatch.setattr(scanner, "scanner_artifact_access_status", lambda repo: {"status": "ok", "repository": repo, "token_configured": True})
+    monkeypatch.setattr(
+        scanner,
+        "_fetch_recent_artifacts",
+        lambda repo: {
+            "security-audit-evidence": {
+                "workflow": "Security Audit Evidence",
+                "conclusion": "success",
+                "files": {
+                    "credential-scan.json": {"findings": []},
+                    "gitleaks.json": [{"RuleID": "generic-api-key", "File": "example.txt"}],
+                },
+            }
+        },
+    )
+    scored = apply_scanner_artifact_scoring({"repository": "BoneManTGRM/NICO", "sections": _sections()})
+    secret = next(section for section in scored["sections"] if section["id"] == "secrets_review")
+    assert secret["status"] == "yellow"
+    assert secret["score"] <= 60
+    assert any("gitleaks artifact reported 1" in item for item in secret["findings"])
