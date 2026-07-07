@@ -46,6 +46,7 @@ class BrokenPostgresAdapter:
 
 def test_storage_uses_memory_without_database_url(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("NICO_DISABLE_POSTGRES", raising=False)
     store = storage_module.Storage()
 
     status = store.status()
@@ -58,6 +59,7 @@ def test_storage_uses_memory_without_database_url(monkeypatch):
 def test_storage_uses_postgres_when_database_url_and_adapter_available(monkeypatch):
     DurableFakePostgresAdapter.tables = {}
     monkeypatch.setenv("DATABASE_URL", "postgresql://nico:test@example/nico")
+    monkeypatch.delenv("NICO_DISABLE_POSTGRES", raising=False)
     monkeypatch.setattr(storage_module, "PostgresAdapter", DurableFakePostgresAdapter)
 
     first = storage_module.Storage()
@@ -71,6 +73,7 @@ def test_storage_uses_postgres_when_database_url_and_adapter_available(monkeypat
 
 def test_storage_falls_back_when_postgres_startup_fails(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://nico:test@example/nico")
+    monkeypatch.delenv("NICO_DISABLE_POSTGRES", raising=False)
     monkeypatch.setattr(storage_module, "PostgresAdapter", BrokenPostgresAdapter)
 
     store = storage_module.Storage()
