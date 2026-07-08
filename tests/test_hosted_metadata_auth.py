@@ -3,6 +3,7 @@ from __future__ import annotations
 from nico.hosted_metadata_auth import (
     MetadataAuthGitHubAssessmentClient,
     github_metadata_auth_summary,
+    install_metadata_auth_for_hosted_assessment,
     run_github_assessment_with_metadata_auth,
 )
 
@@ -73,7 +74,7 @@ def test_github_metadata_auth_summary_masks_auth_details():
     }
 
 
-def test_assessment_wrapper_uses_auth_aware_client(monkeypatch):
+def test_assessment_wrapper_uses_auth_aware_client():
     import nico.hosted_assessment as hosted_assessment
 
     class FakeClient:
@@ -91,13 +92,21 @@ def test_assessment_wrapper_uses_auth_aware_client(monkeypatch):
         }
 
     original_client = hosted_assessment.GitHubAssessmentClient
-    monkeypatch.setattr(hosted_assessment, "run_github_assessment", fake_run_assessment)
 
     result = run_github_assessment_with_metadata_auth(
         {"repository": "owner/repo", "authorized": True},
         client_factory=FakeClient,
+        runner=fake_run_assessment,
     )
 
     assert result["authorization_header_seen"] == "Bearer fake"
     assert result["github_metadata_auth"]["mode"] == "github_app_installation"
     assert hosted_assessment.GitHubAssessmentClient is original_client
+
+
+def test_install_metadata_auth_for_hosted_assessment_patches_run_function():
+    import nico.hosted_assessment as hosted_assessment
+
+    install_metadata_auth_for_hosted_assessment()
+
+    assert hosted_assessment.run_github_assessment is run_github_assessment_with_metadata_auth
