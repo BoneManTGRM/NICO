@@ -18,6 +18,14 @@ class GitHubAuthResult:
     unavailable: list[str]
 
 
+@dataclass(frozen=True)
+class GitHubCloneAuthResult:
+    extra_env: dict[str, str]
+    mode: str
+    evidence: list[str]
+    unavailable: list[str]
+
+
 def _base_headers() -> dict[str, str]:
     return {
         "Accept": "application/vnd.github+json",
@@ -93,32 +101,66 @@ def request_installation_token(app_jwt: str, *, session: Any = requests) -> tupl
     return str(token), None
 
 
-def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
-    headers = _base_headers()
+def _installation_token_result(*, session: Any = requests) -> tuple[str | None, list[str], list[str]]:
     evidence: list[str] = []
     unavailable: list[str] = []
-
-    if github_app_configured():
-        app_jwt, jwt_error = build_github_app_jwt()
-        if app_jwt:
-            installation_token, token_error = request_installation_token(app_jwt, session=session)
-            if installation_token:
-                headers["Authorization"] = f"Bearer {installation_token}"
-                evidence.append("GitHub App installation token was created server-side for authorized repository assessment.")
-                return GitHubAuthResult(headers=headers, mode="github_app_installation", evidence=evidence, unavailable=unavailable)
-            unavailable.append(token_error or "GitHub App installation token was unavailable.")
-        else:
-            unavailable.append(jwt_error or "GitHub App JWT was unavailable.")
-    else:
+    if not github_app_configured():
         state = github_app_env_state()
         missing = [name for name, present in state.items() if not present]
         unavailable.append("GitHub App installation auth not configured: " + ", ".join(missing) + ".")
+        return None, evidence, unavailable
 
-    token = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+    app_jwt, jwt_error = build_github_app_jwt()
+    if not app_jwt:
+        unavailable.append(jwt_error or "GitHub App JWT was unavailable.")
+        return None, evidence, unavailable
+
+    installation_token, token_error = request_installation_token(app_jwt, session=session)
+    if not installation_token:
+        unavailable.append(token_error or "GitHub App installation token was unavailable.")
+        return None, evidence, unavailable
+
+    evidence.append("GitHub App installation token was created server-side for authorized repository assessment.")
+    return installation_token, evidence, unavailable
+
+
+def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
+    headers = _base_headers()
+    token, evidence, unavailable = _installation_token_result(session=session)
     if token:
         headers["Authorization"] = f"Bearer {token}"
+        return GitHubAuthResult(headers=headers, mode="github_app_installation", evidence=evidence, unavailable=unavailable)
+
+    fallback = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+    if fallback:
+        headers["Authorization"] = f"Bearer {fallback}"
         evidence.append("Server-side GitHub token auth is configured for authorized repository assessment.")
         return GitHubAuthResult(headers=headers, mode="server_token", evidence=evidence, unavailable=unavailable)
 
     unavailable.append("No server-side GitHub credential is configured; private repositories will be unavailable.")
     return GitHubAuthResult(headers=headers, mode="anonymous", evidence=evidence, unavailable=unavailable)
+
+
+def build_github_clone_auth_env(*, session: Any = requests) -> GitHubCloneAuthResult:
+    """Return git extraheader env for private clone without putting tokens in clone URL."""
+    token, evidence, unavailable = _installation_token_result(session=session)
+    mode = "github_app_installation"
+    if not token:
+        token = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+        if token:
+            evidence.append("Server-side GitHub token auth is configured for authorized repository checkout.")
+            mode = "server_token"
+        else:
+            unavailable.append("No server-side GitHub credential is configured for private repository checkout.")
+            return GitHubCloneAuthResult(extra_env={}, mode="anonymous", evidence=evidence, unavailable=unavailable)
+
+    return GitHubCloneAuthResult(
+        extra_env={
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+        },
+        mode=mode,
+        evidence=evidence,
+        unavailable=unavailable,
+    )
