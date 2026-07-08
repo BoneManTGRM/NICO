@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+_EXTRA_VERSION_PATTERN = re.compile(r"(?P<ecosystem>PyPI):(?P<name>[A-Za-z0-9_.-]+)@\[(?P<extra>[^\]]+)\]==(?P<version>[^\s:.,;]+)")
 
 
 def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
@@ -46,6 +50,42 @@ def _status_from_score(score: int) -> str:
     return "red"
 
 
+def _normalize_dependency_text(value: Any) -> Any:
+    if isinstance(value, str):
+        def repl(match: re.Match[str]) -> str:
+            return f"{match.group('ecosystem')}:{match.group('name')}@{match.group('version')}"
+
+        return _EXTRA_VERSION_PATTERN.sub(repl, value)
+    if isinstance(value, list):
+        return [_normalize_dependency_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_dependency_text(item) for key, item in value.items()}
+    return value
+
+
+def normalize_report_dependency_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    dependency = _section(result, "dependency_health")
+    if not dependency:
+        return result
+    before = _section_text(dependency)
+    for key in ("summary", "evidence", "findings", "unavailable"):
+        if key in dependency:
+            dependency[key] = _normalize_dependency_text(dependency[key])
+    after = _section_text(dependency)
+    if before != after:
+        dependency.setdefault("findings", [])
+        dependency.setdefault("unavailable", [])
+        _append_unique(
+            dependency["findings"],
+            "Dependency evidence normalization guard: PEP 508 extras were removed from OSV package/version display before report scoring.",
+        )
+        _append_unique(
+            dependency["unavailable"],
+            "Review dependency evidence if a previous report displayed an OSV package/version with an extras marker such as @[crypto].",
+        )
+    return result
+
+
 def _recompute_maturity(result: dict[str, Any]) -> None:
     sections = [
         item
@@ -72,13 +112,9 @@ def _recompute_maturity(result: dict[str, Any]) -> None:
 
 
 def apply_dependency_score_consistency(result: dict[str, Any]) -> dict[str, Any]:
-    """Keep dependency scoring consistent with disclosed OSV findings.
+    """Keep dependency scoring consistent with disclosed OSV findings."""
 
-    A dependency section may mention OSV findings as available evidence, but it must
-    not remain GREEN 90 while the same report says OSV returned vulnerability
-    records for an exact dependency query.
-    """
-
+    result = normalize_report_dependency_evidence(result)
     dependency = _section(result, "dependency_health")
     if not dependency or not _has_osv_vulnerabilities(dependency):
         return result
