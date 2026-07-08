@@ -1,1 +1,0 @@
-This placeholder can be removed after hosted reports consume current-run scanner artifacts directly.
