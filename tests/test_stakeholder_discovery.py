@@ -36,7 +36,7 @@ def test_stakeholder_discovery_infers_categories_from_notes():
         }
     )
 
-    assert discovery["status"] == "ready_for_human_review"
+    assert discovery["status"] == "ready_for_human_review_with_open_questions"
     assert discovery["missing_categories"] == []
     assert discovery["categories"]["goals"]
     assert discovery["categories"]["success_metrics"]
