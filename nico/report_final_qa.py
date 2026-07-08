@@ -7,6 +7,10 @@ MALFORMED_OSV_EXTRA_RE = re.compile(
     r"OSV returned\s+(?P<count>\d+)\s+vulnerability record\(s\) for PyPI:(?P<name>[A-Za-z0-9_.-]+)@\[(?P<extra>[^\]]+)\]==(?P<version>[^:]+): (?P<ids>[^.]+)\.",
     re.IGNORECASE,
 )
+OSV_EXACT_RECORD_RE = re.compile(
+    r"OSV returned\s+(?P<count>\d+)\s+vulnerability record\(s\) for (?P<ecosystem>[A-Za-z0-9_.-]+):(?P<name>[^@\s]+)@(?P<version>[^:\s]+):",
+    re.IGNORECASE,
+)
 BANDIT_TRIAGE_RE = re.compile(r"Bandit(?: artifact)? reported\s+(?P<count>\d+)\s+finding", re.IGNORECASE)
 
 
@@ -79,9 +83,14 @@ def _has_confirmed_osv_vulnerability_text(text: str) -> bool:
     lower = text.lower()
     if "no vulnerability records" in lower:
         return False
-    if "osv returned" not in lower or "vulnerability record" not in lower:
-        return False
-    return "@[" not in text
+    for match in OSV_EXACT_RECORD_RE.finditer(text):
+        version = match.group("version")
+        if "[" in version or "]" in version:
+            continue
+        if any(marker in version for marker in [">", "<", "=", " "]):
+            continue
+        return True
+    return False
 
 
 def _has_malformed_osv_extra_text(text: str) -> bool:
@@ -92,6 +101,21 @@ def _remove_green_summary_claim(summary: str) -> str:
     text = str(summary or "")
     text = re.sub(r"\bis green\b", "requires review", text, flags=re.IGNORECASE)
     text = re.sub(r"\bgreen from\b", "review-limited from", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bgreen status\b", "scanner-clean status", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bgreen dependency claim\b", "dependency assurance claim", text, flags=re.IGNORECASE)
+    return text
+
+
+def _sanitize_export_text(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_sanitize_export_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_export_text(item) for key, item in value.items()}
+    if not isinstance(value, str):
+        return value
+    text = value.replace("GREEN 90", "green status")
+    text = text.replace("claim GREEN", "claim green status")
+    text = text.replace("cannot be GREEN", "cannot receive scanner-clean status")
     return text
 
 
@@ -117,7 +141,7 @@ def _apply_dependency_qa(result: dict[str, Any]) -> None:
     dependency.setdefault("unavailable", [])
     dependency["summary"] = (
         "Dependency review is not scanner-clean: OSV evidence, malformed OSV-query evidence, or unresolved dependency-audit status remains. "
-        "Current-run pip-audit, npm audit, and OSV Scanner artifacts are required before any green dependency claim."
+        "Current-run pip-audit, npm audit, and OSV Scanner artifacts are required before any dependency assurance claim."
     )
     dependency["findings"] = [
         item
@@ -127,18 +151,18 @@ def _apply_dependency_qa(result: dict[str, Any]) -> None:
     if confirmed_osv:
         _append_unique(
             dependency["findings"],
-            "Final report QA guard: confirmed OSV vulnerability records are present, so Dependency cannot be GREEN until current-run scanner-clean artifacts prove remediation or non-applicability.",
+            "Final report QA guard: confirmed OSV vulnerability records are present, so Dependency cannot receive scanner-clean status until current-run artifacts prove remediation or non-applicability.",
         )
         _set_score(dependency, min(int(dependency.get("score") or 0), 68))
     else:
         _append_unique(
             dependency["findings"],
-            "Final report QA guard: malformed or unresolved OSV dependency evidence is present, so Dependency cannot be GREEN until normalized scanner-clean artifacts are attached.",
+            "Final report QA guard: malformed or unresolved OSV dependency evidence is present, so Dependency cannot receive scanner-clean status until normalized artifacts are attached.",
         )
         _set_score(dependency, min(int(dependency.get("score") or 0), 74))
     _append_unique(
         dependency["unavailable"],
-        "Current-run pip-audit, npm audit, and OSV Scanner artifacts must be attached and verified before dependency scanner-clean or green status can be claimed.",
+        "Current-run pip-audit, npm audit, and OSV Scanner artifacts must be attached and verified before dependency scanner-clean status can be claimed.",
     )
 
 
@@ -164,15 +188,15 @@ def _apply_static_qa(result: dict[str, Any]) -> None:
     static.setdefault("unavailable", [])
     static["summary"] = (
         f"Static analysis is review-limited: Bandit artifact evidence reports {bandit_count} finding(s), and live scanner-worker Bandit/Semgrep/ESLint/TypeScript proof is not attached. "
-        "This section cannot be GREEN until rule-level triage is approved."
+        "This section requires approved rule-level triage before scanner-clean status can be claimed."
     )
     _append_unique(
         static["findings"],
-        f"Final report QA guard: {bandit_count} untriaged Bandit finding(s) require human review, so Static Analysis cannot be GREEN until triage evidence is attached and approved.",
+        f"Final report QA guard: {bandit_count} untriaged Bandit finding(s) require human review, so Static Analysis cannot receive scanner-clean status until triage evidence is attached and approved.",
     )
     _append_unique(
         static["unavailable"],
-        "Approved Bandit/Semgrep/ESLint/TypeScript scanner-worker artifacts and rule-level triage are required before final static scanner-clean or green status can be claimed.",
+        "Approved Bandit/Semgrep/ESLint/TypeScript scanner-worker artifacts and rule-level triage are required before final static scanner-clean status can be claimed.",
     )
     _set_score(static, min(int(static.get("score") or 0), 74))
 
@@ -226,6 +250,7 @@ def apply_final_report_qa(result: dict[str, Any]) -> dict[str, Any]:
     _apply_dependency_qa(result)
     _apply_static_qa(result)
     _remove_inconsistent_green_wording(result)
+    result["sections"] = _sanitize_export_text(result.get("sections", []) or [])
     _recompute_maturity(result)
     result.setdefault("report_quality_guards", {})["final_report_qa"] = {
         "status": "applied",
