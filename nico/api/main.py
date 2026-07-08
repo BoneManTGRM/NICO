@@ -20,6 +20,7 @@ from nico.service_catalog_api import register_service_catalog_routes
 from nico.workflow_preflight_api import register_workflow_preflight_routes
 from nico.release_readiness_api import register_release_readiness_routes
 from nico.hosted_smoke_test_api import register_hosted_smoke_test_routes
+from nico.report_readiness_gate_api import register_report_readiness_gate_routes
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 from nico.max_target_status import build_max_target_status
 from nico.scanner_worker import get_scan, start_scan
@@ -199,6 +200,7 @@ register_service_catalog_routes(app)
 register_workflow_preflight_routes(app)
 register_release_readiness_routes(app)
 register_hosted_smoke_test_routes(app)
+register_report_readiness_gate_routes(app)
 
 
 def _max_target_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -228,7 +230,7 @@ def health():
 
 @app.get('/targets')
 def targets():
-    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['GET /service-catalog','GET /service-catalog/{workflow}','POST /service-catalog/intake-readiness','POST /workflow/preflight','POST /workflow/preflight/batch','POST /release/readiness','POST /hosted/smoke-test','POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-acceptance/request','GET /client-acceptance/{run_id}','POST /client-acceptance/{approval_id}/{status}','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['GET /service-catalog','GET /service-catalog/{workflow}','POST /service-catalog/intake-readiness','POST /workflow/preflight','POST /workflow/preflight/batch','POST /release/readiness','POST /hosted/smoke-test','POST /reports/readiness-gate','POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-acceptance/request','GET /client-acceptance/{run_id}','POST /client-acceptance/{approval_id}/{status}','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
 
 @app.get('/max-target/status')
 def max_target_status():
