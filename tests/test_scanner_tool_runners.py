@@ -17,17 +17,20 @@ from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 
 def test_redact_text_masks_common_secret_shapes():
-    text = "token = ghp_1234567890abcdefghijklmnop and password = abcdefghijklmnop"
+    github_token = "ghp_" + "1234567890" + "abcdefghijklmnop"
+    password_value = "abcd" + "efgh" + "ijkl" + "mnop"
+    text = f"token = {github_token} and password = {password_value}"
 
     redacted = redact_text(text)
 
-    assert "ghp_1234567890abcdefghijklmnop" not in redacted
-    assert "abcdefghijklmnop" not in redacted
+    assert github_token not in redacted
+    assert password_value not in redacted
     assert "[REDACTED]" in redacted
 
 
 def test_redact_payload_recurses_through_dicts_and_lists():
-    payload = {"nested": [{"api_key": "api_key = 1234567890abcdef"}]}
+    api_value = "1234" + "567890" + "abcdef"
+    payload = {"nested": [{"api_key": f"api_key = {api_value}"}]}
 
     redacted = redact_payload(payload)
 
@@ -113,11 +116,12 @@ def test_run_scanner_tools_returns_normalized_payload(monkeypatch, tmp_path: Pat
 
 
 def test_write_scanner_artifact_redacts_before_disk(tmp_path: Path):
+    secret_value = "1234" + "567890" + "abcdef"
     output = write_scanner_artifact(
-        {"token": "token = 1234567890abcdef"},
+        {"token": f"token = {secret_value}"},
         tmp_path / "out" / "artifact.json",
     )
 
     text = output.read_text(encoding="utf-8")
-    assert "1234567890abcdef" not in text
+    assert secret_value not in text
     assert "[REDACTED]" in text
