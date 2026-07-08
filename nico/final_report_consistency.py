@@ -121,15 +121,18 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
     static_text = _section_text(static).lower()
     ci_text = _section_text(ci).lower()
     built_in_clean = "built-in static risk-pattern hits: 0" in static_text and not static.get("findings")
-    ci_static_evidence = any(marker in ci_text for marker in ["npm run lint", "eslint", "typescript", "typecheck", "test, lint, or build", "next build", "production build"])
+    ci_static_evidence = _section_score(result, "ci_cd") >= 90 or any(
+        marker in ci_text
+        for marker in ["npm run lint", "eslint", "typescript", "typecheck", "test, lint, or build", "next build", "production build"]
+    )
     if not built_in_clean:
         return
     static.setdefault("evidence", [])
     if ci_static_evidence:
-        _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, and CI workflow evidence includes lint/typecheck/build coverage.")
-        _append_unique(static["unavailable"], "External Semgrep/Bandit scanner-worker execution remains unavailable; CI-backed lint/typecheck/build evidence is counted separately from full scanner-worker proof.")
+        _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, and CI/CD is green or includes lint/typecheck/build coverage.")
+        _append_unique(static["unavailable"], "External Semgrep/Bandit scanner-worker execution remains unavailable; CI-backed evidence is counted separately from full scanner-worker proof.")
         static["score"] = max(int(static.get("score") or 0), 86)
-        static["summary"] = "Static analysis uses clean built-in pattern checks plus CI-backed lint/typecheck/build evidence, while keeping unavailable external scanner-worker execution disclosed."
+        static["summary"] = "Static analysis uses clean built-in pattern checks plus green CI/CD or lint/typecheck/build evidence, while keeping unavailable external scanner-worker execution disclosed."
     else:
         _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, but external analyzer proof is still unavailable.")
         static["score"] = max(int(static.get("score") or 0), 75)
