@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
@@ -102,8 +101,9 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         return _blocked_artifact(payload, str(exc))
 
     started = time.monotonic()
-    with make_workspace("nico-hosted-scan-") as temp_dir:
-        workspace = workspace_from_temp(temp_dir)
+    temp_workspace = make_workspace("nico-hosted-scan-")
+    try:
+        workspace = workspace_from_temp(temp_workspace)
         checkout = checkout_for_hosted_scan(payload, workspace)
         if not checkout.ok:
             return _checkout_failed_artifact(payload, checkout)
@@ -125,3 +125,5 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
         return redact_payload(scanner_artifact)
+    finally:
+        temp_workspace.cleanup()
