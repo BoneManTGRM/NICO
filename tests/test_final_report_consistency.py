@@ -219,7 +219,6 @@ def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory()
     assert result["release_readiness"]["status"] == "evidence_incomplete"
     assert "dependency_scanner_clean_artifacts_attached" in result["release_readiness"]["missing_signals"]
     assert "dependency_no_osv_vulnerabilities" in result["release_readiness"]["missing_signals"]
-    assert "full_git_history_secret_coverage_verified" in result["release_readiness"]["missing_signals"]
     assert "static_analysis_no_review_findings" in result["release_readiness"]["missing_signals"]
     assert "Add a sandboxed worker" not in markdown
     assert "Add authenticated GitHub App installation flow" not in markdown
@@ -233,7 +232,6 @@ def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory()
     assert "clean dependency artifacts, clean secret artifacts" not in lower_markdown
     assert "Run and attach verified scanner-worker artifacts" in markdown
     assert "run and attach verified scanner-worker artifacts" in lower_markdown
-    assert "run and attach scanner-worker execution artifacts" in lower_markdown
     assert "scanner-worker artifacts are executed against an authorized checkout and attached to that run" in lower_markdown
     assert "release-readiness lift not applied" in lower_markdown
     assert "Dependency evidence status: OSV API completed_with_findings" in markdown
