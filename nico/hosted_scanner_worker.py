@@ -36,10 +36,21 @@ def hosted_scanner_autorun_enabled(payload: dict[str, Any]) -> bool:
     return bool(payload.get("authorized") and payload.get("repository"))
 
 
-def _clone_command(repository: str, ref: str | None, workspace: WorkerWorkspace) -> tuple[str, ...]:
+def full_history_secret_scan_enabled(payload: dict[str, Any]) -> bool:
+    """Return whether the worker should clone full git history for secret scanners."""
+    if os.getenv("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN", "true").lower() != "true":
+        return False
+    if payload.get("full_history_secret_scan") is False:
+        return False
+    return bool(payload.get("authorized") and payload.get("repository"))
+
+
+def _clone_command(repository: str, ref: str | None, workspace: WorkerWorkspace, *, full_history: bool = False) -> tuple[str, ...]:
     repository = validate_repository(repository)
     clone_url = f"https://github.com/{repository}.git"
-    command: list[str] = ["git", "clone", "--depth", "1", "--no-tags"]
+    command: list[str] = ["git", "clone", "--no-tags"]
+    if not full_history:
+        command.extend(["--depth", "1"])
     if ref:
         command.extend(["--branch", validate_ref(ref)])
     command.extend([clone_url, str(workspace.repo_dir)])
@@ -49,8 +60,25 @@ def _clone_command(repository: str, ref: str | None, workspace: WorkerWorkspace)
 def checkout_for_hosted_scan(payload: dict[str, Any], workspace: WorkerWorkspace) -> WorkerCommandResult:
     repository = str(payload.get("repository") or "")
     ref = payload.get("ref") or payload.get("branch") or payload.get("default_branch") or ""
-    command = _clone_command(repository, str(ref).strip() or None, workspace)
-    return run_command(command, cwd=workspace.root, limits=WorkerLimits(timeout_seconds=150, max_output_chars=12_000))
+    command = _clone_command(
+        repository,
+        str(ref).strip() or None,
+        workspace,
+        full_history=full_history_secret_scan_enabled(payload),
+    )
+    return run_command(command, cwd=workspace.root, limits=WorkerLimits(timeout_seconds=240, max_output_chars=12_000))
+
+
+def _git_commit_count(workspace: WorkerWorkspace) -> int | None:
+    if not workspace.repo_dir.exists():
+        return None
+    result = run_command(("git", "rev-list", "--count", "HEAD"), cwd=workspace.repo_dir, limits=WorkerLimits(timeout_seconds=30, max_output_chars=2_000))
+    if not result.ok:
+        return None
+    try:
+        return int((result.stdout or "").strip())
+    except ValueError:
+        return None
 
 
 def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -78,6 +106,7 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
             "timed_out": checkout.timed_out,
             "output_truncated": checkout.output_truncated,
             "safe_output_preview": output[:2000],
+            "full_history_secret_scan_requested": full_history_secret_scan_enabled(payload),
         },
         "unavailable_data_notes": ["Hosted scanner worker could not check out the authorized repository."],
         "human_review_required": True,
@@ -101,6 +130,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         return _blocked_artifact(payload, str(exc))
 
     started = time.monotonic()
+    full_history = full_history_secret_scan_enabled(payload)
     temp_workspace = make_workspace("nico-hosted-scan-")
     try:
         workspace = workspace_from_temp(temp_workspace)
@@ -108,6 +138,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         if not checkout.ok:
             return _checkout_failed_artifact(payload, checkout)
 
+        commit_count = _git_commit_count(workspace)
         scanner_artifact = run_scanner_tools(workspace)
         scanner_artifact.update(
             {
@@ -119,6 +150,9 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
                     "returncode": checkout.returncode,
                     "timed_out": checkout.timed_out,
                     "output_truncated": checkout.output_truncated,
+                    "full_history_secret_scan_requested": full_history,
+                    "commit_count": commit_count,
+                    "history_depth": "full" if full_history else "shallow",
                 },
                 "retention_note": "Temporary hosted scanner workspace was deleted after artifact generation.",
                 "human_review_required": True,
