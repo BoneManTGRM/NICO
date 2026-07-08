@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from nico.bandit_triage import bandit_triage_report_lines, build_bandit_triage
 from nico.hosted_scanner_worker import hosted_scanner_autorun_enabled, run_hosted_scanner_worker
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact, scanner_worker_evidence_notes
 
@@ -82,11 +83,26 @@ def _apply_dependency_worker_evidence(section: dict[str, Any], normalized: dict[
     _refresh_section_status(section)
 
 
-def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
+def _apply_bandit_triage(section: dict[str, Any], artifact: dict[str, Any]) -> dict[str, Any]:
+    triage = build_bandit_triage(artifact)
+    if triage.get("finding_count"):
+        lines = bandit_triage_report_lines(triage)
+        section.setdefault("evidence", []).extend(lines.get("evidence", []))
+        section.setdefault("findings", []).extend(lines.get("findings", []))
+        section["summary"] = "Static analysis includes worker-backed scanner evidence and Bandit finding triage."
+        if triage.get("blocking_count"):
+            section["score"] = max(45, min(int(section.get("score") or 0), 74))
+        elif triage.get("review_required_count"):
+            section["score"] = max(55, min(int(section.get("score") or 0), 82))
+    return triage
+
+
+def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]], artifact: dict[str, Any]) -> dict[str, Any]:
     section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "static" in item.lower()])
     section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "static" in item.lower()])
     section.setdefault("unavailable", []).extend([item for item in notes.get("unavailable", []) if "static" in item.lower()])
 
+    triage = build_bandit_triage(artifact)
     if normalized.get("static_evidence_complete"):
         _remove_unavailable(section, ("semgrep", "bandit", "eslint", "typescript", "sandboxed worker"))
         count = int(normalized.get("static_finding_count") or 0)
@@ -96,7 +112,10 @@ def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str,
         else:
             section["score"] = max(45, min(int(section.get("score") or 0), 82 - min(35, count)))
             section["summary"] = "Static analysis includes worker-backed scanner evidence with findings requiring triage."
+    if triage.get("finding_count"):
+        triage = _apply_bandit_triage(section, artifact)
     _refresh_section_status(section)
+    return triage
 
 
 def _apply_secret_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
@@ -145,6 +164,7 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
 
     normalized = normalize_scanner_worker_artifact(artifact)
     notes = scanner_worker_evidence_notes(artifact)
+    bandit_triage: dict[str, Any] | None = None
     sections = output.get("sections") or []
     for section in sections:
         if not isinstance(section, dict):
@@ -153,7 +173,7 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
         if section_id == "dependency_health":
             _apply_dependency_worker_evidence(section, normalized, notes)
         elif section_id == "static_analysis":
-            _apply_static_worker_evidence(section, normalized, notes)
+            bandit_triage = _apply_static_worker_evidence(section, normalized, notes, artifact)
         elif section_id == "secrets_review":
             _apply_secret_worker_evidence(section, normalized, notes)
         elif section_id == "velocity_complexity":
@@ -162,6 +182,8 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
     output["scanner_worker_evidence_attached"] = True
     output["scanner_worker_auto_ran"] = auto_ran
     output["scanner_worker_artifact"] = normalized
+    if bandit_triage and bandit_triage.get("finding_count"):
+        output["bandit_triage"] = bandit_triage
     if artifact.get("worker_execution_state"):
         output["scanner_worker_execution"] = {
             "state": artifact.get("worker_execution_state"),
