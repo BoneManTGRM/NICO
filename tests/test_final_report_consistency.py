@@ -1,5 +1,5 @@
 from nico.final_report_consistency import finalize_express_result_consistency
-from nico.service_workflows import COVERAGE_TARGETS
+from nico.hosted_assessment import SERVICE_TARGETS
 
 
 def _base_result(**overrides):
@@ -10,7 +10,7 @@ def _base_result(**overrides):
         "client_name": "",
         "project_name": "NICO",
         "assessment_mode": "express",
-        "coverage_targets": COVERAGE_TARGETS,
+        "coverage_targets": SERVICE_TARGETS,
         "executive_summary": "NICO completed an assessment. The current maturity signal is Mid (71/100).",
         "maturity_signal": {"level": "Mid", "score": 77, "summary": "Stale pre-final score."},
         "maturity_semaphore": {"Code Audit": "green"},
