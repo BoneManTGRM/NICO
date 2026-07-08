@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 SECTION_HEADER_RE = re.compile(
-    r"(?P<label>Dependency / Library Ecosystem|Static Analysis|Secrets Exposure Review|Velocity / Complexity)[^\n]{0,80}\bGREEN\b[^\n]*",
+    r"(?P<label>Dependency / Library Ecosystem|Static Analysis|Secrets Exposure Review|Velocity / Complexity)\s*(?:—|-|\||:)\s*GREEN\b[^\n]*",
     re.IGNORECASE,
 )
 SCORE_RE = re.compile(r"\bSCORE\s+(?P<score>\d{1,3})\s*/\s*100\b", re.IGNORECASE)
@@ -27,6 +27,7 @@ SECTION_RISK_MARKERS = {
     "secrets": ("gitleaks", "trufflehog", "full-history", "credential"),
     "velocity": ("release-readiness", "complexity", "final-clean"),
 }
+SECTION_LABELS = tuple(label.lower() for label in SECTION_RISK_MARKERS)
 
 
 def _text(value: Any) -> str:
@@ -52,6 +53,17 @@ def _section_kind(section: dict[str, Any]) -> str | None:
     if "velocity" in key or "complexity" in key:
         return "velocity"
     return None
+
+
+def _kind_from_label(label: str) -> str:
+    lower = label.lower()
+    if "dependency" in lower:
+        return "dependency"
+    if "static" in lower:
+        return "static"
+    if "secret" in lower:
+        return "secrets"
+    return "velocity"
 
 
 def _has_any(text: str, markers: tuple[str, ...]) -> bool:
@@ -81,6 +93,15 @@ def _json_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]:
     return violations
 
 
+def _next_section_start(export_text: str, start: int) -> int:
+    next_start = len(export_text)
+    for label in ("Dependency / Library Ecosystem", "Static Analysis", "Secrets Exposure Review", "Velocity / Complexity", "CI/CD Analysis", "Architecture & Technical Debt", "Code Audit"):
+        idx = export_text.find(label, start)
+        if idx != -1 and idx < next_start:
+            next_start = idx
+    return next_start
+
+
 def _export_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]:
     reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
     export_text = "\n".join(str(reports.get(key) or "") for key in ("markdown", "html"))
@@ -90,17 +111,23 @@ def _export_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]
         violations.append({"type": "missing_export_text", "section": "reports", "reason": "Markdown/HTML export text is empty after report rebuild."})
         return violations
     for match in SECTION_HEADER_RE.finditer(export_text):
+        line_start = export_text.rfind("\n", 0, match.start()) + 1
+        line_end = export_text.find("\n", match.start())
+        if line_end == -1:
+            line_end = len(export_text)
+        line = export_text[line_start:line_end].lower()
+        if "cannot be green" in line or "not green" in line or "no green" in line:
+            continue
         label = match.group("label")
-        start = max(0, match.start() - 500)
-        end = min(len(export_text), match.end() + 1200)
-        window = export_text[start:end].lower()
-        section_key = "dependency" if "dependency" in label.lower() else "static" if "static" in label.lower() else "secrets" if "secrets" in label.lower() else "velocity"
-        if _has_any(window, REVIEW_LIMITED_MARKERS) and _has_any(window, SECTION_RISK_MARKERS[section_key]):
+        section_key = _kind_from_label(label)
+        block_end = _next_section_start(export_text, match.end())
+        block = export_text[line_start:block_end].lower()
+        if _has_any(block, REVIEW_LIMITED_MARKERS) and _has_any(block, SECTION_RISK_MARKERS[section_key]):
             violations.append(
                 {
                     "type": "export_green_contradiction",
                     "section": label,
-                    "reason": "Rendered report shows GREEN while nearby export text discloses missing, unavailable, or review-limited evidence.",
+                    "reason": "Rendered report shows GREEN while the same rendered section discloses missing, unavailable, or review-limited evidence.",
                 }
             )
     if "trust level: review-limited" in lower and "delivery verdict" in lower and "human review" not in lower:
@@ -182,7 +209,7 @@ def apply_export_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
         "violations": violations,
         "rules": [
             "no_green_json_section_with_review_limited_evidence",
-            "no_green_rendered_section_with_nearby_missing_or_unavailable_evidence",
+            "no_green_rendered_section_with_same_section_missing_or_unavailable_evidence",
             "rendered_score_matches_final_json_score",
             "rendered_exports_must_not_be_empty",
         ],
