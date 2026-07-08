@@ -64,12 +64,17 @@ def scanner_section(payload: dict[str, Any]) -> dict[str, Any] | None:
             unavailable.append(f"{name} was unavailable: {'; '.join(map(str, item.get('unavailable_data_notes') or [])) or 'tool did not run'}")
     score = _score_from_results(items)
     has_unavailable = any(item.get("status") == "unavailable" for item in items)
+    diagnostic_status = _status(score, has_unavailable)
     return {
         "id": "scanner_worker_evidence",
         "label": "Scanner Worker Evidence",
         "score": score,
-        "status": _status(score, has_unavailable),
-        "summary": "Controlled scanner-worker output is folded into report evidence when a scanner run is attached to the report payload.",
+        "status": "gray",
+        "diagnostic_status": diagnostic_status,
+        "scoring_weight": 0,
+        "supplemental": True,
+        "score_impact": "diagnostic_only",
+        "summary": "Controlled scanner-worker output is attached as supplemental diagnostic evidence. It is visible in the report, but it is not averaged into the core Express maturity score unless mapped into explicit core evidence sections.",
         "evidence": evidence,
         "findings": findings,
         "unavailable": unavailable,
@@ -90,4 +95,5 @@ def enrich_payload_with_scanner_evidence(payload: dict[str, Any]) -> dict[str, A
     sections.append(section)
     output["sections"] = sections
     output.setdefault("evidence_readiness", {})["scanner_worker_attached"] = True
+    output.setdefault("evidence_readiness", {})["scanner_worker_scoring_mode"] = "supplemental_diagnostic"
     return output
