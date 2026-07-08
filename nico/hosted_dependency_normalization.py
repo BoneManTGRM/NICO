@@ -5,11 +5,7 @@ from typing import Any
 
 
 def normalize_requirement_name(raw_name: str) -> str:
-    """Return the package name without PEP 508 extras.
-
-    OSV package names must not include extras such as PyJWT[crypto]. Extras change
-    install behavior but are not part of the package identity.
-    """
+    """Return the package name without PEP 508 extras."""
 
     return re.sub(r"\[[^\]]+\]", "", str(raw_name or "")).strip()
 
@@ -64,18 +60,23 @@ def exact_osv_dependencies(dependencies: list[dict[str, Any]]) -> list[dict[str,
 
 
 def patch_hosted_assessment_dependency_parsing() -> None:
-    """Patch hosted_assessment dependency parsing without changing report semantics.
+    """Patch hosted assessment dependency parsing and OSV queries.
 
-    This keeps the hosted Express report honest: it can still disclose OSV findings,
-    but it must query OSV with normalized exact package identities rather than PEP
-    extras or range fragments that create misleading vulnerability records.
+    This is intentionally idempotent. It also wraps run_github_assessment so a
+    long-lived hosted process cannot keep using an older unnormalized parser.
     """
 
     from nico import hosted_assessment
 
-    hosted_assessment.parse_requirements = parse_requirements_normalized
+    original_query_osv = getattr(hosted_assessment, "_nico_original_query_osv", None)
+    if original_query_osv is None:
+        original_query_osv = hosted_assessment.query_osv
+        hosted_assessment._nico_original_query_osv = original_query_osv
 
-    original_query_osv = hosted_assessment.query_osv
+    original_run = getattr(hosted_assessment, "_nico_original_run_github_assessment", None)
+    if original_run is None:
+        original_run = hosted_assessment.run_github_assessment
+        hosted_assessment._nico_original_run_github_assessment = original_run
 
     def query_osv_normalized(dependencies: list[dict[str, str]]) -> tuple[list[str], list[str]]:
         normalized = exact_osv_dependencies(dependencies)
@@ -83,4 +84,11 @@ def patch_hosted_assessment_dependency_parsing() -> None:
             return [], ["OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests."]
         return original_query_osv(normalized)
 
+    def run_github_assessment_normalized(request: dict[str, Any]) -> dict[str, Any]:
+        hosted_assessment.parse_requirements = parse_requirements_normalized
+        hosted_assessment.query_osv = query_osv_normalized
+        return original_run(request)
+
+    hosted_assessment.parse_requirements = parse_requirements_normalized
     hosted_assessment.query_osv = query_osv_normalized
+    hosted_assessment.run_github_assessment = run_github_assessment_normalized
