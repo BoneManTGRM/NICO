@@ -13,6 +13,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
     if result.get("status") != "complete":
         return result
+    from nico.report_final_qa import apply_final_report_qa
     from nico.report_truth_runtime_patch import (
         apply_dependency_score_consistency,
         rebuild_reports,
@@ -21,6 +22,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     from nico.report_truth_status import build_report_truth_status
 
     result = apply_dependency_score_consistency(result)
+    result = apply_final_report_qa(result)
     result = refresh_project_trend_score(result)
     result["report_truth_guard"] = build_report_truth_status()
     return rebuild_reports(result)
