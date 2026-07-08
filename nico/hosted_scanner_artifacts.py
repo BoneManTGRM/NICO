@@ -66,6 +66,43 @@ def _refresh_section_status(section: dict[str, Any]) -> None:
     section["status"] = _status_color(score, bool(section.get("unavailable")) and score == 0)
 
 
+def _complexity_profile(artifact: dict[str, Any]) -> dict[str, Any]:
+    value = artifact.get("complexity_engine")
+    return value if isinstance(value, dict) else {}
+
+
+def _complexity_evidence(profile: dict[str, Any]) -> list[str]:
+    evidence = [str(item) for item in profile.get("evidence", []) if item]
+    risk = profile.get("risk_level")
+    score = profile.get("complexity_score")
+    if risk and score is not None:
+        evidence.append(f"Complexity engine risk level: {risk}; complexity score={score}/100.")
+    hotspots = profile.get("hotspots") if isinstance(profile.get("hotspots"), list) else []
+    if hotspots:
+        top = hotspots[0]
+        if isinstance(top, dict):
+            evidence.append(
+                "Top complexity hotspot: "
+                f"{top.get('path')} hotspot_score={top.get('hotspot_score')}, "
+                f"cyclomatic={top.get('cyclomatic_complexity')}, churn={top.get('churn')}."
+            )
+    return evidence
+
+
+def _complexity_findings(profile: dict[str, Any]) -> list[str]:
+    findings = [str(item) for item in profile.get("findings", []) if item]
+    hotspots = profile.get("hotspots") if isinstance(profile.get("hotspots"), list) else []
+    for item in hotspots[:5]:
+        if not isinstance(item, dict):
+            continue
+        findings.append(
+            "Complexity hotspot: "
+            f"{item.get('path')} score={item.get('hotspot_score')}, "
+            f"loc={item.get('loc')}, cyclomatic={item.get('cyclomatic_complexity')}, churn={item.get('churn')}."
+        )
+    return findings
+
+
 def _secret_history_scan_verified(artifact: dict[str, Any]) -> bool:
     checkout = artifact.get("checkout") if isinstance(artifact.get("checkout"), dict) else {}
     history = artifact.get("secret_history_scan") if isinstance(artifact.get("secret_history_scan"), dict) else {}
@@ -155,7 +192,23 @@ def _apply_secret_worker_evidence(section: dict[str, Any], normalized: dict[str,
     _refresh_section_status(section)
 
 
-def _apply_velocity_worker_evidence(section: dict[str, Any], normalized: dict[str, Any]) -> None:
+def _apply_architecture_complexity(section: dict[str, Any], artifact: dict[str, Any]) -> None:
+    profile = _complexity_profile(artifact)
+    if not profile:
+        return
+    section.setdefault("evidence", []).extend(_complexity_evidence(profile))
+    section.setdefault("findings", []).extend(_complexity_findings(profile))
+    _remove_unavailable(section, ("call-graph", "call graph", "cyclomatic", "complexity scoring"))
+    target_score = int(profile.get("architecture_score") or profile.get("complexity_score") or section.get("score") or 0)
+    if profile.get("risk_level") == "high":
+        section["score"] = min(int(section.get("score") or 0), target_score)
+    else:
+        section["score"] = max(int(section.get("score") or 0), target_score)
+    section["summary"] = "Architecture review includes worker-backed call-graph, cyclomatic complexity, hotspot, churn, ownership, dependency-risk, and source-footprint evidence."
+    _refresh_section_status(section)
+
+
+def _apply_velocity_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], artifact: dict[str, Any]) -> None:
     if normalized.get("static_evidence_complete"):
         section.setdefault("evidence", []).append(
             "Scanner-worker static evidence is available, reducing hosted uncertainty around large source footprint and deeper analyzer coverage."
@@ -164,6 +217,18 @@ def _apply_velocity_worker_evidence(section: dict[str, Any], normalized: dict[st
         section["score"] = max(int(section.get("score") or 0), 82)
     if normalized.get("coverage_tools_completed"):
         section.setdefault("evidence", []).append("Scanner-worker coverage evidence is available for work-vs-expected review.")
+
+    profile = _complexity_profile(artifact)
+    if profile:
+        section.setdefault("evidence", []).extend(_complexity_evidence(profile))
+        section.setdefault("findings", []).extend(_complexity_findings(profile))
+        _remove_unavailable(section, ("deeper complexity", "source-footprint", "source footprint"))
+        target_score = int(profile.get("velocity_score") or profile.get("complexity_score") or section.get("score") or 0)
+        if profile.get("risk_level") == "high":
+            section["score"] = min(int(section.get("score") or 0), target_score)
+        else:
+            section["score"] = max(int(section.get("score") or 0), target_score)
+        section["summary"] = "Velocity and complexity review includes worker-backed churn, ownership concentration, hotspot, call-graph, dependency-risk, and source-footprint evidence."
     _refresh_section_status(section)
 
 
@@ -196,14 +261,18 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
             bandit_triage = _apply_static_worker_evidence(section, normalized, notes, artifact)
         elif section_id == "secrets_review":
             _apply_secret_worker_evidence(section, normalized, notes, artifact)
+        elif section_id == "architecture_debt":
+            _apply_architecture_complexity(section, artifact)
         elif section_id == "velocity_complexity":
-            _apply_velocity_worker_evidence(section, normalized)
+            _apply_velocity_worker_evidence(section, normalized, artifact)
 
     output["scanner_worker_evidence_attached"] = True
     output["scanner_worker_auto_ran"] = auto_ran
     output["scanner_worker_artifact"] = normalized
     if artifact.get("secret_history_scan"):
         output["secret_history_scan"] = artifact["secret_history_scan"]
+    if artifact.get("complexity_engine"):
+        output["complexity_engine"] = artifact["complexity_engine"]
     if bandit_triage and bandit_triage.get("finding_count"):
         output["bandit_triage"] = bandit_triage
     if artifact.get("worker_execution_state"):
