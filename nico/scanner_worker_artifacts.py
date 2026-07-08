@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+DEPENDENCY_TOOLS = ("pip-audit", "npm-audit", "osv-scanner")
 STATIC_TOOLS = ("bandit", "semgrep", "eslint", "typescript")
 SECRET_TOOLS = ("gitleaks", "trufflehog")
-ALL_TOOLS = STATIC_TOOLS + SECRET_TOOLS
+COVERAGE_TOOLS = ("coverage",)
+ALL_TOOLS = DEPENDENCY_TOOLS + STATIC_TOOLS + SECRET_TOOLS + COVERAGE_TOOLS
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -25,7 +27,7 @@ def _tool_payloads(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         for item in raw_tools:
             if not isinstance(item, dict):
                 continue
-            name = str(item.get("tool") or item.get("name") or "").lower().strip()
+            name = str(item.get("tool") or item.get("scanner") or item.get("name") or "").lower().strip()
             if name:
                 parsed[name] = item
         return parsed
@@ -52,10 +54,19 @@ def _severity_counts(findings: list[Any]) -> dict[str, int]:
                 finding.get("severity")
                 or finding.get("level")
                 or finding.get("issue_severity")
+                or finding.get("confidence")
                 or "unknown"
             ).lower()
         counts[severity] += 1
     return dict(counts)
+
+
+def _completed_tools(normalized_tools: dict[str, dict[str, Any]], tools: tuple[str, ...]) -> list[str]:
+    return [tool for tool in tools if normalized_tools[tool]["completed"]]
+
+
+def _finding_count(normalized_tools: dict[str, dict[str, Any]], tools: tuple[str, ...]) -> int:
+    return sum(normalized_tools[tool]["finding_count"] for tool in tools)
 
 
 def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]:
@@ -78,22 +89,30 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
             "severity_counts": _severity_counts(findings),
         }
 
-    static_completed = [tool for tool in STATIC_TOOLS if normalized_tools[tool]["completed"]]
-    secret_completed = [tool for tool in SECRET_TOOLS if normalized_tools[tool]["completed"]]
-    static_findings = sum(normalized_tools[tool]["finding_count"] for tool in STATIC_TOOLS)
-    secret_findings = sum(normalized_tools[tool]["finding_count"] for tool in SECRET_TOOLS)
+    dependency_completed = _completed_tools(normalized_tools, DEPENDENCY_TOOLS)
+    static_completed = _completed_tools(normalized_tools, STATIC_TOOLS)
+    secret_completed = _completed_tools(normalized_tools, SECRET_TOOLS)
+    coverage_completed = _completed_tools(normalized_tools, COVERAGE_TOOLS)
 
     return {
         "artifact_schema": "nico.scanner_worker.v1",
+        "dependency_tools_completed": dependency_completed,
         "static_tools_completed": static_completed,
         "secret_tools_completed": secret_completed,
+        "coverage_tools_completed": coverage_completed,
+        "missing_dependency_tools": [tool for tool in DEPENDENCY_TOOLS if tool not in dependency_completed],
         "missing_static_tools": [tool for tool in STATIC_TOOLS if tool not in static_completed],
         "missing_secret_tools": [tool for tool in SECRET_TOOLS if tool not in secret_completed],
-        "static_finding_count": static_findings,
-        "secret_finding_count": secret_findings,
+        "missing_coverage_tools": [tool for tool in COVERAGE_TOOLS if tool not in coverage_completed],
+        "dependency_finding_count": _finding_count(normalized_tools, DEPENDENCY_TOOLS),
+        "static_finding_count": _finding_count(normalized_tools, STATIC_TOOLS),
+        "secret_finding_count": _finding_count(normalized_tools, SECRET_TOOLS),
+        "coverage_finding_count": _finding_count(normalized_tools, COVERAGE_TOOLS),
         "tools": normalized_tools,
+        "dependency_evidence_complete": len(dependency_completed) == len(DEPENDENCY_TOOLS),
         "static_evidence_complete": len(static_completed) == len(STATIC_TOOLS),
         "secret_evidence_complete": len(secret_completed) == len(SECRET_TOOLS),
+        "coverage_evidence_complete": len(coverage_completed) == len(COVERAGE_TOOLS),
     }
 
 
@@ -103,19 +122,31 @@ def scanner_worker_evidence_notes(payload: dict[str, Any]) -> dict[str, list[str
     findings: list[str] = []
     unavailable: list[str] = []
 
+    if normalized["dependency_tools_completed"]:
+        evidence.append("Scanner-worker dependency tools completed: " + ", ".join(normalized["dependency_tools_completed"]) + ".")
     if normalized["static_tools_completed"]:
         evidence.append("Scanner-worker static tools completed: " + ", ".join(normalized["static_tools_completed"]) + ".")
     if normalized["secret_tools_completed"]:
         evidence.append("Scanner-worker secret tools completed: " + ", ".join(normalized["secret_tools_completed"]) + ".")
+    if normalized["coverage_tools_completed"]:
+        evidence.append("Scanner-worker coverage tools completed: " + ", ".join(normalized["coverage_tools_completed"]) + ".")
 
+    if normalized["dependency_finding_count"]:
+        findings.append(f"Scanner-worker dependency tools reported {normalized['dependency_finding_count']} finding(s).")
     if normalized["static_finding_count"]:
         findings.append(f"Scanner-worker static tools reported {normalized['static_finding_count']} finding(s).")
     if normalized["secret_finding_count"]:
         findings.append(f"Scanner-worker secret tools reported {normalized['secret_finding_count']} finding(s).")
+    if normalized["coverage_finding_count"]:
+        findings.append(f"Scanner-worker coverage tools reported {normalized['coverage_finding_count']} finding(s).")
 
+    if normalized["missing_dependency_tools"]:
+        unavailable.append("Scanner-worker dependency tools unavailable: " + ", ".join(normalized["missing_dependency_tools"]) + ".")
     if normalized["missing_static_tools"]:
         unavailable.append("Scanner-worker static tools unavailable: " + ", ".join(normalized["missing_static_tools"]) + ".")
     if normalized["missing_secret_tools"]:
         unavailable.append("Scanner-worker secret tools unavailable: " + ", ".join(normalized["missing_secret_tools"]) + ".")
+    if normalized["missing_coverage_tools"]:
+        unavailable.append("Scanner-worker coverage tools unavailable: " + ", ".join(normalized["missing_coverage_tools"]) + ".")
 
     return {"evidence": evidence, "findings": findings, "unavailable": unavailable}
