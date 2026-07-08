@@ -8,8 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import requests
+
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
+
+OSV_API = "https://api.osv.dev/v1/querybatch"
 
 SECRET_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -187,6 +191,97 @@ def _unavailable_tool(spec: ScannerToolSpec, reason: str) -> dict[str, Any]:
     }
 
 
+def _normalize_requirement(raw: str) -> dict[str, str] | None:
+    line = raw.split("#", 1)[0].strip()
+    if not line or line.startswith("-"):
+        return None
+    match = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?\s*(==|~=|>=|<=|>|<)\s*([^;\s]+)", line)
+    if not match:
+        return None
+    name, operator, version = match.groups()
+    if operator != "==":
+        return None
+    return {"name": name, "version": version, "ecosystem": "PyPI", "source": "requirements.txt"}
+
+
+def _package_lock_dependencies(path: Path) -> list[dict[str, str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    dependencies: list[dict[str, str]] = []
+    packages = payload.get("packages")
+    if isinstance(packages, dict):
+        for raw_name, item in packages.items():
+            if not raw_name or raw_name == "" or not isinstance(item, dict):
+                continue
+            version = str(item.get("version") or "").strip()
+            if not version:
+                continue
+            name = raw_name.split("node_modules/", 1)[-1]
+            if name:
+                dependencies.append({"name": name, "version": version, "ecosystem": "npm", "source": str(path)})
+    return dependencies
+
+
+def _osv_query_dependencies(repo_dir: Path) -> list[dict[str, str]]:
+    dependencies: list[dict[str, str]] = []
+    requirements = repo_dir / "requirements.txt"
+    if requirements.exists():
+        for line in requirements.read_text(encoding="utf-8", errors="replace").splitlines():
+            item = _normalize_requirement(line)
+            if item:
+                dependencies.append(item)
+    for lockfile in repo_dir.glob("**/package-lock.json"):
+        if any(part in {"node_modules", ".next", "dist", "build"} for part in lockfile.relative_to(repo_dir).parts):
+            continue
+        dependencies.extend(_package_lock_dependencies(lockfile))
+    return dependencies[:150]
+
+
+def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, Any]:
+    dependencies = _osv_query_dependencies(repo_dir)
+    if not dependencies:
+        return _unavailable_tool(spec, "osv-scanner CLI is not installed and no exact dependency versions were available for OSV API fallback evidence.")
+    queries = [
+        {"package": {"name": item["name"], "ecosystem": item["ecosystem"]}, "version": item["version"]}
+        for item in dependencies
+    ]
+    try:
+        response = requests.post(OSV_API, json={"queries": queries}, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        return _unavailable_tool(spec, f"osv-scanner CLI is not installed and OSV API fallback was unavailable: {exc}")
+    results = payload.get("results") if isinstance(payload, dict) else []
+    findings: list[dict[str, Any]] = []
+    if isinstance(results, list):
+        for dependency, result in zip(dependencies, results):
+            vulns = result.get("vulns", []) if isinstance(result, dict) else []
+            for vuln in vulns:
+                if isinstance(vuln, dict):
+                    item = dict(vuln)
+                    item.setdefault("package", dependency["name"])
+                    item.setdefault("version", dependency["version"])
+                    item.setdefault("ecosystem", dependency["ecosystem"])
+                    findings.append(item)
+    return redact_payload(
+        {
+            "tool": spec.name,
+            "status": "completed",
+            "category": spec.category,
+            "returncode": 1 if findings else 0,
+            "timed_out": False,
+            "output_truncated": False,
+            "execution_source": "osv_api_fallback",
+            "evidence_summary": f"OSV API fallback queried {len(dependencies)} exact dependency version(s) because osv-scanner CLI was not installed.",
+            "findings": findings,
+            "stderr": "",
+            "scans_git_history": spec.scans_git_history,
+        }
+    )
+
+
 def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None]:
     repo_dir = workspace.repo_dir
     if spec.name == "pip-audit" and not (repo_dir / "requirements.txt").exists():
@@ -201,6 +296,8 @@ def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) 
         return spec.command, existing[0].parent, None
     if spec.name == "trufflehog":
         return tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command), repo_dir, None
+    if spec.name in {"eslint", "typescript"} and (repo_dir / "apps" / "web" / "package.json").exists():
+        return spec.command, repo_dir / "apps" / "web", None
     return spec.command, repo_dir, None
 
 
@@ -218,6 +315,8 @@ def run_scanner_tool(
 
     executable = spec.command[0]
     if shutil.which(executable) is None:
+        if spec.name == "osv-scanner":
+            return _osv_api_fallback_tool(spec, workspace.repo_dir)
         return _unavailable_tool(spec, f"{executable} is not installed in the worker image")
 
     command, cwd, unavailable_reason = _resolve_command_and_cwd(spec, workspace)
