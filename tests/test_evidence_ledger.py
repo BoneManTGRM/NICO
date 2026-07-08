@@ -79,8 +79,10 @@ def test_attach_evidence_ledger_adds_report_guard_and_guidance():
     assert any("Evidence ledger attached" in item for item in result["medium_term_plan"])
 
 
-def test_final_hosted_gate_exports_evidence_ledger_summary():
+def test_final_hosted_gate_attaches_evidence_ledger_before_report_rebuild():
     result = apply_final_hosted_truth_gate(_result_with_evidence())
 
     assert result["evidence_ledger"]["ledger_hash"]
-    assert "Evidence ledger attached" in result["reports"]["markdown"]
+    assert result["report_quality_guards"]["evidence_ledger"]["ledger_hash"] == result["evidence_ledger"]["ledger_hash"]
+    assert any("Evidence ledger attached" in item for item in result["medium_term_plan"])
+    assert result["reports"]["markdown"]
