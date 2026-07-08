@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
 from nico.hosted_assessment import run_github_assessment
+from nico.hosted_scanner_artifacts import extract_scanner_worker_artifact, run_github_assessment_with_scanner_artifacts
 from nico.assessment_quality import polish_express_result
 from nico.final_report_consistency import finalize_express_result_consistency
 from nico.assessment_attachment import attach_existing_worker_evidence
@@ -62,6 +63,10 @@ class GithubAssessmentRequest(BaseModel):
     customer_id: str = 'default_customer'
     project_id: str = 'default_project'
     authorized_by: str = 'unspecified'
+    scanner_worker_artifact: dict[str, Any] = {}
+    scanner_artifact: dict[str, Any] = {}
+    worker_artifact: dict[str, Any] = {}
+    scanner_worker: dict[str, Any] = {}
 
 class MidAssessmentRequest(BaseModel):
     authorized: bool = False
@@ -339,7 +344,10 @@ def audit_log(): return Store().rows('audit_log')
 def hosted_github_assessment(req: GithubAssessmentRequest):
     global _LAST_HOSTED_ASSESSMENT
     request_payload = req.model_dump()
-    result = run_github_assessment(request_payload)
+    if extract_scanner_worker_artifact(request_payload):
+        result = run_github_assessment_with_scanner_artifacts(request_payload)
+    else:
+        result = run_github_assessment(request_payload)
     if result.get('status') == 'blocked': raise HTTPException(400, result)
     result = attach_existing_worker_evidence(result, request_payload)
     result = enrich_payload_with_scanner_evidence(result)
