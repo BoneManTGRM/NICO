@@ -13,6 +13,7 @@ def test_score_details_averages_sections_and_lists_lowest():
 
     assert result["score"] == 80
     assert result["section_count"] == 2
+    assert result["scored_section_count"] == 2
     assert result["display_section_count"] == 2
     assert result["lowest_sections"][0]["id"] == "b"
 
@@ -28,7 +29,8 @@ def test_score_details_excludes_supplemental_sections_from_average():
     )
 
     assert result["score"] == 90
-    assert result["section_count"] == 1
+    assert result["section_count"] == 2
+    assert result["scored_section_count"] == 1
     assert result["display_section_count"] == 2
     assert result["supplemental_section_count"] == 1
     assert result["lowest_sections"] == [{
