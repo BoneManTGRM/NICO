@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 MALFORMED_EXTRA_OSV_RE = re.compile(
@@ -158,7 +159,9 @@ def apply_dependency_score_consistency(result: dict[str, Any]) -> dict[str, Any]
                 missing.append(signal)
         readiness["status"] = "evidence_incomplete"
         readiness["missing_signals"] = missing
-        readiness["passed_signals"] = [item for item in readiness.get("passed_signals", []) or [] if item not in set(missing)]
+        result["release_readiness"]["passed_signals"] = [
+            item for item in readiness.get("passed_signals", []) or [] if item not in set(missing)
+        ]
     _recompute_maturity(result)
     return result
 
@@ -197,10 +200,43 @@ def refresh_project_trend_score(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_report_defaults(result: dict[str, Any]) -> None:
+    """Make report rebuilding safe for partial unit-test payloads.
+
+    The finalizer is used by both full hosted assessment results and narrow unit
+    tests that intentionally omit report-only metadata. Rebuilding reports must
+    not make those partial payloads crash.
+    """
+
+    from nico.hosted_assessment import SERVICE_TARGETS
+
+    result.setdefault("generated_at", _utc_now())
+    result.setdefault("repository", result.get("source_scope") or "authorized repository")
+    result.setdefault("client_name", "")
+    result.setdefault("project_name", result.get("repository") or "NICO")
+    result.setdefault("assessment_mode", "express")
+    result.setdefault("coverage_targets", SERVICE_TARGETS)
+    result.setdefault("sections", [])
+    result.setdefault("findings", [])
+    result.setdefault("quick_wins", [])
+    result.setdefault("medium_term_plan", [])
+    result.setdefault("resourcing_recommendation", [])
+    result.setdefault("risk_register", [])
+    result.setdefault("verification_checklist", [])
+    result.setdefault("reports", {})
+    if not isinstance(result.get("maturity_signal"), dict):
+        result["maturity_signal"] = {"level": "Unknown", "score": "N/A"}
+
+
 def rebuild_reports(result: dict[str, Any]) -> dict[str, Any]:
     from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
     from nico.i18n_es_mx import reports_es_mx, wants_es_mx
 
+    _ensure_report_defaults(result)
     result["executive_summary"] = (
         f"NICO completed an authorized hosted Express Technical Health Assessment for {result.get('repository') or result.get('source_scope') or 'the authorized repository'}. "
         f"The final maturity signal is {(result.get('maturity_signal') or {}).get('level', 'Unknown')} ({(result.get('maturity_signal') or {}).get('score', 'N/A')}/100). "
