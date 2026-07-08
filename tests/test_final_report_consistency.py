@@ -190,7 +190,7 @@ def _pdf_regression_sections():
     ]
 
 
-def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory():
+def test_pdf_regression_score_drops_when_osv_findings_are_disclosed():
     result = finalize_express_result_consistency(
         _base_result(
             maturity_signal={"level": "Senior", "score": 90, "summary": "Original report score."},
@@ -215,7 +215,7 @@ def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory()
 
     markdown = result["reports"]["markdown"]
     lower_markdown = markdown.lower()
-    assert result["maturity_signal"]["score"] == 90
+    assert result["maturity_signal"]["score"] == 88
     assert result["release_readiness"]["status"] == "evidence_incomplete"
     assert "dependency_scanner_clean_artifacts_attached" in result["release_readiness"]["missing_signals"]
     assert "dependency_no_osv_vulnerabilities" in result["release_readiness"]["missing_signals"]
