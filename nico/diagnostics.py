@@ -8,6 +8,7 @@ from nico.approval_queue import list_approvals
 from nico.build_marker import BUILD_COMMIT, BUILD_MARKER
 from nico.github_diagnostics import github_auth_diagnostics
 from nico.live_score_check import live_score_check
+from nico.report_truth_status import build_report_truth_status
 from nico.runtime_config import runtime_config
 from nico.scanner_artifact_scoring import scanner_artifact_access_status
 from nico.storage import STORE
@@ -92,12 +93,14 @@ def diagnostics() -> dict[str, Any]:
     config = runtime_config()
     default_repo = os.getenv("NICO_DEFAULT_REPOSITORY") or "BoneManTGRM/NICO"
     deployment = deployment_diagnostics()
+    report_truth = build_report_truth_status()
     return {
         "status": "ok",
         "app": "NICO",
-        "version": "0.8.1-live-score-check",
+        "version": "0.8.2-report-truth-status",
         "git_commit": deployment["deployed_commit"],
         "deployment": deployment,
+        "report_truth_guard": report_truth,
         "backend_mode": "accuracy-hardening-hosted",
         "live_score_check": live_score_check(),
         "storage": storage_diagnostics(),
