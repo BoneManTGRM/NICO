@@ -38,17 +38,28 @@ def _section_score(result: dict[str, Any], section_id: str) -> int:
     return int(item.get("score") or 0) if item else 0
 
 
+def _list_text(value: Any) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(part or "") for part in value)
+    if isinstance(value, dict):
+        return "\n".join(_list_text(part) for part in value.values())
+    return str(value or "")
+
+
 def _section_text(item: dict[str, Any] | None) -> str:
     if not item:
         return ""
-    values = []
-    for key in ("summary", "evidence", "findings", "unavailable"):
-        value = item.get(key)
-        if isinstance(value, list):
-            values.extend(str(part) for part in value)
-        else:
-            values.append(str(value or ""))
-    return "\n".join(values)
+    return "\n".join(_list_text(item.get(key)) for key in ("summary", "evidence", "findings", "unavailable"))
+
+
+def _evidence_text(item: dict[str, Any] | None) -> str:
+    if not item:
+        return ""
+    return "\n".join(_list_text(item.get(key)) for key in ("summary", "evidence"))
+
+
+def _findings_text(item: dict[str, Any] | None) -> str:
+    return _list_text((item or {}).get("findings"))
 
 
 def _append_unique(items: list[Any], value: str) -> None:
@@ -67,6 +78,30 @@ def _has_blocking_findings(item: dict[str, Any] | None, ignored_markers: tuple[s
             continue
         return True
     return False
+
+
+def _has_osv_vulnerability(item: dict[str, Any] | None) -> bool:
+    text = (_evidence_text(item) + "\n" + _findings_text(item)).lower()
+    return "osv returned" in text and "vulnerability record" in text and "no vulnerability records" not in text
+
+
+def _has_clean_dependency_audit_artifacts(item: dict[str, Any] | None) -> bool:
+    evidence = _evidence_text(item).lower()
+    has_zero_audit = "zero dependency vulnerabilities" in evidence and (
+        "pip-audit" in evidence or "npm-audit" in evidence or "osv scanner" in evidence or "osv-scanner" in evidence
+    )
+    return has_zero_audit and not _has_osv_vulnerability(item)
+
+
+def _has_clean_secret_artifacts(item: dict[str, Any] | None) -> bool:
+    evidence = _evidence_text(item).lower()
+    has_clean_zero = "zero high-confidence" in evidence or "zero credential findings" in evidence
+    return "credential-scan" in evidence and "gitleaks" in evidence and has_clean_zero
+
+
+def _has_static_review_findings(item: dict[str, Any] | None) -> bool:
+    findings = _findings_text(item).lower()
+    return any(marker in findings for marker in ("needs_human_review", "bandit triage", "parsed bandit artifact reported", "finding(s)"))
 
 
 def _recompute_maturity(result: dict[str, Any]) -> None:
@@ -112,12 +147,13 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
     if not item:
         return
     text = _section_text(item).lower()
+    evidence = _evidence_text(item).lower()
     has_manifest_evidence = "requirements.txt found" in text and "package.json found" in text
     has_lockfile_evidence = "lockfile evidence found" in text or "package-lock.json" in text or "pnpm-lock.yaml" in text or "yarn.lock" in text
-    has_clean_osv_evidence = "osv returned no vulnerability records" in text
-    has_clean_audit_artifacts = "pip-audit" in text and "npm-audit" in text and "zero dependency vulnerabilities" in text
+    has_clean_osv_evidence = "osv returned no vulnerability records" in evidence
+    has_clean_audit_artifacts = _has_clean_dependency_audit_artifacts(item)
     has_broad_range_warning = "[standard]>=" in text or "broad-range warnings" in text
-    has_osv_vulnerabilities = "osv returned" in text and "vulnerability record" in text
+    has_osv_vulnerabilities = _has_osv_vulnerability(item)
     if not (has_manifest_evidence and has_lockfile_evidence):
         return
     item.setdefault("evidence", [])
@@ -125,7 +161,7 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: parsed pip-audit and npm-audit artifacts reported zero dependency vulnerabilities for the assessed artifact set.")
         item["score"] = max(int(item.get("score") or 0), 90)
-    elif has_clean_osv_evidence:
+    elif has_clean_osv_evidence and not has_osv_vulnerabilities:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
         item["score"] = max(int(item.get("score") or 0), 86)
@@ -148,12 +184,7 @@ def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
     item = _section(result, "secrets_review")
     if not item:
         return
-    text = _section_text(item).lower()
-    has_clean_artifacts = (
-        "credential-scan" in text
-        and "gitleaks" in text
-        and ("zero high-confidence" in text or "clean credential-scan" in text)
-    )
+    has_clean_artifacts = _has_clean_secret_artifacts(item)
     blocking_findings = _has_blocking_findings(
         item,
         (
@@ -259,39 +290,49 @@ def _apply_velocity_traceability_adjustment(result: dict[str, Any]) -> None:
     if not (strong_traceability and supporting_sections_green):
         return
     velocity.setdefault("evidence", [])
-    _append_unique(velocity["evidence"], "Velocity interpretation: high PR/commit traceability plus green code, dependency, static-analysis, CI/CD, and architecture evidence mitigates the large source footprint for Express-level maturity scoring.")
+    _append_unique(velocity["evidence"], "Velocity interpretation: high PR/commit traceability plus available code, dependency, static-analysis, CI/CD, and architecture evidence supports Express-level maturity scoring while disclosed findings and missing runtime artifacts remain separate from final-clean claims.")
     velocity.setdefault("unavailable", [])
     _append_unique(velocity["unavailable"], "Precise story points, reviewer seniority, project trend history, and client acceptance still require retained history and human review before client-final delivery claims.")
     velocity["score"] = max(int(velocity.get("score") or 0), 82)
     velocity["status"] = _status_from_score(int(velocity["score"]))
-    velocity["summary"] = "Work-vs-expected signal uses commit velocity, PR traceability, source footprint, and supporting green evidence from code, dependency, static-analysis, CI/CD, and architecture sections."
+    velocity["summary"] = "Work-vs-expected signal uses commit velocity, PR traceability, source footprint, and available supporting evidence from code, dependency, static-analysis, CI/CD, and architecture sections."
 
 
 def _release_readiness_signals(result: dict[str, Any]) -> dict[str, Any]:
     code = _section_score(result, "code_audit")
-    deps = _section_score(result, "dependency_health")
-    secrets = _section_score(result, "secrets_review")
-    static = _section_score(result, "static_analysis")
+    dependency = _section(result, "dependency_health")
+    secrets_section = _section(result, "secrets_review")
+    static_section = _section(result, "static_analysis")
     ci = _section_score(result, "ci_cd")
     arch = _section_score(result, "architecture_debt")
     velocity = _section(result, "velocity_complexity")
-    velocity_text = _section_text(velocity)
-    text = "\n".join(_section_text(_section(result, section_id)) for section_id in [
-        "code_audit", "dependency_health", "secrets_review", "static_analysis", "ci_cd", "architecture_debt", "velocity_complexity"
-    ]).lower()
+    velocity_text = _section_text(velocity).lower()
+    ci_text = _section_text(_section(result, "ci_cd")).lower()
     release_evidence = {
         "code_audit_green": code >= 86,
-        "dependency_evidence_clean": deps >= 88 and "pip-audit" in text and "npm-audit" in text,
-        "secret_evidence_clean": secrets >= 90 and "gitleaks" in text and "credential-scan" in text,
-        "static_analysis_green": static >= 86,
-        "ci_artifacts_green": ci >= 95 and ("artifact" in text or "workflow runs returned" in text),
+        "dependency_scanner_clean_artifacts_attached": _section_score(result, "dependency_health") >= 88 and _has_clean_dependency_audit_artifacts(dependency),
+        "dependency_no_osv_vulnerabilities": not _has_osv_vulnerability(dependency),
+        "secret_evidence_clean": _section_score(result, "secrets_review") >= 90 and _has_clean_secret_artifacts(secrets_section),
+        "static_analysis_no_review_findings": _section_score(result, "static_analysis") >= 86 and not _has_static_review_findings(static_section),
+        "ci_artifacts_green": ci >= 95 and ("workflow runs returned" in ci_text or "artifact" in ci_text),
         "architecture_green": arch >= 90,
-        "pr_traceability_present": "pull request traceability ratio:" in velocity_text.lower() and " prs / " in velocity_text.lower(),
-        "commit_velocity_present": "commit velocity:" in velocity_text.lower(),
+        "pr_traceability_present": "pull request traceability ratio:" in velocity_text and " prs / " in velocity_text,
+        "commit_velocity_present": "commit velocity:" in velocity_text,
     }
     passed = [name for name, ok in release_evidence.items() if ok]
     missing = [name for name, ok in release_evidence.items() if not ok]
     return {"ready": len(missing) == 0, "passed": passed, "missing": missing, "signals": release_evidence}
+
+
+def _remove_untrue_release_clean_claims(velocity: dict[str, Any]) -> None:
+    velocity["evidence"] = [
+        item
+        for item in velocity.get("evidence", []) or []
+        if "clean dependency artifacts" not in str(item).lower()
+        and "clean secret artifacts" not in str(item).lower()
+        and "release-readiness evidence:" not in str(item).lower()
+    ]
+    velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, available supporting evidence, disclosed findings, and explicit missing runtime artifacts; it does not claim final release-readiness."
 
 
 def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
@@ -300,17 +341,38 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
         "status": "provisionally_ready_for_human_review" if readiness["ready"] else "evidence_incomplete",
         "passed_signals": readiness["passed"],
         "missing_signals": readiness["missing"],
-        "rule": "Release-readiness can lift Velocity / Complexity only when code, dependency, secret, static, CI, architecture, commit velocity, and PR traceability evidence are present and green.",
+        "rule": "Release-readiness can lift Velocity / Complexity only when clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI, architecture, commit velocity, and PR traceability evidence are all present.",
     }
     velocity = _section(result, "velocity_complexity")
-    if not velocity or not readiness["ready"]:
+    if not velocity:
         return
     velocity.setdefault("evidence", [])
-    _append_unique(velocity["evidence"], "Release-readiness evidence: clean code markers, clean dependency artifacts, clean secret artifacts, static-analysis evidence, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
+    velocity.setdefault("unavailable", [])
+    if not readiness["ready"]:
+        _remove_untrue_release_clean_claims(velocity)
+        _append_unique(
+            velocity["unavailable"],
+            "Release-readiness lift not applied because required final-clean evidence is incomplete: " + ", ".join(readiness["missing"]),
+        )
+        return
+    _append_unique(velocity["evidence"], "Release-readiness evidence: clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
     _append_unique(velocity["evidence"], "Why not higher: precise story-point estimates, reviewer seniority, business-value mapping, and acceptance evidence still require human review.")
     velocity["score"] = max(int(velocity.get("score") or 0), 90)
     velocity["status"] = _status_from_score(int(velocity["score"]))
-    velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, and final release-readiness evidence from clean CI/security/dependency artifacts."
+    velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, and verified release-readiness evidence from clean dependency, secret, static-analysis, CI, architecture, commit-velocity, and PR-traceability artifacts."
+
+
+def _apply_truth_guard(result: dict[str, Any]) -> None:
+    """Remove final-clean claims that are not supported by the current evidence set."""
+    velocity = _section(result, "velocity_complexity")
+    readiness = result.get("release_readiness") if isinstance(result.get("release_readiness"), dict) else {}
+    if velocity and readiness.get("status") != "provisionally_ready_for_human_review":
+        _remove_untrue_release_clean_claims(velocity)
+    result["report_truth_guard"] = {
+        "status": "applied",
+        "rule": "Reports may describe available maturity evidence, but must not claim scanner-clean, release-ready, deployment-ready, or client-ready status unless the required runtime artifacts are attached for this run.",
+        "blocked_claims": list((readiness or {}).get("missing_signals", [])),
+    }
 
 
 def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
@@ -327,6 +389,8 @@ def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_velocity_traceability_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_report_evidence_status(result)
+    _apply_release_readiness_adjustment(result)
+    _apply_truth_guard(result)
     _recompute_maturity(result)
 
 
@@ -410,7 +474,7 @@ def finalize_express_result_consistency(result: dict[str, Any]) -> dict[str, Any
         "field": "maturity_signal",
         "level": (result.get("maturity_signal") or {}).get("level"),
         "score": (result.get("maturity_signal") or {}).get("score"),
-        "rule": "Executive summary and report exports are rebuilt after final scoring, evidence classification, and polishing.",
+        "rule": "Executive summary and report exports are rebuilt after final scoring, evidence classification, truth-guard checks, and polishing.",
     }
     result = attach_score_details(result)
     _rebuild_reports(result)

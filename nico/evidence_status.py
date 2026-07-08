@@ -337,6 +337,40 @@ def _dynamic_medium_term_plan(status: dict[str, Any]) -> list[str]:
     return plan
 
 
+def _dynamic_resourcing_recommendation() -> list[str]:
+    return [
+        "Product Engineering Architect: validate maturity scoring, architecture/debt conclusions, evidence-state classification, and client-facing recommendations.",
+        "Product Engineer: repair high-priority findings, run and attach verified scanner-worker artifacts, and maintain frontend/backend integrations.",
+        "Product Quality Engineer: verify QA/parity evidence, report quality, safety boundaries, delivery-manifest status, and final client readiness.",
+    ]
+
+
+def _dynamic_repairs() -> list[str]:
+    return [
+        "Triage and repair confirmed findings in risk order, starting with secrets, dependency findings, static-analysis findings, and CI gaps.",
+        "Run and attach scanner-worker execution artifacts for pip-audit, npm audit, OSV Scanner, Semgrep, Bandit, ESLint, TypeScript, and gitleaks/trufflehog before scanner-clean claims.",
+        "Complete report-readiness, final-review, delivery-manifest, and client-acceptance checks before client-facing delivery.",
+    ]
+
+
+def _dynamic_risk_register(result: dict[str, Any]) -> list[str]:
+    current = [str(item) for item in result.get("risk_register", []) or []]
+    kept = [
+        item
+        for item in current
+        if not (
+            "cli scanners are marked unavailable until a sandboxed worker executes" in item.lower()
+            or "add scanner worker" in item.lower()
+            or "add scanner workers" in item.lower()
+        )
+    ]
+    _append_unique(kept, "Private repositories require backend GitHub credentials; the browser must never receive a GitHub token.")
+    _append_unique(kept, "Hosted servers cannot scan a user's local filesystem; hosted mode must use authorized repository APIs only.")
+    _append_unique(kept, "CLI scanner results remain unavailable for a report run until scanner-worker artifacts are executed against an authorized checkout and attached to that run.")
+    _append_unique(kept, "Production-impacting remediation must remain human-approved.")
+    return kept
+
+
 def apply_report_evidence_status(result: dict[str, Any]) -> dict[str, Any]:
     """Attach evidence-state classification without hiding unavailable evidence."""
     status = build_report_evidence_status(result)
@@ -345,4 +379,7 @@ def apply_report_evidence_status(result: dict[str, Any]) -> dict[str, Any]:
     _apply_secret_language(result)
     _apply_static_language(result)
     result["medium_term_plan"] = _dynamic_medium_term_plan(status)
+    result["resourcing_recommendation"] = _dynamic_resourcing_recommendation()
+    result["repairs"] = _dynamic_repairs()
+    result["risk_register"] = _dynamic_risk_register(result)
     return result
