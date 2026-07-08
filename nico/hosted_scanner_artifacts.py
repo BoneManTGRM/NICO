@@ -125,8 +125,6 @@ def _apply_velocity_worker_evidence(section: dict[str, Any], normalized: dict[st
         section["score"] = max(int(section.get("score") or 0), 82)
     if normalized.get("coverage_tools_completed"):
         section.setdefault("evidence", []).append("Scanner-worker coverage evidence is available for work-vs-expected review.")
-    elif normalized.get("missing_coverage_tools"):
-        section.setdefault("unavailable", []).append("Scanner-worker coverage tools unavailable: " + ", ".join(normalized["missing_coverage_tools"]) + ".")
     _refresh_section_status(section)
 
 
