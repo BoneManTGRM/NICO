@@ -408,3 +408,74 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
     _LAST_RETAINER_OPS = result
     STORE.put('assessment_runs', result.get('generated_at','latest_retainer').replace(':','_'), {'workflow':'retainer','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
+
+@app.post('/worker/scan')
+def worker_scan(req: WorkerScanRequest):
+    result = start_scan(req.model_dump())
+    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    return result
+@app.get('/worker/scan/{scan_id}')
+def worker_scan_status(scan_id: str): return get_scan(scan_id)
+
+@app.post('/evidence/upload')
+async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form('default_customer'), project_id: str = Form('default_project'), run_id: str = Form('')):
+    result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
+    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    return result
+@app.get('/evidence/{project_id}')
+def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
+
+@app.post('/client-job/package')
+def client_job_package(req: ClientJobPackageRequest): return create_client_job_package(req.model_dump())
+@app.post('/client-job/export')
+def client_job_export(req: ClientJobExportRequest):
+    payload = req.model_dump()
+    if req.job_id:
+        return export_client_job_package(req.job_id, req.format)
+    return export_client_job_payload(payload, req.format)
+@app.get('/client-job/{job_id}')
+def client_job_get(job_id: str): return get_client_job_package(job_id)
+@app.get('/client-job/{job_id}/exports')
+def client_job_exports(job_id: str): return list_client_job_exports(job_id)
+
+@app.post('/repair/suggest')
+def repair_suggest(req: RepairSuggestionRequest): return suggest_repair(req.model_dump())
+@app.post('/repair/approval')
+def repair_approval(req: RepairSuggestionRequest): return create_repair_approval(req.model_dump())
+@app.get('/repair/policy')
+def repair_policy(): return repair_quality_policy()
+
+@app.post('/reports/package')
+def create_report_package(req: ReportRequest): return build_report_package(req.model_dump())
+@app.get('/reports/{run_id}')
+def report_by_run(run_id: str): return get_report(run_id)
+@app.post('/reports/{run_id}/export')
+def report_export(run_id: str, req: ReportExportRequest): return export_report(run_id, req.format)
+@app.get('/reports/{run_id}/final-review')
+def report_final_review_status(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
+    return final_review_status(run_id, customer_id=customer_id, project_id=project_id)
+@app.post('/reports/{run_id}/final-review/request')
+def report_final_review_request(run_id: str, req: FinalReviewRequest):
+    payload = req.model_dump(); payload['run_id'] = run_id
+    return request_final_review(payload)
+@app.post('/reports/final-review/{approval_id}/{status}')
+def report_final_review_transition(approval_id: str, status: str, req: FinalReviewTransitionRequest):
+    return transition_final_review(approval_id, status, actor=req.actor, note=req.note)
+
+@app.post('/approval/create')
+def approval_create(req: ApprovalRequest): return create_approval(req.model_dump())
+@app.get('/approvals')
+def approvals(customer_id: str = '', project_id: str = ''): return {'status':'ok','approvals':list_approvals(customer_id or None, project_id or None)}
+@app.post('/approvals/{approval_id}/{status}')
+def approval_transition(approval_id: str, status: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, status, req.actor, req.note)
+@app.post('/approvals/{approval_id}/draft-pr')
+def approval_draft_pr(approval_id: str, req: DraftPrRequest):
+    payload = req.model_dump(); payload['approval_id'] = approval_id
+    return draft_pr_request(payload)
+
+@app.post('/github/installations')
+def github_installation(req: GitHubInstallationRequest, x_nico_admin_token: str = Header(default='')): return installation_record(req.model_dump(), admin_token=x_nico_admin_token)
+@app.get('/github/app/plan')
+def github_plan(): return github_app_plan()
+
+if __name__=='__main__': uvicorn.run(app,host='0.0.0.0',port=8000)
