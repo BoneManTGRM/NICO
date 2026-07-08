@@ -1,15 +1,11 @@
 # Report runtime evidence fix handoff
 
-Generated report `nico-express-BoneManTGRM-NICO(8).pdf` still scored 89/100 because the hosted report still had:
+Generated report `nico-express-BoneManTGRM-NICO(9).pdf` dropped to 85/100 because `cryptography==46.0.3` was pinned directly after splitting `PyJWT[crypto]`. The hosted OSV and pip-audit evidence then reported vulnerability records for the exact `cryptography` pin.
 
-- OSV findings caused by package extras in the dependency name (`PyJWT[crypto]`).
-- Missing dependency scanner-worker artifacts.
-- Missing live static scanner-worker artifacts.
-- Bandit findings that still need triage.
+Root correction:
 
-This PR fixes the extras issue by using the base package plus explicit crypto dependency:
+- Keep `PyJWT[crypto]==2.13.0` as the installation requirement.
+- Normalize package identity before OSV lookup so extras are not submitted as the OSV package name.
+- Do not pin transitive crypto dependencies directly unless a current-run audit proves the exact pin is clean.
 
-- `PyJWT==2.13.0`
-- `cryptography==46.0.3`
-
-This PR does not fake scanner artifacts and does not force the score higher. A later report can only rise if the hosted report actually consumes clean current-run dependency/static/complexity evidence.
+Remaining honest blockers are unchanged: dependency/static scanner-worker artifacts, Bandit triage, complexity artifacts, and human/client acceptance must be attached before final scanner-clean or client-ready claims.

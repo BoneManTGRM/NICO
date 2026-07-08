@@ -4,7 +4,9 @@ The Express report must not claim scanner-clean or release-ready status unless c
 
 Current important distinction:
 
-- `requirements.txt` must avoid PEP 508 extras in the package name submitted to OSV. Extras such as `PyJWT[crypto]` are valid pip syntax, but OSV package lookup must use the base package name, such as `PyJWT`, with the exact version.
+- PEP 508 extras such as `PyJWT[crypto]` are valid pip syntax and may be kept in `requirements.txt` when the project intentionally needs the extra.
+- OSV package lookup must normalize extras away and query the base package name, such as `PyJWT`, with the exact base-package version.
+- Do not split extras into direct transitive package pins unless the exact pin has current clean audit evidence.
 - Scanner-worker evidence remains unavailable unless the hosted assessment receives an explicit scanner-worker artifact or auto-run successfully checks out the authorized repository and completes the tools.
 - Workflow artifacts from GitHub Actions are not automatically attached to a hosted report unless the report flow imports them as current-run evidence.
 
