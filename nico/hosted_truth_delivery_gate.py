@@ -14,6 +14,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") != "complete":
         return result
     from nico.evidence_ledger import attach_evidence_ledger
+    from nico.export_truth_gate import apply_export_truth_gate
     from nico.report_final_qa import apply_final_report_qa
     from nico.report_score_lift_plan import attach_score_lift_plan
     from nico.report_truth_runtime_patch import (
@@ -33,7 +34,8 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     result = attach_score_lift_plan(result)
     result = attach_service_tier_workflows(result)
     result["report_truth_guard"] = build_report_truth_status()
-    return rebuild_reports(result)
+    result = rebuild_reports(result)
+    return apply_export_truth_gate(result)
 
 
 def patch_client_acceptance_gate_for_report_truth() -> None:
