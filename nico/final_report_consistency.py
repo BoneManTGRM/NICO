@@ -55,8 +55,27 @@ def _append_unique(items: list[Any], value: str) -> None:
         items.append(value)
 
 
+def _has_blocking_findings(item: dict[str, Any] | None, ignored_markers: tuple[str, ...] = ()) -> bool:
+    if not item:
+        return False
+    for finding in item.get("findings", []) or []:
+        text = str(finding or "").lower()
+        if not text.strip():
+            continue
+        if any(marker in text for marker in ignored_markers):
+            continue
+        return True
+    return False
+
+
 def _recompute_maturity(result: dict[str, Any]) -> None:
-    sections = [item for item in result.get("sections", []) if isinstance(item, dict) and item.get("status") != "gray"]
+    sections = [
+        item for item in result.get("sections", [])
+        if isinstance(item, dict)
+        and item.get("status") != "gray"
+        and item.get("supplemental") is not True
+        and int(item.get("scoring_weight", 1) or 0) != 0
+    ]
     score = round(sum(int(item.get("score") or 0) for item in sections) / len(sections)) if sections else 0
     if score >= 82:
         level = "Senior"
@@ -95,11 +114,16 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
     has_manifest_evidence = "requirements.txt found" in text and "package.json found" in text
     has_lockfile_evidence = "lockfile evidence found" in text or "package-lock.json" in text or "pnpm-lock.yaml" in text or "yarn.lock" in text
     has_clean_osv_evidence = "osv returned no vulnerability records" in text
+    has_clean_audit_artifacts = "pip-audit" in text and "npm-audit" in text and "zero dependency vulnerabilities" in text
     has_broad_range_warning = "[standard]>=" in text or "broad-range warnings" in text
     if not (has_manifest_evidence and has_lockfile_evidence):
         return
     item.setdefault("evidence", [])
-    if has_clean_osv_evidence:
+    if has_clean_audit_artifacts:
+        item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned" not in str(note).lower()]
+        _append_unique(item["evidence"], "Dependency evidence classification: parsed pip-audit and npm-audit artifacts reported zero dependency vulnerabilities for the assessed artifact set.")
+        item["score"] = max(int(item.get("score") or 0), 90)
+    elif has_clean_osv_evidence:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
         item["score"] = max(int(item.get("score") or 0), 86)
@@ -108,9 +132,39 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
         item["score"] = max(int(item.get("score") or 0), 88)
     else:
         return
-    _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
+    if not has_clean_audit_artifacts:
+        _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
     item["status"] = _status_from_score(int(item["score"]))
-    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, and OSV evidence while keeping scanner-worker limitations disclosed."
+    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, OSV evidence, and parsed audit artifacts when available while keeping scanner-worker limitations disclosed."
+
+
+def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
+    item = _section(result, "secrets_review")
+    if not item:
+        return
+    text = _section_text(item).lower()
+    has_clean_artifacts = (
+        "credential-scan" in text
+        and "gitleaks" in text
+        and ("zero high-confidence" in text or "clean credential-scan" in text)
+    )
+    blocking_findings = _has_blocking_findings(
+        item,
+        (
+            "generic token-name pattern matches",
+            "false-positive",
+            "full git-history",
+            "requires a sandboxed worker",
+            "hosted mode currently scans",
+        ),
+    )
+    if not has_clean_artifacts or blocking_findings:
+        return
+    item.setdefault("evidence", [])
+    _append_unique(item["evidence"], "Secrets evidence classification: parsed credential-scan and gitleaks artifacts reported zero high-confidence credential findings for this run.")
+    item["score"] = max(int(item.get("score") or 0), 90)
+    item["status"] = _status_from_score(int(item["score"]))
+    item["summary"] = "Secrets review uses built-in masked secret-pattern detection plus parsed credential-scan and gitleaks artifacts when available; full git-history limits remain disclosed."
 
 
 def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
@@ -120,12 +174,27 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
         return
     static_text = _section_text(static).lower()
     ci_text = _section_text(ci).lower()
-    built_in_clean = "built-in static risk-pattern hits: 0" in static_text and not static.get("findings")
+    built_in_clean = "built-in static risk-pattern hits: 0" in static_text
+    has_blocking_static_findings = _has_blocking_findings(
+        static,
+        (
+            "semgrep",
+            "bandit",
+            "eslint",
+            "typescript",
+            "external analyzer",
+            "external scanner",
+            "scanner-worker",
+            "sandboxed worker",
+            "not yet executed",
+            "unavailable",
+        ),
+    )
     ci_static_evidence = _section_score(result, "ci_cd") >= 90 or any(
         marker in ci_text
         for marker in ["npm run lint", "eslint", "typescript", "typecheck", "test, lint, or build", "next build", "production build"]
     )
-    if not built_in_clean:
+    if not built_in_clean or has_blocking_static_findings:
         return
     static.setdefault("evidence", [])
     if ci_static_evidence:
@@ -234,13 +303,16 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
 def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_code_audit_adjustment(result)
     _apply_dependency_evidence_adjustment(result)
+    _apply_secret_evidence_adjustment(result)
     _apply_static_evidence_adjustment(result)
     _apply_velocity_traceability_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_project_trend_evidence(result)
     apply_client_acceptance_evidence(result)
+    _apply_secret_evidence_adjustment(result)
     _apply_static_evidence_adjustment(result)
     _apply_velocity_traceability_adjustment(result)
+    _apply_release_readiness_adjustment(result)
     _recompute_maturity(result)
 
 
