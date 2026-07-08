@@ -14,6 +14,8 @@ from nico.assessment_attachment import attach_existing_worker_evidence
 from nico.report_accuracy import apply_report_accuracy
 from nico.scanner_evidence import enrich_payload_with_scanner_evidence
 from nico.express_review_target import attach_express_review_target
+from nico.evidence_artifact_bundle import attach_evidence_artifact_bundle
+from nico.client_acceptance import attach_client_acceptance_gate, client_acceptance_status, request_client_acceptance, transition_client_acceptance
 from nico.service_workflows import COVERAGE_TARGETS, build_mid_assessment, build_retainer_ops
 from nico.max_target_status import build_max_target_status
 from nico.scanner_worker import get_scan, start_scan
@@ -136,6 +138,7 @@ class ReportRequest(BaseModel):
 class FinalReviewRequest(BaseModel):
     customer_id: str = 'default_customer'
     project_id: str = 'default_project'
+    run_id: str = ''
     report_id: str = ''
     evidence: list[str] = []
     requester: str = 'nico'
@@ -144,6 +147,18 @@ class FinalReviewRequest(BaseModel):
     rollback_plan: str = ''
 
 class FinalReviewTransitionRequest(BaseModel): actor: str = 'human_reviewer'; note: str = ''
+
+class ClientAcceptanceRequest(BaseModel):
+    customer_id: str = 'default_customer'
+    project_id: str = 'default_project'
+    run_id: str = ''
+    report_id: str = ''
+    repository: str = ''
+    evidence: list[str] = []
+    requester: str = 'nico'
+    risk_level: str = ''
+    test_plan: str = ''
+    rollback_plan: str = ''
 
 class ClientJobPackageRequest(BaseModel):
     customer_id: str = 'default_customer'
@@ -205,7 +220,7 @@ def health():
 
 @app.get('/targets')
 def targets():
-    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-acceptance/request','GET /client-acceptance/{run_id}','POST /client-acceptance/{approval_id}/{status}','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
 
 @app.get('/max-target/status')
 def max_target_status():
@@ -340,6 +355,20 @@ def set_policy(req:PolicyLevelRequest):
 @app.get('/audit-log')
 def audit_log(): return Store().rows('audit_log')
 
+@app.get('/client-acceptance/{run_id}')
+def client_acceptance_get(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
+    return client_acceptance_status(run_id, customer_id, project_id)
+@app.post('/client-acceptance/request')
+def client_acceptance_request(req: ClientAcceptanceRequest):
+    result = request_client_acceptance(req.model_dump())
+    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    return result
+@app.post('/client-acceptance/{approval_id}/{status}')
+def client_acceptance_transition_endpoint(approval_id: str, status: str, req: FinalReviewTransitionRequest):
+    result = transition_client_acceptance(approval_id, status, actor=req.actor, note=req.note)
+    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    return result
+
 @app.post('/assessment/github')
 def hosted_github_assessment(req: GithubAssessmentRequest):
     global _LAST_HOSTED_ASSESSMENT
@@ -356,6 +385,8 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = polish_express_result(result)
     result = finalize_express_result_consistency(result)
     result = attach_express_review_target(result, request_payload)
+    result = attach_evidence_artifact_bundle(result)
+    result = attach_client_acceptance_gate(result)
     _LAST_HOSTED_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('run_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -377,74 +408,3 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
     _LAST_RETAINER_OPS = result
     STORE.put('assessment_runs', result.get('generated_at','latest_retainer').replace(':','_'), {'workflow':'retainer','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
-
-@app.post('/worker/scan')
-def worker_scan(req: WorkerScanRequest):
-    result = start_scan(req.model_dump())
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
-    return result
-@app.get('/worker/scan/{scan_id}')
-def worker_scan_status(scan_id: str): return get_scan(scan_id)
-
-@app.post('/evidence/upload')
-async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form('default_customer'), project_id: str = Form('default_project'), run_id: str = Form('')):
-    result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
-    return result
-@app.get('/evidence/{project_id}')
-def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
-
-@app.post('/client-job/package')
-def client_job_package(req: ClientJobPackageRequest): return create_client_job_package(req.model_dump())
-@app.post('/client-job/export')
-def client_job_export(req: ClientJobExportRequest):
-    payload = req.model_dump()
-    if req.job_id:
-        return export_client_job_package(req.job_id, req.format)
-    return export_client_job_payload(payload, req.format)
-@app.get('/client-job/{job_id}')
-def client_job_get(job_id: str): return get_client_job_package(job_id)
-@app.get('/client-job/{job_id}/exports')
-def client_job_exports(job_id: str): return list_client_job_exports(job_id)
-
-@app.post('/repair/suggest')
-def repair_suggest(req: RepairSuggestionRequest): return suggest_repair(req.model_dump())
-@app.post('/repair/approval')
-def repair_approval(req: RepairSuggestionRequest): return create_repair_approval(req.model_dump())
-@app.get('/repair/policy')
-def repair_policy(): return repair_quality_policy()
-
-@app.post('/reports/package')
-def create_report_package(req: ReportRequest): return build_report_package(req.model_dump())
-@app.get('/reports/{run_id}')
-def report_by_run(run_id: str): return get_report(run_id)
-@app.post('/reports/{run_id}/export')
-def report_export(run_id: str, req: ReportExportRequest): return export_report(run_id, req.format)
-@app.get('/reports/{run_id}/final-review')
-def report_final_review_status(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
-    return final_review_status(run_id, customer_id=customer_id, project_id=project_id)
-@app.post('/reports/{run_id}/final-review/request')
-def report_final_review_request(run_id: str, req: FinalReviewRequest):
-    payload = req.model_dump(); payload['run_id'] = run_id
-    return request_final_review(payload)
-@app.post('/reports/final-review/{approval_id}/{status}')
-def report_final_review_transition(approval_id: str, status: str, req: FinalReviewTransitionRequest):
-    return transition_final_review(approval_id, status, actor=req.actor, note=req.note)
-
-@app.post('/approval/create')
-def approval_create(req: ApprovalRequest): return create_approval(req.model_dump())
-@app.get('/approvals')
-def approvals(customer_id: str = '', project_id: str = ''): return {'status':'ok','approvals':list_approvals(customer_id or None, project_id or None)}
-@app.post('/approvals/{approval_id}/{status}')
-def approval_transition(approval_id: str, status: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, status, req.actor, req.note)
-@app.post('/approvals/{approval_id}/draft-pr')
-def approval_draft_pr(approval_id: str, req: DraftPrRequest):
-    payload = req.model_dump(); payload['approval_id'] = approval_id
-    return draft_pr_request(payload)
-
-@app.post('/github/installations')
-def github_installation(req: GitHubInstallationRequest, x_nico_admin_token: str = Header(default='')): return installation_record(req.model_dump(), admin_token=x_nico_admin_token)
-@app.get('/github/app/plan')
-def github_plan(): return github_app_plan()
-
-if __name__=='__main__': uvicorn.run(app,host='0.0.0.0',port=8000)
