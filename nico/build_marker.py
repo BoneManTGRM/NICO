@@ -1,2 +1,2 @@
 BUILD_MARKER = "nico-final-hosted-truth-gate"
-BUILD_COMMIT = "runtime-deploy-commit"
+BUILD_COMMIT = "0000000000000000000000000000000000000000"
