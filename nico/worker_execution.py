@@ -51,10 +51,17 @@ def validate_repository(repository: str) -> str:
     value = (repository or "").strip()
     value = value.replace("https://github.com/", "").replace("http://github.com/", "")
     value = value.replace("git@github.com:", "")
-    value = value.removesuffix(".git").strip("/")
+    value = value.strip("/")
+
+    if value.endswith(".git"):
+        value = value[:-4]
+
     parts = value.split("/")
-    if len(parts) >= 2:
-        value = "/".join(parts[:2])
+    if len(parts) != 2:
+        raise ValueError("repository must be owner/name")
+
+    owner, repo = parts
+    value = f"{owner}/{repo}"
     if not SAFE_REPO_RE.fullmatch(value):
         raise ValueError("repository must be owner/name")
     return value
