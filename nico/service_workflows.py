@@ -4,6 +4,8 @@ import html
 from datetime import datetime, timezone
 from typing import Any
 
+from nico.qa_parity_intake import build_qa_parity_intake
+
 
 COVERAGE_TARGETS = {
     "express": "90-95%",
@@ -151,6 +153,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
     stakeholders = lines(payload.get("stakeholder_notes"))
     roadmap = lines(payload.get("roadmap_notes"))
     risks = lines(payload.get("known_risks"))
+    qa_parity_intake = build_qa_parity_intake(payload)
 
     qa_score = 35 + min(40, len(qa) * 5)
     parity_score = 30 + min(45, len(parity) * 6)
@@ -159,8 +162,8 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
     risk_score = 78 if risks else 45
 
     sections = [
-        section("qa_functional", "QA / Functional Review", qa_score, "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.", [f"QA evidence items supplied: {len(qa)}."] + qa[:12], [] if qa else ["No QA evidence supplied yet."], [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."]),
-        section("platform_parity", "Platform Parity", parity_score, "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.", [f"Parity evidence items supplied: {len(parity)}."] + parity[:12], [] if parity else ["No parity comparison evidence supplied yet."], [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."]),
+        section("qa_functional", "QA / Functional Review", qa_score, "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.", [f"QA evidence items supplied: {len(qa)}.", f"Structured QA intake status: {qa_parity_intake['status']} score={qa_parity_intake['readiness_score']}/100."] + qa[:12], [] if qa else ["No QA evidence supplied yet."], [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."]),
+        section("platform_parity", "Platform Parity", parity_score, "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.", [f"Parity evidence items supplied: {len(parity)}.", f"Platforms covered by structured intake: {qa_parity_intake['platforms_covered']}."] + parity[:12], [] if parity else ["No parity comparison evidence supplied yet."], [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."]),
         section("stakeholder_discovery", "Stakeholder Discovery", stakeholder_score, "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.", [f"Stakeholder evidence items supplied: {len(stakeholders)}."] + stakeholders[:12], [] if stakeholders else ["No stakeholder notes supplied yet."], [] if stakeholders else ["Interview notes or questionnaire responses are needed for stronger roadmap confidence."]),
         section("roadmap_planning", "Six-Month Roadmap Planning", roadmap_score, "Roadmap score is based on supplied milestones, priorities, dependencies, and constraints.", [f"Roadmap evidence items supplied: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap evidence supplied yet."], [] if roadmap else ["Roadmap milestones and sequencing assumptions are unavailable."]),
         section("risk_register", "Mid Risk Register", risk_score, "Risk score is based on explicit known-risk inputs and whether they are available for planning.", [f"Known risks supplied: {len(risks)}."] + risks[:12], [] if risks else ["Known product, technical, timeline, or team risks have not been supplied."]),
@@ -177,6 +180,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
         "evidence_readiness": evidence_gap_score(sections),
         "maturity_semaphore": {item["label"]: item["status"] for item in sections},
         "sections": sections,
+        "qa_parity_intake": qa_parity_intake,
         "qa_checklist": [
             "Critical user flows tested",
             "Authentication/login/logout tested",
