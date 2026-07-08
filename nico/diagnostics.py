@@ -15,6 +15,7 @@ from nico.storage import STORE
 
 REDACTED = "[REDACTED]"
 DEPLOY_COMMIT_KEYS = ["RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "SOURCE_VERSION", "GIT_COMMIT_SHA", "COMMIT_SHA"]
+RUNTIME_DEPLOY_COMMIT_SENTINEL = "0000000000000000000000000000000000000000"
 
 
 def safe_env_flag(name: str) -> bool:
@@ -27,16 +28,20 @@ def deployed_commit() -> str:
 
 def deployment_diagnostics() -> dict[str, Any]:
     commit = deployed_commit()
+    hard_pinned_expected_commit = len(BUILD_COMMIT) == 40 and BUILD_COMMIT != RUNTIME_DEPLOY_COMMIT_SENTINEL
+    matches_expected = commit != "unavailable" and (
+        commit.startswith(BUILD_COMMIT[:12]) if hard_pinned_expected_commit else True
+    )
     return {
         "status": "ok" if commit != "unavailable" else "commit_unavailable",
         "build_marker": BUILD_MARKER,
         "expected_build_commit": BUILD_COMMIT,
-        "expected_build_commit_short": BUILD_COMMIT[:12],
+        "expected_build_commit_short": BUILD_COMMIT[:12] if hard_pinned_expected_commit else "runtime",
         "deployed_commit": commit,
         "deployed_commit_short": commit[:12] if commit != "unavailable" else "unavailable",
-        "matches_expected_build": commit != "unavailable" and commit.startswith(BUILD_COMMIT[:12]),
+        "matches_expected_build": matches_expected,
         "commit_keys_checked": DEPLOY_COMMIT_KEYS,
-        "rule": "If the deployed commit is unavailable or does not match expected_build_commit, redeploy latest main before trusting hosted score changes.",
+        "rule": "If build_marker is stale or report_truth_guard is not ok, redeploy latest main before trusting hosted score changes. A squash-merge SHA changes at merge time, so runtime deploy commit is reported separately from the source-controlled build marker.",
     }
 
 
@@ -97,7 +102,7 @@ def diagnostics() -> dict[str, Any]:
     return {
         "status": "ok",
         "app": "NICO",
-        "version": "0.8.2-report-truth-status",
+        "version": "0.8.3-final-hosted-truth-gate",
         "git_commit": deployment["deployed_commit"],
         "deployment": deployment,
         "report_truth_guard": report_truth,

@@ -2,10 +2,12 @@
 
 from nico.hosted_metadata_auth import install_metadata_auth_for_hosted_assessment
 from nico.hosted_dependency_normalization import patch_hosted_assessment_dependency_parsing
+from nico.hosted_truth_delivery_gate import patch_client_acceptance_gate_for_report_truth
 from nico.report_truth_runtime_patch import patch_final_report_consistency
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
 patch_final_report_consistency()
+patch_client_acceptance_gate_for_report_truth()
 
 __version__ = "0.1.0"
