@@ -10,4 +10,5 @@ psycopg>=3.2,<4
 pip-audit==2.10.1
 bandit==1.9.4
 semgrep==1.168.0
-PyJWT[crypto]==2.13.0
+PyJWT==2.13.0
+cryptography==46.0.3
