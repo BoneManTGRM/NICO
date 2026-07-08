@@ -18,7 +18,7 @@ def test_retainer_modules_builds_weekly_monthly_release_and_gates():
     )
 
     assert modules["artifact_schema"] == "nico.retainer_modules.v1"
-    assert modules["status"] == "ready_for_human_retainer_review"
+    assert modules["status"] == "needs_more_retainer_evidence"
     assert modules["weekly_health"]["score"] >= 50
     assert modules["monthly_strategy"]["score"] >= 50
     assert modules["release_readiness"]["status"] == "ready_for_human_release_review"
