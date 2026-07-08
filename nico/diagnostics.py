@@ -7,6 +7,7 @@ from nico.admin_security import safe_public_admin_status
 from nico.approval_queue import list_approvals
 from nico.build_marker import BUILD_COMMIT, BUILD_MARKER
 from nico.github_diagnostics import github_auth_diagnostics
+from nico.live_score_check import live_score_check
 from nico.runtime_config import runtime_config
 from nico.scanner_artifact_scoring import scanner_artifact_access_status
 from nico.storage import STORE
@@ -94,10 +95,11 @@ def diagnostics() -> dict[str, Any]:
     return {
         "status": "ok",
         "app": "NICO",
-        "version": "0.8.0-deploy-diagnostics",
+        "version": "0.8.1-live-score-check",
         "git_commit": deployment["deployed_commit"],
         "deployment": deployment,
         "backend_mode": "accuracy-hardening-hosted",
+        "live_score_check": live_score_check(),
         "storage": storage_diagnostics(),
         "runtime_config": {"source": config.get("source"), "version": config.get("version")},
         "github": github_auth_diagnostics(),
