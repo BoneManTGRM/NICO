@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from nico.bandit_triage import bandit_triage_report_lines, build_bandit_triage
+from nico.evidence_artifact_bundle import attach_evidence_artifact_bundle
 from nico.hosted_scanner_worker import hosted_scanner_autorun_enabled, run_hosted_scanner_worker
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact, scanner_worker_evidence_notes
 
@@ -304,4 +305,4 @@ def run_github_assessment_with_scanner_artifacts(payload: dict[str, Any]) -> dic
     result = run_github_assessment(payload)
     if result.get("status") != "complete":
         return result
-    return attach_scanner_worker_artifacts(result, payload)
+    return attach_evidence_artifact_bundle(attach_scanner_worker_artifacts(result, payload))
