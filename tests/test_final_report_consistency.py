@@ -216,6 +216,11 @@ def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory()
     markdown = result["reports"]["markdown"]
     lower_markdown = markdown.lower()
     assert result["maturity_signal"]["score"] == 90
+    assert result["release_readiness"]["status"] == "evidence_incomplete"
+    assert "dependency_scanner_clean_artifacts_attached" in result["release_readiness"]["missing_signals"]
+    assert "dependency_no_osv_vulnerabilities" in result["release_readiness"]["missing_signals"]
+    assert "full_git_history_secret_coverage_verified" in result["release_readiness"]["missing_signals"]
+    assert "static_analysis_no_review_findings" in result["release_readiness"]["missing_signals"]
     assert "Add a sandboxed worker" not in markdown
     assert "Add authenticated GitHub App installation flow" not in markdown
     assert "Expand Mid assessment modules" not in markdown
@@ -223,10 +228,14 @@ def test_pdf_regression_score_can_stay_90_but_report_text_is_not_contradictory()
     assert "add scanner workers" not in lower_markdown
     assert "add scanner-worker execution" not in lower_markdown
     assert "cli scanners are marked unavailable until a sandboxed worker executes" not in lower_markdown
+    assert "final release-readiness evidence from clean ci/security/dependency artifacts" not in lower_markdown
+    assert "release-readiness evidence: clean code markers" not in lower_markdown
+    assert "clean dependency artifacts, clean secret artifacts" not in lower_markdown
     assert "Run and attach verified scanner-worker artifacts" in markdown
     assert "run and attach verified scanner-worker artifacts" in lower_markdown
     assert "run and attach scanner-worker execution artifacts" in lower_markdown
     assert "scanner-worker artifacts are executed against an authorized checkout and attached to that run" in lower_markdown
+    assert "release-readiness lift not applied" in lower_markdown
     assert "Dependency evidence status: OSV API completed_with_findings" in markdown
     assert "final scanner-clean status is not claimed" in markdown
     assert "full git-history secret coverage is not verified for this run" in markdown
