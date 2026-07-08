@@ -28,6 +28,7 @@ class ScannerToolSpec:
     timeout_seconds: int = 120
     max_output_chars: int = 80_000
     requires_project_commands: bool = False
+    scans_git_history: bool = False
 
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
@@ -38,8 +39,8 @@ TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
     ScannerToolSpec("semgrep", ("semgrep", "scan", "--config", "auto", "--json", "."), "static", timeout_seconds=240),
     ScannerToolSpec("eslint", ("npx", "eslint", ".", "--format", "json"), "static", timeout_seconds=180, requires_project_commands=True),
     ScannerToolSpec("typescript", ("npx", "tsc", "--noEmit", "--pretty", "false"), "static", timeout_seconds=180, requires_project_commands=True),
-    ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", "."), "secret", timeout_seconds=180),
-    ScannerToolSpec("trufflehog", ("trufflehog", "filesystem", ".", "--json", "--no-update"), "secret", timeout_seconds=180),
+    ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", "."), "secret", timeout_seconds=240, scans_git_history=True),
+    ScannerToolSpec("trufflehog", ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification"), "secret", timeout_seconds=300, scans_git_history=True),
     ScannerToolSpec("coverage", ("coverage", "run", "-m", "pytest", "-q"), "coverage", timeout_seconds=240, requires_project_commands=True),
 )
 
@@ -182,6 +183,7 @@ def _unavailable_tool(spec: ScannerToolSpec, reason: str) -> dict[str, Any]:
         "category": spec.category,
         "reason": reason,
         "findings": [],
+        "scans_git_history": spec.scans_git_history,
     }
 
 
@@ -197,6 +199,8 @@ def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) 
         if not existing:
             return None, repo_dir, "package-lock.json not found for npm audit."
         return spec.command, existing[0].parent, None
+    if spec.name == "trufflehog":
+        return tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command), repo_dir, None
     return spec.command, repo_dir, None
 
 
@@ -237,6 +241,7 @@ def run_scanner_tool(
             "output_truncated": result.output_truncated,
             "findings": findings,
             "stderr": result.stderr,
+            "scans_git_history": spec.scans_git_history,
         }
     )
 
@@ -253,10 +258,19 @@ def run_scanner_tools(
     tool_results = [run_scanner_tool(spec, workspace, runner=runner) for spec in specs]
     raw_payload = {"tools": tool_results}
     normalized = normalize_scanner_worker_artifact(raw_payload)
+    history_secret_tools = [
+        item["tool"]
+        for item in tool_results
+        if isinstance(item, dict) and item.get("category") == "secret" and item.get("status") == "completed" and item.get("scans_git_history")
+    ]
     return {
         "artifact_schema": "nico.scanner_worker.v1",
         "tools": {item["tool"]: item for item in tool_results if isinstance(item, dict) and item.get("tool")},
         "normalized": normalized,
+        "secret_history_scan": {
+            "completed_tools": history_secret_tools,
+            "history_aware": bool(history_secret_tools),
+        },
     }
 
 

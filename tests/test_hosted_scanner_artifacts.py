@@ -42,17 +42,28 @@ def _base_result() -> dict:
     }
 
 
-def _clean_worker_artifact() -> dict:
-    return {
+def _clean_worker_artifact(*, full_history: bool = True) -> dict:
+    artifact = {
         "tools": {
             "bandit": {"status": "completed", "findings": []},
             "semgrep": {"status": "completed", "findings": []},
             "eslint": {"status": "completed", "findings": []},
             "typescript": {"status": "completed", "findings": []},
-            "gitleaks": {"status": "completed", "findings": []},
-            "trufflehog": {"status": "completed", "findings": []},
+            "gitleaks": {"status": "completed", "findings": [], "scans_git_history": full_history},
+            "trufflehog": {"status": "completed", "findings": [], "scans_git_history": full_history},
         }
     }
+    if full_history:
+        artifact["checkout"] = {
+            "full_history_secret_scan_requested": True,
+            "history_depth": "full",
+            "commit_count": 42,
+        }
+        artifact["secret_history_scan"] = {
+            "completed_tools": ["gitleaks", "trufflehog"],
+            "history_aware": True,
+        }
+    return artifact
 
 
 def test_extract_scanner_worker_artifact_accepts_aliases():
@@ -88,8 +99,18 @@ def test_clean_complete_artifact_upgrades_static_secrets_and_velocity():
     assert static["unavailable"] == []
     assert secrets["score"] == 95
     assert secrets["unavailable"] == []
+    assert any("Full git-history secret scan executed" in item for item in secrets["evidence"])
     assert velocity["score"] == 82
     assert velocity["unavailable"] == []
+
+
+def test_secret_tools_without_history_keep_history_gap_visible():
+    result = attach_scanner_worker_artifacts(_base_result(), {"scanner_worker_artifact": _clean_worker_artifact(full_history=False)})
+
+    secrets = next(item for item in result["sections"] if item["id"] == "secrets_review")
+
+    assert secrets["score"] == 92
+    assert any("Full git-history secret scan" in item for item in secrets["unavailable"])
 
 
 def test_partial_artifact_keeps_missing_tools_unavailable():
@@ -110,14 +131,16 @@ def test_worker_findings_are_attached_to_matching_sections():
         _base_result(),
         {
             "scanner_worker_artifact": {
+                "checkout": {"full_history_secret_scan_requested": True, "history_depth": "full", "commit_count": 4},
+                "secret_history_scan": {"completed_tools": ["gitleaks", "trufflehog"], "history_aware": True},
                 "tools": {
                     "bandit": {"status": "completed", "findings": [{"severity": "low"}]},
                     "semgrep": {"status": "completed", "findings": []},
                     "eslint": {"status": "completed", "findings": []},
                     "typescript": {"status": "completed", "findings": []},
-                    "gitleaks": {"status": "completed", "findings": [{"RuleID": "generic"}]},
-                    "trufflehog": {"status": "completed", "findings": []},
-                }
+                    "gitleaks": {"status": "completed", "findings": [{"RuleID": "generic"}], "scans_git_history": True},
+                    "trufflehog": {"status": "completed", "findings": [], "scans_git_history": True},
+                },
             }
         },
     )

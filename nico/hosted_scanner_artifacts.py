@@ -66,6 +66,13 @@ def _refresh_section_status(section: dict[str, Any]) -> None:
     section["status"] = _status_color(score, bool(section.get("unavailable")) and score == 0)
 
 
+def _secret_history_scan_verified(artifact: dict[str, Any]) -> bool:
+    checkout = artifact.get("checkout") if isinstance(artifact.get("checkout"), dict) else {}
+    history = artifact.get("secret_history_scan") if isinstance(artifact.get("secret_history_scan"), dict) else {}
+    completed = history.get("completed_tools") if isinstance(history.get("completed_tools"), list) else []
+    return bool(checkout.get("full_history_secret_scan_requested") and checkout.get("history_depth") == "full" and completed)
+
+
 def _apply_dependency_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
     section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "dependency" in item.lower()])
     section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "dependency" in item.lower()])
@@ -118,17 +125,30 @@ def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str,
     return triage
 
 
-def _apply_secret_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
+def _apply_secret_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]], artifact: dict[str, Any]) -> None:
     section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "secret" in item.lower()])
     section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "secret" in item.lower()])
     section.setdefault("unavailable", []).extend([item for item in notes.get("unavailable", []) if "secret" in item.lower()])
 
+    history_verified = _secret_history_scan_verified(artifact)
+    if history_verified:
+        history = artifact.get("secret_history_scan") if isinstance(artifact.get("secret_history_scan"), dict) else {}
+        completed = ", ".join(str(item) for item in history.get("completed_tools", []))
+        commit_count = artifact.get("checkout", {}).get("commit_count") if isinstance(artifact.get("checkout"), dict) else None
+        section.setdefault("evidence", []).append(
+            f"Full git-history secret scan executed with {completed}; commit_count={commit_count if commit_count is not None else 'unknown'}."
+        )
+
     if normalized.get("secret_evidence_complete"):
-        _remove_unavailable(section, ("gitleaks", "trufflehog", "git-history", "sandboxed worker"))
+        if history_verified:
+            _remove_unavailable(section, ("gitleaks", "trufflehog", "git-history", "git history", "sandboxed worker"))
+        else:
+            _remove_unavailable(section, ("gitleaks", "trufflehog", "sandboxed worker"))
+            section.setdefault("unavailable", []).append("Full git-history secret scan did not provide verified history coverage.")
         count = int(normalized.get("secret_finding_count") or 0)
         if count == 0:
-            section["score"] = max(int(section.get("score") or 0), 95)
-            section["summary"] = "Secrets review includes worker-backed Gitleaks and TruffleHog evidence."
+            section["score"] = max(int(section.get("score") or 0), 95 if history_verified else 92)
+            section["summary"] = "Secrets review includes worker-backed Gitleaks and TruffleHog history evidence." if history_verified else "Secrets review includes worker-backed secret scanner evidence, but full git-history coverage is not verified."
         else:
             section["score"] = max(25, min(int(section.get("score") or 0), 70 - min(45, count * 10)))
             section["summary"] = "Secrets review includes worker-backed secret scanner findings requiring immediate human review."
@@ -175,13 +195,15 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
         elif section_id == "static_analysis":
             bandit_triage = _apply_static_worker_evidence(section, normalized, notes, artifact)
         elif section_id == "secrets_review":
-            _apply_secret_worker_evidence(section, normalized, notes)
+            _apply_secret_worker_evidence(section, normalized, notes, artifact)
         elif section_id == "velocity_complexity":
             _apply_velocity_worker_evidence(section, normalized)
 
     output["scanner_worker_evidence_attached"] = True
     output["scanner_worker_auto_ran"] = auto_ran
     output["scanner_worker_artifact"] = normalized
+    if artifact.get("secret_history_scan"):
+        output["secret_history_scan"] = artifact["secret_history_scan"]
     if bandit_triage and bandit_triage.get("finding_count"):
         output["bandit_triage"] = bandit_triage
     if artifact.get("worker_execution_state"):
