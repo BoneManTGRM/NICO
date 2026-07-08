@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from nico.qa_parity_intake import build_qa_parity_intake
+from nico.roadmap_generator import build_six_month_roadmap
+from nico.stakeholder_discovery import build_stakeholder_discovery
 
 
 COVERAGE_TARGETS = {
@@ -90,7 +92,7 @@ def build_markdown_report(result: dict[str, Any]) -> str:
         "NICO drafts evidence-bound workflow output. Final client-facing delivery, roadmap commitments, and resourcing decisions require human review.",
         "",
         "## Maturity Signal",
-        f"{result.get('maturity_signal', {}).get('level', 'Unknown')} — {result.get('maturity_signal', {}).get('score', 0)}/100",
+        f"{result.get('maturity_signal', {}).get('level', 'Unknown')} - {result.get('maturity_signal', {}).get('score', 0)}/100",
         "",
         "## Evidence Readiness",
         f"{result.get('evidence_readiness', {}).get('readiness_score', 0)}/100",
@@ -99,7 +101,7 @@ def build_markdown_report(result: dict[str, Any]) -> str:
     ]
     for item in result.get("sections", []):
         lines_out += [
-            f"### {item['label']} — {item['status'].upper()} ({item['score']}/100)",
+            f"### {item['label']} - {item['status'].upper()} ({item['score']}/100)",
             item["summary"],
             "Evidence:",
         ]
@@ -154,18 +156,20 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
     roadmap = lines(payload.get("roadmap_notes"))
     risks = lines(payload.get("known_risks"))
     qa_parity_intake = build_qa_parity_intake(payload)
+    stakeholder_discovery = build_stakeholder_discovery(payload)
+    roadmap_artifact = build_six_month_roadmap(payload, stakeholder_discovery=stakeholder_discovery, qa_parity_intake=qa_parity_intake)
 
     qa_score = 35 + min(40, len(qa) * 5)
     parity_score = 30 + min(45, len(parity) * 6)
-    stakeholder_score = 30 + min(45, len(stakeholders) * 5)
-    roadmap_score = 35 + min(40, len(roadmap) * 6)
+    stakeholder_score = max(30 + min(45, len(stakeholders) * 5), int(stakeholder_discovery.get("readiness_score") or 0))
+    roadmap_score = max(35 + min(40, len(roadmap) * 6), int(roadmap_artifact.get("readiness_score") or 0))
     risk_score = 78 if risks else 45
 
     sections = [
         section("qa_functional", "QA / Functional Review", qa_score, "QA score is based on supplied functional evidence, reproduction notes, pass/fail signals, and bug descriptions.", [f"QA evidence items supplied: {len(qa)}.", f"Structured QA intake status: {qa_parity_intake['status']} score={qa_parity_intake['readiness_score']}/100."] + qa[:12], [] if qa else ["No QA evidence supplied yet."], [] if qa else ["Screenshots, videos, test results, or reproduction steps are needed for stronger Mid coverage."]),
         section("platform_parity", "Platform Parity", parity_score, "Parity score is based on supplied iOS/Android or web/mobile comparison evidence.", [f"Parity evidence items supplied: {len(parity)}.", f"Platforms covered by structured intake: {qa_parity_intake['platforms_covered']}."] + parity[:12], [] if parity else ["No parity comparison evidence supplied yet."], [] if parity else ["Feature-by-feature platform walkthrough evidence is missing."]),
-        section("stakeholder_discovery", "Stakeholder Discovery", stakeholder_score, "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.", [f"Stakeholder evidence items supplied: {len(stakeholders)}."] + stakeholders[:12], [] if stakeholders else ["No stakeholder notes supplied yet."], [] if stakeholders else ["Interview notes or questionnaire responses are needed for stronger roadmap confidence."]),
-        section("roadmap_planning", "Six-Month Roadmap Planning", roadmap_score, "Roadmap score is based on supplied milestones, priorities, dependencies, and constraints.", [f"Roadmap evidence items supplied: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap evidence supplied yet."], [] if roadmap else ["Roadmap milestones and sequencing assumptions are unavailable."]),
+        section("stakeholder_discovery", "Stakeholder Discovery", stakeholder_score, "Discovery score is based on supplied business goals, pain points, desired outcomes, and constraints.", [f"Stakeholder evidence items supplied: {len(stakeholders)}.", f"Structured stakeholder discovery status: {stakeholder_discovery['status']} score={stakeholder_discovery['readiness_score']}/100."] + stakeholder_discovery.get("roadmap_inputs", []) + stakeholders[:12], [] if stakeholder_discovery.get("status") != "needs_more_discovery" else ["Stakeholder discovery is incomplete."], stakeholder_discovery.get("unavailable", [])),
+        section("roadmap_planning", "Six-Month Roadmap Planning", roadmap_score, "Roadmap score is based on supplied milestones, priorities, dependencies, constraints, QA/parity state, and stakeholder discovery inputs.", [f"Roadmap evidence items supplied: {len(roadmap)}.", f"Generated roadmap status: {roadmap_artifact['status']} score={roadmap_artifact['readiness_score']}/100."] + roadmap_artifact.get("roadmap_summary", []) + roadmap[:8], [] if roadmap_artifact.get("status") != "needs_more_evidence" else ["Roadmap evidence is incomplete."], roadmap_artifact.get("unavailable", [])),
         section("risk_register", "Mid Risk Register", risk_score, "Risk score is based on explicit known-risk inputs and whether they are available for planning.", [f"Known risks supplied: {len(risks)}."] + risks[:12], [] if risks else ["Known product, technical, timeline, or team risks have not been supplied."]),
     ]
     mat = maturity(sections)
@@ -181,6 +185,8 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
         "maturity_semaphore": {item["label"]: item["status"] for item in sections},
         "sections": sections,
         "qa_parity_intake": qa_parity_intake,
+        "stakeholder_discovery": stakeholder_discovery,
+        "six_month_roadmap_artifact": roadmap_artifact,
         "qa_checklist": [
             "Critical user flows tested",
             "Authentication/login/logout tested",
@@ -199,11 +205,7 @@ def build_mid_assessment(payload: dict[str, Any]) -> dict[str, Any]:
             "Same payment or subscription behavior if applicable",
             "Same analytics or tracking expectations",
         ],
-        "six_month_roadmap": [
-            "Month 1: stabilize critical bugs, evidence gaps, and release readiness",
-            "Months 2-3: improve QA automation, CI checks, and platform parity",
-            "Months 4-6: execute roadmap milestones, reduce debt, and improve delivery predictability",
-        ],
+        "six_month_roadmap": roadmap_artifact.get("roadmap_summary", []),
         "human_review_required": True,
         "safety_boundary": "Defensive-only and evidence-bound. NICO does not replace stakeholder judgment or final consultant review.",
     }
