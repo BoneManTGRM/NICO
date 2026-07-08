@@ -6,7 +6,12 @@ def _minimal_result():
     return {
         "status": "complete",
         "repository": "BoneManTGRM/NICO",
+        "generated_at": "2026-07-08T22:40:00Z",
+        "client_name": "",
+        "project_name": "NICO",
         "assessment_mode": "express",
+        "coverage_targets": {"express_technical_health_assessment": {"target": "90-95%"}},
+        "executive_summary": "NICO completed an authorized hosted Express Technical Health Assessment.",
         "maturity_signal": {"level": "Senior", "score": 86},
         "maturity_semaphore": {},
         "sections": [
@@ -21,6 +26,9 @@ def _minimal_result():
         ],
         "quick_wins": [],
         "medium_term_plan": [],
+        "resourcing_recommendation": [],
+        "risk_register": [],
+        "verification_checklist": [],
         "reports": {"markdown": "", "html": "", "pdf_base64": ""},
     }
 
