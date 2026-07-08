@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
 from typing import Any
 
 MALFORMED_EXTRA_OSV_RE = re.compile(
@@ -35,13 +34,21 @@ def _section_text(section: dict[str, Any] | None) -> str:
     return "\n".join(_text(section.get(key)) for key in ("summary", "evidence", "findings", "unavailable"))
 
 
+def _has_osv_vulnerabilities_text(text: str) -> bool:
+    lower = text.lower()
+    return "osv returned" in lower and "vulnerability record" in lower and "no vulnerability records" not in lower
+
+
 def _has_osv_vulnerabilities(section: dict[str, Any] | None) -> bool:
-    text = _section_text(section).lower()
-    return "osv returned" in text and "vulnerability record" in text and "no vulnerability records" not in text
+    return _has_osv_vulnerabilities_text(_section_text(section))
+
+
+def _has_malformed_extra_osv_query_text(text: str) -> bool:
+    return bool(MALFORMED_EXTRA_OSV_RE.search(text))
 
 
 def _has_malformed_extra_osv_query(section: dict[str, Any] | None) -> bool:
-    return bool(MALFORMED_EXTRA_OSV_RE.search(_section_text(section)))
+    return _has_malformed_extra_osv_query_text(_section_text(section))
 
 
 def _append_unique(items: list[Any], value: str) -> None:
@@ -121,13 +128,18 @@ def apply_dependency_score_consistency(result: dict[str, Any]) -> dict[str, Any]
     version string.
     """
 
+    raw_dependency = _section(result, "dependency_health")
+    raw_text = _section_text(raw_dependency)
+    had_malformed_query = _has_malformed_extra_osv_query_text(raw_text)
+    had_osv_findings = _has_osv_vulnerabilities_text(raw_text)
+
     result["sections"] = _normalize_malformed_osv_extra_text(result.get("sections", []) or [])
     dependency = _section(result, "dependency_health")
     if not dependency:
         return result
 
-    has_osv_findings = _has_osv_vulnerabilities(dependency)
-    has_malformed_query = _has_malformed_extra_osv_query(dependency) or "@ [" in _section_text(dependency)
+    has_osv_findings = had_osv_findings or _has_osv_vulnerabilities(dependency)
+    has_malformed_query = had_malformed_query or _has_malformed_extra_osv_query(dependency)
     if not (has_osv_findings or has_malformed_query):
         return result
 
@@ -159,9 +171,7 @@ def apply_dependency_score_consistency(result: dict[str, Any]) -> dict[str, Any]
                 missing.append(signal)
         readiness["status"] = "evidence_incomplete"
         readiness["missing_signals"] = missing
-        result["release_readiness"]["passed_signals"] = [
-            item for item in readiness.get("passed_signals", []) or [] if item not in set(missing)
-        ]
+        readiness["passed_signals"] = [item for item in readiness.get("passed_signals", []) or [] if item not in set(missing)]
     _recompute_maturity(result)
     return result
 
@@ -200,55 +210,15 @@ def refresh_project_trend_score(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _ensure_report_defaults(result: dict[str, Any]) -> None:
-    """Make report rebuilding safe for partial unit-test payloads.
-
-    The finalizer is used by both full hosted assessment results and narrow unit
-    tests that intentionally omit report-only metadata. Rebuilding reports must
-    not make those partial payloads crash.
-    """
-
-    from nico.hosted_assessment import SERVICE_TARGETS
-
-    result.setdefault("generated_at", _utc_now())
-    result.setdefault("repository", result.get("source_scope") or "authorized repository")
-    result.setdefault("client_name", "")
-    result.setdefault("project_name", result.get("repository") or "NICO")
-    result.setdefault("assessment_mode", "express")
-    result.setdefault("coverage_targets", SERVICE_TARGETS)
-    result.setdefault("sections", [])
-    result.setdefault("findings", [])
-    result.setdefault("quick_wins", [])
-    result.setdefault("medium_term_plan", [])
-    result.setdefault("resourcing_recommendation", [])
-    result.setdefault("risk_register", [])
-    result.setdefault("verification_checklist", [])
-    result.setdefault("reports", {})
-    if not isinstance(result.get("maturity_signal"), dict):
-        result["maturity_signal"] = {"level": "Unknown", "score": "N/A"}
-
-
 def rebuild_reports(result: dict[str, Any]) -> dict[str, Any]:
-    from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
-    from nico.i18n_es_mx import reports_es_mx, wants_es_mx
+    """Rebuild report exports using the core finalizer's tolerant renderer."""
 
-    _ensure_report_defaults(result)
-    result["executive_summary"] = (
-        f"NICO completed an authorized hosted Express Technical Health Assessment for {result.get('repository') or result.get('source_scope') or 'the authorized repository'}. "
-        f"The final maturity signal is {(result.get('maturity_signal') or {}).get('level', 'Unknown')} ({(result.get('maturity_signal') or {}).get('score', 'N/A')}/100). "
-        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, retained project history when available, acceptance when approved, and explicit unavailable-data notes have been applied. Final delivery still requires human review."
-    )
-    result["reports"] = {
-        "markdown": build_markdown(result),
-        "html": build_html(result),
-        "pdf_base64": build_pdf_base64(result),
-    }
-    if any(wants_es_mx(result.get(key)) for key in ("report_language", "language", "assessment_mode")):
-        result["reports"].update(reports_es_mx(result))
+    from nico import final_report_consistency
+
+    if result.get("status") != "complete":
+        return result
+    core_rebuild = getattr(final_report_consistency, "_rebuild_reports")
+    core_rebuild(result)
     return result
 
 
@@ -262,6 +232,8 @@ def patch_final_report_consistency() -> None:
 
     def finalize_with_dependency_consistency(result: dict[str, Any]) -> dict[str, Any]:
         finalized = original(result)
+        if finalized.get("status") != "complete":
+            return finalized
         finalized = apply_dependency_score_consistency(finalized)
         finalized = refresh_project_trend_score(finalized)
         return rebuild_reports(finalized)
