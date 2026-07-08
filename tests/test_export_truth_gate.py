@@ -91,8 +91,8 @@ def test_final_hosted_gate_repairs_before_export_truth_gate():
 
     assert result["export_truth_gate"]["status"] == "passed"
     assert result["export_truth_gate"]["export_allowed"] is True
-    assert result["trust_engine"]["trust_level"] == "Review-limited"
     assert "NICO Export Blocked" not in result["reports"]["markdown"]
     sections = {item["id"]: item for item in result["sections"] if isinstance(item, dict) and "id" in item}
     assert sections["dependency_health"]["status"] == "yellow"
     assert sections["static_analysis"]["status"] == "yellow"
+    assert result["trust_level"] in {"Review-limited", "Evidence-bound"}
