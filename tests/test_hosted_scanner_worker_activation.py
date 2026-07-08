@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts, extract_scanner_worker_artifact
-from nico.hosted_scanner_worker import hosted_scanner_autorun_enabled
+from nico.hosted_scanner_worker import _clone_command, full_history_secret_scan_enabled, hosted_scanner_autorun_enabled
+from nico.worker_execution import WorkerWorkspace
 
 
 def _base_result() -> dict:
@@ -59,6 +60,8 @@ def _complete_artifact() -> dict:
     return {
         "worker_execution_state": "completed",
         "generated_at": "2026-07-08T00:00:00Z",
+        "checkout": {"full_history_secret_scan_requested": True, "history_depth": "full", "commit_count": 10},
+        "secret_history_scan": {"completed_tools": ["gitleaks", "trufflehog"], "history_aware": True},
         "tools": {
             "pip-audit": {"status": "completed", "findings": []},
             "npm-audit": {"status": "completed", "findings": []},
@@ -67,8 +70,8 @@ def _complete_artifact() -> dict:
             "semgrep": {"status": "completed", "findings": []},
             "eslint": {"status": "completed", "findings": []},
             "typescript": {"status": "completed", "findings": []},
-            "gitleaks": {"status": "completed", "findings": []},
-            "trufflehog": {"status": "completed", "findings": []},
+            "gitleaks": {"status": "completed", "findings": [], "scans_git_history": True},
+            "trufflehog": {"status": "completed", "findings": [], "scans_git_history": True},
             "coverage": {"status": "completed", "findings": []},
         },
     }
@@ -81,6 +84,34 @@ def test_authorized_owner_repo_requests_enable_scanner_autorun(monkeypatch):
 
     assert hosted_scanner_autorun_enabled(payload) is True
     assert extract_scanner_worker_artifact(payload) == {"auto_run_scanner_worker": True}
+
+
+def test_full_history_secret_scan_is_enabled_for_authorized_repo_by_default(monkeypatch):
+    monkeypatch.delenv("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN", raising=False)
+
+    payload = {"repository": "BoneManTGRM/NICO", "authorized": True}
+
+    assert full_history_secret_scan_enabled(payload) is True
+
+
+def test_full_history_secret_scan_can_be_disabled(monkeypatch, tmp_path):
+    monkeypatch.setenv("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN", "false")
+    workspace = WorkerWorkspace(root=tmp_path)
+
+    payload = {"repository": "BoneManTGRM/NICO", "authorized": True}
+    command = _clone_command("BoneManTGRM/NICO", None, workspace, full_history=full_history_secret_scan_enabled(payload))
+
+    assert full_history_secret_scan_enabled(payload) is False
+    assert "--depth" in command
+
+
+def test_full_history_clone_omits_depth_limit(tmp_path):
+    workspace = WorkerWorkspace(root=tmp_path)
+
+    command = _clone_command("BoneManTGRM/NICO", None, workspace, full_history=True)
+
+    assert "--depth" not in command
+    assert "--no-tags" in command
 
 
 def test_scanner_autorun_can_be_disabled(monkeypatch):
@@ -102,10 +133,12 @@ def test_complete_worker_artifact_lifts_dependency_and_removes_unavailable_notes
 
     assert result["scanner_worker_evidence_attached"] is True
     assert result["scanner_worker_artifact"]["dependency_evidence_complete"] is True
+    assert result["secret_history_scan"]["history_aware"] is True
     assert dependency["score"] == 95
     assert dependency["unavailable"] == []
     assert static["unavailable"] == []
     assert secrets["unavailable"] == []
+    assert any("Full git-history secret scan executed" in item for item in secrets["evidence"])
     assert any("coverage evidence" in item for item in velocity["evidence"])
 
 
