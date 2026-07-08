@@ -49,6 +49,17 @@ TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
 )
 
 
+ESLINT_CONFIG_NAMES = (
+    "eslint.config.js",
+    "eslint.config.mjs",
+    "eslint.config.cjs",
+    ".eslintrc",
+    ".eslintrc.json",
+    ".eslintrc.js",
+    ".eslintrc.cjs",
+)
+
+
 def project_commands_allowed() -> bool:
     return os.getenv("NICO_ALLOW_PROJECT_COMMANDS", "false").lower() == "true"
 
@@ -140,14 +151,14 @@ def _osv_findings(payload: dict[str, Any]) -> list[Any]:
 def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any]:
     text = redact_text(result.stdout or "")
     if not text.strip():
-        return []
+        return [] if result.returncode == 0 else [{"message": redact_text(result.stderr or "tool failed without stdout")}]
 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
         if tool_name == "trufflehog":
             return _parse_json_lines(text)
-        if tool_name in {"typescript", "coverage"} and result.returncode != 0:
+        if tool_name in {"eslint", "typescript", "coverage"} and result.returncode != 0:
             return [{"message": redact_text(result.stderr or result.stdout)}]
         return []
 
@@ -282,8 +293,30 @@ def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, A
     )
 
 
+def _read_package_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _has_eslint_config(path: Path) -> bool:
+    return any((path / name).exists() for name in ESLINT_CONFIG_NAMES)
+
+
+def _package_script(path: Path, script_name: str) -> str | None:
+    payload = _read_package_json(path / "package.json")
+    scripts = payload.get("scripts")
+    if not isinstance(scripts, dict):
+        return None
+    value = scripts.get(script_name)
+    return str(value) if value else None
+
+
 def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None]:
     repo_dir = workspace.repo_dir
+    web_dir = repo_dir / "apps" / "web"
     if spec.name == "pip-audit" and not (repo_dir / "requirements.txt").exists():
         return None, repo_dir, "requirements.txt not found for pip-audit."
     if spec.name == "npm-audit":
@@ -294,10 +327,21 @@ def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) 
         if not existing:
             return None, repo_dir, "package-lock.json not found for npm audit."
         return spec.command, existing[0].parent, None
+    if spec.name == "eslint":
+        if (web_dir / "package.json").exists():
+            if _has_eslint_config(web_dir):
+                return spec.command, web_dir, None
+            if _package_script(web_dir, "lint"):
+                return ("npm", "run", "lint"), web_dir, None
+        return None, repo_dir, "No frontend ESLint config or lint script was found for scanner-worker ESLint evidence."
+    if spec.name == "typescript":
+        if (web_dir / "package.json").exists():
+            if _package_script(web_dir, "lint"):
+                return ("npm", "run", "lint"), web_dir, None
+            return spec.command, web_dir, None
+        return None, repo_dir, "apps/web/package.json not found for TypeScript scanner-worker evidence."
     if spec.name == "trufflehog":
         return tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command), repo_dir, None
-    if spec.name in {"eslint", "typescript"} and (repo_dir / "apps" / "web" / "package.json").exists():
-        return spec.command, repo_dir / "apps" / "web", None
     return spec.command, repo_dir, None
 
 
@@ -313,15 +357,16 @@ def run_scanner_tool(
             f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
         )
 
-    executable = spec.command[0]
-    if shutil.which(executable) is None:
+    if shutil.which(spec.command[0]) is None:
         if spec.name == "osv-scanner":
             return _osv_api_fallback_tool(spec, workspace.repo_dir)
-        return _unavailable_tool(spec, f"{executable} is not installed in the worker image")
+        return _unavailable_tool(spec, f"{spec.command[0]} is not installed in the worker image")
 
     command, cwd, unavailable_reason = _resolve_command_and_cwd(spec, workspace)
     if command is None:
         return _unavailable_tool(spec, unavailable_reason or f"{spec.name} could not resolve a safe command")
+    if shutil.which(command[0]) is None:
+        return _unavailable_tool(spec, f"{command[0]} is not installed in the worker image")
 
     result = runner(
         command,
@@ -338,6 +383,7 @@ def run_scanner_tool(
             "returncode": result.returncode,
             "timed_out": result.timed_out,
             "output_truncated": result.output_truncated,
+            "command_intent": " ".join(command[:3]),
             "findings": findings,
             "stderr": result.stderr,
             "scans_git_history": spec.scans_git_history,
