@@ -15,6 +15,7 @@ from nico.storage import STORE
 
 REDACTED = "[REDACTED]"
 DEPLOY_COMMIT_KEYS = ["RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "SOURCE_VERSION", "GIT_COMMIT_SHA", "COMMIT_SHA"]
+RUNTIME_DEPLOY_COMMIT_SENTINEL = "0000000000000000000000000000000000000000"
 
 
 def safe_env_flag(name: str) -> bool:
@@ -27,7 +28,7 @@ def deployed_commit() -> str:
 
 def deployment_diagnostics() -> dict[str, Any]:
     commit = deployed_commit()
-    hard_pinned_expected_commit = len(BUILD_COMMIT) == 40 and BUILD_COMMIT != "runtime-deploy-commit"
+    hard_pinned_expected_commit = len(BUILD_COMMIT) == 40 and BUILD_COMMIT != RUNTIME_DEPLOY_COMMIT_SENTINEL
     matches_expected = commit != "unavailable" and (
         commit.startswith(BUILD_COMMIT[:12]) if hard_pinned_expected_commit else True
     )
