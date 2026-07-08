@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -26,16 +27,25 @@ class ScannerToolSpec:
     category: str
     timeout_seconds: int = 120
     max_output_chars: int = 80_000
+    requires_project_commands: bool = False
 
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
+    ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=180),
+    ScannerToolSpec("npm-audit", ("npm", "audit", "--json", "--package-lock-only", "--ignore-scripts"), "dependency", timeout_seconds=180),
+    ScannerToolSpec("osv-scanner", ("osv-scanner", "--format", "json", "."), "dependency", timeout_seconds=180),
     ScannerToolSpec("bandit", ("bandit", "-r", ".", "-f", "json"), "static", timeout_seconds=180),
     ScannerToolSpec("semgrep", ("semgrep", "scan", "--config", "auto", "--json", "."), "static", timeout_seconds=240),
-    ScannerToolSpec("eslint", ("npx", "eslint", ".", "--format", "json"), "static", timeout_seconds=180),
-    ScannerToolSpec("typescript", ("npx", "tsc", "--noEmit", "--pretty", "false"), "static", timeout_seconds=180),
+    ScannerToolSpec("eslint", ("npx", "eslint", ".", "--format", "json"), "static", timeout_seconds=180, requires_project_commands=True),
+    ScannerToolSpec("typescript", ("npx", "tsc", "--noEmit", "--pretty", "false"), "static", timeout_seconds=180, requires_project_commands=True),
     ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", "."), "secret", timeout_seconds=180),
     ScannerToolSpec("trufflehog", ("trufflehog", "filesystem", ".", "--json", "--no-update"), "secret", timeout_seconds=180),
+    ScannerToolSpec("coverage", ("coverage", "run", "-m", "pytest", "-q"), "coverage", timeout_seconds=240, requires_project_commands=True),
 )
+
+
+def project_commands_allowed() -> bool:
+    return os.getenv("NICO_ALLOW_PROJECT_COMMANDS", "false").lower() == "true"
 
 
 def redact_text(value: str) -> str:
@@ -76,6 +86,52 @@ def _parse_json_lines(text: str) -> list[Any]:
     return items
 
 
+def _npm_audit_findings(payload: dict[str, Any]) -> list[Any]:
+    vulnerabilities = payload.get("vulnerabilities")
+    if not isinstance(vulnerabilities, dict):
+        return []
+    findings: list[Any] = []
+    for package_name, item in vulnerabilities.items():
+        if isinstance(item, dict):
+            finding = dict(item)
+            finding.setdefault("package", package_name)
+            findings.append(finding)
+    return findings
+
+
+def _pip_audit_findings(payload: dict[str, Any]) -> list[Any]:
+    findings: list[Any] = []
+    dependencies = payload.get("dependencies")
+    if not isinstance(dependencies, list):
+        return findings
+    for dep in dependencies:
+        if not isinstance(dep, dict):
+            continue
+        for vuln in dep.get("vulns") or []:
+            if isinstance(vuln, dict):
+                finding = dict(vuln)
+                finding.setdefault("package", dep.get("name"))
+                finding.setdefault("installed_version", dep.get("version"))
+                findings.append(finding)
+    return findings
+
+
+def _osv_findings(payload: dict[str, Any]) -> list[Any]:
+    findings: list[Any] = []
+    for key in ("results", "packages"):
+        items = payload.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            vulns = item.get("vulnerabilities") or item.get("vulns") or []
+            for vuln in vulns:
+                if isinstance(vuln, dict):
+                    findings.append(vuln)
+    return findings
+
+
 def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any]:
     text = redact_text(result.stdout or "")
     if not text.strip():
@@ -86,8 +142,16 @@ def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any
     except json.JSONDecodeError:
         if tool_name == "trufflehog":
             return _parse_json_lines(text)
+        if tool_name in {"typescript", "coverage"} and result.returncode != 0:
+            return [{"message": redact_text(result.stderr or result.stdout)}]
         return []
 
+    if tool_name == "pip-audit" and isinstance(payload, dict):
+        return _pip_audit_findings(payload)
+    if tool_name == "npm-audit" and isinstance(payload, dict):
+        return _npm_audit_findings(payload)
+    if tool_name == "osv-scanner" and isinstance(payload, dict):
+        return _osv_findings(payload)
     if tool_name == "bandit" and isinstance(payload, dict):
         return payload.get("results") or []
     if tool_name == "semgrep" and isinstance(payload, dict):
@@ -102,7 +166,7 @@ def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any
                         item.setdefault("filePath", file_result.get("filePath"))
                         findings.append(item)
         return findings
-    if tool_name == "typescript":
+    if tool_name in {"typescript", "coverage"}:
         return [] if result.returncode == 0 else [{"message": redact_text(result.stderr or result.stdout)}]
     if tool_name == "gitleaks" and isinstance(payload, list):
         return payload
@@ -111,24 +175,54 @@ def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any
     return []
 
 
+def _unavailable_tool(spec: ScannerToolSpec, reason: str) -> dict[str, Any]:
+    return {
+        "tool": spec.name,
+        "status": "unavailable",
+        "category": spec.category,
+        "reason": reason,
+        "findings": [],
+    }
+
+
+def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None]:
+    repo_dir = workspace.repo_dir
+    if spec.name == "pip-audit" and not (repo_dir / "requirements.txt").exists():
+        return None, repo_dir, "requirements.txt not found for pip-audit."
+    if spec.name == "npm-audit":
+        lockfiles = [repo_dir / "package-lock.json"]
+        lockfiles.extend(repo_dir.glob("*/package-lock.json"))
+        lockfiles.extend(repo_dir.glob("*/*/package-lock.json"))
+        existing = [path for path in lockfiles if path.exists()]
+        if not existing:
+            return None, repo_dir, "package-lock.json not found for npm audit."
+        return spec.command, existing[0].parent, None
+    return spec.command, repo_dir, None
+
+
 def run_scanner_tool(
     spec: ScannerToolSpec,
     workspace: WorkerWorkspace,
     *,
     runner: Callable[..., WorkerCommandResult] = run_command,
 ) -> dict[str, Any]:
+    if spec.requires_project_commands and not project_commands_allowed():
+        return _unavailable_tool(
+            spec,
+            f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
+        )
+
     executable = spec.command[0]
     if shutil.which(executable) is None:
-        return {
-            "tool": spec.name,
-            "status": "unavailable",
-            "reason": f"{executable} is not installed in the worker image",
-            "findings": [],
-        }
+        return _unavailable_tool(spec, f"{executable} is not installed in the worker image")
+
+    command, cwd, unavailable_reason = _resolve_command_and_cwd(spec, workspace)
+    if command is None:
+        return _unavailable_tool(spec, unavailable_reason or f"{spec.name} could not resolve a safe command")
 
     result = runner(
-        spec.command,
-        cwd=workspace.repo_dir,
+        command,
+        cwd=cwd,
         limits=WorkerLimits(timeout_seconds=spec.timeout_seconds, max_output_chars=spec.max_output_chars),
     )
     status = "completed" if not result.timed_out else "timeout"
@@ -137,6 +231,7 @@ def run_scanner_tool(
         {
             "tool": spec.name,
             "status": status,
+            "category": spec.category,
             "returncode": result.returncode,
             "timed_out": result.timed_out,
             "output_truncated": result.output_truncated,

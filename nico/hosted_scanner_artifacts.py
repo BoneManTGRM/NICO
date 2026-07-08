@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from nico.hosted_scanner_worker import hosted_scanner_autorun_enabled, run_hosted_scanner_worker
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact, scanner_worker_evidence_notes
 
 SCANNER_ARTIFACT_KEYS = (
@@ -11,6 +12,7 @@ SCANNER_ARTIFACT_KEYS = (
     "worker_artifact",
     "scanner_worker",
 )
+AUTO_RUN_SENTINEL = {"auto_run_scanner_worker": True}
 
 
 def _status_color(score: int, unavailable: bool = False) -> str:
@@ -23,12 +25,30 @@ def _status_color(score: int, unavailable: bool = False) -> str:
     return "red"
 
 
-def extract_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any] | None:
+def extract_explicit_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any] | None:
     for key in SCANNER_ARTIFACT_KEYS:
         value = payload.get(key)
         if isinstance(value, dict) and value:
             return value
     return None
+
+
+def extract_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any] | None:
+    explicit = extract_explicit_scanner_worker_artifact(payload)
+    if explicit:
+        return explicit
+    if hosted_scanner_autorun_enabled(payload):
+        return dict(AUTO_RUN_SENTINEL)
+    return None
+
+
+def _resolve_scanner_worker_artifact(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, bool]:
+    explicit = extract_explicit_scanner_worker_artifact(payload)
+    if explicit:
+        return explicit, False
+    if hosted_scanner_autorun_enabled(payload):
+        return run_hosted_scanner_worker(payload), True
+    return None, False
 
 
 def _remove_unavailable(section: dict[str, Any], fragments: tuple[str, ...]) -> None:
@@ -45,8 +65,25 @@ def _refresh_section_status(section: dict[str, Any]) -> None:
     section["status"] = _status_color(score, bool(section.get("unavailable")) and score == 0)
 
 
+def _apply_dependency_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
+    section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "dependency" in item.lower()])
+    section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "dependency" in item.lower()])
+    section.setdefault("unavailable", []).extend([item for item in notes.get("unavailable", []) if "dependency" in item.lower()])
+
+    if normalized.get("dependency_evidence_complete"):
+        _remove_unavailable(section, ("pip-audit", "npm audit", "npm-audit", "osv scanner", "osv-scanner", "sandboxed worker"))
+        count = int(normalized.get("dependency_finding_count") or 0)
+        if count == 0:
+            section["score"] = max(int(section.get("score") or 0), 95)
+            section["summary"] = "Dependency review includes worker-backed pip-audit, npm audit, and OSV Scanner evidence."
+        else:
+            section["score"] = max(45, min(int(section.get("score") or 0), 86 - min(35, count * 4)))
+            section["summary"] = "Dependency review includes worker-backed dependency scanner evidence with findings requiring triage."
+    _refresh_section_status(section)
+
+
 def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
-    section.setdefault("evidence", []).extend(notes.get("evidence", []))
+    section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "static" in item.lower()])
     section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "static" in item.lower()])
     section.setdefault("unavailable", []).extend([item for item in notes.get("unavailable", []) if "static" in item.lower()])
 
@@ -63,7 +100,7 @@ def _apply_static_worker_evidence(section: dict[str, Any], normalized: dict[str,
 
 
 def _apply_secret_worker_evidence(section: dict[str, Any], normalized: dict[str, Any], notes: dict[str, list[str]]) -> None:
-    section.setdefault("evidence", []).extend(notes.get("evidence", []))
+    section.setdefault("evidence", []).extend([item for item in notes.get("evidence", []) if "secret" in item.lower()])
     section.setdefault("findings", []).extend([item for item in notes.get("findings", []) if "secret" in item.lower()])
     section.setdefault("unavailable", []).extend([item for item in notes.get("unavailable", []) if "secret" in item.lower()])
 
@@ -86,22 +123,23 @@ def _apply_velocity_worker_evidence(section: dict[str, Any], normalized: dict[st
         )
         _remove_unavailable(section, ("deeper complexity", "sandboxed worker"))
         section["score"] = max(int(section.get("score") or 0), 82)
+    if normalized.get("coverage_tools_completed"):
+        section.setdefault("evidence", []).append("Scanner-worker coverage evidence is available for work-vs-expected review.")
     _refresh_section_status(section)
 
 
 def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    """Attach explicit scanner-worker evidence to a hosted Express result.
+    """Attach explicit or auto-run scanner-worker evidence to a hosted Express result.
 
-    This function is intentionally conservative. It only upgrades sections when a
-    scanner-worker artifact is explicitly supplied. Missing tool evidence remains
-    unavailable instead of being treated as clean.
+    Missing or failed tool evidence remains unavailable. Auto-run only happens for
+    explicit authorized requests and can be disabled globally or per request.
     """
     output = deepcopy(result)
-    artifact = extract_scanner_worker_artifact(payload)
+    artifact, auto_ran = _resolve_scanner_worker_artifact(payload)
     if not artifact:
         output["scanner_worker_evidence_attached"] = False
         output.setdefault("unavailable_data_notes", []).append(
-            "No scanner-worker artifact was supplied; hosted Express result keeps scanner execution evidence unavailable."
+            "No scanner-worker artifact was supplied or auto-run; hosted Express result keeps scanner execution evidence unavailable."
         )
         return output
 
@@ -112,7 +150,9 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
         if not isinstance(section, dict):
             continue
         section_id = section.get("id")
-        if section_id == "static_analysis":
+        if section_id == "dependency_health":
+            _apply_dependency_worker_evidence(section, normalized, notes)
+        elif section_id == "static_analysis":
             _apply_static_worker_evidence(section, normalized, notes)
         elif section_id == "secrets_review":
             _apply_secret_worker_evidence(section, normalized, notes)
@@ -120,7 +160,16 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
             _apply_velocity_worker_evidence(section, normalized)
 
     output["scanner_worker_evidence_attached"] = True
+    output["scanner_worker_auto_ran"] = auto_ran
     output["scanner_worker_artifact"] = normalized
+    if artifact.get("worker_execution_state"):
+        output["scanner_worker_execution"] = {
+            "state": artifact.get("worker_execution_state"),
+            "generated_at": artifact.get("generated_at"),
+            "duration_seconds": artifact.get("duration_seconds"),
+            "retention_note": artifact.get("retention_note"),
+        }
+    output.setdefault("unavailable_data_notes", []).extend(artifact.get("unavailable_data_notes") or [])
     output["findings"] = [
         finding
         for item in sections
@@ -131,10 +180,11 @@ def attach_scanner_worker_artifacts(result: dict[str, Any], payload: dict[str, A
 
 
 def run_github_assessment_with_scanner_artifacts(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run hosted Express assessment, then attach explicit scanner-worker artifacts.
+    """Run hosted Express assessment, then attach scanner-worker artifacts.
 
     Existing callers can keep using run_github_assessment. Worker-aware hosted flows
-    can call this wrapper when they have a trusted scanner-worker artifact to attach.
+    can call this wrapper with a trusted artifact or let NICO auto-run the worker for
+    explicitly authorized owner/repo assessments.
     """
     from nico.hosted_assessment import run_github_assessment
 
