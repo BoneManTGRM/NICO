@@ -1,3 +1,4 @@
+from nico.deployment_truth import build_truth_guard_status
 from nico.hosted_dependency_normalization import exact_osv_dependencies, parse_requirements_normalized
 from nico.report_truth_runtime_patch import apply_dependency_score_consistency
 
@@ -47,4 +48,17 @@ def test_dependency_cannot_stay_green_90_with_osv_vulnerability_records():
     assert dependency["score"] == 74
     assert dependency["status"] == "yellow"
     assert "cannot claim GREEN 90" in "\n".join(dependency["findings"])
+    assert "@[crypto]" not in str(dependency)
+    assert "PyPI:PyJWT@2.13.0" in str(dependency)
     assert fixed["maturity_signal"]["score"] == 87
+
+
+def test_truth_guard_status_exposes_live_deployment_check():
+    status = build_truth_guard_status()
+
+    assert status["status"] == "ok"
+    assert status["normalized_pyjwt_extra"] is True
+    assert status["sample_dependency_score_after_guard"] == 74
+    assert status["sample_dependency_status_after_guard"] == "yellow"
+    assert status["sample_contains_malformed_pyjwt_extra"] is False
+    assert "truth-guards-" in status["truth_guard_version"]
