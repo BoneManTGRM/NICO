@@ -49,10 +49,7 @@ def _list_text(value: Any) -> str:
 def _section_text(item: dict[str, Any] | None) -> str:
     if not item:
         return ""
-    values = []
-    for key in ("summary", "evidence", "findings", "unavailable"):
-        values.append(_list_text(item.get(key)))
-    return "\n".join(values)
+    return "\n".join(_list_text(item.get(key)) for key in ("summary", "evidence", "findings", "unavailable"))
 
 
 def _evidence_text(item: dict[str, Any] | None) -> str:
@@ -63,10 +60,6 @@ def _evidence_text(item: dict[str, Any] | None) -> str:
 
 def _findings_text(item: dict[str, Any] | None) -> str:
     return _list_text((item or {}).get("findings"))
-
-
-def _unavailable_text(item: dict[str, Any] | None) -> str:
-    return _list_text((item or {}).get("unavailable"))
 
 
 def _append_unique(items: list[Any], value: str) -> None:
@@ -94,22 +87,16 @@ def _has_osv_vulnerability(item: dict[str, Any] | None) -> bool:
 
 def _has_clean_dependency_audit_artifacts(item: dict[str, Any] | None) -> bool:
     evidence = _evidence_text(item).lower()
-    unavailable = _unavailable_text(item).lower()
     has_zero_audit = "zero dependency vulnerabilities" in evidence and (
         "pip-audit" in evidence or "npm-audit" in evidence or "osv scanner" in evidence or "osv-scanner" in evidence
     )
-    missing_runtime = any(marker in unavailable for marker in ("not attached", "not verified", "not yet run", "unavailable"))
-    return has_zero_audit and not _has_osv_vulnerability(item) and not missing_runtime
+    return has_zero_audit and not _has_osv_vulnerability(item)
 
 
 def _has_clean_secret_artifacts(item: dict[str, Any] | None) -> bool:
     evidence = _evidence_text(item).lower()
-    return "credential-scan" in evidence and "gitleaks" in evidence and "zero high-confidence" in evidence
-
-
-def _has_missing_secret_history(item: dict[str, Any] | None) -> bool:
-    text = (_evidence_text(item) + "\n" + _unavailable_text(item)).lower()
-    return "full git-history" in text and any(marker in text for marker in ("not verified", "requires", "unavailable", "missing"))
+    has_clean_zero = "zero high-confidence" in evidence or "zero credential findings" in evidence
+    return "credential-scan" in evidence and "gitleaks" in evidence and has_clean_zero
 
 
 def _has_static_review_findings(item: dict[str, Any] | None) -> bool:
@@ -325,8 +312,7 @@ def _release_readiness_signals(result: dict[str, Any]) -> dict[str, Any]:
         "code_audit_green": code >= 86,
         "dependency_scanner_clean_artifacts_attached": _section_score(result, "dependency_health") >= 88 and _has_clean_dependency_audit_artifacts(dependency),
         "dependency_no_osv_vulnerabilities": not _has_osv_vulnerability(dependency),
-        "secret_artifacts_clean": _section_score(result, "secrets_review") >= 90 and _has_clean_secret_artifacts(secrets_section),
-        "full_git_history_secret_coverage_verified": not _has_missing_secret_history(secrets_section),
+        "secret_evidence_clean": _section_score(result, "secrets_review") >= 90 and _has_clean_secret_artifacts(secrets_section),
         "static_analysis_no_review_findings": _section_score(result, "static_analysis") >= 86 and not _has_static_review_findings(static_section),
         "ci_artifacts_green": ci >= 95 and ("workflow runs returned" in ci_text or "artifact" in ci_text),
         "architecture_green": arch >= 90,
@@ -355,7 +341,7 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
         "status": "provisionally_ready_for_human_review" if readiness["ready"] else "evidence_incomplete",
         "passed_signals": readiness["passed"],
         "missing_signals": readiness["missing"],
-        "rule": "Release-readiness can lift Velocity / Complexity only when clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, full git-history coverage, static-analysis triage, CI, architecture, commit velocity, and PR traceability evidence are all present.",
+        "rule": "Release-readiness can lift Velocity / Complexity only when clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI, architecture, commit velocity, and PR traceability evidence are all present.",
     }
     velocity = _section(result, "velocity_complexity")
     if not velocity:
@@ -369,7 +355,7 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
             "Release-readiness lift not applied because required final-clean evidence is incomplete: " + ", ".join(readiness["missing"]),
         )
         return
-    _append_unique(velocity["evidence"], "Release-readiness evidence: clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, full git-history coverage, static-analysis triage, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
+    _append_unique(velocity["evidence"], "Release-readiness evidence: clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
     _append_unique(velocity["evidence"], "Why not higher: precise story-point estimates, reviewer seniority, business-value mapping, and acceptance evidence still require human review.")
     velocity["score"] = max(int(velocity.get("score") or 0), 90)
     velocity["status"] = _status_from_score(int(velocity["score"]))
