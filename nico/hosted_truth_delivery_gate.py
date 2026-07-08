@@ -13,6 +13,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
     if result.get("status") != "complete":
         return result
+    from nico.evidence_ledger import attach_evidence_ledger
     from nico.report_final_qa import apply_final_report_qa
     from nico.report_score_lift_plan import attach_score_lift_plan
     from nico.report_truth_runtime_patch import (
@@ -27,6 +28,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     result = apply_dependency_score_consistency(result)
     result = apply_final_report_qa(result)
     result = apply_strict_trust_engine(result)
+    result = attach_evidence_ledger(result)
     result = refresh_project_trend_score(result)
     result = attach_score_lift_plan(result)
     result = attach_service_tier_workflows(result)
