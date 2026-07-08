@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from nico.qa_parity_intake import build_qa_parity_intake
+from nico.retainer_modules import build_retainer_modules
 from nico.roadmap_generator import build_six_month_roadmap
 from nico.stakeholder_discovery import build_stakeholder_discovery
 
@@ -223,27 +224,23 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
     blockers = lines(payload.get("blockers"))
     releases = lines(payload.get("release_notes"))
     roadmap = lines(payload.get("roadmap_notes"))
+    retainer = build_retainer_modules(payload)
 
-    delivery_score = 40 + min(40, (len(commits) + len(prs)) * 4)
+    delivery_score = max(40 + min(40, (len(commits) + len(prs)) * 4), int(retainer["weekly_health"].get("score") or 0))
     backlog_score = 35 + min(40, len(issues) * 5)
-    release_score = 35 + min(40, len(releases) * 6)
-    strategy_score = 35 + min(40, len(roadmap) * 5)
-    blocker_score = 88 if not blockers else max(45, 78 - len(blockers) * 5)
+    release_score = max(35 + min(40, len(releases) * 6), int(retainer["release_readiness"].get("score") or 0))
+    strategy_score = max(35 + min(40, len(roadmap) * 5), int(retainer["monthly_strategy"].get("score") or 0))
+    blocker_score = int(retainer["blocker_escalation"].get("score") or (88 if not blockers else max(45, 78 - len(blockers) * 5)))
 
     sections = [
-        section("weekly_delivery", "Weekly Delivery Status", delivery_score, "Delivery status uses supplied commit and PR summaries.", [f"Commit items: {len(commits)}.", f"PR items: {len(prs)}."] + commits[:8] + prs[:8], [] if commits or prs else ["No delivery evidence supplied."], [] if commits or prs else ["Commit or PR evidence is needed for stronger delivery status."]),
+        section("weekly_delivery", "Weekly Delivery Status", delivery_score, "Delivery status uses supplied commit and PR summaries plus structured retainer weekly-health evidence.", [f"Commit items: {len(commits)}.", f"PR items: {len(prs)}.", f"Retainer weekly health status: {retainer['weekly_health']['status']} score={retainer['weekly_health']['score']}/100."] + commits[:8] + prs[:8], [] if commits or prs else ["No delivery evidence supplied."], [] if commits or prs else ["Commit or PR evidence is needed for stronger delivery status."]),
         section("backlog_health", "Backlog Health", backlog_score, "Backlog health uses supplied issue, bug, and task evidence.", [f"Backlog/issue items: {len(issues)}."] + issues[:12], [] if issues else ["No backlog evidence supplied."], [] if issues else ["Issue or bug evidence is needed for stronger backlog scoring."]),
-        section("release_readiness", "Release Readiness", release_score, "Release readiness uses supplied release notes and deployment-risk evidence.", [f"Release evidence items: {len(releases)}."] + releases[:12], [] if releases else ["No release evidence supplied."], [] if releases else ["Release notes, test summaries, or deployment notes are needed for stronger release scoring."]),
-        section("monthly_strategy", "Monthly Strategy", strategy_score, "Strategy score uses roadmap progress, risks, and business-context notes.", [f"Roadmap evidence items: {len(roadmap)}."] + roadmap[:12], [] if roadmap else ["No roadmap progress evidence supplied."], [] if roadmap else ["Roadmap progress notes are needed for stronger strategy scoring."]),
-        section("blockers", "Blockers / Approval Needs", blocker_score, "Blocker score reflects unresolved blockers and approval needs.", [f"Blocker items: {len(blockers)}."] + blockers[:12], blockers[:12]),
+        section("release_readiness", "Release Readiness", release_score, "Release readiness uses supplied release notes plus structured release gates and blocker evidence.", [f"Release evidence items: {len(releases)}.", f"Retainer release readiness status: {retainer['release_readiness']['status']} score={retainer['release_readiness']['score']}/100."] + releases[:12], [] if releases else ["No release evidence supplied."], retainer.get("unavailable", [])),
+        section("monthly_strategy", "Monthly Strategy", strategy_score, "Strategy score uses roadmap progress, metrics, client-update evidence, and business-context notes.", [f"Roadmap evidence items: {len(roadmap)}.", f"Retainer monthly strategy status: {retainer['monthly_strategy']['status']} score={retainer['monthly_strategy']['score']}/100."] + roadmap[:12], [] if roadmap else ["No roadmap progress evidence supplied."], [] if roadmap else ["Roadmap progress notes are needed for stronger strategy scoring."]),
+        section("blockers", "Blockers / Approval Needs", blocker_score, "Blocker score reflects unresolved blockers, escalation needs, and approval gates.", [f"Blocker items: {len(blockers)}.", f"Retainer blocker escalation status: {retainer['blocker_escalation']['status']} score={retainer['blocker_escalation']['score']}/100."] + blockers[:12], blockers[:12]),
     ]
     mat = maturity(sections)
-    approval_queue = [
-        "Production deployment approval",
-        "Issue/task creation approval",
-        "Major dependency upgrade approval",
-        "Customer-facing roadmap commitment approval",
-    ]
+    approval_queue = [f"{item['gate']}: {item['reason']}" for item in retainer.get("approval_gates", [])]
     if blockers:
         approval_queue.extend(blockers[:8])
 
@@ -258,25 +255,10 @@ def build_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
         "evidence_readiness": evidence_gap_score(sections),
         "maturity_semaphore": {item["label"]: item["status"] for item in sections},
         "sections": sections,
-        "weekly_status_report": [
-            "What changed: summarize commits, PRs, issues, releases, and bugs from supplied evidence.",
-            "What is blocked: escalate blockers and approval needs.",
-            "What is next: prioritize highest-risk repair and delivery tasks.",
-        ],
-        "monthly_strategy_report": [
-            "Roadmap progress",
-            "Technical debt trend",
-            "Release reliability",
-            "Team velocity signal",
-            "Next-month focus",
-        ],
-        "release_checklist": [
-            "Tests/lint/build reviewed",
-            "Known risks reviewed",
-            "Rollback path identified",
-            "Human approval recorded",
-            "Client-facing communication prepared if needed",
-        ],
+        "retainer_modules": retainer,
+        "weekly_status_report": retainer["weekly_health"].get("next_actions", []) + ["What changed: summarize commits, PRs, issues, releases, and bugs from supplied evidence.", "What is blocked: escalate blockers and approval needs.", "What is next: prioritize highest-risk repair and delivery tasks."],
+        "monthly_strategy_report": retainer["monthly_strategy"].get("next_focus", []) + ["Roadmap progress", "Technical debt trend", "Release reliability", "Team velocity signal", "Next-month focus"],
+        "release_checklist": retainer["release_readiness"].get("required_checks", []),
         "human_approval_queue": approval_queue,
         "human_review_required": True,
         "safety_boundary": "Retainer Ops is advisory by default. Production-impacting changes require human approval.",
