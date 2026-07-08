@@ -21,11 +21,13 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
         refresh_project_trend_score,
     )
     from nico.report_truth_status import build_report_truth_status
+    from nico.service_tier_workflows import attach_service_tier_workflows
 
     result = apply_dependency_score_consistency(result)
     result = apply_final_report_qa(result)
     result = refresh_project_trend_score(result)
     result = attach_score_lift_plan(result)
+    result = attach_service_tier_workflows(result)
     result["report_truth_guard"] = build_report_truth_status()
     return rebuild_reports(result)
 
