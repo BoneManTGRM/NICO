@@ -333,7 +333,8 @@ def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) 
                 return spec.command, web_dir, None
             if _package_script(web_dir, "lint"):
                 return ("npm", "run", "lint"), web_dir, None
-        return None, repo_dir, "No frontend ESLint config or lint script was found for scanner-worker ESLint evidence."
+            return spec.command, web_dir, None
+        return None, repo_dir, "apps/web/package.json not found for scanner-worker ESLint evidence."
     if spec.name == "typescript":
         if (web_dir / "package.json").exists():
             if _package_script(web_dir, "lint"):
