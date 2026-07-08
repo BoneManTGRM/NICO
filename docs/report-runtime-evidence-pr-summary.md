@@ -1,8 +1,12 @@
 # Hosted report evidence correction
 
-The current hosted report remains 89/100 until runtime artifacts are consumed by the report flow.
+The current hosted report dropped to 85/100 because a transitive dependency was pinned directly after splitting the PyJWT extra, and the exact pin produced OSV and pip-audit findings.
 
-This correction removes one false dependency finding source by avoiding extras in the OSV package name. The dependency is represented as `PyJWT==2.13.0` with `cryptography==46.0.3` instead of `PyJWT[crypto]==2.13.0`.
+This correction restores the safer representation:
+
+- Keep `PyJWT[crypto]==2.13.0` as the project requirement.
+- Normalize OSV lookup to the base package name `PyJWT` and version `2.13.0`.
+- Avoid direct transitive pins unless a current-run audit proves the exact version is clean.
 
 The remaining score blockers are intentional truth-guard blockers until real artifacts are attached:
 
@@ -11,4 +15,4 @@ The remaining score blockers are intentional truth-guard blockers until real art
 - Bandit findings require triage.
 - Complexity artifacts are not attached to the hosted report.
 
-No score is raised by this correction.
+No score is raised by this correction. It removes the accidental direct vulnerable pin that caused the 85/100 regression.
