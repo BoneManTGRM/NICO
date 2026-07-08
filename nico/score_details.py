@@ -52,14 +52,15 @@ def build_score_details(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "ok" if scored_rows else "unavailable",
         "score": score,
-        "section_count": len(scored_rows),
+        "section_count": len(rows),
+        "scored_section_count": len(scored_rows),
         "display_section_count": len(rows),
         "supplemental_section_count": len(rows) - len(scored_rows),
         "limited_count": len(limited),
         "lowest_sections": low,
         "supplemental_sections": [row for row in rows if not row["included_in_maturity_score"]],
         "sections": rows,
-        "explanation": "Overall score is the rounded average of core scored sections only. Supplemental diagnostic sections remain visible but are not averaged into maturity unless explicitly mapped into core evidence.",
+        "explanation": "Overall score is the rounded average of core scored sections only. section_count is the display section count; scored_section_count is the number of sections included in maturity scoring.",
     }
 
 
