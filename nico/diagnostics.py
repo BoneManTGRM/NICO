@@ -5,16 +5,37 @@ from typing import Any
 
 from nico.admin_security import safe_public_admin_status
 from nico.approval_queue import list_approvals
+from nico.build_marker import BUILD_COMMIT, BUILD_MARKER
 from nico.github_diagnostics import github_auth_diagnostics
 from nico.runtime_config import runtime_config
 from nico.scanner_artifact_scoring import scanner_artifact_access_status
 from nico.storage import STORE
 
 REDACTED = "[REDACTED]"
+DEPLOY_COMMIT_KEYS = ["RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "SOURCE_VERSION", "GIT_COMMIT_SHA", "COMMIT_SHA"]
 
 
 def safe_env_flag(name: str) -> bool:
     return bool(os.getenv(name, "").strip())
+
+
+def deployed_commit() -> str:
+    return next((os.getenv(key, "").strip() for key in DEPLOY_COMMIT_KEYS if os.getenv(key, "").strip()), "unavailable")
+
+
+def deployment_diagnostics() -> dict[str, Any]:
+    commit = deployed_commit()
+    return {
+        "status": "ok" if commit != "unavailable" else "commit_unavailable",
+        "build_marker": BUILD_MARKER,
+        "expected_build_commit": BUILD_COMMIT,
+        "expected_build_commit_short": BUILD_COMMIT[:12],
+        "deployed_commit": commit,
+        "deployed_commit_short": commit[:12] if commit != "unavailable" else "unavailable",
+        "matches_expected_build": commit != "unavailable" and commit.startswith(BUILD_COMMIT[:12]),
+        "commit_keys_checked": DEPLOY_COMMIT_KEYS,
+        "rule": "If the deployed commit is unavailable or does not match expected_build_commit, redeploy latest main before trusting hosted score changes.",
+    }
 
 
 def storage_diagnostics() -> dict[str, Any]:
@@ -69,11 +90,13 @@ def latest_runs_diagnostics() -> dict[str, Any]:
 def diagnostics() -> dict[str, Any]:
     config = runtime_config()
     default_repo = os.getenv("NICO_DEFAULT_REPOSITORY") or "BoneManTGRM/NICO"
+    deployment = deployment_diagnostics()
     return {
         "status": "ok",
         "app": "NICO",
-        "version": "0.8.0-accuracy-hardening",
-        "git_commit": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("VERCEL_GIT_COMMIT_SHA") or "unavailable",
+        "version": "0.8.0-deploy-diagnostics",
+        "git_commit": deployment["deployed_commit"],
+        "deployment": deployment,
         "backend_mode": "accuracy-hardening-hosted",
         "storage": storage_diagnostics(),
         "runtime_config": {"source": config.get("source"), "version": config.get("version")},
