@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from nico.complexity_engine import build_complexity_profile
 from nico.github_app_auth import build_github_clone_auth_env
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
 from nico.worker_execution import (
@@ -159,6 +160,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
 
         commit_count = _git_commit_count(workspace)
         scanner_artifact = run_scanner_tools(workspace)
+        scanner_artifact["complexity_engine"] = build_complexity_profile(workspace.repo_dir)
         scanner_artifact.update(
             {
                 "worker_execution_state": "completed",
