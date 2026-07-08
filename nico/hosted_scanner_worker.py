@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from nico.github_app_auth import build_github_clone_auth_env
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
 from nico.worker_execution import (
     WorkerCommandResult,
@@ -66,7 +67,13 @@ def checkout_for_hosted_scan(payload: dict[str, Any], workspace: WorkerWorkspace
         workspace,
         full_history=full_history_secret_scan_enabled(payload),
     )
-    return run_command(command, cwd=workspace.root, limits=WorkerLimits(timeout_seconds=240, max_output_chars=12_000))
+    clone_auth = build_github_clone_auth_env()
+    return run_command(
+        command,
+        cwd=workspace.root,
+        limits=WorkerLimits(timeout_seconds=240, max_output_chars=12_000),
+        extra_env=clone_auth.extra_env,
+    )
 
 
 def _git_commit_count(workspace: WorkerWorkspace) -> int | None:
@@ -79,6 +86,15 @@ def _git_commit_count(workspace: WorkerWorkspace) -> int | None:
         return int((result.stdout or "").strip())
     except ValueError:
         return None
+
+
+def _clone_auth_metadata() -> dict[str, Any]:
+    clone_auth = build_github_clone_auth_env()
+    return {
+        "mode": clone_auth.mode,
+        "evidence": clone_auth.evidence,
+        "unavailable": clone_auth.unavailable,
+    }
 
 
 def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -95,6 +111,7 @@ def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
 
 def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandResult) -> dict[str, Any]:
     output = redact_text((checkout.stdout or "") + "\n" + (checkout.stderr or ""))
+    clone_auth = _clone_auth_metadata()
     return {
         "artifact_schema": "nico.scanner_worker.v1",
         "worker_execution_state": "checkout_failed",
@@ -107,8 +124,9 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
             "output_truncated": checkout.output_truncated,
             "safe_output_preview": output[:2000],
             "full_history_secret_scan_requested": full_history_secret_scan_enabled(payload),
+            "auth_mode": clone_auth["mode"],
         },
-        "unavailable_data_notes": ["Hosted scanner worker could not check out the authorized repository."],
+        "unavailable_data_notes": ["Hosted scanner worker could not check out the authorized repository."] + clone_auth["unavailable"],
         "human_review_required": True,
     }
 
@@ -131,6 +149,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
 
     started = time.monotonic()
     full_history = full_history_secret_scan_enabled(payload)
+    clone_auth = _clone_auth_metadata()
     temp_workspace = make_workspace("nico-hosted-scan-")
     try:
         workspace = workspace_from_temp(temp_workspace)
@@ -153,7 +172,9 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
                     "full_history_secret_scan_requested": full_history,
                     "commit_count": commit_count,
                     "history_depth": "full" if full_history else "shallow",
+                    "auth_mode": clone_auth["mode"],
                 },
+                "private_repo_auth": clone_auth,
                 "retention_note": "Temporary hosted scanner workspace was deleted after artifact generation.",
                 "human_review_required": True,
             }
