@@ -26,7 +26,7 @@ def _status_color(score: int, unavailable: bool = False) -> str:
 def extract_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any] | None:
     for key in SCANNER_ARTIFACT_KEYS:
         value = payload.get(key)
-        if isinstance(value, dict):
+        if isinstance(value, dict) and value:
             return value
     return None
 
