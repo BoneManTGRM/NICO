@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from nico.client_acceptance_evidence import apply_client_acceptance_evidence
+from nico.evidence_status import apply_report_evidence_status
 from nico.hosted_assessment import build_html, build_markdown, build_pdf_base64
 from nico.i18n_es_mx import reports_es_mx, wants_es_mx
 from nico.project_trend_evidence import apply_project_trend_evidence
@@ -116,6 +117,7 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
     has_clean_osv_evidence = "osv returned no vulnerability records" in text
     has_clean_audit_artifacts = "pip-audit" in text and "npm-audit" in text and "zero dependency vulnerabilities" in text
     has_broad_range_warning = "[standard]>=" in text or "broad-range warnings" in text
+    has_osv_vulnerabilities = "osv returned" in text and "vulnerability record" in text
     if not (has_manifest_evidence and has_lockfile_evidence):
         return
     item.setdefault("evidence", [])
@@ -127,15 +129,19 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
         item["score"] = max(int(item.get("score") or 0), 86)
+    elif has_osv_vulnerabilities and int(item.get("score") or 0) >= 86:
+        _append_unique(item["evidence"], "Dependency evidence classification: OSV API evidence completed with vulnerability records; final scanner-clean status is not claimed without pip-audit, npm audit, and OSV Scanner artifacts.")
+        item["score"] = max(int(item.get("score") or 0), 88)
     elif has_broad_range_warning and int(item.get("score") or 0) >= 78:
         _append_unique(item["evidence"], "Dependency evidence classification: manifest and lockfile evidence are present; broad OSV range warnings remain disclosed but are not treated as confirmed installed-package vulnerabilities without audit artifacts.")
         item["score"] = max(int(item.get("score") or 0), 88)
     else:
         return
     if not has_clean_audit_artifacts:
+        item.setdefault("unavailable", [])
         _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
     item["status"] = _status_from_score(int(item["score"]))
-    item["summary"] = "Dependency review uses manifest evidence, JavaScript lockfile evidence, OSV evidence, and parsed audit artifacts when available while keeping scanner-worker limitations disclosed."
+    item["summary"] = "Dependency review uses available manifest, lockfile, OSV, and audit-artifact evidence while separating runtime scanner proof from final scanner-clean claims."
 
 
 def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
@@ -156,6 +162,8 @@ def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
             "full git-history",
             "requires a sandboxed worker",
             "hosted mode currently scans",
+            "not verified",
+            "source distinction",
         ),
     )
     if not has_clean_artifacts or blocking_findings:
@@ -188,6 +196,9 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
             "sandboxed worker",
             "not yet executed",
             "unavailable",
+            "source distinction",
+            "needs_human_review",
+            "triage summary",
         ),
     )
     ci_static_evidence = _section_score(result, "ci_cd") >= 90 or any(
@@ -199,6 +210,7 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
     static.setdefault("evidence", [])
     if ci_static_evidence:
         _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, and CI/CD is green or includes lint/typecheck/build coverage.")
+        static.setdefault("unavailable", [])
         _append_unique(static["unavailable"], "External Semgrep/Bandit scanner-worker execution remains unavailable; CI-backed evidence is counted separately from full scanner-worker proof.")
         static["score"] = max(int(static.get("score") or 0), 86)
         static["summary"] = "Static analysis uses clean built-in pattern checks plus green CI/CD or lint/typecheck/build evidence, while keeping unavailable external scanner-worker execution disclosed."
@@ -248,6 +260,7 @@ def _apply_velocity_traceability_adjustment(result: dict[str, Any]) -> None:
         return
     velocity.setdefault("evidence", [])
     _append_unique(velocity["evidence"], "Velocity interpretation: high PR/commit traceability plus green code, dependency, static-analysis, CI/CD, and architecture evidence mitigates the large source footprint for Express-level maturity scoring.")
+    velocity.setdefault("unavailable", [])
     _append_unique(velocity["unavailable"], "Precise story points, reviewer seniority, project trend history, and client acceptance still require retained history and human review before client-final delivery claims.")
     velocity["score"] = max(int(velocity.get("score") or 0), 82)
     velocity["status"] = _status_from_score(int(velocity["score"]))
@@ -313,6 +326,7 @@ def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_static_evidence_adjustment(result)
     _apply_velocity_traceability_adjustment(result)
     _apply_release_readiness_adjustment(result)
+    apply_report_evidence_status(result)
     _recompute_maturity(result)
 
 
@@ -396,7 +410,7 @@ def finalize_express_result_consistency(result: dict[str, Any]) -> dict[str, Any
         "field": "maturity_signal",
         "level": (result.get("maturity_signal") or {}).get("level"),
         "score": (result.get("maturity_signal") or {}).get("score"),
-        "rule": "Executive summary and report exports are rebuilt after final scoring and polishing.",
+        "rule": "Executive summary and report exports are rebuilt after final scoring, evidence classification, and polishing.",
     }
     result = attach_score_details(result)
     _rebuild_reports(result)
