@@ -2,10 +2,13 @@ from nico.build_marker import BUILD_COMMIT, BUILD_MARKER
 from nico.diagnostics import diagnostics
 from nico.report_truth_status import REPORT_TRUTH_GUARD_EXPECTED_BUILD_MARKER, REPORT_TRUTH_GUARD_VERSION, build_report_truth_status
 
+RUNTIME_DEPLOY_COMMIT_SENTINEL = "0000000000000000000000000000000000000000"
+
 
 def test_build_marker_identifies_final_hosted_truth_gate():
     assert BUILD_MARKER == "nico-final-hosted-truth-gate"
-    assert BUILD_COMMIT == "runtime-deploy-commit"
+    assert BUILD_COMMIT == RUNTIME_DEPLOY_COMMIT_SENTINEL
+    assert len(BUILD_COMMIT) == 40
 
 
 def test_report_truth_guard_status_is_deploy_visible():
@@ -25,6 +28,7 @@ def test_diagnostics_include_report_truth_guard_status():
 
     assert payload["version"] == "0.8.3-final-hosted-truth-gate"
     assert payload["deployment"]["build_marker"] == "nico-final-hosted-truth-gate"
-    assert payload["deployment"]["expected_build_commit"] == "runtime-deploy-commit"
+    assert payload["deployment"]["expected_build_commit"] == RUNTIME_DEPLOY_COMMIT_SENTINEL
+    assert payload["deployment"]["expected_build_commit_short"] == "runtime"
     assert payload["report_truth_guard"]["version"] == REPORT_TRUTH_GUARD_VERSION
     assert "hosted backend has not loaded" in payload["report_truth_guard"]["rule"]
