@@ -34,7 +34,6 @@ SECTION_RISK_MARKERS = {
     "secrets": ("gitleaks", "trufflehog", "full-history", "credential"),
     "velocity": ("release-readiness", "complexity", "final-clean"),
 }
-SECTION_LABELS = tuple(label.lower() for label in SECTION_RISK_MARKERS)
 
 
 def _text(value: Any) -> str:
@@ -78,6 +77,14 @@ def _has_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in lower for marker in markers)
 
 
+def _primary_export_text(result: dict[str, Any]) -> str:
+    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
+    markdown = str(reports.get("markdown") or "")
+    if markdown.strip():
+        return markdown
+    return str(reports.get("html") or "")
+
+
 def _json_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]:
     violations: list[dict[str, Any]] = []
     for section in result.get("sections", []) or []:
@@ -101,17 +108,18 @@ def _json_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _next_section_start(export_text: str, start: int) -> int:
-    next_start = len(export_text)
-    for label in ("Dependency / Library Ecosystem", "Static Analysis", "Secrets Exposure Review", "Velocity / Complexity", "CI/CD Analysis", "Architecture & Technical Debt", "Code Audit"):
-        idx = export_text.find(label, start)
-        if idx != -1 and idx < next_start:
-            next_start = idx
-    return next_start
+    """Return the next rendered section boundary in the same export document."""
+
+    boundaries = []
+    for pattern in ("\n### ", "\n## ", "\n<h2", "\n<h3"):
+        idx = export_text.find(pattern, start)
+        if idx != -1:
+            boundaries.append(idx)
+    return min(boundaries) if boundaries else len(export_text)
 
 
 def _export_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]:
-    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
-    export_text = "\n".join(str(reports.get(key) or "") for key in ("markdown", "html"))
+    export_text = _primary_export_text(result)
     lower = export_text.lower()
     violations: list[dict[str, Any]] = []
     if not export_text.strip():
@@ -149,8 +157,7 @@ def _export_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]
 
 
 def _score_mismatch(result: dict[str, Any]) -> list[dict[str, Any]]:
-    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
-    export_text = "\n".join(str(reports.get(key) or "") for key in ("markdown", "html"))
+    export_text = _primary_export_text(result)
     expected = None
     if isinstance(result.get("maturity_signal"), dict):
         try:
