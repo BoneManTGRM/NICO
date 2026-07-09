@@ -32,6 +32,15 @@ def _bandit_triage_status(finding: dict[str, Any]) -> str:
     return "needs-review"
 
 
+def _bandit_finding_id(finding: dict[str, Any], index: int) -> str:
+    if finding.get("test_id"):
+        return str(finding["test_id"])
+    cwe = finding.get("issue_cwe")
+    if isinstance(cwe, dict) and cwe.get("id"):
+        return f"CWE-{cwe['id']}"
+    return f"bandit-{index}"
+
+
 def build_bandit_triage(findings: list[Any]) -> list[dict[str, Any]]:
     triage: list[dict[str, Any]] = []
     for index, raw in enumerate(findings, start=1):
@@ -39,7 +48,7 @@ def build_bandit_triage(findings: list[Any]) -> list[dict[str, Any]]:
         status = _bandit_triage_status(finding)
         triage.append(
             {
-                "finding_id": str(finding.get("test_id") or finding.get("issue_cwe", {}).get("id") if isinstance(finding.get("issue_cwe"), dict) else "") or f"bandit-{index}"),
+                "finding_id": _bandit_finding_id(finding, index),
                 "rule_id": str(finding.get("test_id") or finding.get("test_name") or "unknown"),
                 "filename": str(finding.get("filename") or finding.get("file") or "unknown"),
                 "line_number": _as_int(finding.get("line_number") or finding.get("line")),
