@@ -13,6 +13,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
     if result.get("status") != "complete":
         return result
+    from nico.bandit_triage_workflow import attach_bandit_triage_to_report
     from nico.evidence_ledger import attach_evidence_ledger
     from nico.export_truth_gate import apply_export_truth_gate
     from nico.report_final_qa import apply_final_report_qa
@@ -31,8 +32,10 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
     result = apply_dependency_score_consistency(result)
     result = attach_scanner_artifacts_to_report(result)
+    result = attach_bandit_triage_to_report(result)
     result = apply_verified_scanner_score_lifts(result)
     result = apply_final_report_qa(result)
+    result = attach_bandit_triage_to_report(result)
     result = apply_verified_scanner_score_lifts(result)
     result = apply_strict_trust_engine(result)
     result = attach_evidence_ledger(result)
