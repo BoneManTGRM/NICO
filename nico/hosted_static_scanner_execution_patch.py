@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,6 +14,18 @@ IGNORED_DIRS = {".git", "node_modules", ".next", "dist", "build", ".venv", "venv
 
 def _project_commands_allowed() -> bool:
     return os.getenv("NICO_ALLOW_PROJECT_COMMANDS", "false").lower() == "true"
+
+
+def _which(binary: str) -> str | None:
+    try:
+        from nico import scanner_tool_runners
+
+        resolved = scanner_tool_runners.shutil.which(binary)
+        if resolved is not None:
+            return resolved
+        return None
+    except Exception:
+        return shutil.which(binary)
 
 
 def _safe_files(repo_dir: Path, suffixes: tuple[str, ...], *, limit: int = 5000) -> list[Path]:
@@ -133,18 +144,16 @@ def _completed(spec: ScannerToolSpec, result: WorkerCommandResult, *, cwd: Path,
 
 
 def _bandit_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None, str]:
-    if not _safe_files(workspace.repo_dir, (".py",)):
-        return None, workspace.repo_dir, "No Python files were present for Bandit static analysis.", "bandit_no_python_files"
-    if shutil.which("bandit"):
-        return ("bandit", "-r", ".", "-f", "json", "-x", "./node_modules,./.venv,./venv,./.git"), workspace.repo_dir, None, "bandit_cli"
-    return (sys.executable, "-m", "bandit", "-r", ".", "-f", "json", "-x", "./node_modules,./.venv,./venv,./.git"), workspace.repo_dir, None, "python_module_bandit"
+    if _which("bandit") is None:
+        return None, workspace.repo_dir, "bandit is not installed in the worker image.", "bandit_cli"
+    return ("bandit", "-r", ".", "-f", "json"), workspace.repo_dir, None, "bandit_cli"
 
 
 def _semgrep_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None, str]:
+    if _which("semgrep") is None:
+        return None, workspace.repo_dir, "semgrep is not installed in the worker image.", "semgrep_cli"
     if not _safe_files(workspace.repo_dir, (".py", ".ts", ".tsx", ".js", ".jsx")):
         return None, workspace.repo_dir, "No supported source files were present for Semgrep static analysis.", "semgrep_no_source_files"
-    if shutil.which("semgrep") is None:
-        return None, workspace.repo_dir, "semgrep is not installed in the worker image.", "semgrep_cli"
     return (
         "semgrep",
         "scan",
@@ -170,11 +179,11 @@ def _eslint_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None,
     if not _project_commands_allowed():
         return None, directory, "eslint requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local JavaScript tooling.", "eslint_project_commands_disabled"
     if _script(directory, "lint"):
-        return ("npm", "run", "lint", "--", "--format", "json"), directory, None, "eslint_npm_script"
+        return ("npm", "run", "lint"), directory, None, "eslint_npm_script"
     local = _local_bin(directory, "eslint")
     if local:
         return (str(local), ".", "--format", "json"), directory, None, "eslint_local_binary"
-    if shutil.which("eslint"):
+    if _which("eslint"):
         return ("eslint", ".", "--format", "json"), directory, None, "eslint_global_binary"
     return None, directory, "ESLint is not installed globally and no local node_modules/.bin/eslint exists in the checkout.", "eslint_unavailable"
 
@@ -183,17 +192,17 @@ def _typescript_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | N
     directory = _web_dir(workspace.repo_dir)
     if not (directory / "package.json").exists():
         return None, workspace.repo_dir, "apps/web/package.json not found for TypeScript evidence.", "typescript_unavailable"
-    if not (directory / "tsconfig.json").exists():
-        return None, directory, "apps/web/tsconfig.json not found for TypeScript evidence.", "typescript_unavailable"
     if not _project_commands_allowed():
         return None, directory, "typescript requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local TypeScript tooling.", "typescript_project_commands_disabled"
+    if not (directory / "tsconfig.json").exists():
+        return None, directory, "apps/web/tsconfig.json not found for TypeScript evidence.", "typescript_unavailable"
     for script_name in ("typecheck", "type-check", "check-types"):
         if _script(directory, script_name):
             return ("npm", "run", script_name), directory, None, "typescript_npm_script"
     local = _local_bin(directory, "tsc")
     if local:
         return (str(local), "--noEmit", "--pretty", "false"), directory, None, "typescript_local_binary"
-    if shutil.which("tsc"):
+    if _which("tsc"):
         return ("tsc", "--noEmit", "--pretty", "false"), directory, None, "typescript_global_binary"
     return None, directory, "TypeScript compiler is not installed globally and no local node_modules/.bin/tsc exists in the checkout.", "typescript_unavailable"
 
@@ -206,8 +215,8 @@ def _run_static_tool(
 ) -> dict[str, Any]:
     if spec.name == "bandit":
         command, cwd, reason, source = _bandit_command(workspace)
-        if command is None and source == "bandit_no_python_files":
-            return _completed_without_command(spec, reason or "No Python files to scan.", source=source)
+        if command and spec.command and spec.command[0] == "bandit":
+            command = spec.command
     elif spec.name == "semgrep":
         command, cwd, reason, source = _semgrep_command(workspace)
         if command is None and source == "semgrep_no_source_files":
@@ -221,8 +230,6 @@ def _run_static_tool(
     if command is None:
         return _unavailable(spec, reason or f"{spec.name} command could not be resolved.", source=source)
     result = runner(command, cwd=cwd, limits=WorkerLimits(timeout_seconds=spec.timeout_seconds, max_output_chars=spec.max_output_chars))
-    if spec.name == "bandit" and command[0] == sys.executable and result.returncode != 0 and "No module named" in (result.stderr or result.stdout):
-        return _unavailable(spec, "bandit binary is not installed and python -m bandit is unavailable in the worker image.", source=source)
     return _completed(spec, result, cwd=cwd, command=command, source=source)
 
 
