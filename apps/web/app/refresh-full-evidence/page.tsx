@@ -1,92 +1,60 @@
 "use client";
 
-import {useMemo, useState} from "react";
+import {useState} from "react";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
-const REQUIRED_SECTIONS = [
-  ["dependency_health", "Dependency scanners"],
-  ["secrets_review", "Full-history secrets"],
-  ["static_analysis", "Static analysis"],
-  ["velocity_complexity", "Complexity / velocity"],
-] as const;
-
-const REQUIRED_TOOLS = [
-  "pip-audit",
-  "npm-audit",
-  "osv-scanner",
-  "bandit",
-  "semgrep",
-  "eslint",
-  "typescript",
-  "gitleaks",
-  "trufflehog",
-];
-
-type Section = {
-  id?: string;
-  label?: string;
-  score?: number;
+type ToolRecord = {
+  tool?: string;
+  category?: string;
   status?: string;
-  summary?: string;
-  evidence?: string[];
-  findings?: string[];
-  unavailable?: string[];
-};
-
-type RuntimeGuard = {
-  status?: string;
-  refresh_full_evidence_requested?: boolean;
-  completed_dependency_tools?: string[];
-  completed_static_tools?: string[];
-  completed_secret_tools?: string[];
-  missing_dependency_tools?: string[];
-  missing_static_tools?: string[];
-  missing_secret_tools?: string[];
-  missing_required_tools?: string[];
-  error?: string;
-  guardrail?: string;
+  returncode?: number | null;
+  findings_count?: number;
+  current_run?: boolean;
+  verified_for_this_report?: boolean;
+  reason?: string;
 };
 
 type RefreshResult = {
   status?: string;
   repository?: string;
-  generated_at?: string;
-  maturity_signal?: {level?: string; score?: number; summary?: string};
-  sections?: Section[];
-  reports?: {pdf_base64?: string; pdf_filename?: string; markdown?: string; html?: string};
-  scanner_artifact_summary?: {completed_tools?: string[]; unavailable_tools?: string[]};
-  report_quality_guards?: Record<string, unknown>;
-  evidence_ledger?: {coverage_by_section?: Record<string, {complete?: boolean; verified_tools?: string[]; missing_required_tools?: string[]}>};
+  maturity_signal?: {level?: string; score?: number};
   human_review_required?: boolean;
+  hosted_full_evidence_runtime_validation?: {
+    status?: string;
+    requested?: boolean;
+    missing_or_unavailable_tools?: string[];
+    tool_records?: ToolRecord[];
+  };
+  report_quality_guards?: {
+    hosted_full_evidence_runtime?: {
+      status?: string;
+      refresh_full_evidence_requested?: boolean;
+      missing_required_tools?: string[];
+      missing_or_unavailable_tools?: string[];
+      tool_records?: ToolRecord[];
+      bandit_triage_summary?: {
+        total_findings?: number;
+        blocker_count?: number;
+        needs_review_count?: number;
+        static_lift_allowed?: boolean;
+      };
+    };
+  };
+  bandit_triage_summary?: {
+    total_findings?: number;
+    blocker_count?: number;
+    needs_review_count?: number;
+    static_lift_allowed?: boolean;
+  };
+  reports?: {pdf_base64?: string; pdf_filename?: string};
 };
 
 function statusClass(status?: string) {
-  if (status === "green" || status === "passed" || status === "complete" || status === "available" || status === "attached" || status === "completed") return "status green";
-  if (status === "yellow" || status === "pending" || status === "running" || status === "queued" || status === "partial" || status?.startsWith("skipped")) return "status yellow";
-  if (status === "red" || status === "failed" || status === "error" || status === "timeout" || status === "blocked" || status?.startsWith("failed")) return "status red";
+  if (status === "completed" || status === "complete" || status === "green" || status === "success") return "status green";
+  if (status === "failed" || status === "error" || status === "blocked" || status === "timeout") return "status red";
+  if (status === "queued" || status === "running" || status === "yellow" || status === "unavailable" || status === "missing") return "status yellow";
   return "status gray";
-}
-
-function ListBlock({items}: {items?: string[]}) {
-  if (!items?.length) return <p className="muted">No items returned.</p>;
-  return <ul className="tight-list">{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>;
-}
-
-function findSection(result: RefreshResult | null, id: string) {
-  return result?.sections?.find((section) => section.id === id);
-}
-
-function sectionReady(result: RefreshResult | null, id: string) {
-  const section = findSection(result, id);
-  const coverage = result?.evidence_ledger?.coverage_by_section?.[id];
-  if (coverage?.complete) return true;
-  return section?.status === "green" && !(section.unavailable?.length);
-}
-
-function runtimeGuard(result: RefreshResult | null): RuntimeGuard | null {
-  const value = result?.report_quality_guards?.hosted_full_evidence_runtime;
-  return value && typeof value === "object" ? value as RuntimeGuard : null;
 }
 
 function downloadPdf(result: RefreshResult | null) {
@@ -97,57 +65,45 @@ function downloadPdf(result: RefreshResult | null) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = result?.reports?.pdf_filename || "nico-full-evidence-report.pdf";
+  anchor.download = result?.reports?.pdf_filename || "nico-refresh-full-evidence.pdf";
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
 export default function RefreshFullEvidencePage() {
   const [repository, setRepository] = useState("BoneManTGRM/NICO");
-  const [clientName, setClientName] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [authorizedBy, setAuthorizedBy] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<RefreshResult | null>(null);
 
-  const completedTools = result?.scanner_artifact_summary?.completed_tools || [];
-  const unavailableTools = result?.scanner_artifact_summary?.unavailable_tools || [];
-  const missingTools = useMemo(() => REQUIRED_TOOLS.filter((tool) => !completedTools.includes(tool)), [completedTools]);
-  const guard = runtimeGuard(result);
-  const guardMissing = [
-    ...(guard?.missing_dependency_tools || []),
-    ...(guard?.missing_static_tools || []),
-    ...(guard?.missing_secret_tools || []),
-    ...(guard?.missing_required_tools || []),
-  ];
-
-  async function refreshFullEvidence() {
-    if (!API_URL) { setError("Backend URL is not configured in Vercel."); return; }
+  async function runRefreshFullEvidence() {
+    if (!API_URL) {
+      setError("Backend URL is not configured in Vercel.");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
-      const refreshActor = authorizedBy ? `${authorizedBy} via frontend-refresh-full-evidence` : "frontend-refresh-full-evidence";
       const response = await fetch(`${API_URL}/assessment/github`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           repository,
           authorized,
-          authorized_by: refreshActor,
-          client_name: clientName,
-          project_name: projectName,
+          client_name: "",
+          project_name: "",
           assessment_mode: "express",
           timeframe_days: 180,
+          authorized_by: "frontend-refresh-full-evidence",
+          refresh_full_evidence_requested: true,
           run_scanner_worker: true,
           scanner_worker_autorun: true,
           full_history_secret_scan: true,
-          refresh_full_evidence: true,
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail?.error || data?.error || `Refresh failed with ${response.status}`);
+      if (!response.ok) throw new Error(data?.detail?.error || data?.error || `Refresh Full Evidence failed with ${response.status}`);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh Full Evidence failed");
@@ -156,60 +112,51 @@ export default function RefreshFullEvidencePage() {
     }
   }
 
+  const guard = result?.report_quality_guards?.hosted_full_evidence_runtime;
+  const validation = result?.hosted_full_evidence_runtime_validation;
+  const records = validation?.tool_records || guard?.tool_records || [];
+  const bandit = result?.bandit_triage_summary || guard?.bandit_triage_summary;
+  const missing = validation?.missing_or_unavailable_tools || guard?.missing_or_unavailable_tools || guard?.missing_required_tools || [];
+
   return (
     <main className="shell">
       <section className="hero">
-        <p className="eyebrow">One-click evidence refresh</p>
-        <h1>Refresh Full Evidence</h1>
-        <p className="lead">Re-run the authorized Express assessment path with hosted scanner evidence, full-history secret scanning, static analysis, dependency proof, complexity evidence, report rebuilding, and final trust gates.</p>
+        <p className="eyebrow">NICO Refresh Full Evidence</p>
+        <h1>Run hosted scanner evidence collection</h1>
+        <p className="lead">This mode explicitly requests hosted scanner-worker execution, full-history secret scanning, current-run tool records, and strict human-review gating.</p>
       </section>
 
       <section className="section panel">
-        <div className="section-head"><div><p className="eyebrow">Authorized repository</p><h2>Run the full evidence path</h2></div><span className={API_URL ? "status green" : "status red"}>{API_URL ? "Backend configured" : "Backend missing"}</span></div>
-        <p className="warning-box">Only use this on repositories you own or are explicitly authorized to assess. Missing scanner output remains missing evidence; this button does not fake clean results.</p>
-        <div className="form-grid">
-          <label>Repository owner/name<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repo" /></label>
-          <label>Client name, optional<input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Client name" /></label>
-          <label>Project name, optional<input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project name" /></label>
-          <label>Authorized by<input value={authorizedBy} onChange={(event) => setAuthorizedBy(event.target.value)} placeholder="Name or role" /></label>
-        </div>
+        <div className="section-head"><div><p className="eyebrow">Authorized repository</p><h2>Refresh Full Evidence request</h2></div><span className="status yellow">Evidence-bound</span></div>
+        <p className="warning-box">Only run this on repositories you own or are explicitly authorized to assess. Missing, failed, or unavailable tools remain visible and do not count as clean evidence.</p>
+        <label className="wide-label">Repository owner/name or GitHub URL<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repo" /></label>
         <label className="check-row"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} />I confirm I own this target or have explicit permission to assess it.</label>
-        <button type="button" className="primary-button" disabled={!API_URL || !authorized || loading} onClick={refreshFullEvidence}>{loading ? "Refreshing full evidence..." : "Refresh Full Evidence"}</button>
+        <button type="button" className="primary-button" disabled={!API_URL || !authorized || loading} onClick={runRefreshFullEvidence}>{loading ? "Running Refresh Full Evidence..." : "Run Refresh Full Evidence"}</button>
         {error ? <p className="error-box">{error}</p> : null}
       </section>
 
       <section className="section panel">
-        <div className="section-head"><div><p className="eyebrow">Live validation</p><h2>{guard?.status ? `Runtime evidence: ${guard.status}` : "Awaiting runtime evidence"}</h2></div><span className={statusClass(guard?.status)}>{guard?.refresh_full_evidence_requested ? "refresh requested" : guard ? "refresh not requested" : "not run"}</span></div>
-        {guard?.error ? <p className="error-box">{guard.error}</p> : null}
-        <p className="muted">This panel shows whether the hosted backend actually attempted the scanner-worker evidence refresh. Yellow sections should only turn green after the worker returns current-run artifacts.</p>
-        <div className="two-col inset-grid">
-          <div className="mini-panel"><p className="eyebrow">Runtime guard</p><p>{guard?.guardrail || "No runtime guard returned yet."}</p></div>
-          <div className="mini-panel"><p className="eyebrow">Runtime missing tools</p><ListBlock items={guardMissing.length ? Array.from(new Set(guardMissing)) : unavailableTools.length ? unavailableTools : missingTools} /></div>
+        <div className="section-head"><div><p className="eyebrow">Runtime validation</p><h2>{validation?.status || guard?.status || "No refresh result yet"}</h2></div><span className={statusClass(validation?.status || guard?.status)}>{result?.status || "not run"}</span></div>
+        {result?.maturity_signal ? <p className="summary-box">{result.maturity_signal.level} · {result.maturity_signal.score}/100 · Human review required: {String(result.human_review_required)}</p> : null}
+        <div className="grid three inset-grid">
+          <article><b>Requested</b><span>{String(validation?.requested ?? guard?.refresh_full_evidence_requested ?? false)}</span></article>
+          <article><b>Missing / unavailable</b><span>{missing.length}</span></article>
+          <article><b>Bandit blockers</b><span>{bandit?.blocker_count ?? "unknown"}</span></article>
         </div>
-      </section>
-
-      <section className="section panel">
-        <div className="section-head"><div><p className="eyebrow">Refresh status</p><h2>{result?.maturity_signal?.level ? `${result.maturity_signal.level} · ${result.maturity_signal.score}/100` : "Awaiting refresh"}</h2></div><span className={statusClass(result?.status)}>{result?.status || "not run"}</span></div>
-        {result?.human_review_required ? <p className="warning-box">Human review is still required before client-facing delivery.</p> : null}
-        <div className="grid four target-grid">
-          {REQUIRED_SECTIONS.map(([id, label]) => {
-            const section = findSection(result, id);
-            const ready = sectionReady(result, id);
-            return <article key={id}><b>{label}</b><span className={ready ? "status green" : result ? "status yellow" : "status gray"}>{ready ? "verified" : result ? "needs evidence" : "pending"}</span><small>{section ? `${section.status} · ${section.score}/100` : "No section yet"}</small></article>;
-          })}
-        </div>
-        <div className="two-col inset-grid">
-          <div className="mini-panel"><p className="eyebrow">Completed scanner tools</p><ListBlock items={completedTools} /></div>
-          <div className="mini-panel"><p className="eyebrow">Still missing / unavailable</p><ListBlock items={unavailableTools.length ? unavailableTools : missingTools} /></div>
+        <div className="results-grid">
+          {records.map((record) => (
+            <article className="result-card" key={record.tool}>
+              <div className="result-head"><b>{record.tool}</b><span className={statusClass(record.status)}>{record.status}</span></div>
+              <p><b>Category:</b> {record.category || "unknown"}</p>
+              <p><b>Return code:</b> {record.returncode ?? "n/a"}</p>
+              <p><b>Findings:</b> {record.findings_count ?? 0}</p>
+              <p><b>Current run:</b> {String(record.current_run)}</p>
+              <p><b>Verified for this report:</b> {String(record.verified_for_this_report)}</p>
+              {record.reason ? <p><b>Reason:</b> {record.reason}</p> : null}
+            </article>
+          ))}
         </div>
         <div className="report-actions"><button type="button" disabled={!result?.reports?.pdf_base64} onClick={() => downloadPdf(result)}>Download refreshed PDF</button></div>
-      </section>
-
-      <section className="section panel">
-        <div className="section-head"><div><p className="eyebrow">Evidence details</p><h2>Current report sections</h2></div><span className="status blue">Evidence-bound</span></div>
-        <div className="results-grid">
-          {result?.sections?.map((section) => <article className="result-card" key={section.id}><div className="result-head"><b>{section.label}</b><span className={statusClass(section.status)}>{section.status} · {section.score}/100</span></div><p>{section.summary}</p><h3>Evidence</h3><ListBlock items={section.evidence} />{section.findings?.length ? <><h3>Findings</h3><ListBlock items={section.findings} /></> : null}{section.unavailable?.length ? <><h3>Unavailable</h3><ListBlock items={section.unavailable} /></> : null}</article>)}
-        </div>
       </section>
     </main>
   );
