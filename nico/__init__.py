@@ -9,6 +9,7 @@ from nico.report_pdf_display_patch import apply_pdf_display_patch
 from nico.hosted_report_regression_patch import install_hosted_report_regression_patch
 from nico.hosted_evidence_execution_patch import install_hosted_evidence_execution_patch
 from nico.hosted_scanner_runtime_diagnostics import install_hosted_scanner_runtime_diagnostics_route
+from nico.hosted_scanner_execution_path_patch import install_hosted_scanner_execution_path_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -19,5 +20,6 @@ apply_pdf_display_patch()
 install_hosted_report_regression_patch()
 install_hosted_evidence_execution_patch()
 install_hosted_scanner_runtime_diagnostics_route()
+install_hosted_scanner_execution_path_patch()
 
 __version__ = "0.1.0"
