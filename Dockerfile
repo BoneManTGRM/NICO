@@ -23,7 +23,7 @@ COPY requirements.txt ./
 RUN python -m pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --legacy-peer-deps --ignore-scripts; fi
+RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts; fi
 
 EXPOSE 8000
 
