@@ -161,6 +161,17 @@ def _summary_text(display: dict[str, Any]) -> str:
     )
 
 
+def _export_summary(display: dict[str, Any]) -> str:
+    lines = [
+        _summary_text(display),
+    ]
+    if display["why_not_higher"]:
+        lines.append("Why not higher: " + " ".join(display["why_not_higher"][:3]))
+    if display["path_to_verified"]:
+        lines.append("Path to verified: " + " ".join(display["path_to_verified"][:3]))
+    return "\n\n".join(lines)
+
+
 def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> None:
     sections = [
         section
@@ -191,6 +202,18 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
     result["sections"] = sections
 
 
+def _attach_export_summary(result: dict[str, Any], display: dict[str, Any]) -> None:
+    trust_text = _export_summary(display)
+    existing = str(result.get("executive_summary") or "").strip()
+    if existing.startswith("Trust Level:"):
+        remainder = existing.split("\n\n", 3)
+        existing = remainder[-1] if remainder else ""
+    if existing and existing != "No executive summary returned.":
+        result["executive_summary"] = trust_text + "\n\n" + existing
+    else:
+        result["executive_summary"] = trust_text
+
+
 def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
     """Attach plain-English trust status and next steps to report output."""
 
@@ -219,6 +242,7 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
         "client_delivery_status": display["client_delivery_status"],
     }
     _attach_display_section(result, display)
+    _attach_export_summary(result, display)
 
     quick_wins = list(result.get("quick_wins") or [])
     for item in display["path_to_verified"][:3]:
