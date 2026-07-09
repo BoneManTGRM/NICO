@@ -20,7 +20,9 @@ RUN apt-get update \
 RUN npm install -g eslint typescript
 
 COPY requirements.txt ./
-RUN python -m pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir pip-audit bandit semgrep coverage
 
 COPY . .
 RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts; fi
