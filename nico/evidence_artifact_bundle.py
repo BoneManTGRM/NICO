@@ -68,12 +68,16 @@ def _collect_ci_references(result: dict[str, Any]) -> list[str]:
 def _scanner_outputs(result: dict[str, Any]) -> dict[str, Any]:
     worker = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
     complexity = result.get("complexity_engine") if isinstance(result.get("complexity_engine"), dict) else {}
+    complexity_summary = result.get("complexity_engine_summary") if isinstance(result.get("complexity_engine_summary"), dict) else {}
     bandit = result.get("bandit_triage") if isinstance(result.get("bandit_triage"), dict) else {}
+    bandit_summary = result.get("bandit_triage_summary") if isinstance(result.get("bandit_triage_summary"), dict) else {}
     history = result.get("secret_history_scan") if isinstance(result.get("secret_history_scan"), dict) else {}
     return {
         "scanner_worker_artifact": _safe_copy(worker),
         "complexity_engine": _safe_copy(complexity),
+        "complexity_engine_summary": _safe_copy(complexity_summary),
         "bandit_triage": _safe_copy(bandit),
+        "bandit_triage_summary": _safe_copy(bandit_summary),
         "secret_history_scan": _safe_copy(history),
     }
 
@@ -113,6 +117,111 @@ def _raw_evidence_json(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _verification_state(evidence_count: int, finding_count: int, unavailable_count: int) -> str:
+    if unavailable_count and not evidence_count:
+        return "unavailable"
+    if finding_count:
+        return "findings_present"
+    if unavailable_count and evidence_count:
+        return "partial"
+    if evidence_count:
+        return "verified"
+    return "not_attached"
+
+
+def _section_ledger_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for section in result.get("sections", []) or []:
+        if not isinstance(section, dict):
+            continue
+        evidence = section.get("evidence") if isinstance(section.get("evidence"), list) else []
+        findings = section.get("findings") if isinstance(section.get("findings"), list) else []
+        unavailable = section.get("unavailable") if isinstance(section.get("unavailable"), list) else []
+        row = {
+            "entry_type": "section",
+            "scope": section.get("label") or section.get("id") or "section",
+            "section_id": section.get("id"),
+            "score": section.get("score"),
+            "status": section.get("status"),
+            "evidence_count": len(evidence),
+            "finding_count": len(findings),
+            "unavailable_count": len(unavailable),
+            "verification_state": _verification_state(len(evidence), len(findings), len(unavailable)),
+            "evidence_hash": _sha256_bytes(_json_bytes(evidence)),
+            "findings_hash": _sha256_bytes(_json_bytes(findings)),
+            "unavailable_hash": _sha256_bytes(_json_bytes(unavailable)),
+        }
+        row["entry_hash"] = _sha256_bytes(_json_bytes(row))
+        rows.append(row)
+    return rows
+
+
+def _tool_ledger_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    worker = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
+    tools = worker.get("tools") if isinstance(worker.get("tools"), dict) else {}
+    for name, payload in sorted(tools.items()):
+        tool_payload = payload if isinstance(payload, dict) else {"raw": payload}
+        finding_count = int(tool_payload.get("finding_count") or tool_payload.get("findings_count") or 0)
+        status = str(tool_payload.get("status") or ("completed" if tool_payload.get("completed") else "unavailable"))
+        current_run = bool(tool_payload.get("current_run") or tool_payload.get("verified_for_this_report"))
+        verified = bool(tool_payload.get("verified_for_this_report") or tool_payload.get("completed") or status in {"completed", "success", "ok", "passed"})
+        row = {
+            "entry_type": "scanner_tool",
+            "scope": str(name),
+            "status": status,
+            "current_run": current_run,
+            "verified_for_this_report": verified,
+            "finding_count": finding_count,
+            "verification_state": "findings_present" if finding_count else ("verified" if verified else "unavailable"),
+            "payload_hash": _sha256_bytes(_json_bytes(tool_payload)),
+        }
+        row["entry_hash"] = _sha256_bytes(_json_bytes(row))
+        rows.append(row)
+
+    for key in ("complexity_engine_summary", "bandit_triage_summary", "secret_history_scan"):
+        payload = result.get(key) if isinstance(result.get(key), dict) else {}
+        if not payload:
+            continue
+        verified = bool(payload.get("verified_for_this_report") or payload.get("full_history_verified") or payload.get("history_aware") or payload.get("status") == "completed")
+        row = {
+            "entry_type": "artifact_summary",
+            "scope": key,
+            "status": payload.get("status") or "attached",
+            "current_run": bool(payload.get("current_run") or verified),
+            "verified_for_this_report": verified,
+            "finding_count": int(payload.get("finding_count") or payload.get("findings_count") or payload.get("total_findings") or 0),
+            "verification_state": "verified" if verified else "partial",
+            "payload_hash": _sha256_bytes(_json_bytes(payload)),
+        }
+        row["entry_hash"] = _sha256_bytes(_json_bytes(row))
+        rows.append(row)
+    return rows
+
+
+def build_hardened_evidence_ledger(result: dict[str, Any]) -> dict[str, Any]:
+    entries = _section_ledger_entries(result) + _tool_ledger_entries(result)
+    unavailable_entries = [item for item in entries if item.get("verification_state") == "unavailable"]
+    partial_entries = [item for item in entries if item.get("verification_state") == "partial"]
+    finding_entries = [item for item in entries if item.get("verification_state") == "findings_present"]
+    verified_entries = [item for item in entries if item.get("verification_state") == "verified"]
+    ledger = {
+        "artifact_schema": "nico.evidence_ledger.v1",
+        "repository": result.get("repository"),
+        "generated_at": result.get("generated_at"),
+        "entry_count": len(entries),
+        "verified_entry_count": len(verified_entries),
+        "partial_entry_count": len(partial_entries),
+        "unavailable_entry_count": len(unavailable_entries),
+        "finding_entry_count": len(finding_entries),
+        "human_review_required": bool(result.get("human_review_required", True) or unavailable_entries or partial_entries or finding_entries),
+        "entries": entries,
+        "guardrail": "Evidence rows are hash-addressed and classified as verified, partial, unavailable, findings_present, or not_attached. Missing evidence remains explicit and does not become clean proof.",
+    }
+    ledger["ledger_hash"] = _sha256_bytes(_json_bytes({**ledger, "ledger_hash": ""}))
+    return ledger
+
+
 def build_evidence_artifact_bundle(result: dict[str, Any]) -> dict[str, Any]:
     """Build a defensible artifact manifest for a hosted NICO assessment.
 
@@ -123,6 +232,10 @@ def build_evidence_artifact_bundle(result: dict[str, Any]) -> dict[str, Any]:
     reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
     raw_evidence = _raw_evidence_json(result)
     raw_evidence_sha = _sha256_bytes(_json_bytes(raw_evidence))
+    scanner_outputs = _scanner_outputs(result)
+    unavailable_inventory = _collect_unavailable(result)
+    evidence_ledger = build_hardened_evidence_ledger(result)
+    report_digests = _report_digests(reports)
     bundle = {
         "artifact_schema": "nico.evidence_bundle.v1",
         "created_at": _now_iso(),
@@ -130,17 +243,19 @@ def build_evidence_artifact_bundle(result: dict[str, Any]) -> dict[str, Any]:
         "generated_at": result.get("generated_at"),
         "human_review_required": bool(result.get("human_review_required", True)),
         "artifacts": {
-            "markdown": {"filename": "report.md", **_report_digests(reports)["markdown"]},
-            "html": {"filename": "report.html", **_report_digests(reports)["html"]},
-            "pdf": {"filename": reports.get("pdf_filename") or "report.pdf", **_report_digests(reports)["pdf"]},
+            "markdown": {"filename": "report.md", **report_digests["markdown"]},
+            "html": {"filename": "report.html", **report_digests["html"]},
+            "pdf": {"filename": reports.get("pdf_filename") or "report.pdf", **report_digests["pdf"]},
             "raw_evidence_json": {"filename": "raw-evidence.json", "available": True, "sha256": raw_evidence_sha},
-            "scanner_outputs_json": {"filename": "scanner-outputs.json", "available": bool(_scanner_outputs(result)), "sha256": _sha256_bytes(_json_bytes(_scanner_outputs(result)))},
-            "unavailable_inventory_json": {"filename": "unavailable-inventory.json", "available": True, "sha256": _sha256_bytes(_json_bytes(_collect_unavailable(result)))},
+            "scanner_outputs_json": {"filename": "scanner-outputs.json", "available": bool(scanner_outputs), "sha256": _sha256_bytes(_json_bytes(scanner_outputs))},
+            "unavailable_inventory_json": {"filename": "unavailable-inventory.json", "available": True, "sha256": _sha256_bytes(_json_bytes(unavailable_inventory))},
+            "evidence_ledger_json": {"filename": "evidence-ledger.json", "available": True, "sha256": _sha256_bytes(_json_bytes(evidence_ledger))},
         },
         "raw_evidence_json": raw_evidence,
-        "scanner_outputs": _scanner_outputs(result),
+        "scanner_outputs": scanner_outputs,
         "ci_references": _collect_ci_references(result),
-        "unavailable_inventory": _collect_unavailable(result),
+        "unavailable_inventory": unavailable_inventory,
+        "evidence_ledger": evidence_ledger,
         "hash_algorithm": "sha256",
         "bundle_hash": "",
     }
@@ -154,7 +269,10 @@ def attach_evidence_artifact_bundle(result: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
     bundle = build_evidence_artifact_bundle(output)
     output["evidence_artifact_bundle"] = bundle
+    output["evidence_ledger"] = bundle["evidence_ledger"]
     reports = output.setdefault("reports", {})
     reports["evidence_bundle_json"] = json.dumps(bundle, indent=2, sort_keys=True, default=str)
     reports["evidence_bundle_filename"] = f"nico-evidence-bundle-{str(output.get('repository') or 'assessment').replace('/', '-')}.json"
+    reports["evidence_ledger_json"] = json.dumps(bundle["evidence_ledger"], indent=2, sort_keys=True, default=str)
+    reports["evidence_ledger_filename"] = f"nico-evidence-ledger-{str(output.get('repository') or 'assessment').replace('/', '-')}.json"
     return output
