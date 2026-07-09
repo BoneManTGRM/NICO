@@ -30,24 +30,23 @@ def test_static_unavailable_records_are_current_run():
     assert result["failure_or_unavailable_reason"] == "semgrep missing"
 
 
-def test_bandit_command_falls_back_to_python_module_when_binary_missing(monkeypatch, tmp_path):
+def test_bandit_missing_binary_is_explicit(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     (ws.repo_dir / "app.py").write_text("print('ok')\n", encoding="utf-8")
-    monkeypatch.setattr("nico.hosted_static_scanner_execution_patch.shutil.which", lambda name: None)
+    monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda name: None)
 
     command, cwd, reason, source = _bandit_command(ws)
 
-    assert command is not None
-    assert command[:3] == (__import__("sys").executable, "-m", "bandit")
+    assert command is None
     assert cwd == ws.repo_dir
-    assert reason is None
-    assert source == "python_module_bandit"
+    assert "bandit is not installed" in reason
+    assert source == "bandit_cli"
 
 
 def test_semgrep_missing_binary_is_explicit(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     (ws.repo_dir / "app.py").write_text("print('ok')\n", encoding="utf-8")
-    monkeypatch.setattr("nico.hosted_static_scanner_execution_patch.shutil.which", lambda name: None)
+    monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda name: None)
 
     command, cwd, reason, source = _semgrep_command(ws)
 
@@ -72,6 +71,21 @@ def test_eslint_requires_project_commands(monkeypatch, tmp_path):
     assert source == "eslint_project_commands_disabled"
 
 
+def test_eslint_lint_script_uses_existing_contract(monkeypatch, tmp_path):
+    ws = workspace(tmp_path)
+    web = ws.repo_dir / "apps" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text('{"scripts":{"lint":"next lint"}}', encoding="utf-8")
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
+
+    command, cwd, reason, source = _eslint_command(ws)
+
+    assert command == ("npm", "run", "lint")
+    assert cwd == web
+    assert reason is None
+    assert source == "eslint_npm_script"
+
+
 def test_typescript_prefers_typecheck_script_when_project_commands_allowed(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     web = ws.repo_dir / "apps" / "web"
@@ -91,7 +105,7 @@ def test_typescript_prefers_typecheck_script_when_project_commands_allowed(monke
 def test_patched_bandit_completed_payload(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     (ws.repo_dir / "app.py").write_text("print('ok')\n", encoding="utf-8")
-    monkeypatch.setattr("nico.hosted_static_scanner_execution_patch.shutil.which", lambda name: "/usr/bin/bandit" if name == "bandit" else None)
+    monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda name: "/usr/bin/bandit" if name == "bandit" else None)
     install_hosted_static_scanner_execution_patch()
 
     def fake_runner(command, *, cwd, limits):
