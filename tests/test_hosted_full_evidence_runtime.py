@@ -102,6 +102,21 @@ def test_runtime_refresh_is_not_triggered_for_standard_express_reports(monkeypat
 
     assert calls == []
     assert "scanner_worker_artifact" not in result
+    assert result["report_quality_guards"]["hosted_full_evidence_runtime"]["status"] == "skipped_no_explicit_refresh_request"
+
+
+def test_runtime_refresh_exposes_worker_exception_without_score_faking(monkeypatch):
+    def fail(_payload):
+        raise RuntimeError("worker unavailable")
+
+    monkeypatch.setattr("nico.hosted_full_evidence_runtime_v2.run_hosted_scanner_worker", fail)
+
+    result = ensure_hosted_runtime_evidence(_yellow_result())
+
+    guard = result["report_quality_guards"]["hosted_full_evidence_runtime"]
+    assert guard["status"] == "failed_exception"
+    assert "worker unavailable" in guard["error"]
+    assert "scanner_worker_artifact" not in result
 
 
 def test_final_gate_can_turn_yellow_sections_green_from_runtime_evidence(monkeypatch):
