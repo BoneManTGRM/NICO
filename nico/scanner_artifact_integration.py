@@ -100,6 +100,100 @@ def _current_run_summary(normalized: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _report_run_id(result: dict[str, Any]) -> str:
+    existing = result.get("report_run_id") or result.get("run_id") or result.get("assessment_id")
+    if existing:
+        return str(existing)
+    basis = {
+        "repository": result.get("repository") or result.get("repo"),
+        "generated_at": result.get("generated_at"),
+        "project": result.get("project_name"),
+    }
+    return "run_" + _hash_payload(basis)[:16]
+
+
+def _commit_sha(result: dict[str, Any], artifact: dict[str, Any]) -> str:
+    checkout = artifact.get("checkout") if isinstance(artifact.get("checkout"), dict) else {}
+    return str(
+        result.get("commit_sha")
+        or result.get("head_sha")
+        or result.get("deploy_commit")
+        or checkout.get("commit_sha")
+        or "unknown"
+    )
+
+
+def _tool_evidence_status(payload: dict[str, Any]) -> str:
+    status = str(payload.get("status") or "not_verified")
+    if status == "completed":
+        findings = payload.get("findings") if isinstance(payload.get("findings"), list) else []
+        return "completed_with_findings" if findings else "completed_clean"
+    if status == "timeout":
+        return "timeout"
+    if status == "unavailable":
+        return "unavailable"
+    return "failed"
+
+
+def _bind_tool_payload(
+    *,
+    result: dict[str, Any],
+    artifact: dict[str, Any],
+    report_run_id: str,
+    repository: str,
+    commit_sha: str,
+    tool_name: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    bound = dict(payload)
+    bound.setdefault("tool", tool_name)
+    findings = bound.get("findings") if isinstance(bound.get("findings"), list) else []
+    evidence_status = _tool_evidence_status(bound)
+    bound["evidence_status"] = evidence_status
+    bound["findings_count"] = len(findings)
+    bound["report_run_id"] = report_run_id
+    bound["repository"] = repository
+    bound["commit_sha"] = commit_sha
+    bound["run_timestamp"] = str(artifact.get("generated_at") or result.get("generated_at") or "")
+    bound["command_used"] = bound.get("command_used") or bound.get("command_intent")
+    bound["verified_for_this_report"] = evidence_status in {"completed_clean", "completed_with_findings"}
+    bound["artifact_hash"] = _hash_payload(bound)
+    return bound
+
+
+def _bind_scanner_artifacts(result: dict[str, Any], artifact: dict[str, Any]) -> dict[str, Any]:
+    report_run_id = _report_run_id(result)
+    result["report_run_id"] = report_run_id
+    repository = str(result.get("repository") or artifact.get("repository") or "")
+    commit_sha = _commit_sha(result, artifact)
+    tools = artifact.get("tools") if isinstance(artifact.get("tools"), dict) else {}
+    bound_tools = {
+        str(tool_name): _bind_tool_payload(
+            result=result,
+            artifact=artifact,
+            report_run_id=report_run_id,
+            repository=repository,
+            commit_sha=commit_sha,
+            tool_name=str(tool_name),
+            payload=payload,
+        )
+        for tool_name, payload in tools.items()
+        if isinstance(payload, dict)
+    }
+    bundle = {
+        "artifact_schema": "nico.scanner_artifact_bundle.v1",
+        "status": "attached" if bound_tools else "missing",
+        "report_run_id": report_run_id,
+        "repository": repository,
+        "commit_sha": commit_sha,
+        "generated_at": str(artifact.get("generated_at") or result.get("generated_at") or ""),
+        "tool_count": len(bound_tools),
+        "tools": bound_tools,
+    }
+    bundle["artifact_hash"] = _hash_payload(bundle)
+    return bundle
+
+
 def attach_scanner_artifacts_to_report(result: dict[str, Any]) -> dict[str, Any]:
     """Attach current-run scanner artifact proof to report sections.
 
@@ -125,7 +219,9 @@ def attach_scanner_artifacts_to_report(result: dict[str, Any]) -> dict[str, Any]
     artifact["normalized"] = normalized
     artifact["artifact_hash"] = _hash_payload(artifact)
     artifact["verified_for_report_run"] = True
+    scanner_bundle = _bind_scanner_artifacts(result, artifact)
     result["scanner_worker_artifact"] = artifact
+    result["scanner_artifacts"] = scanner_bundle
     result["scanner_artifact_summary"] = _current_run_summary(normalized)
 
     notes = scanner_worker_evidence_notes(artifact)
@@ -135,8 +231,11 @@ def attach_scanner_artifacts_to_report(result: dict[str, Any]) -> dict[str, Any]
         "status": "attached",
         "artifact_attached": True,
         "artifact_hash": artifact["artifact_hash"],
+        "artifact_bundle_hash": scanner_bundle["artifact_hash"],
+        "report_run_id": scanner_bundle["report_run_id"],
+        "commit_sha": scanner_bundle["commit_sha"],
         "completed_tools": result["scanner_artifact_summary"]["completed_tools"],
         "unavailable_tools": result["scanner_artifact_summary"]["unavailable_tools"],
-        "guardrail": "Completed scanner tools are current-run proof; unavailable tools remain explicit missing evidence.",
+        "guardrail": "Completed scanner tools are exact report-run proof; unavailable tools remain explicit missing evidence.",
     }
     return result

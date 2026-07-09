@@ -31,6 +31,9 @@ REQUIRED_BY_SECTION = {
 }
 
 
+COMPLETED_STATUSES = {"completed", "completed_clean", "completed_with_findings", "success", "ok", "passed"}
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -93,6 +96,10 @@ def _findings_count(text: str) -> int | None:
     return None
 
 
+def _is_verified_status(status: str) -> bool:
+    return str(status or "").lower() in COMPLETED_STATUSES
+
+
 def _entry_from_line(
     *,
     report_run_id: str,
@@ -124,7 +131,7 @@ def _entry_from_line(
         "content_hash": _hash_payload({"section": linked_section, "source": source, "text": text}),
         "findings_count": _findings_count(text),
         "linked_section": linked_section,
-        "verified_for_this_report": status == "completed",
+        "verified_for_this_report": _is_verified_status(status),
         "evidence_excerpt": text[:280],
     }
 
@@ -157,19 +164,20 @@ def _section_entries(result: dict[str, Any], report_run_id: str) -> list[dict[st
 
 
 def _scanner_artifact_entries(result: dict[str, Any], report_run_id: str) -> list[dict[str, Any]]:
-    generated_at = str(result.get("generated_at") or _now_iso())
-    repository = str(result.get("repository") or result.get("repo") or "")
-    commit_sha = str(result.get("commit_sha") or result.get("head_sha") or result.get("deploy_commit") or "unknown")
-    scanner = result.get("scanner_worker_artifact") or result.get("scanner_artifacts") or result.get("scanner_worker")
+    scanner = result.get("scanner_artifacts") or result.get("scanner_worker_artifact") or result.get("scanner_worker")
     if not isinstance(scanner, dict):
         return []
+    generated_at = str(scanner.get("generated_at") or result.get("generated_at") or _now_iso())
+    repository = str(scanner.get("repository") or result.get("repository") or result.get("repo") or "")
+    commit_sha = str(scanner.get("commit_sha") or result.get("commit_sha") or result.get("head_sha") or result.get("deploy_commit") or "unknown")
+    scanner_report_run_id = str(scanner.get("report_run_id") or report_run_id)
     tools = scanner.get("tools") if isinstance(scanner.get("tools"), dict) else {}
     entries: list[dict[str, Any]] = []
     for tool_name, payload in tools.items():
         if not isinstance(payload, dict):
             continue
         tool = str(payload.get("tool") or tool_name)
-        status = str(payload.get("status") or "not_verified")
+        status = str(payload.get("evidence_status") or payload.get("status") or "not_verified")
         category = str(payload.get("category") or "")
         linked_section = TOOL_SECTION_MAP.get(tool.lower()) or {
             "dependency": "dependency_health",
@@ -178,22 +186,28 @@ def _scanner_artifact_entries(result: dict[str, Any], report_run_id: str) -> lis
             "coverage": "coverage",
         }.get(category, "unknown_section")
         findings = payload.get("findings") if isinstance(payload.get("findings"), list) else []
+        findings_count = payload.get("findings_count")
+        if not isinstance(findings_count, int):
+            findings_count = len(findings)
+        verified = payload.get("verified_for_this_report")
+        if not isinstance(verified, bool):
+            verified = _is_verified_status(status)
         entries.append(
             {
-                "artifact_id": f"{report_run_id}:{linked_section}:{tool}:scanner_worker:{_hash_payload(payload)[:12]}",
+                "artifact_id": f"{scanner_report_run_id}:{linked_section}:{tool}:scanner_worker:{_hash_payload(payload)[:12]}",
                 "tool_name": tool,
                 "source": "scanner_worker_artifact",
-                "repository": repository,
-                "commit_sha": commit_sha,
-                "run_timestamp": generated_at,
-                "command_used": payload.get("command_intent") or payload.get("command_used"),
+                "repository": str(payload.get("repository") or repository),
+                "commit_sha": str(payload.get("commit_sha") or commit_sha),
+                "run_timestamp": str(payload.get("run_timestamp") or generated_at),
+                "command_used": payload.get("command_used") or payload.get("command_intent"),
                 "exit_code": payload.get("returncode"),
                 "status": status,
-                "content_hash": _hash_payload(payload),
-                "findings_count": len(findings),
+                "content_hash": payload.get("artifact_hash") or _hash_payload(payload),
+                "findings_count": findings_count,
                 "linked_section": linked_section,
-                "verified_for_this_report": status == "completed",
-                "evidence_excerpt": f"{tool} scanner-worker artifact status={status}, findings={len(findings)}",
+                "verified_for_this_report": verified,
+                "evidence_excerpt": f"{tool} scanner-worker artifact status={status}, findings={findings_count}, report_run_id={scanner_report_run_id}",
             }
         )
     return entries
