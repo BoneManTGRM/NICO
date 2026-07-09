@@ -96,7 +96,8 @@ def _patch_hosted_scanner_worker_complexity_summary() -> None:
         hosted_scanner_worker._nico_original_run_hosted_scanner_worker_complexity_attachment = original
 
     def run_hosted_scanner_worker_with_complexity_summary(payload: dict[str, Any]) -> dict[str, Any]:
-        artifact = original(payload)
+        original_func = hosted_scanner_worker._nico_original_run_hosted_scanner_worker_complexity_attachment
+        artifact = original_func(payload)
         return _attach_complexity_summary_to_artifact(artifact) if isinstance(artifact, dict) else artifact
 
     hosted_scanner_worker.run_hosted_scanner_worker = run_hosted_scanner_worker_with_complexity_summary
@@ -111,7 +112,8 @@ def _patch_scanner_artifact_attachment_complexity_summary() -> None:
         hosted_scanner_artifacts._nico_original_attach_scanner_worker_artifacts_complexity_attachment = original
 
     def attach_scanner_worker_artifacts_with_complexity_summary(result: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-        output = original(result, payload)
+        original_func = hosted_scanner_artifacts._nico_original_attach_scanner_worker_artifacts_complexity_attachment
+        output = original_func(result, payload)
         if not isinstance(output, dict):
             return output
         artifact = payload.get("scanner_worker_artifact") or payload.get("scanner_artifact") or payload.get("worker_artifact") or payload.get("scanner_worker")
