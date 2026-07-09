@@ -59,10 +59,11 @@ def test_client_acceptance_gate_ready_with_bundle_and_pending_signoffs():
     result = attach_client_acceptance_gate(_assessment("run_gate_ready"))
     gate = result["client_acceptance"]
 
-    assert gate["status"] == "ready_for_human_signoff"
+    assert gate["status"] == "ready_for_human_signoff_with_disclosures"
     assert gate["client_delivery_allowed"] is False
     assert gate["evidence_bundle_hash"]
     assert len(gate["required_signoffs"]) == 2
+    assert gate["disclosures"]["unavailable_count"] > 0
 
 
 def test_client_acceptance_request_and_transition_allows_delivery_after_approval():
