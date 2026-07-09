@@ -5,11 +5,13 @@ from nico.hosted_dependency_normalization import patch_hosted_assessment_depende
 from nico.hosted_truth_delivery_gate import patch_client_acceptance_gate_for_report_truth
 from nico.report_final_qa import patch_polish_express_result_for_final_qa
 from nico.report_truth_runtime_patch import patch_final_report_consistency
+from nico.report_pdf_display_patch import apply_pdf_display_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
 patch_polish_express_result_for_final_qa()
 patch_final_report_consistency()
 patch_client_acceptance_gate_for_report_truth()
+apply_pdf_display_patch()
 
 __version__ = "0.1.0"
