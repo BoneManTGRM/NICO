@@ -13,6 +13,7 @@ from nico.hosted_scanner_execution_path_patch import install_hosted_scanner_exec
 from nico.hosted_dependency_scanner_execution_patch import install_hosted_dependency_scanner_execution_patch
 from nico.hosted_secret_scanner_execution_patch import install_hosted_secret_scanner_execution_patch
 from nico.hosted_static_scanner_execution_patch import install_hosted_static_scanner_execution_patch
+from nico.hosted_bandit_triage_workflow_patch import install_bandit_triage_workflow_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -27,5 +28,6 @@ install_hosted_scanner_execution_path_patch()
 install_hosted_dependency_scanner_execution_patch()
 install_hosted_secret_scanner_execution_patch()
 install_hosted_static_scanner_execution_patch()
+install_bandit_triage_workflow_patch()
 
 __version__ = "0.1.0"
