@@ -1,4 +1,4 @@
-from nico.hosted_full_evidence_runtime import ensure_hosted_runtime_evidence
+from nico.hosted_full_evidence_runtime_v2 import ensure_hosted_runtime_evidence
 from nico.hosted_truth_delivery_gate import apply_final_hosted_truth_gate
 
 
@@ -56,10 +56,12 @@ def _artifact():
     }
 
 
-def _yellow_result():
+def _yellow_result(*, refresh=True):
     return {
         "status": "complete",
         "repository": "BoneManTGRM/NICO",
+        "authorized_by": "frontend-refresh-full-evidence" if refresh else "standard-express",
+        "refresh_full_evidence_requested": refresh,
         "generated_at": "2026-07-09T13:19:59Z",
         "maturity_signal": {"level": "Senior", "score": 82},
         "maturity_semaphore": {},
@@ -83,7 +85,7 @@ def _yellow_result():
 
 
 def test_runtime_refresh_attaches_raw_scanner_artifact(monkeypatch):
-    monkeypatch.setattr("nico.hosted_full_evidence_runtime.run_hosted_scanner_worker", lambda payload: _artifact())
+    monkeypatch.setattr("nico.hosted_full_evidence_runtime_v2.run_hosted_scanner_worker", lambda payload: _artifact())
 
     result = ensure_hosted_runtime_evidence(_yellow_result())
 
@@ -92,8 +94,18 @@ def test_runtime_refresh_attaches_raw_scanner_artifact(monkeypatch):
     assert result["report_quality_guards"]["hosted_full_evidence_runtime"]["missing_dependency_tools"] == []
 
 
+def test_runtime_refresh_is_not_triggered_for_standard_express_reports(monkeypatch):
+    calls = []
+    monkeypatch.setattr("nico.hosted_full_evidence_runtime_v2.run_hosted_scanner_worker", lambda payload: calls.append(payload) or _artifact())
+
+    result = ensure_hosted_runtime_evidence(_yellow_result(refresh=False))
+
+    assert calls == []
+    assert "scanner_worker_artifact" not in result
+
+
 def test_final_gate_can_turn_yellow_sections_green_from_runtime_evidence(monkeypatch):
-    monkeypatch.setattr("nico.hosted_full_evidence_runtime.run_hosted_scanner_worker", lambda payload: _artifact())
+    monkeypatch.setattr("nico.hosted_full_evidence_runtime_v2.run_hosted_scanner_worker", lambda payload: _artifact())
 
     result = apply_final_hosted_truth_gate(_yellow_result())
     sections = {section["id"]: section for section in result["sections"] if isinstance(section, dict) and section.get("id")}
