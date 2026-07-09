@@ -114,6 +114,17 @@ The hosted app is optional. The no-server assessment engine works locally first.
 
 See `docs/SAFARI_HOSTED_APP.md` for the full hosted setup.
 
+## Hosted Readiness Diagnostics
+
+Hosted readiness support is available for operators who need current-run evidence visibility before client review.
+
+- `/diagnostics` - read-only diagnostics hub.
+- `/scanner-runtime` - deployed scanner runtime tool availability.
+- `/release-readiness` - release-readiness support and output-contract verification.
+- `docs/hosted-readiness-runbook.md` - operator runbook for Refresh Full Evidence review, readiness blockers, evidence hashes, and human signoff checks.
+
+Diagnostics do not approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
+
 ## CLI Commands
 
 ```bash
