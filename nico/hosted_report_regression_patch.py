@@ -22,19 +22,14 @@ def _marker_requests_refresh(payload: dict[str, Any]) -> bool:
     if payload.get("refresh_full_evidence_requested") is True:
         return True
     marker = str(payload.get("authorized_by") or "").lower()
-    if "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker:
-        return True
-    # The hosted Express button is a read-only authorized assessment request. In
-    # hosted mode it should attempt evidence collection rather than silently
-    # returning manifest-only yellow sections.
-    return bool(payload.get("authorized")) and marker in {"", "unspecified", "frontend", "user"}
+    return "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker
 
 
 def _prepare_refresh_payload(payload: dict[str, Any]) -> dict[str, Any]:
     prepared = dict(payload or {})
     if _marker_requests_refresh(prepared):
         prepared["refresh_full_evidence_requested"] = True
-        if str(prepared.get("authorized_by") or "").lower() in {"", "unspecified", "frontend", "user"}:
+        if not str(prepared.get("authorized_by") or "").strip():
             prepared["authorized_by"] = "frontend-refresh-full-evidence"
         prepared.setdefault("run_scanner_worker", True)
         prepared.setdefault("scanner_worker_autorun", True)
@@ -114,7 +109,7 @@ def _runtime_validation_from_result(result: dict[str, Any]) -> dict[str, Any]:
     records = _tool_records(artifact)
     missing = [item["tool"] for item in records if item["status"] in {"missing", "unavailable", "failed", "timeout"}]
     findings = [item["tool"] for item in records if int(item.get("findings_count") or 0) > 0]
-    validation = {
+    return {
         "status": str(guard.get("status") or "unknown"),
         "requested": bool(guard.get("refresh_full_evidence_requested") or result.get("refresh_full_evidence_requested")),
         "repository": result.get("repository"),
@@ -126,10 +121,19 @@ def _runtime_validation_from_result(result: dict[str, Any]) -> dict[str, Any]:
         "normalized": normalized or {},
         "unavailable_data_notes": list((artifact or {}).get("unavailable_data_notes") or []),
     }
-    return validation
 
 
-def _append_runtime_notes_to_sections(result: dict[str, Any]) -> None:
+def _should_attach_runtime_validation(result: dict[str, Any]) -> bool:
+    if result.get("refresh_full_evidence_requested") is True:
+        return True
+    if isinstance(result.get("scanner_worker_artifact"), dict):
+        return True
+    guards = result.get("report_quality_guards") if isinstance(result.get("report_quality_guards"), dict) else {}
+    guard = guards.get("hosted_full_evidence_runtime") if isinstance(guards.get("hosted_full_evidence_runtime"), dict) else {}
+    return bool(guard.get("refresh_full_evidence_requested"))
+
+
+def _append_runtime_validation(result: dict[str, Any]) -> None:
     validation = _runtime_validation_from_result(result)
     result["hosted_full_evidence_runtime_validation"] = validation
     guards = result.setdefault("report_quality_guards", {})
@@ -139,30 +143,6 @@ def _append_runtime_notes_to_sections(result: dict[str, Any]) -> None:
         guard["missing_or_unavailable_tools"] = validation["missing_or_unavailable_tools"]
         guard["tools_with_findings"] = validation["tools_with_findings"]
         guard["unavailable_data_notes"] = validation["unavailable_data_notes"]
-
-    sections = {section.get("id"): section for section in result.get("sections", []) or [] if isinstance(section, dict)}
-    grouped: dict[str, list[dict[str, Any]]] = {"dependency": [], "static": [], "secret": []}
-    for record in validation["tool_records"]:
-        category = record.get("category")
-        if category in grouped:
-            grouped[category].append(record)
-    category_to_section = {"dependency": "dependency_health", "static": "static_analysis", "secret": "secrets_review"}
-    for category, records in grouped.items():
-        section = sections.get(category_to_section[category])
-        if not section:
-            continue
-        section.setdefault("evidence", [])
-        section.setdefault("unavailable", [])
-        status_line = ", ".join(f"{item['tool']}={item['status']}" for item in records)
-        if status_line:
-            section["evidence"] = _unique(list(section.get("evidence", []) or []) + [f"Refresh Full Evidence current-run {category} tool status: {status_line}."])
-        unavailable_lines = []
-        for item in records:
-            if item["status"] in {"missing", "unavailable", "failed", "timeout"}:
-                reason = item.get("reason") or "no reason returned"
-                unavailable_lines.append(f"{item['tool']} current-run status={item['status']}; reason={reason}")
-        if unavailable_lines:
-            section["unavailable"] = _unique(list(section.get("unavailable", []) or []) + unavailable_lines)
 
 
 def _patch_hosted_refresh_contract() -> None:
@@ -179,9 +159,9 @@ def _patch_hosted_refresh_contract() -> None:
         if isinstance(result, dict) and result.get("status") == "complete":
             result["authorized_by"] = prepared.get("authorized_by") or "unspecified"
             result["refresh_full_evidence_requested"] = bool(prepared.get("refresh_full_evidence_requested"))
-            result["run_scanner_worker"] = bool(prepared.get("run_scanner_worker", True))
-            result["scanner_worker_autorun"] = bool(prepared.get("scanner_worker_autorun", True))
-            result["full_history_secret_scan"] = bool(prepared.get("full_history_secret_scan", True))
+            result["run_scanner_worker"] = bool(prepared.get("run_scanner_worker", False))
+            result["scanner_worker_autorun"] = bool(prepared.get("scanner_worker_autorun", False))
+            result["full_history_secret_scan"] = bool(prepared.get("full_history_secret_scan", False))
         return result
 
     hosted_assessment.run_github_assessment = run_github_assessment_with_refresh_contract
@@ -210,7 +190,7 @@ def _patch_ci_release_readiness_scoring() -> None:
         if workflows:
             evidence.append(f"GitHub Actions workflows found: {', '.join(workflows.keys())}.")
             score = 55
-            if any(term in combined for term in ["pytest", "npm run lint", "next build", "npm test", "ruff", "mypy", "eslint", "tsc --noemit", "tsc --noemit"]):
+            if any(term in combined for term in ["pytest", "npm run lint", "next build", "npm test", "ruff", "mypy", "eslint", "tsc --noemit", "tsc --noEmit"]):
                 score += 18
                 evidence.append("Workflow text includes test, lint, or build commands.")
             else:
@@ -278,8 +258,8 @@ def _patch_runtime_evidence_diagnostics() -> None:
 
     def ensure_hosted_runtime_evidence_with_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         updated = original(result)
-        if isinstance(updated, dict) and updated.get("status") == "complete":
-            _append_runtime_notes_to_sections(updated)
+        if isinstance(updated, dict) and updated.get("status") == "complete" and _should_attach_runtime_validation(updated):
+            _append_runtime_validation(updated)
         return updated
 
     hosted_full_evidence_runtime_v2.ensure_hosted_runtime_evidence = ensure_hosted_runtime_evidence_with_diagnostics
