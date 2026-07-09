@@ -118,8 +118,36 @@ def build_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _apply_final_hosted_truth_gate_before_acceptance(result: dict[str, Any]) -> dict[str, Any]:
+    """Force final truth/export gates onto the direct API return path.
+
+    The API imports attach_client_acceptance_gate directly, so monkey-patching the
+    client_acceptance module is not sufficient for the hosted endpoint. Running
+    the hosted truth gate here makes the client-acceptance step the final
+    last-mile lock before the result is stored and returned.
+    """
+
+    if result.get("status") != "complete":
+        return result
+    try:
+        from nico.hosted_truth_delivery_gate import apply_final_hosted_truth_gate
+
+        return apply_final_hosted_truth_gate(result)
+    except Exception as exc:  # pragma: no cover - defensive guard for report delivery
+        result.setdefault("report_quality_guards", {})["final_hosted_truth_gate"] = {
+            "status": "failed",
+            "error": str(exc),
+            "guardrail": "Final hosted truth gate failed before client acceptance; human review remains required.",
+        }
+        result["human_review_required"] = True
+        result["client_ready"] = False
+        return result
+
+
 def attach_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
     output = dict(result)
+    output["human_review_required"] = True
+    output = _apply_final_hosted_truth_gate_before_acceptance(output)
     output["client_acceptance"] = build_client_acceptance_gate(output)
     output["human_review_required"] = True
     return output
