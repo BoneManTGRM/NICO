@@ -39,12 +39,16 @@ def _remove_lines(section: dict[str, Any], fragments: tuple[str, ...]) -> None:
         section[key] = [item for item in values if not any(fragment in str(item).lower() for fragment in lowered)]
 
 
+def _artifact(result: dict[str, Any]) -> dict[str, Any]:
+    return result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
+
+
 def _tools(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     bundle = result.get("scanner_artifacts") if isinstance(result.get("scanner_artifacts"), dict) else {}
     tools = bundle.get("tools") if isinstance(bundle.get("tools"), dict) else {}
     if tools:
         return {str(name): payload for name, payload in tools.items() if isinstance(payload, dict)}
-    artifact = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
+    artifact = _artifact(result)
     raw = artifact.get("tools") if isinstance(artifact.get("tools"), dict) else {}
     return {str(name): payload for name, payload in raw.items() if isinstance(payload, dict)}
 
@@ -55,6 +59,9 @@ def _tool_status(tool: dict[str, Any]) -> str:
 
 def _finding_count(tool: dict[str, Any]) -> int:
     value = tool.get("findings_count")
+    if isinstance(value, int):
+        return value
+    value = tool.get("finding_count")
     if isinstance(value, int):
         return value
     findings = tool.get("findings")
@@ -85,11 +92,24 @@ def _all_verified(tools: dict[str, dict[str, Any]], required: tuple[str, ...]) -
     return True
 
 
+def _secret_history_payload(result: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(result.get("secret_history_scan"), dict):
+        return result["secret_history_scan"]
+    artifact = _artifact(result)
+    if isinstance(artifact.get("secret_history_scan"), dict):
+        return artifact["secret_history_scan"]
+    return {}
+
+
 def _secret_history_verified(result: dict[str, Any]) -> bool:
-    artifact = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
+    artifact = _artifact(result)
     checkout = artifact.get("checkout") if isinstance(artifact.get("checkout"), dict) else {}
-    history = artifact.get("secret_history_scan") if isinstance(artifact.get("secret_history_scan"), dict) else {}
+    history = _secret_history_payload(result)
     completed = set(str(item) for item in history.get("completed_tools", []) if item)
+    if history.get("full_history_verified") is True and all(tool in completed for tool in SECRET_TOOLS):
+        return True
+    if history.get("history_aware") is True and all(tool in completed for tool in SECRET_TOOLS):
+        return True
     return bool(
         checkout.get("full_history_secret_scan_requested")
         and checkout.get("history_depth") == "full"
@@ -99,10 +119,60 @@ def _secret_history_verified(result: dict[str, Any]) -> bool:
 
 def _complexity_profile(result: dict[str, Any]) -> dict[str, Any]:
     complexity_artifact = result.get("complexity_artifact") if isinstance(result.get("complexity_artifact"), dict) else {}
-    if not complexity_artifact or complexity_artifact.get("verified_for_this_report") is not True:
-        return {}
-    profile = complexity_artifact.get("profile")
-    return profile if isinstance(profile, dict) else {}
+    if complexity_artifact and complexity_artifact.get("verified_for_this_report") is True:
+        profile = complexity_artifact.get("profile")
+        if isinstance(profile, dict):
+            return profile
+    if isinstance(result.get("complexity_engine"), dict):
+        return result["complexity_engine"]
+    artifact = _artifact(result)
+    if isinstance(artifact.get("complexity_engine"), dict):
+        return artifact["complexity_engine"]
+    summary = result.get("complexity_engine_summary") if isinstance(result.get("complexity_engine_summary"), dict) else {}
+    if not summary and isinstance(artifact.get("complexity_engine_summary"), dict):
+        summary = artifact["complexity_engine_summary"]
+    if summary.get("verified_for_this_report") is True or summary.get("status") == "completed":
+        return {
+            "source_file_count": summary.get("source_file_count"),
+            "analyzed_file_count": summary.get("source_file_count"),
+            "total_loc": summary.get("total_loc"),
+            "total_functions": summary.get("total_functions"),
+            "call_graph_edge_count": summary.get("call_graph_edge_count"),
+            "max_file_cyclomatic_complexity": summary.get("max_file_cyclomatic_complexity"),
+            "complexity_score": summary.get("complexity_score"),
+            "architecture_score": summary.get("architecture_score"),
+            "velocity_score": summary.get("velocity_score"),
+            "risk_level": summary.get("risk_level"),
+            "hotspots": summary.get("top_hotspots") or [],
+            "evidence": [f"Complexity summary verified with artifact hash {summary.get('artifact_hash', 'not-attached')}"],
+            "findings": [],
+            "unavailable": [],
+        }
+    return {}
+
+
+def _bandit_triage(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    if isinstance(result.get("bandit_triage"), dict):
+        return result["bandit_triage"]
+    if isinstance(result.get("bandit_triage_summary"), dict):
+        return result["bandit_triage_summary"]
+    bandit = tools.get("bandit") if isinstance(tools.get("bandit"), dict) else {}
+    return bandit.get("bandit_triage") if isinstance(bandit.get("bandit_triage"), dict) else {}
+
+
+def _triage_open_count(triage: dict[str, Any]) -> int:
+    return int(
+        triage.get("blocking_count")
+        or 0
+    ) + int(
+        triage.get("review_required_count")
+        or triage.get("needs_review_count")
+        or 0
+    ) + int(triage.get("unresolved_high_confidence_count") or 0)
+
+
+def _triage_finding_count(triage: dict[str, Any]) -> int:
+    return int(triage.get("finding_count") or triage.get("total_findings") or 0)
 
 
 def _set_section_score(section: dict[str, Any], score: int, summary: str, evidence: str) -> None:
@@ -145,13 +215,12 @@ def _static_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> No
     section = _section(result, "static_analysis")
     if not section:
         return
-    bandit_triage = result.get("bandit_triage") if isinstance(result.get("bandit_triage"), dict) else {}
+    bandit_triage = _bandit_triage(result, tools)
     clean = _all_clean(tools, STATIC_TOOLS)
     triaged_without_blockers = (
         _all_verified(tools, STATIC_TOOLS)
-        and int(bandit_triage.get("blocking_count") or 0) == 0
-        and int(bandit_triage.get("review_required_count") or 0) == 0
-        and int(bandit_triage.get("finding_count") or 0) > 0
+        and _triage_open_count(bandit_triage) == 0
+        and _triage_finding_count(bandit_triage) > 0
     )
     if not clean and not triaged_without_blockers:
         return
@@ -170,11 +239,10 @@ def _velocity_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> 
         return
     profile = _complexity_profile(result)
     dependency_clean = _all_clean(tools, DEPENDENCY_TOOLS)
+    bandit_triage = _bandit_triage(result, tools)
     static_verified = _all_clean(tools, STATIC_TOOLS) or (
         _all_verified(tools, STATIC_TOOLS)
-        and isinstance(result.get("bandit_triage"), dict)
-        and int(result["bandit_triage"].get("blocking_count") or 0) == 0
-        and int(result["bandit_triage"].get("review_required_count") or 0) == 0
+        and _triage_open_count(bandit_triage) == 0
     )
     if not (dependency_clean and static_verified and profile):
         return
@@ -213,6 +281,19 @@ def _recompute_maturity(result: dict[str, Any]) -> None:
         result["project_trend_evidence"]["current_score"] = score
 
 
+def _attach_final_evidence_score_bridge(result: dict[str, Any], tools: dict[str, dict[str, Any]], lifts: dict[str, Any]) -> None:
+    result["final_evidence_score_bridge"] = {
+        "artifact_schema": "nico.final_evidence_score_bridge.v1",
+        "dependency_clean": _all_clean(tools, DEPENDENCY_TOOLS),
+        "secret_clean_full_history": _all_clean(tools, SECRET_TOOLS) and _secret_history_verified(result),
+        "static_clean": _all_clean(tools, STATIC_TOOLS),
+        "static_triaged_without_blockers": _all_verified(tools, STATIC_TOOLS) and _triage_open_count(_bandit_triage(result, tools)) == 0,
+        "complexity_profile_attached": bool(_complexity_profile(result)),
+        "lifts": lifts,
+        "guardrail": "Final score bridge only reports score eligibility from current-run verified evidence summaries. It does not waive findings, unavailable scanners, or missing human review.",
+    }
+
+
 def apply_verified_scanner_score_lifts(result: dict[str, Any]) -> dict[str, Any]:
     """Lift yellow sections only from exact current-run verified scanner artifacts."""
 
@@ -248,6 +329,7 @@ def apply_verified_scanner_score_lifts(result: dict[str, Any]) -> dict[str, Any]
         "lifts": combined_lifts,
         "guardrail": "Scores lift only from current-run scanner artifacts that are clean or explicitly triaged with no blockers.",
     }
+    _attach_final_evidence_score_bridge(result, tools, combined_lifts)
     if new_lifts:
         _recompute_maturity(result)
     return result

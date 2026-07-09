@@ -128,3 +128,49 @@ def test_final_gate_preserves_green_lifts_when_artifacts_are_clean():
     assert sections["static_analysis"]["status"] == "green"
     assert sections["velocity_complexity"]["status"] == "green"
     assert result["export_truth_gate"]["status"] == "passed"
+
+
+def test_final_evidence_summary_shapes_drive_lifts_without_legacy_artifacts():
+    result = _base_result()
+    result.pop("complexity_artifact", None)
+    result["scanner_worker_artifact"].pop("complexity_engine", None)
+    result["scanner_worker_artifact"].pop("secret_history_scan", None)
+    result["secret_history_scan"] = {"completed_tools": ["gitleaks", "trufflehog"], "full_history_verified": True}
+    result["complexity_engine_summary"] = {
+        "status": "completed",
+        "verified_for_this_report": True,
+        "source_file_count": 200,
+        "total_loc": 18000,
+        "total_functions": 900,
+        "call_graph_edge_count": 1200,
+        "max_file_cyclomatic_complexity": 28,
+        "complexity_score": 88,
+        "velocity_score": 88,
+        "risk_level": "low",
+        "artifact_hash": "abc123",
+    }
+    result["bandit_triage_summary"] = {
+        "total_findings": 1,
+        "approved_count": 1,
+        "blocking_count": 0,
+        "needs_review_count": 0,
+        "unresolved_high_confidence_count": 0,
+        "score_lift_allowed": True,
+    }
+    result["scanner_worker_artifact"]["tools"]["bandit"] = _tool(
+        "bandit",
+        "static",
+        status="completed_with_findings",
+        findings=[{"id": "B602"}],
+    )
+
+    result = apply_verified_scanner_score_lifts(result)
+    sections = {section["id"]: section for section in result["sections"]}
+
+    assert sections["dependency_health"]["status"] == "green"
+    assert sections["secrets_review"]["status"] == "green"
+    assert sections["static_analysis"]["score"] >= 88
+    assert sections["velocity_complexity"]["score"] >= 88
+    assert result["final_evidence_score_bridge"]["secret_clean_full_history"] is True
+    assert result["final_evidence_score_bridge"]["complexity_profile_attached"] is True
+    assert result["final_evidence_score_bridge"]["static_triaged_without_blockers"] is True
