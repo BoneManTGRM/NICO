@@ -27,3 +27,11 @@ def test_hosted_scanner_binary_installer_targets_missing_yellow_section_tools():
     assert "osv-scanner" in installer
     assert "gitleaks" in installer
     assert "trufflehog" in installer
+
+
+def test_hosted_scanner_binary_installer_is_best_effort_by_default():
+    installer = Path("scripts/install_hosted_scanner_binaries.py").read_text(encoding="utf-8")
+
+    assert 'NICO_SCANNER_INSTALL_STRICT", "false"' in installer
+    assert "warning: could not install" in installer
+    assert "if STRICT_INSTALL" in installer
