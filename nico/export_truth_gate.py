@@ -20,6 +20,13 @@ REVIEW_LIMITED_MARKERS = (
     "review_required",
     "needs_human_review",
 )
+HUMAN_REVIEW_MARKERS = (
+    "human review",
+    "human_review_required",
+    "human-review",
+    "review required",
+    "review_required",
+)
 
 SECTION_RISK_MARKERS = {
     "dependency": ("osv", "pip-audit", "npm audit", "npm-audit", "osv-scanner", "vulnerability"),
@@ -130,7 +137,7 @@ def _export_green_contradictions(result: dict[str, Any]) -> list[dict[str, Any]]
                     "reason": "Rendered report shows GREEN while the same rendered section discloses missing, unavailable, or review-limited evidence.",
                 }
             )
-    if "trust level: review-limited" in lower and "delivery verdict" in lower and "human review" not in lower:
+    if "trust level: review-limited" in lower and "delivery verdict" in lower and not _has_any(lower, HUMAN_REVIEW_MARKERS):
         violations.append(
             {
                 "type": "trust_delivery_mismatch",
