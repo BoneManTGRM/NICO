@@ -7,6 +7,7 @@ STATIC_TOOLS = ("bandit", "semgrep", "eslint", "typescript")
 SECRET_TOOLS = ("gitleaks", "trufflehog")
 CLEAN_STATUSES = {"completed_clean", "completed"}
 VERIFIED_STATUSES = {"completed_clean", "completed_with_findings", "completed"}
+STALE_PROOF_GAP_FRAGMENTS = ("strict trust engine", "missing", "unavailable", "not verified", "not attached")
 
 
 def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
@@ -118,7 +119,7 @@ def _dependency_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -
     section = _section(result, "dependency_health")
     if not section or not _all_clean(tools, DEPENDENCY_TOOLS):
         return
-    _remove_lines(section, ("pip-audit", "npm audit", "npm-audit", "osv-scanner", "osv scanner", "missing dependency scanner", "dependency scanner artifacts"))
+    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("pip-audit", "npm audit", "npm-audit", "osv-scanner", "osv scanner", "dependency scanner artifacts"))
     _set_section_score(
         section,
         90,
@@ -131,7 +132,7 @@ def _secret_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> No
     section = _section(result, "secrets_review")
     if not section or not (_all_clean(tools, SECRET_TOOLS) and _secret_history_verified(result)):
         return
-    _remove_lines(section, ("gitleaks", "trufflehog", "secret history", "git-history", "full-history", "full git-history", "secret coverage"))
+    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("gitleaks", "trufflehog", "secret history", "git-history", "full-history", "full git-history", "secret coverage"))
     _set_section_score(
         section,
         92,
@@ -154,7 +155,7 @@ def _static_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> No
     )
     if not clean and not triaged_without_blockers:
         return
-    _remove_lines(section, ("bandit", "semgrep", "eslint", "typescript", "scanner-worker static", "static tools unavailable"))
+    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("bandit", "semgrep", "eslint", "typescript", "scanner-worker static", "static tools unavailable", "scanner-worker artifacts"))
     _set_section_score(
         section,
         88 if triaged_without_blockers else 90,
@@ -177,7 +178,7 @@ def _velocity_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> 
     )
     if not (dependency_clean and static_verified and profile):
         return
-    _remove_lines(section, ("release-readiness lift not applied", "final-clean evidence is incomplete", "deeper complexity", "missing runtime artifacts", "source-footprint"))
+    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("release-readiness lift not applied", "final-clean evidence is incomplete", "deeper complexity", "runtime artifacts", "source-footprint"))
     target_score = int(profile.get("velocity_score") or profile.get("complexity_score") or 82)
     target_score = max(82, min(90, target_score))
     _set_section_score(
