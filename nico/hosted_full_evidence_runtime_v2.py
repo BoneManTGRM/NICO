@@ -40,15 +40,34 @@ def _missing_required_tools(result: dict[str, Any]) -> list[str]:
     return [str(item) for item in missing]
 
 
+def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
+    result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
+        "status": status,
+        "refresh_full_evidence_requested": _explicit_refresh_requested(result),
+        "repository": _repo(result),
+        "missing_required_tools": _missing_required_tools(result),
+        "guardrail": "Refresh Full Evidence is diagnostic and evidence-bound: it only turns yellow sections green when the hosted worker actually returns current-run scanner and complexity artifacts.",
+        **extra,
+    }
+
+
 def _should_refresh(result: dict[str, Any]) -> bool:
     if result.get("status") != "complete":
+        _guard(result, "skipped_not_complete")
         return False
     if not _explicit_refresh_requested(result):
+        _guard(result, "skipped_no_explicit_refresh_request")
         return False
     repository = _repo(result)
     if not repository or "/" not in repository:
+        _guard(result, "skipped_invalid_repository")
         return False
-    return bool(_missing_required_tools(result))
+    missing = _missing_required_tools(result)
+    if not missing:
+        _guard(result, "skipped_all_required_tools_already_present")
+        return False
+    _guard(result, "queued", missing_required_tools=missing)
+    return True
 
 
 def _payload_for_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -70,6 +89,7 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
     result["scanner_worker_auto_ran"] = True
     result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
         "status": artifact.get("worker_execution_state") or "attempted",
+        "refresh_full_evidence_requested": _explicit_refresh_requested(result),
         "completed_dependency_tools": normalized.get("dependency_tools_completed"),
         "completed_static_tools": normalized.get("static_tools_completed"),
         "completed_secret_tools": normalized.get("secret_tools_completed"),
@@ -89,11 +109,12 @@ def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
     """Collect runtime evidence only for explicit Refresh Full Evidence requests."""
     if not _should_refresh(result):
         return result
-    artifact = run_hosted_scanner_worker(_payload_for_result(result))
+    try:
+        artifact = run_hosted_scanner_worker(_payload_for_result(result))
+    except Exception as exc:  # pragma: no cover - defensive reporting path
+        _guard(result, "failed_exception", error=str(exc))
+        return result
     if not isinstance(artifact, dict):
-        result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
-            "status": "failed",
-            "guardrail": "Runtime evidence refresh did not return an artifact.",
-        }
+        _guard(result, "failed_no_artifact")
         return result
     return _attach_raw_artifact(result, artifact)
