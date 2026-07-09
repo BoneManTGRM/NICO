@@ -17,6 +17,7 @@ from nico.hosted_bandit_triage_workflow_patch import install_bandit_triage_workf
 from nico.hosted_complexity_engine_attachment_patch import install_hosted_complexity_engine_attachment_patch
 from nico.report_full_detail_export_patch import install_report_full_detail_export_patch
 from nico.client_final_review_gate_patch import install_client_final_review_gate_patch
+from nico.release_readiness_summary_patch import install_release_readiness_summary_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -35,5 +36,6 @@ install_bandit_triage_workflow_patch()
 install_hosted_complexity_engine_attachment_patch()
 install_report_full_detail_export_patch()
 install_client_final_review_gate_patch()
+install_release_readiness_summary_patch()
 
 __version__ = "0.1.0"
