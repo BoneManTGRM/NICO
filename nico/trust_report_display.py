@@ -172,6 +172,38 @@ def _export_summary(display: dict[str, Any]) -> str:
     return "\n\n".join(lines)
 
 
+def _canonical_assessment_summary(result: dict[str, Any]) -> str:
+    maturity = result.get("maturity_signal") if isinstance(result.get("maturity_signal"), dict) else {}
+    level = maturity.get("level") or "Unknown"
+    score = maturity.get("score") if maturity.get("score") not in (None, "") else "N/A"
+    repo = result.get("repository") or result.get("source_scope") or "the authorized repository"
+    return (
+        f"NICO completed an authorized hosted Express Technical Health Assessment for {repo}. "
+        f"The final maturity signal is {level} ({score}/100). "
+        "Scores are generated from the final evidence-bound result after code audit, dependency, secrets, static analysis, CI/CD, architecture, velocity, artifact evidence, retained project history when available, acceptance when approved, and explicit unavailable-data notes have been applied. "
+        "Final delivery still requires human review."
+    )
+
+
+def _remove_leading_trust_summary(existing: str) -> str:
+    paragraphs = [part.strip() for part in str(existing or "").split("\n\n")]
+    while paragraphs and paragraphs[0].startswith(("Trust Level:", "Why not higher:", "Path to verified:")):
+        paragraphs.pop(0)
+    return "\n\n".join(part for part in paragraphs if part).strip()
+
+
+def _summary_body(result: dict[str, Any], existing: str) -> str:
+    body = _remove_leading_trust_summary(existing)
+    generated_markers = (
+        "NICO completed an authorized hosted Express Technical Health Assessment",
+        "The final maturity signal is",
+        "La señal final de madurez es",
+    )
+    if not body or body == "No executive summary returned." or any(marker in body for marker in generated_markers):
+        return _canonical_assessment_summary(result)
+    return _canonical_assessment_summary(result) + "\n\n" + body
+
+
 def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> None:
     sections = [
         section
@@ -205,13 +237,7 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
 def _attach_export_summary(result: dict[str, Any], display: dict[str, Any]) -> None:
     trust_text = _export_summary(display)
     existing = str(result.get("executive_summary") or "").strip()
-    if existing.startswith("Trust Level:"):
-        remainder = existing.split("\n\n", 3)
-        existing = remainder[-1] if remainder else ""
-    if existing and existing != "No executive summary returned.":
-        result["executive_summary"] = trust_text + "\n\n" + existing
-    else:
-        result["executive_summary"] = trust_text
+    result["executive_summary"] = trust_text + "\n\n" + _summary_body(result, existing)
 
 
 def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
