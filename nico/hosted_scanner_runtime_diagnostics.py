@@ -40,6 +40,8 @@ VERSION_COMMANDS: dict[str, tuple[str, ...]] = {
     "trufflehog": ("trufflehog", "--version"),
 }
 
+_ROUTE_PATH = "/diagnostics/hosted-scanner-runtime"
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -148,6 +150,34 @@ def hosted_scanner_runtime_diagnostics() -> dict[str, Any]:
 
 
 def register_hosted_scanner_runtime_diagnostics_routes(app: Any) -> None:
-    @app.get("/diagnostics/hosted-scanner-runtime")
+    if any(getattr(route, "path", None) == _ROUTE_PATH for route in getattr(app, "routes", [])):
+        return
+
+    @app.get(_ROUTE_PATH)
     def hosted_scanner_runtime_diagnostics_endpoint() -> dict[str, Any]:
         return hosted_scanner_runtime_diagnostics()
+
+
+def install_hosted_scanner_runtime_diagnostics_route() -> None:
+    """Auto-register the runtime diagnostics route on NICO FastAPI apps.
+
+    This avoids another large edit to nico/api/main.py while keeping the route
+    available as soon as the hosted API constructs its FastAPI application.
+    """
+    try:
+        from fastapi import FastAPI
+    except Exception:  # pragma: no cover - FastAPI is required in hosted app
+        return
+    original_init = getattr(FastAPI, "_nico_original_init_for_runtime_diagnostics", None)
+    if original_init is None:
+        original_init = FastAPI.__init__
+        setattr(FastAPI, "_nico_original_init_for_runtime_diagnostics", original_init)
+
+    def init_with_runtime_diagnostics(self: Any, *args: Any, **kwargs: Any) -> None:
+        original_init(self, *args, **kwargs)
+        register_hosted_scanner_runtime_diagnostics_routes(self)
+
+    if getattr(FastAPI.__init__, "_nico_runtime_diagnostics_installed", False):
+        return
+    init_with_runtime_diagnostics._nico_runtime_diagnostics_installed = True  # type: ignore[attr-defined]
+    FastAPI.__init__ = init_with_runtime_diagnostics
