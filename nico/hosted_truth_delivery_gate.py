@@ -17,7 +17,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     from nico.complexity_artifact_integration import attach_complexity_artifact_to_report
     from nico.evidence_ledger import attach_evidence_ledger
     from nico.export_truth_gate import apply_export_truth_gate
-    from nico.hosted_full_evidence_runtime import ensure_hosted_runtime_evidence
+    from nico.hosted_full_evidence_runtime_v2 import ensure_hosted_runtime_evidence
     from nico.report_final_qa import apply_final_report_qa
     from nico.report_score_lift_plan import attach_score_lift_plan
     from nico.report_truth_runtime_patch import (
