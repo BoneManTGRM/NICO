@@ -221,6 +221,8 @@ def apply_verified_scanner_score_lifts(result: dict[str, Any]) -> dict[str, Any]
     tools = _tools(result)
     if not tools:
         return result
+    prior_guard = result.setdefault("report_quality_guards", {}).get("verified_scanner_score_lifts")
+    prior_lifts = prior_guard.get("lifts", {}) if isinstance(prior_guard, dict) else {}
     before = {
         item.get("id"): int(item.get("score") or 0)
         for item in result.get("sections", []) or []
@@ -235,16 +237,17 @@ def apply_verified_scanner_score_lifts(result: dict[str, Any]) -> dict[str, Any]
         for item in result.get("sections", []) or []
         if isinstance(item, dict) and item.get("id")
     }
-    lifts = {
+    new_lifts = {
         section_id: {"previous_score": score, "new_score": after.get(section_id)}
         for section_id, score in before.items()
         if after.get(section_id, score) > score
     }
+    combined_lifts = {**prior_lifts, **new_lifts}
     result.setdefault("report_quality_guards", {})["verified_scanner_score_lifts"] = {
-        "status": "applied" if lifts else "no_lifts",
-        "lifts": lifts,
+        "status": "applied" if combined_lifts else "no_lifts",
+        "lifts": combined_lifts,
         "guardrail": "Scores lift only from current-run scanner artifacts that are clean or explicitly triaged with no blockers.",
     }
-    if lifts:
+    if new_lifts:
         _recompute_maturity(result)
     return result
