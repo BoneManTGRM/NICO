@@ -20,9 +20,11 @@ RUN apt-get update \
 RUN npm install -g eslint typescript
 
 COPY requirements.txt ./
+COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir pip-audit bandit semgrep coverage
+    && pip install --no-cache-dir pip-audit bandit semgrep coverage \
+    && python scripts/install_hosted_scanner_binaries.py
 
 COPY . .
 RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts; fi
