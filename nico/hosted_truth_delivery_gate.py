@@ -24,12 +24,14 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     )
     from nico.report_truth_status import build_report_truth_status
     from nico.scanner_artifact_integration import attach_scanner_artifacts_to_report
+    from nico.scanner_score_lifts import apply_verified_scanner_score_lifts
     from nico.service_tier_workflows import attach_service_tier_workflows
     from nico.trust_engine import apply_strict_trust_engine
     from nico.trust_report_display import attach_trust_report_display
 
     result = apply_dependency_score_consistency(result)
     result = attach_scanner_artifacts_to_report(result)
+    result = apply_verified_scanner_score_lifts(result)
     result = apply_final_report_qa(result)
     result = apply_strict_trust_engine(result)
     result = attach_evidence_ledger(result)
