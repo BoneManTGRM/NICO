@@ -96,8 +96,13 @@ def _add_visible_validation_note(result: dict[str, Any], status: str, missing_to
 
 
 def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
+    guards = result.setdefault("report_quality_guards", {})
+    existing = guards.get("hosted_full_evidence_runtime") if isinstance(guards.get("hosted_full_evidence_runtime"), dict) else {}
+    existing_status = str((existing or {}).get("status") or "")
+    if status == "skipped_all_required_tools_already_present" and existing_status in {"completed", "attempted"}:
+        return
     missing = _missing_required_tools(result)
-    result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
+    guards["hosted_full_evidence_runtime"] = {
         "status": status,
         "refresh_full_evidence_requested": _explicit_refresh_requested(result),
         "repository": _repo(result),
