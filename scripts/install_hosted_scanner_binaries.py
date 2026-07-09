@@ -12,25 +12,26 @@ from pathlib import Path
 from typing import Any
 
 INSTALL_DIR = Path(os.getenv("NICO_SCANNER_INSTALL_DIR", "/usr/local/bin"))
+STRICT_INSTALL = os.getenv("NICO_SCANNER_INSTALL_STRICT", "false").lower() == "true"
 USER_AGENT = "NICO-hosted-scanner-tool-installer"
 
 TOOLS = (
     {
         "name": "osv-scanner",
         "repository": "google/osv-scanner",
-        "asset_markers": ("osv-scanner_linux_amd64",),
+        "asset_markers": ("osv-scanner_linux_amd64", "linux_amd64"),
         "binary": "osv-scanner",
     },
     {
         "name": "gitleaks",
         "repository": "gitleaks/gitleaks",
-        "asset_markers": ("linux_x64.tar.gz", "linux_amd64.tar.gz"),
+        "asset_markers": ("linux_x64.tar.gz", "linux_amd64.tar.gz", "linux_x64", "linux_amd64"),
         "binary": "gitleaks",
     },
     {
         "name": "trufflehog",
         "repository": "trufflesecurity/trufflehog",
-        "asset_markers": ("linux_amd64.tar.gz",),
+        "asset_markers": ("linux_amd64.tar.gz", "linux_amd64"),
         "binary": "trufflehog",
     },
 )
@@ -120,13 +121,20 @@ def install_tool(tool: dict[str, Any]) -> None:
 
 def main() -> None:
     failures: list[str] = []
+    installed: list[str] = []
     for tool in TOOLS:
+        name = str(tool["name"])
         try:
             install_tool(tool)
+            installed.append(name)
         except Exception as exc:  # pragma: no cover - exercised during Docker build
-            failures.append(f"{tool['name']}: {exc}")
+            failures.append(f"{name}: {exc}")
+            print(f"warning: could not install {name}: {exc}")
+    print("hosted scanner binary installer summary: installed=" + ", ".join(installed or ["none"]))
     if failures:
-        raise SystemExit("Failed to install hosted scanner binaries: " + "; ".join(failures))
+        print("hosted scanner binary installer warnings: " + "; ".join(failures))
+        if STRICT_INSTALL:
+            raise SystemExit("Failed to install hosted scanner binaries: " + "; ".join(failures))
 
 
 if __name__ == "__main__":
