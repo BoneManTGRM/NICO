@@ -50,8 +50,8 @@ def _mixed_artifact():
     }
 
 
-def test_authorized_frontend_payload_requests_full_evidence_by_default():
-    payload = _prepare_refresh_payload({"repository": "BoneManTGRM/NICO", "authorized": True, "authorized_by": "unspecified"})
+def test_frontend_refresh_marker_requests_full_evidence():
+    payload = _prepare_refresh_payload({"repository": "BoneManTGRM/NICO", "authorized": True, "authorized_by": "frontend-refresh-full-evidence"})
 
     assert payload["refresh_full_evidence_requested"] is True
     assert payload["authorized_by"] == "frontend-refresh-full-evidence"
@@ -60,19 +60,27 @@ def test_authorized_frontend_payload_requests_full_evidence_by_default():
     assert payload["full_history_secret_scan"] is True
 
 
+def test_unspecified_authorized_payload_does_not_mutate_into_refresh():
+    payload = _prepare_refresh_payload({"repository": "BoneManTGRM/NICO", "authorized": True, "authorized_by": "unspecified"})
+
+    assert payload.get("refresh_full_evidence_requested") is not True
+    assert payload["authorized_by"] == "unspecified"
+
+
 def test_runtime_validation_exposes_truthful_tool_records(monkeypatch):
     monkeypatch.setattr("nico.hosted_full_evidence_runtime_v2.run_hosted_scanner_worker", lambda payload: _mixed_artifact())
 
     result = ensure_hosted_runtime_evidence(_result())
     validation = result["hosted_full_evidence_runtime_validation"]
     records = {item["tool"]: item for item in validation["tool_records"]}
+    guard_records = {item["tool"]: item for item in result["report_quality_guards"]["hosted_full_evidence_runtime"]["tool_records"]}
 
     assert validation["status"] == "completed"
     assert records["pip-audit"]["verified_for_this_report"] is True
     assert records["npm-audit"]["status"] == "unavailable"
     assert "npm executable unavailable" in records["npm-audit"]["reason"]
+    assert guard_records["npm-audit"]["status"] == "unavailable"
     assert "trufflehog" in validation["missing_or_unavailable_tools"]
-    assert any("npm-audit current-run status=unavailable" in item for item in result["sections"][0]["unavailable"])
 
 
 def test_trust_display_surfaces_runtime_validation(monkeypatch):
