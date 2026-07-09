@@ -102,13 +102,14 @@ export default function RefreshFullEvidencePage() {
     setError("");
     setLoading(true);
     try {
+      const refreshActor = authorizedBy ? `${authorizedBy} via frontend-refresh-full-evidence` : "frontend-refresh-full-evidence";
       const response = await fetch(`${API_URL}/assessment/github`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           repository,
           authorized,
-          authorized_by: authorizedBy || "frontend-refresh-full-evidence",
+          authorized_by: refreshActor,
           client_name: clientName,
           project_name: projectName,
           assessment_mode: "express",
