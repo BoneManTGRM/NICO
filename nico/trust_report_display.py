@@ -204,6 +204,21 @@ def _summary_body(result: dict[str, Any], existing: str) -> str:
     return _canonical_assessment_summary(result) + "\n\n" + body
 
 
+def _trust_section_status(trust_level: str) -> str:
+    if trust_level == "Verified":
+        return "green"
+    if trust_level in {"Evidence-bound", "Review-limited"}:
+        return "yellow"
+    return "red"
+
+
+def _display_score(display: dict[str, Any]) -> int:
+    try:
+        return int(display.get("score") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> None:
     sections = [
         section
@@ -215,10 +230,11 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
         {
             "id": "trust_readiness",
             "label": "Trust & Client Readiness",
-            "status": "green" if display["trust_level"] == "Verified" else "yellow" if display["trust_level"] in {"Evidence-bound", "Review-limited"} else "red",
-            "score": 0,
+            "status": _trust_section_status(display["trust_level"]),
+            "score": _display_score(display),
             "scoring_weight": 0,
             "supplemental": True,
+            "score_basis": "final_maturity_signal_display_only",
             "summary": _summary_text(display),
             "evidence": [
                 f"Trust Level: {display['trust_level']}",
@@ -226,6 +242,7 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
                 f"Evidence Ledger: {display['evidence_ledger_status']}",
                 f"Scanner Artifact Integration: {display['scanner_artifact_status']}",
                 f"Export Truth Gate: {display['export_truth_gate_status']}",
+                "Display score mirrors the final maturity score; this supplemental row has scoring_weight=0 and does not change the maturity average.",
             ],
             "findings": display["why_not_higher"] or ["No trust display blockers found."],
             "unavailable": [] if display["trust_level"] == "Verified" else ["Verified client-clean status requires all critical evidence to remain attached and clean."],
