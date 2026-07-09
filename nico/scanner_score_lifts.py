@@ -99,15 +99,9 @@ def _secret_history_verified(result: dict[str, Any]) -> bool:
 
 def _complexity_profile(result: dict[str, Any]) -> dict[str, Any]:
     complexity_artifact = result.get("complexity_artifact") if isinstance(result.get("complexity_artifact"), dict) else {}
-    if complexity_artifact:
-        if complexity_artifact.get("verified_for_this_report") is not True:
-            return {}
-        profile = complexity_artifact.get("profile")
-        return profile if isinstance(profile, dict) else {}
-    if isinstance(result.get("complexity_engine"), dict):
-        return result["complexity_engine"]
-    artifact = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
-    profile = artifact.get("complexity_engine")
+    if not complexity_artifact or complexity_artifact.get("verified_for_this_report") is not True:
+        return {}
+    profile = complexity_artifact.get("profile")
     return profile if isinstance(profile, dict) else {}
 
 
