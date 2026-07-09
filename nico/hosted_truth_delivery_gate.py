@@ -33,6 +33,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     result = attach_scanner_artifacts_to_report(result)
     result = apply_verified_scanner_score_lifts(result)
     result = apply_final_report_qa(result)
+    result = apply_verified_scanner_score_lifts(result)
     result = apply_strict_trust_engine(result)
     result = attach_evidence_ledger(result)
     result = refresh_project_trend_score(result)
