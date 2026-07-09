@@ -89,6 +89,16 @@ def _git_commit_count(workspace: WorkerWorkspace) -> int | None:
         return None
 
 
+def _git_head_sha(workspace: WorkerWorkspace) -> str | None:
+    if not workspace.repo_dir.exists():
+        return None
+    result = run_command(("git", "rev-parse", "HEAD"), cwd=workspace.repo_dir, limits=WorkerLimits(timeout_seconds=30, max_output_chars=2_000))
+    if not result.ok:
+        return None
+    value = (result.stdout or "").strip()
+    return value or None
+
+
 def _clone_auth_metadata() -> dict[str, Any]:
     clone_auth = build_github_clone_auth_env()
     return {
@@ -159,6 +169,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
             return _checkout_failed_artifact(payload, checkout)
 
         commit_count = _git_commit_count(workspace)
+        commit_sha = _git_head_sha(workspace)
         scanner_artifact = run_scanner_tools(workspace)
         scanner_artifact["complexity_engine"] = build_complexity_profile(workspace.repo_dir)
         scanner_artifact.update(
@@ -173,6 +184,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
                     "output_truncated": checkout.output_truncated,
                     "full_history_secret_scan_requested": full_history,
                     "commit_count": commit_count,
+                    "commit_sha": commit_sha,
                     "history_depth": "full" if full_history else "shallow",
                     "auth_mode": clone_auth["mode"],
                 },
