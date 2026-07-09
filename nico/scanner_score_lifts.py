@@ -98,6 +98,12 @@ def _secret_history_verified(result: dict[str, Any]) -> bool:
 
 
 def _complexity_profile(result: dict[str, Any]) -> dict[str, Any]:
+    complexity_artifact = result.get("complexity_artifact") if isinstance(result.get("complexity_artifact"), dict) else {}
+    if complexity_artifact:
+        if complexity_artifact.get("verified_for_this_report") is not True:
+            return {}
+        profile = complexity_artifact.get("profile")
+        return profile if isinstance(profile, dict) else {}
     if isinstance(result.get("complexity_engine"), dict):
         return result["complexity_engine"]
     artifact = result.get("scanner_worker_artifact") if isinstance(result.get("scanner_worker_artifact"), dict) else {}
@@ -178,7 +184,7 @@ def _velocity_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> 
     )
     if not (dependency_clean and static_verified and profile):
         return
-    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("release-readiness lift not applied", "final-clean evidence is incomplete", "deeper complexity", "runtime artifacts", "source-footprint"))
+    _remove_lines(section, STALE_PROOF_GAP_FRAGMENTS + ("release-readiness lift not applied", "final-clean evidence is incomplete", "deeper complexity", "runtime artifacts", "source-footprint", "complexity proof"))
     target_score = int(profile.get("velocity_score") or profile.get("complexity_score") or 82)
     target_score = max(82, min(90, target_score))
     _set_section_score(
