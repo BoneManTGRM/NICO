@@ -1,3 +1,4 @@
+from nico.complexity_artifact_integration import attach_complexity_artifact_to_report
 from nico.hosted_truth_delivery_gate import apply_final_hosted_truth_gate
 from nico.scanner_artifact_integration import attach_scanner_artifacts_to_report
 from nico.scanner_score_lifts import apply_verified_scanner_score_lifts
@@ -43,10 +44,17 @@ def _base_result():
             "secret_history_scan": {"completed_tools": ["gitleaks", "trufflehog"], "history_aware": True},
             "complexity_engine": {
                 "risk_level": "low",
+                "source_file_count": 200,
+                "analyzed_file_count": 200,
+                "total_loc": 18000,
+                "total_functions": 900,
+                "call_graph_edge_count": 1200,
+                "max_file_cyclomatic_complexity": 28,
                 "velocity_score": 88,
                 "complexity_score": 88,
                 "evidence": ["Complexity engine analyzed 200 source file(s)."],
                 "findings": [],
+                "unavailable": [],
             },
             "tools": {
                 "pip-audit": _tool("pip-audit", "dependency"),
@@ -69,8 +77,13 @@ def _base_result():
     }
 
 
+def _bind_scanner_and_complexity(result):
+    result = attach_scanner_artifacts_to_report(result)
+    return attach_complexity_artifact_to_report(result)
+
+
 def test_verified_clean_scanner_artifacts_lift_yellow_sections():
-    result = attach_scanner_artifacts_to_report(_base_result())
+    result = _bind_scanner_and_complexity(_base_result())
     result = apply_verified_scanner_score_lifts(result)
     sections = {section["id"]: section for section in result["sections"]}
 
@@ -94,7 +107,7 @@ def test_verified_score_lifts_do_not_lift_tools_with_findings_without_triage():
         status="completed_with_findings",
         findings=[{"id": "OSV-1"}],
     )
-    result = attach_scanner_artifacts_to_report(result)
+    result = _bind_scanner_and_complexity(result)
     result = apply_verified_scanner_score_lifts(result)
     sections = {section["id"]: section for section in result["sections"]}
 
@@ -109,6 +122,7 @@ def test_final_gate_preserves_green_lifts_when_artifacts_are_clean():
 
     assert result["report_quality_guards"]["verified_scanner_score_lifts"]["status"] == "applied"
     assert result["evidence_ledger"]["coverage_by_section"]["dependency_health"]["complete"] is True
+    assert result["evidence_ledger"]["coverage_by_section"]["velocity_complexity"]["complete"] is True
     assert sections["dependency_health"]["status"] == "green"
     assert sections["secrets_review"]["status"] == "green"
     assert sections["static_analysis"]["status"] == "green"
