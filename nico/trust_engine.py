@@ -67,11 +67,13 @@ def _cap_section(section: dict[str, Any], cap: int, reason: str, finding: str) -
 def _remove_green_claims(text: str) -> str:
     value = str(text or "")
     replacements = [
+        (r"\bcannot be GREEN\b", "cannot be VERIFIED"),
+        (r"\bcannot receive GREEN\b", "cannot receive verified"),
         (r"\bis green\b", "requires verified evidence"),
         (r"\bgreen from\b", "review-limited from"),
         (r"\bthe green score\b", "the review-limited score"),
-        (r"\bGREEN\b", "REVIEW-LIMITED"),
         (r"\bgreen score\b", "review-limited score"),
+        (r"\bGREEN\b", "VERIFIED"),
     ]
     for pattern, replacement in replacements:
         value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
@@ -116,7 +118,6 @@ def _dependency_rule(section: dict[str, Any]) -> dict[str, Any] | None:
 
 def _static_rule(section: dict[str, Any]) -> dict[str, Any] | None:
     text = _section_text(section)
-    lower = text.lower()
     if "static" not in _section_key(section):
         return None
     match = BANDIT_COUNT_RE.search(text)
