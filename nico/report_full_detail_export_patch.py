@@ -60,7 +60,7 @@ def build_full_detail_export(result: dict[str, Any]) -> dict[str, Any]:
                     "current_run": bool(payload.get("current_run")) if isinstance(payload, dict) else False,
                     "verified_for_this_report": bool(payload.get("verified_for_this_report")) if isinstance(payload, dict) else False,
                     "findings_count": int(payload.get("findings_count") or payload.get("finding_count") or 0) if isinstance(payload, dict) else 0,
-                    "reason": payload.get("reason") or payload.get("failure_or_unavailable_reason") if isinstance(payload, dict) else "",
+                    "reason": (payload.get("reason") or payload.get("failure_or_unavailable_reason") or "") if isinstance(payload, dict) else "",
                 }
                 for name, payload in sorted((scanner.get("tools") if isinstance(scanner.get("tools"), dict) else {}).items())
             },
@@ -163,7 +163,8 @@ def _patch_pdf_bullets_for_detail() -> None:
         assessment_quality._nico_original_bullets_for_full_detail = original
 
     def bullets_with_fuller_detail(items: list[str], style: Any, max_items: int = 6) -> list[Any]:
-        return original(items, style, max_items=max(max_items, min(_detail_limit(), len(items) if items else max_items)))
+        original_func = assessment_quality._nico_original_bullets_for_full_detail
+        return original_func(items, style, max_items=max(max_items, min(_detail_limit(), len(items) if items else max_items)))
 
     assessment_quality._bullets = bullets_with_fuller_detail
 
@@ -177,7 +178,8 @@ def _patch_polish_for_full_detail_exports() -> None:
         assessment_quality._nico_original_polish_express_result_full_detail = original
 
     def polish_express_result_with_full_detail(result: dict[str, Any]) -> dict[str, Any]:
-        polished = assessment_quality._nico_original_polish_express_result_full_detail(result)
+        original_func = assessment_quality._nico_original_polish_express_result_full_detail
+        polished = original_func(result)
         return attach_full_detail_report_exports(polished)
 
     assessment_quality.polish_express_result = polish_express_result_with_full_detail
