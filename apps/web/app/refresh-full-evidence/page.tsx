@@ -34,6 +34,20 @@ type Section = {
   unavailable?: string[];
 };
 
+type RuntimeGuard = {
+  status?: string;
+  refresh_full_evidence_requested?: boolean;
+  completed_dependency_tools?: string[];
+  completed_static_tools?: string[];
+  completed_secret_tools?: string[];
+  missing_dependency_tools?: string[];
+  missing_static_tools?: string[];
+  missing_secret_tools?: string[];
+  missing_required_tools?: string[];
+  error?: string;
+  guardrail?: string;
+};
+
 type RefreshResult = {
   status?: string;
   repository?: string;
@@ -48,9 +62,9 @@ type RefreshResult = {
 };
 
 function statusClass(status?: string) {
-  if (status === "green" || status === "passed" || status === "complete" || status === "available" || status === "attached") return "status green";
-  if (status === "yellow" || status === "pending" || status === "running" || status === "queued" || status === "partial") return "status yellow";
-  if (status === "red" || status === "failed" || status === "error" || status === "timeout" || status === "blocked") return "status red";
+  if (status === "green" || status === "passed" || status === "complete" || status === "available" || status === "attached" || status === "completed") return "status green";
+  if (status === "yellow" || status === "pending" || status === "running" || status === "queued" || status === "partial" || status?.startsWith("skipped")) return "status yellow";
+  if (status === "red" || status === "failed" || status === "error" || status === "timeout" || status === "blocked" || status?.startsWith("failed")) return "status red";
   return "status gray";
 }
 
@@ -68,6 +82,11 @@ function sectionReady(result: RefreshResult | null, id: string) {
   const coverage = result?.evidence_ledger?.coverage_by_section?.[id];
   if (coverage?.complete) return true;
   return section?.status === "green" && !(section.unavailable?.length);
+}
+
+function runtimeGuard(result: RefreshResult | null): RuntimeGuard | null {
+  const value = result?.report_quality_guards?.hosted_full_evidence_runtime;
+  return value && typeof value === "object" ? value as RuntimeGuard : null;
 }
 
 function downloadPdf(result: RefreshResult | null) {
@@ -96,6 +115,13 @@ export default function RefreshFullEvidencePage() {
   const completedTools = result?.scanner_artifact_summary?.completed_tools || [];
   const unavailableTools = result?.scanner_artifact_summary?.unavailable_tools || [];
   const missingTools = useMemo(() => REQUIRED_TOOLS.filter((tool) => !completedTools.includes(tool)), [completedTools]);
+  const guard = runtimeGuard(result);
+  const guardMissing = [
+    ...(guard?.missing_dependency_tools || []),
+    ...(guard?.missing_static_tools || []),
+    ...(guard?.missing_secret_tools || []),
+    ...(guard?.missing_required_tools || []),
+  ];
 
   async function refreshFullEvidence() {
     if (!API_URL) { setError("Backend URL is not configured in Vercel."); return; }
@@ -150,6 +176,16 @@ export default function RefreshFullEvidencePage() {
         <label className="check-row"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} />I confirm I own this target or have explicit permission to assess it.</label>
         <button type="button" className="primary-button" disabled={!API_URL || !authorized || loading} onClick={refreshFullEvidence}>{loading ? "Refreshing full evidence..." : "Refresh Full Evidence"}</button>
         {error ? <p className="error-box">{error}</p> : null}
+      </section>
+
+      <section className="section panel">
+        <div className="section-head"><div><p className="eyebrow">Live validation</p><h2>{guard?.status ? `Runtime evidence: ${guard.status}` : "Awaiting runtime evidence"}</h2></div><span className={statusClass(guard?.status)}>{guard?.refresh_full_evidence_requested ? "refresh requested" : guard ? "refresh not requested" : "not run"}</span></div>
+        {guard?.error ? <p className="error-box">{guard.error}</p> : null}
+        <p className="muted">This panel shows whether the hosted backend actually attempted the scanner-worker evidence refresh. Yellow sections should only turn green after the worker returns current-run artifacts.</p>
+        <div className="two-col inset-grid">
+          <div className="mini-panel"><p className="eyebrow">Runtime guard</p><p>{guard?.guardrail || "No runtime guard returned yet."}</p></div>
+          <div className="mini-panel"><p className="eyebrow">Runtime missing tools</p><ListBlock items={guardMissing.length ? Array.from(new Set(guardMissing)) : unavailableTools.length ? unavailableTools : missingTools} /></div>
+        </div>
       </section>
 
       <section className="section panel">
