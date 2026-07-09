@@ -11,6 +11,7 @@ from nico.hosted_evidence_execution_patch import install_hosted_evidence_executi
 from nico.hosted_scanner_runtime_diagnostics import install_hosted_scanner_runtime_diagnostics_route
 from nico.hosted_scanner_execution_path_patch import install_hosted_scanner_execution_path_patch
 from nico.hosted_dependency_scanner_execution_patch import install_hosted_dependency_scanner_execution_patch
+from nico.hosted_secret_scanner_execution_patch import install_hosted_secret_scanner_execution_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -23,5 +24,6 @@ install_hosted_evidence_execution_patch()
 install_hosted_scanner_runtime_diagnostics_route()
 install_hosted_scanner_execution_path_patch()
 install_hosted_dependency_scanner_execution_patch()
+install_hosted_secret_scanner_execution_patch()
 
 __version__ = "0.1.0"
