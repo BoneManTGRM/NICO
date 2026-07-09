@@ -19,6 +19,9 @@ TOOL_SECTION_MAP = {
     "trufflehog": "secrets_review",
     "credential-scan": "secrets_review",
     "coverage": "coverage",
+    "complexity engine": "velocity_complexity",
+    "complexity-engine": "velocity_complexity",
+    "call graph": "velocity_complexity",
     "codeql": "ci_cd",
     "github actions": "ci_cd",
 }
@@ -27,6 +30,7 @@ REQUIRED_BY_SECTION = {
     "dependency_health": ["pip-audit", "npm-audit", "osv-scanner"],
     "static_analysis": ["bandit", "semgrep", "eslint", "typescript"],
     "secrets_review": ["gitleaks", "trufflehog"],
+    "velocity_complexity": ["complexity engine"],
     "ci_cd": ["github actions"],
 }
 
@@ -184,6 +188,7 @@ def _scanner_artifact_entries(result: dict[str, Any], report_run_id: str) -> lis
             "static": "static_analysis",
             "secret": "secrets_review",
             "coverage": "coverage",
+            "complexity": "velocity_complexity",
         }.get(category, "unknown_section")
         findings = payload.get("findings") if isinstance(payload.get("findings"), list) else []
         findings_count = payload.get("findings_count")
@@ -211,6 +216,37 @@ def _scanner_artifact_entries(result: dict[str, Any], report_run_id: str) -> lis
             }
         )
     return entries
+
+
+def _complexity_artifact_entries(result: dict[str, Any], report_run_id: str) -> list[dict[str, Any]]:
+    artifact = result.get("complexity_artifact")
+    if not isinstance(artifact, dict):
+        return []
+    status = str(artifact.get("status") or "not_verified")
+    verified = artifact.get("verified_for_this_report") is True and _is_verified_status(status)
+    summary = artifact.get("summary") if isinstance(artifact.get("summary"), dict) else {}
+    return [
+        {
+            "artifact_id": f"{artifact.get('report_run_id') or report_run_id}:velocity_complexity:complexity engine:complexity_artifact:{str(artifact.get('artifact_hash') or _hash_payload(artifact))[:12]}",
+            "tool_name": "complexity engine",
+            "source": "complexity_artifact",
+            "repository": str(artifact.get("repository") or result.get("repository") or result.get("repo") or ""),
+            "commit_sha": str(artifact.get("commit_sha") or result.get("commit_sha") or result.get("head_sha") or "unknown"),
+            "run_timestamp": str(artifact.get("generated_at") or result.get("generated_at") or _now_iso()),
+            "command_used": "nico.complexity_engine.build_complexity_profile",
+            "exit_code": 0 if verified else None,
+            "status": status,
+            "content_hash": str(artifact.get("artifact_hash") or _hash_payload(artifact)),
+            "findings_count": len(artifact.get("findings") if isinstance(artifact.get("findings"), list) else []),
+            "linked_section": "velocity_complexity",
+            "verified_for_this_report": verified,
+            "evidence_excerpt": (
+                "complexity engine artifact "
+                f"status={status}, source_files={summary.get('source_file_count')}, "
+                f"call_edges={summary.get('call_graph_edge_count')}, report_run_id={artifact.get('report_run_id') or report_run_id}"
+            ),
+        }
+    ]
 
 
 def _dedupe_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -246,7 +282,11 @@ def build_evidence_ledger(result: dict[str, Any]) -> dict[str, Any]:
     generated_at = str(result.get("generated_at") or _now_iso())
     repository = str(result.get("repository") or result.get("repo") or "unknown")
     report_run_id = str(result.get("report_run_id") or result.get("assessment_id") or _hash_payload({"generated_at": generated_at, "repository": repository})[:16])
-    entries = _dedupe_entries(_scanner_artifact_entries(result, report_run_id) + _section_entries(result, report_run_id))
+    entries = _dedupe_entries(
+        _scanner_artifact_entries(result, report_run_id)
+        + _complexity_artifact_entries(result, report_run_id)
+        + _section_entries(result, report_run_id)
+    )
     coverage = _coverage(entries)
     verified_count = sum(1 for entry in entries if entry.get("verified_for_this_report"))
     unavailable_count = sum(1 for entry in entries if entry.get("status") == "unavailable")
