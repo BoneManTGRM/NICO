@@ -54,24 +54,27 @@ def test_runtime_payload_for_result_preserves_refresh_execution_flags():
     assert payload["default_branch"] == "main"
 
 
-def test_worker_patch_attaches_tool_stubs_on_blocked(monkeypatch):
-    from nico import hosted_scanner_worker
+def test_ensure_tool_records_preserves_completed_tool_payloads():
+    artifact = {
+        "artifact_schema": "nico.scanner_worker.v1",
+        "worker_execution_state": "completed",
+        "repository": "BoneManTGRM/NICO",
+        "generated_at": "2026-07-09T18:30:00Z",
+        "tools": {
+            "bandit": {
+                "tool": "bandit",
+                "status": "completed",
+                "category": "static",
+                "returncode": 1,
+                "findings": [{"test_id": "B101"}],
+            }
+        },
+    }
 
-    install_hosted_scanner_execution_path_patch()
+    updated = _ensure_tool_records(artifact)
+    records = {item["tool"]: item for item in updated["tool_records"]}
 
-    def blocked(payload):
-        return {
-            "artifact_schema": "nico.scanner_worker.v1",
-            "worker_execution_state": "blocked",
-            "repository": payload.get("repository"),
-            "generated_at": "2026-07-09T18:30:00Z",
-            "tools": {},
-            "unavailable_data_notes": ["blocked for test"],
-        }
-
-    monkeypatch.setattr(hosted_scanner_worker, "_nico_original_run_hosted_scanner_worker_execution_path", blocked)
-    artifact = hosted_scanner_worker.run_hosted_scanner_worker({"repository": "BoneManTGRM/NICO", "authorized": True, "authorized_by": "frontend-refresh-full-evidence"})
-
-    assert artifact["tools"]["pip-audit"]["status"] == "unavailable"
-    assert artifact["tool_records"]
-    assert artifact["refresh_full_evidence_requested"] is True
+    assert updated["tools"]["bandit"]["status"] == "completed"
+    assert records["bandit"]["findings_count"] == 1
+    assert records["bandit"]["verified_for_this_report"] is True
+    assert records["pip-audit"]["status"] == "unavailable"
