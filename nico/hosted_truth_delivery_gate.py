@@ -26,6 +26,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     from nico.scanner_artifact_integration import attach_scanner_artifacts_to_report
     from nico.service_tier_workflows import attach_service_tier_workflows
     from nico.trust_engine import apply_strict_trust_engine
+    from nico.trust_report_display import attach_trust_report_display
 
     result = apply_dependency_score_consistency(result)
     result = attach_scanner_artifacts_to_report(result)
@@ -36,8 +37,10 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     result = attach_score_lift_plan(result)
     result = attach_service_tier_workflows(result)
     result["report_truth_guard"] = build_report_truth_status()
+    result = attach_trust_report_display(result)
     result = rebuild_reports(result)
-    return apply_export_truth_gate(result)
+    result = apply_export_truth_gate(result)
+    return attach_trust_report_display(result)
 
 
 def patch_client_acceptance_gate_for_report_truth() -> None:
