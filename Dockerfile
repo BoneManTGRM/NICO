@@ -6,6 +6,7 @@ ENV PIP_NO_CACHE_DIR=1
 ENV NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true
 ENV NICO_ALLOW_PROJECT_COMMANDS=true
 ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
+ENV NICO_SCANNER_INSTALL_STRICT=false
 
 WORKDIR /app
 
@@ -15,6 +16,8 @@ RUN apt-get update \
         git \
         nodejs \
         npm \
+        tar \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g eslint typescript
