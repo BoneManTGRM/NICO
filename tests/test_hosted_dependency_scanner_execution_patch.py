@@ -1,12 +1,14 @@
+import sys
 from pathlib import Path
 
+from nico import scanner_tool_runners
 from nico.hosted_dependency_scanner_execution_patch import (
     _npm_audit_commands,
     _pip_audit_command,
     _unavailable,
     install_hosted_dependency_scanner_execution_patch,
 )
-from nico.scanner_tool_runners import ScannerToolSpec, run_scanner_tool
+from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 
@@ -24,7 +26,7 @@ def test_pip_audit_falls_back_to_python_module_when_binary_missing(monkeypatch, 
     command, cwd, reason, source = _pip_audit_command(ws.repo_dir)
 
     assert command is not None
-    assert command[:3] == (__import__("sys").executable, "-m", "pip_audit")
+    assert command[:3] == (sys.executable, "-m", "pip_audit")
     assert cwd == ws.repo_dir
     assert reason is None
     assert source == "python_module_pip_audit"
@@ -67,7 +69,7 @@ def test_patched_pip_audit_returns_completed_payload(monkeypatch, tmp_path):
         return WorkerCommandResult(args=tuple(command), returncode=0, stdout='{"dependencies":[]}', stderr="")
 
     spec = ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency")
-    result = run_scanner_tool(spec, ws, runner=fake_runner)
+    result = scanner_tool_runners.run_scanner_tool(spec, ws, runner=fake_runner)
 
     assert result["status"] == "completed"
     assert result["verified_for_this_report"] is True
@@ -90,7 +92,7 @@ def test_osv_api_fallback_marks_current_run(monkeypatch, tmp_path):
     install_hosted_dependency_scanner_execution_patch()
 
     spec = ScannerToolSpec("osv-scanner", ("osv-scanner", "--format", "json", "."), "dependency")
-    result = run_scanner_tool(spec, ws)
+    result = scanner_tool_runners.run_scanner_tool(spec, ws)
 
     assert result["status"] == "completed"
     assert result["execution_source"] == "osv_api_fallback"
