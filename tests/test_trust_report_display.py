@@ -54,6 +54,10 @@ def test_trust_report_display_marks_review_limited_and_adds_path():
     assert result["client_delivery_status"] == "Human Review Required"
     assert result["sections"][0]["id"] == "trust_readiness"
     assert result["sections"][0]["label"] == "Trust & Client Readiness"
+    assert result["sections"][0]["status"] == "yellow"
+    assert result["sections"][0]["score"] == 82
+    assert result["sections"][0]["scoring_weight"] == 0
+    assert result["sections"][0]["score_basis"] == "final_maturity_signal_display_only"
     assert any("pip-audit" in item for item in result["trust_report_display"]["why_not_higher"])
     assert any("Attach current-run clean pip-audit" in item for item in result["quick_wins"])
 
@@ -64,6 +68,7 @@ def test_trust_report_display_marks_verified_when_critical_proof_is_complete():
     assert result["trust_report_display"]["trust_level"] == "Verified"
     assert result["client_delivery_status"] == "Client-ready after human approval"
     assert result["sections"][0]["status"] == "green"
+    assert result["sections"][0]["score"] == 92
     assert result["sections"][0]["findings"] == ["No trust display blockers found."]
 
 
@@ -72,5 +77,7 @@ def test_hosted_gate_exports_trust_readiness_section():
 
     assert result["trust_report_display"]["trust_level"] == "Review-limited"
     assert result["sections"][0]["id"] == "trust_readiness"
+    assert result["sections"][0]["score"] == result["maturity_signal"]["score"]
+    assert result["sections"][0]["scoring_weight"] == 0
     assert "Trust & Client Readiness" in result["reports"]["markdown"]
     assert "Trust Level:" in result["reports"]["markdown"]
