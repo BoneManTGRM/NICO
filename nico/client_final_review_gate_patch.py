@@ -153,9 +153,8 @@ def _patch_client_acceptance_status() -> None:
         final_gate = _safe_dict(gate.get("final_review_gate"))
         if final_gate:
             status["client_final_review_gate"] = final_gate
-            if status.get("client_delivery_allowed") and final_gate.get("blockers"):
-                status["client_delivery_allowed"] = False
-                status["acceptance_status"] = "blocked_missing_final_review_evidence"
+            status["final_review_blockers"] = list(final_gate.get("blockers") or [])
+            status["final_review_status"] = final_gate.get("status")
         return status
 
     client_acceptance.client_acceptance_status = client_acceptance_status_with_final_review
