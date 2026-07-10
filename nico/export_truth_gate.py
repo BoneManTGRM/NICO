@@ -205,41 +205,75 @@ def _blocked_report(result: dict[str, Any], violations: list[dict[str, Any]]) ->
     return "\n".join(lines)
 
 
+def _artifact_snapshot(reports: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "markdown": bool(str(reports.get("markdown") or "").strip()),
+        "html": bool(str(reports.get("html") or "").strip()),
+        "pdf": bool(str(reports.get("pdf_base64") or "").strip()),
+    }
+
+
+def _append_export_disclosure(result: dict[str, Any], violations: list[dict[str, Any]]) -> None:
+    if not violations:
+        return
+    note = "Export Truth Gate warnings were recorded; exports are draft-only and require human review before client delivery."
+    result.setdefault("unavailable_data_notes", [])
+    if note not in result["unavailable_data_notes"]:
+        result["unavailable_data_notes"].append(note)
+    result.setdefault("findings", [])
+    finding = f"Export Truth Gate warning count={len(violations)}; client delivery remains blocked until human review."
+    if finding not in result["findings"]:
+        result["findings"].append(finding)
+
+
 def apply_export_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     """Validate rendered report exports against the final JSON evidence state.
 
-    This gate runs after report rebuild. It blocks client-facing exports if the
-    JSON or rendered Markdown/HTML still show green contradictions, score drift,
-    or missing export text.
+    This gate no longer destroys Markdown/HTML/PDF artifacts when it finds a
+    review issue. Destroying artifacts made the hosted UI look broken and made
+    the acceptance workflow impossible to review. Instead, the gate records
+    draft-only warnings, keeps client delivery blocked, and preserves the
+    report artifacts for human review.
     """
 
     if result.get("status") != "complete":
         return result
+    reports = result.setdefault("reports", {})
+    before = _artifact_snapshot(reports)
     violations = _json_green_contradictions(result) + _export_green_contradictions(result) + _score_mismatch(result)
+    has_missing_export_text = any(item.get("type") == "missing_export_text" for item in violations)
+    status = "failed" if has_missing_export_text else "review_required" if violations else "passed"
     gate = {
-        "version": "export-truth-gate-v1",
-        "status": "failed" if violations else "passed",
-        "export_allowed": not violations,
+        "version": "export-truth-gate-v2-nondestructive",
+        "status": status,
+        "export_allowed": not has_missing_export_text,
+        "client_delivery_allowed": False,
+        "draft_only": bool(violations),
         "violations": violations,
+        "artifact_snapshot": before,
         "rules": [
             "no_green_json_section_with_review_limited_evidence",
             "no_green_rendered_section_with_same_section_missing_or_unavailable_evidence",
             "rendered_score_matches_final_json_score",
             "rendered_exports_must_not_be_empty",
+            "preserve_exports_for_human_review",
         ],
     }
     result["export_truth_gate"] = gate
     result.setdefault("report_quality_guards", {})["export_truth_gate"] = {
         "status": gate["status"],
         "export_allowed": gate["export_allowed"],
+        "client_delivery_allowed": False,
+        "draft_only": bool(violations),
         "violation_count": len(violations),
     }
     if violations:
         result["delivery_verdict"] = "human_review_required"
         result["client_ready"] = False
-        reports = result.setdefault("reports", {})
-        blocked = _blocked_report(result, violations)
-        reports["markdown"] = blocked
-        reports["html"] = "<pre>" + blocked.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>"
-        reports["pdf_base64"] = ""
+        _append_export_disclosure(result, violations)
+        if has_missing_export_text:
+            blocked = _blocked_report(result, violations)
+            reports["markdown"] = blocked
+            reports["html"] = "<pre>" + blocked.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>"
+            reports["pdf_base64"] = ""
     return result
