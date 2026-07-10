@@ -1,0 +1,87 @@
+NICO Source-Available Non-Commercial License v1.0
+
+Copyright (c) 2026 Cody Jenkins / BoneManTGRM. All rights reserved.
+
+IMPORTANT: This license is source-available and non-commercial. It is not an open-source license because commercial use is restricted.
+
+1. Definitions
+
+"Software" means the NICO software, source code, object code, documentation, reports, examples, tests, scripts, workflows, user interfaces, and related materials in this repository.
+
+"Licensor" means Cody Jenkins / BoneManTGRM, or any later rights holder authorized to license the Software.
+
+"You" or "Licensee" means any individual or entity accessing, copying, modifying, running, or otherwise using the Software.
+
+"Non-Commercial Use" means personal, educational, internal evaluation, testing, research, or defensive security review use that does not directly or indirectly generate revenue, support paid services, support a commercial product, support consulting, support managed services, or provide business value to a for-profit entity.
+
+"Commercial Use" means any use of the Software for or by a business, client, customer, government agency, contractor, revenue-generating activity, paid service, managed service, hosted service, consulting engagement, product offering, internal business operation, or competing product or service.
+
+2. Non-Commercial License Grant
+
+Subject to this License, Licensor grants You a limited, revocable, non-exclusive, non-transferable, non-sublicensable license to access, copy, run, and modify the Software solely for Non-Commercial Use.
+
+Permitted Non-Commercial Use includes reviewing source code, testing the Software in private authorized environments, evaluating defensive assessment workflows, creating private non-commercial modifications, and using the Software only on systems You own or are explicitly authorized to assess.
+
+3. Commercial License Required
+
+Commercial Use is not allowed under this License. Commercial Use requires a separate written commercial license, order form, or signed agreement from Licensor.
+
+4. Restrictions
+
+You may not, without a separate written commercial license from Licensor:
+
+- use the Software for Commercial Use;
+- sell, rent, lease, sublicense, resell, distribute, or provide the Software to third parties;
+- offer the Software as a hosted service, managed service, audit service, security service, software-as-a-service, or client deliverable;
+- use the Software to produce paid reports, paid assessments, paid audits, or client-facing deliverables;
+- use the Software in a competing product or service;
+- remove, obscure, or alter copyright, license, attribution, safety, authorization, or human-review notices;
+- misrepresent the Software as open-source software;
+- use the Software outside defensive, authorized assessment boundaries;
+- use the Software on any system You do not own or lack explicit permission to assess;
+- train, fine-tune, or improve a commercial model or commercial product using the Software without written permission; or
+- circumvent any license, safety, authorization, reporting, audit, or human-review control included with the Software.
+
+5. Defensive-Only Boundary
+
+The Software is provided for defensive, authorized security analysis only. You are solely responsible for obtaining authorization before assessing any repository, application, system, network, account, or data source.
+
+6. Ownership
+
+Licensor retains all right, title, and interest in and to the Software, including all copyrights, trade secrets, trademarks, know-how, improvements, derivative works, and other intellectual property rights, except for third-party components governed by their own licenses.
+
+No ownership rights are transferred to You under this License.
+
+7. Modifications and Feedback
+
+You may create private modifications solely for permitted Non-Commercial Use. You may not distribute modified versions without written permission.
+
+If You submit feedback, ideas, issues, pull requests, patches, suggestions, or other contributions to Licensor, You grant Licensor a perpetual, worldwide, royalty-free, irrevocable license to use, reproduce, modify, distribute, sublicense, and commercialize those contributions without restriction or obligation, unless a separate written contributor agreement says otherwise.
+
+8. Third-Party Materials
+
+The Software may include or interact with third-party packages, APIs, tools, data, documentation, or services. Third-party materials are governed by their own licenses and terms.
+
+9. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND. LICENSOR DISCLAIMS ALL WARRANTIES, EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, SECURITY, ACCURACY, RELIABILITY, AVAILABILITY, AND ERROR-FREE OPERATION.
+
+10. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, PUNITIVE, OR OTHER DAMAGES, INCLUDING LOST PROFITS, LOST REVENUE, LOST DATA, BUSINESS INTERRUPTION, SECURITY INCIDENTS, SYSTEM DAMAGE, OR PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, ARISING FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+11. Indemnity
+
+You agree to defend, indemnify, and hold harmless Licensor from and against any claims, damages, liabilities, losses, costs, and expenses arising from Your use of the Software, Your violation of this License, Your violation of law, or Your assessment of systems without authorization.
+
+12. Termination
+
+This License terminates automatically if You violate any term. Upon termination, You must immediately stop using the Software and delete all copies in Your possession or control, except where retention is required by law.
+
+13. Governing Law
+
+Unless a separate signed agreement states otherwise, this License is governed by the laws of the jurisdiction where Licensor resides, without regard to conflict-of-law rules.
+
+14. Entire License
+
+This License is the complete agreement for Non-Commercial Use of the Software and supersedes prior informal statements about licensing. Any Commercial Use requires a separate written commercial license signed or otherwise approved in writing by Licensor.
