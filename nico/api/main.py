@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 from nico.cli import scan_test_lab, scan_drift_demo, run_scan, Store, generate_reports, verify_latest
@@ -216,6 +217,18 @@ register_release_readiness_routes(app)
 register_hosted_smoke_test_routes(app)
 register_report_readiness_gate_routes(app)
 register_report_readiness_attachment_routes(app)
+
+
+@app.exception_handler(Exception)
+async def safe_unhandled_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            'status': 'error',
+            'code': 'internal_error',
+            'message': 'Request failed. Review server logs or diagnostic evidence with authorized access.',
+        },
+    )
 
 
 def _max_target_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
