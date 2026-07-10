@@ -20,17 +20,20 @@ RUN apt-get update \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g eslint typescript
+RUN npm install -g eslint typescript --no-audit --no-fund \
+    || echo "warning: optional eslint/typescript global install unavailable during Docker build"
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir pip-audit bandit semgrep coverage \
-    && python scripts/install_hosted_scanner_binaries.py
+    && (pip install --no-cache-dir pip-audit bandit semgrep coverage \
+        || echo "warning: optional Python scanner package install unavailable during Docker build") \
+    && (python scripts/install_hosted_scanner_binaries.py \
+        || echo "warning: optional hosted scanner binary install unavailable during Docker build")
 
 COPY . .
-RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts; fi
+RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund || echo "warning: optional frontend dependency install unavailable during backend Docker build"; fi
 
 EXPOSE 8000
 
