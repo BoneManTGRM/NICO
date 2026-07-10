@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
 import re
 import zipfile
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
+
+from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact, scanner_worker_evidence_notes
 
 GITHUB_API = "https://api.github.com"
 MAX_ARTIFACT_BYTES = 1_200_000
@@ -111,7 +115,7 @@ def _fetch_recent_artifacts(repo: str) -> dict[str, Any]:
                 continue
             files = _artifact_files(repo, int(artifact.get("id") or 0))
             if files:
-                out[name] = {"workflow": run.get("name"), "conclusion": run.get("conclusion"), "created_at": artifact.get("created_at"), "files": files}
+                out[name] = {"workflow": run.get("name"), "conclusion": run.get("conclusion"), "created_at": artifact.get("created_at"), "run_id": run_id, "files": files}
         if all(name in out for name in wanted_names):
             break
     return out
@@ -152,6 +156,22 @@ def _npm_count(data: Any) -> int | None:
     return None
 
 
+def _osv_count(data: Any) -> int | None:
+    if not isinstance(data, dict):
+        return None
+    if isinstance(data.get("results"), list):
+        total = 0
+        for item in data["results"]:
+            if isinstance(item, dict):
+                total += len(item.get("packages") or item.get("vulnerabilities") or [])
+        return total
+    if isinstance(data.get("vulnerabilities"), list):
+        return len(data["vulnerabilities"])
+    if str(data.get("status") or "").lower() in {"unavailable", "skipped"}:
+        return None
+    return 0
+
+
 def _result_count(data: Any) -> int | None:
     if not isinstance(data, dict):
         return None
@@ -159,6 +179,26 @@ def _result_count(data: Any) -> int | None:
         value = data.get(key)
         if isinstance(value, list):
             return len(value)
+    if isinstance(data.get("finding_count"), int):
+        return int(data["finding_count"])
+    return None
+
+
+def _eslint_count(data: Any) -> int | None:
+    if isinstance(data, list):
+        return sum(len(item.get("messages") or []) for item in data if isinstance(item, dict))
+    if isinstance(data, dict) and isinstance(data.get("finding_count"), int):
+        return int(data["finding_count"])
+    return None
+
+
+def _typescript_count(data: Any) -> int | None:
+    if isinstance(data, dict):
+        if isinstance(data.get("finding_count"), int):
+            return int(data["finding_count"])
+        status = str(data.get("status") or "").lower()
+        if status in {"completed_clean", "completed", "success", "ok", "passed"}:
+            return 0
     return None
 
 
@@ -184,6 +224,71 @@ def _gitleaks_count(data: Any) -> int | None:
         if data.get("status") == "skipped":
             return None
     return None
+
+
+def _trufflehog_count(data: Any) -> int | None:
+    if isinstance(data, dict):
+        if isinstance(data.get("finding_count"), int):
+            return int(data["finding_count"])
+        if str(data.get("status") or "").lower() == "unavailable":
+            return None
+    return _gitleaks_count(data)
+
+
+def _tool_status(count: int | None, present: bool) -> str:
+    if not present or count is None:
+        return "unavailable"
+    return "completed"
+
+
+def _tool_record(name: str, count: int | None, source_run_id: Any, generated_at: str, present: bool) -> dict[str, Any]:
+    payload = {
+        "status": _tool_status(count, present),
+        "finding_count": int(count or 0),
+        "execution_source": "github_actions_artifact",
+        "run_id": source_run_id,
+        "generated_at": generated_at,
+    }
+    payload["artifact_hash"] = hashlib.sha256(json.dumps({"tool": name, **payload}, sort_keys=True).encode()).hexdigest()
+    return payload
+
+
+def _scanner_manifest_from_files(files: dict[str, Any], artifacts: dict[str, Any], repo: str) -> dict[str, Any]:
+    explicit = files.get("scanner-worker-artifact.json")
+    if isinstance(explicit, dict) and isinstance(explicit.get("tools"), dict):
+        return explicit
+    latest = next(iter(artifacts.values()), {}) if artifacts else {}
+    run_id = latest.get("run_id")
+    generated_at = str(latest.get("created_at") or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+    pip = files.get("pip-audit.json") or files.get("pip-audit-results.json")
+    npm = files.get("npm-audit.json") or files.get("npm-audit-results.json")
+    osv = files.get("osv-scanner.json")
+    bandit = files.get("bandit.json")
+    semgrep = files.get("semgrep.json")
+    eslint = files.get("eslint.json")
+    typescript = files.get("typescript-summary.json")
+    gitleaks = files.get("gitleaks-summary.json") or files.get("gitleaks.json")
+    trufflehog = files.get("trufflehog-summary.json") or files.get("trufflehog.json")
+    counts = {
+        "pip-audit": (_pip_count(pip), pip is not None),
+        "npm-audit": (_npm_count(npm), npm is not None),
+        "osv-scanner": (_osv_count(osv), osv is not None),
+        "bandit": (_result_count(bandit), bandit is not None),
+        "semgrep": (_result_count(semgrep), semgrep is not None),
+        "eslint": (_eslint_count(eslint), eslint is not None),
+        "typescript": (_typescript_count(typescript), typescript is not None),
+        "gitleaks": (_gitleaks_count(gitleaks), gitleaks is not None),
+        "trufflehog": (_trufflehog_count(trufflehog), trufflehog is not None),
+    }
+    return {
+        "artifact_schema": "nico.scanner_worker.v1",
+        "worker_execution_state": "completed",
+        "repository": repo,
+        "run_id": run_id,
+        "generated_at": generated_at,
+        "tools": {tool: _tool_record(tool, count, run_id, generated_at, present) for tool, (count, present) in counts.items()},
+        "human_review_required": True,
+    }
 
 
 def _drop_resolved_dependency_findings(section: dict[str, Any]) -> None:
@@ -245,6 +350,27 @@ def _mark_artifact_access_unavailable(sections: list[dict[str, Any]], status: di
             _append_unique(section["unavailable"], note)
 
 
+def _attach_manifest_notes(sections: list[dict[str, Any]], manifest: dict[str, Any]) -> None:
+    notes = scanner_worker_evidence_notes(manifest)
+    mapping = {
+        "dependency_health": "dependency tools completed",
+        "static_analysis": "static tools completed",
+        "secrets_review": "secret tools completed",
+    }
+    for section_id, marker in mapping.items():
+        section = _section(sections, section_id)
+        if not section:
+            continue
+        section.setdefault("evidence", [])
+        section.setdefault("unavailable", [])
+        for note in notes["evidence"]:
+            if marker in note.lower():
+                _append_unique(section["evidence"], note)
+        for note in notes["unavailable"]:
+            if section_id.split("_")[0] in note.lower() or (section_id == "secrets_review" and "secret" in note.lower()):
+                _append_unique(section["unavailable"], note)
+
+
 def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
     repo = _repo(output.get("repository") or output.get("source_scope"))
@@ -266,32 +392,53 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
     for artifact in artifacts.values():
         files.update(artifact.get("files") or {})
 
+    manifest = _scanner_manifest_from_files(files, artifacts, repo)
+    normalized_manifest = normalize_scanner_worker_artifact(manifest)
+    output["scanner_worker_artifact"] = manifest
+    output["scanner_worker_artifact_normalized"] = normalized_manifest
+    output["scanner_worker_evidence_attached"] = True
+    _attach_manifest_notes(sections, manifest)
+
     if deps is not None:
         pip = files.get("pip-audit.json") or files.get("pip-audit-results.json")
         npm = files.get("npm-audit.json") or files.get("npm-audit-results.json")
+        osv = files.get("osv-scanner.json")
         pip_count = _pip_count(pip) if pip is not None else None
         npm_count = _npm_count(npm) if npm is not None else None
-        if pip_count == 0 and npm_count == 0:
+        osv_count = _osv_count(osv) if osv is not None else None
+        if pip_count == 0 and npm_count == 0 and osv_count == 0:
+            _drop_resolved_dependency_findings(deps)
+            _lift_section(deps, "dependency_intelligence", "Parsed GitHub Actions pip-audit, npm-audit, and OSV Scanner artifacts reported zero dependency vulnerabilities.", 90)
+        elif pip_count == 0 and npm_count == 0:
             _drop_resolved_dependency_findings(deps)
             _lift_section(deps, "dependency_intelligence", "Parsed GitHub Actions pip-audit and npm-audit artifacts reported zero dependency vulnerabilities.", 90)
         elif pip_count is not None and pip_count > 0:
             _flag_section(deps, "dependency_intelligence", f"Parsed pip-audit artifact reported {pip_count} vulnerability finding(s).", 68)
         elif npm_count is not None and npm_count > 0:
             _flag_section(deps, "dependency_intelligence", f"Parsed npm-audit artifact reported {npm_count} vulnerability finding(s).", 64)
+        elif osv_count is not None and osv_count > 0:
+            _flag_section(deps, "dependency_intelligence", f"Parsed OSV Scanner artifact reported {osv_count} vulnerability finding(s).", 64)
 
     if secrets is not None:
         credential = files.get("credential-scan.json")
         gitleaks = files.get("gitleaks.json")
         gitleaks_summary = files.get("gitleaks-summary.json")
+        trufflehog = files.get("trufflehog-summary.json") or files.get("trufflehog.json")
         credential_count = _credential_count(credential)
         gitleaks_count = _gitleaks_count(gitleaks)
+        trufflehog_count = _trufflehog_count(trufflehog)
         if gitleaks_count is None:
             gitleaks_count = _gitleaks_count(gitleaks_summary)
-        if credential_count == 0 and gitleaks_count == 0:
+        if credential_count == 0 and gitleaks_count == 0 and trufflehog_count == 0:
+            _drop_resolved_secret_findings(secrets)
+            _lift_section(secrets, "secret_scanning", "Parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings.", 93)
+        elif credential_count == 0 and gitleaks_count == 0:
             _drop_resolved_secret_findings(secrets)
             _lift_section(secrets, "secret_scanning", "Parsed credential-scan and gitleaks git-history artifacts reported zero credential findings.", 93)
         elif gitleaks_count is not None and gitleaks_count > 0:
             _flag_section(secrets, "secret_scanning", f"Parsed gitleaks artifact reported {gitleaks_count} git-history secret finding(s).", 60)
+        elif trufflehog_count is not None and trufflehog_count > 0:
+            _flag_section(secrets, "secret_scanning", f"Parsed trufflehog artifact reported {trufflehog_count} git-history secret finding(s).", 60)
         elif credential_count is not None and credential_count > 0:
             _flag_section(secrets, "secret_scanning", f"Parsed credential-scan artifact reported {credential_count} high-confidence credential finding(s).", 60)
         elif credential_count == 0:
@@ -301,18 +448,30 @@ def apply_scanner_artifact_scoring(result: dict[str, Any]) -> dict[str, Any]:
     if static is not None:
         bandit = files.get("bandit.json")
         semgrep = files.get("semgrep.json")
+        eslint = files.get("eslint.json")
+        typescript = files.get("typescript-summary.json")
+        bandit_triage = files.get("bandit-triage.json")
         bandit_count = _result_count(bandit) if bandit is not None else None
         semgrep_count = _result_count(semgrep) if semgrep is not None else None
-        if bandit_count == 0 and semgrep_count == 0:
-            _lift_section(static, "static_analysis", "Parsed Bandit and Semgrep artifacts reported zero scanner findings.", 90)
+        eslint_count = _eslint_count(eslint) if eslint is not None else None
+        typescript_count = _typescript_count(typescript) if typescript is not None else None
+        if bandit_count == 0 and semgrep_count == 0 and eslint_count == 0 and typescript_count == 0:
+            _lift_section(static, "static_analysis", "Parsed Bandit, Semgrep, ESLint, and TypeScript artifacts reported zero scanner findings.", 90)
         elif bandit_count and bandit_count > 0:
+            if isinstance(bandit_triage, dict):
+                static.setdefault("evidence", [])
+                _append_unique(static["evidence"], "Bandit triage artifact attached: blocking={blocking}, needs_review={needs_review}, approved={approved}, candidate_false_positive={candidate_false_positive}.".format(**{key: int(bandit_triage.get(key) or 0) for key in ("blocking", "needs_review", "approved", "candidate_false_positive")}))
             _flag_section(static, "static_analysis", f"Parsed Bandit artifact reported {bandit_count} finding(s).", 70)
         elif semgrep_count and semgrep_count > 0:
             _flag_section(static, "static_analysis", f"Parsed Semgrep artifact reported {semgrep_count} finding(s).", 70)
+        elif eslint_count and eslint_count > 0:
+            _flag_section(static, "static_analysis", f"Parsed ESLint artifact reported {eslint_count} finding(s).", 70)
+        elif typescript_count and typescript_count > 0:
+            _flag_section(static, "static_analysis", f"Parsed TypeScript artifact reported {typescript_count} finding(s).", 70)
 
     if ci is not None:
         _lift_section(ci, "ci_artifacts", "Current GitHub Actions scanner artifact sets were fetched and parsed successfully.", 95)
 
     output["sections"] = sections
-    output["scanner_artifact_summary"] = {"status": "parsed", "access": access, "artifact_sets": sorted(artifacts.keys()), "files": sorted(files.keys())}
+    output["scanner_artifact_summary"] = {"status": "parsed", "access": access, "artifact_sets": sorted(artifacts.keys()), "files": sorted(files.keys()), "scanner_manifest_attached": True, "normalized_missing_tools": normalized_manifest.get("missing_dependency_tools", []) + normalized_manifest.get("missing_static_tools", []) + normalized_manifest.get("missing_secret_tools", [])}
     return output
