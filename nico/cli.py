@@ -81,6 +81,7 @@ REPAIR_LIBRARY = {
 }
 
 SKIP_SCAN_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".nico", ".next"}
+SAFE_SCAN_PART_RE = re.compile(r"^[A-Za-z0-9._ -]+$")
 
 
 def now() -> str:
@@ -307,12 +308,30 @@ def _allowed_scan_bases() -> list[Path]:
     return bases
 
 
-def _resolve_scan_root_under_base(target: str, base: Path) -> Path:
+def _safe_target_parts_for_base(target: str, base: Path) -> tuple[str, ...]:
     target_text = str(target or "").strip()
     if not target_text or "\x00" in target_text:
         raise ValueError("scan target is empty or invalid")
-    raw = Path(target_text).expanduser()
-    candidate = raw if raw.is_absolute() else base / raw
+    base_text = str(base)
+    if target_text == base_text:
+        return ()
+    if target_text.startswith(base_text + os.sep):
+        relative_text = target_text[len(base_text) + 1:]
+    elif os.path.isabs(target_text):
+        raise ValueError("absolute scan target is outside the allowed root")
+    else:
+        relative_text = target_text
+    if "\\" in relative_text:
+        raise ValueError("scan target separators are invalid")
+    parts = tuple(part for part in relative_text.split("/") if part)
+    if any(part in {".", ".."} or not SAFE_SCAN_PART_RE.fullmatch(part) for part in parts):
+        raise ValueError("scan target contains unsafe path components")
+    return parts
+
+
+def _resolve_scan_root_under_base(target: str, base: Path) -> Path:
+    parts = _safe_target_parts_for_base(target, base)
+    candidate = base.joinpath(*parts)
     root = candidate.resolve(strict=True)
     root.relative_to(base)
     if not root.is_dir():
