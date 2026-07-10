@@ -172,15 +172,22 @@ def safe_operation_result(result: Any) -> dict[str, Any]:
     }
 
 
-def hosted_assessment_storage_record(req: GithubAssessmentRequest) -> tuple[str, dict[str, Any]]:
-    record_id = f"express_{req.customer_id or 'default_customer'}_{req.project_id or 'default_project'}"
+def assessment_storage_record(req: Any, workflow: str) -> tuple[str, dict[str, Any]]:
+    customer_id = str(getattr(req, 'customer_id', 'default_customer') or 'default_customer')
+    project_id = str(getattr(req, 'project_id', 'default_project') or 'default_project')
+    repository = str(getattr(req, 'repository', '') or '')
+    record_id = f"{workflow}_{customer_id}_{project_id}"
     payload = {
         'status': 'complete',
-        'repository': req.repository,
-        'customer_id': req.customer_id,
-        'project_id': req.project_id,
+        'repository': repository,
+        'customer_id': customer_id,
+        'project_id': project_id,
     }
-    return record_id, {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':'complete','payload':payload}
+    return record_id, {'workflow': workflow, 'customer_id': customer_id, 'project_id': project_id, 'status': 'complete', 'payload': payload}
+
+
+def hosted_assessment_storage_record(req: Any) -> tuple[str, dict[str, Any]]:
+    return assessment_storage_record(req, 'express')
 
 
 def safe_blocked_exception(result: dict[str, Any]) -> HTTPException:
@@ -569,7 +576,8 @@ def hosted_mid_assessment(req: MidAssessmentRequest):
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     result = scrub_exception_details(result)
     _LAST_MID_ASSESSMENT = result
-    STORE.put('assessment_runs', result.get('generated_at','latest_mid').replace(':','_'), {'workflow':'mid','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
+    record_id, storage_record = assessment_storage_record(req, 'mid')
+    STORE.put('assessment_runs', record_id, storage_record)
     return result
 
 @app.post('/retainer/ops')
@@ -579,7 +587,8 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     result = scrub_exception_details(result)
     _LAST_RETAINER_OPS = result
-    STORE.put('assessment_runs', result.get('generated_at','latest_retainer').replace(':','_'), {'workflow':'retainer','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
+    record_id, storage_record = assessment_storage_record(req, 'retainer')
+    STORE.put('assessment_runs', record_id, storage_record)
     return result
 
 @app.post('/worker/scan')
