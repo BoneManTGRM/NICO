@@ -226,8 +226,35 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
     return result
 
 
+def _preserve_existing_artifact_after_refresh_failure(result: dict[str, Any], attempted_artifact: dict[str, Any], existing_artifact: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_scanner_worker_artifact(existing_artifact)
+    missing = []
+    missing.extend(normalized.get("missing_dependency_tools") or [])
+    missing.extend(normalized.get("missing_static_tools") or [])
+    missing.extend(normalized.get("missing_secret_tools") or [])
+    result["scanner_worker_artifact"] = existing_artifact
+    result["scanner_worker_artifact_normalized"] = normalized
+    result["scanner_worker_evidence_attached"] = True
+    result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
+        "status": "refresh_checkout_failed_existing_artifact_preserved",
+        "refresh_full_evidence_requested": _explicit_refresh_requested(result),
+        "request_source": _request_source(result),
+        "attempted_runtime_status": attempted_artifact.get("worker_execution_state") or "checkout_failed",
+        "completed_dependency_tools": normalized.get("dependency_tools_completed"),
+        "completed_static_tools": normalized.get("static_tools_completed"),
+        "completed_secret_tools": normalized.get("secret_tools_completed"),
+        "missing_dependency_tools": normalized.get("missing_dependency_tools"),
+        "missing_static_tools": normalized.get("missing_static_tools"),
+        "missing_secret_tools": normalized.get("missing_secret_tools"),
+        "guardrail": "Refresh checkout failed, so the report preserved already attached current-run scanner evidence instead of replacing it with an empty checkout-failed artifact.",
+    }
+    _add_visible_validation_note(result, "refresh_checkout_failed_existing_artifact_preserved", [str(item) for item in missing])
+    return result
+
+
 def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
     """Collect runtime evidence only for explicit hosted Refresh Full Evidence requests."""
+    existing_artifact = _raw_artifact(result)
     if not _should_refresh(result):
         return result
     try:
@@ -238,4 +265,6 @@ def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(artifact, dict):
         _guard(result, "failed_no_artifact")
         return result
+    if existing_artifact and str(artifact.get("worker_execution_state") or "") == "checkout_failed":
+        return _preserve_existing_artifact_after_refresh_failure(result, artifact, existing_artifact)
     return _attach_raw_artifact(result, artifact)
