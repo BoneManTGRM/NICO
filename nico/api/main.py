@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import Any
@@ -168,6 +170,17 @@ def safe_operation_result(result: Any) -> dict[str, Any]:
         'project_id': result.get('project_id'),
         'queued': result.get('queued'),
     }
+
+
+def hosted_assessment_storage_record(req: GithubAssessmentRequest) -> tuple[str, dict[str, Any]]:
+    record_id = f"express_{req.customer_id or 'default_customer'}_{req.project_id or 'default_project'}"
+    payload = {
+        'status': 'complete',
+        'repository': req.repository,
+        'customer_id': req.customer_id,
+        'project_id': req.project_id,
+    }
+    return record_id, {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':'complete','payload':payload}
 
 
 def safe_blocked_exception(result: dict[str, Any]) -> HTTPException:
@@ -545,8 +558,8 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_client_acceptance_gate(result)
     result = scrub_exception_details(result)
     _LAST_HOSTED_ASSESSMENT = result
-    stored_result = safe_operation_result(result)
-    STORE.put('assessment_runs', stored_result.get('scan_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':stored_result.get('status'),'payload':stored_result})
+    record_id, storage_record = hosted_assessment_storage_record(req)
+    STORE.put('assessment_runs', record_id, storage_record)
     return result
 
 @app.post('/assessment/mid')
