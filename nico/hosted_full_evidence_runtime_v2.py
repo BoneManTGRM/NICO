@@ -47,9 +47,15 @@ def _explicit_refresh_requested(result: dict[str, Any]) -> bool:
 
 def _raw_artifact(result: dict[str, Any]) -> dict[str, Any] | None:
     artifact = result.get("scanner_worker_artifact")
-    if isinstance(artifact, dict) and isinstance(artifact.get("tools"), dict):
-        tools = artifact.get("tools") or {}
-        if any(isinstance(payload, dict) and "findings" in payload for payload in tools.values()):
+    if not isinstance(artifact, dict):
+        return None
+    tools = artifact.get("tools") or artifact.get("results") or {}
+    accepted_keys = {"findings", "issues", "results", "vulnerabilities", "finding_count", "findings_count", "issue_count", "status", "exit_code", "artifact_hash", "execution_source"}
+    if isinstance(tools, dict):
+        if any(isinstance(payload, dict) and accepted_keys.intersection(payload.keys()) for payload in tools.values()):
+            return artifact
+    if isinstance(tools, list):
+        if any(isinstance(payload, dict) and accepted_keys.intersection(payload.keys()) for payload in tools):
             return artifact
     return None
 
@@ -120,11 +126,13 @@ def _add_visible_validation_note(result: dict[str, Any], status: str, missing_to
 
 
 def _runtime_already_attempted(result: dict[str, Any]) -> bool:
-    if result.get("scanner_worker_auto_ran") is True:
+    if result.get("scanner_worker_auto_ran") is True and _raw_artifact(result):
         return True
     guard = result.get("report_quality_guards", {}).get("hosted_full_evidence_runtime") if isinstance(result.get("report_quality_guards"), dict) else None
-    if isinstance(guard, dict) and str(guard.get("status") or "") in TERMINAL_RUNTIME_STATUSES:
+    if isinstance(guard, dict) and str(guard.get("status") or "") in {"completed", "skipped_all_required_tools_already_present"}:
         return True
+    if isinstance(guard, dict) and str(guard.get("status") or "") in TERMINAL_RUNTIME_STATUSES:
+        return not _missing_required_tools(result)
     return False
 
 
@@ -132,7 +140,7 @@ def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
     guards = result.setdefault("report_quality_guards", {})
     existing = guards.get("hosted_full_evidence_runtime") if isinstance(guards.get("hosted_full_evidence_runtime"), dict) else {}
     existing_status = str((existing or {}).get("status") or "")
-    if status == "skipped_all_required_tools_already_present" and existing_status in {"completed", "attempted"}:
+    if status == "skipped_all_required_tools_already_present" and existing_status == "completed":
         return
     if status == "skipped_runtime_already_attempted" and existing_status in TERMINAL_RUNTIME_STATUSES:
         return
@@ -160,12 +168,12 @@ def _should_refresh(result: dict[str, Any]) -> bool:
     if not repository or "/" not in repository:
         _guard(result, "skipped_invalid_repository")
         return False
-    if _runtime_already_attempted(result):
-        _guard(result, "skipped_runtime_already_attempted")
-        return False
     missing = _missing_required_tools(result)
     if not missing:
         _guard(result, "skipped_all_required_tools_already_present")
+        return False
+    if _runtime_already_attempted(result):
+        _guard(result, "skipped_runtime_already_attempted")
         return False
     _guard(result, "queued", missing_required_tools=missing)
     return True
@@ -187,7 +195,7 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
     completed = sorted(
         tool
         for tool, payload in (artifact.get("tools") or {}).items()
-        if isinstance(payload, dict) and payload.get("status") == "completed"
+        if isinstance(payload, dict) and str(payload.get("status") or "").lower() in {"completed", "success", "ok", "passed"}
     )
     result["scanner_worker_artifact"] = artifact
     result["scanner_worker_artifact_normalized"] = normalized
