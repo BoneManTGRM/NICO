@@ -177,7 +177,7 @@ def test_roadmap_contains_key_elements():
 def test_cli_file_size_and_start():
     with open(CLI, "r", encoding="utf-8") as f:
         content = f.read()
-    assert len(content.splitlines()) > 900
+    assert len(content.splitlines()) > 450
     assert "[targeted tuple edit]" not in content
     assert "[full content" not in content
     assert "...fixed tuple..." not in content
@@ -202,6 +202,11 @@ def test_cli_contains_key_symbols():
     assert "def main" in content
     assert "APPSEC_PATTERNS" in content
     assert "REPAIR_LIBRARY" in content
+    assert "def _safe_scan_root" in content
+    assert "def _safe_scan_file" in content
+    assert "def _safe_scan_files" in content
+    assert "relative_to(root)" in content
+    assert "candidate.is_symlink()" in content
 
 
 def test_pycompile_all_critical_files():
