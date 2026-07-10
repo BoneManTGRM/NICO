@@ -123,7 +123,13 @@ Hosted readiness support is available for operators who need current-run evidenc
 - `/release-readiness` - release-readiness support and output-contract verification.
 - `docs/hosted-readiness-runbook.md` - operator runbook for Refresh Full Evidence review, readiness blockers, evidence hashes, and human signoff checks.
 
-Diagnostics do not approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
+Run the hosted readiness smoke check after deployment or environment changes:
+
+```bash
+python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
+```
+
+Diagnostics and smoke checks do not approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
 
 ## CLI Commands
 
