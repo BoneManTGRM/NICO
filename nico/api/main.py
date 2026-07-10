@@ -172,6 +172,18 @@ def safe_operation_result(result: Any) -> dict[str, Any]:
     }
 
 
+def safe_assessment_response_payload(value: Any) -> dict[str, Any]:
+    """Return a JSON-safe assessment payload with exception-detail keys redacted.
+
+    Keep the immediate authorized assessment response intact for the UI/report,
+    but avoid returning the raw assessment object directly from route handlers.
+    """
+    clean = scrub_exception_details(value)
+    if isinstance(clean, dict):
+        return clean
+    return {'status': 'ok', 'result_type': type(clean).__name__}
+
+
 def assessment_storage_record(req: Any, workflow: str) -> tuple[str, dict[str, Any]]:
     customer_id = str(getattr(req, 'customer_id', 'default_customer') or 'default_customer')
     project_id = str(getattr(req, 'project_id', 'default_project') or 'default_project')
@@ -557,39 +569,39 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_existing_worker_evidence(result, request_payload)
     result = enrich_payload_with_scanner_evidence(result)
     result = apply_report_accuracy(result)
-    result = attach_express_review_target(result, request_payload)
+    result = attach_express_review_target(result)
     result = polish_express_result(result)
     result = finalize_express_result_consistency(result)
     result = attach_express_review_target(result, request_payload)
     result = attach_evidence_artifact_bundle(result)
     result = attach_client_acceptance_gate(result)
-    result = scrub_exception_details(result)
-    _LAST_HOSTED_ASSESSMENT = result
+    response_payload = safe_assessment_response_payload(result)
+    _LAST_HOSTED_ASSESSMENT = response_payload
     record_id, storage_record = hosted_assessment_storage_record(req)
     STORE.put('assessment_runs', record_id, storage_record)
-    return result
+    return JSONResponse(content=response_payload)
 
 @app.post('/assessment/mid')
 def hosted_mid_assessment(req: MidAssessmentRequest):
     global _LAST_MID_ASSESSMENT
     result = build_mid_assessment(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    result = scrub_exception_details(result)
-    _LAST_MID_ASSESSMENT = result
+    response_payload = safe_assessment_response_payload(result)
+    _LAST_MID_ASSESSMENT = response_payload
     record_id, storage_record = assessment_storage_record(req, 'mid')
     STORE.put('assessment_runs', record_id, storage_record)
-    return result
+    return JSONResponse(content=response_payload)
 
 @app.post('/retainer/ops')
 def hosted_retainer_ops(req: RetainerOpsRequest):
     global _LAST_RETAINER_OPS
     result = build_retainer_ops(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    result = scrub_exception_details(result)
-    _LAST_RETAINER_OPS = result
+    response_payload = safe_assessment_response_payload(result)
+    _LAST_RETAINER_OPS = response_payload
     record_id, storage_record = assessment_storage_record(req, 'retainer')
     STORE.put('assessment_runs', record_id, storage_record)
-    return result
+    return JSONResponse(content=response_payload)
 
 @app.post('/worker/scan')
 def worker_scan(req: WorkerScanRequest):
