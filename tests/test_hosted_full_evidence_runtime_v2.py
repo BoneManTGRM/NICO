@@ -39,6 +39,16 @@ def clean_scanner_artifact() -> dict:
     }
 
 
+def partial_scanner_artifact() -> dict:
+    artifact = clean_scanner_artifact()
+    artifact["tools"] = {
+        "pip-audit": {"status": "completed", "finding_count": 0},
+        "npm-audit": {"status": "completed", "finding_count": 0},
+        "gitleaks": {"status": "completed", "finding_count": 0},
+    }
+    return artifact
+
+
 def test_standard_complete_result_still_skips_without_request() -> None:
     result = complete_result()
 
@@ -111,6 +121,28 @@ def test_zero_finding_status_only_artifact_is_recognized() -> None:
     result["scanner_worker_artifact"] = clean_scanner_artifact()
 
     assert runtime._missing_required_tools(result) == []
+
+
+def test_checkout_failure_preserves_existing_partial_artifact(monkeypatch) -> None:
+    result = requested_result()
+    existing = partial_scanner_artifact()
+    result["scanner_worker_artifact"] = existing
+
+    monkeypatch.setattr(
+        runtime,
+        "run_hosted_scanner_worker",
+        lambda payload: {"worker_execution_state": "checkout_failed", "tools": {}},
+    )
+
+    output = runtime.ensure_hosted_runtime_evidence(result)
+
+    assert output is result
+    assert result["scanner_worker_artifact"] is existing
+    guard = result["report_quality_guards"]["hosted_full_evidence_runtime"]
+    assert guard["status"] == "refresh_checkout_failed_existing_artifact_preserved"
+    assert guard["attempted_runtime_status"] == "checkout_failed"
+    assert "pip-audit" in guard["completed_dependency_tools"]
+    assert "npm-audit" in guard["completed_dependency_tools"]
 
 
 def test_explicit_request_adds_visible_runtime_note(monkeypatch) -> None:
