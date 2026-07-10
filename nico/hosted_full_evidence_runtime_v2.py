@@ -126,13 +126,14 @@ def _add_visible_validation_note(result: dict[str, Any], status: str, missing_to
 
 
 def _runtime_already_attempted(result: dict[str, Any]) -> bool:
+    missing = _missing_required_tools(result)
     if result.get("scanner_worker_auto_ran") is True and _raw_artifact(result):
-        return True
+        return not missing
     guard = result.get("report_quality_guards", {}).get("hosted_full_evidence_runtime") if isinstance(result.get("report_quality_guards"), dict) else None
     if isinstance(guard, dict) and str(guard.get("status") or "") in {"completed", "skipped_all_required_tools_already_present"}:
-        return True
+        return not missing
     if isinstance(guard, dict) and str(guard.get("status") or "") in TERMINAL_RUNTIME_STATUSES:
-        return not _missing_required_tools(result)
+        return not missing
     return False
 
 
@@ -231,8 +232,8 @@ def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
         return result
     try:
         artifact = run_hosted_scanner_worker(_payload_for_result(result))
-    except Exception as exc:  # pragma: no cover - defensive reporting path
-        _guard(result, "failed_exception", error=str(exc))
+    except Exception:  # pragma: no cover - defensive reporting path
+        _guard(result, "failed_exception", error="hosted scanner worker failed")
         return result
     if not isinstance(artifact, dict):
         _guard(result, "failed_no_artifact")
