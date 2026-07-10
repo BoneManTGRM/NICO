@@ -173,10 +173,7 @@ class Store:
         with self.db() as db:
             db.execute("INSERT OR REPLACE INTO scans VALUES(?,?,?,?)", (scan["id"], kind, scan["created_at"], json.dumps(scan, sort_keys=True)))
             for finding in scan["findings"]:
-                db.execute(
-                    "INSERT OR REPLACE INTO findings VALUES(?,?,?,?,?)",
-                    (finding["id"], scan["id"], finding["severity"], finding["category"], json.dumps(finding, sort_keys=True)),
-                )
+                db.execute("INSERT OR REPLACE INTO findings VALUES(?,?,?,?,?)", (finding["id"], scan["id"], finding["severity"], finding["category"], json.dumps(finding, sort_keys=True)))
 
     def save_drift(self, scan_id: str, drift: list[dict[str, Any]]) -> None:
         with self.db() as db:
@@ -186,10 +183,7 @@ class Store:
     def save_repairs(self, repairs: list[dict[str, Any]]) -> None:
         with self.db() as db:
             for repair in repairs:
-                db.execute(
-                    "INSERT OR REPLACE INTO repairs VALUES(?,?,?,?)",
-                    (repair["id"], repair["finding_id"], repair.get("status", "suggested"), json.dumps(repair, sort_keys=True)),
-                )
+                db.execute("INSERT OR REPLACE INTO repairs VALUES(?,?,?,?)", (repair["id"], repair["finding_id"], repair.get("status", "suggested"), json.dumps(repair, sort_keys=True)))
 
     def update_repair_status(self, repair_id: str, status: str) -> dict[str, Any] | None:
         target = None
@@ -200,10 +194,7 @@ class Store:
                 break
         if target:
             with self.db() as db:
-                db.execute(
-                    "INSERT OR REPLACE INTO repairs VALUES(?,?,?,?)",
-                    (target["id"], target["finding_id"], status, json.dumps(target, sort_keys=True)),
-                )
+                db.execute("INSERT OR REPLACE INTO repairs VALUES(?,?,?,?)", (target["id"], target["finding_id"], status, json.dumps(target, sort_keys=True)))
         return target
 
     def save_memory(self, payload: dict[str, Any]) -> None:
@@ -213,10 +204,7 @@ class Store:
 
     def save_verification(self, result: dict[str, Any]) -> None:
         with self.db() as db:
-            db.execute(
-                "INSERT OR REPLACE INTO verification VALUES(?,?,?,?)",
-                (result["id"], result.get("repair_id"), json.dumps(result, sort_keys=True), result["created_at"]),
-            )
+            db.execute("INSERT OR REPLACE INTO verification VALUES(?,?,?,?)", (result["id"], result.get("repair_id"), json.dumps(result, sort_keys=True), result["created_at"]))
 
     def save_report(self, report_id: str, fmt: str, path: str) -> None:
         with self.db() as db:
@@ -268,29 +256,7 @@ class Store:
 
 def normalized_finding(source: str, category: str, severity: str, confidence: float, title: str, path: str = "", line: int | None = None, masked: str = "", raw_fp: str = "", biz: str = "", tech: str = "", fix: str = "", verify: str = "", mapping: list[str] | None = None) -> dict[str, Any]:
     finding_id = new_id("finding")
-    return {
-        "finding_id": finding_id,
-        "id": finding_id,
-        "source": source,
-        "category": category,
-        "severity": severity,
-        "confidence": confidence,
-        "title": title,
-        "affected_file": path,
-        "affected_line": line,
-        "file_path": path,
-        "line": line,
-        "masked_evidence": masked,
-        "raw_evidence_fingerprint": raw_fp,
-        "business_impact": biz,
-        "technical_impact": tech,
-        "recommended_fix": fix,
-        "recommendation": fix,
-        "verification_method": verify,
-        "standards_mapping": mapping or [],
-        "created_at": now(),
-        "status": "open",
-    }
+    return {"finding_id": finding_id, "id": finding_id, "source": source, "category": category, "severity": severity, "confidence": confidence, "title": title, "affected_file": path, "affected_line": line, "file_path": path, "line": line, "masked_evidence": masked, "raw_evidence_fingerprint": raw_fp, "business_impact": biz, "technical_impact": tech, "recommended_fix": fix, "recommendation": fix, "verification_method": verify, "standards_mapping": mapping or [], "created_at": now(), "status": "open"}
 
 
 def scan_text(path: str, text: str) -> list[dict[str, Any]]:
@@ -301,26 +267,10 @@ def scan_text(path: str, text: str) -> list[dict[str, Any]]:
             if match:
                 raw = match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(0)
                 fake = "FAKE_TEST_ONLY" in raw.upper()
-                findings.append(
-                    normalized_finding(
-                        "built_in_secret_scanner", "secret_exposure", "high" if fake else "critical", 0.95,
-                        "Potential secret detected", path, line_number, mask_text(line.strip()), fp(raw),
-                        "A leaked credential can expose systems, billing, users, or customer data.",
-                        "Credential-like source value was found. Raw value is not stored.",
-                        "Move to environment/secrets manager and rotate if real.",
-                        "Rescan affected file and confirm credential-like value is absent.", ["CWE-798", "OWASP-ASVS-V6"],
-                    )
-                )
+                findings.append(normalized_finding("built_in_secret_scanner", "secret_exposure", "high" if fake else "critical", 0.95, "Potential secret detected", path, line_number, mask_text(line.strip()), fp(raw), "A leaked credential can expose systems, billing, users, or customer data.", "Credential-like source value was found. Raw value is not stored.", "Move to environment/secrets manager and rotate if real.", "Rescan affected file and confirm credential-like value is absent.", ["CWE-798", "OWASP-ASVS-V6"]))
         for category, severity, title, marker, fix, biz, map_id in APPSEC_PATTERNS:
             if marker in line:
-                findings.append(
-                    normalized_finding(
-                        "built_in_appsec_scanner", category, severity, 0.88, title, path, line_number,
-                        line.strip(), fp(category + path + str(line_number)), biz, f"{title} marker was detected.",
-                        fix, "Apply targeted fix, run tests, and rescan affected file.", [map_id],
-                    )
-                )
-
+                findings.append(normalized_finding("built_in_appsec_scanner", category, severity, 0.88, title, path, line_number, line.strip(), fp(category + path + str(line_number)), biz, f"{title} marker was detected.", fix, "Apply targeted fix, run tests, and rescan affected file.", [map_id]))
     if path.endswith("requirements.txt") and "flask==0.12" in text:
         findings.append(normalized_finding("built_in_dependency_scanner", "dependency_risk", "high", 0.9, "Risky Python dependency fixture", path, masked="flask==0.12", raw_fp="dependency-fixture-flask-012", biz="Outdated dependencies increase breach and downtime risk.", tech="Old Flask test fixture detected.", fix="Upgrade dependency and run tests.", verify="Rescan dependency manifests and confirm risky version is absent.", mapping=["CWE-1104"]))
     if path.endswith("package.json") and "4.17.15" in text:
@@ -339,11 +289,44 @@ def scan_text(path: str, text: str) -> list[dict[str, Any]]:
     return findings
 
 
-def _safe_scan_root(target: str) -> Path:
-    root = Path(target).expanduser().resolve(strict=True)
+def _allowed_scan_bases() -> list[Path]:
+    configured = os.getenv("NICO_ALLOWED_SCAN_ROOTS") or os.getenv("NICO_ALLOWED_SCAN_ROOT") or str(Path.cwd())
+    bases: list[Path] = []
+    for raw_base in configured.split(os.pathsep):
+        raw_base = raw_base.strip()
+        if not raw_base:
+            continue
+        try:
+            base = Path(raw_base).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if base.is_dir():
+            bases.append(base)
+    if not bases:
+        bases.append(Path.cwd().resolve())
+    return bases
+
+
+def _resolve_scan_root_under_base(target: str, base: Path) -> Path:
+    target_text = str(target or "").strip()
+    if not target_text or "\x00" in target_text:
+        raise ValueError("scan target is empty or invalid")
+    raw = Path(target_text).expanduser()
+    candidate = raw if raw.is_absolute() else base / raw
+    root = candidate.resolve(strict=True)
+    root.relative_to(base)
     if not root.is_dir():
         raise NotADirectoryError("scan target must be an existing directory")
     return root
+
+
+def _safe_scan_root(target: str) -> Path:
+    for base in _allowed_scan_bases():
+        try:
+            return _resolve_scan_root_under_base(target, base)
+        except (OSError, RuntimeError, ValueError, NotADirectoryError):
+            continue
+    raise NotADirectoryError("scan target must be an existing directory under an allowed scan root")
 
 
 def _safe_scan_file(root: Path, candidate: Path) -> tuple[Path, str] | None:
@@ -591,11 +574,11 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.cmd == "scan-test-lab":
         result = scan_test_lab()
-        print(json.dumps({"scan_id": result["scan"]["id"], "findings": len(result["scan"]["findings"]), "drift": len(result["drift"]), "repairs": len(result["repairs"])}, indent=2))
+        print(json.dumps({"scan_id": result["scan"]["id"], "findings": len(result["scan"]["findings"]), "drift": len(result["drift"]), "repairs": len(result["repairs"] )}, indent=2))
         return
     if args.cmd == "scan-drift-demo":
         result = scan_drift_demo()
-        print(json.dumps({"scan_id": result["scan"]["id"], "findings": len(result["scan"]["findings"]), "drift": len(result["drift"]), "repairs": len(result["repairs"])}, indent=2))
+        print(json.dumps({"scan_id": result["scan"]["id"], "findings": len(result["scan"]["findings"]), "drift": len(result["drift"]), "repairs": len(result["repairs"] )}, indent=2))
         return
     if args.cmd == "report":
         if args.which in {"owner", "developer", "reparodynamic", "compliance"}:
