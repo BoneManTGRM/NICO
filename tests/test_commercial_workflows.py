@@ -161,4 +161,5 @@ def test_runtime_projects_templates_and_diagnostics_endpoints():
     assert diagnostics.status_code == 200
     text = str(diagnostics.json()).lower()
     assert "nico_admin_token" not in text
-    assert "database_url" not in text or "[redacted]" in text or "not_configured" in text
+    assert "'database_url':" not in text
+    assert '"database_url":' not in text
