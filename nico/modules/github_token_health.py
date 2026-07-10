@@ -5,7 +5,6 @@ Never exposes the token.
 """
 
 import os
-from urllib.parse import urlparse
 
 try:
     import requests
@@ -13,24 +12,15 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
+from nico.modules.github_url_safety import is_github_repo_url, parse_github_repo
+
 
 def _is_github_url(target: str) -> bool:
-    try:
-        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
-        return 'github.com' in p.netloc
-    except Exception:
-        return False
+    return is_github_repo_url(target)
 
 
 def _parse_repo(target: str):
-    try:
-        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
-        parts = [x for x in p.path.strip('/').split('/') if x]
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-    except Exception:
-        pass
-    return None, None
+    return parse_github_repo(target)
 
 
 def check_github_token_health(target: str, github_token_env: str | None = None) -> dict:
@@ -120,8 +110,8 @@ def check_github_token_health(target: str, github_token_env: str | None = None) 
         if result["repo_access"]:
             result["status"] = "completed"
 
-    except Exception as e:
+    except Exception:
         result["status"] = "error"
-        result["limitations"].append(f"Token health check error: {str(e)[:180]}")
+        result["limitations"].append("Token health check error: request failed")
 
     return result
