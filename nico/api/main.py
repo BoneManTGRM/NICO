@@ -569,7 +569,7 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_existing_worker_evidence(result, request_payload)
     result = enrich_payload_with_scanner_evidence(result)
     result = apply_report_accuracy(result)
-    result = attach_express_review_target(result)
+    result = attach_express_review_target(result, request_payload)
     result = polish_express_result(result)
     result = finalize_express_result_consistency(result)
     result = attach_express_review_target(result, request_payload)
