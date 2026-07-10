@@ -545,7 +545,8 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_client_acceptance_gate(result)
     result = scrub_exception_details(result)
     _LAST_HOSTED_ASSESSMENT = result
-    STORE.put('assessment_runs', result.get('run_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
+    stored_result = safe_operation_result(result)
+    STORE.put('assessment_runs', stored_result.get('scan_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':stored_result.get('status'),'payload':stored_result})
     return result
 
 @app.post('/assessment/mid')
