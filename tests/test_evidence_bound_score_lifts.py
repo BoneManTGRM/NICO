@@ -20,6 +20,7 @@ def test_evidence_bound_static_secret_and_velocity_lifts_move_score_above_85():
             "status": "complete",
             "repository": "BoneManTGRM/NICO",
             "assessment_mode": "express",
+            "complexity_engine": {"status": "complete", "hotspot_risk": "low"},
             "sections": [
                 _section(
                     "code_audit",
@@ -49,9 +50,9 @@ def test_evidence_bound_static_secret_and_velocity_lifts_move_score_above_85():
                     "green",
                     [
                         "Clean credential-scan and gitleaks artifacts downgraded generic token-name pattern matches as false-positive source-code signals for this run.",
-                        "Parsed credential-scan artifact reported zero high-confidence credential findings.",
+                        "Parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings.",
+                        "Scanner-worker secret tools completed: gitleaks, trufflehog.",
                     ],
-                    unavailable=["Full git-history secret scanning requires a sandboxed worker with gitleaks or trufflehog."],
                 ),
                 _section(
                     "static_analysis",
@@ -128,4 +129,5 @@ def test_static_lift_does_not_ignore_real_blocking_findings():
     )
 
     scores = {item["id"]: item["score"] for item in result["sections"]}
+
     assert scores["static_analysis"] == 70

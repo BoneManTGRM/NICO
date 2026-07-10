@@ -67,6 +67,10 @@ def _append_unique(items: list[Any], value: str) -> None:
         items.append(value)
 
 
+def _remove_marked(items: list[Any], markers: tuple[str, ...]) -> list[Any]:
+    return [item for item in items if not any(marker in str(item or "").lower() for marker in markers)]
+
+
 def _has_blocking_findings(item: dict[str, Any] | None, ignored_markers: tuple[str, ...] = ()) -> bool:
     if not item:
         return False
@@ -99,9 +103,34 @@ def _has_clean_secret_artifacts(item: dict[str, Any] | None) -> bool:
     return "credential-scan" in evidence and "gitleaks" in evidence and has_clean_zero
 
 
+def _has_verified_full_history_secret_evidence(item: dict[str, Any] | None) -> bool:
+    text = _section_text(item).lower()
+    has_clean_full_history_statement = "gitleaks" in text and "trufflehog" in text and "zero credential findings" in text
+    has_worker_records = "scanner-worker secret tools completed" in text and "gitleaks" in text and "trufflehog" in text
+    has_refresh_records = "gitleaks=completed" in text and "trufflehog=completed" in text
+    has_clean_attachment = "parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings" in text
+    return has_clean_attachment and (has_worker_records or has_refresh_records or has_clean_full_history_statement)
+
+
 def _has_static_review_findings(item: dict[str, Any] | None) -> bool:
     findings = _findings_text(item).lower()
+    if not findings.strip():
+        return False
+    clean_triage_text = _section_text(item).lower()
+    clean_triage = "bandit triage classified 0 finding(s)" in clean_triage_text or "blocking=0, needs_review=0" in clean_triage_text
+    if clean_triage:
+        findings = re.sub(r"bandit triage[^\n]*", "", findings)
+        findings = findings.replace("parsed bandit artifact reported 0 finding(s).", "")
     return any(marker in findings for marker in ("needs_human_review", "bandit triage", "parsed bandit artifact reported", "finding(s)"))
+
+
+def _has_complexity_evidence(result: dict[str, Any]) -> bool:
+    if result.get("complexity_engine"):
+        return True
+    summary = result.get("scanner_artifact_summary") if isinstance(result.get("scanner_artifact_summary"), dict) else {}
+    if "complexity-profile.json" in summary.get("files", []):
+        return True
+    return "complexity-profile.json" in str(summary).lower()
 
 
 def _recompute_maturity(result: dict[str, Any]) -> None:
@@ -161,10 +190,14 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: parsed pip-audit and npm-audit artifacts reported zero dependency vulnerabilities for the assessed artifact set.")
         item["score"] = max(int(item.get("score") or 0), 90)
+        item["summary"] = "Dependency review is verified by current-run clean pip-audit, npm audit, and OSV Scanner artifacts."
     elif has_clean_osv_evidence and not has_osv_vulnerabilities:
         item["findings"] = [note for note in item.get("findings", []) or [] if "osv returned no vulnerability records" not in str(note).lower()]
         _append_unique(item["evidence"], "Dependency evidence classification: clean OSV no-vulnerability output, Python manifest evidence, npm manifest evidence, and JavaScript lockfile evidence are present.")
         item["score"] = max(int(item.get("score") or 0), 86)
+        item.setdefault("unavailable", [])
+        _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
+        item["summary"] = "Dependency review uses available manifest, lockfile, OSV, and audit-artifact evidence while separating runtime scanner proof from final scanner-clean claims."
     elif has_osv_vulnerabilities and int(item.get("score") or 0) >= 86:
         _append_unique(item["evidence"], "Dependency evidence classification: OSV API evidence completed with vulnerability records; final scanner-clean status is not claimed without pip-audit, npm audit, and OSV Scanner artifacts.")
         item["score"] = max(int(item.get("score") or 0), 88)
@@ -173,11 +206,7 @@ def _apply_dependency_evidence_adjustment(result: dict[str, Any]) -> None:
         item["score"] = max(int(item.get("score") or 0), 88)
     else:
         return
-    if not has_clean_audit_artifacts:
-        item.setdefault("unavailable", [])
-        _append_unique(item["unavailable"], "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.")
     item["status"] = _status_from_score(int(item["score"]))
-    item["summary"] = "Dependency review uses available manifest, lockfile, OSV, and audit-artifact evidence while separating runtime scanner proof from final scanner-clean claims."
 
 
 def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
@@ -185,6 +214,7 @@ def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
     if not item:
         return
     has_clean_artifacts = _has_clean_secret_artifacts(item)
+    has_full_history = _has_verified_full_history_secret_evidence(item)
     blocking_findings = _has_blocking_findings(
         item,
         (
@@ -195,15 +225,35 @@ def _apply_secret_evidence_adjustment(result: dict[str, Any]) -> None:
             "hosted mode currently scans",
             "not verified",
             "source distinction",
+            "strict trust engine",
+            "unavailable or unverified",
         ),
     )
-    if not has_clean_artifacts or blocking_findings:
+    if not (has_clean_artifacts and has_full_history) or blocking_findings:
         return
     item.setdefault("evidence", [])
-    _append_unique(item["evidence"], "Secrets evidence classification: parsed credential-scan and gitleaks artifacts reported zero high-confidence credential findings for this run.")
-    item["score"] = max(int(item.get("score") or 0), 90)
+    item["findings"] = _remove_marked(
+        item.get("findings", []) or [],
+        (
+            "strict trust engine: secrets cannot receive scanner-clean status",
+            "strict trust engine: secrets cannot be green",
+            "full-history secret coverage is unavailable",
+            "full git-history secret coverage was not verified",
+        ),
+    )
+    item["unavailable"] = _remove_marked(
+        item.get("unavailable", []) or [],
+        (
+            "full git-history secret coverage was not verified",
+            "secret scanner source distinction",
+            "live full-history scanner proof",
+        ),
+    )
+    _append_unique(item["evidence"], "Secrets evidence classification: credential-scan, gitleaks, and trufflehog full-history artifacts are attached for this run and reported zero credential findings.")
+    _append_unique(item["evidence"], "Verified score lift: current-run full-history secret scanner artifacts are clean and bound to this report run.")
+    item["score"] = max(int(item.get("score") or 0), 92)
     item["status"] = _status_from_score(int(item["score"]))
-    item["summary"] = "Secrets review uses built-in masked secret-pattern detection plus parsed credential-scan and gitleaks artifacts when available; full git-history limits remain disclosed."
+    item["summary"] = "Secrets review is verified by current-run clean credential-scan, gitleaks, and trufflehog full-history artifacts."
 
 
 def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
@@ -214,6 +264,9 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
     static_text = _section_text(static).lower()
     ci_text = _section_text(ci).lower()
     built_in_clean = "built-in static risk-pattern hits: 0" in static_text
+    current_run_static_complete = all(marker in static_text for marker in ("bandit", "semgrep", "eslint", "typescript")) and (
+        "scanner-worker static tools completed" in static_text or "static scanner artifacts are complete" in static_text
+    )
     has_blocking_static_findings = _has_blocking_findings(
         static,
         (
@@ -230,16 +283,22 @@ def _apply_static_evidence_adjustment(result: dict[str, Any]) -> None:
             "source distinction",
             "needs_human_review",
             "triage summary",
+            "bandit triage classified 0 finding(s)",
         ),
     )
     ci_static_evidence = _section_score(result, "ci_cd") >= 90 or any(
         marker in ci_text
         for marker in ["npm run lint", "eslint", "typescript", "typecheck", "test, lint, or build", "next build", "production build"]
     )
-    if not built_in_clean or has_blocking_static_findings:
+    if not (built_in_clean or current_run_static_complete) or has_blocking_static_findings:
         return
     static.setdefault("evidence", [])
-    if ci_static_evidence:
+    if current_run_static_complete:
+        static["unavailable"] = _remove_marked(static.get("unavailable", []) or [], ("semgrep", "bandit", "scanner-worker execution remains unavailable"))
+        _append_unique(static["evidence"], "Static evidence classification: current-run Bandit, Semgrep, ESLint, and TypeScript artifacts are complete for this report run.")
+        static["score"] = max(int(static.get("score") or 0), 90)
+        static["summary"] = "Static analysis is verified by current-run Bandit, Semgrep, ESLint, and TypeScript artifacts."
+    elif ci_static_evidence:
         _append_unique(static["evidence"], "Static evidence classification: built-in static risk-pattern hits are zero, and CI/CD is green or includes lint/typecheck/build coverage.")
         static.setdefault("unavailable", [])
         _append_unique(static["unavailable"], "External Semgrep/Bandit scanner-worker execution remains unavailable; CI-backed evidence is counted separately from full scanner-worker proof.")
@@ -293,7 +352,7 @@ def _apply_velocity_traceability_adjustment(result: dict[str, Any]) -> None:
     _append_unique(velocity["evidence"], "Velocity interpretation: high PR/commit traceability plus available code, dependency, static-analysis, CI/CD, and architecture evidence supports Express-level maturity scoring while disclosed findings and missing runtime artifacts remain separate from final-clean claims.")
     velocity.setdefault("unavailable", [])
     _append_unique(velocity["unavailable"], "Precise story points, reviewer seniority, project trend history, and client acceptance still require retained history and human review before client-final delivery claims.")
-    velocity["score"] = max(int(velocity.get("score") or 0), 82)
+    velocity["score"] = max(int(velocity.get("score") or 0), 84)
     velocity["status"] = _status_from_score(int(velocity["score"]))
     velocity["summary"] = "Work-vs-expected signal uses commit velocity, PR traceability, source footprint, and available supporting evidence from code, dependency, static-analysis, CI/CD, and architecture sections."
 
@@ -312,10 +371,11 @@ def _release_readiness_signals(result: dict[str, Any]) -> dict[str, Any]:
         "code_audit_green": code >= 86,
         "dependency_scanner_clean_artifacts_attached": _section_score(result, "dependency_health") >= 88 and _has_clean_dependency_audit_artifacts(dependency),
         "dependency_no_osv_vulnerabilities": not _has_osv_vulnerability(dependency),
-        "secret_evidence_clean": _section_score(result, "secrets_review") >= 90 and _has_clean_secret_artifacts(secrets_section),
+        "secret_evidence_clean": _section_score(result, "secrets_review") >= 90 and _has_clean_secret_artifacts(secrets_section) and _has_verified_full_history_secret_evidence(secrets_section),
         "static_analysis_no_review_findings": _section_score(result, "static_analysis") >= 86 and not _has_static_review_findings(static_section),
         "ci_artifacts_green": ci >= 95 and ("workflow runs returned" in ci_text or "artifact" in ci_text),
         "architecture_green": arch >= 90,
+        "complexity_evidence_attached": _has_complexity_evidence(result) or "complexity-profile.json" in ci_text,
         "pr_traceability_present": "pull request traceability ratio:" in velocity_text and " prs / " in velocity_text,
         "commit_velocity_present": "commit velocity:" in velocity_text,
     }
@@ -341,7 +401,7 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
         "status": "provisionally_ready_for_human_review" if readiness["ready"] else "evidence_incomplete",
         "passed_signals": readiness["passed"],
         "missing_signals": readiness["missing"],
-        "rule": "Release-readiness can lift Velocity / Complexity only when clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI, architecture, commit velocity, and PR traceability evidence are all present.",
+        "rule": "Release-readiness can lift Velocity / Complexity only when clean dependency scanner artifacts, no OSV vulnerabilities, clean full-history secret artifacts, static-analysis triage, CI, architecture, complexity evidence, commit velocity, and PR traceability evidence are all present.",
     }
     velocity = _section(result, "velocity_complexity")
     if not velocity:
@@ -350,20 +410,24 @@ def _apply_release_readiness_adjustment(result: dict[str, Any]) -> None:
     velocity.setdefault("unavailable", [])
     if not readiness["ready"]:
         _remove_untrue_release_clean_claims(velocity)
+        velocity["unavailable"] = _remove_marked(velocity.get("unavailable", []) or [], ("release-readiness lift not applied",))
         _append_unique(
             velocity["unavailable"],
             "Release-readiness lift not applied because required final-clean evidence is incomplete: " + ", ".join(readiness["missing"]),
         )
         return
-    _append_unique(velocity["evidence"], "Release-readiness evidence: clean dependency scanner artifacts, no OSV vulnerabilities, clean secret artifacts, static-analysis triage, CI artifact evidence, green architecture, commit velocity, and PR traceability are all present.")
+    velocity["unavailable"] = _remove_marked(
+        velocity.get("unavailable", []) or [],
+        ("missing complexity evidence", "release-readiness lift not applied", "required final-clean evidence is incomplete"),
+    )
+    _append_unique(velocity["evidence"], "Release-readiness evidence: clean dependency scanner artifacts, no OSV vulnerabilities, clean full-history secret artifacts, static-analysis triage, CI artifact evidence, green architecture, complexity evidence, commit velocity, and PR traceability are all present.")
     _append_unique(velocity["evidence"], "Why not higher: precise story-point estimates, reviewer seniority, business-value mapping, and acceptance evidence still require human review.")
     velocity["score"] = max(int(velocity.get("score") or 0), 90)
     velocity["status"] = _status_from_score(int(velocity["score"]))
-    velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, and verified release-readiness evidence from clean dependency, secret, static-analysis, CI, architecture, commit-velocity, and PR-traceability artifacts."
+    velocity["summary"] = "Work-vs-expected signal uses velocity, PR traceability, source footprint, and verified release-readiness evidence from clean dependency, secret, static-analysis, CI, architecture, complexity, commit-velocity, and PR-traceability artifacts."
 
 
 def _apply_truth_guard(result: dict[str, Any]) -> None:
-    """Remove final-clean claims that are not supported by the current evidence set."""
     velocity = _section(result, "velocity_complexity")
     readiness = result.get("release_readiness") if isinstance(result.get("release_readiness"), dict) else {}
     if velocity and readiness.get("status") != "provisionally_ready_for_human_review":
@@ -389,6 +453,8 @@ def _apply_final_score_adjustments(result: dict[str, Any]) -> None:
     _apply_velocity_traceability_adjustment(result)
     _apply_release_readiness_adjustment(result)
     apply_report_evidence_status(result)
+    _apply_secret_evidence_adjustment(result)
+    _apply_static_evidence_adjustment(result)
     _apply_release_readiness_adjustment(result)
     _apply_truth_guard(result)
     _recompute_maturity(result)
