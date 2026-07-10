@@ -134,6 +134,8 @@ def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
     existing_status = str((existing or {}).get("status") or "")
     if status == "skipped_all_required_tools_already_present" and existing_status in {"completed", "attempted"}:
         return
+    if status == "skipped_runtime_already_attempted" and existing_status in TERMINAL_RUNTIME_STATUSES:
+        return
     missing = _missing_required_tools(result)
     guards["hosted_full_evidence_runtime"] = {
         "status": status,
