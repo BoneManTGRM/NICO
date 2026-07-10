@@ -52,6 +52,19 @@ def cors_origins():
     return origins or default_origins
 
 
+def safe_blocked_exception(result: dict[str, Any]) -> HTTPException:
+    """Return a bounded client error without exposing raw internal payloads."""
+    code = str(result.get('code') or result.get('reason') or 'blocked')[:80]
+    return HTTPException(
+        status_code=400,
+        detail={
+            'status': 'blocked',
+            'code': code,
+            'message': 'Request blocked by NICO safety, authorization, or review policy.',
+        },
+    )
+
+
 class LocalScanRequest(BaseModel): path: str
 class PolicyLevelRequest(BaseModel): level: int
 class CustomerRequest(BaseModel): customer_id: str = ''; name: str = ''
@@ -373,12 +386,12 @@ def client_acceptance_get(run_id: str, customer_id: str = 'default_customer', pr
 @app.post('/client-acceptance/request')
 def client_acceptance_request(req: ClientAcceptanceRequest):
     result = request_client_acceptance(req.model_dump())
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     return result
 @app.post('/client-acceptance/{approval_id}/{status}')
 def client_acceptance_transition_endpoint(approval_id: str, status: str, req: FinalReviewTransitionRequest):
     result = transition_client_acceptance(approval_id, status, actor=req.actor, note=req.note)
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     return result
 
 @app.post('/assessment/github')
@@ -389,7 +402,7 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
         result = run_github_assessment_with_scanner_artifacts(request_payload)
     else:
         result = run_github_assessment(request_payload)
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     result = attach_existing_worker_evidence(result, request_payload)
     result = enrich_payload_with_scanner_evidence(result)
     result = apply_report_accuracy(result)
@@ -407,7 +420,7 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
 def hosted_mid_assessment(req: MidAssessmentRequest):
     global _LAST_MID_ASSESSMENT
     result = build_mid_assessment(req.model_dump())
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     _LAST_MID_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('generated_at','latest_mid').replace(':','_'), {'workflow':'mid','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -416,7 +429,7 @@ def hosted_mid_assessment(req: MidAssessmentRequest):
 def hosted_retainer_ops(req: RetainerOpsRequest):
     global _LAST_RETAINER_OPS
     result = build_retainer_ops(req.model_dump())
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     _LAST_RETAINER_OPS = result
     STORE.put('assessment_runs', result.get('generated_at','latest_retainer').replace(':','_'), {'workflow':'retainer','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -424,7 +437,7 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
 @app.post('/worker/scan')
 def worker_scan(req: WorkerScanRequest):
     result = start_scan(req.model_dump())
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     return result
 @app.get('/worker/scan/{scan_id}')
 def worker_scan_status(scan_id: str): return get_scan(scan_id)
@@ -432,7 +445,7 @@ def worker_scan_status(scan_id: str): return get_scan(scan_id)
 @app.post('/evidence/upload')
 async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form('default_customer'), project_id: str = Form('default_project'), run_id: str = Form('')):
     result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
-    if result.get('status') == 'blocked': raise HTTPException(400, result)
+    if result.get('status') == 'blocked': raise safe_blocked_exception(result)
     return result
 @app.get('/evidence/{project_id}')
 def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
