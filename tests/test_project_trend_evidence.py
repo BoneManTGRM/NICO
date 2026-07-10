@@ -21,21 +21,13 @@ def _release_ready_result(score=91):
         "repository": "BoneManTGRM/NICO",
         "project_id": "default_project",
         "generated_at": "2026-07-07T14:00:00Z",
-        "complexity_engine": {"status": "complete", "hotspot_risk": "low"},
         "maturity_signal": {"level": "Senior", "score": score},
         "executive_summary": "old",
+        "complexity_engine": {"status": "complete", "hotspot_risk": "low"},
         "sections": [
             _section("code_audit", "Code Audit", 86, ["Text files inspected for code-risk markers: actionable TODO/FIXME/security markers=0, risky pattern hits=2, test-path signals=2."]),
             _section("dependency_health", "Dependency / Library Ecosystem", 90, ["Parsed GitHub Actions pip-audit and npm-audit artifacts reported zero dependency vulnerabilities."]),
-            _section(
-                "secrets_review",
-                "Secrets Exposure Review",
-                93,
-                [
-                    "Parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings.",
-                    "Scanner-worker secret tools completed: gitleaks, trufflehog.",
-                ],
-            ),
+            _section("secrets_review", "Secrets Exposure Review", 93, ["Parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings.", "Scanner-worker secret tools completed: gitleaks, trufflehog."]),
             _section("static_analysis", "Static Analysis", 86, ["Parsed Bandit and Semgrep artifacts reported zero scanner findings."]),
             _section("ci_cd", "CI/CD Analysis", 95, ["Current GitHub Actions scanner artifact sets were fetched and parsed successfully."]),
             _section("architecture_debt", "Architecture & Technical Debt", 94, ["Repository root contains nico/."]),
