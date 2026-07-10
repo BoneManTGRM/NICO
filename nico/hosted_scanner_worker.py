@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from nico.complexity_engine import build_complexity_profile
@@ -24,6 +25,10 @@ from nico.worker_execution import (
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _empty_dependency_proof() -> dict[str, Any]:
+    return build_dependency_proof_inventory(Path("/__nico_missing_checkout__"), {})
 
 
 def hosted_scanner_autorun_enabled(payload: dict[str, Any]) -> bool:
@@ -121,7 +126,7 @@ def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
-        "dependency_proof": build_dependency_proof_inventory(__import__("pathlib").Path("."), {}),
+        "dependency_proof": _empty_dependency_proof(),
         "unavailable_data_notes": [reason],
         "human_review_required": True,
     }
@@ -148,7 +153,7 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
-        "dependency_proof": build_dependency_proof_inventory(__import__("pathlib").Path("."), {}),
+        "dependency_proof": _empty_dependency_proof(),
         "checkout": {
             "returncode": checkout.returncode,
             "timed_out": checkout.timed_out,
