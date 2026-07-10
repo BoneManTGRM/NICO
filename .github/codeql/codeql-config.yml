@@ -1,0 +1,14 @@
+name: NICO CodeQL precision config
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+paths-ignore:
+  - "**/.nico/**"
+  - "**/node_modules/**"
+  - "**/.venv/**"
+  - "**/venv/**"
+  - "**/__pycache__/**"
+  - "**/dist/**"
+  - "**/build/**"
