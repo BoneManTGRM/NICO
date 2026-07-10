@@ -44,6 +44,7 @@ from nico.admin_security import require_admin_write, safe_public_admin_status
 _LAST_HOSTED_ASSESSMENT = {}
 _LAST_MID_ASSESSMENT = {}
 _LAST_RETAINER_OPS = {}
+_EXCEPTION_DETAIL_KEYS = {'error', 'exception', 'exc', 'traceback', 'stacktrace', 'stack_trace', 'stack', 'debug', 'stderr', 'reason'}
 
 
 def cors_origins():
@@ -53,8 +54,36 @@ def cors_origins():
     return origins or default_origins
 
 
+def scrub_exception_details(value: Any) -> Any:
+    if isinstance(value, dict):
+        scrubbed: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if key_text in _EXCEPTION_DETAIL_KEYS and isinstance(item, str):
+                scrubbed[key] = 'internal detail redacted'
+            else:
+                scrubbed[key] = scrub_exception_details(item)
+        return scrubbed
+    if isinstance(value, list):
+        return [scrub_exception_details(item) for item in value]
+    return value
+
+
+def safe_storage_status_payload() -> dict[str, Any]:
+    try:
+        return scrub_exception_details(STORE.status())
+    except Exception:  # pragma: no cover - defensive API boundary
+        return {'status': 'unavailable', 'mode': 'storage_status_unavailable'}
+
+
+def safe_runtime_config_payload() -> dict[str, Any]:
+    try:
+        return scrub_exception_details(runtime_config())
+    except Exception:  # pragma: no cover - defensive API boundary
+        return {'source': 'unavailable', 'version': 'unavailable'}
+
+
 def safe_blocked_exception(result: dict[str, Any]) -> HTTPException:
-    """Return a bounded client error without exposing raw internal payloads."""
     code = str(result.get('code') or result.get('reason') or 'blocked')[:80]
     return HTTPException(
         status_code=400,
@@ -234,41 +263,42 @@ async def safe_unhandled_exception_handler(_request: Request, _exc: Exception) -
 def _max_target_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     if _LAST_HOSTED_ASSESSMENT:
-        payload.update(_LAST_HOSTED_ASSESSMENT)
+        payload.update(scrub_exception_details(_LAST_HOSTED_ASSESSMENT))
     if _LAST_MID_ASSESSMENT:
-        payload['mid_assessment'] = _LAST_MID_ASSESSMENT
-        payload.setdefault('qa_evidence', str(_LAST_MID_ASSESSMENT))
-        payload.setdefault('parity_notes', str(_LAST_MID_ASSESSMENT))
-        payload.setdefault('stakeholder_notes', str(_LAST_MID_ASSESSMENT))
-        payload.setdefault('roadmap_notes', str(_LAST_MID_ASSESSMENT))
-        payload.setdefault('known_risks', str(_LAST_MID_ASSESSMENT))
+        payload['mid_assessment'] = scrub_exception_details(_LAST_MID_ASSESSMENT)
+        payload.setdefault('qa_evidence', 'latest mid-assessment evidence available')
+        payload.setdefault('parity_notes', 'latest mid-assessment parity notes available')
+        payload.setdefault('stakeholder_notes', 'latest mid-assessment stakeholder notes available')
+        payload.setdefault('roadmap_notes', 'latest mid-assessment roadmap notes available')
+        payload.setdefault('known_risks', 'latest mid-assessment risk notes available')
     if _LAST_RETAINER_OPS:
-        payload['retainer_ops'] = _LAST_RETAINER_OPS
-        payload.setdefault('issue_summary', str(_LAST_RETAINER_OPS))
-        payload.setdefault('release_notes', str(_LAST_RETAINER_OPS))
-        payload.setdefault('client_update', str(_LAST_RETAINER_OPS))
+        payload['retainer_ops'] = scrub_exception_details(_LAST_RETAINER_OPS)
+        payload.setdefault('issue_summary', 'latest retainer issue summary available')
+        payload.setdefault('release_notes', 'latest retainer release notes available')
+        payload.setdefault('client_update', 'latest retainer client update available')
     if extra:
-        payload.update(extra)
+        payload.update(scrub_exception_details(extra))
     return payload
 
 
 @app.get('/health')
 def health():
-    return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
+    return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': safe_storage_status_payload(),'runtime_config': {'source': safe_runtime_config_payload().get('source'), 'version': safe_runtime_config_payload().get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
 
 @app.get('/targets')
 def targets():
-    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': STORE.status(),'runtime_config': {'source': runtime_config().get('source'), 'version': runtime_config().get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['GET /service-catalog','GET /service-catalog/{workflow}','POST /service-catalog/intake-readiness','POST /workflow/preflight','POST /workflow/preflight/batch','POST /release/readiness','POST /hosted/smoke-test','POST /reports/readiness-gate','POST /reports/attach-readiness','POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-acceptance/request','GET /client-acceptance/{run_id}','POST /client-acceptance/{approval_id}/{status}','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
+    config = safe_runtime_config_payload()
+    return {'status': 'ok','coverage_targets': COVERAGE_TARGETS,'storage': safe_storage_status_payload(),'runtime_config': {'source': config.get('source'), 'version': config.get('version')},'truth_rules': ['Evidence-bound scoring only','Missing evidence is marked unavailable','Client delivery requires human review','Production-impacting actions require human approval'],'workflow_endpoints': ['GET /service-catalog','GET /service-catalog/{workflow}','POST /service-catalog/intake-readiness','POST /workflow/preflight','POST /workflow/preflight/batch','POST /release/readiness','POST /hosted/smoke-test','POST /reports/readiness-gate','POST /reports/attach-readiness','POST /assessment/github','POST /assessment/mid','POST /retainer/ops','GET /max-target/status','POST /max-target/status','POST /worker/scan','POST /client-acceptance/request','GET /client-acceptance/{run_id}','POST /client-acceptance/{approval_id}/{status}','POST /client-job/package','POST /client-job/export','GET /client-job/{job_id}','GET /client-job/{job_id}/exports','POST /reports/{run_id}/final-review/request','POST /reports/final-review/{approval_id}/{status}','POST /evidence/upload','POST /repair/suggest','GET /approvals','GET /config/runtime','GET /customers','GET /projects','GET /diagnostics']}
 
 @app.get('/max-target/status')
 def max_target_status():
     payload = _max_target_payload()
-    return {'status':'ok','source':'latest_in_memory_assessments','has_sources': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'max_target_status': build_max_target_status(payload)}
+    return {'status':'ok','source':'latest_in_memory_assessments','has_sources': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'max_target_status': scrub_exception_details(build_max_target_status(payload))}
 
 @app.post('/max-target/status')
 def max_target_status_from_payload(req: MaxTargetStatusRequest):
     payload = _max_target_payload(req.payload or {})
-    return {'status':'ok','source':'latest_in_memory_plus_payload','max_target_status': build_max_target_status(payload)}
+    return {'status':'ok','source':'latest_in_memory_plus_payload','max_target_status': scrub_exception_details(build_max_target_status(payload))}
 
 @app.get('/usage/guide')
 def usage_guide():
@@ -277,135 +307,135 @@ def usage_guide():
     return {'status':'ok','format':'markdown','content':path.read_text(encoding='utf-8')}
 
 @app.get('/storage/status')
-def storage_status(): return {'status':'ok','storage':STORE.status()}
+def storage_status(): return {'status':'ok','storage':safe_storage_status_payload()}
 @app.get('/storage/schema')
-def storage_schema(): return {'status':'ok','schema':STORE.schema(),'storage':STORE.status(),'migration_plan':STORE.migration_plan()}
+def storage_schema(): return {'status':'ok','schema':scrub_exception_details(STORE.schema()),'storage':safe_storage_status_payload(),'migration_plan':scrub_exception_details(STORE.migration_plan())}
 @app.get('/storage/migration-plan')
-def storage_migration_plan(): return STORE.migration_plan()
+def storage_migration_plan(): return scrub_exception_details(STORE.migration_plan())
 @app.post('/storage/apply-schema')
 def storage_apply_schema(x_nico_admin_token: str = Header(default='')):
     allowed, blocked = require_admin_write(x_nico_admin_token)
-    if not allowed: return blocked
+    if not allowed: return scrub_exception_details(blocked)
     return {'status':'unavailable','mode':'manual_migration_required','message':'Automatic schema application is disabled in this safe hosted build. Use the schema from GET /storage/schema manually.'}
 
 @app.get('/config/runtime')
-def config_runtime(): return {'status':'ok','config':runtime_config()}
+def config_runtime(): return {'status':'ok','config':safe_runtime_config_payload()}
 @app.post('/config/runtime')
 def config_runtime_update(req: RuntimeConfigRequest, x_nico_admin_token: str = Header(default='')):
     payload = dict(req.config or {})
     payload['updated_by'] = req.updated_by
     payload['change_reason'] = req.change_reason
-    return update_runtime_config(payload, admin_token=x_nico_admin_token)
+    return scrub_exception_details(update_runtime_config(payload, admin_token=x_nico_admin_token))
 @app.get('/config/runtime/history')
-def config_runtime_history(): return runtime_config_history()
+def config_runtime_history(): return scrub_exception_details(runtime_config_history())
 @app.post('/config/runtime/preview')
-def config_runtime_preview(req: RuntimeConfigRequest): return preview_runtime_config(req.config or {})
+def config_runtime_preview(req: RuntimeConfigRequest): return scrub_exception_details(preview_runtime_config(req.config or {}))
 @app.post('/config/runtime/rollback')
 def config_runtime_rollback(x_nico_admin_token: str = Header(default='')):
     allowed, blocked = require_admin_write(x_nico_admin_token)
-    if not allowed: return blocked
+    if not allowed: return scrub_exception_details(blocked)
     return {'status':'unavailable','message':'Runtime config rollback history exists, but automated rollback is not enabled in this safe build.'}
 
 @app.get('/report-templates')
-def report_templates(): return list_report_templates()
+def report_templates(): return scrub_exception_details(list_report_templates())
 @app.get('/report-templates/{template_id}')
-def report_template(template_id: str): return get_report_template(template_id)
+def report_template(template_id: str): return scrub_exception_details(get_report_template(template_id))
 @app.post('/report-templates/{template_id}')
-def report_template_update(template_id: str, req: ReportTemplateRequest, x_nico_admin_token: str = Header(default='')): return update_report_template(template_id, req.template or {}, admin_token=x_nico_admin_token)
+def report_template_update(template_id: str, req: ReportTemplateRequest, x_nico_admin_token: str = Header(default='')): return scrub_exception_details(update_report_template(template_id, req.template or {}, admin_token=x_nico_admin_token))
 
 @app.get('/customers')
-def customers(): return {'status':'ok','customers':list_customers()}
+def customers(): return {'status':'ok','customers':scrub_exception_details(list_customers())}
 @app.post('/customers')
-def customer_create(req: CustomerRequest, x_nico_admin_token: str = Header(default='')): return create_customer(req.model_dump(), admin_token=x_nico_admin_token)
+def customer_create(req: CustomerRequest, x_nico_admin_token: str = Header(default='')): return scrub_exception_details(create_customer(req.model_dump(), admin_token=x_nico_admin_token))
 @app.get('/customers/{customer_id}')
-def customer_get(customer_id: str): return get_customer(customer_id)
+def customer_get(customer_id: str): return scrub_exception_details(get_customer(customer_id))
 @app.get('/projects')
-def projects(customer_id: str = ''): return {'status':'ok','projects':list_projects(customer_id or None)}
+def projects(customer_id: str = ''): return {'status':'ok','projects':scrub_exception_details(list_projects(customer_id or None))}
 @app.post('/projects')
-def project_create(req: ProjectRequest, x_nico_admin_token: str = Header(default='')): return create_project(req.model_dump(), admin_token=x_nico_admin_token)
+def project_create(req: ProjectRequest, x_nico_admin_token: str = Header(default='')): return scrub_exception_details(create_project(req.model_dump(), admin_token=x_nico_admin_token))
 @app.get('/projects/{project_id}')
-def project_get(project_id: str): return get_project(project_id)
+def project_get(project_id: str): return scrub_exception_details(get_project(project_id))
 @app.get('/projects/{project_id}/runs')
-def project_runs_endpoint(project_id: str): return project_runs(project_id)
+def project_runs_endpoint(project_id: str): return scrub_exception_details(project_runs(project_id))
 @app.get('/projects/{project_id}/latest')
-def project_latest_endpoint(project_id: str): return project_latest(project_id)
+def project_latest_endpoint(project_id: str): return scrub_exception_details(project_latest(project_id))
 @app.get('/projects/{project_id}/trends')
-def project_trends_endpoint(project_id: str): return project_trends(project_id)
+def project_trends_endpoint(project_id: str): return scrub_exception_details(project_trends(project_id))
 @app.get('/projects/{project_id}/reports')
-def project_reports_endpoint(project_id: str): return project_reports(project_id)
+def project_reports_endpoint(project_id: str): return scrub_exception_details(project_reports(project_id))
 @app.get('/projects/{project_id}/approvals')
-def project_approvals_endpoint(project_id: str): return project_approvals(project_id)
+def project_approvals_endpoint(project_id: str): return scrub_exception_details(project_approvals(project_id))
 @app.get('/projects/{project_id}/evidence')
-def project_evidence_endpoint(project_id: str): return project_evidence(project_id)
+def project_evidence_endpoint(project_id: str): return scrub_exception_details(project_evidence(project_id))
 
 @app.get('/diagnostics')
-def diagnostics_endpoint(): return diagnostics()
+def diagnostics_endpoint(): return scrub_exception_details(diagnostics())
 @app.get('/diagnostics/frontend-config')
-def diagnostics_frontend_config(): return {'status':'ok','runtime_config':runtime_config(),'admin':safe_public_admin_status()}
+def diagnostics_frontend_config(): return {'status':'ok','runtime_config':safe_runtime_config_payload(),'admin':safe_public_admin_status()}
 @app.get('/diagnostics/backend-config')
-def diagnostics_backend_config(): return diagnostics()
+def diagnostics_backend_config(): return scrub_exception_details(diagnostics())
 @app.get('/diagnostics/storage')
-def diagnostics_storage(): return storage_diagnostics()
+def diagnostics_storage(): return scrub_exception_details(storage_diagnostics())
 @app.get('/diagnostics/features')
-def diagnostics_features(): return feature_diagnostics()
+def diagnostics_features(): return scrub_exception_details(feature_diagnostics())
 @app.get('/diagnostics/latest-runs')
-def diagnostics_latest_runs(): return latest_runs_diagnostics()
+def diagnostics_latest_runs(): return scrub_exception_details(latest_runs_diagnostics())
 
 @app.post('/scan/test-lab')
-def api_scan_test_lab(): return scan_test_lab()
+def api_scan_test_lab(): return scrub_exception_details(scan_test_lab())
 @app.post('/scan/drift-demo')
-def api_scan_drift_demo(): return scan_drift_demo()
+def api_scan_drift_demo(): return scrub_exception_details(scan_drift_demo())
 @app.post('/scan/local')
 def api_scan_local(req:LocalScanRequest):
     if not req.path: raise HTTPException(400,'path required')
-    return run_scan(req.path)
+    return scrub_exception_details(run_scan(req.path))
 @app.get('/scans/latest')
-def latest_scan(): return Store().latest_scan()
+def latest_scan(): return scrub_exception_details(Store().latest_scan())
 @app.get('/findings')
-def findings(): return Store().payloads('findings')
+def findings(): return scrub_exception_details(Store().payloads('findings'))
 @app.get('/findings/{finding_id}')
 def finding(finding_id:str):
     for f in Store().payloads('findings'):
-        if f.get('id')==finding_id: return f
+        if f.get('id')==finding_id: return scrub_exception_details(f)
     raise HTTPException(404,'finding not found')
 @app.get('/drift')
-def drift(): return Store().payloads('drift_events')
+def drift(): return scrub_exception_details(Store().payloads('drift_events'))
 @app.get('/repairs')
-def repairs(): return Store().payloads('repairs')
+def repairs(): return scrub_exception_details(Store().payloads('repairs'))
 @app.get('/verification/latest')
-def verification_latest(): return verify_latest()
+def verification_latest(): return scrub_exception_details(verify_latest())
 @app.post('/verification/latest')
-def verification_post(): return verify_latest()
+def verification_post(): return scrub_exception_details(verify_latest())
 @app.get('/memory')
-def memory(): return Store().payloads('memory')
+def memory(): return scrub_exception_details(Store().payloads('memory'))
 @app.get('/reports')
-def reports(): return Store().rows('reports')
+def reports(): return scrub_exception_details(Store().rows('reports'))
 @app.get('/reports/latest')
 def report_latest():
-    rows=Store().rows('reports'); return rows[0] if rows else {}
+    rows=Store().rows('reports'); return scrub_exception_details(rows[0]) if rows else {}
 @app.post('/reports/generate')
-def report_generate(): return generate_reports()
+def report_generate(): return scrub_exception_details(generate_reports())
 @app.get('/policy')
-def policy(): return Store().policy()
+def policy(): return scrub_exception_details(Store().policy())
 @app.post('/policy/autonomy-level')
 def set_policy(req:PolicyLevelRequest):
-    s=Store(); p=s.policy(); p['autonomy_level']=max(0,min(5,int(req.level))); s.save_policy(p); s.audit('policy.autonomy_level',{'level':p['autonomy_level']}); return p
+    s=Store(); p=s.policy(); p['autonomy_level']=max(0,min(5,int(req.level))); s.save_policy(p); s.audit('policy.autonomy_level',{'level':p['autonomy_level']}); return scrub_exception_details(p)
 @app.get('/audit-log')
-def audit_log(): return Store().rows('audit_log')
+def audit_log(): return scrub_exception_details(Store().rows('audit_log'))
 
 @app.get('/client-acceptance/{run_id}')
 def client_acceptance_get(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
-    return client_acceptance_status(run_id, customer_id, project_id)
+    return scrub_exception_details(client_acceptance_status(run_id, customer_id, project_id))
 @app.post('/client-acceptance/request')
 def client_acceptance_request(req: ClientAcceptanceRequest):
     result = request_client_acceptance(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return result
+    return scrub_exception_details(result)
 @app.post('/client-acceptance/{approval_id}/{status}')
 def client_acceptance_transition_endpoint(approval_id: str, status: str, req: FinalReviewTransitionRequest):
     result = transition_client_acceptance(approval_id, status, actor=req.actor, note=req.note)
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return result
+    return scrub_exception_details(result)
 
 @app.post('/assessment/github')
 def hosted_github_assessment(req: GithubAssessmentRequest):
@@ -425,6 +455,7 @@ def hosted_github_assessment(req: GithubAssessmentRequest):
     result = attach_express_review_target(result, request_payload)
     result = attach_evidence_artifact_bundle(result)
     result = attach_client_acceptance_gate(result)
+    result = scrub_exception_details(result)
     _LAST_HOSTED_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('run_id') or result.get('generated_at','latest_express').replace(':','_'), {'workflow':'express','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -434,6 +465,7 @@ def hosted_mid_assessment(req: MidAssessmentRequest):
     global _LAST_MID_ASSESSMENT
     result = build_mid_assessment(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
+    result = scrub_exception_details(result)
     _LAST_MID_ASSESSMENT = result
     STORE.put('assessment_runs', result.get('generated_at','latest_mid').replace(':','_'), {'workflow':'mid','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -443,6 +475,7 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
     global _LAST_RETAINER_OPS
     result = build_retainer_ops(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
+    result = scrub_exception_details(result)
     _LAST_RETAINER_OPS = result
     STORE.put('assessment_runs', result.get('generated_at','latest_retainer').replace(':','_'), {'workflow':'retainer','customer_id':req.customer_id,'project_id':req.project_id,'status':result.get('status'),'payload':result})
     return result
@@ -451,69 +484,69 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
 def worker_scan(req: WorkerScanRequest):
     result = start_scan(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return result
+    return scrub_exception_details(result)
 @app.get('/worker/scan/{scan_id}')
-def worker_scan_status(scan_id: str): return get_scan(scan_id)
+def worker_scan_status(scan_id: str): return scrub_exception_details(get_scan(scan_id))
 
 @app.post('/evidence/upload')
 async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form('default_customer'), project_id: str = Form('default_project'), run_id: str = Form('')):
     result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return result
+    return scrub_exception_details(result)
 @app.get('/evidence/{project_id}')
-def evidence_for_project(project_id: str, customer_id: str = ''): return list_evidence(project_id, customer_id=customer_id or None)
+def evidence_for_project(project_id: str, customer_id: str = ''): return scrub_exception_details(list_evidence(project_id, customer_id=customer_id or None))
 
 @app.post('/client-job/package')
-def client_job_package(req: ClientJobPackageRequest): return create_client_job_package(req.model_dump())
+def client_job_package(req: ClientJobPackageRequest): return scrub_exception_details(create_client_job_package(req.model_dump()))
 @app.post('/client-job/export')
 def client_job_export(req: ClientJobExportRequest):
     payload = req.model_dump()
     if req.job_id:
-        return export_client_job_package(req.job_id, req.format)
-    return export_client_job_payload(payload, req.format)
+        return scrub_exception_details(export_client_job_package(req.job_id, req.format))
+    return scrub_exception_details(export_client_job_payload(payload, req.format))
 @app.get('/client-job/{job_id}')
-def client_job_get(job_id: str): return get_client_job_package(job_id)
+def client_job_get(job_id: str): return scrub_exception_details(get_client_job_package(job_id))
 @app.get('/client-job/{job_id}/exports')
-def client_job_exports(job_id: str): return list_client_job_exports(job_id)
+def client_job_exports(job_id: str): return scrub_exception_details(list_client_job_exports(job_id))
 
 @app.post('/repair/suggest')
-def repair_suggest(req: RepairSuggestionRequest): return suggest_repair(req.model_dump())
+def repair_suggest(req: RepairSuggestionRequest): return scrub_exception_details(suggest_repair(req.model_dump()))
 @app.post('/repair/approval')
-def repair_approval(req: RepairSuggestionRequest): return create_repair_approval(req.model_dump())
+def repair_approval(req: RepairSuggestionRequest): return scrub_exception_details(create_repair_approval(req.model_dump()))
 @app.get('/repair/policy')
-def repair_policy(): return repair_quality_policy()
+def repair_policy(): return scrub_exception_details(repair_quality_policy())
 
 @app.post('/reports/package')
-def create_report_package(req: ReportRequest): return build_report_package(req.model_dump())
+def create_report_package(req: ReportRequest): return scrub_exception_details(build_report_package(req.model_dump()))
 @app.get('/reports/{run_id}')
-def report_by_run(run_id: str): return get_report(run_id)
+def report_by_run(run_id: str): return scrub_exception_details(get_report(run_id))
 @app.post('/reports/{run_id}/export')
-def report_export(run_id: str, req: ReportExportRequest): return export_report(run_id, req.format)
+def report_export(run_id: str, req: ReportExportRequest): return scrub_exception_details(export_report(run_id, req.format))
 @app.get('/reports/{run_id}/final-review')
 def report_final_review_status(run_id: str, customer_id: str = 'default_customer', project_id: str = 'default_project'):
-    return final_review_status(run_id, customer_id=customer_id, project_id=project_id)
+    return scrub_exception_details(final_review_status(run_id, customer_id=customer_id, project_id=project_id))
 @app.post('/reports/{run_id}/final-review/request')
 def report_final_review_request(run_id: str, req: FinalReviewRequest):
     payload = req.model_dump(); payload['run_id'] = run_id
-    return request_final_review(payload)
+    return scrub_exception_details(request_final_review(payload))
 @app.post('/reports/final-review/{approval_id}/{status}')
 def report_final_review_transition(approval_id: str, status: str, req: FinalReviewTransitionRequest):
-    return transition_final_review(approval_id, status, actor=req.actor, note=req.note)
+    return scrub_exception_details(transition_final_review(approval_id, status, actor=req.actor, note=req.note))
 
 @app.post('/approval/create')
-def approval_create(req: ApprovalRequest): return create_approval(req.model_dump())
+def approval_create(req: ApprovalRequest): return scrub_exception_details(create_approval(req.model_dump()))
 @app.get('/approvals')
-def approvals(customer_id: str = '', project_id: str = ''): return {'status':'ok','approvals':list_approvals(customer_id or None, project_id or None)}
+def approvals(customer_id: str = '', project_id: str = ''): return {'status':'ok','approvals':scrub_exception_details(list_approvals(customer_id or None, project_id or None))}
 @app.post('/approvals/{approval_id}/{status}')
-def approval_transition(approval_id: str, status: str, req: ApprovalTransitionRequest): return transition_approval(approval_id, status, req.actor, req.note)
+def approval_transition(approval_id: str, status: str, req: ApprovalTransitionRequest): return scrub_exception_details(transition_approval(approval_id, status, req.actor, req.note))
 @app.post('/approvals/{approval_id}/draft-pr')
 def approval_draft_pr(approval_id: str, req: DraftPrRequest):
     payload = req.model_dump(); payload['approval_id'] = approval_id
-    return draft_pr_request(payload)
+    return scrub_exception_details(draft_pr_request(payload))
 
 @app.post('/github/installations')
-def github_installation(req: GitHubInstallationRequest, x_nico_admin_token: str = Header(default='')): return installation_record(req.model_dump(), admin_token=x_nico_admin_token)
+def github_installation(req: GitHubInstallationRequest, x_nico_admin_token: str = Header(default='')): return scrub_exception_details(installation_record(req.model_dump(), admin_token=x_nico_admin_token))
 @app.get('/github/app/plan')
-def github_plan(): return github_app_plan()
+def github_plan(): return scrub_exception_details(github_app_plan())
 
 if __name__=='__main__': uvicorn.run(app,host='0.0.0.0',port=8000)
