@@ -1,9 +1,8 @@
 name: NICO CodeQL precision config
 
-queries:
-  - uses: security-extended
-  - uses: security-and-quality
-
+# Keep the advanced workflow focused on actionable security signals.
+# Do not enable security-and-quality here: it produces broad maintainability/test
+# notes that swamp the security dashboard and are tracked separately by NICO CI.
 query-filters:
   - exclude:
       id: py/stack-trace-exposure
