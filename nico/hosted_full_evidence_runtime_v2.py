@@ -11,6 +11,14 @@ CATEGORY_TO_SECTION = {
     "static": "static_analysis",
     "secret": "secrets_review",
 }
+TERMINAL_RUNTIME_STATUSES = {
+    "completed",
+    "attempted",
+    "partial",
+    "failed_exception",
+    "failed_no_artifact",
+    "skipped_all_required_tools_already_present",
+}
 
 
 def _repo(result: dict[str, Any]) -> str:
@@ -26,11 +34,22 @@ def _append_unique(items: list[Any], value: str) -> None:
         items.append(value)
 
 
+def _hosted_complete_repo_assessment(result: dict[str, Any]) -> bool:
+    repository = _repo(result)
+    return result.get("status") == "complete" and bool(repository) and "/" in repository
+
+
 def _explicit_refresh_requested(result: dict[str, Any]) -> bool:
+    if result.get("refresh_full_evidence_requested") is False:
+        return False
     if result.get("refresh_full_evidence_requested") is True:
         return True
     marker = str(result.get("authorized_by") or "").lower()
-    return "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker
+    if "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker:
+        return True
+    if result.get("scanner_worker_autorun") is True or result.get("run_scanner_worker") is True:
+        return True
+    return _hosted_complete_repo_assessment(result)
 
 
 def _raw_artifact(result: dict[str, Any]) -> dict[str, Any] | None:
@@ -64,6 +83,19 @@ def _tool_category(tool: str) -> str:
     return "unknown"
 
 
+def _request_source(result: dict[str, Any]) -> str:
+    if result.get("refresh_full_evidence_requested") is True:
+        return "explicit_payload_flag"
+    marker = str(result.get("authorized_by") or "").lower()
+    if "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker:
+        return "authorized_by_marker"
+    if result.get("scanner_worker_autorun") is True or result.get("run_scanner_worker") is True:
+        return "scanner_worker_autorun_flag"
+    if _hosted_complete_repo_assessment(result):
+        return "auto_required_for_complete_hosted_assessment"
+    return "not_requested"
+
+
 def _add_visible_validation_note(result: dict[str, Any], status: str, missing_tools: list[str], completed_tools: list[str] | None = None) -> None:
     if not _explicit_refresh_requested(result):
         return
@@ -74,7 +106,8 @@ def _add_visible_validation_note(result: dict[str, Any], status: str, missing_to
         _append_unique(
             trust["evidence"],
             "Refresh Full Evidence runtime validation: "
-            f"status={status}; completed_tools={', '.join(completed_tools) if completed_tools else 'none'}; "
+            f"status={status}; request_source={_request_source(result)}; "
+            f"completed_tools={', '.join(completed_tools) if completed_tools else 'none'}; "
             f"missing_tools={', '.join(missing_tools) if missing_tools else 'none'}.",
         )
     by_category: dict[str, list[str]] = {"dependency": [], "static": [], "secret": []}
@@ -95,6 +128,15 @@ def _add_visible_validation_note(result: dict[str, Any], status: str, missing_to
         )
 
 
+def _runtime_already_attempted(result: dict[str, Any]) -> bool:
+    if result.get("scanner_worker_auto_ran") is True:
+        return True
+    guard = result.get("report_quality_guards", {}).get("hosted_full_evidence_runtime") if isinstance(result.get("report_quality_guards"), dict) else None
+    if isinstance(guard, dict) and str(guard.get("status") or "") in TERMINAL_RUNTIME_STATUSES:
+        return True
+    return False
+
+
 def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
     guards = result.setdefault("report_quality_guards", {})
     existing = guards.get("hosted_full_evidence_runtime") if isinstance(guards.get("hosted_full_evidence_runtime"), dict) else {}
@@ -105,6 +147,7 @@ def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
     guards["hosted_full_evidence_runtime"] = {
         "status": status,
         "refresh_full_evidence_requested": _explicit_refresh_requested(result),
+        "request_source": _request_source(result),
         "repository": _repo(result),
         "missing_required_tools": missing,
         "guardrail": "Refresh Full Evidence is diagnostic and evidence-bound: it only turns yellow sections green when the hosted worker actually returns current-run scanner and complexity artifacts.",
@@ -123,6 +166,9 @@ def _should_refresh(result: dict[str, Any]) -> bool:
     repository = _repo(result)
     if not repository or "/" not in repository:
         _guard(result, "skipped_invalid_repository")
+        return False
+    if _runtime_already_attempted(result):
+        _guard(result, "skipped_runtime_already_attempted")
         return False
     missing = _missing_required_tools(result)
     if not missing:
@@ -157,6 +203,7 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
     result.setdefault("report_quality_guards", {})["hosted_full_evidence_runtime"] = {
         "status": artifact.get("worker_execution_state") or "attempted",
         "refresh_full_evidence_requested": _explicit_refresh_requested(result),
+        "request_source": _request_source(result),
         "completed_dependency_tools": normalized.get("dependency_tools_completed"),
         "completed_static_tools": normalized.get("static_tools_completed"),
         "completed_secret_tools": normalized.get("secret_tools_completed"),
@@ -178,7 +225,7 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
 
 
 def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    """Collect runtime evidence only for explicit Refresh Full Evidence requests."""
+    """Collect runtime evidence for complete hosted assessments unless explicitly disabled."""
     if not _should_refresh(result):
         return result
     try:
