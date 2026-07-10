@@ -12,12 +12,13 @@ def test_local_assessment_requires_authorization(tmp_path):
         assert "--authorized" in str(exc)
 
 
-def test_local_assessment_generates_report(tmp_path):
+def test_local_assessment_generates_report(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     (project / "app.py").write_text("# TODO: add rate limiting\n", encoding="utf-8")
     (project / "requirements.txt").write_text("requests>=2.31\n", encoding="utf-8")
     (project / "README.md").write_text("# Test project\n", encoding="utf-8")
+    monkeypatch.setenv("NICO_ALLOWED_SCAN_ROOT", str(tmp_path))
 
     result = run_local_assessment(str(project), authorized=True)
 
