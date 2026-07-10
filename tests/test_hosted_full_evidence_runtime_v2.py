@@ -16,15 +16,30 @@ def complete_result() -> dict:
     }
 
 
-def test_complete_hosted_assessment_auto_requests_full_evidence() -> None:
+def requested_result() -> dict:
+    result = complete_result()
+    result["refresh_full_evidence_requested"] = True
+    return result
+
+
+def test_standard_complete_result_still_skips_without_request() -> None:
     result = complete_result()
 
+    assert runtime._explicit_refresh_requested(result) is False
+    assert runtime._request_source(result) == "not_requested"
+    assert runtime._should_refresh(result) is False
+    assert result["report_quality_guards"]["hosted_full_evidence_runtime"]["status"] == "skipped_no_explicit_refresh_request"
+
+
+def test_explicit_payload_flag_requests_full_evidence() -> None:
+    result = requested_result()
+
     assert runtime._explicit_refresh_requested(result) is True
-    assert runtime._request_source(result) == "auto_required_for_complete_hosted_assessment"
+    assert runtime._request_source(result) == "explicit_payload_flag"
 
 
 def test_refresh_can_be_explicitly_disabled() -> None:
-    result = complete_result()
+    result = requested_result()
     result["refresh_full_evidence_requested"] = False
 
     assert runtime._explicit_refresh_requested(result) is False
@@ -41,7 +56,7 @@ def test_authorized_by_marker_still_requests_full_evidence() -> None:
 
 
 def test_runtime_does_not_repeat_after_attempt(monkeypatch) -> None:
-    result = complete_result()
+    result = requested_result()
     result["scanner_worker_auto_ran"] = True
 
     def fail_run_worker(payload):
@@ -57,8 +72,8 @@ def test_runtime_does_not_repeat_after_attempt(monkeypatch) -> None:
     assert guard["refresh_full_evidence_requested"] is True
 
 
-def test_auto_request_adds_visible_queued_note(monkeypatch) -> None:
-    result = complete_result()
+def test_explicit_request_adds_visible_runtime_note(monkeypatch) -> None:
+    result = requested_result()
 
     def fail_run_worker(payload):
         return "not-an-artifact"
@@ -70,7 +85,7 @@ def test_auto_request_adds_visible_queued_note(monkeypatch) -> None:
     assert output is result
     guard = result["report_quality_guards"]["hosted_full_evidence_runtime"]
     assert guard["status"] == "failed_no_artifact"
-    assert guard["request_source"] == "auto_required_for_complete_hosted_assessment"
+    assert guard["request_source"] == "explicit_payload_flag"
     trust = next(item for item in result["sections"] if item["id"] == "trust_client_readiness")
     assert any("Refresh Full Evidence runtime validation" in item for item in trust["evidence"])
     assert not any("skipped_no_explicit_refresh_request" in item for item in trust["evidence"])
