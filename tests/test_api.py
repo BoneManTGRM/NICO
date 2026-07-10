@@ -7,7 +7,7 @@ def test_health():
     data = c.get('/health').json()
     assert data['status']=='ok'
     assert data['system']=='NICO'
-    assert 'https://app.nicoaudit.com' in data['cors_origins']
+    assert data['cors_origins'].count('https://app.nicoaudit.com') == 1
 
 
 def test_hosted_assessment_requires_authorization():
