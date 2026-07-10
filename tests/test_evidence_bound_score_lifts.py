@@ -53,7 +53,6 @@ def test_evidence_bound_static_secret_and_velocity_lifts_move_score_above_85():
                         "Parsed credential-scan, gitleaks, and trufflehog full-history artifacts reported zero credential findings.",
                         "Scanner-worker secret tools completed: gitleaks, trufflehog.",
                     ],
-                    unavailable=[],
                 ),
                 _section(
                     "static_analysis",
@@ -128,6 +127,7 @@ def test_static_lift_does_not_ignore_real_blocking_findings():
             "reports": {},
         }
     )
+
     scores = {item["id"]: item["score"] for item in result["sections"]}
 
-    assert scores["static_analysis"] < 86
+    assert scores["static_analysis"] == 70
