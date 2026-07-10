@@ -22,6 +22,23 @@ def requested_result() -> dict:
     return result
 
 
+def clean_scanner_artifact() -> dict:
+    return {
+        "worker_execution_state": "completed",
+        "tools": {
+            "pip-audit": {"status": "completed", "finding_count": 0},
+            "npm-audit": {"status": "completed", "finding_count": 0},
+            "osv-scanner": {"status": "completed", "finding_count": 0},
+            "bandit": {"status": "completed", "finding_count": 0},
+            "semgrep": {"status": "completed", "finding_count": 0},
+            "eslint": {"status": "completed", "finding_count": 0},
+            "typescript": {"status": "completed", "finding_count": 0},
+            "gitleaks": {"status": "completed", "finding_count": 0},
+            "trufflehog": {"status": "completed", "finding_count": 0},
+        },
+    }
+
+
 def test_standard_complete_result_still_skips_without_request() -> None:
     result = complete_result()
 
@@ -55,9 +72,10 @@ def test_authorized_by_marker_still_requests_full_evidence() -> None:
     assert runtime._request_source(result) == "authorized_by_marker"
 
 
-def test_runtime_does_not_repeat_after_attempt(monkeypatch) -> None:
+def test_runtime_does_not_repeat_after_attached_artifact(monkeypatch) -> None:
     result = requested_result()
     result["scanner_worker_auto_ran"] = True
+    result["scanner_worker_artifact"] = clean_scanner_artifact()
 
     def fail_run_worker(payload):
         raise AssertionError("worker should not run twice")
@@ -68,8 +86,31 @@ def test_runtime_does_not_repeat_after_attempt(monkeypatch) -> None:
 
     assert output is result
     guard = result["report_quality_guards"]["hosted_full_evidence_runtime"]
-    assert guard["status"] == "skipped_runtime_already_attempted"
+    assert guard["status"] == "skipped_all_required_tools_already_present"
     assert guard["refresh_full_evidence_requested"] is True
+
+
+def test_previous_attempt_without_artifact_can_retry(monkeypatch) -> None:
+    result = requested_result()
+    result["report_quality_guards"] = {"hosted_full_evidence_runtime": {"status": "attempted"}}
+
+    monkeypatch.setattr(runtime, "run_hosted_scanner_worker", lambda payload: clean_scanner_artifact())
+
+    output = runtime.ensure_hosted_runtime_evidence(result)
+
+    assert output is result
+    guard = result["report_quality_guards"]["hosted_full_evidence_runtime"]
+    assert guard["status"] == "completed"
+    assert guard["missing_dependency_tools"] == []
+    assert guard["missing_static_tools"] == []
+    assert guard["missing_secret_tools"] == []
+
+
+def test_zero_finding_status_only_artifact_is_recognized() -> None:
+    result = requested_result()
+    result["scanner_worker_artifact"] = clean_scanner_artifact()
+
+    assert runtime._missing_required_tools(result) == []
 
 
 def test_explicit_request_adds_visible_runtime_note(monkeypatch) -> None:
