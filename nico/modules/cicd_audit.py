@@ -5,7 +5,6 @@ Static file detection + optional GitHub Actions run history when token available
 
 import os
 from pathlib import Path
-from urllib.parse import urlparse
 
 try:
     import requests
@@ -13,24 +12,15 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
+from nico.modules.github_url_safety import is_github_repo_url, parse_github_repo
+
 
 def _is_github_url(target: str) -> bool:
-    try:
-        p = urlparse(target if target.startswith(('http://','https://')) else 'https://'+target)
-        return 'github.com' in p.netloc
-    except Exception:
-        return False
+    return is_github_repo_url(target)
 
 
 def _parse_repo(target: str):
-    try:
-        p = urlparse(target if target.startswith(('http://','https://')) else 'https://'+target)
-        parts = [x for x in p.path.strip('/').split('/') if x]
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-    except Exception:
-        pass
-    return None, None
+    return parse_github_repo(target)
 
 
 def audit_cicd(target: str, github_token_env: str | None = None) -> dict:
@@ -96,8 +86,8 @@ def audit_cicd(target: str, github_token_env: str | None = None) -> dict:
                         result["limitations"].append("Includes recent GitHub Actions run history")
                     else:
                         result["limitations"].append(f"GitHub Actions API returned {resp.status_code}")
-                except Exception as e:
-                    result["limitations"].append(f"GitHub Actions history fetch error: {str(e)[:150]}")
+                except Exception:
+                    result["limitations"].append("GitHub Actions history fetch error: request failed")
         else:
             result["limitations"].append("No GITHUB_TOKEN provided; workflow run history not fetched")
     elif _is_github_url(target):
