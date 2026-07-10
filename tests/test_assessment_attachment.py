@@ -6,12 +6,21 @@ def test_attachment_requires_authorization():
     result = attach_existing_worker_evidence({"status": "complete", "sections": []}, {"repository": "owner/repo", "authorized": False})
     assert result["worker_evidence_attachment"]["status"] == "blocked"
     assert "scanner_results" not in result
+    assert "refresh_full_evidence_requested" not in result
 
 
 def test_attachment_marks_missing_evidence_unavailable():
     result = attach_existing_worker_evidence({"status": "complete", "sections": []}, {"repository": "owner/missing", "authorized": True})
     assert result["worker_evidence_attachment"]["status"] == "unavailable"
+    assert result["refresh_full_evidence_requested"] is True
+    assert result["refresh_full_evidence_request_source"] == "authorized_hosted_assessment"
     assert any("No completed worker evidence" in note for note in result["unavailable_data_notes"])
+
+
+def test_attachment_allows_explicit_refresh_opt_out():
+    result = attach_existing_worker_evidence({"status": "complete", "sections": []}, {"repository": "owner/missing", "authorized": True, "refresh_full_evidence_requested": False})
+    assert result["worker_evidence_attachment"]["status"] == "unavailable"
+    assert result["refresh_full_evidence_requested"] is False
 
 
 def test_attachment_uses_latest_matching_completed_run():
@@ -22,3 +31,4 @@ def test_attachment_uses_latest_matching_completed_run():
     assert result["worker_evidence_attachment"]["scan_id"] == "test_attach_new"
     assert result["scanner_results"][0]["scanner"] == "new"
     assert result["evidence_readiness"]["existing_worker_evidence_attached"] is True
+    assert result["refresh_full_evidence_requested"] is True
