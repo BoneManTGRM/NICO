@@ -139,7 +139,7 @@ python -m nico scan-test-lab
 python -m nico scan-drift-demo
 python -m nico assess local <path> --authorized
 python -m nico assess github <owner/repo> --authorized
-python -m nico assess archive <archive-path>
+python -m nico assess archive <archive-path> --authorized
 python -m nico assess url <url> --passive-only --authorized
 python -m nico assess report latest --format markdown
 python -m nico report latest
