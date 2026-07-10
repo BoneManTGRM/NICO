@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from nico.complexity_engine import build_complexity_profile
+from nico.dependency_proof_inventory import build_dependency_proof_inventory
 from nico.github_app_auth import build_github_clone_auth_env
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
 from nico.scanner_worker_orchestration import build_scanner_worker_orchestration_manifest, stable_artifact_hash
@@ -120,6 +121,7 @@ def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
+        "dependency_proof": build_dependency_proof_inventory(__import__("pathlib").Path("."), {}),
         "unavailable_data_notes": [reason],
         "human_review_required": True,
     }
@@ -146,6 +148,7 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
+        "dependency_proof": build_dependency_proof_inventory(__import__("pathlib").Path("."), {}),
         "checkout": {
             "returncode": checkout.returncode,
             "timed_out": checkout.timed_out,
@@ -199,6 +202,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         repository = validate_repository(str(payload.get("repository") or ""))
         run_id = stable_artifact_hash({"repository": repository, "started_at": started_at, "commit_sha": commit_sha})[:16]
         scanner_artifact = run_scanner_tools(workspace)
+        scanner_artifact["dependency_proof"] = build_dependency_proof_inventory(workspace.repo_dir, scanner_artifact.get("tools") if isinstance(scanner_artifact.get("tools"), dict) else {})
         scanner_artifact["complexity_engine"] = build_complexity_profile(workspace.repo_dir)
         finished_at = _now_iso()
         scanner_artifact.update(
