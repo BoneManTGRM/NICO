@@ -5,7 +5,6 @@ Safe GitHub activity analysis for public repos. Requires token for reliable/priv
 
 import os
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 try:
     import requests
@@ -13,24 +12,15 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
+from nico.modules.github_url_safety import is_github_repo_url, parse_github_repo
+
 
 def _is_github_url(target: str) -> bool:
-    try:
-        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
-        return 'github.com' in p.netloc and len([x for x in p.path.strip('/').split('/') if x]) >= 2
-    except Exception:
-        return False
+    return is_github_repo_url(target)
 
 
 def _parse_repo(target: str):
-    try:
-        p = urlparse(target if target.startswith(('http://', 'https://')) else 'https://' + target)
-        parts = [x for x in p.path.strip('/').split('/') if x]
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-    except Exception:
-        pass
-    return None, None
+    return parse_github_repo(target)
 
 
 def analyze_github_activity(target: str, months: int = 6, github_token_env: str | None = None) -> dict:
@@ -118,8 +108,8 @@ def analyze_github_activity(target: str, months: int = 6, github_token_env: str 
         if not token:
             result["limitations"].append("No GITHUB_TOKEN; data limited to public unauthenticated API (rate limits apply)")
 
-    except Exception as e:
+    except Exception:
         result["status"] = "error"
-        result["limitations"].append(f"GitHub activity fetch error: {str(e)[:200]}")
+        result["limitations"].append("GitHub activity fetch error: request failed")
 
     return result
