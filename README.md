@@ -131,6 +131,17 @@ python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
 
 Diagnostics and smoke checks do not approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
 
+## License
+
+NICO uses a dual-license model:
+
+- `LICENSE` - source-available non-commercial license for personal, educational, internal evaluation, testing, and non-commercial defensive research use.
+- `COMMERCIAL_LICENSE.md` - commercial license template for business, government, client-facing, managed-service, hosted-service, consulting, paid report, or other revenue-generating use.
+
+Commercial use is not allowed under the default non-commercial license. A separate written commercial license, order form, or signed agreement is required before using NICO for commercial work.
+
+This repository is not licensed as open-source software because the default license restricts commercial use.
+
 ## CLI Commands
 
 ```bash
