@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from nico.api import main as api
 
 
@@ -12,6 +14,15 @@ def _complete_result(**extra):
     }
     result.update(extra)
     return result
+
+
+def _response_payload(response):
+    if isinstance(response, dict):
+        return response
+    body = getattr(response, "body", b"")
+    if isinstance(body, bytes):
+        return json.loads(body.decode("utf-8"))
+    return json.loads(str(body))
 
 
 def _patch_post_processors(monkeypatch):
@@ -41,7 +52,7 @@ def test_github_assessment_uses_standard_path_when_scanner_autorun_disabled(monk
     monkeypatch.setattr(api, "run_github_assessment_with_scanner_artifacts", fake_worker_aware)
 
     req = api.GithubAssessmentRequest(repository="BoneManTGRM/NICO", authorized=True)
-    result = api.hosted_github_assessment(req)
+    result = _response_payload(api.hosted_github_assessment(req))
 
     assert calls == ["standard"]
     assert result["scanner_worker_evidence_attached"] is False
@@ -66,7 +77,7 @@ def test_github_assessment_uses_worker_wrapper_for_authorized_autorun(monkeypatc
     monkeypatch.setattr(api, "run_github_assessment_with_scanner_artifacts", fake_worker_aware)
 
     req = api.GithubAssessmentRequest(repository="BoneManTGRM/NICO", authorized=True)
-    result = api.hosted_github_assessment(req)
+    result = _response_payload(api.hosted_github_assessment(req))
 
     assert calls == ["worker-aware"]
     assert result["scanner_worker_evidence_attached"] is True
@@ -95,7 +106,7 @@ def test_github_assessment_uses_worker_wrapper_with_scanner_artifact(monkeypatch
         authorized=True,
         scanner_worker_artifact={"tools": {}},
     )
-    result = api.hosted_github_assessment(req)
+    result = _response_payload(api.hosted_github_assessment(req))
 
     assert calls == ["worker-aware"]
     assert result["scanner_worker_evidence_attached"] is True
@@ -118,7 +129,7 @@ def test_github_assessment_accepts_worker_artifact_alias(monkeypatch):
         authorized=True,
         worker_artifact={"tools": {}},
     )
-    result = api.hosted_github_assessment(req)
+    result = _response_payload(api.hosted_github_assessment(req))
 
     assert calls == ["worker-aware"]
     assert result["scanner_worker_evidence_attached"] is True
