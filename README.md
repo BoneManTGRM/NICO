@@ -139,6 +139,7 @@ NICO uses a dual-license model:
 - `COMMERCIAL_LICENSE.md` - commercial license template for business, government, client-facing, managed-service, hosted-service, consulting, paid report, or other revenue-generating use.
 - `docs/commercial-license-order-form.md` - order form template for defining customer scope, seats, term, fees, support, and special terms.
 - `docs/commercial-licensing-workflow.md` - step-by-step checklist for moving from commercial interest to signed scope.
+- `docs/license-faq.md` - plain-language licensing FAQ for evaluators and buyers.
 
 Commercial use is not allowed under the default non-commercial license. A separate written commercial license, order form, or signed agreement is required before using NICO for commercial work.
 
