@@ -8,6 +8,7 @@ from typing import Any
 from nico.complexity_engine import build_complexity_profile
 from nico.github_app_auth import build_github_clone_auth_env
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
+from nico.scanner_worker_orchestration import build_scanner_worker_orchestration_manifest, stable_artifact_hash
 from nico.worker_execution import (
     WorkerCommandResult,
     WorkerLimits,
@@ -109,25 +110,41 @@ def _clone_auth_metadata() -> dict[str, Any]:
 
 
 def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {
+    generated_at = _now_iso()
+    repository = payload.get("repository")
+    run_id = stable_artifact_hash({"repository": repository, "generated_at": generated_at, "state": "blocked"})[:16]
+    artifact = {
         "artifact_schema": "nico.scanner_worker.v1",
         "worker_execution_state": "blocked",
-        "repository": payload.get("repository"),
-        "generated_at": _now_iso(),
+        "repository": repository,
+        "generated_at": generated_at,
+        "run_id": run_id,
         "tools": {},
         "unavailable_data_notes": [reason],
         "human_review_required": True,
     }
+    artifact["orchestration"] = build_scanner_worker_orchestration_manifest(
+        artifact,
+        repository=str(repository or ""),
+        run_id=run_id,
+        started_at=generated_at,
+        finished_at=generated_at,
+    )
+    return artifact
 
 
 def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandResult) -> dict[str, Any]:
     output = redact_text((checkout.stdout or "") + "\n" + (checkout.stderr or ""))
     clone_auth = _clone_auth_metadata()
-    return {
+    generated_at = _now_iso()
+    repository = payload.get("repository")
+    run_id = stable_artifact_hash({"repository": repository, "generated_at": generated_at, "state": "checkout_failed"})[:16]
+    artifact = {
         "artifact_schema": "nico.scanner_worker.v1",
         "worker_execution_state": "checkout_failed",
-        "repository": payload.get("repository"),
-        "generated_at": _now_iso(),
+        "repository": repository,
+        "generated_at": generated_at,
+        "run_id": run_id,
         "tools": {},
         "checkout": {
             "returncode": checkout.returncode,
@@ -140,6 +157,14 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
         "unavailable_data_notes": ["Hosted scanner worker could not check out the authorized repository."] + clone_auth["unavailable"],
         "human_review_required": True,
     }
+    artifact["orchestration"] = build_scanner_worker_orchestration_manifest(
+        artifact,
+        repository=str(repository or ""),
+        run_id=run_id,
+        started_at=generated_at,
+        finished_at=generated_at,
+    )
+    return artifact
 
 
 def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
@@ -159,6 +184,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         return _blocked_artifact(payload, str(exc))
 
     started = time.monotonic()
+    started_at = _now_iso()
     full_history = full_history_secret_scan_enabled(payload)
     clone_auth = _clone_auth_metadata()
     temp_workspace = make_workspace("nico-hosted-scan-")
@@ -170,13 +196,19 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
 
         commit_count = _git_commit_count(workspace)
         commit_sha = _git_head_sha(workspace)
+        repository = validate_repository(str(payload.get("repository") or ""))
+        run_id = stable_artifact_hash({"repository": repository, "started_at": started_at, "commit_sha": commit_sha})[:16]
         scanner_artifact = run_scanner_tools(workspace)
         scanner_artifact["complexity_engine"] = build_complexity_profile(workspace.repo_dir)
+        finished_at = _now_iso()
         scanner_artifact.update(
             {
                 "worker_execution_state": "completed",
-                "repository": validate_repository(str(payload.get("repository") or "")),
-                "generated_at": _now_iso(),
+                "repository": repository,
+                "generated_at": finished_at,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "run_id": run_id,
                 "duration_seconds": round(time.monotonic() - started, 2),
                 "checkout": {
                     "returncode": checkout.returncode,
@@ -193,6 +225,14 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
                 "human_review_required": True,
             }
         )
+        scanner_artifact["orchestration"] = build_scanner_worker_orchestration_manifest(
+            scanner_artifact,
+            repository=repository,
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        scanner_artifact["artifact_hash"] = stable_artifact_hash({key: value for key, value in scanner_artifact.items() if key != "artifact_hash"})
         return redact_payload(scanner_artifact)
     finally:
         temp_workspace.cleanup()
