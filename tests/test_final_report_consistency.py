@@ -230,9 +230,9 @@ def test_pdf_regression_score_drops_when_osv_findings_are_disclosed():
     assert "final release-readiness evidence from clean ci/security/dependency artifacts" not in lower_markdown
     assert "release-readiness evidence: clean code markers" not in lower_markdown
     assert "clean dependency artifacts, clean secret artifacts" not in lower_markdown
-    assert "Run and attach verified scanner-worker artifacts" in markdown
-    assert "run and attach verified scanner-worker artifacts" in lower_markdown
-    assert "scanner-worker artifacts are executed against an authorized checkout and attached to that run" in lower_markdown
+    assert "Maintain verified scanner-worker artifacts" in markdown
+    assert "maintain verified scanner-worker artifacts" in lower_markdown
+    assert "scanner-clean claims require current-run artifacts to remain attached and parseable" in lower_markdown
     assert "release-readiness lift not applied" in lower_markdown
     assert "Dependency evidence status: OSV API completed_with_findings" in markdown
     assert "final scanner-clean status is not claimed" in markdown
