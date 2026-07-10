@@ -8,6 +8,7 @@ STATIC_TOOLS = ("bandit", "semgrep", "eslint", "typescript")
 SECRET_TOOLS = ("gitleaks", "trufflehog")
 COVERAGE_TOOLS = ("coverage",)
 ALL_TOOLS = DEPENDENCY_TOOLS + STATIC_TOOLS + SECRET_TOOLS + COVERAGE_TOOLS
+COMPLETED_STATUSES = {"completed", "success", "ok", "passed", "completed_clean", "clean", "no_findings"}
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -43,6 +44,14 @@ def _finding_items(tool_data: dict[str, Any]) -> list[Any]:
     if isinstance(count, int) and count > 0:
         return [{} for _ in range(count)]
     return []
+
+
+def _finding_count_from_payload(tool_data: dict[str, Any], fallback_items: list[Any]) -> int:
+    for key in ("finding_count", "findings_count", "issue_count", "vulnerability_count"):
+        value = tool_data.get(key)
+        if isinstance(value, int):
+            return max(0, value)
+    return len(fallback_items)
 
 
 def _severity_counts(findings: list[Any]) -> dict[str, int]:
@@ -84,9 +93,13 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
         status = str(tool_data.get("status") or ("completed" if tool_data else "unavailable")).lower()
         normalized_tools[tool] = {
             "status": status,
-            "completed": status in {"completed", "success", "ok", "passed"},
-            "finding_count": len(findings),
+            "completed": status in COMPLETED_STATUSES,
+            "finding_count": _finding_count_from_payload(tool_data, findings),
             "severity_counts": _severity_counts(findings),
+            "artifact_hash": tool_data.get("artifact_hash"),
+            "execution_source": tool_data.get("execution_source"),
+            "run_id": tool_data.get("run_id"),
+            "generated_at": tool_data.get("generated_at") or tool_data.get("timestamp"),
         }
 
     dependency_completed = _completed_tools(normalized_tools, DEPENDENCY_TOOLS)
