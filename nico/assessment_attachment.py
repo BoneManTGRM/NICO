@@ -29,6 +29,14 @@ def _completed_runs(repository: str, customer_id: str, project_id: str) -> list[
     return runs
 
 
+def _attach_refresh_request_marker(output: dict[str, Any], request: dict[str, Any]) -> None:
+    if request.get("refresh_full_evidence_requested") is False:
+        output["refresh_full_evidence_requested"] = False
+        return
+    output["refresh_full_evidence_requested"] = True
+    output["refresh_full_evidence_request_source"] = "authorized_hosted_assessment"
+
+
 def attach_existing_worker_evidence(result: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
     if output.get("status") != "complete":
@@ -38,6 +46,7 @@ def attach_existing_worker_evidence(result: dict[str, Any], request: dict[str, A
         output["worker_evidence_attachment"] = {"status": "blocked", "reason": "Evidence attachment requires explicit authorization."}
         return output
 
+    _attach_refresh_request_marker(output, request)
     repository = request.get("repository") or output.get("repository") or ""
     customer_id = request.get("customer_id") or "default_customer"
     project_id = request.get("project_id") or "default_project"
