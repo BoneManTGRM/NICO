@@ -59,6 +59,13 @@ def _export_blocked(result: dict[str, Any]) -> bool:
     return gate.get("export_allowed") is False or gate.get("status") == "failed"
 
 
+def _export_review_required(result: dict[str, Any]) -> bool:
+    gate = result.get("export_truth_gate")
+    if not isinstance(gate, dict):
+        return False
+    return gate.get("status") == "review_required" or bool(gate.get("draft_only"))
+
+
 def _critical_not_green(result: dict[str, Any]) -> dict[str, str]:
     sections = _section_map(result)
     not_green: dict[str, str] = {}
@@ -104,7 +111,9 @@ def _why_not_higher(result: dict[str, Any]) -> list[str]:
     if _scanner_status(result) == "missing":
         reasons.append("Scanner artifact integration is missing for this report run.")
     if _export_blocked(result):
-        reasons.append("Export Truth Gate blocked client-facing artifacts.")
+        reasons.append("Export Truth Gate blocked client-facing artifacts because report exports were missing or empty.")
+    elif _export_review_required(result):
+        reasons.append("Export Truth Gate marked exports draft-only for human review; artifacts were preserved.")
     return list(dict.fromkeys(reasons))[:8]
 
 
@@ -123,6 +132,8 @@ def _path_to_verified(result: dict[str, Any]) -> list[str]:
         steps.append("Attach the scanner-worker artifact bundle to the exact report run.")
     if _export_blocked(result):
         steps.append("Rebuild Markdown/HTML/PDF after final QA and pass the Export Truth Gate.")
+    elif _export_review_required(result):
+        steps.append("Review the draft-only export warnings, then approve or request more evidence before client delivery.")
     if not steps:
         steps.append("Keep evidence ledger, scanner artifact bundle, and export truth gate attached to preserve verified status.")
     return steps
@@ -132,6 +143,8 @@ def _computed_trust_level(result: dict[str, Any]) -> str:
     if _export_blocked(result):
         return "Draft only"
     reasons = _why_not_higher(result)
+    if _export_review_required(result):
+        return "Review-limited"
     if _trust_violations(result) or _critical_not_green(result):
         return "Review-limited"
     if _missing_coverage(result):

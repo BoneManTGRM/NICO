@@ -75,14 +75,15 @@ def _hosted_contradictory_input():
     }
 
 
-def test_export_truth_gate_blocks_green_export_contradictions():
+def test_export_truth_gate_marks_review_required_without_destroying_artifacts():
     result = apply_export_truth_gate(_green_json_contradiction())
 
-    assert result["export_truth_gate"]["status"] == "failed"
-    assert result["export_truth_gate"]["export_allowed"] is False
+    assert result["export_truth_gate"]["status"] == "review_required"
+    assert result["export_truth_gate"]["export_allowed"] is True
+    assert result["export_truth_gate"]["draft_only"] is True
     assert result["client_ready"] is False
-    assert result["reports"]["pdf_base64"] == ""
-    assert "NICO Export Blocked" in result["reports"]["markdown"]
+    assert result["reports"]["pdf_base64"] == "abc"
+    assert "NICO Export Blocked" not in result["reports"]["markdown"]
     assert any(item["type"] == "json_green_contradiction" for item in result["export_truth_gate"]["violations"])
 
 
