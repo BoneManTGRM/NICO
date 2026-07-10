@@ -140,7 +140,7 @@ def _guard(result: dict[str, Any], status: str, **extra: Any) -> None:
     guards = result.setdefault("report_quality_guards", {})
     existing = guards.get("hosted_full_evidence_runtime") if isinstance(guards.get("hosted_full_evidence_runtime"), dict) else {}
     existing_status = str((existing or {}).get("status") or "")
-    if status == "skipped_all_required_tools_already_present" and existing_status in {"completed", "attempted"}:
+    if status == "skipped_all_required_tools_already_present" and existing_status == "completed":
         return
     if status == "skipped_runtime_already_attempted" and existing_status in TERMINAL_RUNTIME_STATUSES:
         return
@@ -168,12 +168,12 @@ def _should_refresh(result: dict[str, Any]) -> bool:
     if not repository or "/" not in repository:
         _guard(result, "skipped_invalid_repository")
         return False
-    if _runtime_already_attempted(result):
-        _guard(result, "skipped_runtime_already_attempted")
-        return False
     missing = _missing_required_tools(result)
     if not missing:
         _guard(result, "skipped_all_required_tools_already_present")
+        return False
+    if _runtime_already_attempted(result):
+        _guard(result, "skipped_runtime_already_attempted")
         return False
     _guard(result, "queued", missing_required_tools=missing)
     return True
