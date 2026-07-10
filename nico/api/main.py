@@ -71,16 +71,103 @@ def scrub_exception_details(value: Any) -> Any:
 
 def safe_storage_status_payload() -> dict[str, Any]:
     try:
-        return scrub_exception_details(STORE.status())
+        status = STORE.status()
     except Exception:  # pragma: no cover - defensive API boundary
         return {'status': 'unavailable', 'mode': 'storage_status_unavailable'}
+    return {
+        'status': status.get('status') or 'ok',
+        'adapter': status.get('adapter') or 'unknown',
+        'persistence_available': bool(status.get('persistence_available')),
+        'database_url_configured': bool(status.get('database_url_configured')),
+    }
+
+
+def safe_storage_schema_payload() -> dict[str, Any]:
+    try:
+        schema = STORE.schema()
+        migration = STORE.migration_plan()
+    except Exception:  # pragma: no cover - defensive API boundary
+        return {'status': 'unavailable', 'schema_available': False, 'migration_plan_available': False}
+    return {
+        'status': 'ok',
+        'schema_available': bool(schema),
+        'schema_keys': sorted(str(key) for key in schema.keys()) if isinstance(schema, dict) else [],
+        'storage': safe_storage_status_payload(),
+        'migration_plan_available': bool(migration),
+    }
+
+
+def safe_migration_plan_payload() -> dict[str, Any]:
+    try:
+        plan = STORE.migration_plan()
+    except Exception:  # pragma: no cover - defensive API boundary
+        return {'status': 'unavailable', 'migration_plan_available': False}
+    return {'status': 'ok', 'migration_plan_available': bool(plan), 'storage': safe_storage_status_payload()}
 
 
 def safe_runtime_config_payload() -> dict[str, Any]:
     try:
-        return scrub_exception_details(runtime_config())
+        config = runtime_config()
     except Exception:  # pragma: no cover - defensive API boundary
         return {'source': 'unavailable', 'version': 'unavailable'}
+    return {'source': config.get('source'), 'version': config.get('version'), 'feature_flags': config.get('feature_flags', {})}
+
+
+def safe_diagnostics_payload() -> dict[str, Any]:
+    config = safe_runtime_config_payload()
+    return {
+        'status': 'ok',
+        'app': 'NICO',
+        'runtime_config': {'source': config.get('source'), 'version': config.get('version')},
+        'storage': safe_storage_status_payload(),
+        'admin': safe_public_admin_status(),
+        'redaction': 'Internal exception, stack, stderr, traceback, and provider-error details are not returned by this endpoint.',
+    }
+
+
+def safe_feature_diagnostics_payload() -> dict[str, Any]:
+    config = safe_runtime_config_payload()
+    return {
+        'status': 'ok',
+        'runtime_config_source': config.get('source'),
+        'feature_flags': config.get('feature_flags', {}),
+        'scanner_execution_enabled': os.getenv('NICO_ENABLE_SCANNER_EXECUTION', 'true').lower() == 'true',
+        'project_commands_allowed': os.getenv('NICO_ALLOW_PROJECT_COMMANDS', 'false').lower() == 'true',
+        'admin': safe_public_admin_status(),
+    }
+
+
+def safe_latest_runs_payload() -> dict[str, Any]:
+    try:
+        assessment_count = len(STORE.list('assessment_runs'))
+        scanner_count = len(STORE.list('scanner_runs'))
+        report_count = len(STORE.list('reports'))
+        approval_count = len(list_approvals())
+    except Exception:  # pragma: no cover - defensive API boundary
+        return {'status': 'unavailable', 'counts_available': False}
+    return {
+        'status': 'ok',
+        'counts_available': True,
+        'counts': {
+            'assessment_runs': assessment_count,
+            'scanner_runs': scanner_count,
+            'approvals': approval_count,
+            'reports': report_count,
+        },
+    }
+
+
+def safe_operation_result(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {'status': 'ok', 'result_type': type(result).__name__}
+    return {
+        'status': result.get('status') or 'ok',
+        'scan_id': result.get('scan_id') or result.get('id') or result.get('run_id'),
+        'repository': result.get('repository'),
+        'customer_id': result.get('customer_id'),
+        'project_id': result.get('project_id'),
+        'queued': result.get('queued'),
+    }
 
 
 def safe_blocked_exception(result: dict[str, Any]) -> HTTPException:
@@ -283,7 +370,8 @@ def _max_target_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
 
 @app.get('/health')
 def health():
-    return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': safe_storage_status_payload(),'runtime_config': {'source': safe_runtime_config_payload().get('source'), 'version': safe_runtime_config_payload().get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
+    config = safe_runtime_config_payload()
+    return {'status':'ok','system':'NICO','mode':'local-first-hosted-ready','coverage_targets': COVERAGE_TARGETS,'storage': safe_storage_status_payload(),'runtime_config': {'source': config.get('source'), 'version': config.get('version')},'admin': safe_public_admin_status(),'customer_access': access_summary({'role':'owner'}),'workflows': {'express': bool(_LAST_HOSTED_ASSESSMENT),'mid': bool(_LAST_MID_ASSESSMENT),'retainer': bool(_LAST_RETAINER_OPS)},'cors_origins': cors_origins()}
 
 @app.get('/targets')
 def targets():
@@ -309,13 +397,13 @@ def usage_guide():
 @app.get('/storage/status')
 def storage_status(): return {'status':'ok','storage':safe_storage_status_payload()}
 @app.get('/storage/schema')
-def storage_schema(): return {'status':'ok','schema':scrub_exception_details(STORE.schema()),'storage':safe_storage_status_payload(),'migration_plan':scrub_exception_details(STORE.migration_plan())}
+def storage_schema(): return safe_storage_schema_payload()
 @app.get('/storage/migration-plan')
-def storage_migration_plan(): return scrub_exception_details(STORE.migration_plan())
+def storage_migration_plan(): return safe_migration_plan_payload()
 @app.post('/storage/apply-schema')
 def storage_apply_schema(x_nico_admin_token: str = Header(default='')):
     allowed, blocked = require_admin_write(x_nico_admin_token)
-    if not allowed: return scrub_exception_details(blocked)
+    if not allowed: return safe_operation_result(blocked)
     return {'status':'unavailable','mode':'manual_migration_required','message':'Automatic schema application is disabled in this safe hosted build. Use the schema from GET /storage/schema manually.'}
 
 @app.get('/config/runtime')
@@ -333,7 +421,7 @@ def config_runtime_preview(req: RuntimeConfigRequest): return scrub_exception_de
 @app.post('/config/runtime/rollback')
 def config_runtime_rollback(x_nico_admin_token: str = Header(default='')):
     allowed, blocked = require_admin_write(x_nico_admin_token)
-    if not allowed: return scrub_exception_details(blocked)
+    if not allowed: return safe_operation_result(blocked)
     return {'status':'unavailable','message':'Runtime config rollback history exists, but automated rollback is not enabled in this safe build.'}
 
 @app.get('/report-templates')
@@ -369,17 +457,17 @@ def project_approvals_endpoint(project_id: str): return scrub_exception_details(
 def project_evidence_endpoint(project_id: str): return scrub_exception_details(project_evidence(project_id))
 
 @app.get('/diagnostics')
-def diagnostics_endpoint(): return scrub_exception_details(diagnostics())
+def diagnostics_endpoint(): return safe_diagnostics_payload()
 @app.get('/diagnostics/frontend-config')
 def diagnostics_frontend_config(): return {'status':'ok','runtime_config':safe_runtime_config_payload(),'admin':safe_public_admin_status()}
 @app.get('/diagnostics/backend-config')
-def diagnostics_backend_config(): return scrub_exception_details(diagnostics())
+def diagnostics_backend_config(): return safe_diagnostics_payload()
 @app.get('/diagnostics/storage')
-def diagnostics_storage(): return scrub_exception_details(storage_diagnostics())
+def diagnostics_storage(): return {'status':'ok','storage':safe_storage_status_payload()}
 @app.get('/diagnostics/features')
-def diagnostics_features(): return scrub_exception_details(feature_diagnostics())
+def diagnostics_features(): return safe_feature_diagnostics_payload()
 @app.get('/diagnostics/latest-runs')
-def diagnostics_latest_runs(): return scrub_exception_details(latest_runs_diagnostics())
+def diagnostics_latest_runs(): return safe_latest_runs_payload()
 
 @app.post('/scan/test-lab')
 def api_scan_test_lab(): return scrub_exception_details(scan_test_lab())
@@ -484,15 +572,15 @@ def hosted_retainer_ops(req: RetainerOpsRequest):
 def worker_scan(req: WorkerScanRequest):
     result = start_scan(req.model_dump())
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return scrub_exception_details(result)
+    return safe_operation_result(result)
 @app.get('/worker/scan/{scan_id}')
-def worker_scan_status(scan_id: str): return scrub_exception_details(get_scan(scan_id))
+def worker_scan_status(scan_id: str): return safe_operation_result(get_scan(scan_id))
 
 @app.post('/evidence/upload')
 async def evidence_upload(file: UploadFile = File(...), customer_id: str = Form('default_customer'), project_id: str = Form('default_project'), run_id: str = Form('')):
     result = await upload_evidence(file, customer_id=customer_id, project_id=project_id, run_id=run_id)
     if result.get('status') == 'blocked': raise safe_blocked_exception(result)
-    return scrub_exception_details(result)
+    return safe_operation_result(result)
 @app.get('/evidence/{project_id}')
 def evidence_for_project(project_id: str, customer_id: str = ''): return scrub_exception_details(list_evidence(project_id, customer_id=customer_id or None))
 

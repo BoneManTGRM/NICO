@@ -135,7 +135,9 @@ def test_runtime_projects_templates_and_diagnostics_endpoints():
     client = TestClient(app)
     config = client.get("/config/runtime")
     assert config.status_code == 200
-    assert config.json()["config"]["default_repository_example"] == "your-org/your-repo"
+    assert config.json()["config"]["source"]
+    assert config.json()["config"]["version"]
+    assert "default_repository_example" not in config.json()["config"]
     blocked_config_write = client.post("/config/runtime", json={"config": {"hero_headline": "New"}})
     assert blocked_config_write.status_code == 200
     assert blocked_config_write.json()["status"] == "unavailable"
@@ -159,4 +161,5 @@ def test_runtime_projects_templates_and_diagnostics_endpoints():
     assert diagnostics.status_code == 200
     text = str(diagnostics.json()).lower()
     assert "nico_admin_token" not in text
-    assert "database_url" not in text or "[redacted]" in text or "not_configured" in text
+    assert "'database_url':" not in text
+    assert '"database_url":' not in text
