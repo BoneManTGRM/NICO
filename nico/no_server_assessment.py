@@ -366,13 +366,14 @@ def passive_url_check(url: str, authorized: bool, passive_only: bool) -> dict[st
     if parsed.scheme == "https":
         try:
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             with socket.create_connection((parsed.hostname, parsed.port or 443), timeout=8) as sock:
                 with context.wrap_socket(sock, server_hostname=parsed.hostname) as tls:
                     cert = tls.getpeercert()
                     evidence.append(f"TLS certificate subject observed: {cert.get('subject', 'unavailable')}.")
                     evidence.append(f"TLS certificate notAfter: {cert.get('notAfter', 'unavailable')}.")
-        except Exception as exc:
-            unavailable.append(f"TLS certificate check unavailable: {exc}")
+        except Exception:
+            unavailable.append("TLS certificate check unavailable: handshake or certificate retrieval failed.")
 
     score = 78
     if status is None or status >= 500:
