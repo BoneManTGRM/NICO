@@ -12,11 +12,33 @@ Use this runbook for authorized NICO hosted assessments only. The diagnostics pa
 - `/scanner-runtime`: verifies deployed scanner runtime tool availability.
 - `/release-readiness`: verifies that release-readiness support is installed and shows the expected output contract.
 
+## Terminal smoke check
+
+Use the smoke-check utility after deployment or environment changes to confirm the hosted API exposes the required readiness endpoints.
+
+```bash
+python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
+```
+
+You can also provide the API URL through an environment variable:
+
+```bash
+NICO_API_URL=https://YOUR-NICO-API-HOST python scripts/check_hosted_readiness.py
+```
+
+The smoke check verifies reachability for:
+
+- `/health`
+- `/diagnostics/hosted-scanner-runtime`
+- `/diagnostics/release-readiness`
+
+Passing smoke checks only prove endpoint reachability. They do not prove scanner output is clean, release evidence is complete, or client delivery is approved.
+
 ## Before running an assessment
 
 1. Confirm the target repository is owned by the operator or explicitly authorized for review.
 2. Confirm the backend health check is online.
-3. Open `/diagnostics` and review available diagnostic pages.
+3. Run the terminal smoke check or open `/diagnostics` and review available diagnostic pages.
 4. Open `/scanner-runtime` and verify whether scanner tools are installed or unavailable.
 5. Treat unavailable tools as missing evidence, not clean results.
 
@@ -60,4 +82,4 @@ Before client-facing delivery, verify:
 
 ## Guardrail
 
-Do not treat any diagnostic page, score bridge, readiness summary, or generated report as final approval. Final client delivery requires explicit human review and accepted signoff.
+Do not treat any diagnostic page, score bridge, readiness summary, smoke-check result, or generated report as final approval. Final client delivery requires explicit human review and accepted signoff.
