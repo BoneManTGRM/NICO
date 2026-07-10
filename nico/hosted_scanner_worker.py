@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from nico.complexity_engine import build_complexity_profile
+from nico.dependency_proof_inventory import build_dependency_proof_inventory
 from nico.github_app_auth import build_github_clone_auth_env
 from nico.scanner_tool_runners import redact_payload, redact_text, run_scanner_tools
 from nico.scanner_worker_orchestration import build_scanner_worker_orchestration_manifest, stable_artifact_hash
@@ -23,6 +25,10 @@ from nico.worker_execution import (
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _empty_dependency_proof() -> dict[str, Any]:
+    return build_dependency_proof_inventory(Path("/__nico_missing_checkout__"), {})
 
 
 def hosted_scanner_autorun_enabled(payload: dict[str, Any]) -> bool:
@@ -120,6 +126,7 @@ def _blocked_artifact(payload: dict[str, Any], reason: str) -> dict[str, Any]:
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
+        "dependency_proof": _empty_dependency_proof(),
         "unavailable_data_notes": [reason],
         "human_review_required": True,
     }
@@ -146,6 +153,7 @@ def _checkout_failed_artifact(payload: dict[str, Any], checkout: WorkerCommandRe
         "generated_at": generated_at,
         "run_id": run_id,
         "tools": {},
+        "dependency_proof": _empty_dependency_proof(),
         "checkout": {
             "returncode": checkout.returncode,
             "timed_out": checkout.timed_out,
@@ -199,6 +207,7 @@ def run_hosted_scanner_worker(payload: dict[str, Any]) -> dict[str, Any]:
         repository = validate_repository(str(payload.get("repository") or ""))
         run_id = stable_artifact_hash({"repository": repository, "started_at": started_at, "commit_sha": commit_sha})[:16]
         scanner_artifact = run_scanner_tools(workspace)
+        scanner_artifact["dependency_proof"] = build_dependency_proof_inventory(workspace.repo_dir, scanner_artifact.get("tools") if isinstance(scanner_artifact.get("tools"), dict) else {})
         scanner_artifact["complexity_engine"] = build_complexity_profile(workspace.repo_dir)
         finished_at = _now_iso()
         scanner_artifact.update(
