@@ -72,8 +72,8 @@ def _safe_version(tool: str, binary: str) -> dict[str, Any]:
         return {"status": "not_installed", "returncode": None, "version": "", "reason": f"{binary} is not available on PATH"}
     except subprocess.TimeoutExpired:
         return {"status": "timeout", "returncode": None, "version": "", "reason": f"{tool} version command timed out"}
-    except Exception as exc:  # pragma: no cover - defensive runtime diagnostics
-        return {"status": "failed", "returncode": None, "version": "", "reason": str(exc)}
+    except Exception:  # pragma: no cover - defensive runtime diagnostics
+        return {"status": "failed", "returncode": None, "version": "", "reason": "version command failed"}
     text = (completed.stdout or completed.stderr or "").strip().splitlines()
     version = text[0][:300] if text else ""
     return {
