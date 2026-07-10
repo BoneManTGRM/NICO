@@ -34,11 +34,6 @@ def _append_unique(items: list[Any], value: str) -> None:
         items.append(value)
 
 
-def _hosted_complete_repo_assessment(result: dict[str, Any]) -> bool:
-    repository = _repo(result)
-    return result.get("status") == "complete" and bool(repository) and "/" in repository
-
-
 def _explicit_refresh_requested(result: dict[str, Any]) -> bool:
     if result.get("refresh_full_evidence_requested") is False:
         return False
@@ -47,9 +42,7 @@ def _explicit_refresh_requested(result: dict[str, Any]) -> bool:
     marker = str(result.get("authorized_by") or "").lower()
     if "frontend-refresh-full-evidence" in marker or "refresh-full-evidence" in marker:
         return True
-    if result.get("scanner_worker_autorun") is True or result.get("run_scanner_worker") is True:
-        return True
-    return _hosted_complete_repo_assessment(result)
+    return result.get("scanner_worker_autorun") is True or result.get("run_scanner_worker") is True
 
 
 def _raw_artifact(result: dict[str, Any]) -> dict[str, Any] | None:
@@ -91,8 +84,6 @@ def _request_source(result: dict[str, Any]) -> str:
         return "authorized_by_marker"
     if result.get("scanner_worker_autorun") is True or result.get("run_scanner_worker") is True:
         return "scanner_worker_autorun_flag"
-    if _hosted_complete_repo_assessment(result):
-        return "auto_required_for_complete_hosted_assessment"
     return "not_requested"
 
 
@@ -225,7 +216,7 @@ def _attach_raw_artifact(result: dict[str, Any], artifact: dict[str, Any]) -> di
 
 
 def ensure_hosted_runtime_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    """Collect runtime evidence for complete hosted assessments unless explicitly disabled."""
+    """Collect runtime evidence only for explicit hosted Refresh Full Evidence requests."""
     if not _should_refresh(result):
         return result
     try:
