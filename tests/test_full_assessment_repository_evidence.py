@@ -12,11 +12,59 @@ class FakeGitHubClient:
             "requirements.txt": "fastapi==0.115.0\npytest==8.4.0\n",
             "apps/web/package.json": '{"dependencies":{"next":"15.0.0"},"devDependencies":{"eslint":"9.0.0"}}',
             "apps/web/package-lock.json": '{"lockfileVersion":3}',
-            ".github/workflows/ci.yml": "permissions: read-all\njobs:\n  test:\n    steps:\n      - run: pytest\n      - run: npm run build\n",
+            ".github/workflows/ci.yml": (
+                "permissions: read-all\nconcurrency: ci-${{ github.ref }}\njobs:\n  test:\n    timeout-minutes: 20\n"
+                "    steps:\n      - uses: actions/cache@v4\n      - run: pytest\n      - run: npm run build\n"
+                "      - uses: actions/upload-artifact@v4\n"
+            ),
             "nico/app.py": "def health():\n    return 'ok'\n",
             "tests/test_app.py": "def test_health():\n    assert True\n",
             "Dockerfile": "FROM python:3.13-slim\n",
         }
+
+    def repo_url(self, repo: str, path: str = "") -> str:
+        return f"https://api.github.test/repos/{repo}{path}"
+
+    def get_json(self, url: str, params=None):
+        self.calls += 1
+        if url.endswith("/actions/runs/1001/jobs"):
+            return {
+                "jobs": [
+                    {
+                        "id": 2001,
+                        "name": "test",
+                        "conclusion": "success",
+                        "started_at": "2026-07-10T12:00:00Z",
+                        "completed_at": "2026-07-10T12:03:00Z",
+                        "runner_name": "GitHub Actions 1",
+                    }
+                ]
+            }, None
+        if url.endswith("/actions/runs/1002/jobs"):
+            return {
+                "jobs": [
+                    {
+                        "id": 2002,
+                        "name": "build",
+                        "conclusion": "failure",
+                        "started_at": "2026-07-09T12:00:00Z",
+                        "completed_at": "2026-07-09T12:02:00Z",
+                        "runner_name": "GitHub Actions 2",
+                    }
+                ]
+            }, None
+        if url.endswith("/deployments"):
+            return [
+                {
+                    "id": 3001,
+                    "environment": "production",
+                    "ref": "main",
+                    "created_at": "2026-07-10T13:00:00Z",
+                }
+            ], None
+        if url.endswith("/deployments/3001/statuses"):
+            return [{"state": "success"}], None
+        return None, "404"
 
     def get_repo(self, repo: str):
         self.calls += 1
@@ -82,8 +130,8 @@ class FakeGitHubClient:
     def get_workflow_runs(self, _repo: str, _since_iso: str):
         self.calls += 1
         return [
-            {"conclusion": "success"},
-            {"conclusion": "failure"},
+            {"id": 1001, "name": "CI", "conclusion": "success"},
+            {"id": 1002, "name": "CI", "conclusion": "failure"},
         ], None
 
 
@@ -126,6 +174,15 @@ def test_collect_repository_evidence_attaches_real_github_summaries() -> None:
     assert result["workflow_evidence"]["successful_runs"] == 1
     assert result["workflow_evidence"]["non_success_runs"] == 1
     assert "pytest" in result["workflow_evidence"]["commands_detected"]
+    assert result["workflow_evidence"]["jobs_observed"] == 2
+    assert result["workflow_evidence"]["successful_jobs"] == 1
+    assert result["workflow_evidence"]["non_success_jobs"] == 1
+    assert result["workflow_evidence"]["job_success_rate"] == 0.5
+    assert result["workflow_evidence"]["configuration_controls"]["cache"] is True
+    assert result["workflow_evidence"]["configuration_controls"]["concurrency"] is True
+    assert result["workflow_evidence"]["configuration_controls"]["timeout"] is True
+    assert result["workflow_evidence"]["deployments_observed"] == 1
+    assert result["workflow_evidence"]["successful_deployments"] == 1
     assert result["dependency_evidence"]["dependency_entries"] == 4
     assert "apps/web/package-lock.json" in result["dependency_evidence"]["lockfile_paths"]
     assert result["architecture_evidence"]["source_file_count"] == 1
@@ -135,7 +192,7 @@ def test_collect_repository_evidence_attaches_real_github_summaries() -> None:
     assert stored is not None
     assert stored["run_id"] == "fullrun_repo"
     assert stored["evidence"]["repository"] == "BoneManTGRM/NICO"
-    assert "source-file contents" in result["retention_note"]
+    assert "CI logs" in result["retention_note"]
     assert client.calls > 0
 
 

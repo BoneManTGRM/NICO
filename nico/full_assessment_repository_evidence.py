@@ -5,6 +5,7 @@ import json
 from datetime import timedelta
 from typing import Any
 
+from nico.full_assessment_ci_evidence import collect_ci_runtime_evidence
 from nico.hosted_assessment import (
     GitHubAssessmentClient,
     _iso,
@@ -91,11 +92,18 @@ def _sample_pulls(pulls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _workflow_summary(workflows: dict[str, str], runs: list[dict[str, Any]]) -> dict[str, Any]:
+def _workflow_summary(
+    workflows: dict[str, str],
+    runs: list[dict[str, Any]],
+    ci_runtime: dict[str, Any],
+) -> dict[str, Any]:
     combined = "\n".join(workflows.values()).lower()
     success = sum(1 for item in runs if item.get("conclusion") == "success")
     non_success = sum(1 for item in runs if item.get("conclusion") in {"failure", "timed_out", "cancelled", "action_required"})
     commands = [command for command in WORKFLOW_COMMANDS if command in combined]
+    jobs = ci_runtime.get("job_evidence") if isinstance(ci_runtime.get("job_evidence"), dict) else {}
+    deployments = ci_runtime.get("deployment_evidence") if isinstance(ci_runtime.get("deployment_evidence"), dict) else {}
+    controls = ci_runtime.get("configuration_controls") if isinstance(ci_runtime.get("configuration_controls"), dict) else {}
     return {
         "workflow_files": sorted(workflows.keys()),
         "workflow_file_count": len(workflows),
@@ -105,6 +113,20 @@ def _workflow_summary(workflows: dict[str, str], runs: list[dict[str, Any]]) -> 
         "commands_detected": commands,
         "explicit_permissions_present": "permissions:" in combined,
         "secret_references_present": "secrets." in combined,
+        "runtime_evidence_status": ci_runtime.get("status") or "unavailable",
+        "configuration_controls": controls,
+        "job_evidence": jobs,
+        "deployment_evidence": deployments,
+        "jobs_observed": int(jobs.get("jobs_observed") or 0),
+        "successful_jobs": int(jobs.get("successful_jobs") or 0),
+        "non_success_jobs": int(jobs.get("non_success_jobs") or 0),
+        "job_success_rate": jobs.get("job_success_rate"),
+        "average_job_duration_seconds": jobs.get("average_job_duration_seconds"),
+        "median_job_duration_seconds": jobs.get("median_job_duration_seconds"),
+        "deployments_observed": int(deployments.get("deployments_observed") or 0),
+        "successful_deployments": int(deployments.get("successful_deployments") or 0),
+        "non_success_deployments": int(deployments.get("non_success_deployments") or 0),
+        "ci_runtime_guardrail": ci_runtime.get("guardrail") or "",
     }
 
 
@@ -225,11 +247,13 @@ def collect_repository_evidence(
     commits, commit_error = github.get_commits(repository, since_iso)
     pulls, pull_error = github.get_pulls(repository, since)
     workflow_runs, runs_error = github.get_workflow_runs(repository, since_iso)
+    ci_runtime = collect_ci_runtime_evidence(github, repository, workflows, workflow_runs)
     files = profile.get("files") if isinstance(profile.get("files"), dict) else {}
     file_scan = scan_files(files)
 
     unavailable = _safe_notes("Repository file-profile evidence", list(profile.get("unavailable") or []))
     unavailable.extend(_safe_notes("Workflow file evidence", list(workflow_unavailable or [])))
+    unavailable.extend(str(note) for note in ci_runtime.get("unavailable_data_notes") or [] if str(note).strip())
     for label, error in (("Commit history", commit_error), ("Pull-request history", pull_error), ("Workflow-run history", runs_error)):
         if error:
             unavailable.append(_safe_api_note(label, error))
@@ -255,7 +279,7 @@ def collect_repository_evidence(
             "sample_commits": _sample_commits(commits),
             "sample_pull_requests": _sample_pulls(pulls),
         },
-        "workflow_evidence": _workflow_summary(workflows, workflow_runs),
+        "workflow_evidence": _workflow_summary(workflows, workflow_runs, ci_runtime),
         "code_signal_evidence": {
             "todo_fixme_security_notes": len(file_scan.get("todos") or []),
             "risk_pattern_hits": len(file_scan.get("risks") or []),
@@ -264,7 +288,7 @@ def collect_repository_evidence(
             "documentation_files_profiled": len(file_scan.get("docs") or []),
         },
         "unavailable_data_notes": sorted({note for note in unavailable if note}),
-        "retention_note": "Only summarized repository evidence is retained in this record; source-file contents and credentials are not stored here.",
+        "retention_note": "Only summarized repository, workflow-job, and deployment evidence is retained; source-file contents, CI logs, and credentials are not stored here.",
         "idempotent_reuse": False,
         "human_review_required": True,
     }
