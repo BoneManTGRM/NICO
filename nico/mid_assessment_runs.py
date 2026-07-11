@@ -95,16 +95,25 @@ def persist_mid_assessment_run(
     }
     stored = active.put("assessment_runs", run_id, record)
 
-    # Imported only after the run is stored to avoid a module-load cycle and to
-    # guarantee that the capability is bound to a persisted snapshot identity.
+    # Imported after the run is stored so capability issuance can bind to the
+    # persisted snapshot without creating a module-load cycle.
     from nico.mid_optional_evidence import (
         issue_mid_evidence_submission_access,
         optional_evidence_summary,
     )
+    from nico.mid_truth_status import attach_mid_truth_status
 
     if not existing:
         result["optional_evidence_submission"] = issue_mid_evidence_submission_access(run_id, store=active)
     result["optional_evidence"] = optional_evidence_summary(run_id, store=active)
+    attach_mid_truth_status(result)
+
+    # Persist the calculated status model and coverage, but remove the raw
+    # one-time submission capability from retained state.
+    stored["response"] = _retained_response(result)
+    stored["status"] = str(result.get("status") or stored.get("status") or "unknown")
+    stored["updated_at"] = utc_now()
+    stored = active.put("assessment_runs", run_id, stored)
     return stored
 
 
