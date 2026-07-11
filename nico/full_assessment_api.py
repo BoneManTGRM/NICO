@@ -5,6 +5,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from nico.full_assessment_continuation import (
+    apply_full_assessment_continuation,
+    plan_full_assessment_continuation,
+)
 from nico.full_assessment_orchestrator import default_full_assessment_handlers, run_full_assessment_orchestration
 from nico.full_assessment_runs import (
     build_status_payload,
@@ -34,6 +38,7 @@ class FullAssessmentRequest(BaseModel):
     refresh_full_evidence: bool = True
     build_reports: bool = True
     create_final_review_request: bool = True
+    auto_continue: bool = True
     tools: list[str] = []
 
 
@@ -51,6 +56,7 @@ class FullAssessmentStatusRequest(BaseModel):
     mode: str = "express"
     build_reports: bool = False
     create_final_review_request: bool = False
+    auto_continue: bool = True
 
 
 def _model_payload(req: BaseModel) -> dict[str, Any]:
@@ -116,10 +122,17 @@ def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
 def full_assessment_status_response(run_id: str, req: FullAssessmentStatusRequest) -> dict[str, Any]:
     request_payload = _model_payload(req)
     payload, record = build_status_payload(run_id, request_payload, explicit_model_fields(req))
-    result = run_full_assessment_orchestration(payload, handlers=default_full_assessment_handlers())
+    plan = plan_full_assessment_continuation(
+        payload,
+        record,
+        auto_continue=bool(request_payload.get("auto_continue", True)),
+    )
+    continuation_payload = plan["payload"]
+    result = run_full_assessment_orchestration(continuation_payload, handlers=default_full_assessment_handlers())
+    result = apply_full_assessment_continuation(result, plan)
     result["status_refresh"] = True
     result = _with_report_path(result)
-    result = _record_result(result, payload, restored=bool(record))
+    result = _record_result(result, continuation_payload, restored=bool(record))
     if result.get("status") == "blocked":
         raise HTTPException(
             status_code=400,
