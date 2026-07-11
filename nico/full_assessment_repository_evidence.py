@@ -48,7 +48,7 @@ def _short_text(value: Any, limit: int = 180) -> str:
 
 def _safe_api_note(label: str, error: str | None) -> str:
     if not error:
-        return ""
+        return f"{label} was unavailable through the GitHub API."
     lowered = error.lower()
     if "404" in lowered:
         return f"{label} was unavailable through the authorized GitHub API scope; verify repository access."
@@ -57,6 +57,10 @@ def _safe_api_note(label: str, error: str | None) -> str:
     if "rate" in lowered or "429" in lowered:
         return f"{label} was unavailable because the GitHub API rate limit was reached."
     return f"{label} was unavailable through the GitHub API."
+
+
+def _safe_notes(label: str, notes: list[Any]) -> list[str]:
+    return sorted({_safe_api_note(label, str(note)) for note in notes if note})
 
 
 def _sample_commits(commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -107,7 +111,13 @@ def _workflow_summary(workflows: dict[str, str], runs: list[dict[str, Any]]) -> 
 def _repository_summary(repo_meta: dict[str, Any], profile: dict[str, Any], files: dict[str, str]) -> dict[str, Any]:
     tree_paths = list(profile.get("tree_paths") or [])
     root_items = list(profile.get("root_items") or [])
-    source_paths = [path for path in tree_paths if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    source_paths = [
+        path
+        for path in tree_paths
+        if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))
+        and not path.startswith("tests/")
+        and "test" not in path.rsplit("/", 1)[-1].lower()
+    ]
     test_paths = [path for path in tree_paths if "test" in path.lower()]
     doc_paths = [path for path in tree_paths if path.lower().endswith(".md") or path.startswith("docs/")]
     deployment = [path for path in tree_paths if path.rsplit("/", 1)[-1] in DEPLOYMENT_NAMES]
@@ -218,12 +228,11 @@ def collect_repository_evidence(
     files = profile.get("files") if isinstance(profile.get("files"), dict) else {}
     file_scan = scan_files(files)
 
-    unavailable = list(profile.get("unavailable") or [])
-    unavailable.extend(workflow_unavailable)
+    unavailable = _safe_notes("Repository file-profile evidence", list(profile.get("unavailable") or []))
+    unavailable.extend(_safe_notes("Workflow file evidence", list(workflow_unavailable or [])))
     for label, error in (("Commit history", commit_error), ("Pull-request history", pull_error), ("Workflow-run history", runs_error)):
-        note = _safe_api_note(label, error)
-        if note:
-            unavailable.append(note)
+        if error:
+            unavailable.append(_safe_api_note(label, error))
 
     merged = sum(1 for item in pulls if item.get("merged_at"))
     open_count = sum(1 for item in pulls if item.get("state") == "open")
