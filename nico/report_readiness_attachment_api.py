@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from nico.full_assessment_api import register_full_assessment_routes
 from nico.report_readiness_attachment import attach_report_readiness_gate
 
 
@@ -19,3 +20,4 @@ def report_readiness_attachment_response(req: ReportReadinessAttachmentRequest) 
 
 def register_report_readiness_attachment_routes(app: FastAPI) -> None:
     app.post("/reports/attach-readiness")(report_readiness_attachment_response)
+    register_full_assessment_routes(app)
