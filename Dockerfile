@@ -37,4 +37,4 @@ RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-pe
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn nico.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn nico.api.hosted:app --host 0.0.0.0 --port ${PORT:-8000}"]
