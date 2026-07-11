@@ -124,6 +124,16 @@ def _restore_weighted_technical_score(assessment: dict[str, Any]) -> None:
     scorecard["post_trust_caps"] = True
 
 
+def _normalize_full_assessment_identity(result: dict[str, Any]) -> None:
+    result["report_path"] = "full_run"
+    result["report_path_label"] = "Full Assessment"
+    summary = str(result.get("executive_summary") or "")
+    result["executive_summary"] = summary.replace(
+        "authorized hosted Express Technical Health Assessment",
+        "authorized Full Assessment",
+    )
+
+
 def prepare_full_assessment_trust(
     assessment: dict[str, Any],
     scanner_evidence: dict[str, Any],
@@ -133,6 +143,7 @@ def prepare_full_assessment_trust(
     prepared = deepcopy(assessment)
     prepared["status"] = "complete"
     prepared["report_run_id"] = prepared.get("run_id") or ""
+    _normalize_full_assessment_identity(prepared)
     _normalize_zero_exception_lines(prepared)
     _attach_scanner_coverage_lines(prepared, scanner_evidence)
     prepared = attach_evidence_ledger(prepared)
@@ -152,6 +163,7 @@ def prepare_full_assessment_trust(
             blockers.append(blocker)
     verdict["blockers"] = blockers
     prepared = attach_trust_report_display(prepared)
+    _normalize_full_assessment_identity(prepared)
     prepared["status"] = "draft"
     return prepared
 
@@ -166,6 +178,7 @@ def _report_payload(package: dict[str, Any]) -> dict[str, Any]:
 
 
 def _render_candidate(candidate: dict[str, Any]) -> None:
+    _normalize_full_assessment_identity(candidate)
     markdown = markdown_report(candidate)
     candidate.setdefault("reports", {})["markdown"] = markdown
     candidate["reports"]["html"] = html_report(markdown)
@@ -180,9 +193,11 @@ def finalize_full_assessment_exports(
     candidate = deepcopy(assessment)
     candidate["status"] = "complete"
     candidate["reports"] = _report_payload(package)
+    _normalize_full_assessment_identity(candidate)
 
     candidate = apply_export_truth_gate(candidate)
     candidate = attach_trust_report_display(candidate)
+    _normalize_full_assessment_identity(candidate)
     _render_candidate(candidate)
 
     first_status = str((candidate.get("export_truth_gate") or {}).get("status") or "pending")
@@ -190,6 +205,7 @@ def finalize_full_assessment_exports(
     second_status = str((candidate.get("export_truth_gate") or {}).get("status") or "pending")
     if second_status != first_status:
         candidate = attach_trust_report_display(candidate)
+        _normalize_full_assessment_identity(candidate)
         _render_candidate(candidate)
         candidate = apply_export_truth_gate(candidate)
 
