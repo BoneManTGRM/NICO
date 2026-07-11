@@ -374,7 +374,7 @@ def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[s
         "html": formats.get("html") or "",
         "pdf_base64": "",
         "pdf_filename": "nico-assessment.pdf",
-        "pdf_error": "PDF export is not produced by this report package path yet; Markdown, HTML, and JSON were generated.",
+        "pdf_error": "PDF export is not produced by this report package path; Markdown, HTML, and JSON were generated.",
         "report_id": package.get("report_id") or "",
     }
     return {
@@ -386,6 +386,55 @@ def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[s
     }
 
 
+def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
+    if not context.get("create_final_review_request"):
+        return {"status": "skipped", "message": "Final review request was skipped by request.", "evidence": {"run_id": context["run_id"]}}
+    reports = outputs.get("reports") or {}
+    report_package = reports.get("report_package") if isinstance(reports.get("report_package"), dict) else {}
+    report_id = str(report_package.get("report_id") or "")
+    if not report_id:
+        return {
+            "status": "planned",
+            "message": "Final review request waits for a generated report package.",
+            "evidence": {"run_id": context["run_id"], "report_id": "", "report_status": reports.get("status") or "not_available"},
+        }
+
+    from nico.final_review_workflow import request_final_review
+
+    review = request_final_review(
+        {
+            "customer_id": context["customer_id"],
+            "project_id": context["project_id"],
+            "run_id": context["run_id"],
+            "report_id": report_id,
+            "repository": context["repository"],
+            "requester": "nico-full-run",
+            "risk_level": "delivery_review",
+            "evidence": [
+                f"Full-run report package generated for run_id={context['run_id']}.",
+                f"Report package id={report_id}.",
+                "Client delivery remains blocked until a human reviewer approves the final report.",
+            ],
+        }
+    )
+    approval = review.get("approval") if isinstance(review.get("approval"), dict) else {}
+    if review.get("status") == "blocked":
+        return {"status": "blocked", "message": str(review.get("error") or "final review request blocked"), "approval": approval, "evidence": {"run_id": context["run_id"], "report_id": report_id}}
+    return {
+        "status": "complete",
+        "message": "Final human-review approval request was created for the generated report package.",
+        "approval": {
+            "approval_id": approval.get("approval_id") or "",
+            "status": approval.get("status") or review.get("status") or "pending_review",
+            "requested_action": approval.get("requested_action") or "final_report_approval",
+            "run_id": approval.get("run_id") or context["run_id"],
+            "report_id": approval.get("report_id") or report_id,
+        },
+        "review": review.get("review") or {},
+        "evidence": {"run_id": context["run_id"], "report_id": report_id, "approval_id": approval.get("approval_id") or ""},
+    }
+
+
 def default_full_assessment_handlers() -> dict[str, StepHandler]:
     return {
         "repo_evidence": _repo_evidence_handler,
@@ -393,6 +442,7 @@ def default_full_assessment_handlers() -> dict[str, StepHandler]:
         "evidence_attachment": _evidence_attachment_handler,
         "scoring": _scoring_handler,
         "reports": _reports_handler,
+        "approval_request": _approval_request_handler,
     }
 
 
