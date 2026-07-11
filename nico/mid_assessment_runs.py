@@ -23,6 +23,8 @@ MID_REQUEST_FIELDS = {
     "timeframe_days",
     "run_scanners",
     "refresh_full_evidence",
+    "build_reports",
+    "create_final_review_request",
     "auto_continue",
     "tools",
 }
