@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from nico.api.main import app
+from nico.approved_delivery_package import build_approved_delivery_package
 from nico.approved_delivery_storage_policy import delivery_storage_readiness
 from nico.full_assessment_api import register_full_assessment_routes
 
@@ -27,7 +28,10 @@ REQUIRED_FULL_ASSESSMENT_ROUTES = {
     ("GET", "/reports/{run_id}/approved-delivery/receipts"),
     ("GET", "/reports/{run_id}/approved-delivery/acknowledgments"),
 }
-HOSTED_POLICY_ROUTES = {("GET", "/delivery/storage-readiness")}
+HOSTED_POLICY_ROUTES = {
+    ("GET", "/delivery/storage-readiness"),
+    ("GET", "/assessment/full-run/{run_id}/approved-delivery/package"),
+}
 
 
 def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
@@ -72,6 +76,62 @@ def _delivery_storage_readiness_response() -> dict[str, object]:
     return delivery_storage_readiness()
 
 
+def _approved_delivery_package_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    x_nico_admin_token: str = Header(default=""),
+) -> Response:
+    result = build_approved_delivery_package(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        admin_token=x_nico_admin_token,
+    )
+    if result.get("status") != "complete":
+        if result.get("admin_write"):
+            status_code = 403
+        elif result.get("storage_readiness"):
+            status_code = 503
+        else:
+            status_code = 400
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "status": "blocked",
+                "message": str(result.get("error") or "Approved-delivery package export was blocked."),
+            },
+        )
+
+    filename = str(result.get("filename") or "nico-approved-delivery-package.zip").replace('"', "")
+    exposed = ", ".join(
+        [
+            "Content-Disposition",
+            "X-NICO-Package-SHA256",
+            "X-NICO-Manifest-SHA256",
+            "X-NICO-Package-Identity-SHA256",
+            "X-NICO-Package-Version",
+            "X-NICO-Package-File-Count",
+        ]
+    )
+    return Response(
+        content=result.get("package_bytes") or b"",
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "X-NICO-Package-SHA256": str(result.get("package_sha256") or ""),
+            "X-NICO-Manifest-SHA256": str(result.get("manifest_sha256") or ""),
+            "X-NICO-Package-Identity-SHA256": str(result.get("package_identity_sha256") or ""),
+            "X-NICO-Package-Version": str(result.get("package_version") or ""),
+            "X-NICO-Package-File-Count": str(result.get("file_count") or 0),
+            "Access-Control-Expose-Headers": exposed,
+        },
+    )
+
+
 def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     """Register the complete hosted Full Assessment surface and delivery policy once."""
 
@@ -98,11 +158,24 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
             tags=["approved-delivery"],
         )
         changed = True
+    registered = _route_pairs(target)
+    if ("GET", "/assessment/full-run/{run_id}/approved-delivery/package") not in registered:
+        target.add_api_route(
+            "/assessment/full-run/{run_id}/approved-delivery/package",
+            _approved_delivery_package_response,
+            methods=["GET"],
+            tags=["approved-delivery"],
+        )
+        changed = True
 
     if not bool(getattr(target.state, "nico_durable_delivery_middleware", False)):
         target.middleware("http")(_enforce_durable_delivery_storage)
         target.state.nico_durable_delivery_middleware = True
 
+    registered = _route_pairs(target)
+    policy_missing = HOSTED_POLICY_ROUTES - registered
+    if policy_missing:
+        raise RuntimeError(f"Hosted delivery policy route registration incomplete; missing={sorted(policy_missing)}")
     if changed:
         target.openapi_schema = None
     return target
