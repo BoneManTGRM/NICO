@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.middleware import Middleware
 
 from nico.api.main import app
 from nico.approved_delivery_operational_readiness import (
@@ -13,6 +14,7 @@ from nico.approved_delivery_operational_readiness import (
 from nico.approved_delivery_package import build_approved_delivery_package
 from nico.approved_delivery_storage_policy import delivery_storage_readiness
 from nico.full_assessment_api import register_full_assessment_routes
+from nico.public_delivery_boundary import PublicDeliveryBoundaryMiddleware, public_delivery_boundary_status
 
 REQUIRED_FULL_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/full-run"),
@@ -34,6 +36,7 @@ REQUIRED_FULL_ASSESSMENT_ROUTES = {
 }
 HOSTED_POLICY_ROUTES = {
     ("GET", "/delivery/storage-readiness"),
+    ("GET", "/delivery/boundary-status"),
     ("GET", "/assessment/full-run/{run_id}/approved-delivery/package"),
     ("GET", "/assessment/full-run/{run_id}/approved-delivery/readiness"),
     ("POST", "/assessment/full-run/{run_id}/approved-delivery/reconcile"),
@@ -80,6 +83,10 @@ async def _enforce_durable_delivery_storage(
 
 def _delivery_storage_readiness_response() -> dict[str, object]:
     return delivery_storage_readiness()
+
+
+def _public_delivery_boundary_status_response() -> dict[str, object]:
+    return public_delivery_boundary_status()
 
 
 def _approved_delivery_package_response(
@@ -207,6 +214,16 @@ def _approved_delivery_reconcile_response(
     return result
 
 
+def _install_public_delivery_boundary(target: FastAPI) -> None:
+    if bool(getattr(target.state, "nico_public_delivery_boundary", False)):
+        return
+    # Append so an existing CORS middleware remains outermost and can decorate
+    # boundary-generated 413/429 responses for approved frontend origins.
+    target.user_middleware.append(Middleware(PublicDeliveryBoundaryMiddleware))
+    target.middleware_stack = None
+    target.state.nico_public_delivery_boundary = True
+
+
 def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     """Register the complete hosted Full Assessment surface and delivery policy once."""
 
@@ -227,6 +244,7 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
 
     extension_routes = [
         ("/delivery/storage-readiness", _delivery_storage_readiness_response, ["GET"]),
+        ("/delivery/boundary-status", _public_delivery_boundary_status_response, ["GET"]),
         ("/assessment/full-run/{run_id}/approved-delivery/package", _approved_delivery_package_response, ["GET"]),
         ("/assessment/full-run/{run_id}/approved-delivery/readiness", _approved_delivery_readiness_response, ["GET"]),
         ("/assessment/full-run/{run_id}/approved-delivery/reconcile", _approved_delivery_reconcile_response, ["POST"]),
@@ -242,6 +260,7 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     if not bool(getattr(target.state, "nico_durable_delivery_middleware", False)):
         target.middleware("http")(_enforce_durable_delivery_storage)
         target.state.nico_durable_delivery_middleware = True
+    _install_public_delivery_boundary(target)
 
     registered = _route_pairs(target)
     policy_missing = HOSTED_POLICY_ROUTES - registered
