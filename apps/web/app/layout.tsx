@@ -16,6 +16,8 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <a className="global-brand" href="/easy">NICO</a>
           <div className="global-links">
             <a href="/full-run">Full Assessment</a>
+            <a href="/mid-review">Mid Review</a>
+            <a href="/mid-report">Mid Report</a>
             <a href="/easy">Easy Mode</a>
             <a href="/start-job">Start Job</a>
             <a href="/scanner-workflow">Scanner to Express</a>
@@ -25,7 +27,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           </div>
         </nav>
         <div className="full-run-callout" role="status">
-          <b>New:</b> Use the <a href="/">Command Center</a> for the unified Express/Mid intake. Mid keeps one run ID and exact repository snapshot; use <a href="/full-run">Full Assessment</a> for the existing full-run workflow.
+          <b>New:</b> Use the <a href="/">Command Center</a> for the unified Express/Mid intake, then open <a href="/mid-review">Mid Review</a> for the admin-authenticated review-by-exception packet and <a href="/mid-report">Mid Report</a> for the snapshot-bound draft PDF. Mid keeps one run ID and exact repository snapshot; use <a href="/full-run">Full Assessment</a> for the existing full-run workflow.
         </div>
         <GenericRepositoryExample />
         {children}
