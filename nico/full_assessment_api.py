@@ -124,7 +124,8 @@ def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
 
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
-    result = run_full_assessment_orchestration(payload, handlers=idempotent_full_assessment_handlers())
+    handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
+    result = run_full_assessment_orchestration(payload, handlers=handlers)
     result = _attach_repository_evidence(result)
     result = _with_report_path(result)
     result = _record_result(result, payload, restored=False)
@@ -152,7 +153,8 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
         auto_continue=auto_continue,
     )
     continuation_payload = plan["payload"]
-    result = run_full_assessment_orchestration(continuation_payload, handlers=idempotent_full_assessment_handlers())
+    handlers = idempotent_full_assessment_handlers(timeframe_days=int(continuation_payload.get("timeframe_days") or 180))
+    result = run_full_assessment_orchestration(continuation_payload, handlers=handlers)
     result = apply_full_assessment_continuation(result, plan)
     result["status_refresh"] = True
     result = _attach_repository_evidence(result)
