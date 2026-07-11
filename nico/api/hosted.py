@@ -6,6 +6,10 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from nico.api.main import app
+from nico.approved_delivery_operational_readiness import (
+    approved_delivery_operational_readiness,
+    reconcile_orphaned_delivery_consumptions,
+)
 from nico.approved_delivery_package import build_approved_delivery_package
 from nico.approved_delivery_storage_policy import delivery_storage_readiness
 from nico.full_assessment_api import register_full_assessment_routes
@@ -31,6 +35,8 @@ REQUIRED_FULL_ASSESSMENT_ROUTES = {
 HOSTED_POLICY_ROUTES = {
     ("GET", "/delivery/storage-readiness"),
     ("GET", "/assessment/full-run/{run_id}/approved-delivery/package"),
+    ("GET", "/assessment/full-run/{run_id}/approved-delivery/readiness"),
+    ("POST", "/assessment/full-run/{run_id}/approved-delivery/reconcile"),
 }
 
 
@@ -132,6 +138,75 @@ def _approved_delivery_package_response(
     )
 
 
+def _approved_delivery_readiness_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, object]:
+    result = approved_delivery_operational_readiness(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        admin_token=x_nico_admin_token,
+    )
+    if result.get("admin_write"):
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "message": "Admin authentication is required to inspect delivery readiness."},
+        )
+    return result
+
+
+def _approved_delivery_reconcile_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    actor: str = "delivery_operator",
+    grace_seconds: int | None = None,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, object]:
+    before = approved_delivery_operational_readiness(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        admin_token=x_nico_admin_token,
+    )
+    if before.get("admin_write"):
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "message": "Admin authentication is required to reconcile delivery state."},
+        )
+    non_repairable = [
+        item
+        for item in before.get("checks") or []
+        if not item.get("passed") and item.get("id") != "download_receipt_reconciliation"
+    ]
+    if non_repairable or before.get("critical_over_receipting"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "blocked",
+                "message": "Automatic reconciliation is unsafe because non-repairable delivery checks failed.",
+                "failed_checks": non_repairable,
+            },
+        )
+    result = reconcile_orphaned_delivery_consumptions(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        admin_token=x_nico_admin_token,
+        actor=actor,
+        grace_seconds=grace_seconds,
+    )
+    if result.get("status") == "blocked" and result.get("error"):
+        raise HTTPException(
+            status_code=409,
+            detail={"status": "blocked", "message": str(result.get("error"))},
+        )
+    return result
+
+
 def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     """Register the complete hosted Full Assessment surface and delivery policy once."""
 
@@ -150,23 +225,19 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     if missing:
         raise RuntimeError(f"Full Assessment route registration incomplete; missing={sorted(missing)}")
 
-    if ("GET", "/delivery/storage-readiness") not in registered:
-        target.add_api_route(
-            "/delivery/storage-readiness",
-            _delivery_storage_readiness_response,
-            methods=["GET"],
-            tags=["approved-delivery"],
-        )
-        changed = True
+    extension_routes = [
+        ("/delivery/storage-readiness", _delivery_storage_readiness_response, ["GET"]),
+        ("/assessment/full-run/{run_id}/approved-delivery/package", _approved_delivery_package_response, ["GET"]),
+        ("/assessment/full-run/{run_id}/approved-delivery/readiness", _approved_delivery_readiness_response, ["GET"]),
+        ("/assessment/full-run/{run_id}/approved-delivery/reconcile", _approved_delivery_reconcile_response, ["POST"]),
+    ]
     registered = _route_pairs(target)
-    if ("GET", "/assessment/full-run/{run_id}/approved-delivery/package") not in registered:
-        target.add_api_route(
-            "/assessment/full-run/{run_id}/approved-delivery/package",
-            _approved_delivery_package_response,
-            methods=["GET"],
-            tags=["approved-delivery"],
-        )
-        changed = True
+    for path, endpoint, methods in extension_routes:
+        pair = (methods[0], path)
+        if pair not in registered:
+            target.add_api_route(path, endpoint, methods=methods, tags=["approved-delivery"])
+            changed = True
+            registered.add(pair)
 
     if not bool(getattr(target.state, "nico_durable_delivery_middleware", False)):
         target.middleware("http")(_enforce_durable_delivery_storage)
