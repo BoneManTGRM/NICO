@@ -213,7 +213,6 @@ def run_tool(name: str, cfg: dict[str, Any], repo_path: Path, env: dict[str, str
             "secret_redaction_applied": False,
         }
 
-
 def clone_repository(repository: str, workspace: Path, env: dict[str, str]) -> tuple[Path | None, list[str]]:
     if shutil.which("git") is None:
         return None, ["git is unavailable in this worker image; repository clone skipped."]
@@ -268,6 +267,7 @@ def _run_scan(scan_id: str, payload: dict[str, Any]) -> None:
         "status": "complete" if results or unavailable_notes else "failed",
         "updated_at": now_iso(),
         "completed_at": now_iso(),
+        "run_id": payload.get("run_id") or SCAN_JOBS[scan_id].get("run_id") or "",
         "tools_requested": list(selected_tools(payload.get("tools") or []).keys()),
         "tools_run": [item["scanner"] for item in results if item.get("status") in {"passed", "failed", "timeout", "error"}],
         "unavailable_tools": unavailable,
@@ -277,6 +277,7 @@ def _run_scan(scan_id: str, payload: dict[str, Any]) -> None:
         "evidence_summary": {
             "mode": "controlled_scanner_worker",
             "repository": payload.get("repository"),
+            "run_id": payload.get("run_id") or SCAN_JOBS[scan_id].get("run_id") or "",
             "repo_size_bytes": repo_size,
             "tools_requested": len(selected_tools(payload.get("tools") or [])),
             "tools_run": len([item for item in results if item.get("status") in {"passed", "failed", "timeout", "error"}]),
@@ -310,6 +311,7 @@ def start_scan(payload: dict[str, Any]) -> dict[str, Any]:
     scan_id = f"scan_{uuid4().hex[:16]}"
     job = {
         "scan_id": scan_id,
+        "run_id": payload.get("run_id") or "",
         "customer_id": payload.get("customer_id") or "default_customer",
         "project_id": payload.get("project_id") or "default_project",
         "repository": payload.get("repository"),
@@ -333,7 +335,7 @@ def start_scan(payload: dict[str, Any]) -> dict[str, Any]:
     }
     SCAN_JOBS[scan_id] = job
     STORE.put("scanner_runs", scan_id, job)
-    STORE.audit("scanner.queued", {"scan_id": scan_id, "repository": payload.get("repository")}, customer_id=job["customer_id"], project_id=job["project_id"])
+    STORE.audit("scanner.queued", {"scan_id": scan_id, "run_id": job.get("run_id"), "repository": payload.get("repository")}, customer_id=job["customer_id"], project_id=job["project_id"])
     threading.Thread(target=_run_scan, args=(scan_id, dict(payload)), daemon=True).start()
     return job
 
