@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from nico.api.hosted import app
 from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
+from nico.mid_delivery_api import register_mid_delivery_routes
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_review_api import register_mid_review_routes
@@ -21,6 +22,12 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
+    ("POST", "/assessment/mid-run/{run_id}/delivery/access"),
+    ("GET", "/assessment/mid-run/{run_id}/delivery/access"),
+    ("GET", "/assessment/mid-run/{run_id}/delivery/receipts"),
+    ("POST", "/assessment/mid-run/delivery/access/{access_id}/revoke"),
+    ("POST", "/assessment/mid-run/delivery/inspect"),
+    ("POST", "/assessment/mid-run/delivery/redeem"),
 }
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -42,6 +49,14 @@ MID_APPROVAL_ROUTES = {
     ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
+}
+MID_DELIVERY_ROUTES = {
+    ("POST", "/assessment/mid-run/{run_id}/delivery/access"),
+    ("GET", "/assessment/mid-run/{run_id}/delivery/access"),
+    ("GET", "/assessment/mid-run/{run_id}/delivery/receipts"),
+    ("POST", "/assessment/mid-run/delivery/access/{access_id}/revoke"),
+    ("POST", "/assessment/mid-run/delivery/inspect"),
+    ("POST", "/assessment/mid-run/delivery/redeem"),
 }
 
 
@@ -68,6 +83,7 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     review_present = _validate_group(existing, MID_REVIEW_ROUTES, "Mid review")
     report_present = _validate_group(existing, MID_REPORT_ROUTES, "Mid report")
     approval_present = _validate_group(existing, MID_APPROVAL_ROUTES, "Mid approval")
+    delivery_present = _validate_group(existing, MID_DELIVERY_ROUTES, "Mid delivery")
     if not core_present:
         register_mid_assessment_routes(target)
         target.openapi_schema = None
@@ -82,6 +98,9 @@ def register_production_routes(target: FastAPI) -> FastAPI:
         target.openapi_schema = None
     if not approval_present:
         register_mid_approval_routes(target)
+        target.openapi_schema = None
+    if not delivery_present:
+        register_mid_delivery_routes(target)
         target.openapi_schema = None
     missing = REQUIRED_MID_ASSESSMENT_ROUTES - _route_pairs(target)
     if missing:
@@ -100,4 +119,5 @@ __all__ = [
     "MID_REVIEW_ROUTES",
     "MID_REPORT_ROUTES",
     "MID_APPROVAL_ROUTES",
+    "MID_DELIVERY_ROUTES",
 ]

@@ -19,6 +19,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
             <a href="/mid-review">Mid Review</a>
             <a href="/mid-report">Mid Report</a>
             <a href="/mid-approval">Mid Approval</a>
+            <a href="/mid-delivery-admin">Mid Delivery</a>
             <a href="/easy">Easy Mode</a>
             <a href="/start-job">Start Job</a>
             <a href="/scanner-workflow">Scanner to Express</a>
@@ -28,7 +29,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           </div>
         </nav>
         <div className="full-run-callout" role="status">
-          <b>Mid workflow:</b> Start with the unified Express/Mid intake in the <a href="/">Command Center</a>, inspect the admin-authenticated review-by-exception packet in <a href="/mid-review">Mid Review</a>, generate the snapshot-bound draft in <a href="/mid-report">Mid Report</a>, and make the exact-state human decision in <a href="/mid-approval">Mid Approval</a>. Approval creates a separate approved artifact but does not create a client delivery link.
+          <b>Mid workflow:</b> Start with the unified Express/Mid intake in the <a href="/">Command Center</a>, inspect the admin-authenticated review-by-exception packet in <a href="/mid-review">Mid Review</a>, generate the bound draft in <a href="/mid-report">Mid Report</a>, and decide the exact state in <a href="/mid-approval">Mid Approval</a>. Approval creates a separate approved artifact but does not create a client delivery link. After approval, create an expiring and download-limited link in <a href="/mid-delivery-admin">Mid Delivery</a>. Client downloads require acknowledgement and create integrity-bound receipts.
         </div>
         <GenericRepositoryExample />
         {children}
