@@ -153,3 +153,74 @@ def test_default_handlers_queue_scanner_with_same_run_id(monkeypatch) -> None:
     assert by_step["scanner_worker"]["evidence"]["scan_id"] == "scan_123"
     assert by_step["evidence_attachment"]["status"] == "pending"
     assert by_step["evidence_attachment"]["evidence"]["run_id"] == "fullrun_456"
+    assert result["scanner"]["scan_id"] == "scan_123"
+
+
+def test_completed_scanner_record_attaches_evidence(monkeypatch) -> None:
+    def fake_get_scan(scan_id: str) -> dict:
+        return {
+            "status": "complete",
+            "scan_id": scan_id,
+            "run_id": "fullrun_done",
+            "customer_id": "cust-a",
+            "project_id": "proj-a",
+            "tools_requested": ["bandit", "semgrep"],
+            "tools_run": ["bandit", "semgrep"],
+            "unavailable_tools": [],
+            "failed_tools": [],
+            "timed_out_tools": [],
+            "scanner_results": [
+                {"scanner": "bandit", "status": "passed"},
+                {"scanner": "semgrep", "status": "passed"},
+            ],
+            "evidence_summary": {"mode": "controlled_scanner_worker", "tools_run": 2},
+            "unavailable_data_notes": [],
+            "secret_redaction_applied": False,
+            "retention_note": "Temporary scan workspace was deleted after completion.",
+        }
+
+    monkeypatch.setattr("nico.scanner_worker.get_scan", fake_get_scan)
+    result = run_full_assessment_orchestration(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "authorization_confirmed": True,
+            "authorized_by": "tester",
+            "customer_id": "cust-a",
+            "project_id": "proj-a",
+            "run_id": "fullrun_done",
+            "scan_id": "scan_done",
+        },
+        handlers=default_full_assessment_handlers(),
+    )
+
+    by_step = {item["step"]: item for item in result["progress"]}
+    assert by_step["scanner_worker"]["status"] == "complete"
+    assert by_step["evidence_attachment"]["status"] == "complete"
+    assert result["scanner_evidence"]["status"] == "attached"
+    assert result["scanner_evidence"]["scan_id"] == "scan_done"
+    assert result["scanner_evidence"]["scanner_results_count"] == 2
+    assert result["scanner_evidence"]["human_review_required"] is True
+
+
+def test_scanner_run_id_mismatch_blocks_attachment(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "nico.scanner_worker.get_scan",
+        lambda scan_id: {"status": "complete", "scan_id": scan_id, "run_id": "other_run"},
+    )
+
+    result = run_full_assessment_orchestration(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "authorization_confirmed": True,
+            "authorized_by": "tester",
+            "run_id": "fullrun_expected",
+            "scan_id": "scan_other",
+        },
+        handlers=default_full_assessment_handlers(),
+    )
+
+    by_step = {item["step"]: item for item in result["progress"]}
+    assert result["status"] == "failed"
+    assert by_step["scanner_worker"]["status"] == "blocked"
+    assert by_step["evidence_attachment"]["status"] == "unavailable"
+    assert result["scanner_evidence"]["scanner_status"] == "blocked"
