@@ -28,7 +28,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           </div>
         </nav>
         <div className="full-run-callout" role="status">
-          <b>Mid workflow:</b> Start in the <a href="/">Command Center</a>, inspect exceptions in <a href="/mid-review">Mid Review</a>, generate the bound draft in <a href="/mid-report">Mid Report</a>, and make the exact-state human decision in <a href="/mid-approval">Mid Approval</a>. Approval creates a separate approved artifact but does not create a client delivery link.
+          <b>Mid workflow:</b> Start with the unified Express/Mid intake in the <a href="/">Command Center</a>, inspect the admin-authenticated review-by-exception packet in <a href="/mid-review">Mid Review</a>, generate the snapshot-bound draft in <a href="/mid-report">Mid Report</a>, and make the exact-state human decision in <a href="/mid-approval">Mid Approval</a>. Approval creates a separate approved artifact but does not create a client delivery link.
         </div>
         <GenericRepositoryExample />
         {children}
