@@ -1,0 +1,1 @@
+Full Assessment scores change only when attached evidence changes or when a scoring defect is repaired. Missing evidence does not count as passing evidence, scanner execution does not establish a clean finding result, and trust or export gates do not raise technical scores. Client delivery requires same-run human approval.
