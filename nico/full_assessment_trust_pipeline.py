@@ -84,7 +84,7 @@ def _attach_scanner_coverage_lines(assessment: dict[str, Any], scanner: dict[str
             _append_unique(
                 section,
                 "evidence",
-                f"{tool} scanner execution completed for this exact report run; this coverage line does not claim a clean finding result.",
+                f"{tool} scanner execution completed for this exact report run; this coverage line represents execution only and does not establish a clean result.",
             )
         elif tool in unavailable:
             _append_unique(section, "unavailable", f"{tool} scanner execution was unavailable for this exact report run.")
