@@ -63,13 +63,13 @@ def test_exceptions_are_expanded_and_verified_sections_are_collapsed():
 
 def test_review_packet_identity_is_visible_without_admin_token_echo():
     source = PAGE.read_text(encoding="utf-8")
-    rendered = source.split("return <main", 1)[1]
+    identity_block = source.split("JSON.stringify({", 1)[1].split("}, null, 2)", 1)[0]
 
-    assert "review_packet_sha256" in source
-    assert "snapshot_commit_sha" in source
-    assert "packet_version" in source
-    assert "{adminToken}" not in rendered
-    assert "JSON.stringify({" in source
+    assert "review_packet_sha256" in identity_block
+    assert "snapshot_commit_sha" in identity_block
+    assert "packet_version" in identity_block
+    assert "adminToken" not in identity_block
+    assert "admin_token" not in identity_block
 
 
 def test_production_api_registers_review_route():
