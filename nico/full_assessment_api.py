@@ -8,6 +8,14 @@ from pydantic import BaseModel
 from nico.full_assessment_orchestrator import default_full_assessment_handlers, run_full_assessment_orchestration
 
 FULL_RUN_REPORT_PATH = "full_run"
+FULL_RUN_REPORT_LABEL = "Full Assessment"
+FULL_RUN_MARKDOWN_BANNER = "> Report path: Full Assessment (`full_run`). This is not Express Assessment output.\n\n"
+FULL_RUN_HTML_BANNER = (
+    '<aside data-nico-report-path="full_run" style="margin:12px 0;padding:12px;border:1px solid #38bdf8;'
+    'border-radius:10px;background:#e0f2fe;color:#0c4a6e;font-weight:700">'
+    'Report path: Full Assessment (<code>full_run</code>). This is not Express Assessment output.'
+    '</aside>'
+)
 
 
 class FullAssessmentRequest(BaseModel):
@@ -51,16 +59,43 @@ def _model_payload(req: BaseModel) -> dict[str, Any]:
     return req.dict()
 
 
+def _label_markdown(markdown: Any) -> Any:
+    if not isinstance(markdown, str) or not markdown.strip():
+        return markdown
+    if "Report path: Full Assessment" in markdown:
+        return markdown
+    return FULL_RUN_MARKDOWN_BANNER + markdown
+
+
+def _label_html(html: Any) -> Any:
+    if not isinstance(html, str) or not html.strip():
+        return html
+    if 'data-nico-report-path="full_run"' in html:
+        return html
+    lower = html.lower()
+    body_index = lower.find("<body")
+    if body_index >= 0:
+        close_index = html.find(">", body_index)
+        if close_index >= 0:
+            return html[: close_index + 1] + FULL_RUN_HTML_BANNER + html[close_index + 1 :]
+    return FULL_RUN_HTML_BANNER + html
+
+
 def _with_report_path(result: dict[str, Any]) -> dict[str, Any]:
     """Mark this response as the full-run path so it cannot be confused with Express output."""
 
     result["report_path"] = FULL_RUN_REPORT_PATH
+    result["report_path_label"] = FULL_RUN_REPORT_LABEL
     reports = result.get("reports")
     if isinstance(reports, dict):
         reports["report_path"] = FULL_RUN_REPORT_PATH
+        reports["report_path_label"] = FULL_RUN_REPORT_LABEL
+        reports["markdown"] = _label_markdown(reports.get("markdown"))
+        reports["html"] = _label_html(reports.get("html"))
     assessment = result.get("assessment")
     if isinstance(assessment, dict):
         assessment["report_path"] = FULL_RUN_REPORT_PATH
+        assessment["report_path_label"] = FULL_RUN_REPORT_LABEL
     return result
 
 
