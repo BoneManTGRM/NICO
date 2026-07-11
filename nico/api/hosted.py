@@ -7,13 +7,14 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware import Middleware
 
 from nico.api.main import app
+from nico.approved_delivery_atomic import redeem_approved_delivery_with_receipt
 from nico.approved_delivery_operational_readiness import (
     approved_delivery_operational_readiness,
     reconcile_orphaned_delivery_consumptions,
 )
 from nico.approved_delivery_package import build_approved_delivery_package
 from nico.approved_delivery_storage_policy import delivery_storage_readiness
-from nico.full_assessment_api import register_full_assessment_routes
+from nico.full_assessment_api import ApprovedDeliveryTokenRequest, register_full_assessment_routes
 from nico.public_delivery_boundary import PublicDeliveryBoundaryMiddleware, public_delivery_boundary_status
 
 REQUIRED_FULL_ASSESSMENT_ROUTES = {
@@ -87,6 +88,68 @@ def _delivery_storage_readiness_response() -> dict[str, object]:
 
 def _public_delivery_boundary_status_response() -> dict[str, object]:
     return public_delivery_boundary_status()
+
+
+def _atomic_approved_delivery_redeem_response(req: ApprovedDeliveryTokenRequest) -> Response:
+    result = redeem_approved_delivery_with_receipt(req.token)
+    if not result.get("available"):
+        if result.get("status") == "blocked":
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "blocked",
+                    "message": "The approved PDF was not returned because its atomic delivery record could not be committed.",
+                },
+            )
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "not_found", "message": "This approved-delivery link is unavailable."},
+        )
+
+    receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
+    if not receipt.get("verified"):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "blocked",
+                "message": "The approved PDF was not returned because its atomic delivery receipt failed verification.",
+            },
+        )
+
+    filename = str(result.get("pdf_filename") or "nico-full-assessment-approved.pdf").replace('"', "")
+    exposed_headers = ", ".join(
+        [
+            "Content-Disposition",
+            "X-NICO-PDF-SHA256",
+            "X-NICO-Receipt-ID",
+            "X-NICO-Receipt-SHA256",
+            "X-NICO-Receipt-Version",
+            "X-NICO-Delivered-At",
+            "X-NICO-Download-Number",
+            "X-NICO-Receipt-Persistence",
+            "X-NICO-Atomic-Delivery",
+        ]
+    )
+    return Response(
+        content=result.get("pdf_bytes") or b"",
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private, max-age=0",
+            "Pragma": "no-cache",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-NICO-PDF-SHA256": str(result.get("pdf_sha256") or ""),
+            "X-NICO-Receipt-ID": str(receipt.get("receipt_id") or ""),
+            "X-NICO-Receipt-SHA256": str(receipt.get("receipt_sha256") or ""),
+            "X-NICO-Receipt-Version": str(receipt.get("receipt_version") or ""),
+            "X-NICO-Delivered-At": str(receipt.get("delivered_at") or ""),
+            "X-NICO-Download-Number": str(receipt.get("download_number") or ""),
+            "X-NICO-Receipt-Persistence": str((receipt.get("persistence") or {}).get("adapter") or "unknown"),
+            "X-NICO-Atomic-Delivery": "true",
+            "Access-Control-Expose-Headers": exposed_headers,
+        },
+    )
 
 
 def _approved_delivery_package_response(
@@ -224,6 +287,31 @@ def _install_public_delivery_boundary(target: FastAPI) -> None:
     target.state.nico_public_delivery_boundary = True
 
 
+def _install_atomic_redeem_route(target: FastAPI) -> None:
+    if bool(getattr(target.state, "nico_atomic_approved_delivery", False)):
+        return
+    remaining = []
+    removed = 0
+    for route in target.router.routes:
+        path = str(getattr(route, "path", ""))
+        methods = {str(method).upper() for method in (getattr(route, "methods", set()) or set())}
+        if path == "/delivery/approved/redeem" and "POST" in methods:
+            removed += 1
+            continue
+        remaining.append(route)
+    if removed != 1:
+        raise RuntimeError(f"Expected exactly one legacy approved-delivery redeem route; found={removed}")
+    target.router.routes = remaining
+    target.add_api_route(
+        "/delivery/approved/redeem",
+        _atomic_approved_delivery_redeem_response,
+        methods=["POST"],
+        tags=["approved-delivery"],
+    )
+    target.state.nico_atomic_approved_delivery = True
+    target.openapi_schema = None
+
+
 def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     """Register the complete hosted Full Assessment surface and delivery policy once."""
 
@@ -241,6 +329,8 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
     missing = REQUIRED_FULL_ASSESSMENT_ROUTES - registered
     if missing:
         raise RuntimeError(f"Full Assessment route registration incomplete; missing={sorted(missing)}")
+
+    _install_atomic_redeem_route(target)
 
     extension_routes = [
         ("/delivery/storage-readiness", _delivery_storage_readiness_response, ["GET"]),
@@ -264,8 +354,11 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
 
     registered = _route_pairs(target)
     policy_missing = HOSTED_POLICY_ROUTES - registered
+    required_missing = REQUIRED_FULL_ASSESSMENT_ROUTES - registered
     if policy_missing:
         raise RuntimeError(f"Hosted delivery policy route registration incomplete; missing={sorted(policy_missing)}")
+    if required_missing:
+        raise RuntimeError(f"Hosted Full Assessment route registration incomplete after atomic replacement; missing={sorted(required_missing)}")
     if changed:
         target.openapi_schema = None
     return target
