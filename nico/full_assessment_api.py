@@ -9,7 +9,8 @@ from nico.full_assessment_continuation import (
     apply_full_assessment_continuation,
     plan_full_assessment_continuation,
 )
-from nico.full_assessment_orchestrator import default_full_assessment_handlers, run_full_assessment_orchestration
+from nico.full_assessment_idempotent_handlers import idempotent_full_assessment_handlers
+from nico.full_assessment_orchestrator import run_full_assessment_orchestration
 from nico.full_assessment_runs import (
     build_status_payload,
     explicit_model_fields,
@@ -108,7 +109,7 @@ def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
 
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
-    result = run_full_assessment_orchestration(payload, handlers=default_full_assessment_handlers())
+    result = run_full_assessment_orchestration(payload, handlers=idempotent_full_assessment_handlers())
     result = _with_report_path(result)
     result = _record_result(result, payload, restored=False)
     if result.get("status") == "blocked":
@@ -135,7 +136,7 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
         auto_continue=auto_continue,
     )
     continuation_payload = plan["payload"]
-    result = run_full_assessment_orchestration(continuation_payload, handlers=default_full_assessment_handlers())
+    result = run_full_assessment_orchestration(continuation_payload, handlers=idempotent_full_assessment_handlers())
     result = apply_full_assessment_continuation(result, plan)
     result["status_refresh"] = True
     result = _with_report_path(result)
