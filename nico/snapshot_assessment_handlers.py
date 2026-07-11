@@ -5,6 +5,7 @@ from typing import Any
 from nico.full_assessment_orchestrator import default_full_assessment_handlers
 from nico.repository_snapshot import capture_repository_snapshot
 from nico.scanner_worker import get_scan
+from nico.snapshot_repository_evidence import collect_snapshot_repository_evidence
 from nico.snapshot_scanner_worker import start_snapshot_scan
 
 
@@ -22,10 +23,35 @@ def _snapshot_repository_handler(context: dict[str, Any], _outputs: dict[str, An
                 "unavailable_data_notes": snapshot.get("unavailable_data_notes") or [],
             },
         }
+
+    repository_evidence, complexity_evidence = collect_snapshot_repository_evidence(context, snapshot)
+    if repository_evidence.get("status") != "attached":
+        return {
+            "status": "blocked",
+            "message": "Snapshot-bound repository evidence could not be attached; technical assessment execution was blocked.",
+            "repository_snapshot": snapshot,
+            "repository_evidence": repository_evidence,
+            "complexity_evidence": complexity_evidence,
+            "evidence": {
+                "run_id": context.get("run_id") or "",
+                "repository": context.get("repository") or "",
+                "snapshot_id": snapshot.get("snapshot_id") or "",
+                "snapshot_commit_sha": snapshot.get("commit_sha") or "",
+                "repository_evidence_status": repository_evidence.get("status") or "unavailable",
+                "unavailable_data_notes": repository_evidence.get("unavailable_data_notes") or [],
+            },
+        }
+
+    files = repository_evidence.get("file_evidence") if isinstance(repository_evidence.get("file_evidence"), dict) else {}
+    activity = repository_evidence.get("activity_evidence") if isinstance(repository_evidence.get("activity_evidence"), dict) else {}
+    workflows = repository_evidence.get("workflow_evidence") if isinstance(repository_evidence.get("workflow_evidence"), dict) else {}
+    dependencies = repository_evidence.get("dependency_evidence") if isinstance(repository_evidence.get("dependency_evidence"), dict) else {}
     return {
         "status": "complete",
-        "message": "The exact default-branch commit was captured and bound to this assessment run.",
+        "message": "Exact-commit repository, workflow-configuration, dependency, code-signal, and complexity evidence were attached; operational history remains separately labeled time-window evidence.",
         "repository_snapshot": snapshot,
+        "repository_evidence": repository_evidence,
+        "complexity_evidence": complexity_evidence,
         "evidence": {
             "run_id": context.get("run_id") or "",
             "repository": context.get("repository") or "",
@@ -33,7 +59,20 @@ def _snapshot_repository_handler(context: dict[str, Any], _outputs: dict[str, An
             "snapshot_commit_sha": snapshot.get("commit_sha") or "",
             "snapshot_tree_sha": snapshot.get("tree_sha") or "",
             "default_branch": snapshot.get("default_branch") or "",
-            "idempotent_reuse": bool(snapshot.get("idempotent_reuse")),
+            "repository_evidence_id": repository_evidence.get("evidence_id") or "",
+            "complexity_evidence_id": complexity_evidence.get("evidence_id") or "",
+            "files_profiled": files.get("files_profiled", 0),
+            "dependency_entries": dependencies.get("dependency_entries", 0),
+            "workflow_file_count": workflows.get("workflow_file_count", 0),
+            "commits_returned": activity.get("commits_returned", 0),
+            "pull_requests_returned": activity.get("pull_requests_returned", 0),
+            "complexity_files_analyzed": complexity_evidence.get("files_analyzed", 0),
+            "unavailable_data_notes": repository_evidence.get("unavailable_data_notes") or [],
+            "idempotent_reuse": bool(
+                snapshot.get("idempotent_reuse")
+                or repository_evidence.get("idempotent_reuse")
+                or complexity_evidence.get("idempotent_reuse")
+            ),
         },
     }
 
