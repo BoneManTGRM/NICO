@@ -40,6 +40,7 @@ def _request_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _retained_response(result: dict[str, Any]) -> dict[str, Any]:
     retained = deepcopy(result)
+    retained.pop("optional_evidence_submission", None)
     reports = retained.get("reports")
     if isinstance(reports, dict):
         reports["pdf_base64"] = ""
@@ -92,7 +93,19 @@ def persist_mid_assessment_run(
         "created_at": existing.get("created_at") or result.get("generated_at") or now,
         "updated_at": now,
     }
-    return active.put("assessment_runs", run_id, record)
+    stored = active.put("assessment_runs", run_id, record)
+
+    # Imported only after the run is stored to avoid a module-load cycle and to
+    # guarantee that the capability is bound to a persisted snapshot identity.
+    from nico.mid_optional_evidence import (
+        issue_mid_evidence_submission_access,
+        optional_evidence_summary,
+    )
+
+    if not existing:
+        result["optional_evidence_submission"] = issue_mid_evidence_submission_access(run_id, store=active)
+    result["optional_evidence"] = optional_evidence_summary(run_id, store=active)
+    return stored
 
 
 def load_mid_assessment_run(run_id: str, store: StorageAdapter | None = None) -> dict[str, Any] | None:
