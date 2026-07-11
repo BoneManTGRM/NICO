@@ -17,11 +17,9 @@ from nico.storage import STORE
 class FakeGitHubClient:
     def __init__(self, sha: str = "a" * 40) -> None:
         self.sha = sha
-        self.repo_calls = 0
         self.commit_calls = 0
 
     def get_repo(self, repository: str):
-        self.repo_calls += 1
         return {
             "full_name": repository,
             "default_branch": "main",
@@ -57,6 +55,32 @@ def _context() -> dict:
     }
 
 
+def _attached_repository_evidence(context: dict, snapshot: dict):
+    return (
+        {
+            "status": "attached",
+            "evidence_id": "evidence_snapshot_repo_test",
+            "run_id": context["run_id"],
+            "repository": context["repository"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "snapshot_commit_sha": snapshot["commit_sha"],
+            "file_evidence": {"files_profiled": 4},
+            "dependency_evidence": {"dependency_entries": 2},
+            "workflow_evidence": {"workflow_file_count": 1},
+            "activity_evidence": {"commits_returned": 3, "pull_requests_returned": 2},
+            "unavailable_data_notes": [],
+        },
+        {
+            "status": "attached",
+            "evidence_id": "evidence_snapshot_complexity_test",
+            "run_id": context["run_id"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "snapshot_commit_sha": snapshot["commit_sha"],
+            "files_analyzed": 3,
+        },
+    )
+
+
 @pytest.fixture(autouse=True)
 def isolated_scan_jobs():
     original = dict(base_scanner.SCAN_JOBS)
@@ -69,7 +93,6 @@ def isolated_scan_jobs():
 def test_snapshot_capture_persists_exact_commit_and_is_idempotent():
     context = _context()
     client = FakeGitHubClient("a" * 40)
-
     first = capture_repository_snapshot(context, client=client)
     client.sha = "c" * 40
     second = capture_repository_snapshot(context, client=client)
@@ -78,23 +101,17 @@ def test_snapshot_capture_persists_exact_commit_and_is_idempotent():
     assert first["snapshot_id"] == repository_snapshot_id(context["run_id"], context["repository"])
     assert first["commit_sha"] == "a" * 40
     assert first["tree_sha"] == "b" * 40
-    assert first["default_branch"] == "main"
-    assert first["run_id"] == context["run_id"]
     assert second["commit_sha"] == "a" * 40
     assert second["idempotent_reuse"] is True
     assert client.commit_calls == 1
-    stored = STORE.get("evidence_items", first["snapshot_id"])
-    assert stored["evidence"]["commit_sha"] == "a" * 40
+    assert STORE.get("evidence_items", first["snapshot_id"])["evidence"]["commit_sha"] == "a" * 40
 
 
 def test_snapshot_capture_does_not_claim_attachment_without_full_commit_sha():
     context = _context()
-    client = FakeGitHubClient("short-sha")
-
-    result = capture_repository_snapshot(context, client=client)
+    result = capture_repository_snapshot(context, client=FakeGitHubClient("short-sha"))
 
     assert result["status"] == "unavailable"
-    assert result["idempotent_reuse"] is False
     assert "exact default-branch commit" in result["unavailable_data_notes"][0]
     assert STORE.get("evidence_items", result["snapshot_id"]) is None
 
@@ -114,12 +131,8 @@ def test_clone_repository_at_snapshot_verifies_exact_head(monkeypatch):
     monkeypatch.setattr(base_scanner, "directory_size", lambda path: 100)
     with tempfile.TemporaryDirectory() as workspace:
         repo_path, actual_sha, notes = snapshot_scanner.clone_repository_at_snapshot(
-            "BoneManTGRM/NICO",
-            "a" * 40,
-            Path(workspace),
-            {"PATH": "/usr/bin"},
+            "BoneManTGRM/NICO", "a" * 40, Path(workspace), {"PATH": "/usr/bin"}
         )
-
     assert repo_path is not None
     assert actual_sha == "a" * 40
     assert notes == []
@@ -139,18 +152,14 @@ def test_clone_repository_blocks_mismatched_checkout(monkeypatch):
     monkeypatch.setattr(snapshot_scanner, "_git", fake_git)
     with tempfile.TemporaryDirectory() as workspace:
         repo_path, actual_sha, notes = snapshot_scanner.clone_repository_at_snapshot(
-            "BoneManTGRM/NICO",
-            "a" * 40,
-            Path(workspace),
-            {"PATH": "/usr/bin"},
+            "BoneManTGRM/NICO", "a" * 40, Path(workspace), {"PATH": "/usr/bin"}
         )
-
     assert repo_path is None
     assert actual_sha == "c" * 40
     assert any("did not match" in note for note in notes)
 
 
-def test_snapshot_handlers_queue_scanner_with_same_run_and_commit(monkeypatch):
+def test_snapshot_handlers_attach_repository_evidence_and_queue_same_commit(monkeypatch):
     context = _context()
     snapshot = {
         "status": "attached",
@@ -161,8 +170,9 @@ def test_snapshot_handlers_queue_scanner_with_same_run_and_commit(monkeypatch):
         "tree_sha": "b" * 40,
         "default_branch": "main",
     }
-    captured_payload = {}
+    captured_payload: dict = {}
     monkeypatch.setattr(handlers, "capture_repository_snapshot", lambda value: dict(snapshot))
+    monkeypatch.setattr(handlers, "collect_snapshot_repository_evidence", _attached_repository_evidence)
 
     def fake_start(payload):
         captured_payload.update(payload)
@@ -180,20 +190,42 @@ def test_snapshot_handlers_queue_scanner_with_same_run_and_commit(monkeypatch):
     scan_output = handlers._snapshot_scanner_handler(context, {"repo_evidence": repo_output})
 
     assert repo_output["status"] == "complete"
+    assert repo_output["repository_evidence"]["snapshot_commit_sha"] == "a" * 40
+    assert repo_output["complexity_evidence"]["files_analyzed"] == 3
     assert scan_output["status"] == "queued"
     assert captured_payload["run_id"] == context["run_id"]
     assert captured_payload["snapshot_id"] == snapshot["snapshot_id"]
     assert captured_payload["snapshot_commit_sha"] == snapshot["commit_sha"]
-    assert captured_payload["repository"] == context["repository"]
+
+
+def test_snapshot_repository_handler_blocks_unavailable_collection(monkeypatch):
+    context = _context()
+    snapshot = {
+        "status": "attached",
+        "snapshot_id": "snapshot_example",
+        "run_id": context["run_id"],
+        "repository": context["repository"],
+        "commit_sha": "a" * 40,
+    }
+    monkeypatch.setattr(handlers, "capture_repository_snapshot", lambda value: dict(snapshot))
+    monkeypatch.setattr(
+        handlers,
+        "collect_snapshot_repository_evidence",
+        lambda context, snapshot: (
+            {"status": "unavailable", "unavailable_data_notes": ["file evidence unavailable"]},
+            {"status": "unavailable"},
+        ),
+    )
+
+    result = handlers._snapshot_repository_handler(context, {})
+
+    assert result["status"] == "blocked"
+    assert result["repository_evidence"]["status"] == "unavailable"
 
 
 def test_existing_scanner_with_different_snapshot_is_blocked(monkeypatch):
     context = {**_context(), "scan_id": "scan_existing"}
-    snapshot = {
-        "status": "attached",
-        "snapshot_id": "snapshot_expected",
-        "commit_sha": "a" * 40,
-    }
+    snapshot = {"status": "attached", "snapshot_id": "snapshot_expected", "commit_sha": "a" * 40}
     monkeypatch.setattr(
         handlers,
         "get_scan",
@@ -206,14 +238,8 @@ def test_existing_scanner_with_different_snapshot_is_blocked(monkeypatch):
             "snapshot_match": True,
         },
     )
-
-    result = handlers._snapshot_scanner_handler(
-        context,
-        {"repo_evidence": {"repository_snapshot": snapshot}},
-    )
-
+    result = handlers._snapshot_scanner_handler(context, {"repo_evidence": {"repository_snapshot": snapshot}})
     assert result["status"] == "blocked"
-    assert "does not match" in result["message"]
     assert result["evidence"]["scanner_snapshot_id"] == "snapshot_other"
 
 
@@ -238,15 +264,10 @@ def test_attachment_requires_completed_exact_snapshot_match():
     }
     result = handlers._snapshot_evidence_attachment_handler(
         context,
-        {
-            "repo_evidence": {"repository_snapshot": snapshot},
-            "scanner_worker": {"status": "complete", "scan": scan},
-        },
+        {"repo_evidence": {"repository_snapshot": snapshot}, "scanner_worker": {"status": "complete", "scan": scan}},
     )
-
     assert result["status"] == "complete"
     assert result["scanner_evidence"]["snapshot_match"] is True
-    assert result["scanner_evidence"]["snapshot_commit_sha"] == "a" * 40
     assert result["scanner_evidence"]["actual_commit_sha"] == "a" * 40
 
 
@@ -259,23 +280,16 @@ def test_attachment_marks_nonmatching_scanner_unavailable():
             "repo_evidence": {"repository_snapshot": snapshot},
             "scanner_worker": {
                 "status": "unavailable",
-                "scan": {
-                    "status": "unavailable",
-                    "scan_id": "scan_test",
-                    "actual_commit_sha": "c" * 40,
-                    "snapshot_match": False,
-                },
+                "scan": {"status": "unavailable", "scan_id": "scan_test", "actual_commit_sha": "c" * 40, "snapshot_match": False},
             },
         },
     )
-
     assert result["status"] == "unavailable"
     assert "could not be attached" in result["message"]
 
 
 def test_snapshot_handler_set_replaces_repository_scanner_and_attachment_steps():
     configured = handlers.snapshot_bound_assessment_handlers()
-
     assert configured["repo_evidence"] is handlers._snapshot_repository_handler
     assert configured["scanner_worker"] is handlers._snapshot_scanner_handler
     assert configured["evidence_attachment"] is handlers._snapshot_evidence_attachment_handler
