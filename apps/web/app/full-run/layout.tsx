@@ -1,6 +1,7 @@
 "use client";
 
-import {ReactNode, useState} from "react";
+import {useState} from "react";
+import type {ReactNode} from "react";
 import DeliveryLedger from "./DeliveryLedger";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
