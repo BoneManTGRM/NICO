@@ -6,6 +6,7 @@ from nico.approval_queue import list_approvals
 
 ACCEPTANCE_ACTIONS = {
     "client_acceptance",
+    "client_acceptance_signoff",
     "client_report_acceptance",
     "final_report_approval",
     "human_review_acceptance",
@@ -49,7 +50,7 @@ def _acceptance_section(evidence: dict[str, Any]) -> dict[str, Any]:
         "score": 96 if accepted else 0,
         "status": "green" if accepted else "gray",
         "summary": (
-            "Final report acceptance is supported by an approved same-project review record."
+            "Final report acceptance is supported by an approved same-project review or client-acceptance record."
             if accepted
             else "Final report acceptance is not scored until an approved same-project review record exists."
         ),
@@ -62,6 +63,7 @@ def _acceptance_section(evidence: dict[str, Any]) -> dict[str, Any]:
 def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
     project_id = _project_id(result)
     customer_id = _customer_id(result)
+    run_id = str(result.get("run_id") or result.get("assessment_id") or "")
     approvals = list_approvals(customer_id=customer_id, project_id=project_id)
     approved = []
     pending = []
@@ -69,6 +71,12 @@ def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         if not _matches_acceptance_action(item.get("requested_action")):
+            continue
+        # Prefer same-run approval records when run_id exists, but keep the legacy
+        # same-project behavior for older records that did not store a run_id.
+        item_run_id = str(item.get("run_id") or "")
+        evidence_text = "\n".join(str(ev) for ev in item.get("evidence", []) or [])
+        if run_id and item_run_id and item_run_id != run_id and run_id not in evidence_text:
             continue
         if item.get("status") == "approved":
             approved.append(item)
@@ -81,9 +89,12 @@ def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
     if latest:
         evidence_count = len(latest.get("evidence") or [])
         note = _approval_note(latest)
+        action = latest.get("requested_action") or "acceptance"
         notes.append(
-            f"Client/human acceptance evidence: approved {latest.get('requested_action')} record {latest.get('approval_id')} by {latest.get('approver') or 'human_reviewer'}; evidence items={evidence_count}."
+            f"Client/human acceptance evidence: approved {action} record {latest.get('approval_id')} by {latest.get('approver') or 'human_reviewer'}; evidence items={evidence_count}."
         )
+        if latest.get("run_id"):
+            notes.append(f"Acceptance run binding: run_id={latest.get('run_id')}.")
         if note:
             notes.append(f"Acceptance reviewer note: {note[:240]}")
     else:
@@ -94,13 +105,14 @@ def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "project_id": project_id,
         "customer_id": customer_id,
+        "run_id": run_id,
         "approved_count": len(approved),
         "pending_count": len(pending),
         "latest_approval_id": latest.get("approval_id") if latest else "",
         "approver": latest.get("approver") if latest else "",
         "approved_at": latest.get("updated_at") if latest else "",
         "notes": notes,
-        "rule": "Client acceptance is credited only from an approved report/client-acceptance approval record for the same customer and project.",
+        "rule": "Client acceptance is credited only from an approved report/client-acceptance approval record for the same customer and project, preferring same-run records when run_id exists.",
     }
 
 
