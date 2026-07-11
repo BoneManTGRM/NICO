@@ -14,7 +14,19 @@ def now_iso() -> str:
 
 
 def create_approval(payload: dict[str, Any]) -> dict[str, Any]:
-    approval_id = f"approval_{uuid4().hex[:16]}"
+    requested_id = str(payload.get("approval_id") or "").strip()
+    idempotency_key = str(payload.get("idempotency_key") or "").strip()
+    approval_id = requested_id or f"approval_{uuid4().hex[:16]}"
+
+    if requested_id:
+        existing = STORE.get("approvals", approval_id)
+        if existing:
+            if not idempotency_key or str(existing.get("idempotency_key") or "") != idempotency_key:
+                raise ValueError("approval idempotency identity conflicts with an existing approval record")
+            reused = dict(existing)
+            reused["idempotent_reuse"] = True
+            return reused
+
     item = {
         "approval_id": approval_id,
         "customer_id": payload.get("customer_id") or "default_customer",
@@ -34,13 +46,15 @@ def create_approval(payload: dict[str, Any]) -> dict[str, Any]:
         "rollback_plan": payload.get("rollback_plan") or "Human reviewer must define or approve the rollback plan before execution.",
         "requester": payload.get("requester") or "nico",
         "approver": "",
+        "idempotency_key": idempotency_key,
+        "idempotent_reuse": False,
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "audit_log": [],
     }
     item["audit_log"].append({"timestamp": now_iso(), "action": "created", "actor": item["requester"]})
     STORE.put("approvals", approval_id, item)
-    STORE.audit("approval.created", {"approval_id": approval_id, "requested_action": item["requested_action"]}, customer_id=item["customer_id"], project_id=item["project_id"])
+    STORE.audit("approval.created", {"approval_id": approval_id, "requested_action": item["requested_action"], "idempotency_key": idempotency_key}, customer_id=item["customer_id"], project_id=item["project_id"])
     return item
 
 
@@ -85,7 +99,7 @@ def draft_pr_request(payload: dict[str, Any]) -> dict[str, Any]:
         "evidence": item.get("evidence", []),
         "test_plan": item.get("test_plan"),
         "rollback_plan": item.get("rollback_plan"),
-        "unavailable_data_notes": ["GitHub write integration is not enabled yet. No branch, commit, or PR was created."],
+        "unavailable_data_notes": ["GitHub write integration is not enabled. No branch, commit, or PR was created."],
         "created_at": now_iso(),
     }
     STORE.put("draft_pr_records", record_id, record)
