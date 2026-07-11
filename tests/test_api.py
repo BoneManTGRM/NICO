@@ -25,6 +25,8 @@ def test_full_assessment_requires_authorization():
     assert detail['status'] == 'blocked'
     assert detail['code'] == 'authorization confirmation is required'
     assert detail['progress'][0]['step'] == 'authorization'
+    assert detail['run_id'].startswith('fullrun_')
+    assert detail['persistence']['recorded'] is True
 
 
 def test_full_assessment_endpoint_returns_planned_progress_shape():
@@ -40,6 +42,9 @@ def test_full_assessment_endpoint_returns_planned_progress_shape():
     assert data['project_id'] == 'proj-a'
     assert data['human_review_required'] is True
     assert data['client_ready'] is False
+    assert data['persistence']['recorded'] is True
+    assert data['persistence']['record_id'] == data['run_id']
+    assert data['persistence']['updated_at']
     assert [item['step'] for item in data['progress']] == ['authorization', 'repo_evidence', 'scanner_worker', 'evidence_attachment', 'scoring', 'reports', 'approval_request']
     by_step = {item['step']: item for item in data['progress']}
     assert by_step['authorization']['status'] == 'complete'
@@ -65,7 +70,27 @@ def test_full_assessment_status_refresh_does_not_request_final_review():
     assert data['run_id'] == 'fullrun_ui'
     assert data['repository'] == 'BoneManTGRM/NICO'
     assert data['approval']['status'] == 'not_requested'
+    assert data['persistence']['recorded'] is True
     by_step = {item['step']: item for item in data['progress']}
     assert by_step['scanner_worker']['status'] == 'skipped'
     assert by_step['reports']['status'] == 'skipped'
     assert by_step['approval_request']['status'] == 'skipped'
+
+
+def test_full_assessment_status_refresh_restores_saved_scope_with_empty_body():
+    c=TestClient(app)
+    started = c.post('/assessment/full-run', json={'repository': 'BoneManTGRM/NICO', 'authorization_confirmed': True, 'authorized': True, 'authorized_by': 'tester', 'customer_id': 'cust-restore', 'project_id': 'proj-restore', 'run_scanners': False})
+    assert started.status_code == 200
+    initial = started.json()
+
+    response = c.post(f"/assessment/full-run/{initial['run_id']}/status", json={})
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data['run_id'] == initial['run_id']
+    assert data['repository'] == 'BoneManTGRM/NICO'
+    assert data['customer_id'] == 'cust-restore'
+    assert data['project_id'] == 'proj-restore'
+    assert data['persistence']['recorded'] is True
+    assert data['persistence']['restored'] is True
+    assert data['approval']['status'] == 'not_requested'
