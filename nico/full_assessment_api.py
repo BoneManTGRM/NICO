@@ -12,6 +12,10 @@ from nico.approved_delivery_access import (
     redeem_approved_delivery_access,
     revoke_approved_delivery_access,
 )
+from nico.approved_delivery_acknowledgments import (
+    create_delivery_acknowledgment,
+    list_delivery_acknowledgments,
+)
 from nico.approved_delivery_receipts import create_delivery_receipt, list_delivery_receipts
 from nico.approved_delivery_recovery import approved_delivery_status, attach_verified_approved_delivery
 from nico.full_assessment_continuation import (
@@ -88,6 +92,13 @@ class ApprovedDeliveryAccessRevokeRequest(BaseModel):
 
 class ApprovedDeliveryTokenRequest(BaseModel):
     token: str = ""
+
+
+class ApprovedDeliveryAcknowledgmentRequest(BaseModel):
+    token: str = ""
+    receipt_id: str = ""
+    acknowledged_by: str = ""
+    acknowledged: bool = False
 
 
 def _model_payload(req: BaseModel) -> dict[str, Any]:
@@ -198,6 +209,16 @@ def _admin_receipt_result(result: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(
             status_code=status_code,
             detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery receipt action was blocked.")},
+        )
+    return result
+
+
+def _admin_acknowledgment_result(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("status") == "blocked":
+        status_code = 403 if result.get("admin_write") else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail={"status": "blocked", "message": str(result.get("error") or "Client acknowledgment action was blocked.")},
         )
     return result
 
@@ -329,6 +350,22 @@ def approved_delivery_receipts_list_response(
     )
 
 
+def approved_delivery_acknowledgments_list_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    return _admin_acknowledgment_result(
+        list_delivery_acknowledgments(
+            run_id,
+            customer_id=customer_id,
+            project_id=project_id,
+            admin_token=x_nico_admin_token,
+        )
+    )
+
+
 def approved_delivery_access_revoke_response(
     access_id: str,
     req: ApprovedDeliveryAccessRevokeRequest,
@@ -406,6 +443,18 @@ def approved_delivery_access_redeem_response(req: ApprovedDeliveryTokenRequest) 
     )
 
 
+def approved_delivery_acknowledge_response(req: ApprovedDeliveryAcknowledgmentRequest) -> dict[str, Any]:
+    result = create_delivery_acknowledgment(_model_payload(req))
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "This delivery acknowledgment request is unavailable."})
+    if result.get("status") == "blocked":
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "blocked", "message": str(result.get("error") or "Client receipt acknowledgment was blocked.")},
+        )
+    return result
+
+
 def register_full_assessment_routes(app: FastAPI) -> None:
     app.post("/assessment/full-run")(full_assessment_response)
     app.post("/assessment/full-run/{run_id}/status")(full_assessment_status_response)
@@ -414,9 +463,12 @@ def register_full_assessment_routes(app: FastAPI) -> None:
     app.post("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_create_response)
     app.get("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_list_response)
     app.get("/assessment/full-run/{run_id}/approved-delivery/receipts")(approved_delivery_receipts_list_response)
+    app.get("/assessment/full-run/{run_id}/approved-delivery/acknowledgments")(approved_delivery_acknowledgments_list_response)
     app.post("/assessment/full-run/approved-delivery/access/{access_id}/revoke")(approved_delivery_access_revoke_response)
     app.post("/delivery/approved/inspect")(approved_delivery_access_inspect_response)
     app.post("/delivery/approved/redeem")(approved_delivery_access_redeem_response)
+    app.post("/delivery/approved/acknowledge")(approved_delivery_acknowledge_response)
     app.get("/reports/{run_id}/approved-delivery")(approved_delivery_response)
     app.get("/reports/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
     app.get("/reports/{run_id}/approved-delivery/receipts")(approved_delivery_receipts_list_response)
+    app.get("/reports/{run_id}/approved-delivery/acknowledgments")(approved_delivery_acknowledgments_list_response)
