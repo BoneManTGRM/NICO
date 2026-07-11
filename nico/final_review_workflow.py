@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from nico.approval_queue import create_approval, list_approvals, transition_approval
+from nico.approval_queue import create_approval, list_approvals, now_iso, transition_approval
+from nico.full_assessment_delivery import build_approved_delivery_artifact
 from nico.reports import get_report
 from nico.storage import STORE
 
@@ -68,6 +69,28 @@ def _valid_pdf_base64(value: Any) -> bool:
     except Exception:
         return False
     return decoded.startswith(b"%PDF")
+
+
+def _delivery_summary(value: Any) -> dict[str, Any]:
+    artifact = value if isinstance(value, dict) else {}
+    if not artifact:
+        return {}
+    return {
+        "status": artifact.get("status") or "unavailable",
+        "artifact_type": artifact.get("artifact_type") or "",
+        "style_version": artifact.get("style_version") or "",
+        "run_id": artifact.get("run_id") or "",
+        "report_id": artifact.get("report_id") or "",
+        "approval_id": artifact.get("approval_id") or "",
+        "approver": artifact.get("approver") or "",
+        "approved_at": artifact.get("approved_at") or "",
+        "client_delivery_allowed": bool(artifact.get("client_delivery_allowed")),
+        "pdf_filename": artifact.get("pdf_filename") or "",
+        "pdf_sha256": artifact.get("pdf_sha256") or "",
+        "source_draft_pdf_sha256": artifact.get("source_draft_pdf_sha256") or "",
+        "approval_identity_sha256": artifact.get("approval_identity_sha256") or "",
+        "disclosure": artifact.get("disclosure") or "",
+    }
 
 
 def final_review_validation(approval: dict[str, Any]) -> dict[str, Any]:
@@ -135,6 +158,8 @@ def final_review_status(run_id: str, customer_id: str = "default_customer", proj
     ]
     approvals.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
     latest = approvals[0] if approvals else None
+    report = _report_for_run(str((latest or {}).get("report_id") or run_id))
+    approved_delivery = report.get("approved_delivery") if isinstance(report.get("approved_delivery"), dict) else {}
     return {
         "status": "ok",
         "run_id": run_id,
@@ -145,8 +170,9 @@ def final_review_status(run_id: str, customer_id: str = "default_customer", proj
         "approver": latest.get("approver") if latest else "",
         "approval_count": len(approvals),
         "review_validation": latest.get("review_validation") if latest else {},
+        "approved_delivery": _delivery_summary(approved_delivery),
         "approvals": approvals,
-        "rule": "Final review status is sourced from same-customer/same-project final_report_approval records only.",
+        "rule": "Final review status is sourced from same-customer/same-project final_report_approval records only. Approved delivery is a separate artifact bound to the exact reviewed draft.",
     }
 
 
@@ -217,9 +243,12 @@ def transition_final_review(approval_id: str, state: str, actor: str = "human_re
     current_state = str(item.get("status") or "pending")
     if current_state in FINAL_REVIEW_TERMINAL_STATES:
         if current_state == normalized_state:
+            report = _report_for_run(str(item.get("report_id") or item.get("run_id") or ""))
+            artifact = report.get("approved_delivery") if isinstance(report.get("approved_delivery"), dict) else {}
             return {
                 "status": "ok",
                 "approval": item,
+                "approved_delivery": artifact,
                 "idempotent_reuse": True,
                 "review": final_review_status(str(item.get("run_id") or ""), item.get("customer_id") or "default_customer", item.get("project_id") or "default_project"),
             }
@@ -238,16 +267,72 @@ def transition_final_review(approval_id: str, state: str, actor: str = "human_re
             "review_validation": validation,
         }
 
+    approved_at = now_iso()
+    approved_delivery: dict[str, Any] = {}
+    report: dict[str, Any] = {}
+    if normalized_state == "approved":
+        report = _report_for_run(str(item.get("report_id") or item.get("run_id") or ""))
+        approval_candidate = dict(item)
+        approval_candidate["approver"] = actor_name
+        approval_candidate["review_decision"] = {
+            "state": "approved",
+            "actor": actor_name,
+            "note": note_text,
+            "decided_at": approved_at,
+            "client_delivery_allowed": True,
+        }
+        existing = report.get("approved_delivery") if isinstance(report.get("approved_delivery"), dict) else {}
+        if existing:
+            if str(existing.get("approval_id") or "") != approval_id:
+                return {
+                    "status": "blocked",
+                    "error": "A different approval is already bound to this report package; create a new report package before another approval.",
+                    "approval_id": approval_id,
+                }
+            approved_delivery = existing
+        else:
+            approved_delivery = build_approved_delivery_artifact(report, approval_candidate, approved_at=approved_at)
+            if approved_delivery.get("status") != "complete":
+                return {
+                    "status": "blocked",
+                    "error": approved_delivery.get("error") or "Approved client-delivery artifact generation failed.",
+                    "approval_id": approval_id,
+                    "review_validation": validation,
+                }
+
     updated = transition_approval(approval_id, normalized_state, actor=actor_name, note=note_text)
     updated["review_validation"] = validation
     updated["review_decision"] = {
         "state": normalized_state,
         "actor": actor_name,
         "note": note_text,
-        "decided_at": updated.get("updated_at") or "",
+        "decided_at": approved_at if normalized_state == "approved" else updated.get("updated_at") or "",
         "client_delivery_allowed": normalized_state == "approved",
     }
+    if approved_delivery:
+        updated["approved_delivery"] = _delivery_summary(approved_delivery)
     STORE.put("approvals", approval_id, updated)
+
+    if approved_delivery and report:
+        report["approved_delivery"] = approved_delivery
+        report["delivery_status"] = "approved"
+        report["client_delivery_allowed"] = True
+        report["human_review_completed"] = True
+        STORE.put("reports", str(report.get("report_id") or updated.get("report_id") or ""), report)
+        STORE.audit(
+            "report.approved_delivery_created",
+            {
+                "approval_id": approval_id,
+                "run_id": updated.get("run_id") or "",
+                "report_id": updated.get("report_id") or "",
+                "pdf_sha256": approved_delivery.get("pdf_sha256") or "",
+                "source_draft_pdf_sha256": approved_delivery.get("source_draft_pdf_sha256") or "",
+                "approval_identity_sha256": approved_delivery.get("approval_identity_sha256") or "",
+            },
+            customer_id=updated.get("customer_id"),
+            project_id=updated.get("project_id"),
+        )
+
     STORE.audit(
         "final_review.transition",
         {"approval_id": approval_id, "state": normalized_state, "actor": actor_name, "run_id": updated.get("run_id") or "", "report_id": updated.get("report_id") or ""},
@@ -257,6 +342,7 @@ def transition_final_review(approval_id: str, state: str, actor: str = "human_re
     return {
         "status": "ok",
         "approval": updated,
+        "approved_delivery": approved_delivery,
         "idempotent_reuse": False,
         "review": final_review_status(str(updated.get("run_id") or ""), updated.get("customer_id") or "default_customer", updated.get("project_id") or "default_project"),
     }
