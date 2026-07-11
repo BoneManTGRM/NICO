@@ -387,29 +387,36 @@ def create_delivery_acknowledgment(payload: dict[str, Any]) -> dict[str, Any]:
     verification = verify_delivery_acknowledgment(stored)
     if not verification.get("verified"):
         return {"status": "blocked", "error": "The persisted client acknowledgment failed integrity verification.", "verification": verification}
+    if str(stored.get("acknowledged_by") or "") != acknowledged_by:
+        return {
+            "status": "blocked",
+            "error": "This delivery receipt was concurrently acknowledged by a different immutable recipient identity.",
+            "verification": verification,
+        }
 
+    stored_identity = stored.get("identity") if isinstance(stored.get("identity"), dict) else identity
     STORE.audit(
         "approved_delivery.client_acknowledged",
         {
-            "acknowledgment_id": acknowledgment_id,
-            "acknowledgment_sha256": acknowledgment_hash,
+            "acknowledgment_id": stored.get("acknowledgment_id") or acknowledgment_id,
+            "acknowledgment_sha256": stored.get("acknowledgment_sha256") or acknowledgment_hash,
             "receipt_id": receipt_id,
-            "receipt_sha256": identity["receipt_sha256"],
-            "access_id": identity["access_id"],
-            "run_id": identity["run_id"],
-            "report_id": identity["report_id"],
-            "approval_id": identity["approval_id"],
+            "receipt_sha256": stored_identity.get("receipt_sha256") or identity["receipt_sha256"],
+            "access_id": stored_identity.get("access_id") or identity["access_id"],
+            "run_id": stored_identity.get("run_id") or identity["run_id"],
+            "report_id": stored_identity.get("report_id") or identity["report_id"],
+            "approval_id": stored_identity.get("approval_id") or identity["approval_id"],
             "acknowledged_by": acknowledged_by,
-            "statement_sha256": identity["statement_sha256"],
-            "pdf_sha256": identity["pdf_sha256"],
-            "token_fingerprint": identity["token_fingerprint"],
+            "statement_sha256": stored_identity.get("statement_sha256") or identity["statement_sha256"],
+            "pdf_sha256": stored_identity.get("pdf_sha256") or identity["pdf_sha256"],
+            "token_fingerprint": stored_identity.get("token_fingerprint") or identity["token_fingerprint"],
             "persistence_adapter": persistence["adapter"],
             "receipt_only": True,
         },
         customer_id=identity["customer_id"],
         project_id=identity["project_id"],
     )
-    return {"status": "acknowledged", "idempotent_reuse": False, "acknowledgment": _public_acknowledgment(stored)}
+    return {"status": "acknowledged", "idempotent_reuse": stored.get("acknowledgment_id") != acknowledgment_id, "acknowledgment": _public_acknowledgment(stored)}
 
 
 def list_delivery_acknowledgments(
