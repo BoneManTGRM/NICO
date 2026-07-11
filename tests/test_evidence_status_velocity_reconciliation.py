@@ -125,7 +125,6 @@ def test_clean_bandit_triage_removes_static_review_finding_and_attaches_complexi
     assert static["findings"] == []
     assert result["complexity_engine"]["artifact"] == "complexity-profile.json"
     assert any("Complexity evidence attached" in item for item in velocity["evidence"])
-    assert not any("static_analysis_no_review_findings" in item for item in velocity["unavailable"])
 
 
 def test_final_consistency_lifts_velocity_when_clean_static_and_complexity_are_attached() -> None:
@@ -134,5 +133,6 @@ def test_final_consistency_lifts_velocity_when_clean_static_and_complexity_are_a
 
     assert result["release_readiness"]["status"] == "provisionally_ready_for_human_review"
     assert "static_analysis_no_review_findings" not in result["release_readiness"]["missing_signals"]
+    assert not any("static_analysis_no_review_findings" in item for item in velocity["unavailable"])
     assert velocity["score"] >= 90
     assert velocity["status"] == "green"
