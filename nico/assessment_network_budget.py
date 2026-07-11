@@ -236,30 +236,35 @@ def _bounded_query_osv(dependencies: list[dict[str, str]]) -> tuple[list[str], l
     return evidence, []
 
 
-def install_assessment_network_budget() -> dict[str, Any]:
-    """Install one bounded network policy for hosted Express and Mid collection."""
-
-    client_cls = hosted.GitHubAssessmentClient
-    if bool(getattr(client_cls, "_nico_budget_installed", False)):
-        return {"status": "already_installed", **collection_policy()}
-
-    original_init = client_cls.__init__
-
-    def bounded_init(self: Any) -> None:
-        original_init(self)
-        self._nico_collection_started = time.monotonic()
-        self._nico_collection_deadline = self._nico_collection_started + GITHUB_COLLECTION_BUDGET_SECONDS
-
-    client_cls.__init__ = bounded_init
-    client_cls.get_json = _bounded_get_json
-    client_cls.collection_budget_status = collection_budget_status
-    client_cls._nico_budget_installed = True
+def _rebind_collectors() -> None:
+    """Restore bounded module-level collectors if another compatibility patch replaced them."""
 
     hosted.fetch_repository_profile = _bounded_repository_profile
     hosted.fetch_workflows = _bounded_workflows
     hosted.query_osv = _bounded_query_osv
     snapshot_evidence._profile = _bounded_snapshot_profile
-    return {"status": "installed", **collection_policy()}
+
+
+def install_assessment_network_budget() -> dict[str, Any]:
+    """Install one bounded network policy for hosted Express and Mid collection."""
+
+    client_cls = hosted.GitHubAssessmentClient
+    already_installed = bool(getattr(client_cls, "_nico_budget_installed", False))
+    if not already_installed:
+        original_init = client_cls.__init__
+
+        def bounded_init(self: Any) -> None:
+            original_init(self)
+            self._nico_collection_started = time.monotonic()
+            self._nico_collection_deadline = self._nico_collection_started + GITHUB_COLLECTION_BUDGET_SECONDS
+
+        client_cls.__init__ = bounded_init
+        client_cls.get_json = _bounded_get_json
+        client_cls.collection_budget_status = collection_budget_status
+        client_cls._nico_budget_installed = True
+
+    _rebind_collectors()
+    return {"status": "already_installed" if already_installed else "installed", **collection_policy()}
 
 
 def collection_policy() -> dict[str, Any]:
