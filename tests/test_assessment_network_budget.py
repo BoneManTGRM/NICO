@@ -117,7 +117,7 @@ def test_express_repository_profile_fetches_selected_files_with_budget_metadata(
 
     profile = budget._bounded_repository_profile(client, "owner/repo", {"default_branch": "main"})
 
-    assert set(profile["files"]) == {"README.md", "requirements.txt", "package.json", "nico/a.py", "nico/b.py"}
+    assert set(profile["files"]) == {"README.md", "requirements.txt", "nico/a.py", "nico/b.py"}
     assert profile["root_items"] == ["nico", "README.md"]
     assert profile["collection_budget"]["budget_seconds"] == budget.GITHUB_COLLECTION_BUDGET_SECONDS
     assert profile["collection_budget"]["budget_exhausted"] is False
