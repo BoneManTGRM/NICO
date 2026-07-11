@@ -50,3 +50,18 @@ def test_full_assessment_endpoint_returns_planned_progress_shape():
     assert by_step['approval_request']['status'] == 'planned'
     assert data['reports']['pdf_error'] == ''
     assert data['approval']['status'] == 'not_requested'
+
+
+def test_full_assessment_status_refresh_does_not_request_final_review():
+    c=TestClient(app)
+    response = c.post('/assessment/full-run/fullrun_ui/status', json={'repository': 'BoneManTGRM/NICO', 'authorization_confirmed': True, 'authorized': True, 'run_scanners': False})
+    assert response.status_code == 200
+    data = response.json()
+    assert data['status_refresh'] is True
+    assert data['run_id'] == 'fullrun_ui'
+    assert data['repository'] == 'BoneManTGRM/NICO'
+    assert data['approval']['status'] == 'not_requested'
+    by_step = {item['step']: item for item in data['progress']}
+    assert by_step['scanner_worker']['status'] == 'skipped'
+    assert by_step['reports']['status'] == 'planned'
+    assert by_step['approval_request']['status'] == 'planned'
