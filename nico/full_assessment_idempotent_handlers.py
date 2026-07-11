@@ -9,15 +9,23 @@ from nico.full_assessment_idempotency import (
 from nico.full_assessment_orchestrator import default_full_assessment_handlers
 
 
-def _repository_evidence_handler(context: dict[str, Any], _outputs: dict[str, Any]) -> dict[str, Any]:
+def _repository_evidence_handler(
+    context: dict[str, Any],
+    _outputs: dict[str, Any],
+    *,
+    timeframe_days: int = 180,
+) -> dict[str, Any]:
     from nico.full_assessment_repository_evidence import collect_repository_evidence
 
-    bundle = collect_repository_evidence(context)
+    evidence_context = dict(context)
+    evidence_context["timeframe_days"] = max(30, min(int(timeframe_days or 180), 365))
+    bundle = collect_repository_evidence(evidence_context)
     attached = bundle.get("status") == "attached"
     metadata = bundle.get("repository_metadata") if isinstance(bundle.get("repository_metadata"), dict) else {}
     activity = bundle.get("activity_evidence") if isinstance(bundle.get("activity_evidence"), dict) else {}
     workflows = bundle.get("workflow_evidence") if isinstance(bundle.get("workflow_evidence"), dict) else {}
     dependencies = bundle.get("dependency_evidence") if isinstance(bundle.get("dependency_evidence"), dict) else {}
+    file_evidence = bundle.get("file_evidence") if isinstance(bundle.get("file_evidence"), dict) else {}
     evidence = {
         "run_id": context["run_id"],
         "repository": context["repository"],
@@ -26,9 +34,10 @@ def _repository_evidence_handler(context: dict[str, Any], _outputs: dict[str, An
         "evidence_id": bundle.get("evidence_id") or "",
         "source": bundle.get("source") or "github_api_read_only",
         "status": bundle.get("status") or "unavailable",
+        "timeframe_days": bundle.get("timeframe_days") or evidence_context["timeframe_days"],
         "idempotent_reuse": bool(bundle.get("idempotent_reuse")),
         "default_branch": metadata.get("default_branch") or "",
-        "files_profiled": (bundle.get("file_evidence") or {}).get("files_profiled", 0),
+        "files_profiled": file_evidence.get("files_profiled", 0),
         "commits_returned": activity.get("commits_returned", 0),
         "pull_requests_returned": activity.get("pull_requests_returned", 0),
         "workflow_file_count": workflows.get("workflow_file_count", 0),
@@ -177,9 +186,13 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
     }
 
 
-def idempotent_full_assessment_handlers() -> dict[str, Any]:
+def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[str, Any]:
     handlers = default_full_assessment_handlers()
-    handlers["repo_evidence"] = _repository_evidence_handler
+    handlers["repo_evidence"] = lambda context, outputs: _repository_evidence_handler(
+        context,
+        outputs,
+        timeframe_days=timeframe_days,
+    )
     handlers["reports"] = _reports_handler
     handlers["approval_request"] = _approval_request_handler
     return handlers
