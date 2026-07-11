@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from nico.api.main import app
+from nico.full_assessment_runs import persist_full_assessment_run
+from nico.storage import STORE
 
 
 def test_health():
@@ -94,3 +96,72 @@ def test_full_assessment_status_refresh_restores_saved_scope_with_empty_body():
     assert data['persistence']['recorded'] is True
     assert data['persistence']['restored'] is True
     assert data['approval']['status'] == 'not_requested'
+
+
+def test_full_assessment_status_auto_continues_after_completed_scanner():
+    run_id = 'fullrun_api_auto'
+    scan_id = 'scan_api_auto'
+    customer_id = 'cust-api-auto'
+    project_id = 'proj-api-auto'
+    request = {
+        'repository': 'BoneManTGRM/NICO',
+        'authorization_confirmed': True,
+        'authorized': True,
+        'authorized_by': 'tester',
+        'customer_id': customer_id,
+        'project_id': project_id,
+        'run_scanners': True,
+        'build_reports': True,
+        'create_final_review_request': True,
+        'auto_continue': True,
+        'tools': ['bandit'],
+    }
+    persist_full_assessment_run(
+        {
+            'status': 'running',
+            'run_id': run_id,
+            'repository': 'BoneManTGRM/NICO',
+            'customer_id': customer_id,
+            'project_id': project_id,
+            'scanner': {'scan_id': scan_id, 'status': 'queued'},
+        },
+        request,
+    )
+    STORE.put('scanner_runs', scan_id, {
+        'scan_id': scan_id,
+        'run_id': run_id,
+        'customer_id': customer_id,
+        'project_id': project_id,
+        'repository': 'BoneManTGRM/NICO',
+        'status': 'complete',
+        'tools_requested': ['bandit'],
+        'tools_run': ['bandit'],
+        'unavailable_tools': [],
+        'failed_tools': [],
+        'timed_out_tools': [],
+        'scanner_results': [{'scanner': 'bandit', 'status': 'passed'}],
+        'evidence_summary': {'mode': 'controlled_scanner_worker', 'tools_run': 1},
+        'unavailable_data_notes': [],
+        'secret_redaction_applied': False,
+        'retention_note': 'Temporary scan workspace was deleted after completion.',
+        'human_review_required': True,
+    })
+
+    c=TestClient(app)
+    response = c.post(f'/assessment/full-run/{run_id}/status', json={})
+    assert response.status_code == 200
+    data = response.json()
+    by_step = {item['step']: item for item in data['progress']}
+
+    assert data['status'] == 'complete'
+    assert data['auto_continuation']['enabled'] is True
+    assert data['auto_continuation']['continued'] is True
+    assert data['auto_continuation']['scanner_status'] == 'complete'
+    assert by_step['evidence_attachment']['status'] == 'complete'
+    assert by_step['scoring']['status'] == 'complete'
+    assert by_step['reports']['status'] == 'complete'
+    assert by_step['approval_request']['status'] == 'complete'
+    assert data['reports']['report_id'].startswith('report_')
+    assert data['approval']['approval_id'].startswith('approval_')
+    assert data['human_review_required'] is True
+    assert data['client_ready'] is False
