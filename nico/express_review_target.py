@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlencode
 
+EXPRESS_REPORT_PATH = "express"
+
 
 def express_run_id(result: dict[str, Any]) -> str:
     explicit = str(result.get("run_id") or result.get("assessment_id") or "").strip()
@@ -32,6 +34,13 @@ def _refresh_requested(request_payload: dict[str, Any]) -> bool:
     )
 
 
+def _attach_express_report_path(result: dict[str, Any]) -> None:
+    result["report_path"] = EXPRESS_REPORT_PATH
+    reports = result.get("reports")
+    if isinstance(reports, dict):
+        reports["report_path"] = EXPRESS_REPORT_PATH
+
+
 def attach_express_review_target(result: dict[str, Any], request_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     request_payload = request_payload or {}
     customer_id = str(request_payload.get("customer_id") or result.get("customer_id") or "default_customer")
@@ -42,6 +51,7 @@ def attach_express_review_target(result: dict[str, Any], request_payload: dict[s
     result["project_id"] = project_id
     result["run_id"] = run_id
     result["authorized_by"] = str(request_payload.get("authorized_by") or result.get("authorized_by") or "unspecified")
+    _attach_express_report_path(result)
     if _refresh_requested(request_payload):
         result["refresh_full_evidence_requested"] = True
     result["final_review"] = {
