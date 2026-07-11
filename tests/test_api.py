@@ -33,6 +33,8 @@ def test_full_assessment_endpoint_returns_planned_progress_shape():
     assert response.status_code == 200
     data = response.json()
     assert data['status'] == 'planned'
+    assert data['report_path'] == 'full_run'
+    assert data['reports']['report_path'] == 'full_run'
     assert data['repository'] == 'BoneManTGRM/NICO'
     assert data['customer_id'] == 'cust-a'
     assert data['project_id'] == 'proj-a'
@@ -58,6 +60,8 @@ def test_full_assessment_status_refresh_does_not_request_final_review():
     assert response.status_code == 200
     data = response.json()
     assert data['status_refresh'] is True
+    assert data['report_path'] == 'full_run'
+    assert data['reports']['report_path'] == 'full_run'
     assert data['run_id'] == 'fullrun_ui'
     assert data['repository'] == 'BoneManTGRM/NICO'
     assert data['approval']['status'] == 'not_requested'

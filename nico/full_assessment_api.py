@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from nico.full_assessment_orchestrator import default_full_assessment_handlers, run_full_assessment_orchestration
 
+FULL_RUN_REPORT_PATH = "full_run"
+
 
 class FullAssessmentRequest(BaseModel):
     target: str = ""
@@ -49,6 +51,19 @@ def _model_payload(req: BaseModel) -> dict[str, Any]:
     return req.dict()
 
 
+def _with_report_path(result: dict[str, Any]) -> dict[str, Any]:
+    """Mark this response as the full-run path so it cannot be confused with Express output."""
+
+    result["report_path"] = FULL_RUN_REPORT_PATH
+    reports = result.get("reports")
+    if isinstance(reports, dict):
+        reports["report_path"] = FULL_RUN_REPORT_PATH
+    assessment = result.get("assessment")
+    if isinstance(assessment, dict):
+        assessment["report_path"] = FULL_RUN_REPORT_PATH
+    return result
+
+
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     result = run_full_assessment_orchestration(_model_payload(req), handlers=default_full_assessment_handlers())
     if result.get("status") == "blocked":
@@ -61,7 +76,7 @@ def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
                 "progress": result.get("progress", []),
             },
         )
-    return result
+    return _with_report_path(result)
 
 
 def full_assessment_status_response(run_id: str, req: FullAssessmentStatusRequest) -> dict[str, Any]:
@@ -82,7 +97,7 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
             },
         )
     result["status_refresh"] = True
-    return result
+    return _with_report_path(result)
 
 
 def register_full_assessment_routes(app: FastAPI) -> None:
