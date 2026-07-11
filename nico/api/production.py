@@ -6,6 +6,7 @@ from nico.api.hosted import app
 from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
 from nico.mid_delivery_api import register_mid_delivery_routes
+from nico.mid_legacy_migration import LEGACY_MID_PATH, register_legacy_mid_migration
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_review_api import register_mid_review_routes
@@ -28,6 +29,7 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run/delivery/access/{access_id}/revoke"),
     ("POST", "/assessment/mid-run/delivery/inspect"),
     ("POST", "/assessment/mid-run/delivery/redeem"),
+    ("POST", LEGACY_MID_PATH),
 }
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -69,6 +71,16 @@ def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
     return pairs
 
 
+def _route_count(target: FastAPI, method: str, path: str) -> int:
+    expected_method = method.upper()
+    count = 0
+    for route in target.routes:
+        methods = {str(item).upper() for item in (getattr(route, "methods", set()) or set())}
+        if str(getattr(route, "path", "")) == path and expected_method in methods:
+            count += 1
+    return count
+
+
 def _validate_group(existing: set[tuple[str, str]], required: set[tuple[str, str]], label: str) -> bool:
     present = existing & required
     if present and present != required:
@@ -102,6 +114,14 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     if not delivery_present:
         register_mid_delivery_routes(target)
         target.openapi_schema = None
+
+    # The application imported above still contains the former manual-notes
+    # POST /assessment/mid handler. Replace it after all route groups are loaded
+    # so production exposes exactly one guarded migration boundary.
+    register_legacy_mid_migration(target)
+    if _route_count(target, "POST", LEGACY_MID_PATH) != 1:
+        raise RuntimeError("Legacy Mid migration route registration must produce exactly one POST /assessment/mid handler")
+
     missing = REQUIRED_MID_ASSESSMENT_ROUTES - _route_pairs(target)
     if missing:
         raise RuntimeError(f"Unified Mid route registration incomplete; missing={sorted(missing)}")
