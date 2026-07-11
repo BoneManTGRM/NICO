@@ -61,10 +61,13 @@ def _repository_evidence_handler(
     }
 
 
-def _scanner_id(outputs: dict[str, Any]) -> str:
+def _scanner_evidence(outputs: dict[str, Any]) -> dict[str, Any]:
     attachment = outputs.get("evidence_attachment") if isinstance(outputs.get("evidence_attachment"), dict) else {}
-    scanner_evidence = attachment.get("scanner_evidence") if isinstance(attachment.get("scanner_evidence"), dict) else attachment.get("evidence") or {}
-    return str(scanner_evidence.get("scan_id") or "")
+    return attachment.get("scanner_evidence") if isinstance(attachment.get("scanner_evidence"), dict) else {}
+
+
+def _scanner_id(outputs: dict[str, Any]) -> str:
+    return str(_scanner_evidence(outputs).get("scan_id") or "")
 
 
 def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
@@ -80,31 +83,30 @@ def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[s
             "evidence": {"run_id": context["run_id"], "assessment_status": scoring.get("status") or "not_available"},
         }
 
+    from nico.full_assessment_trust_pipeline import (
+        finalize_full_assessment_exports,
+        prepare_full_assessment_trust,
+    )
     from nico.reports import build_report_package
 
     scan_id = _scanner_id(outputs)
+    trusted_assessment = prepare_full_assessment_trust(assessment, _scanner_evidence(outputs))
     identity = full_run_report_identity(context["run_id"], scan_id)
     package = build_report_package(
-        assessment,
+        trusted_assessment,
         report_id=identity["report_id"],
         idempotency_key=identity["idempotency_key"],
     )
-    formats = package.get("formats") if isinstance(package.get("formats"), dict) else {}
+    package["scan_id"] = scan_id
+    finalized = finalize_full_assessment_exports(trusted_assessment, package)
+    scoring["assessment"] = finalized["assessment"]
+    package = finalized["package"]
+    reports = finalized["reports"]
     reused = bool(package.get("idempotent_reuse"))
-    reports = {
-        "markdown": formats.get("markdown") or "",
-        "html": formats.get("html") or "",
-        "pdf_base64": "",
-        "pdf_filename": "nico-assessment.pdf",
-        "pdf_error": "PDF export is not produced by this report package path; Markdown, HTML, and JSON were generated.",
-        "report_id": package.get("report_id") or "",
-        "idempotency_key": package.get("idempotency_key") or identity["idempotency_key"],
-        "idempotent_reuse": reused,
-        "scan_id": scan_id,
-    }
+    gate = reports.get("export_truth_gate") if isinstance(reports.get("export_truth_gate"), dict) else {}
     return {
         "status": "complete",
-        "message": "Existing same-run report package was reused; no duplicate report was created." if reused else "Draft report package was generated from the evidence-bound assessment.",
+        "message": "Existing same-run report package was reused and revalidated by trust gates." if reused else "Draft report package was generated and validated by the evidence ledger, strict trust engine, and Export Truth Gate.",
         "report_package": package,
         "reports": reports,
         "evidence": {
@@ -113,7 +115,11 @@ def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[s
             "report_id": package.get("report_id"),
             "idempotency_key": package.get("idempotency_key") or identity["idempotency_key"],
             "idempotent_reuse": reused,
-            "available_formats": [key for key, value in formats.items() if value is not None],
+            "available_formats": [key for key, value in (package.get("formats") or {}).items() if value is not None],
+            "trust_level": reports.get("trust_level") or "Review-limited",
+            "evidence_ledger_status": reports.get("evidence_ledger_status") or "missing",
+            "export_truth_gate_status": gate.get("status") or "pending",
+            "client_delivery_allowed": False,
         },
     }
 
@@ -149,6 +155,7 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
             "evidence": [
                 f"Full-run report package generated for run_id={context['run_id']}.",
                 f"Report package id={report_id}.",
+                "Evidence ledger, strict trust engine, and Export Truth Gate were applied before review request creation.",
                 "Client delivery remains blocked until a human reviewer approves the final report.",
             ],
         }
@@ -165,7 +172,7 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
     reused = bool(review.get("idempotent_reuse") or approval.get("idempotent_reuse"))
     return {
         "status": "complete",
-        "message": "Existing same-report final-review request was reused; no duplicate approval was created." if reused else "Final human-review approval request was created for the generated report package.",
+        "message": "Existing same-report final-review request was reused; no duplicate approval was created." if reused else "Final human-review approval request was created for the trust-gated report package.",
         "approval": {
             "approval_id": approval.get("approval_id") or identity["approval_id"],
             "status": approval.get("status") or review.get("status") or "pending_review",

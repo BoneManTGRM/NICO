@@ -87,6 +87,32 @@ def _attach_repository_evidence(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _attach_assessment_truth_summary(result: dict[str, Any]) -> dict[str, Any]:
+    assessment = result.get("assessment") if isinstance(result.get("assessment"), dict) else {}
+    ledger = assessment.get("evidence_ledger") if isinstance(assessment.get("evidence_ledger"), dict) else {}
+    display = assessment.get("trust_report_display") if isinstance(assessment.get("trust_report_display"), dict) else {}
+    gate = assessment.get("export_truth_gate") if isinstance(assessment.get("export_truth_gate"), dict) else {}
+    if not ledger and not display and not gate:
+        return result
+
+    result["trust_level"] = assessment.get("trust_level") or display.get("trust_level") or "Review-limited"
+    result["client_delivery_status"] = assessment.get("client_delivery_status") or display.get("client_delivery_status") or "Human Review Required"
+    result["evidence_ledger"] = ledger
+    result["trust_report_display"] = display
+    result["export_truth_gate"] = gate
+    result["delivery_verdict"] = "human_review_required"
+    result["human_review_required"] = True
+    result["client_ready"] = False
+    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
+    if reports:
+        reports.setdefault("trust_level", result["trust_level"])
+        reports.setdefault("client_delivery_allowed", False)
+        reports.setdefault("human_review_required", True)
+        reports.setdefault("evidence_ledger_status", str(ledger.get("status") or "missing"))
+        reports.setdefault("export_truth_gate", gate)
+    return result
+
+
 def _record_result(result: dict[str, Any], payload: dict[str, Any], *, restored: bool) -> dict[str, Any]:
     metadata = persistence_metadata(restored=restored)
     result["persistence"] = metadata
@@ -127,6 +153,7 @@ def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
     result = run_full_assessment_orchestration(payload, handlers=handlers)
     result = _attach_repository_evidence(result)
+    result = _attach_assessment_truth_summary(result)
     result = _with_report_path(result)
     result = _record_result(result, payload, restored=False)
     if result.get("status") == "blocked":
@@ -158,6 +185,7 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
     result = apply_full_assessment_continuation(result, plan)
     result["status_refresh"] = True
     result = _attach_repository_evidence(result)
+    result = _attach_assessment_truth_summary(result)
     result = _with_report_path(result)
     result = _record_result(result, continuation_payload, restored=bool(record))
     if result.get("status") == "blocked":
