@@ -22,6 +22,18 @@ type DeliveryMetadata = {
   pdf_sha256?: string;
 };
 
+type DeliveryReceipt = {
+  receipt_id: string;
+  receipt_sha256: string;
+  receipt_version: string;
+  delivered_at: string;
+  download_number: number;
+  persistence: string;
+  pdf_sha256: string;
+  access_id: string;
+  recipient_label: string;
+};
+
 type InspectResponse = {
   status?: string;
   available?: boolean;
@@ -41,9 +53,22 @@ function savePdf(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+function saveReceipt(receipt: DeliveryReceipt) {
+  const blob = new Blob([JSON.stringify(receipt, null, 2)], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `nico-delivery-receipt-${receipt.receipt_id}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export default function ApprovedDeliveryPage() {
   const [token, setToken] = useState("");
   const [metadata, setMetadata] = useState<InspectResponse | null>(null);
+  const [receipt, setReceipt] = useState<DeliveryReceipt | null>(null);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("Validating the approved-delivery link...");
   const [downloading, setDownloading] = useState(false);
@@ -93,7 +118,7 @@ export default function ApprovedDeliveryPage() {
   async function download() {
     if (!token || downloading || status !== "available") return;
     setDownloading(true);
-    setMessage("Re-verifying the artifact and authorizing this download...");
+    setMessage("Re-verifying the artifact, recording the delivery receipt, and authorizing this download...");
     try {
       const response = await fetch(`${API_URL}/delivery/approved/redeem`, {
         method: "POST",
@@ -112,12 +137,29 @@ export default function ApprovedDeliveryPage() {
         }
         throw new Error(errorMessage);
       }
+
+      const issuedReceipt: DeliveryReceipt = {
+        receipt_id: response.headers.get("X-NICO-Receipt-ID") || "",
+        receipt_sha256: response.headers.get("X-NICO-Receipt-SHA256") || "",
+        receipt_version: response.headers.get("X-NICO-Receipt-Version") || "",
+        delivered_at: response.headers.get("X-NICO-Delivered-At") || "",
+        download_number: Number(response.headers.get("X-NICO-Download-Number") || 0),
+        persistence: response.headers.get("X-NICO-Receipt-Persistence") || "unknown",
+        pdf_sha256: response.headers.get("X-NICO-PDF-SHA256") || metadata?.delivery?.pdf_sha256 || "",
+        access_id: metadata?.access?.access_id || "",
+        recipient_label: metadata?.access?.recipient_label || "",
+      };
+      if (!issuedReceipt.receipt_id || !issuedReceipt.receipt_sha256 || !issuedReceipt.delivered_at || issuedReceipt.download_number < 1) {
+        throw new Error("The PDF response did not include a complete verified delivery receipt.");
+      }
+
       const blob = await response.blob();
       if (blob.type !== "application/pdf") throw new Error("The approved PDF response failed content validation.");
       savePdf(blob, metadata?.delivery?.pdf_filename || "nico-full-assessment-approved.pdf");
+      setReceipt(issuedReceipt);
       const remaining = Math.max(0, Number(metadata?.access?.downloads_remaining || 1) - 1);
       setMetadata((current) => current ? {...current, access: {...current.access, downloads_remaining: remaining, download_count: Number(current.access?.download_count || 0) + 1}} : current);
-      setMessage(remaining > 0 ? `Download authorized. ${remaining} permitted download(s) remain.` : "Download authorized. This link has reached its permitted download limit.");
+      setMessage(remaining > 0 ? `Download authorized and receipt recorded. ${remaining} permitted download(s) remain.` : "Download authorized and receipt recorded. This link has reached its permitted download limit.");
       if (remaining === 0) setStatus("exhausted");
     } catch (error) {
       setStatus("blocked");
@@ -133,15 +175,15 @@ export default function ApprovedDeliveryPage() {
     <section className="hero">
       <p className="eyebrow">NICO Secure Delivery</p>
       <h1>Approved Full Assessment</h1>
-      <p className="lead">This page validates the access grant and re-verifies the exact human-approved PDF before every download.</p>
+      <p className="lead">This page validates the access grant, re-verifies the exact human-approved PDF, and records a hash-bound receipt before every download.</p>
     </section>
 
     <section className="section panel">
       <div className="section-head">
         <div><p className="eyebrow">Delivery status</p><h2>{metadata?.delivery?.pdf_filename || "Approved artifact"}</h2></div>
-        <span className={available ? "status green" : status === "loading" ? "status yellow" : "status red"}>{status}</span>
+        <span className={available || receipt ? "status green" : status === "loading" ? "status yellow" : "status red"}>{receipt ? "delivered" : status}</span>
       </div>
-      <p className={available ? "warning-box" : "error-box"}>{message}</p>
+      <p className={available || receipt ? "warning-box" : "error-box"}>{message}</p>
 
       {metadata?.delivery ? <>
         <div className="grid four target-grid">
@@ -157,7 +199,23 @@ export default function ApprovedDeliveryPage() {
       <div className="report-actions">
         <button type="button" className="primary-button" disabled={!available || downloading} onClick={download}>{downloading ? "Authorizing..." : "Download verified approved PDF"}</button>
       </div>
-      <p className="muted">The access token was removed from the browser address after validation. It is not displayed on this page.</p>
+      <p className="muted">The access token was removed from the browser address after validation. It is not displayed on this page or included in the delivery receipt.</p>
     </section>
+
+    {receipt ? <section className="section panel">
+      <div className="section-head">
+        <div><p className="eyebrow">Delivery receipt</p><h2>{receipt.receipt_id}</h2></div>
+        <span className="status green">recorded</span>
+      </div>
+      <p className="warning-box">This receipt binds the completed download to the exact approved PDF hash, access grant, recipient label, and delivery time. It contains no raw access token.</p>
+      <div className="grid four target-grid">
+        <article><b>Delivered at</b><span>{receipt.delivered_at}</span></article>
+        <article><b>Download number</b><span>{receipt.download_number}</span></article>
+        <article><b>Receipt storage</b><span>{receipt.persistence}</span></article>
+        <article><b>Receipt version</b><span>{receipt.receipt_version}</span></article>
+      </div>
+      <details className="help-details"><summary>Receipt integrity</summary><pre className="json-block">{JSON.stringify(receipt, null, 2)}</pre></details>
+      <div className="report-actions"><button type="button" onClick={() => saveReceipt(receipt)}>Download receipt JSON</button></div>
+    </section> : null}
   </main>;
 }
