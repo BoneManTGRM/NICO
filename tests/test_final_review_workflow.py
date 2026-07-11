@@ -60,9 +60,27 @@ def test_final_review_transition_allows_approved_for_final_review(monkeypatch):
         "project_id": "default_project",
         "requested_action": review.FINAL_REVIEW_ACTION,
         "status": "pending",
+        "run_id": "fullrun_review_1",
+        "report_id": "report_review_1",
     }
+    saved = {}
+
     monkeypatch.setattr(review.STORE, "get", lambda table, item_id: item)
+    monkeypatch.setattr(review.STORE, "put", lambda table, item_id, payload: saved.update({"item": dict(payload)}) or payload)
     monkeypatch.setattr(review.STORE, "audit", lambda *args, **kwargs: {"status": "ok"})
+    monkeypatch.setattr(review, "list_approvals", lambda customer_id=None, project_id=None: [saved.get("item", item)])
+    monkeypatch.setattr(
+        review,
+        "final_review_validation",
+        lambda approval: {
+            "status": "ready_for_human_decision",
+            "ready_for_approval": True,
+            "run_id": approval.get("run_id"),
+            "report_id": approval.get("report_id"),
+            "checks": [],
+            "blockers": [],
+        },
+    )
     monkeypatch.setattr(review, "transition_approval", lambda approval_id, state, actor="human_reviewer", note="": {**item, "status": state, "approver": actor})
 
     result = review.transition_final_review("approval_review_1", "approved", actor="cody", note="accepted")
@@ -70,6 +88,7 @@ def test_final_review_transition_allows_approved_for_final_review(monkeypatch):
     assert result["status"] == "ok"
     assert result["approval"]["status"] == "approved"
     assert result["approval"]["approver"] == "cody"
+    assert result["approval"]["review_validation"]["ready_for_approval"] is True
 
 
 def test_final_review_transition_blocks_non_final_review_approval(monkeypatch):
