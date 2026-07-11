@@ -9,7 +9,8 @@ EXPRESS_MARKDOWN_BANNER = "> Report path: Express Assessment (`express`). This i
 EXPRESS_HTML_BANNER = (
     '<aside data-nico-report-path="express" style="margin:12px 0;padding:12px;border:1px solid #38bdf8;'
     'border-radius:10px;background:#e0f2fe;color:#0c4a6e;font-weight:700">'
-    'Report path: Express Assessment (<code>express</code>). This is not Full Assessment output.'</n    '</aside>'
+    'Report path: Express Assessment (<code>express</code>). This is not Full Assessment output.'
+    '</aside>'
 )
 
 
