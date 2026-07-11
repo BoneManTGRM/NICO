@@ -10,19 +10,24 @@ from nico.storage import STORE
 from nico.trust_engine import apply_strict_trust_engine
 from nico.trust_report_display import attach_trust_report_display
 
-TOOL_CATEGORIES = {
-    "pip-audit": "dependency",
-    "npm-audit": "dependency",
-    "osv-scanner": "dependency",
-    "bandit": "static",
-    "semgrep": "static",
-    "eslint": "static",
-    "typescript": "static",
-    "gitleaks": "secret",
-    "trufflehog": "secret",
-    "detect-secrets": "secret",
-    "complexity engine": "complexity",
+TOOL_SECTIONS = {
+    "pip-audit": "dependency_health",
+    "npm-audit": "dependency_health",
+    "osv-scanner": "dependency_health",
+    "bandit": "static_analysis",
+    "semgrep": "static_analysis",
+    "eslint": "static_analysis",
+    "typescript": "static_analysis",
+    "gitleaks": "secrets_review",
+    "trufflehog": "secrets_review",
+    "detect-secrets": "secrets_review",
+    "complexity engine": "velocity_complexity",
 }
+
+ZERO_EXCEPTION_MARKERS = (
+    "unavailable/failed/timed out: 0/0/0",
+    "unavailable/failed/timed_out: 0/0/0",
+)
 
 
 def _list(value: Any) -> list[Any]:
@@ -33,47 +38,63 @@ def _tool_set(scanner: dict[str, Any], key: str) -> set[str]:
     return {str(item).strip().lower() for item in _list(scanner.get(key)) if str(item).strip()}
 
 
-def _scanner_worker_artifact(assessment: dict[str, Any], scanner: dict[str, Any]) -> dict[str, Any]:
-    requested = _tool_set(scanner, "tools_requested")
+def _section_map(assessment: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(item.get("id")): item
+        for item in _list(assessment.get("sections"))
+        if isinstance(item, dict) and item.get("id")
+    }
+
+
+def _append_unique(section: dict[str, Any], field: str, line: str) -> None:
+    values = section.setdefault(field, [])
+    if not isinstance(values, list):
+        values = [values]
+        section[field] = values
+    if line not in values:
+        values.append(line)
+
+
+def _normalize_zero_exception_lines(assessment: dict[str, Any]) -> None:
+    for section in _section_map(assessment).values():
+        evidence = section.get("evidence") if isinstance(section.get("evidence"), list) else []
+        normalized: list[Any] = []
+        for line in evidence:
+            text = str(line)
+            if any(marker in text.lower() for marker in ZERO_EXCEPTION_MARKERS):
+                normalized.append("No scanner execution exceptions were recorded for this section.")
+            else:
+                normalized.append(line)
+        section["evidence"] = normalized
+        section["verified_claims"] = list(normalized)
+
+
+def _attach_scanner_coverage_lines(assessment: dict[str, Any], scanner: dict[str, Any]) -> None:
+    sections = _section_map(assessment)
     completed = _tool_set(scanner, "tools_run")
     unavailable = _tool_set(scanner, "unavailable_tools")
     failed = _tool_set(scanner, "failed_tools")
     timed_out = _tool_set(scanner, "timed_out_tools")
-    names = sorted(requested | completed | unavailable | failed | timed_out)
-    tools: dict[str, Any] = {}
 
-    for name in names:
-        if name in completed:
-            status = "completed"
-            verified = True
-        elif name in unavailable:
-            status = "unavailable"
-            verified = False
-        elif name in failed or name in timed_out:
-            status = "failed"
-            verified = False
-        else:
-            status = "not_verified"
-            verified = False
-        tools[name] = {
-            "tool": name,
-            "category": TOOL_CATEGORIES.get(name, "other"),
-            "evidence_status": status,
-            "verified_for_this_report": verified,
-            "findings_count": None,
-            "findings_count_status": "unknown_from_summary",
-            "repository": assessment.get("repository") or "",
-            "report_run_id": assessment.get("run_id") or "",
-        }
+    for tool in sorted(completed | unavailable | failed | timed_out):
+        section = sections.get(TOOL_SECTIONS.get(tool, ""))
+        if not section:
+            continue
+        if tool in completed:
+            _append_unique(
+                section,
+                "evidence",
+                f"{tool} scanner execution completed for this exact report run; this coverage line does not claim a clean finding result.",
+            )
+        elif tool in unavailable:
+            _append_unique(section, "unavailable", f"{tool} scanner execution was unavailable for this exact report run.")
+        elif tool in failed:
+            _append_unique(section, "unavailable", f"{tool} scanner execution failed for this exact report run.")
+        elif tool in timed_out:
+            _append_unique(section, "unavailable", f"{tool} scanner execution timed out for this exact report run.")
 
-    return {
-        "report_run_id": assessment.get("run_id") or "",
-        "repository": assessment.get("repository") or "",
-        "generated_at": assessment.get("generated_at") or "",
-        "tools": tools,
-        "source": "full_assessment_scanner_summary",
-        "guardrail": "Completed tool execution is attached as run-bound coverage. Finding counts remain unknown unless parsed evidence supplies them.",
-    }
+        section["verified_claims"] = list(section.get("evidence") or [])
+        section["unverified_claims"] = list(section.get("unavailable") or [])
 
 
 def prepare_full_assessment_trust(
@@ -85,7 +106,8 @@ def prepare_full_assessment_trust(
     prepared = deepcopy(assessment)
     prepared["status"] = "complete"
     prepared["report_run_id"] = prepared.get("run_id") or ""
-    prepared["scanner_worker_artifact"] = _scanner_worker_artifact(prepared, scanner_evidence)
+    _normalize_zero_exception_lines(prepared)
+    _attach_scanner_coverage_lines(prepared, scanner_evidence)
     prepared = attach_evidence_ledger(prepared)
     prepared = apply_strict_trust_engine(prepared)
     prepared["human_review_required"] = True
@@ -194,8 +216,4 @@ def finalize_full_assessment_exports(
         "evidence_ledger_status": str((candidate.get("evidence_ledger") or {}).get("status") or "missing"),
         "export_truth_gate": candidate.get("export_truth_gate") or {},
     }
-    return {
-        "assessment": candidate,
-        "package": guarded_package,
-        "reports": reports,
-    }
+    return {"assessment": candidate, "package": guarded_package, "reports": reports}
