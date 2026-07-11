@@ -5,6 +5,11 @@ from typing import Any
 
 from nico.evidence_ledger import attach_evidence_ledger
 from nico.export_truth_gate import apply_export_truth_gate
+from nico.full_assessment_pdf import (
+    FULL_ASSESSMENT_PDF_STYLE_VERSION,
+    build_full_assessment_pdf_base64,
+    full_assessment_pdf_filename,
+)
 from nico.reports import html_report, markdown_report
 from nico.storage import STORE
 from nico.trust_engine import apply_strict_trust_engine
@@ -174,6 +179,9 @@ def _report_payload(package: dict[str, Any]) -> dict[str, Any]:
         "markdown": formats.get("markdown") or "",
         "html": formats.get("html") or "",
         "pdf_base64": formats.get("pdf") or "",
+        "pdf_filename": package.get("pdf_filename") or "",
+        "pdf_style": package.get("pdf_style") or "",
+        "pdf_error": package.get("pdf_error") or "",
     }
 
 
@@ -184,15 +192,32 @@ def _render_candidate(candidate: dict[str, Any]) -> None:
     candidate["reports"]["html"] = html_report(markdown)
 
 
+def _render_pdf_candidate(candidate: dict[str, Any], *, report_id: str) -> None:
+    reports = candidate.setdefault("reports", {})
+    pdf, error = build_full_assessment_pdf_base64(candidate, report_id=report_id)
+    if pdf:
+        reports["pdf_base64"] = pdf
+        reports["pdf_filename"] = full_assessment_pdf_filename(candidate)
+        reports["pdf_style"] = FULL_ASSESSMENT_PDF_STYLE_VERSION
+        reports["pdf_error"] = ""
+    else:
+        reports["pdf_base64"] = ""
+        reports["pdf_filename"] = full_assessment_pdf_filename(candidate)
+        reports["pdf_style"] = FULL_ASSESSMENT_PDF_STYLE_VERSION
+        reports["pdf_error"] = error or "Full Assessment PDF export was unavailable for this report run."
+
+
 def finalize_full_assessment_exports(
     assessment: dict[str, Any],
     package: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate rendered exports, refresh trust display, and persist the guarded package."""
+    """Validate rendered exports, generate a review PDF, and persist the guarded package."""
 
     candidate = deepcopy(assessment)
     candidate["status"] = "complete"
     candidate["reports"] = _report_payload(package)
+    report_id = str(package.get("report_id") or "")
+    candidate["report_id"] = report_id
     _normalize_full_assessment_identity(candidate)
 
     candidate = apply_export_truth_gate(candidate)
@@ -209,6 +234,8 @@ def finalize_full_assessment_exports(
         _render_candidate(candidate)
         candidate = apply_export_truth_gate(candidate)
 
+    _render_pdf_candidate(candidate, report_id=report_id)
+    candidate = apply_export_truth_gate(candidate)
     candidate["human_review_required"] = True
     candidate["client_ready"] = False
     candidate["delivery_verdict"] = "human_review_required"
@@ -219,6 +246,10 @@ def finalize_full_assessment_exports(
     guarded_package["formats"]["markdown"] = candidate.get("reports", {}).get("markdown") or ""
     guarded_package["formats"]["html"] = candidate.get("reports", {}).get("html") or ""
     guarded_package["formats"]["json"] = candidate
+    guarded_package["formats"]["pdf"] = candidate.get("reports", {}).get("pdf_base64") or None
+    guarded_package["pdf_filename"] = candidate.get("reports", {}).get("pdf_filename") or full_assessment_pdf_filename(candidate)
+    guarded_package["pdf_style"] = candidate.get("reports", {}).get("pdf_style") or FULL_ASSESSMENT_PDF_STYLE_VERSION
+    guarded_package["pdf_error"] = candidate.get("reports", {}).get("pdf_error") or ""
     guarded_package["trust_level"] = candidate.get("trust_level") or "Review-limited"
     guarded_package["trust_report_display"] = candidate.get("trust_report_display") or {}
     guarded_package["evidence_ledger"] = candidate.get("evidence_ledger") or {}
@@ -227,7 +258,6 @@ def finalize_full_assessment_exports(
     guarded_package["human_review_required"] = True
     guarded_package["draft_only"] = bool((candidate.get("export_truth_gate") or {}).get("draft_only"))
 
-    report_id = str(guarded_package.get("report_id") or "")
     if report_id:
         STORE.put("reports", report_id, guarded_package)
         STORE.audit(
@@ -237,6 +267,8 @@ def finalize_full_assessment_exports(
                 "run_id": guarded_package.get("run_id") or candidate.get("run_id") or "",
                 "trust_level": guarded_package.get("trust_level"),
                 "export_truth_gate_status": guarded_package.get("export_truth_gate", {}).get("status"),
+                "pdf_generated": bool(guarded_package.get("formats", {}).get("pdf")),
+                "pdf_style": guarded_package.get("pdf_style"),
             },
             customer_id=guarded_package.get("customer_id") or "default_customer",
             project_id=guarded_package.get("project_id") or "default_project",
@@ -246,9 +278,10 @@ def finalize_full_assessment_exports(
     reports = {
         "markdown": formats.get("markdown") or "",
         "html": formats.get("html") or "",
-        "pdf_base64": "",
-        "pdf_filename": "nico-assessment.pdf",
-        "pdf_error": "PDF export is not produced by this report package path; Markdown, HTML, and JSON were generated.",
+        "pdf_base64": formats.get("pdf") or "",
+        "pdf_filename": guarded_package.get("pdf_filename") or full_assessment_pdf_filename(candidate),
+        "pdf_style": guarded_package.get("pdf_style") or FULL_ASSESSMENT_PDF_STYLE_VERSION,
+        "pdf_error": guarded_package.get("pdf_error") or "",
         "report_id": report_id,
         "idempotency_key": guarded_package.get("idempotency_key") or "",
         "idempotent_reuse": bool(guarded_package.get("idempotent_reuse")),
