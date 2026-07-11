@@ -366,7 +366,7 @@ def test_one_mid_run_remains_identity_bound_from_snapshot_through_acknowledged_d
 
     audits = STORE.list("audit_log")
     lifecycle_actions = {
-        "mid.review_packet_built",
+        "mid.review_packet_generated",
         "mid.draft_report_generated",
         "mid.approval_requested",
         "mid.approval_decided",
