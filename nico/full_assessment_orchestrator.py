@@ -16,6 +16,15 @@ FULL_ASSESSMENT_STEPS = [
     "approval_request",
 ]
 
+DEFAULT_FULL_RUN_TOOLS = [
+    "pip-audit",
+    "npm-audit",
+    "osv-scanner",
+    "bandit",
+    "semgrep",
+    "eslint",
+]
+
 StepHandler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None]
 
 
@@ -55,7 +64,13 @@ def _base_context(payload: dict[str, Any]) -> dict[str, Any]:
         "client_name": str(payload.get("client_name") or ""),
         "project_name": str(payload.get("project_name") or ""),
         "authorized_by": str(payload.get("authorized_by") or "unspecified"),
+        "authorization_scope": str(payload.get("authorization_scope") or "repository assessment only"),
         "mode": str(payload.get("mode") or "express"),
+        "run_scanners": bool(payload.get("run_scanners", True)),
+        "refresh_full_evidence": bool(payload.get("refresh_full_evidence", True)),
+        "build_reports": bool(payload.get("build_reports", True)),
+        "create_final_review_request": bool(payload.get("create_final_review_request", True)),
+        "tools": payload.get("tools") if isinstance(payload.get("tools"), list) else DEFAULT_FULL_RUN_TOOLS,
         "created_at": utc_now(),
     }
 
@@ -87,13 +102,89 @@ def _empty_response(context: dict[str, Any], status: str) -> dict[str, Any]:
     }
 
 
+def _repo_evidence_handler(context: dict[str, Any], _outputs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "complete",
+        "message": "Repository target, customer/project scope, run_id, and authorization metadata are bound for this full-run.",
+        "evidence": {
+            "run_id": context["run_id"],
+            "repository": context["repository"],
+            "customer_id": context["customer_id"],
+            "project_id": context["project_id"],
+            "refresh_full_evidence": context["refresh_full_evidence"],
+        },
+    }
+
+
+def _scanner_worker_handler(context: dict[str, Any], _outputs: dict[str, Any]) -> dict[str, Any]:
+    if not context.get("run_scanners"):
+        return {
+            "status": "skipped",
+            "message": "Scanner worker was skipped by request; scoring must treat scanner evidence as unavailable.",
+            "evidence": {"run_id": context["run_id"], "scanner_worker": "skipped"},
+        }
+
+    from nico.scanner_worker import start_scan
+
+    scan = start_scan(
+        {
+            "repository": context["repository"],
+            "authorized": True,
+            "customer_id": context["customer_id"],
+            "project_id": context["project_id"],
+            "run_id": context["run_id"],
+            "authorized_by": context["authorized_by"],
+            "authorization_scope": context["authorization_scope"],
+            "tools": context.get("tools") or DEFAULT_FULL_RUN_TOOLS,
+        }
+    )
+    if scan.get("status") == "blocked":
+        return {"status": "blocked", "message": str(scan.get("error") or "scanner worker blocked"), "evidence": {"run_id": context["run_id"]}}
+    return {
+        "status": scan.get("status") or "queued",
+        "message": "Scanner worker was queued and bound to the full-run id.",
+        "scan": scan,
+        "evidence": {
+            "run_id": context["run_id"],
+            "scan_id": scan.get("scan_id"),
+            "tools_requested": scan.get("tools_requested", []),
+            "customer_id": scan.get("customer_id"),
+            "project_id": scan.get("project_id"),
+        },
+    }
+
+
+def _evidence_attachment_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
+    scanner = outputs.get("scanner_worker") or {}
+    scan = scanner.get("scan") if isinstance(scanner.get("scan"), dict) else {}
+    scan_id = scan.get("scan_id")
+    if not scan_id:
+        return {
+            "status": "skipped",
+            "message": "No scanner run was created, so scanner artifact attachment remains unavailable for this run.",
+            "evidence": {"run_id": context["run_id"], "scan_id": ""},
+        }
+    return {
+        "status": "pending",
+        "message": "Scanner run is bound to the same run_id; artifact parsing will attach completed scanner evidence in the next integration PR.",
+        "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scan.get("status")},
+    }
+
+
+def default_full_assessment_handlers() -> dict[str, StepHandler]:
+    return {
+        "repo_evidence": _repo_evidence_handler,
+        "scanner_worker": _scanner_worker_handler,
+        "evidence_attachment": _evidence_attachment_handler,
+    }
+
+
 def run_full_assessment_orchestration(
     payload: dict[str, Any],
     handlers: dict[str, StepHandler] | None = None,
 ) -> dict[str, Any]:
-    """Run the one-click full-assessment pipeline skeleton.
+    """Run the one-click full-assessment pipeline.
 
-    PR-1 intentionally provides the orchestration contract and safe gates only.
     Missing handlers are marked ``planned`` rather than completed so NICO never
     claims evidence was collected, scanned, scored, exported, or approved when a
     real worker has not run yet.
@@ -147,5 +238,9 @@ def run_full_assessment_orchestration(
     if "approval_request" in step_outputs:
         response["approval"].update(step_outputs["approval_request"].get("approval") or {})
 
-    response["status"] = "complete" if all(item.get("status") == "complete" for item in response["progress"]) else response["status"]
+    statuses = [item.get("status") for item in response["progress"]]
+    if all(status == "complete" for status in statuses):
+        response["status"] = "complete"
+    elif any(status in {"queued", "running", "pending"} for status in statuses):
+        response["status"] = "running"
     return response

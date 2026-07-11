@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from nico.full_assessment_orchestrator import run_full_assessment_orchestration
+from nico.full_assessment_orchestrator import default_full_assessment_handlers, run_full_assessment_orchestration
 
 
 class FullAssessmentRequest(BaseModel):
@@ -23,10 +23,11 @@ class FullAssessmentRequest(BaseModel):
     refresh_full_evidence: bool = True
     build_reports: bool = True
     create_final_review_request: bool = True
+    tools: list[str] = []
 
 
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
-    result = run_full_assessment_orchestration(req.model_dump())
+    result = run_full_assessment_orchestration(req.model_dump(), handlers=default_full_assessment_handlers())
     if result.get("status") == "blocked":
         raise HTTPException(
             status_code=400,

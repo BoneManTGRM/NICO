@@ -29,7 +29,7 @@ def test_full_assessment_requires_authorization():
 
 def test_full_assessment_endpoint_returns_planned_progress_shape():
     c=TestClient(app)
-    response = c.post('/assessment/full-run', json={'target': 'https://github.com/BoneManTGRM/NICO', 'authorization_confirmed': True, 'authorized_by': 'tester', 'customer_id': 'cust-a', 'project_id': 'proj-a'})
+    response = c.post('/assessment/full-run', json={'target': 'https://github.com/BoneManTGRM/NICO', 'authorization_confirmed': True, 'authorized_by': 'tester', 'customer_id': 'cust-a', 'project_id': 'proj-a', 'run_scanners': False})
     assert response.status_code == 200
     data = response.json()
     assert data['status'] == 'planned'
@@ -39,7 +39,14 @@ def test_full_assessment_endpoint_returns_planned_progress_shape():
     assert data['human_review_required'] is True
     assert data['client_ready'] is False
     assert [item['step'] for item in data['progress']] == ['authorization', 'repo_evidence', 'scanner_worker', 'evidence_attachment', 'scoring', 'reports', 'approval_request']
-    assert data['progress'][0]['status'] == 'complete'
-    assert all(item['status'] == 'planned' for item in data['progress'][1:])
+    by_step = {item['step']: item for item in data['progress']}
+    assert by_step['authorization']['status'] == 'complete'
+    assert by_step['repo_evidence']['status'] == 'complete'
+    assert by_step['repo_evidence']['evidence']['customer_id'] == 'cust-a'
+    assert by_step['scanner_worker']['status'] == 'skipped'
+    assert by_step['evidence_attachment']['status'] == 'skipped'
+    assert by_step['scoring']['status'] == 'planned'
+    assert by_step['reports']['status'] == 'planned'
+    assert by_step['approval_request']['status'] == 'planned'
     assert data['reports']['pdf_error'] == ''
     assert data['approval']['status'] == 'not_requested'
