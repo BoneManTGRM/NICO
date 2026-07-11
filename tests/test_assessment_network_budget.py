@@ -13,8 +13,11 @@ import nico.snapshot_repository_evidence as snapshot_evidence
 class FakeResponse:
     status_code = 200
 
+    def __init__(self, payload=None):
+        self.payload = payload if payload is not None else {"ok": True}
+
     def json(self):
-        return {"ok": True}
+        return self.payload
 
 
 class FakeClient:
@@ -114,13 +117,13 @@ def test_express_repository_profile_fetches_selected_files_with_budget_metadata(
 
     profile = budget._bounded_repository_profile(client, "owner/repo", {"default_branch": "main"})
 
-    assert set(profile["files"]) == {"README.md", "requirements.txt", "nico/a.py", "nico/b.py"}
+    assert set(profile["files"]) == {"README.md", "requirements.txt", "package.json", "nico/a.py", "nico/b.py"}
     assert profile["root_items"] == ["nico", "README.md"]
     assert profile["collection_budget"]["budget_seconds"] == budget.GITHUB_COLLECTION_BUDGET_SECONDS
     assert profile["collection_budget"]["budget_exhausted"] is False
 
 
-def test_installer_patches_hosted_and_snapshot_collectors_once():
+def test_installer_patches_hosted_and_snapshot_collectors_once(monkeypatch):
     first = budget.install_assessment_network_budget()
     second = budget.install_assessment_network_budget()
 
@@ -128,9 +131,23 @@ def test_installer_patches_hosted_and_snapshot_collectors_once():
     assert second["status"] == "already_installed"
     assert hosted.fetch_repository_profile is budget._bounded_repository_profile
     assert hosted.fetch_workflows is budget._bounded_workflows
-    assert hosted.query_osv is budget._bounded_query_osv
     assert snapshot_evidence._profile is budget._bounded_snapshot_profile
     assert getattr(hosted.GitHubAssessmentClient, "_nico_budget_installed", False) is True
+
+    observed: dict[str, float] = {}
+
+    def fake_post(_url, **kwargs):
+        observed["timeout"] = float(kwargs["timeout"])
+        return FakeResponse({"results": [{}]})
+
+    monkeypatch.setattr(budget.requests, "post", fake_post)
+    evidence, unavailable = hosted.query_osv(
+        [{"name": "example", "version": "1.0.0", "ecosystem": "PyPI", "source": "requirements.txt"}]
+    )
+
+    assert observed["timeout"] <= budget.OSV_REQUEST_TIMEOUT_SECONDS
+    assert unavailable == []
+    assert evidence
 
 
 def test_frontend_guard_bounds_both_express_and_mid_requests():
