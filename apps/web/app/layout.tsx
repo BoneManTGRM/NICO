@@ -1,5 +1,6 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
+import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
 
@@ -12,6 +13,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
   return (
     <html lang="en">
       <body>
+        <AssessmentRequestGuard />
         <nav className="global-nav" aria-label="NICO primary navigation">
           <a className="global-brand" href="/easy">NICO</a>
           <div className="global-links">
