@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
+from urllib.parse import quote
 
 from nico.hosted_assessment import GitHubAssessmentClient, _iso, _now
 from nico.storage import STORE, StorageAdapter
@@ -21,6 +22,19 @@ def repository_snapshot_id(run_id: str, repository: str) -> str:
 
 def _short(value: Any, limit: int = 180) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def _get_commit(client: Any, repository: str, ref: str) -> tuple[dict[str, Any] | None, str | None]:
+    method = getattr(client, "get_commit", None)
+    if callable(method):
+        value, error = method(repository, ref)
+        return (value if isinstance(value, dict) else None), error
+    get_json = getattr(client, "get_json", None)
+    repo_url = getattr(client, "repo_url", None)
+    if not callable(get_json) or not callable(repo_url):
+        return None, "GitHub commit lookup is unavailable."
+    value, error = get_json(repo_url(repository, f"/commits/{quote(ref, safe='')}"))
+    return (value if isinstance(value, dict) else None), error
 
 
 def capture_repository_snapshot(
@@ -70,7 +84,7 @@ def capture_repository_snapshot(
         }
 
     default_branch = str(repo_meta.get("default_branch") or "main")
-    commit, commit_error = github.get_commit(repository, default_branch)
+    commit, commit_error = _get_commit(github, repository, default_branch)
     commit_sha = str((commit or {}).get("sha") or "")
     if commit_error or not commit or not _SHA_RE.fullmatch(commit_sha):
         return {
