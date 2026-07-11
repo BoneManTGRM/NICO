@@ -35,6 +35,7 @@ class FullAssessmentRequest(BaseModel):
     authorization_confirmed: bool = False
     authorized: bool = False
     mode: str = "express"
+    timeframe_days: int = 180
     run_scanners: bool = True
     refresh_full_evidence: bool = True
     build_reports: bool = True
@@ -55,6 +56,7 @@ class FullAssessmentStatusRequest(BaseModel):
     authorization_confirmed: bool = True
     authorized: bool = True
     mode: str = "express"
+    timeframe_days: int = 180
     build_reports: bool = False
     create_final_review_request: bool = False
     auto_continue: bool = True
@@ -70,6 +72,19 @@ def _with_report_path(result: dict[str, Any]) -> dict[str, Any]:
     """Mark this response as the full-run path so it cannot be confused with Express output."""
 
     return apply_report_path_truth(result, FULL_RUN_REPORT_PATH)
+
+
+def _attach_repository_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    for item in result.get("progress") or []:
+        if not isinstance(item, dict) or item.get("step") != "repo_evidence":
+            continue
+        evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+        bundle = evidence.get("repository_evidence") if isinstance(evidence.get("repository_evidence"), dict) else {}
+        if bundle:
+            result["repository_evidence"] = bundle
+            return result
+    result.setdefault("repository_evidence", {"status": "not_attached", "run_id": result.get("run_id") or ""})
+    return result
 
 
 def _record_result(result: dict[str, Any], payload: dict[str, Any], *, restored: bool) -> dict[str, Any]:
@@ -110,6 +125,7 @@ def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
     result = run_full_assessment_orchestration(payload, handlers=idempotent_full_assessment_handlers())
+    result = _attach_repository_evidence(result)
     result = _with_report_path(result)
     result = _record_result(result, payload, restored=False)
     if result.get("status") == "blocked":
@@ -139,6 +155,7 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
     result = run_full_assessment_orchestration(continuation_payload, handlers=idempotent_full_assessment_handlers())
     result = apply_full_assessment_continuation(result, plan)
     result["status_refresh"] = True
+    result = _attach_repository_evidence(result)
     result = _with_report_path(result)
     result = _record_result(result, continuation_payload, restored=bool(record))
     if result.get("status") == "blocked":
