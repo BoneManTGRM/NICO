@@ -95,6 +95,8 @@ def request_final_review(payload: dict[str, Any]) -> dict[str, Any]:
     for item in payload.get("evidence") or []:
         evidence.append(str(item))
     approval = create_approval({
+        "approval_id": payload.get("approval_id") or "",
+        "idempotency_key": payload.get("idempotency_key") or "",
         "customer_id": customer_id,
         "project_id": project_id,
         "requested_action": FINAL_REVIEW_ACTION,
@@ -107,12 +109,21 @@ def request_final_review(payload: dict[str, Any]) -> dict[str, Any]:
         "rollback_plan": payload.get("rollback_plan") or "If not accepted, transition the final review to needs_more_evidence or rejected and rerun the report after fixes.",
         "requester": payload.get("requester") or "nico",
     })
+    reused = bool(approval.get("idempotent_reuse"))
     approval["run_id"] = run_id
     approval["report_id"] = snapshot.get("report_id") or report_id
     approval["review_snapshot"] = snapshot
     STORE.put("approvals", approval["approval_id"], approval)
-    STORE.audit("final_review.requested", {"approval_id": approval["approval_id"], "run_id": run_id}, customer_id=customer_id, project_id=project_id)
-    return {"status": "pending_review", "approval": approval, "review": final_review_status(run_id, customer_id, project_id)}
+    audit_action = "final_review.reused" if reused else "final_review.requested"
+    STORE.audit(audit_action, {"approval_id": approval["approval_id"], "run_id": run_id, "report_id": approval.get("report_id"), "idempotency_key": approval.get("idempotency_key") or ""}, customer_id=customer_id, project_id=project_id)
+    response_status = "pending_review" if approval.get("status") == "pending" else "ok"
+    return {
+        "status": response_status,
+        "approval": approval,
+        "review": final_review_status(run_id, customer_id, project_id),
+        "idempotent_reuse": reused,
+        "idempotency_key": approval.get("idempotency_key") or "",
+    }
 
 
 def transition_final_review(approval_id: str, state: str, actor: str = "human_reviewer", note: str = "") -> dict[str, Any]:
