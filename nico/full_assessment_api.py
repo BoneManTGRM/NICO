@@ -121,11 +121,18 @@ def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
 
 def full_assessment_status_response(run_id: str, req: FullAssessmentStatusRequest) -> dict[str, Any]:
     request_payload = _model_payload(req)
-    payload, record = build_status_payload(run_id, request_payload, explicit_model_fields(req))
+    explicit_fields = explicit_model_fields(req)
+    payload, record = build_status_payload(run_id, request_payload, explicit_fields)
+    saved_request = dict((record or {}).get("request") or {})
+    auto_continue = (
+        bool(request_payload.get("auto_continue"))
+        if "auto_continue" in explicit_fields
+        else bool(saved_request.get("auto_continue", True))
+    )
     plan = plan_full_assessment_continuation(
         payload,
         record,
-        auto_continue=bool(request_payload.get("auto_continue", True)),
+        auto_continue=auto_continue,
     )
     continuation_payload = plan["payload"]
     result = run_full_assessment_orchestration(continuation_payload, handlers=default_full_assessment_handlers())
