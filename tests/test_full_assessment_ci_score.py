@@ -125,7 +125,7 @@ def test_job_level_evidence_raises_only_ci_section_and_preserves_weights() -> No
     assert updated["scorecard"]["weights"] == TECHNICAL_SECTION_WEIGHTS
     assert updated["scorecard"]["technical_score"] >= baseline["scorecard"]["technical_score"]
     assert updated["scorecard"]["ci_runtime_evidence"]["jobs_observed"] == 24
-    assert any("job-level CI evidence" in line.lower() for line in updated_ci["evidence"])
+    assert any("job-level ci evidence" in line.lower() for line in updated_ci["evidence"])
     assert any("Job logs were not collected" in line for line in updated_ci["unavailable"])
 
 
