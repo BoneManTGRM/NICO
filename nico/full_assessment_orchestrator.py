@@ -266,11 +266,133 @@ def _evidence_attachment_handler(context: dict[str, Any], outputs: dict[str, Any
     }
 
 
+def _section_status(score: int) -> str:
+    if score >= 80:
+        return "green"
+    if score >= 55:
+        return "yellow"
+    if score <= 0:
+        return "gray"
+    return "red"
+
+
+def _scanner_score(scanner_evidence: dict[str, Any]) -> int:
+    if scanner_evidence.get("status") != "attached":
+        return 0
+    requested = len(scanner_evidence.get("tools_requested") or [])
+    run = len(scanner_evidence.get("tools_run") or [])
+    unavailable = len(scanner_evidence.get("unavailable_tools") or [])
+    failed = len(scanner_evidence.get("failed_tools") or [])
+    timed_out = len(scanner_evidence.get("timed_out_tools") or [])
+    if failed or timed_out:
+        return 60
+    if unavailable:
+        return 72
+    if requested and run >= requested:
+        return 90
+    if run:
+        return 75
+    return 45
+
+
+def _scoring_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
+    attachment = outputs.get("evidence_attachment") or {}
+    scanner_evidence = attachment.get("scanner_evidence") if isinstance(attachment.get("scanner_evidence"), dict) else attachment.get("evidence") or {}
+    if scanner_evidence.get("status") != "attached":
+        return {
+            "status": "planned",
+            "message": "Assessment scoring waits for completed same-run scanner evidence; no maturity score was generated from pending or unavailable scanner data.",
+            "evidence": {"run_id": context["run_id"], "scanner_evidence_status": scanner_evidence.get("status") or "not_attached"},
+        }
+
+    score = _scanner_score(scanner_evidence)
+    section = {
+        "id": "scanner_evidence",
+        "label": "Scanner Evidence Attachment",
+        "score": score,
+        "status": _section_status(score),
+        "summary": "Completed same-run scanner evidence was attached and summarized for draft assessment scoring.",
+        "evidence": [
+            f"Scanner run {scanner_evidence.get('scan_id')} completed for full-run {context['run_id']}.",
+            f"Tools requested={len(scanner_evidence.get('tools_requested') or [])}; tools run={len(scanner_evidence.get('tools_run') or [])}; unavailable={len(scanner_evidence.get('unavailable_tools') or [])}; failed={len(scanner_evidence.get('failed_tools') or [])}; timed out={len(scanner_evidence.get('timed_out_tools') or [])}.",
+            scanner_evidence.get("retention_note") or "Scanner evidence was read from the retained scanner record.",
+        ],
+        "findings": [f"Scanner failed tools: {', '.join(scanner_evidence.get('failed_tools') or [])}"] if scanner_evidence.get("failed_tools") else [],
+        "unavailable": list(scanner_evidence.get("unavailable_data_notes") or []),
+        "confidence": "scanner-record-bound",
+    }
+    assessment = {
+        "status": "draft",
+        "run_id": context["run_id"],
+        "repository": context["repository"],
+        "customer_id": context["customer_id"],
+        "project_id": context["project_id"],
+        "client_name": context["client_name"],
+        "project_name": context["project_name"],
+        "source_scope": context["repository"],
+        "authorization_statement": "Full-run assessment is valid only for the explicitly authorized repository/customer/project scope.",
+        "executive_summary": "NICO attached completed same-run scanner evidence and generated a draft evidence-bound assessment package. Final client delivery still requires human review and approval.",
+        "maturity_signal": {"level": "Evidence Attached", "score": score, "summary": "Draft score is based only on completed same-run scanner evidence attached to this full-run."},
+        "client_delivery_verdict": {"status": "human_review_required", "confidence": "limited", "blockers": ["Final client delivery requires human review and approval."], "unavailable_items": len(section.get("unavailable") or [])},
+        "sections": [section],
+        "findings": section["findings"] or ["No scanner failure findings were attached from the completed scanner record."],
+        "unavailable_data_notes": list(section.get("unavailable") or []),
+        "next_steps": [
+            "Review the attached scanner evidence and unavailable notes.",
+            "Run full repository scoring/report generation after scanner evidence and GitHub metadata are both available.",
+            "Request final human review before client delivery.",
+        ],
+        "truthfulness_rules": ["Completed evidence only", "Pending scanner records are not scored", "Client delivery requires human approval"],
+        "human_review_required": True,
+    }
+    return {
+        "status": "complete",
+        "message": "Draft assessment scoring was generated from completed same-run scanner evidence.",
+        "assessment": assessment,
+        "evidence": {"run_id": context["run_id"], "score": score, "sections": 1},
+    }
+
+
+def _reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
+    if not context.get("build_reports"):
+        return {"status": "skipped", "message": "Report generation was skipped by request.", "evidence": {"run_id": context["run_id"]}}
+    scoring = outputs.get("scoring") or {}
+    assessment = scoring.get("assessment") if isinstance(scoring.get("assessment"), dict) else {}
+    if not assessment:
+        return {
+            "status": "planned",
+            "message": "Report package waits for a draft assessment; no report was generated from missing or pending scoring evidence.",
+            "evidence": {"run_id": context["run_id"], "assessment_status": scoring.get("status") or "not_available"},
+        }
+
+    from nico.reports import build_report_package
+
+    package = build_report_package(assessment)
+    formats = package.get("formats") if isinstance(package.get("formats"), dict) else {}
+    reports = {
+        "markdown": formats.get("markdown") or "",
+        "html": formats.get("html") or "",
+        "pdf_base64": "",
+        "pdf_filename": "nico-assessment.pdf",
+        "pdf_error": "PDF export is not produced by this report package path yet; Markdown, HTML, and JSON were generated.",
+        "report_id": package.get("report_id") or "",
+    }
+    return {
+        "status": "complete",
+        "message": "Draft report package was generated from the evidence-bound assessment.",
+        "report_package": package,
+        "reports": reports,
+        "evidence": {"run_id": context["run_id"], "report_id": package.get("report_id"), "available_formats": [key for key, value in formats.items() if value is not None]},
+    }
+
+
 def default_full_assessment_handlers() -> dict[str, StepHandler]:
     return {
         "repo_evidence": _repo_evidence_handler,
         "scanner_worker": _scanner_worker_handler,
         "evidence_attachment": _evidence_attachment_handler,
+        "scoring": _scoring_handler,
+        "reports": _reports_handler,
     }
 
 
@@ -338,7 +460,7 @@ def run_full_assessment_orchestration(
         response["approval"].update(step_outputs["approval_request"].get("approval") or {})
 
     statuses = [item.get("status") for item in response["progress"]]
-    if all(status == "complete" for status in statuses):
+    if all(status in {"complete", "skipped"} for status in statuses) and any(status == "complete" for status in statuses):
         response["status"] = "complete"
     elif any(status in {"queued", "running", "pending"} for status in statuses):
         response["status"] = "running"
