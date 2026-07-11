@@ -4,6 +4,8 @@ import {useEffect, useState} from "react";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
+const ACKNOWLEDGMENT_STATEMENT = "I acknowledge that I received access to the NICO Full Assessment identified by this delivery receipt. This acknowledgment confirms receipt only; it is not technical approval, agreement with every finding, a waiver, legal acceptance, or acceptance of liability.";
+
 type AccessMetadata = {
   access_id?: string;
   status?: string;
@@ -34,6 +36,32 @@ type DeliveryReceipt = {
   recipient_label: string;
 };
 
+type DeliveryAcknowledgment = {
+  acknowledgment_id?: string;
+  status?: string;
+  acknowledgment_version?: string;
+  receipt_id?: string;
+  receipt_sha256?: string;
+  access_id?: string;
+  run_id?: string;
+  report_id?: string;
+  approval_id?: string;
+  recipient_label?: string;
+  acknowledged_by?: string;
+  acknowledged_at?: string;
+  statement?: string;
+  statement_sha256?: string;
+  pdf_sha256?: string;
+  token_fingerprint?: string;
+  acknowledgment_sha256?: string;
+  verified?: boolean;
+  persistence?: {durable?: boolean; adapter?: string; note?: string};
+  receipt_only?: boolean;
+  technical_approval?: boolean;
+  agreement_with_findings?: boolean;
+  legal_acceptance?: boolean;
+};
+
 type InspectResponse = {
   status?: string;
   available?: boolean;
@@ -41,6 +69,18 @@ type InspectResponse = {
   delivery?: DeliveryMetadata;
   detail?: {message?: string};
 };
+
+function saveJson(filename: string, value: unknown) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 function savePdf(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -53,22 +93,15 @@ function savePdf(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function saveReceipt(receipt: DeliveryReceipt) {
-  const blob = new Blob([JSON.stringify(receipt, null, 2)], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `nico-delivery-receipt-${receipt.receipt_id}.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
 export default function ApprovedDeliveryPage() {
   const [token, setToken] = useState("");
   const [metadata, setMetadata] = useState<InspectResponse | null>(null);
   const [receipt, setReceipt] = useState<DeliveryReceipt | null>(null);
+  const [acknowledgment, setAcknowledgment] = useState<DeliveryAcknowledgment | null>(null);
+  const [acknowledgedBy, setAcknowledgedBy] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [acknowledging, setAcknowledging] = useState(false);
+  const [acknowledgmentError, setAcknowledgmentError] = useState("");
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("Validating the approved-delivery link...");
   const [downloading, setDownloading] = useState(false);
@@ -103,6 +136,7 @@ export default function ApprovedDeliveryPage() {
         if (!active) return;
         if (!response.ok || !data.available) throw new Error(data.detail?.message || "This approved-delivery link is unavailable.");
         setMetadata(data);
+        setAcknowledgedBy(data.access?.recipient_label || "");
         setStatus("available");
         setMessage("The approved artifact passed current identity and integrity verification.");
       } catch (error) {
@@ -157,6 +191,8 @@ export default function ApprovedDeliveryPage() {
       if (blob.type !== "application/pdf") throw new Error("The approved PDF response failed content validation.");
       savePdf(blob, metadata?.delivery?.pdf_filename || "nico-full-assessment-approved.pdf");
       setReceipt(issuedReceipt);
+      setAcknowledgment(null);
+      setAcknowledgmentError("");
       const remaining = Math.max(0, Number(metadata?.access?.downloads_remaining || 1) - 1);
       setMetadata((current) => current ? {...current, access: {...current.access, downloads_remaining: remaining, download_count: Number(current.access?.download_count || 0) + 1}} : current);
       setMessage(remaining > 0 ? `Download authorized and receipt recorded. ${remaining} permitted download(s) remain.` : "Download authorized and receipt recorded. This link has reached its permitted download limit.");
@@ -166,6 +202,30 @@ export default function ApprovedDeliveryPage() {
       setMessage(error instanceof Error ? error.message : "This approved-delivery link is unavailable.");
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function acknowledgeReceipt() {
+    if (!token || !receipt || !acknowledged || acknowledgedBy.trim().length < 2 || acknowledging) return;
+    setAcknowledgmentError("");
+    setAcknowledging(true);
+    try {
+      const response = await fetch(`${API_URL}/delivery/approved/acknowledge`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token, receipt_id: receipt.receipt_id, acknowledged_by: acknowledgedBy.trim(), acknowledged: true}),
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      });
+      const data = await response.json() as {status?: string; acknowledgment?: DeliveryAcknowledgment; detail?: {message?: string}};
+      if (!response.ok || data.status !== "acknowledged" || !data.acknowledgment?.verified) {
+        throw new Error(data.detail?.message || "The receipt acknowledgment could not be recorded and verified.");
+      }
+      setAcknowledgment(data.acknowledgment);
+    } catch (error) {
+      setAcknowledgmentError(error instanceof Error ? error.message : "The receipt acknowledgment could not be recorded.");
+    } finally {
+      setAcknowledging(false);
     }
   }
 
@@ -199,7 +259,7 @@ export default function ApprovedDeliveryPage() {
       <div className="report-actions">
         <button type="button" className="primary-button" disabled={!available || downloading} onClick={download}>{downloading ? "Authorizing..." : "Download verified approved PDF"}</button>
       </div>
-      <p className="muted">The access token was removed from the browser address after validation. It is not displayed on this page or included in the delivery receipt.</p>
+      <p className="muted">The access token was removed from the browser address after validation. It is not displayed on this page or included in delivery records.</p>
     </section>
 
     {receipt ? <section className="section panel">
@@ -215,7 +275,31 @@ export default function ApprovedDeliveryPage() {
         <article><b>Receipt version</b><span>{receipt.receipt_version}</span></article>
       </div>
       <details className="help-details"><summary>Receipt integrity</summary><pre className="json-block">{JSON.stringify(receipt, null, 2)}</pre></details>
-      <div className="report-actions"><button type="button" onClick={() => saveReceipt(receipt)}>Download receipt JSON</button></div>
+      <div className="report-actions"><button type="button" onClick={() => saveJson(`nico-delivery-receipt-${receipt.receipt_id}.json`, receipt)}>Download receipt JSON</button></div>
+    </section> : null}
+
+    {receipt ? <section className="section panel">
+      <div className="section-head">
+        <div><p className="eyebrow">Optional receipt acknowledgment</p><h2>{acknowledgment?.acknowledgment_id || "Confirm receipt"}</h2></div>
+        <span className={acknowledgment?.verified ? "status green" : "status yellow"}>{acknowledgment?.verified ? "verified" : "not recorded"}</span>
+      </div>
+      <p className="warning-box">{ACKNOWLEDGMENT_STATEMENT}</p>
+      {!acknowledgment ? <>
+        <div className="form-grid"><label>Name or identifying label<input value={acknowledgedBy} onChange={(event) => setAcknowledgedBy(event.target.value)} placeholder="Recipient name or organization role" /></label></div>
+        <label><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /> I confirm the receipt-only statement above.</label>
+        <div className="report-actions"><button type="button" className="primary-button" disabled={!acknowledged || acknowledgedBy.trim().length < 2 || acknowledging} onClick={acknowledgeReceipt}>{acknowledging ? "Recording acknowledgment..." : "Acknowledge receipt"}</button></div>
+        {acknowledgmentError ? <p className="error-box">{acknowledgmentError}</p> : null}
+      </> : <>
+        <div className="grid four target-grid">
+          <article><b>Acknowledged by</b><span>{acknowledgment.acknowledged_by || "Not recorded"}</span></article>
+          <article><b>Acknowledged at</b><span>{acknowledgment.acknowledged_at || "Not recorded"}</span></article>
+          <article><b>Receipt only</b><span>{String(acknowledgment.receipt_only)}</span></article>
+          <article><b>Technical approval</b><span>{String(acknowledgment.technical_approval)}</span></article>
+        </div>
+        <details className="help-details"><summary>Acknowledgment integrity</summary><pre className="json-block">{JSON.stringify(acknowledgment, null, 2)}</pre></details>
+        <div className="report-actions"><button type="button" onClick={() => saveJson(`nico-delivery-acknowledgment-${acknowledgment.acknowledgment_id}.json`, acknowledgment)}>Download acknowledgment JSON</button></div>
+      </>}
+      <p className="muted">Acknowledgment is optional and does not alter the report, its technical approval, findings, evidence limitations, remediation requirements, or allocation of responsibility.</p>
     </section> : null}
   </main>;
 }
