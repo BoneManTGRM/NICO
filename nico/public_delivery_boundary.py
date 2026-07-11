@@ -7,10 +7,10 @@ import os
 import secrets
 import threading
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import FastAPI
+from starlette.middleware import Middleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 PUBLIC_DELIVERY_PATHS = {
@@ -24,6 +24,11 @@ DEFAULT_MAX_BODY_BYTES = 16 * 1024
 MAX_BODY_BYTES_CAP = 64 * 1024
 MAX_LIMIT_CAP = 1000
 MAX_WINDOW_SECONDS = 3600
+PUBLIC_FIELD_LIMITS = {
+    "token": 4096,
+    "receipt_id": 200,
+    "acknowledged_by": 160,
+}
 
 _RATE_LIMIT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS approved_delivery_rate_limits (
@@ -42,6 +47,9 @@ _PROCESS_SECRET = secrets.token_bytes(32)
 _MEMORY_LOCK = threading.RLock()
 _MEMORY_BUCKETS: dict[str, dict[str, int | str]] = {}
 _LAST_CLEANUP = 0
+_SCHEMA_LOCK = threading.RLock()
+_SCHEMA_READY_URL = ""
+_SCHEMA_RETRY_AT = 0.0
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -104,13 +112,25 @@ def _ensure_schema() -> None:
 
 
 def _postgres_available() -> bool:
-    if not _database_url():
+    global _SCHEMA_READY_URL, _SCHEMA_RETRY_AT
+    database_url = _database_url()
+    if not database_url:
         return False
-    try:
-        _ensure_schema()
-        return True
-    except Exception:
-        return False
+    monotonic_now = time.monotonic()
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY_URL == database_url:
+            return True
+        if monotonic_now < _SCHEMA_RETRY_AT:
+            return False
+        try:
+            _ensure_schema()
+            _SCHEMA_READY_URL = database_url
+            _SCHEMA_RETRY_AT = 0.0
+            return True
+        except Exception:
+            _SCHEMA_READY_URL = ""
+            _SCHEMA_RETRY_AT = monotonic_now + 30.0
+            return False
 
 
 def _header_map(scope: Scope) -> dict[str, str]:
@@ -248,6 +268,23 @@ def _json_response(status_code: int, payload: dict[str, Any], limit: dict[str, A
     return body, headers
 
 
+def _oversized_public_field(path: str, body: bytes) -> str:
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    fields = ["token"]
+    if path == "/delivery/approved/acknowledge":
+        fields.extend(["receipt_id", "acknowledged_by"])
+    for field in fields:
+        value = payload.get(field)
+        if isinstance(value, str) and len(value) > PUBLIC_FIELD_LIMITS[field]:
+            return field
+    return ""
+
+
 class PublicDeliveryBoundaryMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -258,7 +295,7 @@ class PublicDeliveryBoundaryMiddleware:
             return
         path = str(scope.get("path") or "").rstrip("/") or "/"
         method = str(scope.get("method") or "GET").upper()
-        if path not in PUBLIC_DELIVERY_PATHS or method == "OPTIONS":
+        if path not in PUBLIC_DELIVERY_PATHS or method != "POST":
             await self.app(scope, receive, send)
             return
 
@@ -322,6 +359,21 @@ class PublicDeliveryBoundaryMiddleware:
                 await send({"type": "http.response.body", "body": body})
                 return
 
+        oversized_field = _oversized_public_field(path, bytes(buffered))
+        if oversized_field:
+            body, response_headers = _json_response(
+                413,
+                {
+                    "status": "blocked",
+                    "code": "public_delivery_field_too_large",
+                    "message": "This delivery request contains a field that exceeds the allowed size.",
+                },
+                limit,
+            )
+            await send({"type": "http.response.start", "status": 413, "headers": response_headers})
+            await send({"type": "http.response.body", "body": body})
+            return
+
         delivered = False
 
         async def replay_receive() -> Message:
@@ -347,7 +399,8 @@ class PublicDeliveryBoundaryMiddleware:
 def install_public_delivery_boundary(target: FastAPI) -> FastAPI:
     if bool(getattr(target.state, "nico_public_delivery_boundary", False)):
         return target
-    target.add_middleware(PublicDeliveryBoundaryMiddleware)
+    target.user_middleware.append(Middleware(PublicDeliveryBoundaryMiddleware))
+    target.middleware_stack = None
     target.state.nico_public_delivery_boundary = True
     target.openapi_schema = None
     return target
@@ -360,6 +413,7 @@ def public_delivery_boundary_status() -> dict[str, Any]:
         "window_seconds": rate_limit_window_seconds(),
         "limits": {name: route_limit(name) for name in sorted(DEFAULT_LIMITS)},
         "max_body_bytes": public_delivery_max_body_bytes(),
+        "field_limits": dict(PUBLIC_FIELD_LIMITS),
         "trusted_proxy_headers": os.getenv("NICO_TRUST_PROXY_HEADERS", "false").strip().lower() in {"1", "true", "yes", "on"},
         "persistence": "postgres_when_available_with_memory_fallback",
         "privacy": "Client network identifiers are HMAC-fingerprinted and are not stored or audited in raw form.",
