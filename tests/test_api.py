@@ -63,5 +63,5 @@ def test_full_assessment_status_refresh_does_not_request_final_review():
     assert data['approval']['status'] == 'not_requested'
     by_step = {item['step']: item for item in data['progress']}
     assert by_step['scanner_worker']['status'] == 'skipped'
-    assert by_step['reports']['status'] == 'planned'
-    assert by_step['approval_request']['status'] == 'planned'
+    assert by_step['reports']['status'] == 'skipped'
+    assert by_step['approval_request']['status'] == 'skipped'
