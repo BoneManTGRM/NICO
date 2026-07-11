@@ -9,6 +9,58 @@ from nico.full_assessment_idempotency import (
 from nico.full_assessment_orchestrator import default_full_assessment_handlers
 
 
+def _repository_evidence_handler(
+    context: dict[str, Any],
+    _outputs: dict[str, Any],
+    *,
+    timeframe_days: int = 180,
+) -> dict[str, Any]:
+    from nico.full_assessment_repository_evidence import collect_repository_evidence
+
+    evidence_context = dict(context)
+    evidence_context["timeframe_days"] = max(30, min(int(timeframe_days or 180), 365))
+    bundle = collect_repository_evidence(evidence_context)
+    attached = bundle.get("status") == "attached"
+    metadata = bundle.get("repository_metadata") if isinstance(bundle.get("repository_metadata"), dict) else {}
+    activity = bundle.get("activity_evidence") if isinstance(bundle.get("activity_evidence"), dict) else {}
+    workflows = bundle.get("workflow_evidence") if isinstance(bundle.get("workflow_evidence"), dict) else {}
+    dependencies = bundle.get("dependency_evidence") if isinstance(bundle.get("dependency_evidence"), dict) else {}
+    file_evidence = bundle.get("file_evidence") if isinstance(bundle.get("file_evidence"), dict) else {}
+    evidence = {
+        "run_id": context["run_id"],
+        "repository": context["repository"],
+        "customer_id": context["customer_id"],
+        "project_id": context["project_id"],
+        "evidence_id": bundle.get("evidence_id") or "",
+        "source": bundle.get("source") or "github_api_read_only",
+        "status": bundle.get("status") or "unavailable",
+        "timeframe_days": bundle.get("timeframe_days") or evidence_context["timeframe_days"],
+        "idempotent_reuse": bool(bundle.get("idempotent_reuse")),
+        "default_branch": metadata.get("default_branch") or "",
+        "files_profiled": file_evidence.get("files_profiled", 0),
+        "commits_returned": activity.get("commits_returned", 0),
+        "pull_requests_returned": activity.get("pull_requests_returned", 0),
+        "workflow_file_count": workflows.get("workflow_file_count", 0),
+        "workflow_run_count": workflows.get("workflow_run_count", 0),
+        "dependency_entries": dependencies.get("dependency_entries", 0),
+        "unavailable_data_notes": bundle.get("unavailable_data_notes") or [],
+        "repository_evidence": bundle,
+    }
+    if not attached:
+        return {
+            "status": "unavailable",
+            "message": "GitHub repository evidence could not be attached from the authorized read-only API scope; unavailable-data notes were preserved.",
+            "repository_evidence": bundle,
+            "evidence": evidence,
+        }
+    return {
+        "status": "complete",
+        "message": "Read-only GitHub repository metadata, activity, workflow, dependency, architecture, and file-profile evidence were attached to this full-run.",
+        "repository_evidence": bundle,
+        "evidence": evidence,
+    }
+
+
 def _scanner_id(outputs: dict[str, Any]) -> str:
     attachment = outputs.get("evidence_attachment") if isinstance(outputs.get("evidence_attachment"), dict) else {}
     scanner_evidence = attachment.get("scanner_evidence") if isinstance(attachment.get("scanner_evidence"), dict) else attachment.get("evidence") or {}
@@ -134,8 +186,13 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
     }
 
 
-def idempotent_full_assessment_handlers() -> dict[str, Any]:
+def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[str, Any]:
     handlers = default_full_assessment_handlers()
+    handlers["repo_evidence"] = lambda context, outputs: _repository_evidence_handler(
+        context,
+        outputs,
+        timeframe_days=timeframe_days,
+    )
     handlers["reports"] = _reports_handler
     handlers["approval_request"] = _approval_request_handler
     return handlers

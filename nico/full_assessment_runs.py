@@ -18,6 +18,7 @@ REQUEST_FIELDS = {
     "authorization_confirmed",
     "authorized",
     "mode",
+    "timeframe_days",
     "run_scanners",
     "refresh_full_evidence",
     "build_reports",
