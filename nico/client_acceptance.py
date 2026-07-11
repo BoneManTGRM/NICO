@@ -6,6 +6,8 @@ from nico.approval_queue import create_approval, list_approvals, transition_appr
 from nico.storage import STORE
 
 CLIENT_ACCEPTANCE_ACTION = "client_acceptance_signoff"
+FINAL_REVIEW_ACTION = "final_report_approval"
+CLIENT_ACCEPTANCE_ACTIONS = {CLIENT_ACCEPTANCE_ACTION, FINAL_REVIEW_ACTION}
 CLIENT_ACCEPTANCE_STATES = {"approved", "needs_more_evidence", "rejected"}
 
 
@@ -40,12 +42,24 @@ def _unavailable_inventory(result: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _matches_acceptance_action(item: dict[str, Any]) -> bool:
+    return str(item.get("requested_action") or "") in CLIENT_ACCEPTANCE_ACTIONS
+
+
+def _same_run(item: dict[str, Any], run_id: str) -> bool:
+    if not run_id:
+        return True
+    if str(item.get("run_id") or "") == run_id:
+        return True
+    return any(str(ev).find(run_id) >= 0 for ev in item.get("evidence", []) or [])
+
+
 def _approval_records(run_id: str, customer_id: str, project_id: str) -> list[dict[str, Any]]:
     records = []
     for item in list_approvals(customer_id=customer_id, project_id=project_id):
-        if not isinstance(item, dict) or item.get("requested_action") != CLIENT_ACCEPTANCE_ACTION:
+        if not isinstance(item, dict) or not _matches_acceptance_action(item):
             continue
-        if item.get("run_id") == run_id or any(str(ev).find(run_id) >= 0 for ev in item.get("evidence", []) or []):
+        if _same_run(item, run_id):
             records.append(item)
     records.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
     return records
@@ -119,13 +133,7 @@ def build_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_final_hosted_truth_gate_before_acceptance(result: dict[str, Any]) -> dict[str, Any]:
-    """Force final truth/export gates onto the direct API return path.
-
-    The API imports attach_client_acceptance_gate directly, so monkey-patching the
-    client_acceptance module is not sufficient for the hosted endpoint. Running
-    the hosted truth gate here makes the client-acceptance step the final
-    last-mile lock before the result is stored and returned.
-    """
+    """Force final truth/export gates onto the direct API return path."""
 
     if result.get("status") != "complete":
         return result
@@ -133,10 +141,9 @@ def _apply_final_hosted_truth_gate_before_acceptance(result: dict[str, Any]) -> 
         from nico.hosted_truth_delivery_gate import apply_final_hosted_truth_gate
 
         return apply_final_hosted_truth_gate(result)
-    except Exception as exc:  # pragma: no cover - defensive guard for report delivery
+    except Exception:  # pragma: no cover - defensive guard for report delivery
         result.setdefault("report_quality_guards", {})["final_hosted_truth_gate"] = {
             "status": "failed",
-            "error": str(exc),
             "guardrail": "Final hosted truth gate failed before client acceptance; human review remains required.",
         }
         result["human_review_required"] = True
@@ -155,10 +162,11 @@ def attach_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
 
 def client_acceptance_status(run_id: str, customer_id: str = "default_customer", project_id: str = "default_project") -> dict[str, Any]:
     approvals = _approval_records(run_id, customer_id, project_id)
-    latest = approvals[0] if approvals else None
+    approved = [item for item in approvals if item.get("status") == "approved"]
+    latest = approved[0] if approved else approvals[0] if approvals else None
     assessment = _assessment_for_run(run_id, customer_id, project_id)
     gate = assessment.get("client_acceptance") if isinstance(assessment.get("client_acceptance"), dict) else build_client_acceptance_gate(assessment) if assessment else {}
-    accepted = bool(latest and latest.get("status") == "approved")
+    accepted = bool(approved)
     status = "accepted" if accepted else latest.get("status") if latest else gate.get("status", "missing")
     return {
         "status": "ok",
@@ -170,9 +178,11 @@ def client_acceptance_status(run_id: str, customer_id: str = "default_customer",
         "approval_id": latest.get("approval_id") if latest else "",
         "approver": latest.get("approver") if latest else "",
         "approval_count": len(approvals),
+        "approved_count": len(approved),
+        "accepted_actions": sorted(CLIENT_ACCEPTANCE_ACTIONS),
         "client_acceptance": gate,
         "approvals": approvals,
-        "rule": "Client delivery is allowed only after client_acceptance_signoff is approved.",
+        "rule": "Client delivery is allowed only after same-run final_report_approval or client_acceptance_signoff is approved.",
     }
 
 
@@ -218,8 +228,8 @@ def transition_client_acceptance(approval_id: str, state: str, actor: str = "hum
     item = STORE.get("approvals", approval_id)
     if not item:
         return {"status": "not_found", "approval_id": approval_id}
-    if item.get("requested_action") != CLIENT_ACCEPTANCE_ACTION:
-        return {"status": "blocked", "error": "approval is not a client acceptance signoff", "approval_id": approval_id}
+    if item.get("requested_action") not in CLIENT_ACCEPTANCE_ACTIONS:
+        return {"status": "blocked", "error": "approval is not a client acceptance or final review signoff", "approval_id": approval_id}
     updated = transition_approval(approval_id, normalized, actor=actor, note=note)
     STORE.audit("client_acceptance.transition", {"approval_id": approval_id, "state": normalized, "actor": actor}, customer_id=updated.get("customer_id"), project_id=updated.get("project_id"))
     run_id = str(updated.get("run_id") or "")
