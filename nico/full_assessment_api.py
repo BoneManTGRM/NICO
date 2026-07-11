@@ -12,6 +12,7 @@ from nico.approved_delivery_access import (
     redeem_approved_delivery_access,
     revoke_approved_delivery_access,
 )
+from nico.approved_delivery_receipts import create_delivery_receipt, list_delivery_receipts
 from nico.approved_delivery_recovery import approved_delivery_status, attach_verified_approved_delivery
 from nico.full_assessment_continuation import (
     apply_full_assessment_continuation,
@@ -26,6 +27,7 @@ from nico.full_assessment_runs import (
     persistence_metadata,
 )
 from nico.report_path_truth import apply_report_path_truth
+from nico.reports import get_report
 
 FULL_RUN_REPORT_PATH = "full_run"
 FULL_RUN_REPORT_LABEL = "Full Assessment"
@@ -190,6 +192,16 @@ def _admin_access_result(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _admin_receipt_result(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("status") == "blocked":
+        status_code = 403 if result.get("admin_write") else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery receipt action was blocked.")},
+        )
+    return result
+
+
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
     handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
@@ -301,6 +313,22 @@ def approved_delivery_access_list_response(
     )
 
 
+def approved_delivery_receipts_list_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    return _admin_receipt_result(
+        list_delivery_receipts(
+            run_id,
+            customer_id=customer_id,
+            project_id=project_id,
+            admin_token=x_nico_admin_token,
+        )
+    )
+
+
 def approved_delivery_access_revoke_response(
     access_id: str,
     req: ApprovedDeliveryAccessRevokeRequest,
@@ -326,7 +354,37 @@ def approved_delivery_access_redeem_response(req: ApprovedDeliveryTokenRequest) 
     result = redeem_approved_delivery_access(req.token)
     if not result.get("available"):
         raise HTTPException(status_code=404, detail={"status": "not_found", "message": "This approved-delivery link is unavailable."})
+
+    access = result.get("access") if isinstance(result.get("access"), dict) else {}
+    report = get_report(str(access.get("run_id") or access.get("report_id") or ""))
+    if isinstance(report, dict) and report.get("status") != "not_found":
+        result["customer_id"] = report.get("customer_id") or "default_customer"
+        result["project_id"] = report.get("project_id") or "default_project"
+
+    receipt_result = create_delivery_receipt(result)
+    receipt = receipt_result.get("receipt") if isinstance(receipt_result.get("receipt"), dict) else {}
+    if receipt_result.get("status") != "recorded" or not receipt.get("verified"):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "blocked",
+                "message": "The approved PDF was not returned because its delivery receipt could not be persisted and verified.",
+            },
+        )
+
     filename = str(result.get("pdf_filename") or "nico-full-assessment-approved.pdf").replace('"', "")
+    exposed_headers = ", ".join(
+        [
+            "Content-Disposition",
+            "X-NICO-PDF-SHA256",
+            "X-NICO-Receipt-ID",
+            "X-NICO-Receipt-SHA256",
+            "X-NICO-Receipt-Version",
+            "X-NICO-Delivered-At",
+            "X-NICO-Download-Number",
+            "X-NICO-Receipt-Persistence",
+        ]
+    )
     return Response(
         content=result.get("pdf_bytes") or b"",
         media_type="application/pdf",
@@ -337,6 +395,13 @@ def approved_delivery_access_redeem_response(req: ApprovedDeliveryTokenRequest) 
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
             "X-NICO-PDF-SHA256": str(result.get("pdf_sha256") or ""),
+            "X-NICO-Receipt-ID": str(receipt.get("receipt_id") or ""),
+            "X-NICO-Receipt-SHA256": str(receipt.get("receipt_sha256") or ""),
+            "X-NICO-Receipt-Version": str(receipt.get("receipt_version") or ""),
+            "X-NICO-Delivered-At": str(receipt.get("delivered_at") or ""),
+            "X-NICO-Download-Number": str(receipt.get("download_number") or ""),
+            "X-NICO-Receipt-Persistence": str((receipt.get("persistence") or {}).get("adapter") or "unknown"),
+            "Access-Control-Expose-Headers": exposed_headers,
         },
     )
 
@@ -348,8 +413,10 @@ def register_full_assessment_routes(app: FastAPI) -> None:
     app.get("/assessment/full-run/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
     app.post("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_create_response)
     app.get("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_list_response)
+    app.get("/assessment/full-run/{run_id}/approved-delivery/receipts")(approved_delivery_receipts_list_response)
     app.post("/assessment/full-run/approved-delivery/access/{access_id}/revoke")(approved_delivery_access_revoke_response)
     app.post("/delivery/approved/inspect")(approved_delivery_access_inspect_response)
     app.post("/delivery/approved/redeem")(approved_delivery_access_redeem_response)
     app.get("/reports/{run_id}/approved-delivery")(approved_delivery_response)
     app.get("/reports/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
+    app.get("/reports/{run_id}/approved-delivery/receipts")(approved_delivery_receipts_list_response)
