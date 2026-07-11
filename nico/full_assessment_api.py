@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from nico.approved_delivery_recovery import approved_delivery_status, attach_verified_approved_delivery
 from nico.full_assessment_continuation import (
     apply_full_assessment_continuation,
     plan_full_assessment_continuation,
@@ -148,6 +149,10 @@ def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
     }
 
 
+def _attach_persisted_delivery(result: dict[str, Any]) -> dict[str, Any]:
+    return attach_verified_approved_delivery(result, include_pdf=True)
+
+
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
     handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
@@ -155,6 +160,7 @@ def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     result = _attach_repository_evidence(result)
     result = _attach_assessment_truth_summary(result)
     result = _with_report_path(result)
+    result = _attach_persisted_delivery(result)
     result = _record_result(result, payload, restored=False)
     if result.get("status") == "blocked":
         raise HTTPException(
@@ -187,6 +193,7 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
     result = _attach_repository_evidence(result)
     result = _attach_assessment_truth_summary(result)
     result = _with_report_path(result)
+    result = _attach_persisted_delivery(result)
     result = _record_result(result, continuation_payload, restored=bool(record))
     if result.get("status") == "blocked":
         raise HTTPException(
@@ -196,6 +203,45 @@ def full_assessment_status_response(run_id: str, req: FullAssessmentStatusReques
     return result
 
 
+def approved_delivery_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    include_pdf: bool = False,
+) -> dict[str, Any]:
+    result = approved_delivery_status(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        include_pdf=include_pdf,
+    )
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Full Assessment report not found."})
+    if result.get("status") == "blocked" and result.get("error"):
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "blocked", "message": str(result.get("error") or "Approved delivery verification failed.")},
+        )
+    return result
+
+
+def approved_delivery_verify_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+) -> dict[str, Any]:
+    return approved_delivery_response(
+        run_id,
+        customer_id=customer_id,
+        project_id=project_id,
+        include_pdf=False,
+    )
+
+
 def register_full_assessment_routes(app: FastAPI) -> None:
     app.post("/assessment/full-run")(full_assessment_response)
     app.post("/assessment/full-run/{run_id}/status")(full_assessment_status_response)
+    app.get("/assessment/full-run/{run_id}/approved-delivery")(approved_delivery_response)
+    app.get("/assessment/full-run/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
+    app.get("/reports/{run_id}/approved-delivery")(approved_delivery_response)
+    app.get("/reports/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
