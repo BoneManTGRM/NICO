@@ -97,6 +97,33 @@ def _attach_scanner_coverage_lines(assessment: dict[str, Any], scanner: dict[str
         section["unverified_claims"] = list(section.get("unavailable") or [])
 
 
+def _restore_weighted_technical_score(assessment: dict[str, Any]) -> None:
+    from nico.full_assessment_scorecard import TECHNICAL_SECTION_WEIGHTS
+
+    sections = _section_map(assessment)
+    weighted = 0
+    total_weight = 0
+    for section_id, weight in TECHNICAL_SECTION_WEIGHTS.items():
+        section = sections.get(section_id)
+        if not section:
+            continue
+        try:
+            score = int(section.get("score") or 0)
+        except (TypeError, ValueError):
+            score = 0
+        weighted += score * weight
+        total_weight += weight
+    score = round(weighted / total_weight) if total_weight else 0
+    level = "Senior" if score >= 82 else "Mid" if score >= 58 else "Junior"
+    signal = assessment.setdefault("maturity_signal", {})
+    signal["level"] = level
+    signal["score"] = score
+    signal["summary"] = "Weighted technical score recomputed after strict trust caps were applied."
+    scorecard = assessment.setdefault("scorecard", {})
+    scorecard["technical_score"] = score
+    scorecard["post_trust_caps"] = True
+
+
 def prepare_full_assessment_trust(
     assessment: dict[str, Any],
     scanner_evidence: dict[str, Any],
@@ -110,6 +137,7 @@ def prepare_full_assessment_trust(
     _attach_scanner_coverage_lines(prepared, scanner_evidence)
     prepared = attach_evidence_ledger(prepared)
     prepared = apply_strict_trust_engine(prepared)
+    _restore_weighted_technical_score(prepared)
     prepared["human_review_required"] = True
     prepared["client_ready"] = False
     verdict = prepared.setdefault("client_delivery_verdict", {})
