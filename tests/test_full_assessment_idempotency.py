@@ -7,7 +7,7 @@ from nico.full_assessment_idempotency import (
     full_run_approval_identity,
     full_run_report_identity,
 )
-from nico.storage import MemoryAdapter
+from nico.storage import MemoryAdapter, Storage
 
 
 def _assessment(run_id: str) -> dict:
@@ -38,7 +38,18 @@ def _assessment(run_id: str) -> dict:
     }
 
 
-def _patch_store(monkeypatch, store: MemoryAdapter) -> None:
+def _memory_store() -> Storage:
+    """Build the same audited storage facade used by production with a memory adapter."""
+
+    store = object.__new__(Storage)
+    store.database_url = ""
+    store.disable_postgres = False
+    store.adapter_error = ""
+    store.adapter = MemoryAdapter()
+    return store
+
+
+def _patch_store(monkeypatch, store: Storage) -> None:
     monkeypatch.setattr(reports, "STORE", store)
     monkeypatch.setattr(approval_queue, "STORE", store)
     monkeypatch.setattr(final_review_workflow, "STORE", store)
@@ -61,7 +72,7 @@ def test_full_run_artifact_identities_are_stable_and_scan_bound() -> None:
 
 
 def test_report_package_reuses_same_run_and_scan_record(monkeypatch) -> None:
-    store = MemoryAdapter()
+    store = _memory_store()
     _patch_store(monkeypatch, store)
     identity = full_run_report_identity("fullrun_report", "scan_report")
 
@@ -80,10 +91,11 @@ def test_report_package_reuses_same_run_and_scan_record(monkeypatch) -> None:
     assert first["idempotent_reuse"] is False
     assert second["idempotent_reuse"] is True
     assert len(store.list("reports")) == 1
+    assert len(store.list("audit_log")) == 1
 
 
 def test_final_review_reuses_same_report_approval(monkeypatch) -> None:
-    store = MemoryAdapter()
+    store = _memory_store()
     _patch_store(monkeypatch, store)
     report_identity = full_run_report_identity("fullrun_review", "scan_review")
     reports.build_report_package(
@@ -113,7 +125,7 @@ def test_final_review_reuses_same_report_approval(monkeypatch) -> None:
 
 
 def test_idempotent_review_reuse_preserves_human_approval(monkeypatch) -> None:
-    store = MemoryAdapter()
+    store = _memory_store()
     _patch_store(monkeypatch, store)
     report_identity = full_run_report_identity("fullrun_approved", "scan_approved")
     reports.build_report_package(
