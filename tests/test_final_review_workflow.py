@@ -63,12 +63,41 @@ def test_final_review_transition_allows_approved_for_final_review(monkeypatch):
         "run_id": "fullrun_review_1",
         "report_id": "report_review_1",
     }
-    saved = {}
+    report = {
+        "status": "complete",
+        "report_id": "report_review_1",
+        "run_id": "fullrun_review_1",
+        "formats": {"json": {"report_path": "full_run"}, "pdf": "draft"},
+    }
+    saved = {"report": report}
+    artifact = {
+        "status": "complete",
+        "artifact_type": "approved_full_assessment_pdf",
+        "approval_id": "approval_review_1",
+        "report_id": "report_review_1",
+        "run_id": "fullrun_review_1",
+        "approver": "cody",
+        "approved_at": "2026-07-11T16:30:00Z",
+        "client_delivery_allowed": True,
+        "pdf_base64": "approved-pdf",
+        "pdf_filename": "approved.pdf",
+        "pdf_sha256": "a" * 64,
+        "source_draft_pdf_sha256": "b" * 64,
+        "approval_identity_sha256": "c" * 64,
+    }
 
     monkeypatch.setattr(review.STORE, "get", lambda table, item_id: item)
-    monkeypatch.setattr(review.STORE, "put", lambda table, item_id, payload: saved.update({"item": dict(payload)}) or payload)
+
+    def fake_put(table, item_id, payload):
+        saved[table] = dict(payload)
+        if table == "reports":
+            saved["report"] = dict(payload)
+        return payload
+
+    monkeypatch.setattr(review.STORE, "put", fake_put)
     monkeypatch.setattr(review.STORE, "audit", lambda *args, **kwargs: {"status": "ok"})
-    monkeypatch.setattr(review, "list_approvals", lambda customer_id=None, project_id=None: [saved.get("item", item)])
+    monkeypatch.setattr(review, "list_approvals", lambda customer_id=None, project_id=None: [saved.get("approvals", item)])
+    monkeypatch.setattr(review, "_report_for_run", lambda run_id: saved.get("report", {}))
     monkeypatch.setattr(
         review,
         "final_review_validation",
@@ -81,6 +110,7 @@ def test_final_review_transition_allows_approved_for_final_review(monkeypatch):
             "blockers": [],
         },
     )
+    monkeypatch.setattr(review, "build_approved_delivery_artifact", lambda report_value, approval, approved_at: {**artifact, "approved_at": approved_at})
     monkeypatch.setattr(review, "transition_approval", lambda approval_id, state, actor="human_reviewer", note="": {**item, "status": state, "approver": actor})
 
     result = review.transition_final_review("approval_review_1", "approved", actor="cody", note="accepted")
@@ -89,6 +119,10 @@ def test_final_review_transition_allows_approved_for_final_review(monkeypatch):
     assert result["approval"]["status"] == "approved"
     assert result["approval"]["approver"] == "cody"
     assert result["approval"]["review_validation"]["ready_for_approval"] is True
+    assert result["approved_delivery"]["client_delivery_allowed"] is True
+    assert saved["report"]["delivery_status"] == "approved"
+    assert saved["report"]["formats"]["pdf"] == "draft"
+    assert saved["report"]["approved_delivery"]["pdf_filename"] == "approved.pdf"
 
 
 def test_final_review_transition_blocks_non_final_review_approval(monkeypatch):
