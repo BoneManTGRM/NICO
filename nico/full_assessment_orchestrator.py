@@ -58,6 +58,7 @@ def _base_context(payload: dict[str, Any]) -> dict[str, Any]:
     repository = normalize_repository_target(payload)
     return {
         "run_id": str(payload.get("run_id") or new_id("fullrun")),
+        "scan_id": str(payload.get("scan_id") or ""),
         "repository": repository,
         "customer_id": str(payload.get("customer_id") or "default_customer"),
         "project_id": str(payload.get("project_id") or "default_project"),
@@ -93,6 +94,8 @@ def _empty_response(context: dict[str, Any], status: str) -> dict[str, Any]:
         "project_id": context.get("project_id") or "default_project",
         "mode": context.get("mode") or "express",
         "progress": [],
+        "scanner": {"scan_id": context.get("scan_id") or "", "status": "not_started"},
+        "scanner_evidence": {"status": "not_attached", "scan_id": context.get("scan_id") or ""},
         "assessment": {},
         "reports": {"markdown": "", "html": "", "pdf_base64": "", "pdf_filename": "nico-assessment.pdf", "pdf_error": ""},
         "approval": {"approval_id": "", "status": "not_requested"},
@@ -116,15 +119,49 @@ def _repo_evidence_handler(context: dict[str, Any], _outputs: dict[str, Any]) ->
     }
 
 
+def _run_id_matches(scan: dict[str, Any], run_id: str) -> bool:
+    scan_run_id = str(scan.get("run_id") or "")
+    return not scan_run_id or not run_id or scan_run_id == run_id
+
+
 def _scanner_worker_handler(context: dict[str, Any], _outputs: dict[str, Any]) -> dict[str, Any]:
+    from nico.scanner_worker import get_scan, start_scan
+
+    if context.get("scan_id"):
+        scan = get_scan(context["scan_id"])
+        if scan.get("status") == "not_found":
+            return {
+                "status": "unavailable",
+                "message": "Requested scanner run was not found; completed scanner evidence cannot be attached.",
+                "scan": scan,
+                "evidence": {"run_id": context["run_id"], "scan_id": context["scan_id"]},
+            }
+        if not _run_id_matches(scan, context["run_id"]):
+            return {
+                "status": "blocked",
+                "message": "Scanner run_id does not match the full-run id; evidence attachment is blocked.",
+                "scan": scan,
+                "evidence": {"run_id": context["run_id"], "scan_id": context["scan_id"], "scanner_run_id": scan.get("run_id")},
+            }
+        return {
+            "status": scan.get("status") or "unknown",
+            "message": "Existing scanner run was loaded for this full-run.",
+            "scan": scan,
+            "evidence": {
+                "run_id": context["run_id"],
+                "scan_id": context["scan_id"],
+                "tools_requested": scan.get("tools_requested", []),
+                "customer_id": scan.get("customer_id"),
+                "project_id": scan.get("project_id"),
+            },
+        }
+
     if not context.get("run_scanners"):
         return {
             "status": "skipped",
             "message": "Scanner worker was skipped by request; scoring must treat scanner evidence as unavailable.",
             "evidence": {"run_id": context["run_id"], "scanner_worker": "skipped"},
         }
-
-    from nico.scanner_worker import start_scan
 
     scan = start_scan(
         {
@@ -139,7 +176,7 @@ def _scanner_worker_handler(context: dict[str, Any], _outputs: dict[str, Any]) -
         }
     )
     if scan.get("status") == "blocked":
-        return {"status": "blocked", "message": str(scan.get("error") or "scanner worker blocked"), "evidence": {"run_id": context["run_id"]}}
+        return {"status": "blocked", "message": str(scan.get("error") or "scanner worker blocked"), "scan": scan, "evidence": {"run_id": context["run_id"]}}
     return {
         "status": scan.get("status") or "queued",
         "message": "Scanner worker was queued and bound to the full-run id.",
@@ -154,20 +191,78 @@ def _scanner_worker_handler(context: dict[str, Any], _outputs: dict[str, Any]) -
     }
 
 
+def _summarize_completed_scanner_evidence(scan: dict[str, Any], run_id: str) -> dict[str, Any]:
+    results = scan.get("scanner_results") if isinstance(scan.get("scanner_results"), list) else []
+    return {
+        "status": "attached",
+        "run_id": run_id,
+        "scan_id": scan.get("scan_id") or "",
+        "scanner_status": scan.get("status") or "unknown",
+        "tools_requested": scan.get("tools_requested", []),
+        "tools_run": scan.get("tools_run", []),
+        "unavailable_tools": scan.get("unavailable_tools", []),
+        "failed_tools": scan.get("failed_tools", []),
+        "timed_out_tools": scan.get("timed_out_tools", []),
+        "scanner_results_count": len(results),
+        "evidence_summary": scan.get("evidence_summary") if isinstance(scan.get("evidence_summary"), dict) else {},
+        "unavailable_data_notes": scan.get("unavailable_data_notes", []),
+        "secret_redaction_applied": bool(scan.get("secret_redaction_applied")),
+        "retention_note": scan.get("retention_note") or "Scanner evidence was read from the retained scanner record.",
+        "human_review_required": True,
+    }
+
+
 def _evidence_attachment_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
     scanner = outputs.get("scanner_worker") or {}
     scan = scanner.get("scan") if isinstance(scanner.get("scan"), dict) else {}
-    scan_id = scan.get("scan_id")
+    scan_id = scan.get("scan_id") or context.get("scan_id")
     if not scan_id:
         return {
             "status": "skipped",
             "message": "No scanner run was created, so scanner artifact attachment remains unavailable for this run.",
             "evidence": {"run_id": context["run_id"], "scan_id": ""},
         }
+
+    scanner_step_status = str(scanner.get("status") or "")
+    if scanner_step_status in {"blocked", "failed", "unavailable"}:
+        status = "failed" if scanner_step_status == "failed" else scanner_step_status
+        return {
+            "status": status,
+            "message": "Scanner step did not provide attachable completed evidence.",
+            "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_step_status},
+        }
+
+    scanner_status = str(scan.get("status") or "unknown")
+    if scanner_status in {"queued", "running"}:
+        return {
+            "status": "pending",
+            "message": "Scanner run exists but has not completed; scanner evidence remains pending.",
+            "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_status},
+        }
+    if scanner_status == "complete":
+        evidence = _summarize_completed_scanner_evidence(scan, context["run_id"])
+        return {
+            "status": "complete",
+            "message": "Completed scanner evidence was attached to the full-run response.",
+            "scanner_evidence": evidence,
+            "evidence": evidence,
+        }
+    if scanner_status == "not_found":
+        return {
+            "status": "unavailable",
+            "message": "Scanner run was not found; scanner evidence is unavailable.",
+            "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_status},
+        }
+    if scanner_status in {"failed", "error", "blocked"}:
+        return {
+            "status": "failed" if scanner_status in {"failed", "error"} else "blocked",
+            "message": "Scanner run did not complete successfully; scanner evidence was not attached as complete.",
+            "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_status},
+        }
     return {
-        "status": "pending",
-        "message": "Scanner run is bound to the same run_id; artifact parsing will attach completed scanner evidence in the next integration PR.",
-        "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scan.get("status")},
+        "status": "unavailable",
+        "message": "Scanner run status is not attachable as completed evidence.",
+        "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_status},
     }
 
 
@@ -231,6 +326,10 @@ def run_full_assessment_orchestration(
         step_outputs[step] = output
         response["progress"].append(_progress(step, output.get("status", "complete"), output.get("message", ""), output.get("evidence") if isinstance(output.get("evidence"), dict) else None))
 
+    if "scanner_worker" in step_outputs:
+        response["scanner"] = step_outputs["scanner_worker"].get("scan") or response["scanner"]
+    if "evidence_attachment" in step_outputs:
+        response["scanner_evidence"] = step_outputs["evidence_attachment"].get("scanner_evidence") or step_outputs["evidence_attachment"].get("evidence") or response["scanner_evidence"]
     if "scoring" in step_outputs:
         response["assessment"] = step_outputs["scoring"].get("assessment") or step_outputs["scoring"].get("result") or {}
     if "reports" in step_outputs:
@@ -243,4 +342,6 @@ def run_full_assessment_orchestration(
         response["status"] = "complete"
     elif any(status in {"queued", "running", "pending"} for status in statuses):
         response["status"] = "running"
+    elif any(status in {"failed", "blocked"} for status in statuses):
+        response["status"] = "failed"
     return response

@@ -11,6 +11,7 @@ from nico.full_assessment_orchestrator import default_full_assessment_handlers, 
 class FullAssessmentRequest(BaseModel):
     target: str = ""
     repository: str = ""
+    scan_id: str = ""
     customer_id: str = "default_customer"
     project_id: str = "default_project"
     client_name: str = ""
