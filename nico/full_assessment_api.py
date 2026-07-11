@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
 
+from nico.approved_delivery_access import (
+    create_approved_delivery_access,
+    inspect_approved_delivery_access,
+    list_approved_delivery_access,
+    redeem_approved_delivery_access,
+    revoke_approved_delivery_access,
+)
 from nico.approved_delivery_recovery import approved_delivery_status, attach_verified_approved_delivery
 from nico.full_assessment_continuation import (
     apply_full_assessment_continuation,
@@ -61,6 +68,24 @@ class FullAssessmentStatusRequest(BaseModel):
     build_reports: bool = False
     create_final_review_request: bool = False
     auto_continue: bool = True
+
+
+class ApprovedDeliveryAccessRequest(BaseModel):
+    customer_id: str = "default_customer"
+    project_id: str = "default_project"
+    report_id: str = ""
+    recipient_label: str = ""
+    created_by: str = "human_reviewer"
+    expires_in_hours: int = 24
+    max_downloads: int = 1
+
+
+class ApprovedDeliveryAccessRevokeRequest(BaseModel):
+    actor: str = "admin"
+
+
+class ApprovedDeliveryTokenRequest(BaseModel):
+    token: str = ""
 
 
 def _model_payload(req: BaseModel) -> dict[str, Any]:
@@ -153,6 +178,18 @@ def _attach_persisted_delivery(result: dict[str, Any]) -> dict[str, Any]:
     return attach_verified_approved_delivery(result, include_pdf=True)
 
 
+def _admin_access_result(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("status") == "blocked":
+        status_code = 403 if result.get("admin_write") else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery access action was blocked.")},
+        )
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Approved-delivery access record not found."})
+    return result
+
+
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
     handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
@@ -238,10 +275,81 @@ def approved_delivery_verify_response(
     )
 
 
+def approved_delivery_access_create_response(
+    run_id: str,
+    req: ApprovedDeliveryAccessRequest,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    payload = _model_payload(req)
+    payload["run_id"] = run_id
+    return _admin_access_result(create_approved_delivery_access(payload, admin_token=x_nico_admin_token))
+
+
+def approved_delivery_access_list_response(
+    run_id: str,
+    customer_id: str = "default_customer",
+    project_id: str = "default_project",
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    return _admin_access_result(
+        list_approved_delivery_access(
+            run_id,
+            customer_id=customer_id,
+            project_id=project_id,
+            admin_token=x_nico_admin_token,
+        )
+    )
+
+
+def approved_delivery_access_revoke_response(
+    access_id: str,
+    req: ApprovedDeliveryAccessRevokeRequest,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    return _admin_access_result(
+        revoke_approved_delivery_access(
+            access_id,
+            admin_token=x_nico_admin_token,
+            actor=req.actor,
+        )
+    )
+
+
+def approved_delivery_access_inspect_response(req: ApprovedDeliveryTokenRequest) -> dict[str, Any]:
+    result = inspect_approved_delivery_access(req.token)
+    if not result.get("available"):
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "This approved-delivery link is unavailable."})
+    return result
+
+
+def approved_delivery_access_redeem_response(req: ApprovedDeliveryTokenRequest) -> Response:
+    result = redeem_approved_delivery_access(req.token)
+    if not result.get("available"):
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "This approved-delivery link is unavailable."})
+    filename = str(result.get("pdf_filename") or "nico-full-assessment-approved.pdf").replace('"', "")
+    return Response(
+        content=result.get("pdf_bytes") or b"",
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private, max-age=0",
+            "Pragma": "no-cache",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-NICO-PDF-SHA256": str(result.get("pdf_sha256") or ""),
+        },
+    )
+
+
 def register_full_assessment_routes(app: FastAPI) -> None:
     app.post("/assessment/full-run")(full_assessment_response)
     app.post("/assessment/full-run/{run_id}/status")(full_assessment_status_response)
     app.get("/assessment/full-run/{run_id}/approved-delivery")(approved_delivery_response)
     app.get("/assessment/full-run/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
+    app.post("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_create_response)
+    app.get("/assessment/full-run/{run_id}/approved-delivery/access")(approved_delivery_access_list_response)
+    app.post("/assessment/full-run/approved-delivery/access/{access_id}/revoke")(approved_delivery_access_revoke_response)
+    app.post("/delivery/approved/inspect")(approved_delivery_access_inspect_response)
+    app.post("/delivery/approved/redeem")(approved_delivery_access_redeem_response)
     app.get("/reports/{run_id}/approved-delivery")(approved_delivery_response)
     app.get("/reports/{run_id}/approved-delivery/verify")(approved_delivery_verify_response)
