@@ -7,8 +7,9 @@ from nico.storage import STORE
 
 
 def _clear_approvals() -> None:
-    if hasattr(STORE, "_tables"):
-        STORE._tables["approvals"] = []  # type: ignore[attr-defined]
+    tables = getattr(STORE, "_tables", None)
+    if isinstance(tables, dict):
+        tables["approvals"] = {}
 
 
 def _base_result() -> dict:
