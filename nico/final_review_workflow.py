@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from nico.approval_queue import create_approval, list_approvals, transition_approval
@@ -8,6 +9,7 @@ from nico.storage import STORE
 
 FINAL_REVIEW_ACTION = "final_report_approval"
 FINAL_REVIEW_STATES = {"approved", "needs_more_evidence", "rejected"}
+FINAL_REVIEW_TERMINAL_STATES = {"approved", "rejected"}
 
 
 def _safe_score(value: Any) -> str:
@@ -57,6 +59,73 @@ def _payload_snapshot(run_id: str, customer_id: str, project_id: str, report_id:
     }
 
 
+def _valid_pdf_base64(value: Any) -> bool:
+    encoded = str(value or "").strip()
+    if not encoded:
+        return False
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except Exception:
+        return False
+    return decoded.startswith(b"%PDF")
+
+
+def final_review_validation(approval: dict[str, Any]) -> dict[str, Any]:
+    """Validate the exact run-bound Full Assessment draft before human approval."""
+
+    run_id = str(approval.get("run_id") or "").strip()
+    report_id = str(approval.get("report_id") or "").strip()
+    report = _report_for_run(report_id or run_id)
+    formats = report.get("formats") if isinstance(report.get("formats"), dict) else {}
+    report_payload = formats.get("json") if isinstance(formats.get("json"), dict) else {}
+    gate = report.get("export_truth_gate") if isinstance(report.get("export_truth_gate"), dict) else {}
+    if not gate and isinstance(report_payload.get("export_truth_gate"), dict):
+        gate = report_payload.get("export_truth_gate") or {}
+
+    checks = [
+        {
+            "id": "report_exists",
+            "passed": bool(report),
+            "message": "The exact report package exists.",
+        },
+        {
+            "id": "report_id_matches",
+            "passed": bool(report and report_id and str(report.get("report_id") or "") == report_id),
+            "message": "The approval is bound to the exact report ID.",
+        },
+        {
+            "id": "run_id_matches",
+            "passed": bool(report and run_id and str(report.get("run_id") or "") == run_id),
+            "message": "The report package is bound to the exact Full Assessment run.",
+        },
+        {
+            "id": "full_assessment_identity",
+            "passed": str(report_payload.get("report_path") or "") == "full_run",
+            "message": "The report identifies itself as a Full Assessment.",
+        },
+        {
+            "id": "pdf_integrity",
+            "passed": _valid_pdf_base64(formats.get("pdf")),
+            "message": "The stored draft PDF is present and begins with a valid PDF header.",
+        },
+        {
+            "id": "export_truth_gate_passed",
+            "passed": str(gate.get("status") or "") == "passed",
+            "message": "The Export Truth Gate passed without unresolved rendered-output contradictions.",
+        },
+    ]
+    blockers = [item["message"] for item in checks if not item["passed"]]
+    return {
+        "status": "ready_for_human_decision" if not blockers else "blocked",
+        "ready_for_approval": not blockers,
+        "run_id": run_id,
+        "report_id": report_id,
+        "checks": checks,
+        "blockers": blockers,
+        "rule": "Approval is allowed only for the exact run-bound Full Assessment package with a valid draft PDF and a passed Export Truth Gate.",
+    }
+
+
 def final_review_status(run_id: str, customer_id: str = "default_customer", project_id: str = "default_project") -> dict[str, Any]:
     approvals = [
         item for item in list_approvals(customer_id=customer_id, project_id=project_id)
@@ -75,6 +144,7 @@ def final_review_status(run_id: str, customer_id: str = "default_customer", proj
         "approval_id": latest.get("approval_id") if latest else "",
         "approver": latest.get("approver") if latest else "",
         "approval_count": len(approvals),
+        "review_validation": latest.get("review_validation") if latest else {},
         "approvals": approvals,
         "rule": "Final review status is sourced from same-customer/same-project final_report_approval records only.",
     }
@@ -113,6 +183,7 @@ def request_final_review(payload: dict[str, Any]) -> dict[str, Any]:
     approval["run_id"] = run_id
     approval["report_id"] = snapshot.get("report_id") or report_id
     approval["review_snapshot"] = snapshot
+    approval["review_validation"] = final_review_validation(approval)
     STORE.put("approvals", approval["approval_id"], approval)
     audit_action = "final_review.reused" if reused else "final_review.requested"
     STORE.audit(audit_action, {"approval_id": approval["approval_id"], "run_id": run_id, "report_id": approval.get("report_id"), "idempotency_key": approval.get("idempotency_key") or ""}, customer_id=customer_id, project_id=project_id)
@@ -127,13 +198,65 @@ def request_final_review(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def transition_final_review(approval_id: str, state: str, actor: str = "human_reviewer", note: str = "") -> dict[str, Any]:
-    if state not in FINAL_REVIEW_STATES:
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state not in FINAL_REVIEW_STATES:
         return {"status": "blocked", "error": f"Invalid final review state: {state}"}
     item = STORE.get("approvals", approval_id)
     if not item:
         return {"status": "not_found", "approval_id": approval_id}
     if item.get("requested_action") != FINAL_REVIEW_ACTION:
         return {"status": "blocked", "error": "approval is not a final report review", "approval_id": approval_id}
-    updated = transition_approval(approval_id, state, actor=actor, note=note)
-    STORE.audit("final_review.transition", {"approval_id": approval_id, "state": state, "actor": actor}, customer_id=updated.get("customer_id"), project_id=updated.get("project_id"))
-    return {"status": "ok", "approval": updated}
+
+    actor_name = str(actor or "").strip()
+    note_text = str(note or "").strip()
+    if not actor_name:
+        return {"status": "blocked", "error": "A human reviewer identity is required.", "approval_id": approval_id}
+    if normalized_state in {"needs_more_evidence", "rejected"} and not note_text:
+        return {"status": "blocked", "error": "A review note is required when requesting more evidence or rejecting a report.", "approval_id": approval_id}
+
+    current_state = str(item.get("status") or "pending")
+    if current_state in FINAL_REVIEW_TERMINAL_STATES:
+        if current_state == normalized_state:
+            return {
+                "status": "ok",
+                "approval": item,
+                "idempotent_reuse": True,
+                "review": final_review_status(str(item.get("run_id") or ""), item.get("customer_id") or "default_customer", item.get("project_id") or "default_project"),
+            }
+        return {
+            "status": "blocked",
+            "error": f"Final review is already terminal with state={current_state}; create a new report and review request for a different decision.",
+            "approval_id": approval_id,
+        }
+
+    validation = final_review_validation(item)
+    if normalized_state == "approved" and not validation.get("ready_for_approval"):
+        return {
+            "status": "blocked",
+            "error": "Final review approval is blocked because the exact Full Assessment package failed pre-approval validation.",
+            "approval_id": approval_id,
+            "review_validation": validation,
+        }
+
+    updated = transition_approval(approval_id, normalized_state, actor=actor_name, note=note_text)
+    updated["review_validation"] = validation
+    updated["review_decision"] = {
+        "state": normalized_state,
+        "actor": actor_name,
+        "note": note_text,
+        "decided_at": updated.get("updated_at") or "",
+        "client_delivery_allowed": normalized_state == "approved",
+    }
+    STORE.put("approvals", approval_id, updated)
+    STORE.audit(
+        "final_review.transition",
+        {"approval_id": approval_id, "state": normalized_state, "actor": actor_name, "run_id": updated.get("run_id") or "", "report_id": updated.get("report_id") or ""},
+        customer_id=updated.get("customer_id"),
+        project_id=updated.get("project_id"),
+    )
+    return {
+        "status": "ok",
+        "approval": updated,
+        "idempotent_reuse": False,
+        "review": final_review_status(str(updated.get("run_id") or ""), updated.get("customer_id") or "default_customer", updated.get("project_id") or "default_project"),
+    }
