@@ -3,22 +3,22 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from nico.mid_optional_evidence import submit_mid_optional_evidence
+from nico.mid_optional_evidence import MAX_FIELD_CHARS, submit_mid_optional_evidence
 
 
 class MidOptionalEvidenceRequest(BaseModel):
-    token: str = ""
-    application_url: str = ""
-    ios_build_access: str = ""
-    android_build_access: str = ""
-    architecture_documents: str = ""
-    product_requirements: str = ""
-    stakeholder_questionnaire: str = ""
-    meeting_transcripts: str = ""
-    existing_roadmap: str = ""
-    business_priorities: str = ""
+    token: str = Field(default="", max_length=256)
+    application_url: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    ios_build_access: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    android_build_access: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    architecture_documents: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    product_requirements: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    stakeholder_questionnaire: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    meeting_transcripts: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    existing_roadmap: str = Field(default="", max_length=MAX_FIELD_CHARS)
+    business_priorities: str = Field(default="", max_length=MAX_FIELD_CHARS)
 
 
 def _payload(model: BaseModel) -> dict[str, Any]:
