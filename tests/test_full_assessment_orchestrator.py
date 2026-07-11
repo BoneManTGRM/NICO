@@ -222,5 +222,5 @@ def test_scanner_run_id_mismatch_blocks_attachment(monkeypatch) -> None:
     by_step = {item["step"]: item for item in result["progress"]}
     assert result["status"] == "failed"
     assert by_step["scanner_worker"]["status"] == "blocked"
-    assert by_step["evidence_attachment"]["status"] == "unavailable"
+    assert by_step["evidence_attachment"]["status"] == "blocked"
     assert result["scanner_evidence"]["scanner_status"] == "blocked"
