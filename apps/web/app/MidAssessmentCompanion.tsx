@@ -68,7 +68,6 @@ type MidResult = {
   assessment?: {sections?: TruthSection[]; evidence_coverage?: Coverage};
 };
 type EvidenceResponse = {status?: string; optional_evidence?: OptionalEvidence; detail?: {message?: string}; error?: string};
-
 type FormState = Record<EvidenceField, string>;
 
 function emptyForm(): FormState {
@@ -85,8 +84,8 @@ function statusClass(status?: string) {
 
 function safeMidResult(value: unknown): MidResult | null {
   if (!value || typeof value !== "object") return null;
-  const source = value as Record<string, unknown>;
-  const {optional_evidence_submission: _secret, ...safe} = source;
+  const safe = {...(value as Record<string, unknown>)};
+  delete safe.optional_evidence_submission;
   return safe as MidResult;
 }
 
@@ -174,24 +173,20 @@ export default function MidAssessmentCompanion() {
           if (resolvedRunId.startsWith("midrun_")) {
             const submission = data.optional_evidence_submission as {token?: unknown} | undefined;
             const token = String(submission?.token || "");
+            const safeResult = safeMidResult(data);
             if (canStore) {
               sessionStorage.setItem(RUN_KEY, resolvedRunId);
               if (token) sessionStorage.setItem(TOKEN_PREFIX + resolvedRunId, token);
+              if (safeResult) sessionStorage.setItem(RESULT_PREFIX + resolvedRunId, JSON.stringify(safeResult));
             }
             setRunId(resolvedRunId);
+            setResult(safeResult);
             setTokenAvailable(token ? true : canStore && Boolean(sessionStorage.getItem(TOKEN_PREFIX + resolvedRunId)));
-            retainSafeResult(safeMidResult(data), resolvedRunId);
             setMessage(token ? "Additional-evidence capability retained in this browser session." : "Mid status updated.");
           }
         } else if (isMidEvidencePath(path)) {
           const evidence = data.optional_evidence as OptionalEvidence | undefined;
-          if (evidence) {
-            setResult((current) => {
-              const updated = {...(current || {}), optional_evidence: evidence};
-              if (runId && canStore) sessionStorage.setItem(RESULT_PREFIX + runId, JSON.stringify(updated));
-              return updated;
-            });
-          }
+          if (evidence) setResult((current) => ({...(current || {}), optional_evidence: evidence}));
         }
       } catch {
         // A successful non-JSON response should not affect the command center.
@@ -262,7 +257,7 @@ export default function MidAssessmentCompanion() {
 
   if (!active || !runId) return null;
 
-  return <main className="shell" id="mid-evidence-console">
+  return <div className="shell" id="mid-evidence-console">
     <section className="section panel">
       <div className="section-head">
         <div><p className="eyebrow">Mid evidence console</p><h2>Measured coverage and review exceptions</h2></div>
@@ -328,5 +323,5 @@ export default function MidAssessmentCompanion() {
         </div>
       </details>
     </section>
-  </main>;
+  </div>;
 }
