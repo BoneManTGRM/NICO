@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from nico.api.hosted import app
+from nico.assessment_network_budget import install_assessment_network_budget
 from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
 from nico.mid_delivery_api import register_mid_delivery_routes
@@ -10,6 +11,8 @@ from nico.mid_legacy_migration import LEGACY_MID_PATH, register_legacy_mid_migra
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_review_api import register_mid_review_routes
+
+ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
 
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -115,9 +118,6 @@ def register_production_routes(target: FastAPI) -> FastAPI:
         register_mid_delivery_routes(target)
         target.openapi_schema = None
 
-    # The application imported above still contains the former manual-notes
-    # POST /assessment/mid handler. Replace it after all route groups are loaded
-    # so production exposes exactly one guarded migration boundary.
     register_legacy_mid_migration(target)
     if _route_count(target, "POST", LEGACY_MID_PATH) != 1:
         raise RuntimeError("Legacy Mid migration route registration must produce exactly one POST /assessment/mid handler")
@@ -132,6 +132,7 @@ register_production_routes(app)
 
 __all__ = [
     "app",
+    "ASSESSMENT_NETWORK_POLICY",
     "register_production_routes",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
