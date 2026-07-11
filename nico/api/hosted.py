@@ -15,6 +15,7 @@ from nico.approved_delivery_operational_readiness import (
 from nico.approved_delivery_package import build_approved_delivery_package
 from nico.approved_delivery_storage_policy import delivery_storage_readiness
 from nico.full_assessment_api import ApprovedDeliveryTokenRequest, register_full_assessment_routes
+from nico.mid_assessment_api import register_mid_assessment_routes
 from nico.public_delivery_boundary import PublicDeliveryBoundaryMiddleware, public_delivery_boundary_status
 
 REQUIRED_FULL_ASSESSMENT_ROUTES = {
@@ -34,6 +35,10 @@ REQUIRED_FULL_ASSESSMENT_ROUTES = {
     ("GET", "/reports/{run_id}/approved-delivery/verify"),
     ("GET", "/reports/{run_id}/approved-delivery/receipts"),
     ("GET", "/reports/{run_id}/approved-delivery/acknowledgments"),
+}
+REQUIRED_MID_ASSESSMENT_ROUTES = {
+    ("POST", "/assessment/mid-run"),
+    ("POST", "/assessment/mid-run/{run_id}/status"),
 }
 HOSTED_POLICY_ROUTES = {
     ("GET", "/delivery/storage-readiness"),
@@ -280,8 +285,6 @@ def _approved_delivery_reconcile_response(
 def _install_public_delivery_boundary(target: FastAPI) -> None:
     if bool(getattr(target.state, "nico_public_delivery_boundary", False)):
         return
-    # Append so an existing CORS middleware remains outermost and can decorate
-    # boundary-generated 413/429 responses for approved frontend origins.
     target.user_middleware.append(Middleware(PublicDeliveryBoundaryMiddleware))
     target.middleware_stack = None
     target.state.nico_public_delivery_boundary = True
@@ -312,23 +315,41 @@ def _install_atomic_redeem_route(target: FastAPI) -> None:
     target.openapi_schema = None
 
 
-def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
-    """Register the complete hosted Full Assessment surface and delivery policy once."""
-
+def _register_required_surface(
+    target: FastAPI,
+    required: set[tuple[str, str]],
+    registrar: Callable[[FastAPI], None],
+    label: str,
+) -> bool:
     existing = _route_pairs(target)
-    present = existing & REQUIRED_FULL_ASSESSMENT_ROUTES
-    changed = False
-    if present != REQUIRED_FULL_ASSESSMENT_ROUTES:
-        if present:
-            missing = sorted(REQUIRED_FULL_ASSESSMENT_ROUTES - present)
-            raise RuntimeError(f"Partial Full Assessment route registration detected; missing={missing}")
-        register_full_assessment_routes(target)
-        changed = True
-
-    registered = _route_pairs(target)
-    missing = REQUIRED_FULL_ASSESSMENT_ROUTES - registered
+    present = existing & required
+    if present == required:
+        return False
+    if present:
+        missing = sorted(required - present)
+        raise RuntimeError(f"Partial {label} route registration detected; missing={missing}")
+    registrar(target)
+    missing = required - _route_pairs(target)
     if missing:
-        raise RuntimeError(f"Full Assessment route registration incomplete; missing={sorted(missing)}")
+        raise RuntimeError(f"{label} route registration incomplete; missing={sorted(missing)}")
+    return True
+
+
+def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
+    """Register complete hosted Full, Mid, and approved-delivery surfaces once."""
+
+    changed = _register_required_surface(
+        target,
+        REQUIRED_FULL_ASSESSMENT_ROUTES,
+        register_full_assessment_routes,
+        "Full Assessment",
+    )
+    changed = _register_required_surface(
+        target,
+        REQUIRED_MID_ASSESSMENT_ROUTES,
+        register_mid_assessment_routes,
+        "Mid Assessment",
+    ) or changed
 
     _install_atomic_redeem_route(target)
 
@@ -354,11 +375,14 @@ def register_hosted_extension_routes(target: FastAPI) -> FastAPI:
 
     registered = _route_pairs(target)
     policy_missing = HOSTED_POLICY_ROUTES - registered
-    required_missing = REQUIRED_FULL_ASSESSMENT_ROUTES - registered
+    full_missing = REQUIRED_FULL_ASSESSMENT_ROUTES - registered
+    mid_missing = REQUIRED_MID_ASSESSMENT_ROUTES - registered
     if policy_missing:
         raise RuntimeError(f"Hosted delivery policy route registration incomplete; missing={sorted(policy_missing)}")
-    if required_missing:
-        raise RuntimeError(f"Hosted Full Assessment route registration incomplete after atomic replacement; missing={sorted(required_missing)}")
+    if full_missing:
+        raise RuntimeError(f"Hosted Full Assessment route registration incomplete after atomic replacement; missing={sorted(full_missing)}")
+    if mid_missing:
+        raise RuntimeError(f"Hosted Mid Assessment route registration incomplete; missing={sorted(mid_missing)}")
     if changed:
         target.openapi_schema = None
     return target
@@ -370,5 +394,6 @@ __all__ = [
     "app",
     "register_hosted_extension_routes",
     "REQUIRED_FULL_ASSESSMENT_ROUTES",
+    "REQUIRED_MID_ASSESSMENT_ROUTES",
     "HOSTED_POLICY_ROUTES",
 ]
