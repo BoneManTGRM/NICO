@@ -98,7 +98,7 @@ def _bounded_repository_profile(client: Any, repo: str, repo_meta: dict[str, Any
     blobs = [item for item in tree if isinstance(item, dict) and item.get("type") == "blob"]
     tree_paths = [str(item.get("path") or "") for item in blobs if item.get("path")]
     sizes = {str(item.get("path") or ""): int(item.get("size") or 0) for item in blobs if item.get("path")}
-    candidates = [path for path in hosted.KNOWN_FILE_PATHS if path in tree_paths or path in {"README.md", "requirements.txt", "package.json"}]
+    candidates = [path for path in hosted.KNOWN_FILE_PATHS if path in tree_paths]
     candidates.extend(
         path for path in tree_paths
         if path not in candidates and hosted.should_fetch_path(path, sizes.get(path, 0))
