@@ -90,9 +90,11 @@ def acceptance_evidence(result: dict[str, Any]) -> dict[str, Any]:
         evidence_count = len(latest.get("evidence") or [])
         note = _approval_note(latest)
         action = latest.get("requested_action") or "acceptance"
+        approved_actions = sorted({str(item.get("requested_action") or "acceptance") for item in approved})
         notes.append(
             f"Client/human acceptance evidence: approved {action} record {latest.get('approval_id')} by {latest.get('approver') or 'human_reviewer'}; evidence items={evidence_count}."
         )
+        notes.append("Approved acceptance action types for this run/project: " + ", ".join(approved_actions) + ".")
         if latest.get("run_id"):
             notes.append(f"Acceptance run binding: run_id={latest.get('run_id')}.")
         if note:
