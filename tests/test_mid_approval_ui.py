@@ -84,7 +84,7 @@ def test_approved_pdf_download_verifies_approval_and_report_headers():
 
 def test_admin_token_is_not_rendered_in_identity_json():
     source = _page()
-    identity = source.split("JSON.stringify({", 1)[1].split("}, null, 2)", 1)[0]
+    identity = source.split('<summary>Exact identity</summary>', 1)[1].split("</details>", 1)[0]
 
     assert "adminToken" not in identity
     assert "admin_token" not in identity
