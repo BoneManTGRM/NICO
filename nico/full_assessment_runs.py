@@ -22,6 +22,7 @@ REQUEST_FIELDS = {
     "refresh_full_evidence",
     "build_reports",
     "create_final_review_request",
+    "auto_continue",
     "tools",
 }
 
