@@ -15,11 +15,14 @@ def _repository_evidence_handler(
     *,
     timeframe_days: int = 180,
 ) -> dict[str, Any]:
+    from nico.full_assessment_complexity_repository import collect_repository_complexity_evidence
     from nico.full_assessment_repository_evidence import collect_repository_evidence
 
     evidence_context = dict(context)
     evidence_context["timeframe_days"] = max(30, min(int(timeframe_days or 180), 365))
-    bundle = collect_repository_evidence(evidence_context)
+    bundle = dict(collect_repository_evidence(evidence_context))
+    complexity = collect_repository_complexity_evidence(evidence_context)
+    bundle["complexity_evidence"] = complexity
     attached = bundle.get("status") == "attached"
     metadata = bundle.get("repository_metadata") if isinstance(bundle.get("repository_metadata"), dict) else {}
     activity = bundle.get("activity_evidence") if isinstance(bundle.get("activity_evidence"), dict) else {}
@@ -43,6 +46,9 @@ def _repository_evidence_handler(
         "workflow_file_count": workflows.get("workflow_file_count", 0),
         "workflow_run_count": workflows.get("workflow_run_count", 0),
         "dependency_entries": dependencies.get("dependency_entries", 0),
+        "complexity_evidence_id": complexity.get("evidence_id") or "",
+        "complexity_status": complexity.get("status") or "unavailable",
+        "complexity_files_analyzed": complexity.get("files_analyzed", 0),
         "unavailable_data_notes": bundle.get("unavailable_data_notes") or [],
         "repository_evidence": bundle,
     }
@@ -51,12 +57,14 @@ def _repository_evidence_handler(
             "status": "unavailable",
             "message": "GitHub repository evidence could not be attached from the authorized read-only API scope; unavailable-data notes were preserved.",
             "repository_evidence": bundle,
+            "complexity_evidence": complexity,
             "evidence": evidence,
         }
     return {
         "status": "complete",
-        "message": "Read-only GitHub repository metadata, activity, workflow, dependency, architecture, and file-profile evidence were attached to this full-run.",
+        "message": "Read-only GitHub repository metadata, activity, workflow, dependency, architecture, file-profile, and bounded complexity evidence were attached to this full-run.",
         "repository_evidence": bundle,
+        "complexity_evidence": complexity,
         "evidence": evidence,
     }
 
@@ -194,7 +202,7 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
 
 
 def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[str, Any]:
-    from nico.full_assessment_ci_score import full_assessment_scoring_with_ci_handler
+    from nico.full_assessment_complexity_score import full_assessment_scoring_with_complexity_handler
 
     handlers = default_full_assessment_handlers()
     handlers["repo_evidence"] = lambda context, outputs: _repository_evidence_handler(
@@ -202,7 +210,7 @@ def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[st
         outputs,
         timeframe_days=timeframe_days,
     )
-    handlers["scoring"] = full_assessment_scoring_with_ci_handler
+    handlers["scoring"] = full_assessment_scoring_with_complexity_handler
     handlers["reports"] = _reports_handler
     handlers["approval_request"] = _approval_request_handler
     return handlers
