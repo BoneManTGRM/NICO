@@ -114,6 +114,7 @@ def test_default_handlers_bind_repo_and_skipped_scanner_to_run_id() -> None:
     assert by_step["scanner_worker"]["evidence"]["run_id"] == "fullrun_123"
     assert by_step["evidence_attachment"]["status"] == "skipped"
     assert by_step["scoring"]["status"] == "planned"
+    assert by_step["reports"]["status"] == "planned"
 
 
 def test_default_handlers_queue_scanner_with_same_run_id(monkeypatch) -> None:
@@ -152,11 +153,12 @@ def test_default_handlers_queue_scanner_with_same_run_id(monkeypatch) -> None:
     assert by_step["scanner_worker"]["status"] == "queued"
     assert by_step["scanner_worker"]["evidence"]["scan_id"] == "scan_123"
     assert by_step["evidence_attachment"]["status"] == "pending"
-    assert by_step["evidence_attachment"]["evidence"]["run_id"] == "fullrun_456"
+    assert by_step["scoring"]["status"] == "planned"
+    assert by_step["reports"]["status"] == "planned"
     assert result["scanner"]["scan_id"] == "scan_123"
 
 
-def test_completed_scanner_record_attaches_evidence(monkeypatch) -> None:
+def test_completed_scanner_record_attaches_evidence_and_builds_report(monkeypatch) -> None:
     def fake_get_scan(scan_id: str) -> dict:
         return {
             "status": "complete",
@@ -196,10 +198,18 @@ def test_completed_scanner_record_attaches_evidence(monkeypatch) -> None:
     by_step = {item["step"]: item for item in result["progress"]}
     assert by_step["scanner_worker"]["status"] == "complete"
     assert by_step["evidence_attachment"]["status"] == "complete"
+    assert by_step["scoring"]["status"] == "complete"
+    assert by_step["reports"]["status"] == "complete"
     assert result["scanner_evidence"]["status"] == "attached"
     assert result["scanner_evidence"]["scan_id"] == "scan_done"
     assert result["scanner_evidence"]["scanner_results_count"] == 2
-    assert result["scanner_evidence"]["human_review_required"] is True
+    assert result["assessment"]["maturity_signal"]["score"] == 90
+    assert result["assessment"]["client_delivery_verdict"]["status"] == "human_review_required"
+    assert result["reports"]["report_id"].startswith("report_")
+    assert "NICO Client-Ready Report Package" in result["reports"]["markdown"]
+    assert result["reports"]["pdf_error"]
+    assert result["human_review_required"] is True
+    assert result["client_ready"] is False
 
 
 def test_scanner_run_id_mismatch_blocks_attachment(monkeypatch) -> None:
@@ -223,4 +233,6 @@ def test_scanner_run_id_mismatch_blocks_attachment(monkeypatch) -> None:
     assert result["status"] == "failed"
     assert by_step["scanner_worker"]["status"] == "blocked"
     assert by_step["evidence_attachment"]["status"] == "blocked"
+    assert by_step["scoring"]["status"] == "planned"
+    assert by_step["reports"]["status"] == "planned"
     assert result["scanner_evidence"]["scanner_status"] == "blocked"
