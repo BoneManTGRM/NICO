@@ -2,29 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 
-from nico.api.hosted import app, register_hosted_extension_routes
+from nico.api.hosted import REQUIRED_FULL_ASSESSMENT_ROUTES, app, register_hosted_extension_routes
 
-
-EXPECTED_ROUTES = {
-    ("POST", "/assessment/full-run"),
-    ("POST", "/assessment/full-run/{run_id}/status"),
-    ("GET", "/assessment/full-run/{run_id}/approved-delivery"),
-    ("GET", "/assessment/full-run/{run_id}/approved-delivery/verify"),
-    ("POST", "/assessment/full-run/{run_id}/approved-delivery/access"),
-    ("GET", "/assessment/full-run/{run_id}/approved-delivery/access"),
-    ("GET", "/assessment/full-run/{run_id}/approved-delivery/receipts"),
-    ("GET", "/assessment/full-run/{run_id}/approved-delivery/acknowledgments"),
-    ("POST", "/assessment/full-run/approved-delivery/access/{access_id}/revoke"),
-    ("POST", "/delivery/approved/inspect"),
-    ("POST", "/delivery/approved/redeem"),
-    ("POST", "/delivery/approved/acknowledge"),
-    ("GET", "/reports/{run_id}/approved-delivery"),
-    ("GET", "/reports/{run_id}/approved-delivery/verify"),
-    ("GET", "/reports/{run_id}/approved-delivery/receipts"),
-    ("GET", "/reports/{run_id}/approved-delivery/acknowledgments"),
-}
+EXPECTED_ROUTES = REQUIRED_FULL_ASSESSMENT_ROUTES
 
 
 def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
@@ -63,6 +46,28 @@ def test_hosted_route_registration_is_idempotent():
     assert EXPECTED_ROUTES <= set(first_counts)
     assert second_counts == first_counts
     assert all(first_counts[item] == 1 for item in EXPECTED_ROUTES)
+
+
+def test_hosted_registration_rejects_partial_route_surface():
+    target = FastAPI()
+    target.add_api_route("/assessment/full-run", lambda: {"status": "partial"}, methods=["POST"])
+
+    with pytest.raises(RuntimeError, match="Partial Full Assessment route registration"):
+        register_hosted_extension_routes(target)
+
+
+def test_hosted_registration_invalidates_cached_openapi_schema():
+    target = FastAPI()
+    initial_schema = target.openapi()
+    assert "/assessment/full-run" not in (initial_schema.get("paths") or {})
+    assert target.openapi_schema is not None
+
+    register_hosted_extension_routes(target)
+
+    assert target.openapi_schema is None
+    refreshed_paths = target.openapi().get("paths") or {}
+    assert "/assessment/full-run" in refreshed_paths
+    assert "/delivery/approved/acknowledge" in refreshed_paths
 
 
 def test_hosted_openapi_schema_exposes_full_assessment_routes():
