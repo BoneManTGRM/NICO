@@ -194,7 +194,7 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
 
 
 def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[str, Any]:
-    from nico.full_assessment_scorecard import full_assessment_scoring_handler
+    from nico.full_assessment_ci_score import full_assessment_scoring_with_ci_handler
 
     handlers = default_full_assessment_handlers()
     handlers["repo_evidence"] = lambda context, outputs: _repository_evidence_handler(
@@ -202,7 +202,7 @@ def idempotent_full_assessment_handlers(*, timeframe_days: int = 180) -> dict[st
         outputs,
         timeframe_days=timeframe_days,
     )
-    handlers["scoring"] = full_assessment_scoring_handler
+    handlers["scoring"] = full_assessment_scoring_with_ci_handler
     handlers["reports"] = _reports_handler
     handlers["approval_request"] = _approval_request_handler
     return handlers
