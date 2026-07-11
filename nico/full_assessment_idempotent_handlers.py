@@ -189,6 +189,9 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
             "report_id": approval.get("report_id") or report_id,
             "idempotency_key": approval.get("idempotency_key") or identity["idempotency_key"],
             "idempotent_reuse": reused,
+            "approver": approval.get("approver") or "",
+            "review_validation": approval.get("review_validation") or {},
+            "review_decision": approval.get("review_decision") or {},
         },
         "review": review.get("review") or {},
         "evidence": {
@@ -197,6 +200,7 @@ def _approval_request_handler(context: dict[str, Any], outputs: dict[str, Any]) 
             "approval_id": approval.get("approval_id") or identity["approval_id"],
             "idempotency_key": approval.get("idempotency_key") or identity["idempotency_key"],
             "idempotent_reuse": reused,
+            "review_validation_status": str((approval.get("review_validation") or {}).get("status") or "missing"),
         },
     }
 
