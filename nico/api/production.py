@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from nico.api.hosted import app
+from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
@@ -15,6 +16,11 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("GET", "/assessment/mid-run/{run_id}/review-exceptions"),
     ("POST", "/assessment/mid-run/{run_id}/report/draft"),
     ("GET", "/assessment/mid-run/{run_id}/report/draft/pdf"),
+    ("POST", "/assessment/mid-run/{run_id}/approval/request"),
+    ("GET", "/assessment/mid-run/{run_id}/approval"),
+    ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
+    ("GET", "/assessment/mid-run/{run_id}/report/approved"),
+    ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
 }
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -30,6 +36,13 @@ MID_REPORT_ROUTES = {
     ("POST", "/assessment/mid-run/{run_id}/report/draft"),
     ("GET", "/assessment/mid-run/{run_id}/report/draft/pdf"),
 }
+MID_APPROVAL_ROUTES = {
+    ("POST", "/assessment/mid-run/{run_id}/approval/request"),
+    ("GET", "/assessment/mid-run/{run_id}/approval"),
+    ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
+    ("GET", "/assessment/mid-run/{run_id}/report/approved"),
+    ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
+}
 
 
 def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
@@ -41,20 +54,20 @@ def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
     return pairs
 
 
+def _validate_group(existing: set[tuple[str, str]], required: set[tuple[str, str]], label: str) -> bool:
+    present = existing & required
+    if present and present != required:
+        raise RuntimeError(f"Partial {label} route registration detected; missing={sorted(required - present)}")
+    return bool(present)
+
+
 def register_production_routes(target: FastAPI) -> FastAPI:
     existing = _route_pairs(target)
-    core_present = existing & MID_CORE_ROUTES
-    optional_present = existing & MID_OPTIONAL_EVIDENCE_ROUTES
-    review_present = existing & MID_REVIEW_ROUTES
-    report_present = existing & MID_REPORT_ROUTES
-    if core_present and core_present != MID_CORE_ROUTES:
-        raise RuntimeError(f"Partial unified Mid route registration detected; missing={sorted(MID_CORE_ROUTES - core_present)}")
-    if optional_present and optional_present != MID_OPTIONAL_EVIDENCE_ROUTES:
-        raise RuntimeError(f"Partial Mid optional-evidence route registration detected; missing={sorted(MID_OPTIONAL_EVIDENCE_ROUTES - optional_present)}")
-    if review_present and review_present != MID_REVIEW_ROUTES:
-        raise RuntimeError(f"Partial Mid review route registration detected; missing={sorted(MID_REVIEW_ROUTES - review_present)}")
-    if report_present and report_present != MID_REPORT_ROUTES:
-        raise RuntimeError(f"Partial Mid report route registration detected; missing={sorted(MID_REPORT_ROUTES - report_present)}")
+    core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
+    optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
+    review_present = _validate_group(existing, MID_REVIEW_ROUTES, "Mid review")
+    report_present = _validate_group(existing, MID_REPORT_ROUTES, "Mid report")
+    approval_present = _validate_group(existing, MID_APPROVAL_ROUTES, "Mid approval")
     if not core_present:
         register_mid_assessment_routes(target)
         target.openapi_schema = None
@@ -66,6 +79,9 @@ def register_production_routes(target: FastAPI) -> FastAPI:
         target.openapi_schema = None
     if not report_present:
         register_mid_report_routes(target)
+        target.openapi_schema = None
+    if not approval_present:
+        register_mid_approval_routes(target)
         target.openapi_schema = None
     missing = REQUIRED_MID_ASSESSMENT_ROUTES - _route_pairs(target)
     if missing:
@@ -83,4 +99,5 @@ __all__ = [
     "MID_OPTIONAL_EVIDENCE_ROUTES",
     "MID_REVIEW_ROUTES",
     "MID_REPORT_ROUTES",
+    "MID_APPROVAL_ROUTES",
 ]
