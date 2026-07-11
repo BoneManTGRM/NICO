@@ -1,6 +1,7 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import GenericRepositoryExample from "./GenericRepositoryExample";
+import MidAssessmentCompanion from "./MidAssessmentCompanion";
 
 export const metadata = {
   title: "NICO",
@@ -24,10 +25,11 @@ export default function RootLayout({children}: {children: ReactNode}) {
           </div>
         </nav>
         <div className="full-run-callout" role="status">
-          <b>New:</b> Use <a href="/full-run">Full Assessment</a> for the one-click orchestrated path: scanner worker, evidence attachment, draft scoring, report package, and final human review request. Express PDFs still use the older fast-report path.
+          <b>New:</b> Use the <a href="/">Command Center</a> for the unified Express/Mid intake. Mid keeps one run ID and exact repository snapshot; use <a href="/full-run">Full Assessment</a> for the existing full-run workflow.
         </div>
         <GenericRepositoryExample />
         {children}
+        <MidAssessmentCompanion />
       </body>
     </html>
   );
