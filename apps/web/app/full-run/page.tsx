@@ -13,36 +13,24 @@ type ReviewValidation = {status?: string; ready_for_approval?: boolean; blockers
 type DeliveryVerification = {status?: string; verified?: boolean; blockers?: string[]; checks?: Array<{id?: string; passed?: boolean; message?: string}>; computed?: {pdf_sha256?: string; source_draft_pdf_sha256?: string; approval_identity_sha256?: string}; rule?: string};
 type ApprovedDelivery = {status?: string; artifact_type?: string; style_version?: string; run_id?: string; report_id?: string; approval_id?: string; approver?: string; approved_at?: string; client_delivery_allowed?: boolean; human_review_completed?: boolean; pdf_base64?: string; pdf_filename?: string; pdf_sha256?: string; source_draft_pdf_sha256?: string; approval_identity_sha256?: string; disclosure?: string};
 type ApprovalRecord = {approval_id?: string; status?: string; requested_action?: string; run_id?: string; report_id?: string; approver?: string; review_validation?: ReviewValidation; review_decision?: {state?: string; actor?: string; note?: string; decided_at?: string; client_delivery_allowed?: boolean}; approved_delivery?: ApprovedDelivery};
+type DeliveryAccess = {access_id?: string; status?: string; recipient_label?: string; created_by?: string; created_at?: string; expires_at?: string; max_downloads?: number; download_count?: number; downloads_remaining?: number; token_fingerprint?: string; persistence?: {durable?: boolean; adapter?: string; note?: string}};
 type FullRunResult = {
-  status?: string;
-  status_refresh?: boolean;
-  report_path?: string;
-  report_path_label?: string;
-  report_path_conflict?: ReportPathConflict;
-  run_id?: string;
-  repository?: string;
-  customer_id?: string;
-  project_id?: string;
-  mode?: string;
-  generated_at?: string;
-  progress?: ProgressItem[];
-  scanner?: {scan_id?: string; status?: string};
-  scanner_evidence?: {status?: string; scan_id?: string; scanner_status?: string; scanner_results_count?: number};
+  status?: string; status_refresh?: boolean; report_path?: string; report_path_label?: string; report_path_conflict?: ReportPathConflict;
+  run_id?: string; repository?: string; customer_id?: string; project_id?: string; mode?: string; generated_at?: string; progress?: ProgressItem[];
+  scanner?: {scan_id?: string; status?: string}; scanner_evidence?: {status?: string; scan_id?: string; scanner_status?: string; scanner_results_count?: number};
   assessment?: {status?: string; report_path?: string; report_path_label?: string; report_path_conflict?: ReportPathConflict; maturity_signal?: {level?: string; score?: number; summary?: string}; client_delivery_verdict?: {status?: string; confidence?: string}; sections?: Array<{id?: string; label?: string; score?: number; status?: string; summary?: string}>};
   reports?: {markdown?: string; html?: string; pdf_base64?: string; pdf_filename?: string; pdf_style?: string; pdf_error?: string; report_id?: string; report_path?: string; report_path_label?: string; report_path_conflict?: ReportPathConflict};
-  approval?: ApprovalRecord;
-  approved_delivery?: ApprovedDelivery;
-  approved_delivery_recovery?: {status?: string; verified?: boolean; verification?: DeliveryVerification};
-  human_review_required?: boolean;
-  client_ready?: boolean;
+  approval?: ApprovalRecord; approved_delivery?: ApprovedDelivery; approved_delivery_recovery?: {status?: string; verified?: boolean; verification?: DeliveryVerification}; human_review_required?: boolean; client_ready?: boolean;
 };
 type ReviewTransitionResponse = {status?: string; error?: string; approval?: ApprovalRecord; approved_delivery?: ApprovedDelivery; review_validation?: ReviewValidation};
 type ApprovedDeliveryResponse = {status?: string; verified?: boolean; error?: string; run_id?: string; report_id?: string; customer_id?: string; project_id?: string; client_ready?: boolean; human_review_required?: boolean; approval?: ApprovalRecord; approved_delivery?: ApprovedDelivery; verification?: DeliveryVerification};
+type AccessCreateResponse = {status?: string; token?: string; fragment_path?: string; access?: DeliveryAccess; warning?: string; detail?: {message?: string}};
+type AccessRevokeResponse = {status?: string; access?: DeliveryAccess; detail?: {message?: string}};
 
 function statusClass(status?: string) {
-  if (["complete", "approved", "verified", "green", "attached", "ready_for_human_decision"].includes(status || "")) return "status green";
+  if (["complete", "approved", "verified", "created", "active", "green", "attached", "ready_for_human_decision"].includes(status || "")) return "status green";
   if (["running", "queued", "pending", "pending_review", "planned", "yellow", "needs_more_evidence", "missing"].includes(status || "")) return "status yellow";
-  if (["failed", "blocked", "error", "rejected", "red"].includes(status || "")) return "status red";
+  if (["failed", "blocked", "error", "rejected", "revoked", "expired", "red"].includes(status || "")) return "status red";
   return "status gray";
 }
 
@@ -61,11 +49,8 @@ function saveBase64Pdf(pdfBase64: string, filename: string) {
   const blob = new Blob([bytes], {type: "application/pdf"});
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename || "nico-full-assessment.pdf";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+  anchor.href = url; anchor.download = filename || "nico-full-assessment.pdf";
+  document.body.appendChild(anchor); anchor.click(); anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
@@ -81,10 +66,17 @@ export default function FullRunPage() {
   const [reviewerActor, setReviewerActor] = useState("human_reviewer");
   const [reviewNote, setReviewNote] = useState("");
   const [deliveryLookupId, setDeliveryLookupId] = useState("");
+  const [adminToken, setAdminToken] = useState("");
+  const [recipientLabel, setRecipientLabel] = useState("");
+  const [expiresInHours, setExpiresInHours] = useState(24);
+  const [maxDownloads, setMaxDownloads] = useState(1);
+  const [clientLink, setClientLink] = useState("");
+  const [deliveryAccess, setDeliveryAccess] = useState<DeliveryAccess | null>(null);
   const [result, setResult] = useState<FullRunResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [accessLoading, setAccessLoading] = useState(false);
   const backendConfigured = Boolean(API_URL);
   const reportPath = result?.report_path || result?.reports?.report_path || result?.assessment?.report_path || "full_run";
   const reportPathLabel = result?.report_path_label || result?.reports?.report_path_label || result?.assessment?.report_path_label || "Full Assessment";
@@ -105,11 +97,10 @@ export default function FullRunPage() {
 
   async function runFullAssessment() {
     if (!backendConfigured) { setError("No NEXT_PUBLIC_NICO_API_URL is configured for this deployment."); return; }
-    setError(""); setResult(null); setLoading(true);
+    setError(""); setResult(null); setClientLink(""); setDeliveryAccess(null); setLoading(true);
     try {
       const data = await postFullRun("/assessment/full-run", {repository, authorization_confirmed: authorized, authorized, authorized_by: authorizedBy, customer_id: customerId, project_id: projectId, mode: "express", run_scanners: runScanners, refresh_full_evidence: true, build_reports: buildReports, create_final_review_request: requestReview, tools: defaultTools});
-      setResult(data);
-      setDeliveryLookupId(data.run_id || data.reports?.report_id || "");
+      setResult(data); setDeliveryLookupId(data.run_id || data.reports?.report_id || "");
     } catch (err) { setError(err instanceof Error ? err.message : "Full-run failed"); }
     finally { setLoading(false); }
   }
@@ -119,8 +110,7 @@ export default function FullRunPage() {
     setError(""); setLoading(true);
     try {
       const data = await postFullRun(`/assessment/full-run/${encodeURIComponent(result.run_id)}/status`, {repository: result.repository || repository, authorization_confirmed: true, authorized: true, authorized_by: authorizedBy, customer_id: result.customer_id || customerId, project_id: result.project_id || projectId, scan_id: result.scanner?.scan_id || result.scanner_evidence?.scan_id || "", build_reports: false, create_final_review_request: false});
-      setResult(data);
-      setDeliveryLookupId(data.run_id || data.reports?.report_id || deliveryLookupId);
+      setResult(data); setDeliveryLookupId(data.run_id || data.reports?.report_id || deliveryLookupId);
     } catch (err) { setError(err instanceof Error ? err.message : "Full-run refresh failed"); }
     finally { setLoading(false); }
   }
@@ -134,20 +124,7 @@ export default function FullRunPage() {
       const response = await fetch(`${API_URL}/assessment/full-run/${encodeURIComponent(lookupId)}/approved-delivery?${params.toString()}`, {cache: "no-store"});
       const data = await response.json() as ApprovedDeliveryResponse & {detail?: {message?: string}};
       if (!response.ok || data.status === "blocked" || data.status === "not_found" || !data.verified) throw new Error(data.detail?.message || data.error || "Approved delivery could not be verified and recovered.");
-      setResult((current) => ({
-        ...(current || {}),
-        status: current?.status || "complete",
-        report_path: current?.report_path || "full_run",
-        report_path_label: current?.report_path_label || "Full Assessment",
-        run_id: data.run_id || current?.run_id || lookupId,
-        customer_id: data.customer_id || current?.customer_id || customerId,
-        project_id: data.project_id || current?.project_id || projectId,
-        approval: data.approval || current?.approval,
-        approved_delivery: data.approved_delivery || current?.approved_delivery,
-        approved_delivery_recovery: {status: data.status, verified: data.verified, verification: data.verification},
-        client_ready: data.client_ready,
-        human_review_required: data.human_review_required,
-      }));
+      setResult((current) => ({...(current || {}), status: current?.status || "complete", report_path: current?.report_path || "full_run", report_path_label: current?.report_path_label || "Full Assessment", run_id: data.run_id || current?.run_id || lookupId, customer_id: data.customer_id || current?.customer_id || customerId, project_id: data.project_id || current?.project_id || projectId, approval: data.approval || current?.approval, approved_delivery: data.approved_delivery || current?.approved_delivery, approved_delivery_recovery: {status: data.status, verified: data.verified, verification: data.verification}, client_ready: data.client_ready, human_review_required: data.human_review_required}));
       setDeliveryLookupId(data.run_id || data.report_id || lookupId);
     } catch (err) { setError(err instanceof Error ? err.message : "Approved delivery recovery failed"); }
     finally { setLoading(false); }
@@ -164,40 +141,57 @@ export default function FullRunPage() {
       const data = await response.json() as ReviewTransitionResponse;
       if (!response.ok || data.status === "blocked" || data.status === "not_found") throw new Error(data.error || `Final-review decision failed with ${response.status}`);
       setResult((current) => current ? {...current, approval: data.approval || current.approval, approved_delivery: data.approved_delivery || current.approved_delivery} : current);
-      setDeliveryLookupId(data.approved_delivery?.run_id || result?.run_id || deliveryLookupId);
-      setReviewNote("");
+      setDeliveryLookupId(data.approved_delivery?.run_id || result?.run_id || deliveryLookupId); setReviewNote("");
     } catch (err) { setError(err instanceof Error ? err.message : "Final-review decision failed"); }
     finally { setReviewLoading(false); }
   }
 
-  async function copyMarkdown() {
-    if (deliveryActionsBlocked || !result?.reports?.markdown) return;
-    await navigator.clipboard?.writeText(result.reports.markdown);
+  async function createClientLink() {
+    const runId = approvedDelivery?.run_id || result?.run_id || deliveryLookupId;
+    if (!backendConfigured || !runId) { setError("A verified approved delivery is required."); return; }
+    if (!adminToken.trim()) { setError("The NICO admin token is required to create a client link."); return; }
+    setError(""); setAccessLoading(true); setClientLink(""); setDeliveryAccess(null);
+    try {
+      const response = await fetch(`${API_URL}/assessment/full-run/${encodeURIComponent(runId)}/approved-delivery/access`, {method: "POST", headers: {"Content-Type": "application/json", "X-NICO-Admin-Token": adminToken}, body: JSON.stringify({customer_id: result?.customer_id || customerId, project_id: result?.project_id || projectId, report_id: approvedDelivery?.report_id || result?.approval?.report_id || "", recipient_label: recipientLabel, created_by: reviewerActor || authorizedBy, expires_in_hours: expiresInHours, max_downloads: maxDownloads}), cache: "no-store"});
+      const data = await response.json() as AccessCreateResponse;
+      if (!response.ok || data.status !== "created" || !data.token) throw new Error(data.detail?.message || "The secure client link could not be created.");
+      const fragment = data.fragment_path || `/delivery#token=${encodeURIComponent(data.token)}`;
+      setClientLink(`${window.location.origin}${fragment}`); setDeliveryAccess(data.access || null);
+    } catch (err) { setError(err instanceof Error ? err.message : "Secure client-link creation failed"); }
+    finally { setAccessLoading(false); }
   }
 
-  function downloadDraftPdf() {
-    if (deliveryActionsBlocked || !result?.reports?.pdf_base64) return;
-    try { saveBase64Pdf(result.reports.pdf_base64, result.reports.pdf_filename || "nico-full-assessment.pdf"); }
-    catch { setError("The Full Assessment draft PDF could not be decoded for download."); }
+  async function revokeClientLink() {
+    if (!deliveryAccess?.access_id || !adminToken.trim()) return;
+    setError(""); setAccessLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/assessment/full-run/approved-delivery/access/${encodeURIComponent(deliveryAccess.access_id)}/revoke`, {method: "POST", headers: {"Content-Type": "application/json", "X-NICO-Admin-Token": adminToken}, body: JSON.stringify({actor: reviewerActor || authorizedBy}), cache: "no-store"});
+      const data = await response.json() as AccessRevokeResponse;
+      if (!response.ok || data.status !== "revoked") throw new Error(data.detail?.message || "The client link could not be revoked.");
+      setDeliveryAccess(data.access || {...deliveryAccess, status: "revoked"}); setClientLink("");
+    } catch (err) { setError(err instanceof Error ? err.message : "Client-link revocation failed"); }
+    finally { setAccessLoading(false); }
   }
 
-  function downloadApprovedPdf() {
-    if (deliveryActionsBlocked || !approvedDelivery?.client_delivery_allowed || !approvedDelivery.pdf_base64) return;
-    try { saveBase64Pdf(approvedDelivery.pdf_base64, approvedDelivery.pdf_filename || "nico-full-assessment-approved.pdf"); }
-    catch { setError("The approved Full Assessment PDF could not be decoded for download."); }
-  }
+  async function copyClientLink() { if (clientLink) await navigator.clipboard?.writeText(clientLink); }
+  async function copyMarkdown() { if (!deliveryActionsBlocked && result?.reports?.markdown) await navigator.clipboard?.writeText(result.reports.markdown); }
+  function downloadDraftPdf() { if (!deliveryActionsBlocked && result?.reports?.pdf_base64) { try { saveBase64Pdf(result.reports.pdf_base64, result.reports.pdf_filename || "nico-full-assessment.pdf"); } catch { setError("The Full Assessment draft PDF could not be decoded for download."); } } }
+  function downloadApprovedPdf() { if (!deliveryActionsBlocked && approvedDelivery?.client_delivery_allowed && approvedDelivery.pdf_base64) { try { saveBase64Pdf(approvedDelivery.pdf_base64, approvedDelivery.pdf_filename || "nico-full-assessment-approved.pdf"); } catch { setError("The approved Full Assessment PDF could not be decoded for download."); } } }
 
   return <main className="shell">
-    <section className="hero"><p className="eyebrow">NICO Full Run</p><h1>One-click full assessment</h1><p className="lead">Run the full evidence-bound chain: authorization, repository evidence, scanner worker, evidence attachment, draft scoring, report package, final human review, and verified approved delivery.</p><div className="hero-actions"><a className="secondary-link" href="/">Back to dashboard</a></div></section>
+    <section className="hero"><p className="eyebrow">NICO Full Run</p><h1>One-click full assessment</h1><p className="lead">Run the evidence-bound chain through human approval, verified delivery, and controlled client handoff.</p><div className="hero-actions"><a className="secondary-link" href="/">Back to dashboard</a></div></section>
 
-    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Authorized target</p><h2>Full assessment setup</h2></div><span className={backendConfigured ? "status green" : "status red"}>{backendConfigured ? "Backend configured" : "Backend missing"}</span></div><p className="warning-box">Only assess repositories you own or are explicitly authorized to review. Client delivery remains blocked until human review approval, approved-artifact generation, and integrity verification.</p><div className="form-grid"><label>Repository owner/name or GitHub URL<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repo" /></label><label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label><label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label><label>Authorized by<input value={authorizedBy} onChange={(event) => setAuthorizedBy(event.target.value)} /></label><label>Run or report ID<input value={deliveryLookupId} onChange={(event) => setDeliveryLookupId(event.target.value)} placeholder="Recover a saved approved delivery" /></label></div><div className="checkbox-grid"><label><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> I confirm authorization.</label><label><input type="checkbox" checked={runScanners} onChange={(event) => setRunScanners(event.target.checked)} /> Run scanner worker.</label><label><input type="checkbox" checked={buildReports} onChange={(event) => setBuildReports(event.target.checked)} /> Build report package.</label><label><input type="checkbox" checked={requestReview} onChange={(event) => setRequestReview(event.target.checked)} /> Request final review.</label></div><div className="report-actions"><button type="button" className="primary-button" disabled={!backendConfigured || !authorized || loading} onClick={runFullAssessment}>{loading ? "Working..." : "Run full assessment"}</button><button type="button" disabled={!result?.run_id || loading} onClick={refreshFullRun}>Refresh full-run status</button><button type="button" disabled={!deliveryLookupId.trim() || loading || !backendConfigured} onClick={recoverApprovedDelivery}>Recover approved delivery</button><button type="button" disabled={!result?.reports?.markdown || deliveryActionsBlocked} onClick={copyMarkdown}>Copy Markdown</button><button type="button" disabled={!result?.reports?.pdf_base64 || deliveryActionsBlocked} onClick={downloadDraftPdf}>Download draft PDF</button><button type="button" className="primary-button" disabled={!approvedDelivery?.client_delivery_allowed || !approvedDelivery?.pdf_base64 || deliveryActionsBlocked} onClick={downloadApprovedPdf}>Download approved PDF</button></div>{error ? <p className="error-box">{error}</p> : null}</section>
+    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Authorized target</p><h2>Full assessment setup</h2></div><span className={backendConfigured ? "status green" : "status red"}>{backendConfigured ? "Backend configured" : "Backend missing"}</span></div><p className="warning-box">Only assess repositories you own or are explicitly authorized to review. Client delivery remains blocked until human approval and artifact verification.</p><div className="form-grid"><label>Repository owner/name or GitHub URL<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repo" /></label><label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label><label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label><label>Authorized by<input value={authorizedBy} onChange={(event) => setAuthorizedBy(event.target.value)} /></label><label>Run or report ID<input value={deliveryLookupId} onChange={(event) => setDeliveryLookupId(event.target.value)} placeholder="Recover a saved approved delivery" /></label></div><div className="checkbox-grid"><label><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> I confirm authorization.</label><label><input type="checkbox" checked={runScanners} onChange={(event) => setRunScanners(event.target.checked)} /> Run scanner worker.</label><label><input type="checkbox" checked={buildReports} onChange={(event) => setBuildReports(event.target.checked)} /> Build report package.</label><label><input type="checkbox" checked={requestReview} onChange={(event) => setRequestReview(event.target.checked)} /> Request final review.</label></div><div className="report-actions"><button type="button" className="primary-button" disabled={!backendConfigured || !authorized || loading} onClick={runFullAssessment}>{loading ? "Working..." : "Run full assessment"}</button><button type="button" disabled={!result?.run_id || loading} onClick={refreshFullRun}>Refresh full-run status</button><button type="button" disabled={!deliveryLookupId.trim() || loading || !backendConfigured} onClick={recoverApprovedDelivery}>Recover approved delivery</button><button type="button" disabled={!result?.reports?.markdown || deliveryActionsBlocked} onClick={copyMarkdown}>Copy Markdown</button><button type="button" disabled={!result?.reports?.pdf_base64 || deliveryActionsBlocked} onClick={downloadDraftPdf}>Download draft PDF</button><button type="button" className="primary-button" disabled={!approvedDelivery?.client_delivery_allowed || !approvedDelivery?.pdf_base64 || deliveryActionsBlocked} onClick={downloadApprovedPdf}>Download approved PDF</button></div>{error ? <p className="error-box">{error}</p> : null}</section>
 
     <section className="section panel"><div className="section-head"><div><p className="eyebrow">Full-run result</p><h2>{result?.run_id ? `run_id=${result.run_id}` : "Awaiting full run or recovery"}</h2></div><span className={statusClass(result?.approved_delivery_recovery?.status || result?.status)}>{result?.approved_delivery_recovery?.status || result?.status || "not started"}</span></div>{result?.human_review_required && approvalStatus !== "approved" ? <p className="warning-box">Human review is required. client_ready={String(result.client_ready)}</p> : null}<ReportPathNotice expectedPath="full_run" reportPath={reportPath} reportPathLabel={reportPathLabel} conflict={reportPathConflict} clientReady={Boolean(result?.client_ready && approvedDelivery?.client_delivery_allowed)} /><div className="grid four target-grid"><article><b>Repository</b><span>{result?.repository || repository}</span></article><article><b>Scan ID</b><span>{result?.scanner?.scan_id || result?.scanner_evidence?.scan_id || "not available"}</span></article><article><b>Report ID</b><span>{result?.reports?.report_id || result?.approval?.report_id || approvedDelivery?.report_id || "not available"}</span></article><article><b>Approval ID</b><span>{result?.approval?.approval_id || approvedDelivery?.approval_id || "not requested"}</span></article></div><ProgressTimeline progress={result?.progress} /></section>
 
-    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Human review</p><h2>Final report decision</h2></div><span className={statusClass(approvalStatus)}>{approvalStatus.replaceAll("_", " ")}</span></div><p className="warning-box">Review the draft PDF, scorecard, evidence limits, unavailable data, and action plan before deciding. Approval generates a new hash-bound client-delivery PDF; the reviewed draft remains unchanged.</p><div className="form-grid"><label>Reviewer identity<input value={reviewerActor} onChange={(event) => setReviewerActor(event.target.value)} placeholder="Human reviewer name or role" /></label><label>Decision note<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Required when requesting more evidence or rejecting." /></label></div>{reviewValidation ? <div className="mini-panel"><div className="result-head"><b>Pre-approval validation</b><span className={statusClass(reviewValidation.status)}>{reviewValidation.status || "unknown"}</span></div><pre className="json-block">{JSON.stringify(reviewValidation, null, 2)}</pre></div> : <p className="muted">No final-review validation record is available yet.</p>}<div className="report-actions"><button type="button" className="primary-button" disabled={!result?.approval?.approval_id || !result?.reports?.pdf_base64 || deliveryActionsBlocked || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("approved")}>{reviewLoading ? "Generating approved artifact..." : "Approve and generate delivery PDF"}</button><button type="button" disabled={!result?.approval?.approval_id || !reviewNote.trim() || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("needs_more_evidence")}>Request more evidence</button><button type="button" disabled={!result?.approval?.approval_id || !reviewNote.trim() || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("rejected")}>Reject report</button></div>{result?.approval?.review_decision ? <p className="warning-box">Decision: {result.approval.review_decision.state || approvalStatus}; reviewer={result.approval.review_decision.actor || result.approval.approver || "not recorded"}; decided_at={result.approval.review_decision.decided_at || "not recorded"}.</p> : null}</section>
+    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Human review</p><h2>Final report decision</h2></div><span className={statusClass(approvalStatus)}>{approvalStatus.replaceAll("_", " ")}</span></div><p className="warning-box">Approval generates a separate hash-bound client-delivery PDF. The reviewed draft remains unchanged.</p><div className="form-grid"><label>Reviewer identity<input value={reviewerActor} onChange={(event) => setReviewerActor(event.target.value)} /></label><label>Decision note<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Required when requesting more evidence or rejecting." /></label></div>{reviewValidation ? <div className="mini-panel"><div className="result-head"><b>Pre-approval validation</b><span className={statusClass(reviewValidation.status)}>{reviewValidation.status || "unknown"}</span></div><pre className="json-block">{JSON.stringify(reviewValidation, null, 2)}</pre></div> : null}<div className="report-actions"><button type="button" className="primary-button" disabled={!result?.approval?.approval_id || !result?.reports?.pdf_base64 || deliveryActionsBlocked || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("approved")}>{reviewLoading ? "Generating approved artifact..." : "Approve and generate delivery PDF"}</button><button type="button" disabled={!result?.approval?.approval_id || !reviewNote.trim() || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("needs_more_evidence")}>Request more evidence</button><button type="button" disabled={!result?.approval?.approval_id || !reviewNote.trim() || approvalTerminal || reviewLoading} onClick={() => submitReviewDecision("rejected")}>Reject report</button></div></section>
 
-    {approvedDelivery?.status === "complete" ? <section className="section panel"><div className="section-head"><div><p className="eyebrow">Approved delivery</p><h2>{approvedDelivery.pdf_filename || "Approved Full Assessment PDF"}</h2></div><span className={statusClass(deliveryVerification?.status || (approvedDelivery.client_delivery_allowed ? "verified" : "blocked"))}>{deliveryVerification?.status || (approvedDelivery.client_delivery_allowed ? "verified" : "blocked")}</span></div><p className="warning-box">This is a separate approved artifact. The original draft remains preserved as the exact source reviewed by {approvedDelivery.approver || "the human reviewer"}. Download is enabled only when the persisted approval, scope, identity, source draft, approved PDF, and SHA-256 bindings verify together.</p><div className="grid four target-grid"><article><b>Approved at</b><span>{approvedDelivery.approved_at || "not recorded"}</span></article><article><b>PDF SHA-256</b><span>{approvedDelivery.pdf_sha256 || "not recorded"}</span></article><article><b>Source draft SHA-256</b><span>{approvedDelivery.source_draft_pdf_sha256 || "not recorded"}</span></article><article><b>Approval identity SHA-256</b><span>{approvedDelivery.approval_identity_sha256 || "not recorded"}</span></article></div>{deliveryVerification ? <details className="help-details"><summary>Approved-delivery verification</summary><pre className="json-block">{JSON.stringify(deliveryVerification, null, 2)}</pre></details> : null}<div className="report-actions"><button type="button" className="primary-button" disabled={!approvedDelivery.pdf_base64 || !approvedDelivery.client_delivery_allowed || deliveryVerification?.verified === false || deliveryActionsBlocked} onClick={downloadApprovedPdf}>Download verified approved PDF</button></div><p className="muted">{approvedDelivery.disclosure || "Evidence limitations and remediation requirements remain part of the approved assessment."}</p></section> : null}
+    {approvedDelivery?.status === "complete" ? <section className="section panel"><div className="section-head"><div><p className="eyebrow">Approved delivery</p><h2>{approvedDelivery.pdf_filename || "Approved Full Assessment PDF"}</h2></div><span className={statusClass(deliveryVerification?.status || (approvedDelivery.client_delivery_allowed ? "verified" : "blocked"))}>{deliveryVerification?.status || (approvedDelivery.client_delivery_allowed ? "verified" : "blocked")}</span></div><p className="warning-box">The original draft remains preserved as the exact source reviewed by {approvedDelivery.approver || "the human reviewer"}. Direct download is enabled only when the persisted identities and SHA-256 bindings verify together.</p><div className="grid four target-grid"><article><b>Approved at</b><span>{approvedDelivery.approved_at || "not recorded"}</span></article><article><b>PDF SHA-256</b><span>{approvedDelivery.pdf_sha256 || "not recorded"}</span></article><article><b>Source draft SHA-256</b><span>{approvedDelivery.source_draft_pdf_sha256 || "not recorded"}</span></article><article><b>Approval identity SHA-256</b><span>{approvedDelivery.approval_identity_sha256 || "not recorded"}</span></article></div>{deliveryVerification ? <details className="help-details"><summary>Approved-delivery verification</summary><pre className="json-block">{JSON.stringify(deliveryVerification, null, 2)}</pre></details> : null}<div className="report-actions"><button type="button" className="primary-button" disabled={!approvedDelivery.pdf_base64 || !approvedDelivery.client_delivery_allowed || deliveryVerification?.verified === false || deliveryActionsBlocked} onClick={downloadApprovedPdf}>Download verified approved PDF</button></div>
 
-    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Evidence / output</p><h2>Scanner, score, report, approval</h2></div><span className={statusClass(result?.approval?.status)}>{result?.approval?.status || "approval not requested"}</span></div><div className="two-col inset-grid"><div className="mini-panel"><p className="eyebrow">Scanner evidence</p><pre className="json-block">{JSON.stringify(result?.scanner_evidence || {}, null, 2)}</pre></div><div className="mini-panel"><p className="eyebrow">Assessment</p><pre className="json-block">{JSON.stringify(result?.assessment?.maturity_signal || {}, null, 2)}</pre></div></div>{result?.reports?.markdown ? <details className="help-details"><summary>Report Markdown</summary><pre className="json-block">{result.reports.markdown}</pre></details> : <p className="muted">No report package returned yet.</p>}{result?.reports?.pdf_base64 ? <p className="warning-box">Draft PDF ready: {result.reports.pdf_filename || "nico-full-assessment.pdf"}. Human review and approved-artifact verification are required before client delivery.</p> : null}{result?.reports?.pdf_error ? <p className="warning-box">PDF: {result.reports.pdf_error}</p> : null}</section>
+      <div className="mini-panel"><div className="section-head"><div><p className="eyebrow">Controlled handoff</p><h2>Create an expiring client link</h2></div><span className={statusClass(deliveryAccess?.status)}>{deliveryAccess?.status || "not created"}</span></div><p className="muted">The raw token is returned once, placed only in the link fragment, removed from the client address bar after loading, and never stored or audited by NICO.</p><div className="form-grid"><label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label><label>Recipient label<input value={recipientLabel} onChange={(event) => setRecipientLabel(event.target.value)} placeholder="Client or reviewer name" /></label><label>Expires in hours<input type="number" min={1} max={168} value={expiresInHours} onChange={(event) => setExpiresInHours(Number(event.target.value) || 1)} /></label><label>Maximum downloads<input type="number" min={1} max={20} value={maxDownloads} onChange={(event) => setMaxDownloads(Number(event.target.value) || 1)} /></label></div><div className="report-actions"><button type="button" className="primary-button" disabled={!approvedDelivery.client_delivery_allowed || deliveryVerification?.verified === false || accessLoading || !adminToken.trim()} onClick={createClientLink}>{accessLoading ? "Working..." : "Create secure client link"}</button><button type="button" disabled={!clientLink} onClick={copyClientLink}>Copy client link</button><button type="button" disabled={!deliveryAccess?.access_id || deliveryAccess.status === "revoked" || accessLoading || !adminToken.trim()} onClick={revokeClientLink}>Revoke link</button></div>{clientLink ? <label>One-time returned client link<input readOnly value={clientLink} /></label> : null}{deliveryAccess ? <pre className="json-block">{JSON.stringify(deliveryAccess, null, 2)}</pre> : null}{deliveryAccess?.persistence?.durable === false ? <p className="warning-box">{deliveryAccess.persistence.note}</p> : null}</div>
+      <p className="muted">{approvedDelivery.disclosure || "Evidence limitations and remediation requirements remain part of the approved assessment."}</p></section> : null}
+
+    <section className="section panel"><div className="section-head"><div><p className="eyebrow">Evidence / output</p><h2>Scanner, score, report, approval</h2></div><span className={statusClass(result?.approval?.status)}>{result?.approval?.status || "approval not requested"}</span></div><div className="two-col inset-grid"><div className="mini-panel"><p className="eyebrow">Scanner evidence</p><pre className="json-block">{JSON.stringify(result?.scanner_evidence || {}, null, 2)}</pre></div><div className="mini-panel"><p className="eyebrow">Assessment</p><pre className="json-block">{JSON.stringify(result?.assessment?.maturity_signal || {}, null, 2)}</pre></div></div>{result?.reports?.markdown ? <details className="help-details"><summary>Report Markdown</summary><pre className="json-block">{result.reports.markdown}</pre></details> : <p className="muted">No report package returned yet.</p>}</section>
   </main>;
 }
