@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from nico.full_assessment_orchestrator import FULL_ASSESSMENT_STEPS, normalize_repository_target, run_full_assessment_orchestration
+from nico.full_assessment_orchestrator import (
+    FULL_ASSESSMENT_STEPS,
+    default_full_assessment_handlers,
+    normalize_repository_target,
+    run_full_assessment_orchestration,
+)
 
 
 def test_normalize_repository_target_accepts_owner_repo_and_github_url() -> None:
@@ -86,3 +91,65 @@ def test_missing_handlers_are_planned_not_faked_complete() -> None:
     assert result["assessment"] == {}
     assert result["reports"]["pdf_base64"] == ""
     assert result["approval"]["status"] == "not_requested"
+
+
+def test_default_handlers_bind_repo_and_skipped_scanner_to_run_id() -> None:
+    result = run_full_assessment_orchestration(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "authorization_confirmed": True,
+            "authorized_by": "tester",
+            "customer_id": "cust-a",
+            "project_id": "proj-a",
+            "run_id": "fullrun_123",
+            "run_scanners": False,
+        },
+        handlers=default_full_assessment_handlers(),
+    )
+
+    by_step = {item["step"]: item for item in result["progress"]}
+    assert by_step["repo_evidence"]["status"] == "complete"
+    assert by_step["repo_evidence"]["evidence"]["run_id"] == "fullrun_123"
+    assert by_step["scanner_worker"]["status"] == "skipped"
+    assert by_step["scanner_worker"]["evidence"]["run_id"] == "fullrun_123"
+    assert by_step["evidence_attachment"]["status"] == "skipped"
+    assert by_step["scoring"]["status"] == "planned"
+
+
+def test_default_handlers_queue_scanner_with_same_run_id(monkeypatch) -> None:
+    seen: dict = {}
+
+    def fake_start_scan(payload: dict) -> dict:
+        seen.update(payload)
+        return {
+            "status": "queued",
+            "scan_id": "scan_123",
+            "run_id": payload["run_id"],
+            "customer_id": payload["customer_id"],
+            "project_id": payload["project_id"],
+            "tools_requested": payload["tools"],
+        }
+
+    monkeypatch.setattr("nico.scanner_worker.start_scan", fake_start_scan)
+    result = run_full_assessment_orchestration(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "authorization_confirmed": True,
+            "authorized_by": "tester",
+            "customer_id": "cust-a",
+            "project_id": "proj-a",
+            "run_id": "fullrun_456",
+            "tools": ["bandit"],
+        },
+        handlers=default_full_assessment_handlers(),
+    )
+
+    by_step = {item["step"]: item for item in result["progress"]}
+    assert result["status"] == "running"
+    assert seen["run_id"] == "fullrun_456"
+    assert seen["customer_id"] == "cust-a"
+    assert seen["project_id"] == "proj-a"
+    assert by_step["scanner_worker"]["status"] == "queued"
+    assert by_step["scanner_worker"]["evidence"]["scan_id"] == "scan_123"
+    assert by_step["evidence_attachment"]["status"] == "pending"
+    assert by_step["evidence_attachment"]["evidence"]["run_id"] == "fullrun_456"
