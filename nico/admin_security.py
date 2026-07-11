@@ -31,7 +31,12 @@ def require_admin_write(provided_token: str | None = None) -> tuple[bool, dict[s
     status = admin_write_status(provided_token)
     if status["enabled"]:
         return True, status
-    return False, {"status": "unavailable", "mode": "read_only", "admin_write": status}
+    return False, {
+        "status": "unavailable",
+        "mode": "read_only",
+        "configured": status["status"] != "read_only",
+        "admin_write": status,
+    }
 
 
 def safe_public_admin_status() -> dict[str, Any]:
