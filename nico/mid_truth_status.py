@@ -19,6 +19,15 @@ ALLOWED_SECTION_STATUSES = {
 DEPENDENCY_TOOLS = {"pip-audit", "npm-audit", "osv-scanner"}
 SECRET_TOOLS = {"gitleaks", "trufflehog", "credential-scan"}
 STATIC_TOOLS = {"bandit", "semgrep", "eslint", "typescript"}
+TECHNICAL_SECTION_IDS = {
+    "code_audit",
+    "dependency_health",
+    "secrets_review",
+    "static_analysis",
+    "ci_cd",
+    "architecture_debt",
+    "velocity_complexity",
+}
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -190,7 +199,11 @@ def _technical_source_state(section_id: str, coverage_by_id: dict[str, dict[str,
 
 def _technical_sections(result: dict[str, Any], coverage: dict[str, Any]) -> list[dict[str, Any]]:
     assessment = _dict(result.get("assessment"))
-    sections = [item for item in _list(assessment.get("sections")) if isinstance(item, dict)]
+    sections = [
+        item
+        for item in _list(assessment.get("sections"))
+        if isinstance(item, dict) and str(item.get("id") or "") in TECHNICAL_SECTION_IDS
+    ]
     coverage_by_id = {str(item.get("id")): item for item in _list(coverage.get("units")) if isinstance(item, dict)}
     scanner = _dict(result.get("scanner_evidence")) or _dict(result.get("scanner"))
     failed_tools = _tool_set(scanner, "failed_tools") | _tool_set(scanner, "timed_out_tools")
