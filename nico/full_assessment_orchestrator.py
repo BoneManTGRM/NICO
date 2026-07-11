@@ -223,6 +223,15 @@ def _evidence_attachment_handler(context: dict[str, Any], outputs: dict[str, Any
             "evidence": {"run_id": context["run_id"], "scan_id": ""},
         }
 
+    scanner_step_status = str(scanner.get("status") or "")
+    if scanner_step_status in {"blocked", "failed", "unavailable"}:
+        status = "failed" if scanner_step_status == "failed" else scanner_step_status
+        return {
+            "status": status,
+            "message": "Scanner step did not provide attachable completed evidence.",
+            "evidence": {"run_id": context["run_id"], "scan_id": scan_id, "scanner_status": scanner_step_status},
+        }
+
     scanner_status = str(scan.get("status") or "unknown")
     if scanner_status in {"queued", "running"}:
         return {
