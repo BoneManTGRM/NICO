@@ -17,6 +17,7 @@ def test_report_guard_replaces_only_empty_score_denominators_with_not_scored():
     assert "null|undefined|nan" in source
     assert "normalizeScoreLabels" in source
     assert "Numeric values such as 85/100" in source
+    assert "if (!EMPTY_SCORE.test(current)) return;" in source
     # The empty-score matcher must require the start of the label or a separator
     # immediately before /100. The previous optional prefix matched the /100 suffix
     # inside every valid numeric score and produced `GREEN · 85 · NOT SCORED`.
