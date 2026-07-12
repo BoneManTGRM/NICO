@@ -24,6 +24,10 @@ from nico.mid_report_api import register_mid_report_routes
 from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
 from nico.mid_review_enforcement_compat import install_mid_review_enforcement_compat
+from nico.operational_alerts import (
+    OPERATIONS_ALERT_ROUTES,
+    install_operational_alert_routes,
+)
 from nico.operational_observability import (
     OPERATIONS_OBSERVABILITY_ROUTES,
     install_operational_observability,
@@ -54,6 +58,7 @@ ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
 OPERATIONS_OBSERVABILITY = install_operational_observability(app)
+OPERATIONS_ALERTING = install_operational_alert_routes(app)
 
 OPERATIONS_READINESS_ROUTES = {
     ("GET", "/operations/readiness"),
@@ -84,6 +89,7 @@ REQUIRED_PRODUCTION_ROUTES = (
     REQUIRED_MID_ASSESSMENT_ROUTES
     | OPERATIONS_READINESS_ROUTES
     | OPERATIONS_OBSERVABILITY_ROUTES
+    | OPERATIONS_ALERT_ROUTES
 )
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -148,6 +154,7 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     existing = _route_pairs(target)
     operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
     observability_present = _validate_group(existing, OPERATIONS_OBSERVABILITY_ROUTES, "operational observability")
+    alerts_present = _validate_group(existing, OPERATIONS_ALERT_ROUTES, "operational alerts")
     core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
     optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
     review_present = _validate_group(existing, MID_REVIEW_ROUTES, "Mid review")
@@ -159,6 +166,9 @@ def register_production_routes(target: FastAPI) -> FastAPI:
         target.openapi_schema = None
     if not observability_present:
         install_operational_observability(target)
+        target.openapi_schema = None
+    if not alerts_present:
+        install_operational_alert_routes(target)
         target.openapi_schema = None
     install_correlation_header_exposure(target)
     if not core_present:
@@ -213,10 +223,12 @@ __all__ = [
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "ASSESSMENT_MID_REVIEW_ENFORCEMENT",
     "OPERATIONS_OBSERVABILITY",
+    "OPERATIONS_ALERTING",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
     "OPERATIONS_READINESS_ROUTES",
     "OPERATIONS_OBSERVABILITY_ROUTES",
+    "OPERATIONS_ALERT_ROUTES",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
     "MID_OPTIONAL_EVIDENCE_ROUTES",
