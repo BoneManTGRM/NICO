@@ -1,0 +1,122 @@
+name: Remediation Evidence
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remediation-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install Python dependencies and scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install coverage
+
+      - name: Install hosted scanner binaries
+        env:
+          NICO_SCANNER_INSTALL_STRICT: 'true'
+        run: python scripts/install_hosted_scanner_binaries.py
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Collect dependency evidence
+        shell: bash
+        run: |
+          mkdir -p remediation-evidence
+          set +e
+          osv-scanner scan source --format=json --verbosity=error --recursive . > remediation-evidence/osv.json 2> remediation-evidence/osv.stderr
+          echo "$?" > remediation-evidence/osv.exit
+          (cd apps/web && npm audit --json --package-lock-only --ignore-scripts) > remediation-evidence/npm-audit.json 2> remediation-evidence/npm-audit.stderr
+          echo "$?" > remediation-evidence/npm-audit.exit
+          exit 0
+
+      - name: Collect static evidence
+        shell: bash
+        run: |
+          set +e
+          bandit -r . -f json -o remediation-evidence/bandit.json
+          echo "$?" > remediation-evidence/bandit.exit
+          semgrep scan --json --config auto . > remediation-evidence/semgrep.json 2> remediation-evidence/semgrep.stderr
+          echo "$?" > remediation-evidence/semgrep.exit
+          (cd apps/web && npm run lint) > remediation-evidence/typescript.log 2>&1
+          echo "$?" > remediation-evidence/typescript.exit
+          exit 0
+
+      - name: Collect full-history secret evidence
+        shell: bash
+        run: |
+          set +e
+          gitleaks git --no-banner --redact --report-format json --report-path remediation-evidence/gitleaks.json . > remediation-evidence/gitleaks.stdout 2> remediation-evidence/gitleaks.stderr
+          echo "$?" > remediation-evidence/gitleaks.exit
+          trufflehog git "file://${GITHUB_WORKSPACE}" --results=verified,unknown,unverified --json --no-update --no-verification > remediation-evidence/trufflehog.jsonl 2> remediation-evidence/trufflehog.stderr
+          echo "$?" > remediation-evidence/trufflehog.exit
+          exit 0
+
+      - name: Build sanitized remediation manifest
+        shell: bash
+        run: |
+          python scripts/build_remediation_manifest.py \
+            --osv remediation-evidence/osv.json \
+            --npm-audit remediation-evidence/npm-audit.json \
+            --bandit remediation-evidence/bandit.json \
+            --semgrep remediation-evidence/semgrep.json \
+            --gitleaks remediation-evidence/gitleaks.json \
+            --trufflehog remediation-evidence/trufflehog.jsonl \
+            --typescript remediation-evidence/typescript.log \
+            --typescript-exit "$(cat remediation-evidence/typescript.exit)" \
+            --output remediation-evidence/remediation-manifest.json
+
+      - name: Validate manifest schema and redaction boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('remediation-evidence/remediation-manifest.json')
+          payload = json.loads(path.read_text())
+          assert payload['artifact_schema'] == 'nico.remediation_manifest.v1'
+          text = path.read_text().lower()
+          forbidden = ['raw_secret', 'secret_value', 'private_key_value', 'authorization: bearer']
+          assert not any(item in text for item in forbidden)
+          print(json.dumps(payload['summary'], sort_keys=True))
+          PY
+
+      - name: Upload sanitized remediation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nico-remediation-evidence
+          path: |
+            remediation-evidence/remediation-manifest.json
+            remediation-evidence/remediation-manifest.md
+            remediation-evidence/*.exit
+            remediation-evidence/*.stderr
+          if-no-files-found: error
+          retention-days: 14
