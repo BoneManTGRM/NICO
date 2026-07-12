@@ -31,13 +31,14 @@ def test_report_guard_deduplicates_detail_and_collapses_mobile_cards():
 
 def test_mid_evidence_helper_submits_only_human_review_bound_repository_context():
     source = HELPER.read_text(encoding="utf-8")
+    payload_source = source.lower().split("packetpayload", 1)[1].split("export default", 1)[0]
 
     assert "docs/mid-evidence/ARCHITECTURE.md" in source
     assert "docs/mid-evidence/DEPLOYMENT.md" in source
     assert "docs/mid-evidence/QA.md" in source
     assert "docs/mid-evidence/PRODUCT_CONTEXT.md" in source
     assert "docs/mid-evidence/ROADMAP.md" in source
-    assert "score" not in source.lower().split("packetPayload", 1)[1].split("export default", 1)[0]
+    assert "score" not in payload_source
     assert "human-review-bound" in source
     assert "does not change scores automatically" in source
     assert "Native iOS and Android parity remains unavailable" in source

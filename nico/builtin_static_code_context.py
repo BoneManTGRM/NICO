@@ -10,7 +10,7 @@ from typing import Any
 import nico.assessment_score_integrity as integrity
 
 
-BUILTIN_STATIC_CONTEXT_VERSION = "nico-builtin-static-code-context-v1"
+BUILTIN_STATIC_CONTEXT_VERSION = "nico-builtin-static-code-context-v3"
 NON_PRODUCTION_PATH_PARTS = {
     "test",
     "tests",
@@ -23,6 +23,8 @@ NON_PRODUCTION_PATH_PARTS = {
     "docs",
     "documentation",
 }
+NON_PRODUCTION_FILE_LIMIT = 1_000
+NON_PRODUCTION_BYTE_LIMIT = 10_000_000
 
 _ORIGINAL_BUILTIN_STATIC_SCAN = integrity._built_in_static_scan
 
@@ -113,49 +115,103 @@ def _non_production(path: Path, root: Path) -> bool:
     return bool(parts & NON_PRODUCTION_PATH_PARTS) or name.startswith(("test_", "spec_")) or name.endswith(("_test.py", ".test.js", ".test.ts", ".test.tsx", ".spec.js", ".spec.ts", ".spec.tsx"))
 
 
-def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
-    """Scan executable code context while separating non-production pattern hits.
+def _bounded_non_production_files(root: Path) -> tuple[list[Path], list[str]]:
+    """Collect non-production source evidence independently from production bounds.
 
-    The previous built-in scanner searched raw source lines. Detector definitions,
-    comments, documentation strings, and test fixtures could therefore count as
-    material production findings. This implementation masks comments and strings
-    before matching and records test/example hits separately from score-bearing hits.
+    The main bounded collector can evolve to exclude test and documentation paths.
+    Non-production evidence therefore uses its own strict file and byte limits so an
+    unsafe example remains disclosed without re-entering production scoring.
     """
 
+    selected: list[Path] = []
+    notes: list[str] = []
+    total = 0
+    for path in root.rglob("*"):
+        if len(selected) >= NON_PRODUCTION_FILE_LIMIT:
+            notes.append(f"Non-production evidence scan stopped after {NON_PRODUCTION_FILE_LIMIT} source files.")
+            break
+        if not path.is_file() or path.is_symlink() or path.suffix.lower() not in integrity.SOURCE_SUFFIXES:
+            continue
+        try:
+            relative = path.relative_to(root)
+        except ValueError:
+            continue
+        if any(part in integrity.SKIP_PARTS for part in relative.parts):
+            continue
+        if not _non_production(path, root):
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size > integrity.MAX_BUILTIN_FILE_BYTES:
+            continue
+        if total + size > NON_PRODUCTION_BYTE_LIMIT:
+            notes.append(f"Non-production evidence scan stopped after {NON_PRODUCTION_BYTE_LIMIT} readable bytes.")
+            break
+        total += size
+        selected.append(path)
+    return selected, notes
+
+
+def _record_hits(
+    path: Path,
+    root: Path,
+    text: str,
+    *,
+    excluded: bool,
+    findings: list[str],
+    by_rule: Counter[str],
+    seen: set[tuple[str, int, str]],
+) -> None:
+    relative = path.relative_to(root).as_posix()
+    scan_text = text if excluded else _code_only(path, text)
+    for line_number, line in enumerate(scan_text.splitlines(), 1):
+        for name, pattern, message in integrity.RISK_PATTERNS:
+            if not pattern.search(line):
+                continue
+            key = (relative, line_number, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            by_rule[name] += 1
+            if len(findings) < 100:
+                findings.append(f"{relative}:{line_number}: {name} — {message}")
+
+
+def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
+    """Scan production executable code while disclosing non-production examples."""
+
     started = time.monotonic()
-    paths, notes = integrity._bounded_files(repo_path, source_only=True)
+    bounded_paths, notes = integrity._bounded_files(repo_path, source_only=True)
+    non_production_paths, non_production_notes = _bounded_non_production_files(repo_path)
+    production_paths = [path for path in bounded_paths if not _non_production(path, repo_path)]
+
     material_findings: list[str] = []
     excluded_findings: list[str] = []
     material_by_rule: Counter[str] = Counter()
     excluded_by_rule: Counter[str] = Counter()
+    material_seen: set[tuple[str, int, str]] = set()
+    excluded_seen: set[tuple[str, int, str]] = set()
 
-    for path in paths:
+    for path in production_paths:
         text = integrity._read_text(path)
-        if text is None:
-            continue
-        relative = path.relative_to(repo_path).as_posix()
-        masked = _code_only(path, text)
-        excluded_path = _non_production(path, repo_path)
-        for line_number, line in enumerate(masked.splitlines(), 1):
-            for name, pattern, message in integrity.RISK_PATTERNS:
-                if not pattern.search(line):
-                    continue
-                finding = f"{relative}:{line_number}: {name} — {message}"
-                if excluded_path:
-                    excluded_by_rule[name] += 1
-                    if len(excluded_findings) < 100:
-                        excluded_findings.append(finding)
-                else:
-                    material_by_rule[name] += 1
-                    if len(material_findings) < 100:
-                        material_findings.append(finding)
+        if text is not None:
+            _record_hits(path, repo_path, text, excluded=False, findings=material_findings, by_rule=material_by_rule, seen=material_seen)
+
+    for path in non_production_paths:
+        text = integrity._read_text(path)
+        if text is not None:
+            _record_hits(path, repo_path, text, excluded=True, findings=excluded_findings, by_rule=excluded_by_rule, seen=excluded_seen)
 
     material_count = sum(material_by_rule.values())
     excluded_count = sum(excluded_by_rule.values())
+    total_files = len(production_paths) + len(non_production_paths)
     status = "failed" if material_count else "passed"
     summary = (
-        f"NICO current-tree static risk scanner inspected {len(paths)} source file(s): "
-        f"material production hits={material_count}; excluded test/example hits={excluded_count}."
+        f"NICO current-tree static risk scanner inspected {total_files} source file(s): "
+        f"production={len(production_paths)}, non-production={len(non_production_paths)}, "
+        f"material production hits={material_count}, excluded non-production hits={excluded_count}."
     )
     preview_lines = material_findings[:30]
     if not preview_lines and excluded_count:
@@ -171,9 +227,9 @@ def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
         "safe_output_preview": "\n".join(preview_lines),
         "risk_severity": "high" if material_count else "low",
         "recommended_repair": "Review each material production hit and confirm exploitability before repair prioritization.",
-        "unavailable_data_notes": notes + [
-            "Comments, string literals, and detector definitions are excluded from material matching.",
-            "Hits under tests, fixtures, examples, samples, and documentation are disclosed separately and do not lower the production score.",
+        "unavailable_data_notes": notes + non_production_notes + [
+            "Production comments, string literals, and detector definitions are excluded from material matching.",
+            "Raw pattern matches under tests, fixtures, examples, samples, and documentation are disclosed separately and never lower the production score.",
             "Built-in pattern coverage does not replace language-specific semantic analyzers.",
         ],
         "secret_redaction_applied": False,
@@ -184,7 +240,9 @@ def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
         "total_finding_count": material_count + excluded_count,
         "findings_by_rule": dict(sorted(material_by_rule.items())),
         "excluded_findings_by_rule": dict(sorted(excluded_by_rule.items())),
-        "files_scanned": len(paths),
+        "files_scanned": total_files,
+        "production_files_scanned": len(production_paths),
+        "non_production_files_scanned": len(non_production_paths),
         "analyzer_version": BUILTIN_STATIC_CONTEXT_VERSION,
         "code_context_masking": True,
     }
@@ -197,7 +255,7 @@ def install_builtin_static_code_context() -> dict[str, Any]:
     return {
         "status": "already_installed" if installed else "installed",
         "version": BUILTIN_STATIC_CONTEXT_VERSION,
-        "rule": "Only executable-code-context hits in production paths count as material built-in static findings; comments, strings, detector definitions, and non-production paths remain disclosed but non-scoring.",
+        "rule": "Only executable-code-context hits in production paths count as material built-in static findings; independently bounded non-production paths remain disclosed but non-scoring.",
     }
 
 
