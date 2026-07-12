@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from nico.api.hosted import app
 from nico.assessment_network_budget import install_assessment_network_budget
+from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
@@ -27,6 +28,7 @@ ASSESSMENT_FULL_HISTORY_CHECKOUT = install_exact_snapshot_full_history_checkout(
 ASSESSMENT_SECRET_HISTORY = install_exact_snapshot_secret_history()
 ASSESSMENT_SECRET_HISTORY_EXIT_GUARD = install_secret_history_exit_guard()
 ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibility()
+ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -154,6 +156,7 @@ __all__ = [
     "ASSESSMENT_SECRET_HISTORY",
     "ASSESSMENT_SECRET_HISTORY_EXIT_GUARD",
     "ASSESSMENT_SECRET_HISTORY_COMPATIBILITY",
+    "ASSESSMENT_REQUIRED_TOOLS",
     "register_production_routes",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
