@@ -37,6 +37,10 @@ from nico.operational_observability import (
     install_operational_observability,
 )
 from nico.operations_readiness_api import register_operations_readiness_routes
+from nico.retainer_auto_evidence_api import (
+    RETAINER_OPS_ROUTE,
+    install_retainer_auto_evidence,
+)
 from nico.scanner_recovery import (
     REQUIRED_SCANNER_RECOVERY_ROUTES,
     install_scanner_recovery,
@@ -69,6 +73,7 @@ ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
 ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
+RETAINER_AUTO_EVIDENCE = install_retainer_auto_evidence(app)
 OPERATIONS_OBSERVABILITY = install_operational_observability(app)
 OPERATIONS_ALERTING = install_operational_alert_routes(app)
 OPERATIONS_STORAGE_SCHEMA = install_storage_schema_readiness(app)
@@ -107,7 +112,7 @@ REQUIRED_PRODUCTION_ROUTES = (
     | OPERATIONS_ALERT_ROUTES
     | REQUIRED_SCANNER_RECOVERY_ROUTES
     | REQUIRED_ASSESSMENT_RECOVERY_ROUTES
-    | {STORAGE_SCHEMA_READINESS_ROUTE}
+    | {STORAGE_SCHEMA_READINESS_ROUTE, RETAINER_OPS_ROUTE}
 )
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -169,6 +174,7 @@ def _validate_group(existing: set[tuple[str, str]], required: set[tuple[str, str
 
 
 def register_production_routes(target: FastAPI) -> FastAPI:
+    install_retainer_auto_evidence(target)
     existing = _route_pairs(target)
     operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
     observability_present = _validate_group(existing, OPERATIONS_OBSERVABILITY_ROUTES, "operational observability")
@@ -223,6 +229,8 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     register_legacy_mid_migration(target)
     if _route_count(target, "POST", LEGACY_MID_PATH) != 1:
         raise RuntimeError("Legacy Mid migration route registration must produce exactly one POST /assessment/mid handler")
+    if _route_count(target, RETAINER_OPS_ROUTE[0], RETAINER_OPS_ROUTE[1]) != 1:
+        raise RuntimeError("Retainer route registration must produce exactly one truth-bound POST /retainer/ops handler")
 
     missing = REQUIRED_PRODUCTION_ROUTES - _route_pairs(target)
     if missing:
@@ -252,6 +260,7 @@ __all__ = [
     "ASSESSMENT_TYPESCRIPT_VALIDATION",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "ASSESSMENT_MID_REVIEW_ENFORCEMENT",
+    "RETAINER_AUTO_EVIDENCE",
     "OPERATIONS_OBSERVABILITY",
     "OPERATIONS_ALERTING",
     "OPERATIONS_STORAGE_SCHEMA",
@@ -264,6 +273,7 @@ __all__ = [
     "OPERATIONS_ALERT_ROUTES",
     "REQUIRED_SCANNER_RECOVERY_ROUTES",
     "REQUIRED_ASSESSMENT_RECOVERY_ROUTES",
+    "RETAINER_OPS_ROUTE",
     "STORAGE_SCHEMA_READINESS_ROUTE",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
