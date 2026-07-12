@@ -8,6 +8,7 @@ from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.builtin_static_code_context import install_builtin_static_code_context
+from nico.dependency_scanner_triage import install_dependency_scanner_triage
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
 from nico.exact_snapshot_secret_history_compat import install_secret_history_score_compatibility
@@ -37,6 +38,7 @@ ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibi
 ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY = install_scanner_runtime_compat()
 ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
+ASSESSMENT_DEPENDENCY_TRIAGE = install_dependency_scanner_triage()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 
 OPERATIONS_READINESS_ROUTES = {
@@ -177,6 +179,7 @@ __all__ = [
     "ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY",
     "ASSESSMENT_REQUIRED_TOOLS",
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
+    "ASSESSMENT_DEPENDENCY_TRIAGE",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
