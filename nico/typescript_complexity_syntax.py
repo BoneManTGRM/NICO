@@ -16,11 +16,11 @@ _BRANCH_PATTERNS = (
     r"\?\?",
     r"&&",
     r"\|\|",
-    # A ternary question mark is a branch. TypeScript optional properties and
-    # optional parameters use `?:` and are type syntax, not runtime branches.
-    # Optional chaining (`?.`) and nullish coalescing (`??`) are handled
-    # separately and must not be counted again here.
-    r"\?(?![?.:])",
+    # A standalone ternary question mark is a branch. TypeScript optional
+    # properties and parameters use `?:` and are type syntax, not runtime
+    # branches. Optional chaining (`?.`) and both characters in nullish
+    # coalescing (`??`) are handled separately and must not be counted here.
+    r"(?<![?.])\?(?![?.:])",
 )
 
 
