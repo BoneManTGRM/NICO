@@ -5,6 +5,7 @@ from typing import Any
 from nico.diagnostics import deployment_diagnostics, feature_diagnostics, storage_diagnostics
 from nico.report_truth_status import build_report_truth_status
 from nico.runtime_config import runtime_config
+from nico.scanner_recovery_status import scanner_recovery_status
 from nico.storage_schema_readiness import cached_storage_schema_readiness
 
 OPERATIONS_READINESS_SCHEMA = "nico.operations_readiness.v1"
@@ -16,6 +17,8 @@ REQUIRED_OPERATION_ROUTES = {
     "GET /operations/observability",
     "GET /operations/alerts",
     "GET /operations/storage-schema",
+    "GET /operations/recovery",
+    "POST /operations/recovery/scanner/{scan_id}/resume",
     "POST /assessment/github",
     "POST /assessment/mid-run",
     "POST /assessment/full-run",
@@ -72,10 +75,6 @@ def _schema_readiness_for_call(
     if storage_schema is not None:
         return _dict(storage_schema)
     if storage_argument_supplied:
-        # Unit and integration callers that inject a complete storage diagnostic can
-        # continue to test the readiness model without touching the process-global
-        # database. Production calls do not inject storage and therefore use the
-        # verified live schema contract below.
         return {
             "status": "ready" if persistence_available else "blocked",
             "schema_ready": persistence_available,
@@ -92,6 +91,27 @@ def _schema_readiness_for_call(
     return _dict(cached_storage_schema_readiness())
 
 
+def _scanner_recovery_for_call(
+    *,
+    storage_argument_supplied: bool,
+    persistence_available: bool,
+    recovery: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if recovery is not None:
+        return _dict(recovery)
+    if storage_argument_supplied:
+        return {
+            "status": "clear" if persistence_available else "unavailable",
+            "clear": persistence_available,
+            "persistence_available": persistence_available,
+            "recovery_required": 0 if persistence_available else None,
+            "stale_active": 0 if persistence_available else None,
+            "active": 0 if persistence_available else None,
+            "blockers": [] if persistence_available else ["durable_postgres_required"],
+        }
+    return _dict(scanner_recovery_status())
+
+
 def build_operations_readiness(
     route_inventory: list[str] | set[str] | tuple[str, ...],
     *,
@@ -101,6 +121,7 @@ def build_operations_readiness(
     report_truth: dict[str, Any] | None = None,
     runtime: dict[str, Any] | None = None,
     storage_schema: dict[str, Any] | None = None,
+    scanner_recovery: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a fail-closed hosted operations-readiness decision.
 
@@ -130,6 +151,17 @@ def build_operations_readiness(
         schema_payload.get("status") == "ready"
         and schema_payload.get("schema_ready") is True
         and schema_payload.get("migration_ready") is True
+    )
+    recovery_payload = _scanner_recovery_for_call(
+        storage_argument_supplied=storage_argument_supplied,
+        persistence_available=persistence_available,
+        recovery=scanner_recovery,
+    )
+    recovery_clear = bool(
+        recovery_payload.get("status") == "clear"
+        and recovery_payload.get("clear") is True
+        and int(recovery_payload.get("recovery_required") or 0) == 0
+        and int(recovery_payload.get("stale_active") or 0) == 0
     )
     scanner_execution_enabled = bool(features_payload.get("scanner_execution_enabled"))
     report_truth_active = truth_payload.get("status") == "ok" and bool(truth_payload.get("guard_active"))
@@ -216,7 +248,7 @@ def build_operations_readiness(
             required=True,
             observed={"registered": len(routes), "missing": missing_routes},
             expected=sorted(REQUIRED_OPERATION_ROUTES),
-            remediation="Register every required operations, assessment, scanner, observability, alert, and storage-schema route in the production application.",
+            remediation="Register every required operations, assessment, scanner, observability, alert, storage-schema, and recovery route in the production application.",
         ),
         _check(
             "operator_admin_configured",
@@ -226,6 +258,21 @@ def build_operations_readiness(
             observed=admin.get("admin_write_mode") or "read_only",
             expected="Server-side operator admin authentication configured",
             remediation="Configure NICO_ADMIN_TOKEN before relying on public operator write workflows.",
+        ),
+        _check(
+            "scanner_recovery_queue_clear",
+            "Interrupted scanner recovery queue",
+            passed=recovery_clear,
+            required=False,
+            observed={
+                "status": recovery_payload.get("status") or "unavailable",
+                "recovery_required": recovery_payload.get("recovery_required"),
+                "stale_active": recovery_payload.get("stale_active"),
+                "active": recovery_payload.get("active"),
+                "blockers": list(recovery_payload.get("blockers") or [])[:20] if isinstance(recovery_payload.get("blockers"), list) else [],
+            },
+            expected={"status": "clear", "recovery_required": 0, "stale_active": 0},
+            remediation="Review /operations/recovery and resume or close each interrupted scanner run before full operator use.",
         ),
         _check(
             "project_commands_disabled",
@@ -251,7 +298,7 @@ def build_operations_readiness(
         "artifact_schema": OPERATIONS_READINESS_SCHEMA,
         "status": status,
         "operational_ready": status == "ready",
-        "required_checks": sum(1 for item in checks if item["required"]),
+        "required_checks": sum(1 for item in checks if item["required]),
         "required_passed": sum(1 for item in checks if item["required"] and item["passed"]),
         "advisory_checks": sum(1 for item in checks if not item["required"]),
         "advisory_passed": sum(1 for item in checks if not item["required"] and item["passed"]),
@@ -277,6 +324,14 @@ def build_operations_readiness(
             "contract_version": schema_payload.get("contract_version") or "unavailable",
             "contract_sha256": schema_payload.get("contract_sha256") or "unavailable",
             "blockers": list(schema_payload.get("blockers") or [])[:40] if isinstance(schema_payload.get("blockers"), list) else [],
+        },
+        "scanner_recovery": {
+            "status": recovery_payload.get("status") or "unavailable",
+            "clear": recovery_clear,
+            "recovery_required": recovery_payload.get("recovery_required"),
+            "stale_active": recovery_payload.get("stale_active"),
+            "active": recovery_payload.get("active"),
+            "blockers": list(recovery_payload.get("blockers") or [])[:20] if isinstance(recovery_payload.get("blockers"), list) else [],
         },
         "report_truth": {
             "status": truth_payload.get("status") or "unavailable",
