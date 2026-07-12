@@ -53,6 +53,8 @@ jobs:
           set +e
           osv-scanner scan source --format=json --verbosity=error --recursive . > remediation-evidence/osv.json 2> remediation-evidence/osv.stderr
           echo "$?" > remediation-evidence/osv.exit
+          python -m pip_audit -r requirements.txt -f json -o remediation-evidence/pip-audit.json > remediation-evidence/pip-audit.stdout 2> remediation-evidence/pip-audit.stderr
+          echo "$?" > remediation-evidence/pip-audit.exit
           (cd apps/web && npm audit --json --package-lock-only --ignore-scripts) > remediation-evidence/npm-audit.json 2> remediation-evidence/npm-audit.stderr
           echo "$?" > remediation-evidence/npm-audit.exit
           exit 0
@@ -85,6 +87,7 @@ jobs:
           set +e
           PYTHONPATH=. python scripts/build_remediation_manifest.py \
             --osv remediation-evidence/osv.json \
+            --pip-audit remediation-evidence/pip-audit.json \
             --npm-audit remediation-evidence/npm-audit.json \
             --bandit remediation-evidence/bandit.json \
             --semgrep remediation-evidence/semgrep.json \
@@ -110,7 +113,7 @@ jobs:
           from pathlib import Path
           path = Path('remediation-evidence/remediation-manifest.json')
           payload = json.loads(path.read_text())
-          assert payload['artifact_schema'] == 'nico.remediation_manifest.v1'
+          assert payload['artifact_schema'] == 'nico.remediation_manifest.v2'
           text = path.read_text().lower()
           forbidden = ['raw_secret', 'secret_value', 'private_key_value', 'authorization: bearer']
           assert not any(item in text for item in forbidden)
@@ -126,6 +129,7 @@ jobs:
             remediation-evidence/remediation-manifest.json
             remediation-evidence/remediation-manifest.md
             remediation-evidence/osv.json
+            remediation-evidence/pip-audit.json
             remediation-evidence/npm-audit.json
             remediation-evidence/bandit.json
             remediation-evidence/semgrep.json
@@ -134,14 +138,3 @@ jobs:
             remediation-evidence/manifest.stdout
           if-no-files-found: error
           retention-days: 14
-
-      - name: Upload exact source snapshot for targeted repair
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nico-remediation-source-snapshot
-          path: |
-            nico/no_server_assessment.py
-            nico/cli.py
-          if-no-files-found: error
-          retention-days: 2
