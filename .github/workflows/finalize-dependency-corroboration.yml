@@ -1,0 +1,28 @@
+name: Finalize Dependency Corroboration
+
+on:
+  push:
+    branches:
+      - agent/remediate-all-296
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[dependency-corroboration-finalized]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remediate-all-296
+      - name: Finalize one-pass OSV and stale finding cleanup
+        run: python scripts/finalize_dependency_corroboration.py
+      - name: Commit finalized dependency triage
+        shell: bash
+        run: |
+          git config user.name "NICO Repair Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add nico/dependency_scanner_triage.py scripts/finalize_dependency_corroboration.py .github/workflows/finalize-dependency-corroboration.yml
+          git commit -m "Finalize dependency corroboration [dependency-corroboration-finalized]"
+          git push origin HEAD:agent/remediate-all-296
