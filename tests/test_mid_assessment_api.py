@@ -128,7 +128,7 @@ def test_mid_run_creates_one_mid_identity_and_never_generates_express_report(mon
     assert result["service_tier"] == "mid"
     assert result["unified_run"] is True
     assert result["express_report_generated"] is False
-    assert result["report_generation_status"] == "mid_report_pipeline_pending"
+    assert result["report_generation_status"] == "mid_report_generation_pending"
     assert result["repository_snapshot"]["commit_sha"] == "a" * 40
     assert result["repository_evidence"]["snapshot_commit_sha"] == "a" * 40
     assert result["complexity_evidence"]["snapshot_commit_sha"] == "a" * 40
@@ -148,6 +148,113 @@ def test_mid_run_creates_one_mid_identity_and_never_generates_express_report(mon
     assert stored["snapshot_commit_sha"] == "a" * 40
     assert stored["request"]["build_reports"] is False
     assert stored["request"]["create_final_review_request"] is False
+
+
+def test_completed_mid_run_automatically_returns_dedicated_draft_and_review_request(monkeypatch):
+    run_id = _run_id()
+    _put_evidence(run_id)
+    monkeypatch.setattr(api, "new_id", lambda prefix: run_id)
+    monkeypatch.setenv("NICO_ADMIN_TOKEN", "server-admin-token")
+    monkeypatch.setattr(api, "run_full_assessment_orchestration", lambda payload, handlers: _orchestrator_result(payload, status="complete"))
+
+    report = {
+        "status": "complete",
+        "draft_status": "human_review_required",
+        "report_id": f"mid_report_{run_id}",
+        "report_path": "mid_run",
+        "report_version": "mid-assessment-draft-v1",
+        "pdf_sha256": "b" * 64,
+        "pdf_filename": "nico-mid-assessment-DRAFT.pdf",
+        "review_packet_id": f"mid_review_{run_id}",
+        "review_packet_sha256": "c" * 64,
+        "formats": {
+            "markdown": "# Mid Assessment",
+            "html": "<h1>Mid Assessment</h1>",
+            "pdf": "JVBERi0xLjQK",
+        },
+    }
+    approval = {
+        "approval_id": f"mid_approval_{run_id}",
+        "status": "pending",
+        "exception_item_count": 3,
+        "draft_report_id": report["report_id"],
+    }
+    report_calls: list[dict] = []
+    approval_calls: list[dict] = []
+
+    def fake_report(run_id_value, customer_id, project_id, admin_token):
+        report_calls.append({"run_id": run_id_value, "customer_id": customer_id, "project_id": project_id, "admin_token": admin_token})
+        return report
+
+    def fake_approval(run_id_value, customer_id, project_id, admin_token):
+        approval_calls.append({"run_id": run_id_value, "customer_id": customer_id, "project_id": project_id, "admin_token": admin_token})
+        return {"status": "requested", "approval": approval}
+
+    monkeypatch.setattr(api, "generate_mid_draft_report", fake_report)
+    monkeypatch.setattr(api, "request_mid_approval", fake_approval)
+
+    result = api.mid_assessment_response(MidAssessmentRunRequest(
+        repository="BoneManTGRM/NICO",
+        customer_id="customer_mid",
+        project_id="project_mid",
+        authorized_by="owner",
+        authorization_confirmed=True,
+    ))
+
+    progress = {item["step"]: item for item in result["progress"]}
+    assert result["status"] == "complete"
+    assert result["report_generation_status"] == "complete"
+    assert result["mid_report"]["report_id"] == report["report_id"]
+    assert result["reports"]["pdf_base64"] == report["formats"]["pdf"]
+    assert result["reports"]["markdown"] == report["formats"]["markdown"]
+    assert result["reports"]["html"] == report["formats"]["html"]
+    assert result["approval_request_status"] == "pending"
+    assert result["approval_request"]["approval_id"] == approval["approval_id"]
+    assert progress["reports"]["status"] == "complete"
+    assert progress["approval_request"]["status"] == "complete"
+    assert "skipped" not in {progress["reports"]["status"], progress["approval_request"]["status"]}
+    assert result["express_report_generated"] is False
+    assert result["full_report_generated"] is False
+    assert result["client_ready"] is False
+    assert report_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "server-admin-token"}]
+    assert approval_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "server-admin-token"}]
+
+    stored = load_mid_assessment_run(run_id)
+    assert stored is not None
+    assert stored["report_id"] == report["report_id"]
+    assert stored["approval_id"] == approval["approval_id"]
+    assert stored["response"]["report_generation_status"] == "complete"
+    assert stored["response"]["mid_report"]["pdf_sha256"] == report["pdf_sha256"]
+    assert stored["response"]["approval_request"]["status"] == "pending"
+
+
+def test_completed_mid_run_discloses_server_configuration_block_instead_of_skipping(monkeypatch):
+    run_id = _run_id()
+    _put_evidence(run_id)
+    monkeypatch.setattr(api, "new_id", lambda prefix: run_id)
+    monkeypatch.delenv("NICO_ADMIN_TOKEN", raising=False)
+    monkeypatch.setattr(api, "run_full_assessment_orchestration", lambda payload, handlers: _orchestrator_result(payload, status="complete"))
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("report generation must not be called without server admin configuration")
+
+    monkeypatch.setattr(api, "generate_mid_draft_report", forbidden)
+    result = api.mid_assessment_response(MidAssessmentRunRequest(
+        repository="BoneManTGRM/NICO",
+        customer_id="customer_mid",
+        project_id="project_mid",
+        authorized_by="owner",
+        authorization_confirmed=True,
+    ))
+
+    progress = {item["step"]: item for item in result["progress"]}
+    assert result["status"] == "complete"
+    assert result["report_generation_status"] == "blocked"
+    assert result["report_generation_error"] == "server_admin_token_not_configured"
+    assert progress["reports"]["status"] == "blocked"
+    assert progress["approval_request"]["status"] == "not_started"
+    assert "skipped" not in {progress["reports"]["status"], progress["approval_request"]["status"]}
+    assert "NICO_ADMIN_TOKEN" in result["report_generation_note"]
 
 
 def test_mid_run_requires_authorization_and_uses_midrun_identity(monkeypatch):
@@ -198,6 +305,7 @@ def test_mid_status_restores_saved_scope_and_forces_mid_downstream_guardrails(mo
         "report_id": "", "approval_id": "", "reason": "same-run scanner complete",
     })
     monkeypatch.setattr(api, "apply_full_assessment_continuation", lambda result, plan: result)
+    monkeypatch.delenv("NICO_ADMIN_TOKEN", raising=False)
 
     result = api.mid_assessment_status_response(run_id, MidAssessmentStatusRequest())
 
@@ -211,6 +319,7 @@ def test_mid_status_restores_saved_scope_and_forces_mid_downstream_guardrails(mo
     assert captured["mode"] == "mid"
     assert captured["build_reports"] is False
     assert captured["create_final_review_request"] is False
+    assert result["report_generation_status"] == "blocked"
 
 
 def test_mid_status_does_not_accept_non_mid_or_unknown_run_ids():
@@ -238,7 +347,7 @@ def test_mid_persistence_rejects_non_mid_identity_and_other_workflow_collision()
         persist_mid_assessment_run({"run_id": run_id, "status": "running"}, {"run_id": run_id})
 
 
-def test_mid_status_payload_reuses_saved_scanner_and_never_enables_reports():
+def test_mid_status_payload_reuses_saved_scanner_and_never_enables_generic_reports():
     run_id = _run_id()
     persist_mid_assessment_run(_orchestrator_result({
         "run_id": run_id,
