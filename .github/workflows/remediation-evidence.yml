@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python scripts/build_remediation_manifest.py \
+          PYTHONPATH=. python scripts/build_remediation_manifest.py \
             --osv remediation-evidence/osv.json \
             --npm-audit remediation-evidence/npm-audit.json \
             --bandit remediation-evidence/bandit.json \
