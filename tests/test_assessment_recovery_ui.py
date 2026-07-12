@@ -54,4 +54,4 @@ def test_recovery_ui_discloses_identity_reuse_and_human_control() -> None:
     assert "Same run, snapshot, report, and approval identities are retained" in panel
     assert "Existing deterministic artifacts are reused rather than duplicated" in panel
     assert "All resumes require an authenticated operator claim" in panel
-    assert "client" not in panel.lower() or "client" in panel.lower()
+    assert "No automatic continuation is permitted" in panel
