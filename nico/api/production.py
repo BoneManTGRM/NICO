@@ -21,6 +21,7 @@ from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
+from nico.operations_readiness_api import register_operations_readiness_routes
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
 
@@ -38,6 +39,9 @@ ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 
+OPERATIONS_READINESS_ROUTES = {
+    ("GET", "/operations/readiness"),
+}
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
     ("POST", "/assessment/mid-run/{run_id}/status"),
@@ -58,6 +62,7 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run/delivery/redeem"),
     ("POST", LEGACY_MID_PATH),
 }
+REQUIRED_PRODUCTION_ROUTES = REQUIRED_MID_ASSESSMENT_ROUTES | OPERATIONS_READINESS_ROUTES
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
     ("POST", "/assessment/mid-run/{run_id}/status"),
@@ -117,12 +122,16 @@ def _validate_group(existing: set[tuple[str, str]], required: set[tuple[str, str
 
 def register_production_routes(target: FastAPI) -> FastAPI:
     existing = _route_pairs(target)
+    operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
     core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
     optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
     review_present = _validate_group(existing, MID_REVIEW_ROUTES, "Mid review")
     report_present = _validate_group(existing, MID_REPORT_ROUTES, "Mid report")
     approval_present = _validate_group(existing, MID_APPROVAL_ROUTES, "Mid approval")
     delivery_present = _validate_group(existing, MID_DELIVERY_ROUTES, "Mid delivery")
+    if not operations_present:
+        register_operations_readiness_routes(target)
+        target.openapi_schema = None
     if not core_present:
         register_mid_assessment_routes(target)
         target.openapi_schema = None
@@ -146,9 +155,9 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     if _route_count(target, "POST", LEGACY_MID_PATH) != 1:
         raise RuntimeError("Legacy Mid migration route registration must produce exactly one POST /assessment/mid handler")
 
-    missing = REQUIRED_MID_ASSESSMENT_ROUTES - _route_pairs(target)
+    missing = REQUIRED_PRODUCTION_ROUTES - _route_pairs(target)
     if missing:
-        raise RuntimeError(f"Unified Mid route registration incomplete; missing={sorted(missing)}")
+        raise RuntimeError(f"Production route registration incomplete; missing={sorted(missing)}")
     return target
 
 
@@ -170,6 +179,8 @@ __all__ = [
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "register_production_routes",
+    "REQUIRED_PRODUCTION_ROUTES",
+    "OPERATIONS_READINESS_ROUTES",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
     "MID_OPTIONAL_EVIDENCE_ROUTES",
