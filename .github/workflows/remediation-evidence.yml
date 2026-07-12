@@ -82,6 +82,7 @@ jobs:
       - name: Build sanitized remediation manifest
         shell: bash
         run: |
+          set +e
           python scripts/build_remediation_manifest.py \
             --osv remediation-evidence/osv.json \
             --npm-audit remediation-evidence/npm-audit.json \
@@ -91,11 +92,19 @@ jobs:
             --trufflehog remediation-evidence/trufflehog.jsonl \
             --typescript remediation-evidence/typescript.log \
             --typescript-exit "$(cat remediation-evidence/typescript.exit)" \
-            --output remediation-evidence/remediation-manifest.json
+            --output remediation-evidence/remediation-manifest.json \
+            > remediation-evidence/manifest.stdout \
+            2> remediation-evidence/manifest.stderr
+          echo "$?" > remediation-evidence/manifest.exit
+          exit 0
 
       - name: Validate manifest schema and redaction boundary
         shell: bash
         run: |
+          if [ "$(cat remediation-evidence/manifest.exit)" != "0" ]; then
+            cat remediation-evidence/manifest.stderr
+            exit 1
+          fi
           python - <<'PY'
           import json
           from pathlib import Path
@@ -118,5 +127,6 @@ jobs:
             remediation-evidence/remediation-manifest.md
             remediation-evidence/*.exit
             remediation-evidence/*.stderr
+            remediation-evidence/manifest.stdout
           if-no-files-found: error
           retention-days: 14
