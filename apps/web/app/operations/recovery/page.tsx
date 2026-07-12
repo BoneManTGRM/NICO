@@ -23,7 +23,7 @@ export default function RecoveryPage() {
         <div>
           <p className={styles.eyebrow}>NICO Phase 3</p>
           <h1>Recovery Control</h1>
-          <p className={styles.lead}>Review interrupted Mid, Full, and scanner work. Recovery reuses the same durable identities and never starts automatically.</p>
+          <p className={styles.lead}>Review interrupted Mid, Full, and scanner work. Assessment recovery retains the same durable run and artifact identities; scanner recovery retains the same durable scan ID. Recovery never starts automatically.</p>
         </div>
         <div className={styles.heroState}><a className={`${styles.pill} ${styles.neutral}`} href="/operations">Back to Operations</a></div>
       </section>
