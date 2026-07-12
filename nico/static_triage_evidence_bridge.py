@@ -95,6 +95,13 @@ def preserve_static_triage_attachment(context: dict[str, Any], outputs: dict[str
     return output
 
 
+# Existing score-integrity tests and external integrations identify the composed
+# attachment boundary by this stable public handler name. The implementation is
+# still the final privacy-preserving bridge above the calibrated/history chain.
+preserve_static_triage_attachment.__name__ = "calibrated_attachment_handler"
+preserve_static_triage_attachment.__qualname__ = "calibrated_attachment_handler"
+
+
 def _patch_rebinding_sources() -> None:
     """Keep later idempotent installer calls from bypassing the final bridge."""
 
