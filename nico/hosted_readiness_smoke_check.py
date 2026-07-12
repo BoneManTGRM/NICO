@@ -10,9 +10,14 @@ from urllib.request import Request, urlopen
 
 DEFAULT_ENDPOINTS = (
     "/health",
+    "/operations/readiness",
     "/diagnostics/hosted-scanner-runtime",
     "/diagnostics/release-readiness",
 )
+REQUIRED_PAYLOAD_STATUSES = {
+    "/health": {"ok"},
+    "/operations/readiness": {"ready"},
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,13 @@ def check_endpoint(base_url: str, path: str, timeout_seconds: int = 15, opener: 
     normalized_path = "/" + path.lstrip("/")
     status, payload, error = _read_json(f"{base}{normalized_path}", timeout_seconds=timeout_seconds, opener=opener)
     ok = bool(status and 200 <= status < 300 and not error)
+    required_statuses = REQUIRED_PAYLOAD_STATUSES.get(normalized_path)
+    if ok and required_statuses:
+        observed_status = str(payload.get("status") or "missing")
+        if observed_status not in required_statuses:
+            ok = False
+            expected = ", ".join(sorted(required_statuses))
+            error = f"Semantic status {observed_status}; expected {expected}"
     return EndpointCheck(path=normalized_path, ok=ok, status_code=status, error=error, payload=payload)
 
 
@@ -80,7 +92,7 @@ def run_smoke_check(base_url: str, endpoints: tuple[str, ...] = DEFAULT_ENDPOINT
         "passed_count": len(checks) - len(failed),
         "failed_count": len(failed),
         "checks": [item.as_dict() for item in checks],
-        "guardrail": "Smoke-check success only confirms endpoint reachability. It does not approve client delivery, lift scores, or replace human review.",
+        "guardrail": "Smoke-check success confirms endpoint reachability and required semantic readiness states. It does not approve client delivery, lift scores, or replace human review.",
     }
 
 
