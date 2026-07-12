@@ -18,7 +18,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     from nico.evidence_ledger import attach_evidence_ledger
     from nico.export_truth_gate import apply_export_truth_gate
     from nico.hosted_full_evidence_runtime_v2 import ensure_hosted_runtime_evidence
-    from nico.report_evidence_consistency_gate import apply_report_evidence_consistency_gate
+    from nico.report_evidence_consistency_runtime import apply_report_evidence_consistency_gate
     from nico.report_final_qa import apply_final_report_qa
     from nico.report_pdf_display_patch import apply_pdf_display_patch
     from nico.report_score_lift_plan import attach_score_lift_plan
