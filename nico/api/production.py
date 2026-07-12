@@ -8,6 +8,7 @@ from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
+from nico.exact_snapshot_secret_history_compat import install_secret_history_score_compatibility
 from nico.exact_snapshot_secret_history_exit_guard import install_secret_history_exit_guard
 from nico.exact_snapshot_static_triage import install_exact_snapshot_static_triage
 from nico.mid_approval_api import register_mid_approval_routes
@@ -25,6 +26,7 @@ ASSESSMENT_STATIC_TRIAGE = install_exact_snapshot_static_triage()
 ASSESSMENT_FULL_HISTORY_CHECKOUT = install_exact_snapshot_full_history_checkout()
 ASSESSMENT_SECRET_HISTORY = install_exact_snapshot_secret_history()
 ASSESSMENT_SECRET_HISTORY_EXIT_GUARD = install_secret_history_exit_guard()
+ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibility()
 
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -151,6 +153,7 @@ __all__ = [
     "ASSESSMENT_FULL_HISTORY_CHECKOUT",
     "ASSESSMENT_SECRET_HISTORY",
     "ASSESSMENT_SECRET_HISTORY_EXIT_GUARD",
+    "ASSESSMENT_SECRET_HISTORY_COMPATIBILITY",
     "register_production_routes",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
