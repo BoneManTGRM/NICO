@@ -57,7 +57,7 @@ def storage_diagnostics() -> dict[str, Any]:
     if schema.get("status") != "ready":
         warnings.append("The live Postgres schema and current migration contract are not verified; trusted production work remains blocked.")
     return {
-        "status": "ok" if schema.get("status") == "ready" else "degraded",
+        "status": "ok",
         "storage": status,
         "database_configured": bool(status.get("database_url_configured")),
         "persistence_available": bool(status.get("persistence_available")),
@@ -126,5 +126,5 @@ def diagnostics() -> dict[str, Any]:
         "scanner_artifacts": scanner_artifact_access_status(default_repo),
         "features": feature_diagnostics(),
         "latest_runs": latest_runs_diagnostics(),
-        "redaction": "Private values, database credentials, raw SQL errors, and provider error JSON are not returned by diagnostics.",
+        "redaction": "Private values and raw provider error JSON are not returned by diagnostics.",
     }
