@@ -18,6 +18,7 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     from nico.evidence_ledger import attach_evidence_ledger
     from nico.export_truth_gate import apply_export_truth_gate
     from nico.hosted_full_evidence_runtime_v2 import ensure_hosted_runtime_evidence
+    from nico.report_evidence_consistency_gate import apply_report_evidence_consistency_gate
     from nico.report_final_qa import apply_final_report_qa
     from nico.report_pdf_display_patch import apply_pdf_display_patch
     from nico.report_score_lift_plan import attach_score_lift_plan
@@ -39,13 +40,16 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     result = attach_bandit_triage_to_report(result)
     result = attach_complexity_artifact_to_report(result)
     result = apply_verified_scanner_score_lifts(result)
+    result = apply_report_evidence_consistency_gate(result)
     result = apply_final_report_qa(result)
     result = ensure_hosted_runtime_evidence(result)
     result = attach_scanner_artifacts_to_report(result)
     result = attach_bandit_triage_to_report(result)
     result = attach_complexity_artifact_to_report(result)
     result = apply_verified_scanner_score_lifts(result)
+    result = apply_report_evidence_consistency_gate(result)
     result = apply_strict_trust_engine(result)
+    result = apply_report_evidence_consistency_gate(result)
     result = attach_evidence_ledger(result)
     result = refresh_project_trend_score(result)
     result = attach_score_lift_plan(result)
