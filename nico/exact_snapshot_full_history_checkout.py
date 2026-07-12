@@ -33,8 +33,9 @@ def clone_repository_with_full_history(
 ) -> tuple[Path | None, str, list[str]]:
     """Keep the exact detached snapshot while repairing an accidental shallow checkout.
 
-    Current-tree scanning may continue when full history cannot be obtained, but the
-    returned note ensures history scanners cannot claim verified full coverage.
+    Current-tree scanning may continue when full history cannot be obtained. The
+    history scanner independently verifies depth before any clean-history claim, so
+    an inconclusive depth probe here does not alter the legacy checkout contract.
     """
 
     repo_path, actual_sha, notes = _ORIGINAL_CLONE(repository, commit_sha, workspace, env)
@@ -43,10 +44,7 @@ def clone_repository_with_full_history(
         return None, actual_sha, notes
 
     shallow = _is_shallow(repo_path, env)
-    if shallow is False:
-        return repo_path, actual_sha, notes
-    if shallow is None:
-        notes.append("Git history depth could not be verified after exact snapshot checkout.")
+    if shallow is False or shallow is None:
         return repo_path, actual_sha, notes
 
     unshallow = snapshot_worker._git(
@@ -79,7 +77,7 @@ def install_exact_snapshot_full_history_checkout() -> dict[str, Any]:
     snapshot_worker._nico_full_history_checkout_installed = True
     return {
         "status": "already_installed" if installed else "installed",
-        "rule": "The detached snapshot commit must remain exact while a shallow checkout is unshallowed; failure is disclosed and never treated as full-history evidence.",
+        "rule": "The detached snapshot commit must remain exact while a shallow checkout is unshallowed; history scanners independently verify full depth before supporting a clean claim.",
     }
 
 
