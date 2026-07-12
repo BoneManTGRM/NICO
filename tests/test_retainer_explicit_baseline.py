@@ -75,11 +75,9 @@ def test_requested_missing_baseline_does_not_fall_back_to_repository_only_eviden
 
     workflow = build_truth_bound_retainer_ops(result)
     assert workflow["retainer_modules"]["repository_evidence_bound"] is False
-    assert workflow["maturity_signal"]["calculated"] is True  # monthly context remains separately calculable
-    technical_sections = {
-        item["id"]: item
-        for item in workflow["sections"]
-        if item["id"] in {"weekly_delivery", "backlog_health", "release_readiness", "blockers"}
-    }
-    assert all(item["score_calculated"] is False for item in technical_sections.values())
-    assert all(item["score"] == 0 for item in technical_sections.values())
+    assert workflow["maturity_signal"]["calculated"] is False
+    assert workflow["maturity_signal"]["score"] == 0
+    assert workflow["evidence_readiness"]["calculated"] is False
+    assert workflow["evidence_readiness"]["readiness_score"] == 0
+    assert all(item["score_calculated"] is False for item in workflow["sections"])
+    assert all(item["score"] == 0 for item in workflow["sections"])
