@@ -5,6 +5,7 @@ import {useEffect, useState} from "react";
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const RUN_KEY = "nico.mid.active_run";
 const TOKEN_PREFIX = "nico.mid.evidence_token.";
+const PACKET_PREFIX = "nico.mid.evidence_packet_attached.";
 
 function packetPayload() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -21,6 +22,7 @@ export default function MidEvidencePacketHelper() {
   const [active, setActive] = useState(false);
   const [runId, setRunId] = useState("");
   const [tokenAvailable, setTokenAvailable] = useState(false);
+  const [packetAttached, setPacketAttached] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -31,11 +33,14 @@ export default function MidEvidencePacketHelper() {
     const syncSession = () => {
       try {
         const storedRun = sessionStorage.getItem(RUN_KEY) || "";
-        setRunId(storedRun.startsWith("midrun_") ? storedRun : "");
-        setTokenAvailable(Boolean(storedRun && sessionStorage.getItem(TOKEN_PREFIX + storedRun)));
+        const validRun = storedRun.startsWith("midrun_") ? storedRun : "";
+        setRunId(validRun);
+        setTokenAvailable(Boolean(validRun && sessionStorage.getItem(TOKEN_PREFIX + validRun)));
+        setPacketAttached(Boolean(validRun && sessionStorage.getItem(PACKET_PREFIX + validRun)));
       } catch {
         setRunId("");
         setTokenAvailable(false);
+        setPacketAttached(false);
       }
     };
     syncSession();
@@ -47,8 +52,8 @@ export default function MidEvidencePacketHelper() {
     };
   }, []);
 
-  async function attachPacket() {
-    if (!API_URL || !runId || submitting) return;
+  async function attachPacket(automatic = false) {
+    if (!API_URL || !runId || submitting || packetAttached) return;
     setError("");
     setMessage("");
     let token = "";
@@ -59,7 +64,7 @@ export default function MidEvidencePacketHelper() {
     }
     if (!token) {
       setTokenAvailable(false);
-      setError("The optional-evidence capability is not available in this browser session. Start a fresh Mid run to issue a new capability.");
+      if (!automatic) setError("The optional-evidence capability is not available in this browser session. Start a fresh Mid run to issue a new capability.");
       return;
     }
 
@@ -76,24 +81,45 @@ export default function MidEvidencePacketHelper() {
       if (!response.ok || data?.status !== "submitted") {
         throw new Error(data?.detail?.message || data?.error || "The evidence packet could not be attached.");
       }
-      setMessage("The version-controlled NICO evidence packet was attached to this exact Mid run. It remains human-review-bound and does not change scores automatically.");
+      try {
+        sessionStorage.setItem(PACKET_PREFIX + runId, "1");
+      } catch {
+        // The server-side evidence remains attached even when local status storage is unavailable.
+      }
+      setPacketAttached(true);
+      setMessage(
+        automatic
+          ? "The version-controlled NICO evidence packet was attached automatically to this exact Mid run. It remains human-review-bound and does not change scores automatically."
+          : "The version-controlled NICO evidence packet was attached to this exact Mid run. It remains human-review-bound and does not change scores automatically.",
+      );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The evidence packet could not be attached.");
+      if (!automatic) setError(caught instanceof Error ? caught.message : "The evidence packet could not be attached.");
     } finally {
       setSubmitting(false);
     }
   }
 
+  useEffect(() => {
+    if (!active || !runId || !tokenAvailable || packetAttached) return;
+    const timer = window.setTimeout(() => {
+      void attachPacket(true);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [active, runId, tokenAvailable, packetAttached]);
+
   if (!active || !runId) return null;
+
+  const statusLabel = packetAttached ? "evidence packet attached" : tokenAvailable ? "evidence capability available" : "fresh run required";
+  const statusClass = packetAttached ? "status green" : tokenAvailable ? "status blue" : "status gray";
 
   return <section className="section panel" id="mid-evidence-packet-helper">
     <div className="section-head">
       <div><p className="eyebrow">Mid completion actions</p><h2>Finish the evidence and review chain</h2></div>
-      <span className={tokenAvailable ? "status blue" : "status gray"}>{tokenAvailable ? "evidence capability available" : "fresh run required"}</span>
+      <span className={statusClass}>{statusLabel}</span>
     </div>
-    <p className="muted">Active run: {runId}. Repository context can be attached as human-review evidence; it is never converted into automatic repository proof.</p>
+    <p className="muted">Active run: {runId}. Repository context is attached as human-review evidence; it is never converted into automatic repository proof.</p>
     <div className="report-actions">
-      <button type="button" className="primary-button" disabled={!API_URL || !tokenAvailable || submitting} onClick={attachPacket}>{submitting ? "Attaching evidence packet..." : "Attach NICO evidence packet"}</button>
+      <button type="button" className="primary-button" disabled={!API_URL || !tokenAvailable || submitting || packetAttached} onClick={() => void attachPacket(false)}>{packetAttached ? "Evidence packet attached" : submitting ? "Attaching evidence packet..." : "Attach NICO evidence packet"}</button>
       <a className="secondary-link" href="/">Start a fresh Mid run</a>
       <a className="secondary-link" href="/mid-review">Review exceptions</a>
       <a className="secondary-link" href="/mid-report">Generate Mid draft</a>
