@@ -109,7 +109,7 @@ def persist_full_assessment_run(
     request_payload: dict[str, Any],
     store: StorageAdapter | None = None,
     *,
-    preserve_existing_completion_intent: bool = False,
+    preserve_existing_completion_intent: bool = True,
 ) -> dict[str, Any]:
     active = _store(store)
     run_id = str(result.get("run_id") or request_payload.get("run_id") or "").strip()
