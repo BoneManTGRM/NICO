@@ -59,6 +59,8 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("GET", "/assessment/mid-run/{run_id}/report/draft/pdf"),
     ("POST", "/assessment/mid-run/{run_id}/approval/request"),
     ("GET", "/assessment/mid-run/{run_id}/approval"),
+    ("GET", "/assessment/mid-run/approval/{approval_id}/review-items"),
+    ("POST", "/assessment/mid-run/approval/{approval_id}/review-items/{item_id}"),
     ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
@@ -88,6 +90,8 @@ MID_REPORT_ROUTES = {
 MID_APPROVAL_ROUTES = {
     ("POST", "/assessment/mid-run/{run_id}/approval/request"),
     ("GET", "/assessment/mid-run/{run_id}/approval"),
+    ("GET", "/assessment/mid-run/approval/{approval_id}/review-items"),
+    ("POST", "/assessment/mid-run/approval/{approval_id}/review-items/{item_id}"),
     ("POST", "/assessment/mid-run/approval/{approval_id}/{state}"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved"),
     ("GET", "/assessment/mid-run/{run_id}/report/approved/pdf"),
