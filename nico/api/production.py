@@ -7,6 +7,7 @@ from nico.assessment_network_budget import install_assessment_network_budget
 from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
+from nico.builtin_static_code_context import install_builtin_static_code_context
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
 from nico.exact_snapshot_secret_history_compat import install_secret_history_score_compatibility
@@ -24,6 +25,7 @@ from nico.static_triage_evidence_bridge import install_static_triage_evidence_br
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
 ASSESSMENT_SCORE_INTEGRITY = install_assessment_score_integrity()
 ASSESSMENT_SCORE_COMPATIBILITY = install_score_integrity_compatibility()
+ASSESSMENT_BUILTIN_STATIC_CONTEXT = install_builtin_static_code_context()
 ASSESSMENT_STATIC_TRIAGE = install_exact_snapshot_static_triage()
 ASSESSMENT_FULL_HISTORY_CHECKOUT = install_exact_snapshot_full_history_checkout()
 ASSESSMENT_SECRET_HISTORY = install_exact_snapshot_secret_history()
@@ -153,6 +155,7 @@ __all__ = [
     "ASSESSMENT_NETWORK_POLICY",
     "ASSESSMENT_SCORE_INTEGRITY",
     "ASSESSMENT_SCORE_COMPATIBILITY",
+    "ASSESSMENT_BUILTIN_STATIC_CONTEXT",
     "ASSESSMENT_STATIC_TRIAGE",
     "ASSESSMENT_FULL_HISTORY_CHECKOUT",
     "ASSESSMENT_SECRET_HISTORY",
