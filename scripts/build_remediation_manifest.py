@@ -4,10 +4,17 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
+from nico.dependency_scanner_triage import (
+    corroborate_dependency_records,
+    parse_npm_audit,
+    parse_osv,
+    parse_pip_audit,
+)
 from nico.exact_snapshot_secret_history import parse_gitleaks_findings, parse_trufflehog_findings
 from nico.exact_snapshot_static_triage import parse_static_findings
+from nico.secret_history_triage import classify_history_findings
 
 
 def _read(path: Path | None) -> str:
@@ -45,61 +52,44 @@ def _fingerprint(*parts: Any) -> str:
     return hashlib.sha256(material.encode("utf-8", errors="replace")).hexdigest()[:20]
 
 
-def _walk(value: Any) -> Iterable[Any]:
-    yield value
-    if isinstance(value, dict):
-        for child in value.values():
-            yield from _walk(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk(child)
-
-
-def _fixed_versions(vulnerability: dict[str, Any]) -> list[str]:
-    versions: set[str] = set()
-    for affected in _list(vulnerability.get("affected")):
-        for range_item in _list(_dict(affected).get("ranges")):
-            for event in _list(_dict(range_item).get("events")):
-                fixed = str(_dict(event).get("fixed") or "").strip()
-                if fixed:
-                    versions.add(fixed)
-    return sorted(versions)
-
-
-def osv_records(payload: Any) -> list[dict[str, Any]]:
-    records: dict[str, dict[str, Any]] = {}
-    for node in _walk(payload):
-        if not isinstance(node, dict):
-            continue
-        package = _dict(node.get("package"))
-        vulnerabilities = node.get("vulnerabilities") if isinstance(node.get("vulnerabilities"), list) else node.get("vulns")
-        if not package or not isinstance(vulnerabilities, list):
-            continue
-        name = str(package.get("name") or "unknown")
-        version = str(package.get("version") or "unknown")
-        ecosystem = str(package.get("ecosystem") or package.get("purl") or "unknown")
-        for vulnerability in vulnerabilities:
-            if not isinstance(vulnerability, dict):
-                continue
-            vulnerability_id = str(vulnerability.get("id") or _dict(vulnerability.get("database_specific")).get("id") or "unknown")
-            aliases = sorted({str(item) for item in _list(vulnerability.get("aliases")) if str(item)})
-            fixed_versions = _fixed_versions(vulnerability)
-            key = _fingerprint(ecosystem, name, version, vulnerability_id)
-            records[key] = {
-                "fingerprint": key,
-                "id": vulnerability_id,
-                "aliases": aliases,
-                "package": name,
-                "installed_version": version,
-                "ecosystem": ecosystem,
-                "fixed_versions": fixed_versions,
-                "remediation": (
-                    f"Upgrade {name} from {version} to a non-vulnerable version"
-                    + (f" such as {fixed_versions[0]} or later" if fixed_versions else " identified by the package ecosystem")
-                    + ", then rerun OSV-Scanner."
-                ),
-            }
-    return sorted(records.values(), key=lambda item: (item["ecosystem"], item["package"], item["id"]))
+def dependency_records(osv_payload: Any, pip_payload: Any, npm_payload: Any) -> dict[str, Any]:
+    osv = parse_osv(osv_payload)
+    pip = parse_pip_audit(pip_payload)
+    npm = parse_npm_audit(npm_payload)
+    scanner = {
+        "scanner_results": [
+            {
+                "scanner": "osv-scanner",
+                "execution_completed": osv_payload is not None,
+                "dependency_records": osv,
+            },
+            {
+                "scanner": "pip-audit",
+                "execution_completed": pip_payload is not None,
+                "resolved_versions": pip.get("resolved_versions") or {},
+                "dependency_records": pip.get("vulnerabilities") or [],
+            },
+            {
+                "scanner": "npm-audit",
+                "execution_completed": npm_payload is not None,
+                "dependency_records": npm.get("vulnerabilities") or [],
+            },
+        ]
+    }
+    correlated = corroborate_dependency_records(scanner)
+    return {
+        "osv_grouped": osv,
+        "pip": pip.get("vulnerabilities") or [],
+        "npm": npm.get("vulnerabilities") or [],
+        "material": correlated.get("material_records") or [],
+        "review": correlated.get("review_records") or [],
+        "pip_resolved_versions": pip.get("resolved_versions") or {},
+        "scanner_completion": {
+            "osv": bool(correlated.get("osv_completed")),
+            "pip_audit": bool(correlated.get("pip_audit_completed")),
+            "npm_audit": bool(correlated.get("npm_audit_completed")),
+        },
+    }
 
 
 def static_records(tool: str, text: str) -> tuple[list[dict[str, Any]], str | None]:
@@ -124,37 +114,11 @@ def static_records(tool: str, text: str) -> tuple[list[dict[str, Any]], str | No
     return sorted(records, key=lambda item: (item["path"], item["line"], item["rule_id"])), parse_error
 
 
-def npm_records(payload: Any) -> list[dict[str, Any]]:
-    vulnerabilities = _dict(_dict(payload).get("vulnerabilities"))
-    records = []
-    for package, value in vulnerabilities.items():
-        item = _dict(value)
-        via = []
-        for cause in _list(item.get("via")):
-            if isinstance(cause, str):
-                via.append(cause)
-            elif isinstance(cause, dict):
-                via.append(str(cause.get("title") or cause.get("name") or cause.get("source") or "advisory"))
-        records.append(
-            {
-                "fingerprint": _fingerprint("npm", package, item.get("range"), item.get("severity")),
-                "package": package,
-                "severity": item.get("severity") or "unknown",
-                "direct": bool(item.get("isDirect")),
-                "range": item.get("range") or "",
-                "via": sorted(set(via)),
-                "fix_available": item.get("fixAvailable"),
-                "remediation": "Update the affected direct dependency or its owning dependency chain, regenerate package-lock.json, and rerun npm audit.",
-            }
-        )
-    return sorted(records, key=lambda item: (item["severity"], item["package"]))
-
-
 def secret_records(gitleaks_text: str, trufflehog_text: str) -> tuple[list[dict[str, Any]], list[str]]:
     gitleaks, gitleaks_error = parse_gitleaks_findings(gitleaks_text) if gitleaks_text.strip() else ([], "Gitleaks output missing.")
     trufflehog, trufflehog_error = parse_trufflehog_findings(trufflehog_text) if trufflehog_text.strip() else ([], "TruffleHog output missing.")
     records = []
-    for item in [*gitleaks, *trufflehog]:
+    for item in classify_history_findings([*gitleaks, *trufflehog]):
         records.append(
             {
                 "fingerprint": _fingerprint(item.get("tool"), item.get("rule_id"), item.get("path"), item.get("line"), item.get("commit_fingerprint")),
@@ -164,7 +128,11 @@ def secret_records(gitleaks_text: str, trufflehog_text: str) -> tuple[list[dict[
                 "line": int(item.get("line") or 0),
                 "commit_fingerprint": item.get("commit_fingerprint") or "",
                 "verified": bool(item.get("verified")),
-                "remediation": "Validate outside this artifact, rotate any confirmed credential, remove it from current and historical content, and rerun both full-history scanners.",
+                "test_only": bool(item.get("test_only")),
+                "material": bool(item.get("material")),
+                "review_required": bool(item.get("review_required")),
+                "disposition": item.get("disposition") or "review",
+                "remediation": "Rotate confirmed credentials outside this artifact; review production candidates; keep synthetic test fixtures distinct from production exposure.",
             }
         )
     errors = [item for item in (gitleaks_error, trufflehog_error) if item]
@@ -185,45 +153,62 @@ def _markdown(manifest: dict[str, Any]) -> str:
     lines = [
         "# NICO Remediation Manifest",
         "",
-        "This artifact contains sanitized package, rule, path, line, and fingerprint metadata only. It intentionally excludes credential values and source snippets.",
+        "This artifact contains sanitized package, advisory, rule, path, line, and fingerprint metadata only. It intentionally excludes credential values and source snippets.",
         "",
         "## Summary",
         "",
-        f"- OSV vulnerability records: {summary.get('osv_vulnerabilities', 0)}",
-        f"- npm vulnerability packages: {summary.get('npm_vulnerability_packages', 0)}",
+        f"- Corroborated dependency vulnerabilities: {summary.get('dependency_material', 0)}",
+        f"- Dependency records requiring review: {summary.get('dependency_review', 0)}",
+        f"- Grouped OSV records: {summary.get('osv_grouped_records', 0)}",
         f"- Material Bandit findings: {summary.get('bandit_material', 0)}",
         f"- Material Semgrep findings: {summary.get('semgrep_material', 0)}",
-        f"- Secret-history candidates: {summary.get('secret_history_candidates', 0)}",
+        f"- Material secret-history findings: {summary.get('secret_history_material', 0)}",
+        f"- Excluded test-only secret matches: {summary.get('secret_history_test_only', 0)}",
         f"- TypeScript validation completed: {summary.get('typescript_completed', False)}",
         "",
+        "## Corroborated dependency findings",
+        "",
     ]
-    for title, key in (
-        ("OSV dependency records", "osv"),
-        ("npm dependency records", "npm"),
-        ("Material static findings", "static"),
-        ("Secret-history candidates", "secret_history"),
-    ):
-        lines.extend([f"## {title}", ""])
-        items = _list(manifest.get(key))
-        if not items:
-            lines.extend(["None recorded.", ""])
-            continue
-        for item in items:
-            if key == "osv":
-                lines.append(f"- `{item.get('id')}` — `{item.get('package')}@{item.get('installed_version')}` ({item.get('ecosystem')}); fixed={item.get('fixed_versions') or 'not supplied'}")
-            elif key == "npm":
-                lines.append(f"- `{item.get('package')}` — severity={item.get('severity')}; range=`{item.get('range')}`; direct={item.get('direct')}")
-            elif key == "static":
-                lines.append(f"- `{item.get('tool')}:{item.get('rule_id')}` — `{item.get('path')}:{item.get('line')}`; severity={item.get('severity')}; confidence={item.get('confidence')}; {item.get('message')}")
-            else:
-                lines.append(f"- `{item.get('tool')}:{item.get('rule_id')}` — `{item.get('path')}:{item.get('line')}`; commit={item.get('commit_fingerprint') or 'unknown'}; verified={item.get('verified')}")
-        lines.append("")
+    dependencies = _dict(manifest.get("dependencies"))
+    material = _list(dependencies.get("material"))
+    review = _list(dependencies.get("review"))
+    if not material:
+        lines.append("No corroborated installed dependency vulnerability was recorded.")
+    for item in material:
+        lines.append(
+            f"- `{item.get('package')}@{item.get('installed_version')}` ({item.get('ecosystem')}) — {item.get('advisory_ids') or []}; fixed={item.get('fixed_versions') or 'not supplied'}"
+        )
+    lines.extend(["", "## Dependency review records", ""])
+    if not review:
+        lines.append("None recorded.")
+    for item in review:
+        lines.append(
+            f"- `{item.get('package')}@{item.get('installed_version')}` ({item.get('ecosystem')}) — {item.get('disposition_reason') or 'review required'}"
+        )
+    lines.extend(["", "## Material static findings", ""])
+    static = _list(manifest.get("static"))
+    if not static:
+        lines.append("None recorded.")
+    for item in static:
+        lines.append(
+            f"- `{item.get('tool')}:{item.get('rule_id')}` — `{item.get('path')}:{item.get('line')}`; severity={item.get('severity')}; confidence={item.get('confidence')}; {item.get('message')}"
+        )
+    lines.extend(["", "## Secret-history matches", ""])
+    secrets = _list(manifest.get("secret_history"))
+    if not secrets:
+        lines.append("None recorded.")
+    for item in secrets:
+        lines.append(
+            f"- `{item.get('tool')}:{item.get('rule_id')}` — `{item.get('path')}:{item.get('line')}`; verified={item.get('verified')}; disposition={item.get('disposition')}"
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--osv", type=Path)
+    parser.add_argument("--pip-audit", type=Path)
     parser.add_argument("--npm-audit", type=Path)
     parser.add_argument("--bandit", type=Path)
     parser.add_argument("--semgrep", type=Path)
@@ -234,29 +219,29 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    osv = osv_records(_json(args.osv))
-    npm = npm_records(_json(args.npm_audit))
+    dependencies = dependency_records(_json(args.osv), _json(args.pip_audit), _json(args.npm_audit))
     bandit, bandit_error = static_records("bandit", _read(args.bandit))
     semgrep, semgrep_error = static_records("semgrep", _read(args.semgrep))
     secret_history, secret_errors = secret_records(_read(args.gitleaks), _read(args.trufflehog))
     typescript = _typescript_summary(args.typescript, args.typescript_exit)
     manifest = {
-        "artifact_schema": "nico.remediation_manifest.v1",
+        "artifact_schema": "nico.remediation_manifest.v2",
         "summary": {
-            "osv_vulnerabilities": len(osv),
-            "npm_vulnerability_packages": len(npm),
+            "dependency_material": len(_list(dependencies.get("material"))),
+            "dependency_review": len(_list(dependencies.get("review"))),
+            "osv_grouped_records": len(_list(dependencies.get("osv_grouped"))),
             "bandit_material": len(bandit),
             "semgrep_material": len(semgrep),
-            "secret_history_candidates": len(secret_history),
+            "secret_history_material": sum(bool(item.get("material")) for item in secret_history),
+            "secret_history_test_only": sum(bool(item.get("test_only")) and not bool(item.get("verified")) for item in secret_history),
             "typescript_completed": bool(typescript.get("completed")),
         },
-        "osv": osv,
-        "npm": npm,
+        "dependencies": dependencies,
         "static": [*bandit, *semgrep],
         "secret_history": secret_history,
         "typescript": typescript,
         "parse_warnings": [item for item in (bandit_error, semgrep_error, *secret_errors) if item],
-        "guardrail": "No credential values or source snippets are included. Findings still require human validation before code changes, credential rotation, accepted-risk disposition, or client approval.",
+        "guardrail": "No credential values or source snippets are included. Scanner disagreements remain visible. Findings still require human validation before code changes, credential rotation, accepted-risk disposition, or client approval.",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
