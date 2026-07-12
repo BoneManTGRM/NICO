@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 _PATCHED = False
@@ -14,7 +12,9 @@ def install_mid_checkpoint_optional_evidence_compat() -> dict[str, Any]:
 
     original = mid_api.mid_assessment_response
 
-    def mid_assessment_response(req: mid_api.MidAssessmentRunRequest) -> dict[str, Any]:
+    def mid_assessment_response(
+        req: mid_api.MidAssessmentRunRequest,
+    ) -> dict[str, Any]:
         result = original(req)
         if result.get("optional_evidence_submission"):
             return result
