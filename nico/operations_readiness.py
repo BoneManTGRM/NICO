@@ -5,6 +5,7 @@ from typing import Any
 from nico.diagnostics import deployment_diagnostics, feature_diagnostics, storage_diagnostics
 from nico.report_truth_status import build_report_truth_status
 from nico.runtime_config import runtime_config
+from nico.storage_schema_readiness import cached_storage_schema_readiness
 
 OPERATIONS_READINESS_SCHEMA = "nico.operations_readiness.v1"
 REQUIRED_OPERATION_ROUTES = {
@@ -13,6 +14,8 @@ REQUIRED_OPERATION_ROUTES = {
     "GET /operations/readiness",
     "GET /operations/events",
     "GET /operations/observability",
+    "GET /operations/alerts",
+    "GET /operations/storage-schema",
     "POST /assessment/github",
     "POST /assessment/mid-run",
     "POST /assessment/full-run",
@@ -60,6 +63,35 @@ def _check(
     }
 
 
+def _schema_readiness_for_call(
+    *,
+    storage_argument_supplied: bool,
+    persistence_available: bool,
+    storage_schema: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if storage_schema is not None:
+        return _dict(storage_schema)
+    if storage_argument_supplied:
+        # Unit and integration callers that inject a complete storage diagnostic can
+        # continue to test the readiness model without touching the process-global
+        # database. Production calls do not inject storage and therefore use the
+        # verified live schema contract below.
+        return {
+            "status": "ready" if persistence_available else "blocked",
+            "schema_ready": persistence_available,
+            "migration_ready": persistence_available,
+            "contract_version": "injected-storage-diagnostic",
+            "contract_sha256": "unavailable",
+            "blockers": [] if persistence_available else ["durable_postgres_required"],
+            "catalog": {"complete": persistence_available},
+            "migration": {
+                "current_version_present": persistence_available,
+                "current_contract_matches": persistence_available,
+            },
+        }
+    return _dict(cached_storage_schema_readiness())
+
+
 def build_operations_readiness(
     route_inventory: list[str] | set[str] | tuple[str, ...],
     *,
@@ -68,6 +100,7 @@ def build_operations_readiness(
     features: dict[str, Any] | None = None,
     report_truth: dict[str, Any] | None = None,
     runtime: dict[str, Any] | None = None,
+    storage_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a fail-closed hosted operations-readiness decision.
 
@@ -75,6 +108,7 @@ def build_operations_readiness(
     repository findings and cannot authorize client delivery.
     """
 
+    storage_argument_supplied = storage is not None
     deployment_payload = _dict(deployment if deployment is not None else deployment_diagnostics())
     storage_payload = _dict(storage if storage is not None else storage_diagnostics())
     features_payload = _dict(features if features is not None else feature_diagnostics())
@@ -87,6 +121,16 @@ def build_operations_readiness(
     deployment_commit_available = deployed_commit != "unavailable"
     deployment_matches = bool(deployment_payload.get("matches_expected_build"))
     persistence_available = bool(storage_payload.get("persistence_available"))
+    schema_payload = _schema_readiness_for_call(
+        storage_argument_supplied=storage_argument_supplied,
+        persistence_available=persistence_available,
+        storage_schema=storage_schema,
+    )
+    storage_schema_ready = bool(
+        schema_payload.get("status") == "ready"
+        and schema_payload.get("schema_ready") is True
+        and schema_payload.get("migration_ready") is True
+    )
     scanner_execution_enabled = bool(features_payload.get("scanner_execution_enabled"))
     report_truth_active = truth_payload.get("status") == "ok" and bool(truth_payload.get("guard_active"))
     runtime_loaded = runtime_payload.get("status") == "ok"
@@ -132,6 +176,22 @@ def build_operations_readiness(
             remediation="Configure and verify durable Postgres storage; process-memory storage is not production-ready.",
         ),
         _check(
+            "storage_schema_verified",
+            "Postgres schema and migration contract",
+            passed=persistence_available and storage_schema_ready,
+            required=True,
+            observed={
+                "status": schema_payload.get("status") or "unavailable",
+                "schema_ready": schema_payload.get("schema_ready"),
+                "migration_ready": schema_payload.get("migration_ready"),
+                "contract_version": schema_payload.get("contract_version") or "unavailable",
+                "contract_sha256": schema_payload.get("contract_sha256") or "unavailable",
+                "blockers": list(schema_payload.get("blockers") or [])[:40] if isinstance(schema_payload.get("blockers"), list) else [],
+            },
+            expected={"status": "ready", "schema_ready": True, "migration_ready": True},
+            remediation="Verify the live Postgres catalog and current migration-contract hash through /operations/storage-schema before trusted production work.",
+        ),
+        _check(
             "scanner_execution_enabled",
             "Scanner execution",
             passed=scanner_execution_enabled,
@@ -156,7 +216,7 @@ def build_operations_readiness(
             required=True,
             observed={"registered": len(routes), "missing": missing_routes},
             expected=sorted(REQUIRED_OPERATION_ROUTES),
-            remediation="Register every required operations, assessment, scanner, and observability route in the production application.",
+            remediation="Register every required operations, assessment, scanner, observability, alert, and storage-schema route in the production application.",
         ),
         _check(
             "operator_admin_configured",
@@ -209,6 +269,14 @@ def build_operations_readiness(
             "persistence_available": persistence_available,
             "database_configured": bool(storage_payload.get("database_configured")),
             "warnings": storage_payload.get("warnings") if isinstance(storage_payload.get("warnings"), list) else [],
+        },
+        "storage_schema": {
+            "status": schema_payload.get("status") or "unavailable",
+            "schema_ready": schema_payload.get("schema_ready") is True,
+            "migration_ready": schema_payload.get("migration_ready") is True,
+            "contract_version": schema_payload.get("contract_version") or "unavailable",
+            "contract_sha256": schema_payload.get("contract_sha256") or "unavailable",
+            "blockers": list(schema_payload.get("blockers") or [])[:40] if isinstance(schema_payload.get("blockers"), list) else [],
         },
         "report_truth": {
             "status": truth_payload.get("status") or "unavailable",
