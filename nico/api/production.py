@@ -4,6 +4,10 @@ from fastapi import FastAPI
 
 from nico.api.hosted import app
 from nico.assessment_network_budget import install_assessment_network_budget
+from nico.assessment_recovery import (
+    REQUIRED_ASSESSMENT_RECOVERY_ROUTES,
+    install_assessment_recovery,
+)
 from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
@@ -69,6 +73,7 @@ OPERATIONS_OBSERVABILITY = install_operational_observability(app)
 OPERATIONS_ALERTING = install_operational_alert_routes(app)
 OPERATIONS_STORAGE_SCHEMA = install_storage_schema_readiness(app)
 OPERATIONS_SCANNER_RECOVERY = install_scanner_recovery(app)
+OPERATIONS_ASSESSMENT_RECOVERY = install_assessment_recovery(app)
 
 OPERATIONS_READINESS_ROUTES = {
     ("GET", "/operations/readiness"),
@@ -101,6 +106,7 @@ REQUIRED_PRODUCTION_ROUTES = (
     | OPERATIONS_OBSERVABILITY_ROUTES
     | OPERATIONS_ALERT_ROUTES
     | REQUIRED_SCANNER_RECOVERY_ROUTES
+    | REQUIRED_ASSESSMENT_RECOVERY_ROUTES
     | {STORAGE_SCHEMA_READINESS_ROUTE}
 )
 MID_CORE_ROUTES = {
@@ -167,7 +173,8 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
     observability_present = _validate_group(existing, OPERATIONS_OBSERVABILITY_ROUTES, "operational observability")
     alerts_present = _validate_group(existing, OPERATIONS_ALERT_ROUTES, "operational alerts")
-    recovery_present = _validate_group(existing, REQUIRED_SCANNER_RECOVERY_ROUTES, "scanner recovery")
+    scanner_recovery_present = _validate_group(existing, REQUIRED_SCANNER_RECOVERY_ROUTES, "scanner recovery")
+    assessment_recovery_present = _validate_group(existing, REQUIRED_ASSESSMENT_RECOVERY_ROUTES, "assessment recovery")
     storage_schema_present = STORAGE_SCHEMA_READINESS_ROUTE in existing
     core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
     optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
@@ -184,8 +191,11 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     if not alerts_present:
         install_operational_alert_routes(target)
         target.openapi_schema = None
-    if not recovery_present:
+    if not scanner_recovery_present:
         install_scanner_recovery(target)
+        target.openapi_schema = None
+    if not assessment_recovery_present:
+        install_assessment_recovery(target)
         target.openapi_schema = None
     if not storage_schema_present:
         install_storage_schema_readiness(target)
@@ -246,12 +256,14 @@ __all__ = [
     "OPERATIONS_ALERTING",
     "OPERATIONS_STORAGE_SCHEMA",
     "OPERATIONS_SCANNER_RECOVERY",
+    "OPERATIONS_ASSESSMENT_RECOVERY",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
     "OPERATIONS_READINESS_ROUTES",
     "OPERATIONS_OBSERVABILITY_ROUTES",
     "OPERATIONS_ALERT_ROUTES",
     "REQUIRED_SCANNER_RECOVERY_ROUTES",
+    "REQUIRED_ASSESSMENT_RECOVERY_ROUTES",
     "STORAGE_SCHEMA_READINESS_ROUTE",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
