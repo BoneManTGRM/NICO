@@ -54,15 +54,14 @@ def normalized_section_payload(section: dict[str, Any]) -> dict[str, Any]:
         payload["score"] = None
     payload["score_label"] = score_label
 
-    evidence_seen: set[str] = set()
-    payload["evidence"] = _unique_text(payload.get("evidence"), evidence_seen)
+    payload["evidence"] = _unique_text(payload.get("evidence"))
     payload["findings"] = _unique_text(payload.get("findings"))
 
-    limitation_seen = {_text_key(payload.get("summary"))}
-    limitation_seen.update(_text_key(item) for item in payload["evidence"])
-    payload["unavailable"] = _unique_text(payload.get("unavailable"), limitation_seen)
-    payload["missing_evidence_sources"] = _unique_text(payload.get("missing_evidence_sources"), limitation_seen)
-    payload["failed_evidence_tools"] = _unique_text(payload.get("failed_evidence_tools"), limitation_seen)
+    summary_and_evidence = {_text_key(payload.get("summary"))}
+    summary_and_evidence.update(_text_key(item) for item in payload["evidence"])
+    payload["unavailable"] = _unique_text(payload.get("unavailable"), set(summary_and_evidence))
+    payload["missing_evidence_sources"] = _unique_text(payload.get("missing_evidence_sources"))
+    payload["failed_evidence_tools"] = _unique_text(payload.get("failed_evidence_tools"))
     payload["presentation_version"] = MID_REPORT_PRESENTATION_VERSION
     return payload
 
