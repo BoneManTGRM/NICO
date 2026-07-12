@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import html
+from copy import deepcopy
 from typing import Any
 
 from nico.retainer_modules import build_retainer_modules
 from nico.service_workflows import COVERAGE_TARGETS, now_iso, require_authorized
+
+SCORED_MODULE_KEYS = (
+    "weekly_health",
+    "backlog_health",
+    "release_readiness",
+    "monthly_strategy",
+    "blocker_escalation",
+    "renewal_signals",
+)
 
 
 def _section(
@@ -71,6 +81,29 @@ def _evidence_readiness(sections: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _suppress_unbound_scores(modules: dict[str, Any]) -> dict[str, Any]:
+    if modules.get("repository_evidence_bound") is True:
+        return modules
+    suppressed = deepcopy(modules)
+    note = "A verified repository evidence source is required before this Retainer section can receive a numeric score."
+    for key in SCORED_MODULE_KEYS:
+        module = suppressed.get(key)
+        if not isinstance(module, dict):
+            continue
+        module["score"] = 0
+        module["score_calculated"] = False
+        module["status"] = "unverified"
+        unavailable = [str(item) for item in module.get("unavailable") or []]
+        if note not in unavailable:
+            unavailable.insert(0, note)
+        module["unavailable"] = unavailable
+    suppressed["readiness_score"] = 0
+    suppressed["readiness_score_calculated"] = False
+    if suppressed.get("status") != "needs_repository_evidence":
+        suppressed["status"] = "needs_repository_evidence"
+    return suppressed
+
+
 def _markdown(result: dict[str, Any]) -> str:
     lines = [
         "# NICO Ongoing Product Engineering Retainer",
@@ -125,7 +158,7 @@ def build_truth_bound_retainer_ops(payload: dict[str, Any]) -> dict[str, Any]:
     if blocked:
         return blocked
 
-    modules = build_retainer_modules(payload)
+    modules = _suppress_unbound_scores(build_retainer_modules(payload))
     weekly = modules["weekly_health"]
     backlog = modules["backlog_health"]
     release = modules["release_readiness"]
