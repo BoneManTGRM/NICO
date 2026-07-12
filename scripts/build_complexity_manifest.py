@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+import nico.full_assessment_complexity_evidence as complexity_engine
+from nico.assessment_score_integrity import install_assessment_score_integrity
 
 ROOTS = (Path("nico"), Path("apps/web"), Path("scripts"))
 SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
@@ -31,6 +32,8 @@ def markdown(evidence: dict) -> str:
     lines = [
         "# NICO Complexity Remediation Manifest",
         "",
+        f"- Analyzer: {evidence.get('analyzer_version') or 'unknown'}",
+        f"- JavaScript/TypeScript method: {evidence.get('javascript_typescript_method') or 'unknown'}",
         f"- Files analyzed: {evidence.get('files_analyzed', 0)}",
         f"- Functions measured: {evidence.get('functions_measured', 0)}",
         f"- Average complexity: {evidence.get('average_cyclomatic_complexity')}",
@@ -50,7 +53,7 @@ def markdown(evidence: dict) -> str:
     for item in hotspots:
         lines.append(
             f"- `{item.get('path')}:{item.get('line')}` `{item.get('name')}` — complexity={item.get('cyclomatic_complexity')}, "
-            f"loc={item.get('loc')}, nesting={item.get('max_nesting')}, hotspot={item.get('hotspot_score')}"
+            f"loc={item.get('loc')}, nesting={item.get('max_nesting')}, hotspot={item.get('hotspot_score')}, method={item.get('method')}"
         )
     lines.extend(["", "## Duplicate samples", ""])
     duplicate = evidence.get("duplicate_evidence") if isinstance(evidence.get("duplicate_evidence"), dict) else {}
@@ -74,14 +77,17 @@ def markdown(evidence: dict) -> str:
 
 
 def main() -> int:
+    install_assessment_score_integrity()
     output = Path("remediation-evidence/complexity-manifest.json")
-    evidence = collect_complexity_evidence(collect_files())
+    evidence = complexity_engine.collect_complexity_evidence(collect_files())
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     output.with_suffix(".md").write_text(markdown(evidence), encoding="utf-8")
     print(
         json.dumps(
             {
+                "analyzer_version": evidence.get("analyzer_version"),
+                "javascript_typescript_method": evidence.get("javascript_typescript_method"),
                 "files_analyzed": evidence.get("files_analyzed"),
                 "functions_measured": evidence.get("functions_measured"),
                 "high_complexity_functions": evidence.get("high_complexity_functions"),
