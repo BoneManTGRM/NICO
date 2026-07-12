@@ -1,0 +1,35 @@
+name: Apply Installer Idempotence Repair
+
+on:
+  push:
+    branches: [agent/remediate-all-296]
+    paths:
+      - scripts/apply_installer_idempotence_repair.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remediate-all-296
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply deterministic repair
+        run: python scripts/apply_installer_idempotence_repair.py
+      - name: Validate edited files
+        run: python -m py_compile nico/assessment_score_integrity.py tests/test_assessment_score_integrity.py
+      - name: Commit repair and remove one-time helper
+        run: |
+          git config user.name "NICO Repair Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/apply-installer-idempotence.yml scripts/apply_installer_idempotence_repair.py
+          git add nico/assessment_score_integrity.py tests/test_assessment_score_integrity.py
+          git commit -m "Make score-integrity installer non-destructive"
+          git push origin HEAD:agent/remediate-all-296
