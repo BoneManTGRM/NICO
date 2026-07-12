@@ -12,6 +12,7 @@ from nico.report_truth_status import build_report_truth_status
 from nico.runtime_config import runtime_config
 from nico.scanner_artifact_scoring import scanner_artifact_access_status
 from nico.storage import STORE
+from nico.storage_schema_readiness import cached_storage_schema_readiness
 
 REDACTED = "[REDACTED]"
 DEPLOY_COMMIT_KEYS = ["RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "SOURCE_VERSION", "GIT_COMMIT_SHA", "COMMIT_SHA"]
@@ -47,17 +48,28 @@ def deployment_diagnostics() -> dict[str, Any]:
 
 def storage_diagnostics() -> dict[str, Any]:
     status = STORE.status()
+    schema = cached_storage_schema_readiness()
     warnings = []
     if not status.get("persistence_available"):
         warnings.append(status.get("durability_warning") or "Storage persistence is unavailable; retained evidence may not survive restart.")
     if status.get("database_url_configured") and status.get("adapter") != "postgres":
         warnings.append("DATABASE_URL is configured but Postgres is not active. Check driver availability, connectivity, and NICO_DISABLE_POSTGRES.")
+    if schema.get("status") != "ready":
+        warnings.append("The live Postgres schema and current migration contract are not verified; trusted production work remains blocked.")
     return {
-        "status": "ok",
+        "status": "ok" if schema.get("status") == "ready" else "degraded",
         "storage": status,
         "database_configured": bool(status.get("database_url_configured")),
         "persistence_available": bool(status.get("persistence_available")),
         "database_url": REDACTED if status.get("database_url_configured") else "not_configured",
+        "schema_readiness": {
+            "status": schema.get("status") or "unavailable",
+            "schema_ready": schema.get("schema_ready") is True,
+            "migration_ready": schema.get("migration_ready") is True,
+            "contract_version": schema.get("contract_version") or "unavailable",
+            "contract_sha256": schema.get("contract_sha256") or "unavailable",
+            "blockers": list(schema.get("blockers") or [])[:40] if isinstance(schema.get("blockers"), list) else [],
+        },
         "warnings": warnings,
     }
 
@@ -114,5 +126,5 @@ def diagnostics() -> dict[str, Any]:
         "scanner_artifacts": scanner_artifact_access_status(default_repo),
         "features": feature_diagnostics(),
         "latest_runs": latest_runs_diagnostics(),
-        "redaction": "Private values and raw provider error JSON are not returned by diagnostics.",
+        "redaction": "Private values, database credentials, raw SQL errors, and provider error JSON are not returned by diagnostics.",
     }
