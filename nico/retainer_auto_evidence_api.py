@@ -7,10 +7,10 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from nico.retainer_evidence_ingestion import build_retainer_evidence_payload
+from nico.retainer_evidence_ingestion_v2 import build_retainer_evidence_payload_v2
 from nico.retainer_truth_workflow import build_truth_bound_retainer_ops
 
-RETAINER_AUTO_EVIDENCE_VERSION = "nico.retainer_auto_evidence_api.v1"
+RETAINER_AUTO_EVIDENCE_VERSION = "nico.retainer_auto_evidence_api.v2"
 RETAINER_OPS_ROUTE = ("POST", "/retainer/ops")
 
 
@@ -145,7 +145,7 @@ def install_retainer_auto_evidence(target: FastAPI) -> dict[str, Any]:
             result = build_truth_bound_retainer_ops(request_payload)
             raise main.safe_blocked_exception(result)
 
-        enriched = build_retainer_evidence_payload(
+        enriched = build_retainer_evidence_payload_v2(
             request_payload,
             latest_express=getattr(main, "_LAST_HOSTED_ASSESSMENT", {}) or {},
             latest_mid=getattr(main, "_LAST_MID_ASSESSMENT", {}) or {},
