@@ -15,10 +15,7 @@ from nico.mid_assessment_runs import (
     load_mid_assessment_run,
     persist_mid_assessment_run,
 )
-from nico.snapshot_assessment_handlers import (
-    _snapshot_evidence_attachment_handler,
-    _snapshot_scanner_handler,
-)
+import nico.snapshot_assessment_handlers as snapshot_handlers
 from nico.storage import STORE
 
 
@@ -121,8 +118,8 @@ def _fake_approval(run_id: str, report_id: str) -> dict:
 def test_mid_handler_composition_uses_snapshot_collection_and_evidence_bound_scoring():
     configured = mid_assessment_handlers(180)
 
-    assert configured["scanner_worker"] is _snapshot_scanner_handler
-    assert configured["evidence_attachment"] is _snapshot_evidence_attachment_handler
+    assert configured["scanner_worker"] is snapshot_handlers._snapshot_scanner_handler
+    assert configured["evidence_attachment"] is snapshot_handlers._snapshot_evidence_attachment_handler
     assert callable(configured["repo_evidence"])
     assert callable(configured["scoring"])
     assert callable(configured["reports"])
@@ -137,7 +134,7 @@ def test_mid_run_creates_one_mid_identity_and_never_generates_express_report(mon
 
     def fake_orchestrator(payload, handlers):
         captured.update(payload)
-        assert handlers["scanner_worker"] is _snapshot_scanner_handler
+        assert handlers["scanner_worker"] is snapshot_handlers._snapshot_scanner_handler
         return _orchestrator_result(payload)
 
     monkeypatch.setattr(api, "run_full_assessment_orchestration", fake_orchestrator)
