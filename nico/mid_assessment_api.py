@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from copy import deepcopy
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from nico.admin_security import internal_admin_token
 from nico.full_assessment_continuation import apply_full_assessment_continuation, plan_full_assessment_continuation
 from nico.full_assessment_orchestrator import run_full_assessment_orchestration
 from nico.mid_assessment_approval import request_mid_approval
@@ -223,7 +223,7 @@ def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
 
 
 def _server_admin_token() -> str:
-    return os.getenv("NICO_ADMIN_TOKEN", "").strip()
+    return internal_admin_token()
 
 
 def _persist_artifact_summary(result: dict[str, Any]) -> None:
@@ -260,18 +260,6 @@ def _attach_automatic_mid_artifacts(result: dict[str, Any], payload: dict[str, A
     customer_id = str(payload.get("customer_id") or "default_customer")
     project_id = str(payload.get("project_id") or "default_project")
     admin_token = _server_admin_token()
-    if not admin_token:
-        message = (
-            "The Mid analysis completed, but automatic draft generation is blocked because the server-side NICO_ADMIN_TOKEN is not configured. "
-            "No report was falsely marked complete."
-        )
-        result["report_generation_status"] = "blocked"
-        result["report_generation_note"] = message
-        result["report_generation_error"] = "server_admin_token_not_configured"
-        _set_progress_step(result, "reports", "blocked", message)
-        _set_progress_step(result, "approval_request", "not_started", "Human review request was not created because the Mid draft is unavailable.")
-        _persist_artifact_summary(result)
-        return result
 
     report = generate_mid_draft_report(
         run_id,
