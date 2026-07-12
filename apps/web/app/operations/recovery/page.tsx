@@ -1,12 +1,13 @@
 "use client";
 
 import {FormEvent, useState} from "react";
+import AssessmentRecoveryPanel from "../AssessmentRecoveryPanel";
 import ScannerRecoveryPanel from "../ScannerRecoveryPanel";
 import styles from "../operations.module.css";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
-export default function ScannerRecoveryPage() {
+export default function RecoveryPage() {
   const [adminToken, setAdminToken] = useState("");
   const [refreshKey, setRefreshKey] = useState("");
 
@@ -21,8 +22,8 @@ export default function ScannerRecoveryPage() {
       <section className={styles.hero}>
         <div>
           <p className={styles.eyebrow}>NICO Phase 3</p>
-          <h1>Scanner Recovery</h1>
-          <p className={styles.lead}>Review scanner work interrupted by a backend restart and resume the same durable scan ID without creating duplicate execution.</p>
+          <h1>Recovery Control</h1>
+          <p className={styles.lead}>Review interrupted Mid, Full, and scanner work. Recovery reuses the same durable identities and never starts automatically.</p>
         </div>
         <div className={styles.heroState}><a className={`${styles.pill} ${styles.neutral}`} href="/operations">Back to Operations</a></div>
       </section>
@@ -42,6 +43,7 @@ export default function ScannerRecoveryPage() {
         {!API_URL ? <div className={styles.error}>NEXT_PUBLIC_NICO_API_URL is not configured for this Vercel deployment.</div> : null}
       </section>
 
+      <AssessmentRecoveryPanel apiUrl={API_URL} adminToken={adminToken} refreshKey={refreshKey} />
       <ScannerRecoveryPanel apiUrl={API_URL} adminToken={adminToken} refreshKey={refreshKey} />
     </main>
   );
