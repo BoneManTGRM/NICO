@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException
 
 from nico.admin_security import require_admin_write
 from nico.storage import STORE
@@ -139,18 +139,23 @@ def _now() -> str:
 
 
 def _canonical_hash(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str).encode("utf-8")
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
 def storage_schema_contract() -> dict[str, Any]:
-    tables = {
-        table: list(columns)
-        for table, columns in sorted(EXPECTED_TABLE_COLUMNS.items())
-    }
     contract = {
         "version": STORAGE_SCHEMA_CONTRACT_VERSION,
-        "tables": tables,
+        "tables": {
+            table: list(columns)
+            for table, columns in sorted(EXPECTED_TABLE_COLUMNS.items())
+        },
         "migration_table": STORAGE_SCHEMA_MIGRATION_TABLE,
     }
     contract["contract_sha256"] = _canonical_hash(contract)
@@ -164,9 +169,8 @@ def normalize_catalog_rows(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
             continue
         table = str(raw.get("table_name") or "").strip()
         column = str(raw.get("column_name") or "").strip()
-        if not table or not column:
-            continue
-        catalog.setdefault(table, set()).add(column)
+        if table and column:
+            catalog.setdefault(table, set()).add(column)
     return catalog
 
 
@@ -222,8 +226,7 @@ def _ensure_migration_ledger(adapter: Any, contract: dict[str, Any], now: str) -
         INSERT INTO {STORAGE_SCHEMA_MIGRATION_TABLE} (version, contract_sha256, applied_at, verified_at)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (version) DO UPDATE
-        SET contract_sha256=EXCLUDED.contract_sha256,
-            verified_at=EXCLUDED.verified_at
+        SET verified_at=EXCLUDED.verified_at
         """,
         (
             STORAGE_SCHEMA_CONTRACT_VERSION,
@@ -248,60 +251,78 @@ def _read_migration_ledger(adapter: Any) -> list[dict[str, Any]]:
     )
 
 
+def _blocked_without_postgres(
+    adapter_name: str,
+    persistence_available: bool,
+    contract: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    return {
+        "artifact_schema": STORAGE_SCHEMA_READINESS_SCHEMA,
+        "status": "blocked",
+        "schema_ready": False,
+        "migration_ready": False,
+        "adapter": adapter_name,
+        "persistence_available": persistence_available,
+        "contract_version": STORAGE_SCHEMA_CONTRACT_VERSION,
+        "contract_sha256": contract["contract_sha256"],
+        "catalog": {
+            "complete": False,
+            "missing_tables": sorted(EXPECTED_TABLE_COLUMNS),
+            "missing_columns": {},
+            "expected_table_count": len(EXPECTED_TABLE_COLUMNS),
+            "observed_table_count": 0,
+        },
+        "migration": {
+            "current_version_present": False,
+            "current_contract_matches": False,
+            "record_count": 0,
+            "versions": [],
+        },
+        "blockers": [
+            "durable_postgres_required",
+            "schema_catalog_unverified",
+            "migration_ledger_unverified",
+        ],
+        "warnings": [],
+        "verification_error_type": None,
+        "verified_at": now,
+        "next_action": "Restore durable Postgres, then verify the exact schema catalog and migration ledger before trusted production work.",
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+        "guardrail": "Schema readiness proves database structure and migration identity only. It does not prove workflow records are complete or authorize client delivery.",
+    }
+
+
 def verify_storage_schema(store: Any = STORE) -> dict[str, Any]:
     contract = storage_schema_contract()
     now = _now()
     adapter_name = _safe_adapter_name(store)
-    status_payload: dict[str, Any]
     try:
         status_payload = dict(store.status())
     except Exception:
         status_payload = {}
 
-    if adapter_name != "postgres" or not status_payload.get("persistence_available"):
-        return {
-            "artifact_schema": STORAGE_SCHEMA_READINESS_SCHEMA,
-            "status": "blocked",
-            "schema_ready": False,
-            "migration_ready": False,
-            "adapter": adapter_name,
-            "persistence_available": bool(status_payload.get("persistence_available")),
-            "contract_version": STORAGE_SCHEMA_CONTRACT_VERSION,
-            "contract_sha256": contract["contract_sha256"],
-            "catalog": {
-                "complete": False,
-                "missing_tables": sorted(EXPECTED_TABLE_COLUMNS),
-                "missing_columns": {},
-                "expected_table_count": len(EXPECTED_TABLE_COLUMNS),
-                "observed_table_count": 0,
-            },
-            "migration": {
-                "current_version_present": False,
-                "current_contract_matches": False,
-                "record_count": 0,
-            },
-            "blockers": ["durable_postgres_required", "schema_catalog_unverified", "migration_ledger_unverified"],
-            "warnings": [],
-            "verified_at": now,
-            "next_action": "Restore durable Postgres, then verify the exact schema catalog and migration ledger before trusted production work.",
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
+    persistence_available = bool(status_payload.get("persistence_available"))
+    if adapter_name != "postgres" or not persistence_available:
+        return _blocked_without_postgres(
+            adapter_name,
+            persistence_available,
+            contract,
+            now,
+        )
 
     adapter = getattr(store, "adapter", None)
     blockers: list[str] = []
-    warnings: list[str] = []
-    catalog_result: dict[str, Any]
-    migration_result: dict[str, Any]
     error_type = ""
     try:
         _ensure_migration_ledger(adapter, contract, now)
-        catalog_rows = _query_catalog(adapter)
-        catalog = normalize_catalog_rows(catalog_rows)
+        catalog = normalize_catalog_rows(_query_catalog(adapter))
         catalog_result = compare_schema_catalog(catalog)
         ledger_rows = _read_migration_ledger(adapter)
         current_rows = [
-            row for row in ledger_rows
+            row
+            for row in ledger_rows
             if str(row.get("version") or "") == STORAGE_SCHEMA_CONTRACT_VERSION
         ]
         current_contract_matches = any(
@@ -312,7 +333,10 @@ def verify_storage_schema(store: Any = STORE) -> dict[str, Any]:
             "current_version_present": bool(current_rows),
             "current_contract_matches": current_contract_matches,
             "record_count": len(ledger_rows),
-            "versions": [str(row.get("version") or "")[:80] for row in ledger_rows[:100]],
+            "versions": [
+                str(row.get("version") or "")[:80]
+                for row in ledger_rows[:100]
+            ],
         }
         if not catalog_result["complete"]:
             blockers.append("schema_catalog_incomplete")
@@ -335,7 +359,10 @@ def verify_storage_schema(store: Any = STORE) -> dict[str, Any]:
             "record_count": 0,
             "versions": [],
         }
-        blockers.extend(["schema_verification_failed", "migration_ledger_unverified"])
+        blockers.extend([
+            "schema_verification_failed",
+            "migration_ledger_unverified",
+        ])
 
     schema_ready = bool(catalog_result.get("complete"))
     migration_ready = bool(
@@ -355,7 +382,7 @@ def verify_storage_schema(store: Any = STORE) -> dict[str, Any]:
         "catalog": catalog_result,
         "migration": migration_result,
         "blockers": sorted(set(blockers)),
-        "warnings": sorted(set(warnings)),
+        "warnings": [],
         "verification_error_type": error_type or None,
         "verified_at": now,
         "next_action": (
@@ -401,7 +428,9 @@ def storage_schema_readiness_response(
     x_nico_admin_token: str = Header(default=""),
 ) -> dict[str, Any]:
     _require_operator(x_nico_admin_token)
-    return refresh_storage_schema_readiness() if refresh else cached_storage_schema_readiness()
+    if refresh:
+        return refresh_storage_schema_readiness()
+    return cached_storage_schema_readiness()
 
 
 def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
@@ -417,22 +446,24 @@ def install_storage_schema_readiness(target: FastAPI) -> dict[str, Any]:
     existing = _route_pairs(target)
     present = STORAGE_SCHEMA_READINESS_ROUTE in existing
     if not present:
-        target.get("/operations/storage-schema", tags=["operations"])(storage_schema_readiness_response)
+        target.get("/operations/storage-schema", tags=["operations"])(
+            storage_schema_readiness_response
+        )
         target.openapi_schema = None
 
     from nico.operations_readiness import REQUIRED_OPERATION_ROUTES
 
     REQUIRED_OPERATION_ROUTES.add(REQUIRED_STORAGE_SCHEMA_ROUTE)
-    refresh = refresh_storage_schema_readiness()
+    startup_result = refresh_storage_schema_readiness()
     if STORAGE_SCHEMA_READINESS_ROUTE not in _route_pairs(target):
         raise RuntimeError("Storage schema readiness route registration failed")
     return {
         "installed": True,
         "route_reused": present,
         "route": REQUIRED_STORAGE_SCHEMA_ROUTE,
-        "startup_status": refresh.get("status"),
+        "startup_status": startup_result.get("status"),
         "contract_version": STORAGE_SCHEMA_CONTRACT_VERSION,
-        "contract_sha256": refresh.get("contract_sha256"),
+        "contract_sha256": startup_result.get("contract_sha256"),
     }
 
 
