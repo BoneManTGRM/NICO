@@ -1,0 +1,116 @@
+name: Production Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact 40-character current main commit to verify and promote
+        required: true
+        type: string
+      backend_url:
+        description: Public Railway backend HTTPS origin
+        required: true
+        type: string
+      frontend_url:
+        description: Public Vercel frontend HTTPS origin
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  deployments: write
+  statuses: read
+
+concurrency:
+  group: production-release-gate
+  cancel-in-progress: false
+
+jobs:
+  production-release-gate:
+    name: Verify and record production release
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      NICO_PRODUCTION_API_URL: ${{ inputs.backend_url }}
+      NICO_PRODUCTION_FRONTEND_URL: ${{ inputs.frontend_url }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+
+      - name: Verify checked-out release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install release-gate dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run fail-closed production release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_production_release.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --sha "${RELEASE_SHA}" \
+            --backend-url "${NICO_PRODUCTION_API_URL}" \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --output release-manifest.json \
+            --record-deployment
+
+      - name: Publish release-gate summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f release-manifest.json ]]; then
+            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("release-manifest.json").read_text(encoding="utf-8"))
+          print("# NICO Production Release Gate")
+          print()
+          print(f"- Status: **{payload.get('status', 'unknown')}**")
+          print(f"- Release SHA: `{payload.get('release_sha', 'missing')}`")
+          print(f"- Release identity: `{payload.get('release_identity_sha256', 'missing')}`")
+          print(f"- Manifest SHA-256: `{payload.get('manifest_sha256', 'missing')}`")
+          print(f"- Blockers: {', '.join(payload.get('blockers') or []) or 'none'}")
+          record = payload.get("last_known_good_record") or {}
+          print(f"- Last-known-good record: {record.get('status', 'not requested')}")
+          print()
+          print(payload.get("guardrail", ""))
+          PY
+          else
+            {
+              echo "# NICO Production Release Gate"
+              echo
+              echo "The release manifest was not produced. The gate failed before evidence serialization."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-gate-${{ inputs.release_sha }}
+          path: release-manifest.json
+          if-no-files-found: warn
+          retention-days: 90
