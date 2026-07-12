@@ -9,14 +9,31 @@ import nico.mid_review_enforcement as enforcement
 from nico.storage import STORE, StorageAdapter
 
 _COMPAT_INSTALLED = False
+_BASE_ENFORCED_VALIDATE = enforcement._enforced_validate_mid_approval
 
 
 def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _active_store(store: StorageAdapter | None = None) -> StorageAdapter:
     return store or STORE
+
+
+def _compat_validate_mid_approval(value: Any, store: StorageAdapter | None = None) -> dict[str, Any]:
+    approval = value if isinstance(value, dict) else {}
+    result = deepcopy(_BASE_ENFORCED_VALIDATE(approval, store=store))
+    if str(approval.get("approval_version") or "") == enforcement.MID_APPROVAL_ENFORCED_VERSION:
+        for check in _list(result.get("checks")):
+            if isinstance(check, dict) and check.get("id") == "approval_version":
+                check["passed"] = True
+                check["message"] = "The production Mid approval uses the enforced version-three contract."
+        result = enforcement._recompute_validation(result)
+    return result
 
 
 def _production_request_mid_approval(
@@ -109,6 +126,8 @@ def install_mid_review_enforcement_compat() -> dict[str, Any]:
     approval_service.MID_APPROVAL_VERSION = "mid-report-approval-v2"
     approval_service.request_mid_approval = enforcement._ORIGINALS["request_mid_approval"]
     approval_service.transition_mid_approval = enforcement._ORIGINALS["transition_mid_approval"]
+    enforcement._enforced_validate_mid_approval = _compat_validate_mid_approval
+    approval_service.validate_mid_approval = _compat_validate_mid_approval
     approval_api.request_mid_approval = _production_request_mid_approval
     approval_api.transition_mid_approval = _production_transition_mid_approval
 
