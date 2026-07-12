@@ -37,7 +37,7 @@ class MidReviewDispositionRequest(BaseModel):
 
 def _raise(result: dict[str, Any], default_message: str) -> None:
     if result.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail={"status": "not_found", "message": str(result.get("error") or default_message)})
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": default_message})
     if result.get("status") == "blocked":
         raise HTTPException(
             status_code=403 if result.get("admin_write") else 409,
