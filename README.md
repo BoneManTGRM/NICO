@@ -123,17 +123,21 @@ Hosted readiness support is available for operators who need current-run evidenc
 - `/scanner-runtime` - deployed scanner runtime tool availability.
 - `/release-readiness` - release-readiness support and output-contract verification.
 - `/operations/readiness` - fail-closed semantic production readiness for deployment identity, truth guards, durable storage, scanner execution, runtime configuration, and required routes.
+- Frontend `/api/deployment` - safe Vercel deployment-commit identity used to detect stale frontend/backend combinations.
 - `docs/hosted-readiness-runbook.md` - operator runbook for Refresh Full Evidence review, readiness blockers, evidence hashes, and human signoff checks.
-- `docs/OPERATIONS_READINESS.md` - production operations-readiness contract, deployment gate, and failure procedure.
+- `docs/OPERATIONS_READINESS.md` - production operations-readiness contract and failure procedure.
+- `docs/PRODUCTION_RELEASE_GATE.md` - exact-SHA CI, Vercel, Railway, deployment-alignment, last-known-good, and rollback procedure.
 
-Run both production checks after deployment or environment changes:
+Run both backend checks after deployment or environment changes:
 
 ```bash
 python scripts/check_operations_readiness.py https://YOUR-NICO-API-HOST
 python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
 ```
 
-The operations checker fails unless semantic readiness is `ready`. The hosted smoke check validates both endpoint reachability and required semantic status. Neither check approves delivery, lifts scores by itself, or replaces human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
+Then manually run the GitHub Actions **Production Release Gate** for the full current `main` SHA and the production Vercel and Railway origins. A release becomes last-known-good only when that fail-closed gate passes and records a successful GitHub production deployment.
+
+The operations checker fails unless semantic readiness is `ready`. The hosted smoke check validates both endpoint reachability and required semantic status. The production release gate additionally requires exact-SHA CI and deployment alignment. None of these controls approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
 
 ## License
 
