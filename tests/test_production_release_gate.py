@@ -7,6 +7,7 @@ from nico.production_release_gate import (
     FRONTEND_DEPLOYMENT_SCHEMA,
     REQUIRED_WORKFLOWS,
     build_production_release_manifest,
+    provider_summary,
     safe_origin,
     sha_matches,
 )
@@ -177,6 +178,55 @@ def test_commit_status_success_can_supply_provider_evidence():
     )
 
     assert manifest["status"] == "ready"
+
+
+def test_real_railway_style_context_matches_safe_target_origin_only():
+    statuses = [
+        {
+            "context": "Vercel",
+            "state": "success",
+            "target_url": "https://vercel.com/acme/nico/deployment?token=discarded",
+        },
+        {
+            "context": "successful-cat - NICO",
+            "state": "success",
+            "target_url": (
+                "https://railway.com/project/project-id/service/service-id"
+                "?id=deployment-id&environmentId=environment-id#details"
+            ),
+        },
+    ]
+
+    providers = provider_summary([], statuses)
+    manifest = _manifest(check_runs=[], commit_statuses=statuses)
+    railway_observation = providers["railway"]["observations"][0]
+
+    assert providers["railway"]["matched"] is True
+    assert providers["railway"]["passed"] is True
+    assert railway_observation["name"] == "successful-cat - NICO"
+    assert railway_observation["url"] == "https://railway.com"
+    assert "project-id" not in repr(providers)
+    assert "deployment-id" not in repr(providers)
+    assert "environment-id" not in repr(providers)
+    assert "?" not in railway_observation["url"]
+    assert manifest["status"] == "ready"
+    assert manifest["providers"]["railway"]["observations"][0]["url"] == "https://railway.com"
+
+
+def test_unrelated_domain_does_not_impersonate_railway():
+    providers = provider_summary(
+        [],
+        [
+            {
+                "context": "successful-cat - NICO",
+                "state": "success",
+                "target_url": "https://railway.com.attacker.example/project/1",
+            }
+        ],
+    )
+
+    assert providers["railway"]["matched"] is False
+    assert providers["railway"]["passed"] is False
 
 
 def test_malformed_or_degraded_backend_readiness_blocks_release():
