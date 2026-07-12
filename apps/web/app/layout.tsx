@@ -3,6 +3,8 @@ import "../styles/globals.css";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
+import MidEvidencePacketHelper from "./MidEvidencePacketHelper";
+import ReportPresentationGuard from "./ReportPresentationGuard";
 
 export const metadata = {
   title: "NICO",
@@ -14,6 +16,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <AssessmentRequestGuard />
+        <ReportPresentationGuard />
         <nav className="global-nav" aria-label="NICO primary navigation">
           <a className="global-brand" href="/easy">NICO</a>
           <div className="global-links">
@@ -36,6 +39,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
         <GenericRepositoryExample />
         {children}
         <MidAssessmentCompanion />
+        <MidEvidencePacketHelper />
       </body>
     </html>
   );
