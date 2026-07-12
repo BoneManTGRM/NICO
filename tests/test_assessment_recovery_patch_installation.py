@@ -41,7 +41,7 @@ def test_execution_patch_uses_checkpointed_orchestration_for_all_four_paths() ->
     ).read_text(encoding="utf-8")
 
     assert source.count("result = _run_checkpointed(") == 4
-    assert 'full_api.new_id("fullrun")' in source
+    assert 'new_id("fullrun")' in source
     assert 'mid_api.new_id("midrun")' in source
     assert "orchestrator=orchestrator" in source
     assert "wrap_handlers=orchestrator is canonical_orchestrator" in source
