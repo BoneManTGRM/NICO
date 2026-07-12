@@ -7,7 +7,8 @@ import nico.snapshot_assessment_handlers as snapshot_handlers
 import nico.snapshot_scanner_worker as snapshot_worker
 
 
-TOOL_POLICY_VERSION = "nico-required-assessment-tools-v1"
+TOOL_POLICY_VERSION = "nico-required-assessment-tools-v2"
+REQUIRED_DEPENDENCY_TOOL = "osv-scanner"
 REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
     "nico-secrets",
     "gitleaks",
@@ -15,6 +16,7 @@ REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
     "nico-static",
     "bandit",
     "semgrep",
+    REQUIRED_DEPENDENCY_TOOL,
 )
 
 _ORIGINAL_START_SNAPSHOT_SCAN: Callable[[dict[str, Any]], dict[str, Any]] = snapshot_worker.start_snapshot_scan
@@ -27,6 +29,11 @@ def complete_assessment_tools(requested: Any) -> list[str]:
     caused ``scanner_worker.selected_tools`` to omit every newly added scanner. This
     function keeps caller-selected optional tools while ensuring the exact-snapshot
     evidence needed by current scoring is requested on every authorized assessment.
+
+    OSV-Scanner is the mandatory cross-ecosystem dependency baseline. Ecosystem-specific
+    tools such as pip-audit and npm-audit remain additive when the caller requests them.
+    If the OSV binary or supported manifests are unavailable, the worker must disclose
+    that state rather than returning ``Dependency scanners run: none``.
     """
 
     values = requested if isinstance(requested, list) else []
@@ -44,9 +51,10 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str
         result["tool_policy"] = {
             "version": TOOL_POLICY_VERSION,
             "required_tools": list(REQUIRED_EXACT_SNAPSHOT_TOOLS),
+            "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
             "requested_tools": list(request["tools"]),
             "stale_client_tools_repaired": any(tool not in original for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS),
-            "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, and git-history evidence tools even when a stale client sends an older explicit list.",
+            "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, git-history, and cross-ecosystem dependency evidence tools even when a stale client sends an older explicit list.",
         }
     return result
 
@@ -60,11 +68,13 @@ def install_required_assessment_tools() -> dict[str, Any]:
         "status": "already_installed" if installed else "installed",
         "version": TOOL_POLICY_VERSION,
         "required_tools": list(REQUIRED_EXACT_SNAPSHOT_TOOLS),
-        "rule": "New Mid and Full exact-snapshot runs always request the evidence tools required by their active scoring model; unavailable execution remains disclosed rather than treated as clean.",
+        "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
+        "rule": "New Mid and Full exact-snapshot runs always request the evidence tools required by their active scoring model; unavailable execution remains disclosed rather than treated as clean or silently omitted.",
     }
 
 
 __all__ = [
+    "REQUIRED_DEPENDENCY_TOOL",
     "REQUIRED_EXACT_SNAPSHOT_TOOLS",
     "TOOL_POLICY_VERSION",
     "complete_assessment_tools",
