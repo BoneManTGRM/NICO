@@ -12,6 +12,10 @@ from nico.mid_assessment_approval import (
     request_mid_approval,
     transition_mid_approval,
 )
+from nico.mid_review_dispositions import (
+    get_mid_review_dispositions,
+    submit_mid_review_disposition,
+)
 
 
 class MidApprovalRequest(BaseModel):
@@ -25,6 +29,12 @@ class MidApprovalDecisionRequest(BaseModel):
     reviewed_item_ids: list[str] = Field(default_factory=list, max_length=500)
 
 
+class MidReviewDispositionRequest(BaseModel):
+    decision: str = Field(default="", max_length=64)
+    actor: str = Field(default="", max_length=160)
+    note: str = Field(default="", max_length=4000)
+
+
 def _raise(result: dict[str, Any], default_message: str) -> None:
     if result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail={"status": "not_found", "message": default_message})
@@ -35,6 +45,7 @@ def _raise(result: dict[str, Any], default_message: str) -> None:
                 "status": "blocked",
                 "message": str(result.get("error") or default_message),
                 "validation": result.get("validation") or {},
+                "review_dispositions": result.get("review_dispositions") or {},
                 "missing_reviewed_item_ids": result.get("missing_reviewed_item_ids") or [],
                 "unexpected_reviewed_item_ids": result.get("unexpected_reviewed_item_ids") or [],
             },
@@ -73,6 +84,33 @@ def mid_approval_decision_response(
         admin_token=x_nico_admin_token,
     )
     _raise(result, "Mid approval not found.")
+    return result
+
+
+def mid_review_dispositions_response(
+    approval_id: str,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    result = get_mid_review_dispositions(approval_id, admin_token=x_nico_admin_token)
+    _raise(result, "Mid approval not found.")
+    return result
+
+
+def mid_review_disposition_response(
+    approval_id: str,
+    item_id: str,
+    req: MidReviewDispositionRequest,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    result = submit_mid_review_disposition(
+        approval_id,
+        item_id,
+        decision=req.decision,
+        actor=req.actor,
+        note=req.note,
+        admin_token=x_nico_admin_token,
+    )
+    _raise(result, "Mid review exception not found.")
     return result
 
 
@@ -168,13 +206,16 @@ def mid_approved_report_pdf_response(
 def register_mid_approval_routes(app: FastAPI) -> None:
     app.post("/assessment/mid-run/{run_id}/approval/request")(mid_approval_request_response)
     app.get("/assessment/mid-run/{run_id}/approval")(mid_approval_status_response)
+    app.get("/assessment/mid-run/approval/{approval_id}/review-items")(mid_review_dispositions_response)
+    app.post("/assessment/mid-run/approval/{approval_id}/review-items/{item_id}")(mid_review_disposition_response)
     app.post("/assessment/mid-run/approval/{approval_id}/{state}")(mid_approval_decision_response)
     app.get("/assessment/mid-run/{run_id}/report/approved")(mid_approved_report_response)
     app.get("/assessment/mid-run/{run_id}/report/approved/pdf")(mid_approved_report_pdf_response)
 
 
 __all__ = [
-    "MidApprovalRequest", "MidApprovalDecisionRequest", "mid_approval_request_response",
-    "mid_approval_status_response", "mid_approval_decision_response", "mid_approved_report_response",
+    "MidApprovalRequest", "MidApprovalDecisionRequest", "MidReviewDispositionRequest",
+    "mid_approval_request_response", "mid_approval_status_response", "mid_approval_decision_response",
+    "mid_review_dispositions_response", "mid_review_disposition_response", "mid_approved_report_response",
     "mid_approved_report_pdf_response", "register_mid_approval_routes",
 ]

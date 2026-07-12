@@ -22,7 +22,7 @@ def test_navigation_exposes_mid_approval_after_review_and_report():
     assert "Approval creates a separate approved artifact but does not create a client delivery link" in layout
 
 
-def test_page_requires_exact_scope_admin_reviewer_and_note():
+def test_page_requires_exact_scope_admin_reviewer_and_notes():
     source = _page()
 
     assert "Mid run ID" in source
@@ -31,31 +31,45 @@ def test_page_requires_exact_scope_admin_reviewer_and_note():
     assert "NICO admin token" in source
     assert 'type="password"' in source
     assert "Reviewer name or role" in source
-    assert "Decision note" in source
+    assert "Item-level reviewer note" in source
+    assert "Final decision note" in source
     assert '"X-NICO-Admin-Token": adminToken' in source
 
 
-def test_page_uses_dedicated_request_status_and_decision_endpoints():
+def test_page_uses_dedicated_request_status_disposition_and_decision_endpoints():
     source = _page()
 
     assert "/assessment/mid-run/${encodeURIComponent(runId.trim())}/approval/request" in source
     assert "/assessment/mid-run/${encodeURIComponent(runId.trim())}/approval?${params.toString()}" in source
+    assert "/assessment/mid-run/approval/${encodeURIComponent(approvalId)}/review-items" in source
+    assert "/assessment/mid-run/approval/${encodeURIComponent(approval.approval_id)}/review-items/${encodeURIComponent(item.item_id)}" in source
     assert "/assessment/mid-run/approval/${encodeURIComponent(approval.approval_id)}/${state}" in source
     assert "Request Mid approval" in source
     assert "Refresh approval" in source
-    assert "Request more evidence" in source
-    assert "Reject" in source
+    assert "Request evidence" in source
+    assert "Reject item" in source
 
 
-def test_approval_requires_all_current_exception_items():
+def test_approval_ui_requires_a_structured_decision_for_every_current_exception():
     source = _page()
 
-    assert "Acknowledge all current exception items" in source
-    assert "item.truth_status" not in source
-    assert "allItems.every" in source
-    assert "reviewed_item_ids: reviewed" in source
-    assert "!allReviewed" in source
+    assert "Decide each current item" in source
+    assert "Accept as represented" in source
+    assert "Accept as inference only" in source
+    assert "accepted_item_ids" in source
+    assert "approval_ready" in source
+    assert "!structuredReviewReady" in source
+    assert "reviewed_item_ids: acceptedIds" in source
     assert "Approve and generate separate PDF" in source
+    assert "Acknowledge all current exception items" not in source
+
+
+def test_inference_only_button_cannot_accept_score_changing_inference():
+    source = _page()
+
+    assert "!item.inference_based || item.score_change_material" in source
+    assert "Score-changing:" in source
+    assert "Inference-based:" in source
 
 
 def test_page_displays_exact_identity_and_delivery_boundary():
@@ -65,6 +79,7 @@ def test_page_displays_exact_identity_and_delivery_boundary():
     assert "draft_pdf_sha256: approval.draft_pdf_sha256" in source
     assert "truth_sha256: approval.truth_sha256" in source
     assert "review_packet_sha256: approval.review_packet_sha256" in source
+    assert "disposition_set_sha256: reviewSummary?.disposition_set_sha256" in source
     assert "Client delivery" in source
     assert "Approval does not create a client link" in source
     assert "secure delivery remains disabled" in source
@@ -90,6 +105,7 @@ def test_admin_token_is_not_rendered_in_identity_json():
     assert "admin_token" not in identity
     assert "review_packet_sha256" in identity
     assert "truth_sha256" in identity
+    assert "disposition_set_sha256" in identity
 
 
 def test_production_registers_complete_mid_approval_route_group():
@@ -100,6 +116,8 @@ def test_production_registers_complete_mid_approval_route_group():
     routes = [
         '("POST", "/assessment/mid-run/{run_id}/approval/request")',
         '("GET", "/assessment/mid-run/{run_id}/approval")',
+        '("GET", "/assessment/mid-run/approval/{approval_id}/review-items")',
+        '("POST", "/assessment/mid-run/approval/{approval_id}/review-items/{item_id}")',
         '("POST", "/assessment/mid-run/approval/{approval_id}/{state}")',
         '("GET", "/assessment/mid-run/{run_id}/report/approved")',
         '("GET", "/assessment/mid-run/{run_id}/report/approved/pdf")',
