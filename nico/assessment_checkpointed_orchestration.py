@@ -180,6 +180,7 @@ def run_checkpointed_assessment_orchestration(
     handlers: dict[str, StepHandler],
     checkpoint: CheckpointWriter,
     orchestrator: OrchestrationRunner = run_full_assessment_orchestration,
+    wrap_handlers: bool = True,
 ) -> dict[str, Any]:
     checkpoint(
         {
@@ -203,10 +204,12 @@ def run_checkpointed_assessment_orchestration(
         "preflight",
         "preflight",
     )
-    result = orchestrator(
-        payload,
-        handlers=_wrapped_handlers(payload, handlers, checkpoint),
+    selected_handlers = (
+        _wrapped_handlers(payload, handlers, checkpoint)
+        if wrap_handlers
+        else handlers
     )
+    result = orchestrator(payload, handlers=selected_handlers)
     checkpoint(result, "orchestration", "orchestration_finalized")
     return result
 
