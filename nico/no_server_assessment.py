@@ -8,11 +8,12 @@ import re
 import shutil
 import socket
 import ssl
+import stat
 import tarfile
 import tempfile
 import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
@@ -73,22 +74,48 @@ def is_within(parent: Path, child: Path) -> bool:
         return False
 
 
+def _safe_archive_target(destination: Path, member_name: str) -> Path:
+    normalized = PurePosixPath(str(member_name or "").replace("\\", "/"))
+    if normalized.is_absolute() or not normalized.parts or any(part in {"", ".", ".."} for part in normalized.parts):
+        raise RuntimeError(f"Unsafe archive path blocked: {member_name}")
+    target = destination.joinpath(*normalized.parts)
+    if not is_within(destination, target):
+        raise RuntimeError(f"Unsafe archive path blocked: {member_name}")
+    return target
+
+
 def safe_extract_zip(archive: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zf:
         for member in zf.infolist():
-            target = destination / member.filename
-            if not is_within(destination, target):
-                raise RuntimeError(f"Unsafe archive path blocked: {member.filename}")
-        zf.extractall(destination)
+            target = _safe_archive_target(destination, member.filename)
+            file_type = (member.external_attr >> 16) & 0o170000
+            if file_type == stat.S_IFLNK:
+                raise RuntimeError(f"Archive symlink blocked: {member.filename}")
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member, "r") as source, target.open("wb") as output:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
 
 
 def safe_extract_tar(archive: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive) as tf:
         for member in tf.getmembers():
-            target = destination / member.name
-            if not is_within(destination, target):
-                raise RuntimeError(f"Unsafe archive path blocked: {member.name}")
-        tf.extractall(destination)
+            target = _safe_archive_target(destination, member.name)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise RuntimeError(f"Non-regular archive member blocked: {member.name}")
+            source = tf.extractfile(member)
+            if source is None:
+                raise RuntimeError(f"Archive member could not be read: {member.name}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with source, target.open("wb") as output:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
 
 
 def first_project_root(extracted: Path) -> Path:
