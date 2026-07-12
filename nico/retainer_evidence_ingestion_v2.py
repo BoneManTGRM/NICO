@@ -15,6 +15,16 @@ from nico.retainer_evidence_ingestion import (
 )
 
 RETAINER_EVIDENCE_V2_SCHEMA = "nico.retainer_evidence_ingestion.v2"
+TECHNICAL_FIELDS = (
+    "commit_summary",
+    "pr_summary",
+    "issue_summary",
+    "workflow_summary",
+    "codeql_summary",
+    "release_notes",
+    "deployment_summary",
+    "blockers",
+)
 
 
 def _safe_note(error: str | None) -> str:
@@ -71,6 +81,74 @@ def _latest_by_workflow(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(latest.values())
 
 
+def _fail_closed_explicit_baseline(
+    payload: dict[str, Any],
+    enriched: dict[str, Any],
+) -> dict[str, Any] | None:
+    requested_run_id = str(payload.get("baseline_run_id") or "").strip()
+    if not requested_run_id:
+        return None
+    binding = enriched.get("source_binding") if isinstance(enriched.get("source_binding"), dict) else {}
+    baseline = binding.get("baseline") if isinstance(binding.get("baseline"), dict) else {}
+    if (
+        str(baseline.get("status") or "") == "matched"
+        and str(baseline.get("run_id") or "") == requested_run_id
+    ):
+        return None
+
+    failed = deepcopy(payload)
+    repository = str(binding.get("repository") or payload.get("repository") or "")
+    checked_at = str(binding.get("checked_at") or "")
+    for field in TECHNICAL_FIELDS:
+        failed[field] = ""
+    failed.update(
+        {
+            "repository": repository,
+            "source_binding": {
+                "status": "baseline_mismatch",
+                "repository": repository,
+                "checked_at": checked_at,
+                "timeframe_days": binding.get("timeframe_days") or payload.get("timeframe_days"),
+                "observed_commit_sha": "",
+                "baseline": {
+                    "status": "not_matched",
+                    "baseline_type": "explicit_run",
+                    "requested_run_id": requested_run_id,
+                    "run_id": "",
+                    "snapshot_id": "",
+                    "snapshot_commit_sha": "",
+                    "scanner_id": "",
+                },
+            },
+            "retainer_evidence_sources": {},
+            "retainer_evidence_metrics": {},
+            "blocker_verification": {
+                "status": "unverified",
+                "checked_sources": [],
+                "blocker_count": None,
+                "reason": "explicit_baseline_not_matched",
+            },
+            "technical_evidence_auto_ingested": False,
+            "retainer_evidence_ingestion": {
+                "artifact_schema": RETAINER_EVIDENCE_V2_SCHEMA,
+                "status": "blocked",
+                "code": "explicit_baseline_not_matched",
+                "requested_run_id": requested_run_id,
+                "sources": {},
+                "blocker_verification": {
+                    "status": "unverified",
+                    "checked_sources": [],
+                    "blocker_count": None,
+                    "reason": "explicit_baseline_not_matched",
+                },
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        }
+    )
+    return failed
+
+
 def build_retainer_evidence_payload_v2(
     payload: dict[str, Any],
     *,
@@ -89,6 +167,10 @@ def build_retainer_evidence_payload_v2(
         client=github,
         now=now,
     )
+    explicit_failure = _fail_closed_explicit_baseline(payload, enriched)
+    if explicit_failure is not None:
+        return explicit_failure
+
     binding = enriched.get("source_binding") if isinstance(enriched.get("source_binding"), dict) else {}
     repository = str(binding.get("repository") or enriched.get("repository") or "")
     if str(binding.get("status") or "") != "bound" or not repository:
