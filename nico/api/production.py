@@ -4,6 +4,8 @@ from fastapi import FastAPI
 
 from nico.api.hosted import app
 from nico.assessment_network_budget import install_assessment_network_budget
+from nico.assessment_score_integrity import install_assessment_score_integrity
+from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
 from nico.mid_delivery_api import register_mid_delivery_routes
@@ -13,6 +15,8 @@ from nico.mid_report_api import register_mid_report_routes
 from nico.mid_review_api import register_mid_review_routes
 
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
+ASSESSMENT_SCORE_INTEGRITY = install_assessment_score_integrity()
+ASSESSMENT_SCORE_COMPATIBILITY = install_score_integrity_compatibility()
 
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -133,6 +137,8 @@ register_production_routes(app)
 __all__ = [
     "app",
     "ASSESSMENT_NETWORK_POLICY",
+    "ASSESSMENT_SCORE_INTEGRITY",
+    "ASSESSMENT_SCORE_COMPATIBILITY",
     "register_production_routes",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
