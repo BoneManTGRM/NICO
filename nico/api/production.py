@@ -19,6 +19,7 @@ from nico.mid_delivery_api import register_mid_delivery_routes
 from nico.mid_legacy_migration import LEGACY_MID_PATH, register_legacy_mid_migration
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
+from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
 
@@ -33,6 +34,7 @@ ASSESSMENT_SECRET_HISTORY_EXIT_GUARD = install_secret_history_exit_guard()
 ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibility()
 ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
+ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 
 REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run"),
@@ -163,6 +165,7 @@ __all__ = [
     "ASSESSMENT_SECRET_HISTORY_COMPATIBILITY",
     "ASSESSMENT_REQUIRED_TOOLS",
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
+    "ASSESSMENT_MID_REPORT_PRESENTATION",
     "register_production_routes",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
