@@ -14,10 +14,13 @@ from nico.assessment_score_integrity import (
     _built_in_static_scan,
     analyze_javascript_functions,
     calibrated_collect_complexity_evidence,
+    install_assessment_score_integrity,
+)
+from nico.assessment_score_integrity_compat import (
     calibrated_secrets_section,
     calibrated_static_section,
-    classify_secret_candidates,
-    install_assessment_score_integrity,
+    deduplicated_secret_candidates as classify_secret_candidates,
+    install_score_integrity_compatibility,
 )
 
 
@@ -60,16 +63,17 @@ def test_specific_non_example_token_is_high_confidence_and_masked() -> None:
     raw = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
 
     candidates = classify_secret_candidates("nico/runtime_config.py", f"TOKEN = '{raw}'")
+    specific = next(item for item in candidates if item["kind"] == "github_token")
 
     assert len(candidates) == 1
-    assert candidates[0]["confidence"] == "high"
-    assert candidates[0]["kind"] == "github_token"
-    assert raw not in repr(candidates[0])
-    assert candidates[0]["masked_preview"].startswith("ghp_")
-    assert len(candidates[0]["fingerprint"]) == 16
+    assert specific["confidence"] == "high"
+    assert raw not in repr(specific)
+    assert specific["masked_preview"].startswith("ghp_")
+    assert len(specific["fingerprint"]) == 16
 
 
 def test_builtin_secret_scanner_never_returns_raw_values(tmp_path: Path) -> None:
+    install_score_integrity_compatibility()
     raw = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
     (tmp_path / "config.py").write_text(f"TOKEN = '{raw}'\n", encoding="utf-8")
     (tmp_path / "example.env").write_text("API_KEY=example_replace_me_123456789\n", encoding="utf-8")
@@ -119,6 +123,7 @@ def test_high_confidence_candidate_remains_red() -> None:
 
 
 def test_builtin_static_scanner_ignores_clean_source_and_scores_current_tree_coverage(tmp_path: Path) -> None:
+    install_score_integrity_compatibility()
     (tmp_path / "safe.py").write_text("def add(left, right):\n    return left + right\n", encoding="utf-8")
 
     result = _built_in_static_scan(tmp_path)
@@ -130,7 +135,22 @@ def test_builtin_static_scanner_ignores_clean_source_and_scores_current_tree_cov
     assert section["confidence"] == "current-tree-scanner-bound"
 
 
+def test_builtin_static_scanner_excludes_test_only_risk_fixtures(tmp_path: Path) -> None:
+    install_score_integrity_compatibility()
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_unsafe.py").write_text("import os\nos.system(user_input)\n", encoding="utf-8")
+    (tmp_path / "safe.py").write_text("def safe(value):\n    return value\n", encoding="utf-8")
+
+    result = _built_in_static_scan(tmp_path)
+
+    assert result["status"] == "passed"
+    assert result["finding_count"] == 0
+    assert result["files_scanned"] == 1
+
+
 def test_builtin_static_scanner_retains_material_findings(tmp_path: Path) -> None:
+    install_score_integrity_compatibility()
     (tmp_path / "unsafe.py").write_text("import os\nos.system(user_input)\n", encoding="utf-8")
 
     result = _built_in_static_scan(tmp_path)
@@ -174,6 +194,7 @@ class Service {
 
 def test_calibrated_complexity_reports_v2_and_more_units_than_files() -> None:
     install_assessment_score_integrity()
+    install_score_integrity_compatibility()
     files = {
         "apps/web/example.ts": """
 export function one(value: number) { if (value) return 1; return 0 }
@@ -196,9 +217,13 @@ export function three(value: number) { return value ? 3 : 0 }
 def test_installer_rebinds_scoring_collection_and_mid_attachment() -> None:
     first = install_assessment_score_integrity()
     second = install_assessment_score_integrity()
+    compat_first = install_score_integrity_compatibility()
+    compat_second = install_score_integrity_compatibility()
 
     assert first["status"] in {"installed", "already_installed"}
     assert second["status"] == "already_installed"
+    assert compat_first["status"] in {"installed", "already_installed"}
+    assert compat_second["status"] == "already_installed"
     assert first["version"] == INTEGRITY_VERSION
     assert "nico-secrets" in scanner_worker.TOOL_CATALOG
     assert "nico-static" in scanner_worker.TOOL_CATALOG
