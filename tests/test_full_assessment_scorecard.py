@@ -61,16 +61,89 @@ def _repository(run_id: str = "fullrun_score") -> dict:
     }
 
 
+def _clean_scanner_results() -> list[dict]:
+    return [
+        {
+            "scanner": "nico-secrets",
+            "status": "passed",
+            "finding_counts": {"high": 0, "medium": 0, "low": 0},
+            "files_scanned": 120,
+        },
+        {
+            "scanner": "gitleaks",
+            "status": "passed",
+            "execution_completed": True,
+            "execution_status": "completed_clean",
+            "finding_count": 0,
+            "verified_finding_count": 0,
+            "candidate_finding_count": 0,
+            "full_history_covered": True,
+            "history_commit_count": 100,
+        },
+        {
+            "scanner": "trufflehog",
+            "status": "passed",
+            "execution_completed": True,
+            "execution_status": "completed_clean",
+            "finding_count": 0,
+            "verified_finding_count": 0,
+            "candidate_finding_count": 0,
+            "full_history_covered": True,
+            "history_commit_count": 100,
+        },
+        {
+            "scanner": "nico-static",
+            "status": "passed",
+            "finding_count": 0,
+            "files_scanned": 120,
+        },
+        {
+            "scanner": "bandit",
+            "status": "passed",
+            "execution_completed": True,
+            "execution_status": "completed_clean",
+            "finding_count": 0,
+            "material_finding_count": 0,
+            "review_finding_count": 0,
+            "excluded_test_finding_count": 0,
+        },
+        {
+            "scanner": "semgrep",
+            "status": "passed",
+            "execution_completed": True,
+            "execution_status": "completed_clean",
+            "finding_count": 0,
+            "material_finding_count": 0,
+            "review_finding_count": 0,
+            "excluded_test_finding_count": 0,
+        },
+        {"scanner": "eslint", "status": "passed"},
+    ]
+
+
 def _scanner(run_id: str = "fullrun_score") -> dict:
+    tools = [
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "nico-secrets",
+        "gitleaks",
+        "trufflehog",
+        "nico-static",
+        "bandit",
+        "semgrep",
+        "eslint",
+    ]
     return {
         "status": "attached",
         "run_id": run_id,
         "scan_id": "scan_score",
-        "tools_requested": ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "gitleaks"],
-        "tools_run": ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "gitleaks"],
+        "tools_requested": tools,
+        "tools_run": tools,
         "unavailable_tools": [],
         "failed_tools": [],
         "timed_out_tools": [],
+        "scanner_results": _clean_scanner_results(),
         "unavailable_data_notes": [],
     }
 
@@ -96,6 +169,7 @@ def test_scorecard_builds_seven_weighted_technical_sections_plus_integrity() -> 
     assert assessment["scorecard"]["evidence_readiness_score"] >= 90
     assert by_id["ci_cd"]["status"] == "green"
     assert by_id["dependency_health"]["confidence"] == "scanner-and-repository-bound"
+    assert by_id["secrets_review"]["confidence"] == "history-scanner-and-repository-bound"
     assert assessment["client_delivery_verdict"]["status"] == "human_review_required"
     assert assessment["human_review_required"] is True
     assert assessment["client_ready"] is False
@@ -105,8 +179,12 @@ def test_scorecard_builds_seven_weighted_technical_sections_plus_integrity() -> 
 
 def test_secrets_score_does_not_claim_clean_without_dedicated_scanner() -> None:
     scanner = _scanner()
-    scanner["tools_requested"] = [item for item in scanner["tools_requested"] if item != "gitleaks"]
-    scanner["tools_run"] = [item for item in scanner["tools_run"] if item != "gitleaks"]
+    secret_tools = {"nico-secrets", "gitleaks", "trufflehog"}
+    scanner["tools_requested"] = [item for item in scanner["tools_requested"] if item not in secret_tools]
+    scanner["tools_run"] = [item for item in scanner["tools_run"] if item not in secret_tools]
+    scanner["scanner_results"] = [
+        item for item in scanner["scanner_results"] if item.get("scanner") not in secret_tools
+    ]
 
     assessment = build_full_assessment_scorecard(_context(), _repository(), scanner)
     secrets = next(item for item in assessment["sections"] if item["id"] == "secrets_review")
