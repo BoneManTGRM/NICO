@@ -8,7 +8,7 @@ import nico.snapshot_scanner_worker as snapshot_worker
 
 
 TOOL_POLICY_VERSION = "nico-required-assessment-tools-v4"
-REQUIRED_DEPENDENCY_TOOLS: tuple[str, ...] = ("pip-audit", "npm-audit", "osv-scanner")
+REQUIRED_DEPENDENCY_TOOLS: tuple[str, ...] = ("osv-scanner", "pip-audit", "npm-audit")
 REQUIRED_DEPENDENCY_TOOL = "osv-scanner"
 REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
     # Collect fast current-tree evidence first so full-history work cannot consume
