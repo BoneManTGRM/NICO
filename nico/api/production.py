@@ -33,6 +33,10 @@ from nico.operational_observability import (
     install_operational_observability,
 )
 from nico.operations_readiness_api import register_operations_readiness_routes
+from nico.scanner_recovery import (
+    REQUIRED_SCANNER_RECOVERY_ROUTES,
+    install_scanner_recovery,
+)
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.secret_history_triage import install_secret_history_triage
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
@@ -64,6 +68,7 @@ ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
 OPERATIONS_OBSERVABILITY = install_operational_observability(app)
 OPERATIONS_ALERTING = install_operational_alert_routes(app)
 OPERATIONS_STORAGE_SCHEMA = install_storage_schema_readiness(app)
+OPERATIONS_SCANNER_RECOVERY = install_scanner_recovery(app)
 
 OPERATIONS_READINESS_ROUTES = {
     ("GET", "/operations/readiness"),
@@ -95,6 +100,7 @@ REQUIRED_PRODUCTION_ROUTES = (
     | OPERATIONS_READINESS_ROUTES
     | OPERATIONS_OBSERVABILITY_ROUTES
     | OPERATIONS_ALERT_ROUTES
+    | REQUIRED_SCANNER_RECOVERY_ROUTES
     | {STORAGE_SCHEMA_READINESS_ROUTE}
 )
 MID_CORE_ROUTES = {
@@ -161,6 +167,7 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
     observability_present = _validate_group(existing, OPERATIONS_OBSERVABILITY_ROUTES, "operational observability")
     alerts_present = _validate_group(existing, OPERATIONS_ALERT_ROUTES, "operational alerts")
+    recovery_present = _validate_group(existing, REQUIRED_SCANNER_RECOVERY_ROUTES, "scanner recovery")
     storage_schema_present = STORAGE_SCHEMA_READINESS_ROUTE in existing
     core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
     optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
@@ -176,6 +183,9 @@ def register_production_routes(target: FastAPI) -> FastAPI:
         target.openapi_schema = None
     if not alerts_present:
         install_operational_alert_routes(target)
+        target.openapi_schema = None
+    if not recovery_present:
+        install_scanner_recovery(target)
         target.openapi_schema = None
     if not storage_schema_present:
         install_storage_schema_readiness(target)
@@ -235,11 +245,13 @@ __all__ = [
     "OPERATIONS_OBSERVABILITY",
     "OPERATIONS_ALERTING",
     "OPERATIONS_STORAGE_SCHEMA",
+    "OPERATIONS_SCANNER_RECOVERY",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
     "OPERATIONS_READINESS_ROUTES",
     "OPERATIONS_OBSERVABILITY_ROUTES",
     "OPERATIONS_ALERT_ROUTES",
+    "REQUIRED_SCANNER_RECOVERY_ROUTES",
     "STORAGE_SCHEMA_READINESS_ROUTE",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
