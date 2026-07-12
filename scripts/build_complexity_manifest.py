@@ -5,6 +5,7 @@ from pathlib import Path
 
 import nico.full_assessment_complexity_evidence as complexity_engine
 from nico.assessment_score_integrity import install_assessment_score_integrity
+from nico.typescript_complexity_syntax import install_typescript_complexity_syntax
 
 ROOTS = (Path("nico"), Path("apps/web"), Path("scripts"))
 SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
@@ -78,6 +79,7 @@ def markdown(evidence: dict) -> str:
 
 def main() -> int:
     install_assessment_score_integrity()
+    install_typescript_complexity_syntax()
     output = Path("remediation-evidence/complexity-manifest.json")
     evidence = complexity_engine.collect_complexity_evidence(collect_files())
     output.parent.mkdir(parents=True, exist_ok=True)
