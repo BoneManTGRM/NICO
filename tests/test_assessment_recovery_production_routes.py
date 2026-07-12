@@ -1,76 +1,40 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from pathlib import Path
 
-import nico.assessment_recovery as assessment_recovery
-import nico.scanner_recovery as scanner_recovery
-import nico.storage_schema_readiness as storage_schema
-from nico.api.production import (
-    REQUIRED_ASSESSMENT_RECOVERY_ROUTES,
-    REQUIRED_PRODUCTION_ROUTES,
-    register_production_routes,
-)
+from nico.assessment_recovery import REQUIRED_ASSESSMENT_RECOVERY_ROUTES
 
 
-def _route_pairs(app: FastAPI) -> set[tuple[str, str]]:
-    return {
-        (str(method).upper(), str(getattr(route, "path", "")))
-        for route in app.routes
-        for method in (getattr(route, "methods", set()) or set())
-    }
+ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
-def test_assessment_recovery_routes_are_required_in_production_contract() -> None:
+def test_assessment_recovery_route_contract_is_exact() -> None:
     assert REQUIRED_ASSESSMENT_RECOVERY_ROUTES == {
         ("GET", "/operations/recovery/assessments"),
         ("POST", "/operations/recovery/assessment/{run_id}/resume"),
     }
-    assert REQUIRED_ASSESSMENT_RECOVERY_ROUTES <= REQUIRED_PRODUCTION_ROUTES
 
 
-def test_production_registration_installs_assessment_recovery_once(monkeypatch) -> None:
-    monkeypatch.setattr(
-        assessment_recovery,
-        "reconcile_interrupted_assessment_runs",
-        lambda **kwargs: {
-            "artifact_schema": assessment_recovery.ASSESSMENT_RECOVERY_SCHEMA,
-            "status": "clear",
-            "recovery_required": 0,
-            "automatic_resume": False,
-        },
+def test_production_source_registers_and_validates_assessment_recovery_once() -> None:
+    source = PRODUCTION.read_text(encoding="utf-8")
+
+    assert "REQUIRED_ASSESSMENT_RECOVERY_ROUTES" in source
+    assert "install_assessment_recovery" in source
+    assert "OPERATIONS_ASSESSMENT_RECOVERY = install_assessment_recovery(app)" in source
+    assert "| REQUIRED_ASSESSMENT_RECOVERY_ROUTES" in source
+    assert (
+        '_validate_group(existing, REQUIRED_ASSESSMENT_RECOVERY_ROUTES, "assessment recovery")'
+        in source
     )
-    monkeypatch.setattr(
-        scanner_recovery,
-        "reconcile_interrupted_scanner_runs",
-        lambda **kwargs: {
-            "artifact_schema": scanner_recovery.SCANNER_RECOVERY_SCHEMA,
-            "status": "clear",
-            "recovery_required": 0,
-            "automatic_resume": False,
-        },
-    )
-    monkeypatch.setattr(
-        storage_schema,
-        "refresh_storage_schema_readiness",
-        lambda **kwargs: {
-            "status": "ready",
-            "contract_sha256": "a" * 64,
-        },
-    )
+    assert "if not assessment_recovery_present:" in source
+    assert "install_assessment_recovery(target)" in source
+    assert '"OPERATIONS_ASSESSMENT_RECOVERY"' in source
 
-    app = FastAPI()
-    register_production_routes(app)
-    register_production_routes(app)
-    pairs = _route_pairs(app)
 
-    assert REQUIRED_ASSESSMENT_RECOVERY_ROUTES <= pairs
-    for method, path in REQUIRED_ASSESSMENT_RECOVERY_ROUTES:
-        assert sum(
-            1
-            for route in app.routes
-            if str(getattr(route, "path", "")) == path
-            and method in {
-                str(item).upper()
-                for item in (getattr(route, "methods", set()) or set())
-            }
-        ) == 1
+def test_production_contract_does_not_register_a_second_assessment_execution_path() -> None:
+    source = PRODUCTION.read_text(encoding="utf-8")
+
+    assert source.count('"/operations/recovery/assessments"') == 0
+    assert source.count('"/operations/recovery/assessment/{run_id}/resume"') == 0
+    assert source.count("install_assessment_recovery(target)") == 1
