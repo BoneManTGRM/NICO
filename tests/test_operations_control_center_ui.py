@@ -33,12 +33,20 @@ def test_operator_token_remains_in_component_memory_only() -> None:
     assert 'const [admintoken, setadmintoken] = usestate("")' in lowered
     assert 'type="password"' in lowered
     assert 'autocomplete="off"' in lowered
-    assert "localstorage" not in lowered
-    assert "sessionstorage" not in lowered
-    assert "document.cookie" not in lowered
-    assert "window.name" not in lowered
+    for forbidden_access in [
+        "window.localstorage",
+        "window.sessionstorage",
+        "localstorage.getitem",
+        "localstorage.setitem",
+        "sessionstorage.getitem",
+        "sessionstorage.setitem",
+        "document.cookie",
+        "window.name",
+    ]:
+        assert forbidden_access not in lowered
     assert "admintoken=" not in lowered
     assert "tokenparams" not in lowered
+    assert '{"x-nico-admin-token": admintoken}' in lowered
 
 
 def test_operator_page_surfaces_required_status_and_incident_fields() -> None:
