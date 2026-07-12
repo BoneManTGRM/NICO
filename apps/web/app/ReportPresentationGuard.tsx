@@ -2,7 +2,9 @@
 
 import {useEffect} from "react";
 
-const EMPTY_SCORE = /(?:\s*·\s*)?(?:null|undefined|nan)?\s*\/100\s*$/i;
+// Match only an actually empty score denominator. Numeric values such as 85/100
+// must never be rewritten as NOT SCORED.
+const EMPTY_SCORE = /(?:^|\s*·\s*)(?:null|undefined|nan)?\s*\/100\s*$/i;
 
 function textKey(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase().replace(/[.;:]+$/, "");
@@ -20,20 +22,14 @@ function normalizeScoreLabels(root: ParentNode) {
 
 function removeDuplicateDetail(root: ParentNode) {
   root.querySelectorAll<HTMLElement>(".result-card").forEach((card) => {
-    const listItems = Array.from(card.querySelectorAll<HTMLLIElement>("li"));
-    const seenItems = new Set<string>();
-    listItems.forEach((item) => {
-      const key = textKey(item.textContent || "");
-      if (!key || seenItems.has(key)) item.remove();
-      else seenItems.add(key);
-    });
-
-    const paragraphs = Array.from(card.querySelectorAll<HTMLParagraphElement>("p"));
-    const seenParagraphs = new Set<string>();
-    paragraphs.forEach((paragraph) => {
-      const key = textKey(paragraph.textContent || "");
-      if (!key || seenParagraphs.has(key)) paragraph.remove();
-      else seenParagraphs.add(key);
+    // Use one set in document order so a summary paragraph is retained and an
+    // identical later limitation bullet is removed. Separate paragraph/list sets
+    // allowed the same sentence to appear twice in the screenshots for Issue #296.
+    const seenDetail = new Set<string>();
+    Array.from(card.querySelectorAll<HTMLElement>("p, li")).forEach((element) => {
+      const key = textKey(element.textContent || "");
+      if (!key || seenDetail.has(key)) element.remove();
+      else seenDetail.add(key);
     });
   });
 }

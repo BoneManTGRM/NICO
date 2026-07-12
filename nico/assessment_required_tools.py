@@ -7,16 +7,20 @@ import nico.snapshot_assessment_handlers as snapshot_handlers
 import nico.snapshot_scanner_worker as snapshot_worker
 
 
-TOOL_POLICY_VERSION = "nico-required-assessment-tools-v2"
+TOOL_POLICY_VERSION = "nico-required-assessment-tools-v3"
 REQUIRED_DEPENDENCY_TOOL = "osv-scanner"
 REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
+    # Collect fast current-tree evidence first so full-history work cannot consume
+    # the entire bounded run before dependency and static coverage is attempted.
     "nico-secrets",
-    "gitleaks",
-    "trufflehog",
     "nico-static",
     "bandit",
     "semgrep",
     REQUIRED_DEPENDENCY_TOOL,
+    # Full-history scanners are intentionally last and independently disclose
+    # timeout, shallow history, CLI failure, and findings.
+    "gitleaks",
+    "trufflehog",
 )
 
 _ORIGINAL_START_SNAPSHOT_SCAN: Callable[[dict[str, Any]], dict[str, Any]] = snapshot_worker.start_snapshot_scan
@@ -30,10 +34,9 @@ def complete_assessment_tools(requested: Any) -> list[str]:
     function keeps caller-selected optional tools while ensuring the exact-snapshot
     evidence needed by current scoring is requested on every authorized assessment.
 
-    OSV-Scanner is the mandatory cross-ecosystem dependency baseline. Ecosystem-specific
-    tools such as pip-audit and npm-audit remain additive when the caller requests them.
-    If the OSV binary or supported manifests are unavailable, the worker must disclose
-    that state rather than returning ``Dependency scanners run: none``.
+    Current-tree and dependency analyzers are ordered before full-history scanners.
+    That ordering does not weaken history requirements; it prevents a long history
+    fetch or scan from starving every later evidence category under the total timeout.
     """
 
     values = requested if isinstance(requested, list) else []
@@ -54,6 +57,7 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str
             "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
             "requested_tools": list(request["tools"]),
             "stale_client_tools_repaired": any(tool not in original for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS),
+            "execution_order_rule": "Current-tree and dependency evidence runs before full-history secret scanning so one expensive history operation cannot starve all later evidence categories.",
             "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, git-history, and cross-ecosystem dependency evidence tools even when a stale client sends an older explicit list.",
         }
     return result

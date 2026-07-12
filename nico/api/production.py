@@ -21,6 +21,7 @@ from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
+from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
 
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
@@ -32,6 +33,7 @@ ASSESSMENT_FULL_HISTORY_CHECKOUT = install_exact_snapshot_full_history_checkout(
 ASSESSMENT_SECRET_HISTORY = install_exact_snapshot_secret_history()
 ASSESSMENT_SECRET_HISTORY_EXIT_GUARD = install_secret_history_exit_guard()
 ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibility()
+ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY = install_scanner_runtime_compat()
 ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
@@ -163,6 +165,7 @@ __all__ = [
     "ASSESSMENT_SECRET_HISTORY",
     "ASSESSMENT_SECRET_HISTORY_EXIT_GUARD",
     "ASSESSMENT_SECRET_HISTORY_COMPATIBILITY",
+    "ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY",
     "ASSESSMENT_REQUIRED_TOOLS",
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
