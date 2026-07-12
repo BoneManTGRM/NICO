@@ -10,7 +10,7 @@ from typing import Any
 import nico.assessment_score_integrity as integrity
 
 
-BUILTIN_STATIC_CONTEXT_VERSION = "nico-builtin-static-code-context-v1"
+BUILTIN_STATIC_CONTEXT_VERSION = "nico-builtin-static-code-context-v2"
 NON_PRODUCTION_PATH_PARTS = {
     "test",
     "tests",
@@ -114,12 +114,12 @@ def _non_production(path: Path, root: Path) -> bool:
 
 
 def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
-    """Scan executable code context while separating non-production pattern hits.
+    """Scan production executable code while disclosing non-production examples.
 
-    The previous built-in scanner searched raw source lines. Detector definitions,
-    comments, documentation strings, and test fixtures could therefore count as
-    material production findings. This implementation masks comments and strings
-    before matching and records test/example hits separately from score-bearing hits.
+    Production paths are matched only after comments and string literals are masked.
+    Test, fixture, example, sample, and documentation paths are non-scoring evidence;
+    their raw pattern matches are disclosed so intentionally unsafe examples are not
+    lost while they remain incapable of lowering the production score.
     """
 
     started = time.monotonic()
@@ -128,24 +128,33 @@ def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
     excluded_findings: list[str] = []
     material_by_rule: Counter[str] = Counter()
     excluded_by_rule: Counter[str] = Counter()
+    material_seen: set[tuple[str, int, str]] = set()
+    excluded_seen: set[tuple[str, int, str]] = set()
 
     for path in paths:
         text = integrity._read_text(path)
         if text is None:
             continue
         relative = path.relative_to(repo_path).as_posix()
-        masked = _code_only(path, text)
         excluded_path = _non_production(path, repo_path)
-        for line_number, line in enumerate(masked.splitlines(), 1):
+        scan_text = text if excluded_path else _code_only(path, text)
+        for line_number, line in enumerate(scan_text.splitlines(), 1):
             for name, pattern, message in integrity.RISK_PATTERNS:
                 if not pattern.search(line):
                     continue
+                key = (relative, line_number, name)
                 finding = f"{relative}:{line_number}: {name} — {message}"
                 if excluded_path:
+                    if key in excluded_seen:
+                        continue
+                    excluded_seen.add(key)
                     excluded_by_rule[name] += 1
                     if len(excluded_findings) < 100:
                         excluded_findings.append(finding)
                 else:
+                    if key in material_seen:
+                        continue
+                    material_seen.add(key)
                     material_by_rule[name] += 1
                     if len(material_findings) < 100:
                         material_findings.append(finding)
@@ -155,7 +164,7 @@ def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
     status = "failed" if material_count else "passed"
     summary = (
         f"NICO current-tree static risk scanner inspected {len(paths)} source file(s): "
-        f"material production hits={material_count}; excluded test/example hits={excluded_count}."
+        f"material production hits={material_count}; excluded non-production hits={excluded_count}."
     )
     preview_lines = material_findings[:30]
     if not preview_lines and excluded_count:
@@ -172,8 +181,8 @@ def triaged_builtin_static_scan(repo_path: Path) -> dict[str, Any]:
         "risk_severity": "high" if material_count else "low",
         "recommended_repair": "Review each material production hit and confirm exploitability before repair prioritization.",
         "unavailable_data_notes": notes + [
-            "Comments, string literals, and detector definitions are excluded from material matching.",
-            "Hits under tests, fixtures, examples, samples, and documentation are disclosed separately and do not lower the production score.",
+            "Production comments, string literals, and detector definitions are excluded from material matching.",
+            "Raw pattern matches under tests, fixtures, examples, samples, and documentation are disclosed separately and never lower the production score.",
             "Built-in pattern coverage does not replace language-specific semantic analyzers.",
         ],
         "secret_redaction_applied": False,
@@ -197,7 +206,7 @@ def install_builtin_static_code_context() -> dict[str, Any]:
     return {
         "status": "already_installed" if installed else "installed",
         "version": BUILTIN_STATIC_CONTEXT_VERSION,
-        "rule": "Only executable-code-context hits in production paths count as material built-in static findings; comments, strings, detector definitions, and non-production paths remain disclosed but non-scoring.",
+        "rule": "Only executable-code-context hits in production paths count as material built-in static findings; non-production paths remain disclosed but non-scoring.",
     }
 
 
