@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-
 TECHNICAL_SOURCES = (
     "repository",
     "head_commit",
     "commits",
     "pull_requests",
     "issues",
+    "open_issues",
     "workflow_runs",
+    "latest_workflow_state",
     "codeql_runs",
     "releases",
     "deployments",
@@ -26,9 +27,9 @@ def _lines(value: Any) -> list[str]:
     return [line.strip() for line in str(value).splitlines() if line.strip()]
 
 
-def _bounded_int(value: Any, default: int = 0) -> int:
+def _integer(value: Any, default: int = 0) -> int:
     try:
-        return max(0, int(value or 0))
+        return max(0, int(value))
     except (TypeError, ValueError):
         return max(0, int(default))
 
@@ -49,14 +50,10 @@ def _sources(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     raw = payload.get("retainer_evidence_sources")
     if not isinstance(raw, dict):
         return {}
-    return {
-        str(key): value
-        for key, value in raw.items()
-        if isinstance(value, dict)
-    }
+    return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
 
 
-def _source_verified(sources: dict[str, dict[str, Any]], source_id: str) -> bool:
+def _verified(sources: dict[str, dict[str, Any]], source_id: str) -> bool:
     return str(sources.get(source_id, {}).get("status") or "") == "verified"
 
 
@@ -67,25 +64,14 @@ def _source_note(sources: dict[str, dict[str, Any]], source_id: str) -> str:
     item_count = source.get("item_count")
     count_text = "count unavailable" if item_count is None else f"count={item_count}"
     note = str(source.get("note") or "").strip()
-    suffix = f" · {note}" if note else ""
-    return f"{source_id}: {status} · {count_text} · checked={checked_at}{suffix}"
+    return f"{source_id}: {status} · {count_text} · checked={checked_at}" + (f" · {note}" if note else "")
 
 
 def _manual_source_notes(payload: dict[str, Any]) -> list[str]:
+    binding = payload.get("source_binding") if isinstance(payload.get("source_binding"), dict) else {}
+    checked_at = str(payload.get("manual_context_checked_at") or binding.get("checked_at") or "")
     notes: list[str] = []
-    checked_at = str(
-        payload.get("manual_context_checked_at")
-        or payload.get("source_binding", {}).get("checked_at")
-        if isinstance(payload.get("source_binding"), dict)
-        else ""
-    )
-    for field in (
-        "roadmap_notes",
-        "client_update",
-        "retainer_metrics",
-        "success_metrics",
-        "budget_priorities",
-    ):
+    for field in ("roadmap_notes", "client_update", "retainer_metrics", "success_metrics", "budget_priorities"):
         count = len(_lines(payload.get(field)))
         if count:
             notes.append(
@@ -95,7 +81,7 @@ def _manual_source_notes(payload: dict[str, Any]) -> list[str]:
     return notes
 
 
-def _blocker_rows(payload: dict[str, Any]) -> list[str]:
+def _blockers(payload: dict[str, Any]) -> list[str]:
     rows: list[str] = []
     for key in ("blockers", "known_risks", "approval_needs", "release_blockers"):
         rows.extend(_lines(payload.get(key)))
@@ -129,7 +115,7 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
     issues = _lines(payload.get("issue_summary"))
     workflows = _lines(payload.get("workflow_summary"))
     codeql = _lines(payload.get("codeql_summary"))
-    blockers = _blocker_rows(payload)
+    blockers = _blockers(payload)
     releases = _lines(payload.get("release_notes"))
     deployments = _lines(payload.get("deployment_summary"))
     roadmap = _lines(payload.get("roadmap_notes"))
@@ -138,84 +124,77 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
     budget_priorities = _lines(payload.get("budget_priorities"))
 
     sources = _sources(payload)
-    source_binding = payload.get("source_binding") if isinstance(payload.get("source_binding"), dict) else {}
-    repository_bound = str(source_binding.get("status") or "") == "bound"
-    verified_sources = [source_id for source_id in TECHNICAL_SOURCES if _source_verified(sources, source_id)]
+    binding = payload.get("source_binding") if isinstance(payload.get("source_binding"), dict) else {}
+    repository_bound = str(binding.get("status") or "") == "bound"
     technical_metrics = payload.get("retainer_evidence_metrics") if isinstance(payload.get("retainer_evidence_metrics"), dict) else {}
-    failed_workflows = _bounded_int(technical_metrics.get("failed_workflow_runs"))
-    failed_codeql = _bounded_int(technical_metrics.get("failed_codeql_runs"))
-    open_issues = _bounded_int(technical_metrics.get("open_issues"), len(issues))
+    failed_workflows = _integer(technical_metrics.get("failed_workflow_runs"))
+    failed_codeql = _integer(technical_metrics.get("failed_codeql_runs"))
+    open_issue_count = _integer(technical_metrics.get("open_issues"), len(issues))
 
-    weekly_verified = [source_id for source_id in WEEKLY_SOURCES if _source_verified(sources, source_id)]
+    weekly_verified = [name for name in WEEKLY_SOURCES if _verified(sources, name)]
     weekly_calculated = repository_bound and bool(weekly_verified)
-    weekly_activity = len(commits) + len(workflows) + len(prs) * 3
     weekly_score = 25 + round((len(weekly_verified) / len(WEEKLY_SOURCES)) * 20)
-    weekly_score += min(45, weekly_activity)
+    weekly_score += min(45, len(commits) + len(workflows) + len(prs) * 3)
     weekly_score -= min(30, failed_workflows * 4)
     weekly_score = max(0, min(92, weekly_score))
-    weekly_status = _status(weekly_score, calculated=weekly_calculated, blocker=bool(blockers))
     weekly_unavailable = [
-        f"{source_id} evidence is unavailable for weekly delivery scoring."
-        for source_id in WEEKLY_SOURCES
-        if not _source_verified(sources, source_id)
+        f"{name} evidence is unavailable for weekly delivery scoring."
+        for name in WEEKLY_SOURCES
+        if not _verified(sources, name)
     ]
     if not repository_bound:
         weekly_unavailable.insert(0, "No authorized repository evidence source is bound to this Retainer run.")
     weekly_health = _module(
         score=weekly_score,
         calculated=weekly_calculated,
-        status=weekly_status,
+        status=_status(weekly_score, calculated=weekly_calculated, blocker=bool(blockers)),
         summary="Weekly delivery uses verified commit, pull-request, issue, and workflow-run evidence from the bound repository.",
-        evidence=[_source_note(sources, source_id) for source_id in weekly_verified],
+        evidence=[_source_note(sources, name) for name in weekly_verified],
         unavailable=weekly_unavailable,
         what_changed=(commits + prs + workflows)[:30],
         what_needs_attention=(blockers + issues)[:30],
         next_actions=[
-            "Review non-success workflow runs and labeled blockers before the client update.",
+            "Review current non-success workflow states and labeled blockers before the client update.",
             "Confirm whether newly opened issues change the approved roadmap.",
             "Prepare a human-reviewed weekly status from the verified source ledger.",
         ],
     )
 
-    backlog_calculated = repository_bound and _source_verified(sources, "issues")
-    if backlog_calculated:
-        if open_issues == 0:
-            backlog_score = 85
-        else:
-            backlog_score = max(35, 72 - min(30, open_issues * 2) - min(25, len(blockers) * 7))
+    backlog_source = "open_issues" if "open_issues" in sources else "issues"
+    backlog_calculated = repository_bound and _verified(sources, backlog_source)
+    if backlog_calculated and open_issue_count == 0:
+        backlog_score = 85
+    elif backlog_calculated:
+        backlog_score = max(35, 72 - min(30, open_issue_count * 2) - min(25, len(blockers) * 7))
     else:
         backlog_score = 0
-    backlog_status = _status(backlog_score, calculated=backlog_calculated, blocker=bool(blockers))
-    backlog_unavailable = [] if backlog_calculated else [
-        "The GitHub issue source was not verified; backlog health is unavailable rather than assumed clean."
-    ]
     backlog_health = _module(
         score=backlog_score,
         calculated=backlog_calculated,
-        status=backlog_status,
-        summary="Backlog health uses the verified GitHub issue source and disclosed open-issue and blocker counts.",
-        evidence=[_source_note(sources, "issues")] if backlog_calculated else [],
-        unavailable=backlog_unavailable,
+        status=_status(backlog_score, calculated=backlog_calculated, blocker=bool(blockers)),
+        summary="Backlog health uses the current open-issue source without a timeframe cutoff and discloses open-issue and blocker counts.",
+        evidence=[_source_note(sources, backlog_source)] if backlog_calculated else [],
+        unavailable=[] if backlog_calculated else [
+            "The current open-issue source was not verified; backlog health is unavailable rather than assumed clean."
+        ],
         issue_items=issues[:30],
-        open_issue_count=open_issues if backlog_calculated else None,
+        open_issue_count=open_issue_count if backlog_calculated else None,
     )
 
-    release_verified = [source_id for source_id in RELEASE_SOURCES if _source_verified(sources, source_id)]
+    release_verified = [name for name in RELEASE_SOURCES if _verified(sources, name)]
     release_calculated = repository_bound and bool(release_verified)
     release_score = 25 + len(release_verified) * 10
-    if releases:
-        release_score += 10
-    if deployments:
-        release_score += 5
-    if codeql:
-        release_score += 5
+    release_score += 10 if releases else 0
+    release_score += 5 if deployments else 0
+    release_score += 5 if codeql else 0
     release_score -= min(35, failed_workflows * 4 + failed_codeql * 6)
     if not releases and not deployments:
         release_score = min(release_score, 59)
     release_score = max(0, min(92, release_score))
-    blocker_verification = payload.get("blocker_verification") if isinstance(payload.get("blocker_verification"), dict) else {}
-    blocker_verification_status = str(blocker_verification.get("status") or "unverified")
-    verified_blockers = blocker_verification_status == "verified_blockers" or bool(blockers)
+
+    verification = payload.get("blocker_verification") if isinstance(payload.get("blocker_verification"), dict) else {}
+    verification_status = str(verification.get("status") or "unverified")
+    verified_blockers = verification_status == "verified_blockers" or bool(blockers)
     release_status = (
         "unverified"
         if not release_calculated
@@ -226,9 +205,9 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
         else "needs_release_evidence"
     )
     release_unavailable = [
-        f"{source_id} evidence is unavailable for release-readiness scoring."
-        for source_id in RELEASE_SOURCES
-        if not _source_verified(sources, source_id)
+        f"{name} evidence is unavailable for release-readiness scoring."
+        for name in RELEASE_SOURCES
+        if not _verified(sources, name)
     ]
     if release_calculated and not releases and not deployments:
         release_unavailable.append("No release or deployment record was observed in the selected timeframe.")
@@ -237,7 +216,7 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
         calculated=release_calculated,
         status=release_status,
         summary="Release readiness uses verified workflow, CodeQL, release, deployment, and blocker-verification evidence.",
-        evidence=[_source_note(sources, source_id) for source_id in release_verified],
+        evidence=[_source_note(sources, name) for name in release_verified],
         unavailable=release_unavailable,
         release_notes=releases[:30],
         deployment_evidence=deployments[:30],
@@ -252,8 +231,7 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
 
     manual_context = roadmap + metrics + client_update + budget_priorities
     monthly_calculated = bool(manual_context)
-    monthly_score = 35 + min(50, len(manual_context) * 6)
-    monthly_score = max(0, min(92, monthly_score))
+    monthly_score = max(0, min(92, 35 + min(50, len(manual_context) * 6)))
     monthly_strategy = _module(
         score=monthly_score,
         calculated=monthly_calculated,
@@ -274,31 +252,29 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
         ],
     )
 
-    blocker_calculated = blocker_verification_status in {"verified_clear", "verified_blockers"}
-    if blocker_verification_status == "verified_clear":
-        blocker_score = 90
-        blocker_status = "clear"
-    elif blocker_verification_status == "verified_blockers":
-        blocker_score = max(35, 82 - len(blockers) * 7)
-        blocker_status = "needs_escalation"
+    blocker_calculated = verification_status in {"verified_clear", "verified_blockers"}
+    if verification_status == "verified_clear":
+        blocker_score, blocker_status = 90, "clear"
+    elif verification_status == "verified_blockers":
+        blocker_score, blocker_status = max(35, 82 - len(blockers) * 7), "needs_escalation"
     else:
-        blocker_score = 0
-        blocker_status = "unverified"
+        blocker_score, blocker_status = 0, "unverified"
+    checked_blocker_sources = [
+        str(name)
+        for name in verification.get("checked_sources") or []
+        if _verified(sources, str(name))
+    ]
     blocker_escalation = _module(
         score=blocker_score,
         calculated=blocker_calculated,
         status=blocker_status,
-        summary="Blocker status is clear only when GitHub issue and workflow sources were successfully checked and produced no blocker evidence.",
-        evidence=[
-            _source_note(sources, source_id)
-            for source_id in ("issues", "workflow_runs")
-            if _source_verified(sources, source_id)
-        ],
+        summary="Blocker status is clear only when all current open issues and the latest observed state of each workflow were checked and produced no blocker evidence.",
+        evidence=[_source_note(sources, name) for name in checked_blocker_sources],
         unavailable=[] if blocker_calculated else [
-            "Blocker state is unverified because all required blocker-bearing sources were not successfully checked."
+            "Blocker state is unverified because all required current-state sources were not successfully checked."
         ],
         blockers=blockers[:30],
-        verification=blocker_verification,
+        verification=verification,
         escalation_rules=[
             "Escalate production-impacting blockers immediately.",
             "Request approval for scope, budget, timeline, or release-risk changes.",
@@ -344,14 +320,7 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
 
     calculated_modules = [
         item
-        for item in (
-            weekly_health,
-            backlog_health,
-            release_readiness,
-            monthly_strategy,
-            blocker_escalation,
-            renewal_signals,
-        )
+        for item in (weekly_health, backlog_health, release_readiness, monthly_strategy, blocker_escalation, renewal_signals)
         if item.get("score_calculated")
     ]
     readiness_calculated = repository_bound and len(calculated_modules) >= 3
@@ -366,10 +335,8 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
     unavailable: list[str] = []
     if not repository_bound:
         unavailable.append("Retainer technical evidence is unbound: provide an authorized repository or matching Express/Mid baseline.")
-    unavailable.extend(weekly_health["unavailable"])
-    unavailable.extend(release_readiness["unavailable"])
-    unavailable.extend(monthly_strategy["unavailable"])
-    unavailable.extend(blocker_escalation["unavailable"])
+    for module in (weekly_health, release_readiness, monthly_strategy, blocker_escalation):
+        unavailable.extend(module["unavailable"])
     unavailable = list(dict.fromkeys(str(item) for item in unavailable if str(item).strip()))
 
     if verified_blockers:
@@ -381,13 +348,14 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         overall_status = "needs_more_retainer_evidence"
 
+    verified_sources = [name for name in TECHNICAL_SOURCES if _verified(sources, name)]
     return {
         "artifact_schema": "nico.retainer_modules.v2",
         "status": overall_status,
         "readiness_score": readiness_score,
         "readiness_score_calculated": readiness_calculated,
         "repository_evidence_bound": repository_bound,
-        "source_binding": source_binding,
+        "source_binding": binding,
         "source_ledger": sources,
         "weekly_health": weekly_health,
         "backlog_health": backlog_health,
@@ -401,9 +369,10 @@ def build_retainer_modules(payload: dict[str, Any]) -> dict[str, Any]:
             "commits": len(commits),
             "prs": len(prs),
             "issues": len(issues),
+            "open_issues": open_issue_count if backlog_calculated else None,
             "workflow_runs": len(workflows),
             "codeql_runs": len(codeql),
-            "blockers": len(blockers),
+            "blockers": len(blockers) if blocker_calculated else None,
             "releases": len(releases),
             "deployments": len(deployments),
             "roadmap_notes": len(roadmap),
