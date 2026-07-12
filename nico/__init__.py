@@ -20,6 +20,7 @@ from nico.client_final_review_gate_patch import install_client_final_review_gate
 from nico.release_readiness_summary_patch import install_release_readiness_summary_patch
 from nico.hosted_release_readiness_diagnostics import install_hosted_release_readiness_diagnostics_route
 from nico.assessment_evidence_bundle_patch import install_assessment_evidence_bundle_patch
+from nico.production_release_provider_evidence import install_provider_origin_matching
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -41,5 +42,6 @@ install_client_final_review_gate_patch()
 install_release_readiness_summary_patch()
 install_hosted_release_readiness_diagnostics_route()
 install_assessment_evidence_bundle_patch()
+install_provider_origin_matching()
 
 __version__ = "0.1.0"
