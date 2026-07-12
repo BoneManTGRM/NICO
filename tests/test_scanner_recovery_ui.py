@@ -37,9 +37,15 @@ def test_recovery_token_remains_in_react_memory_only() -> None:
         "sessionstorage.getitem",
         "sessionstorage.setitem",
         "document.cookie",
-        "admintoken=",
+        "window.name",
+        "?admin_token=",
+        "&admin_token=",
+        "?admintoken=",
+        "&admintoken=",
+        "tokenparams",
     ]:
         assert forbidden not in lowered
+    assert '{"x-nico-admin-token": admintoken}' in lowered
 
 
 def test_recovery_is_linked_from_primary_navigation() -> None:
