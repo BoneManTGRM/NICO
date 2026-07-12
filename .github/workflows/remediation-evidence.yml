@@ -125,6 +125,10 @@ jobs:
           path: |
             remediation-evidence/remediation-manifest.json
             remediation-evidence/remediation-manifest.md
+            remediation-evidence/osv.json
+            remediation-evidence/npm-audit.json
+            remediation-evidence/bandit.json
+            remediation-evidence/semgrep.json
             remediation-evidence/*.exit
             remediation-evidence/*.stderr
             remediation-evidence/manifest.stdout
