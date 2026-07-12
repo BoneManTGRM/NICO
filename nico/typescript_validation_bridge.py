@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from importlib import import_module
 from typing import Any, Callable
 
 import nico.assessment_score_integrity as score_integrity
@@ -93,6 +94,27 @@ def static_section_with_typescript_validation(repo: dict[str, Any], scanner: dic
     return section
 
 
+def synchronize_mid_handler_aliases() -> dict[str, str]:
+    """Bind Mid composition to the final installed snapshot handlers.
+
+    Several evidence installers wrap the snapshot attachment boundary in sequence.
+    Importing handler aliases before those installers run can otherwise leave Mid on
+    an inner wrapper even while Full uses the final chain. Resolve both modules
+    explicitly after the final evidence installer and synchronize their live aliases.
+    """
+
+    mid_handlers = import_module("nico.mid_assessment_handlers")
+    snapshot_handlers = import_module("nico.snapshot_assessment_handlers")
+    bindings = {
+        "_snapshot_repository_handler": getattr(snapshot_handlers, "_snapshot_repository_handler"),
+        "_snapshot_scanner_handler": getattr(snapshot_handlers, "_snapshot_scanner_handler"),
+        "_snapshot_evidence_attachment_handler": getattr(snapshot_handlers, "_snapshot_evidence_attachment_handler"),
+    }
+    for name, handler in bindings.items():
+        setattr(mid_handlers, name, handler)
+    return {name: getattr(handler, "__name__", type(handler).__name__) for name, handler in bindings.items()}
+
+
 def install_typescript_validation_bridge() -> dict[str, Any]:
     global _DELEGATE_STATIC_SECTION
     installed = bool(getattr(scorecard, "_nico_typescript_validation_bridge_installed", False))
@@ -101,9 +123,11 @@ def install_typescript_validation_bridge() -> dict[str, Any]:
     scorecard._static_section = static_section_with_typescript_validation
     score_integrity.calibrated_static_section = static_section_with_typescript_validation
     scorecard._nico_typescript_validation_bridge_installed = True
+    mid_handler_bindings = synchronize_mid_handler_aliases()
     return {
         "status": "already_installed" if installed else "installed",
         "version": TYPESCRIPT_VALIDATION_VERSION,
+        "mid_handler_bindings": mid_handler_bindings,
         "rule": "Successful CI-backed TypeScript validation is evidence of compilation/typecheck coverage but is never represented as exact-snapshot ESLint coverage.",
     }
 
@@ -113,4 +137,5 @@ __all__ = [
     "ci_typescript_validation",
     "install_typescript_validation_bridge",
     "static_section_with_typescript_validation",
+    "synchronize_mid_handler_aliases",
 ]
