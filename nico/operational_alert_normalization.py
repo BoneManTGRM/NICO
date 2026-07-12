@@ -27,6 +27,9 @@ def evaluate_operational_alerts(
 
 def install_operational_alert_normalization() -> dict[str, Any]:
     global _INSTALLED
+    from nico.operations_readiness import REQUIRED_OPERATION_ROUTES
+
+    REQUIRED_OPERATION_ROUTES.add(operational_alerts.REQUIRED_OPERATION_ALERT_ROUTE)
     if _INSTALLED:
         return {
             "installed": True,
@@ -40,6 +43,7 @@ def install_operational_alert_normalization() -> dict[str, Any]:
         "idempotent_reuse": False,
         "version": OPERATIONAL_ALERT_NORMALIZATION_VERSION,
         "zero_default_severities": ["p0", "p1", "p2", "p3", "info"],
+        "required_readiness_route": operational_alerts.REQUIRED_OPERATION_ALERT_ROUTE,
     }
 
 
