@@ -12,7 +12,7 @@ from nico.assessment_execution_checkpoints import (
 from nico.full_assessment_orchestrator import (
     run_full_assessment_orchestration as canonical_orchestrator,
 )
-from nico.storage import STORE
+from nico.storage import STORE, new_id
 
 _PATCHED = False
 
@@ -54,7 +54,7 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
         req: full_api.FullAssessmentRequest,
     ) -> dict[str, Any]:
         payload = full_api._model_payload(req)
-        payload["run_id"] = str(payload.get("run_id") or full_api.new_id("fullrun"))
+        payload["run_id"] = str(payload.get("run_id") or new_id("fullrun"))
         writer = make_checkpoint_writer(
             payload,
             workflow="full_assessment",
