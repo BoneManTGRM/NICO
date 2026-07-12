@@ -147,7 +147,7 @@ def test_endpoint_auto_ingests_and_persists_only_bounded_summary(monkeypatch) ->
         )
         return enriched
 
-    monkeypatch.setattr(api, "build_retainer_evidence_payload", fake_ingestion)
+    monkeypatch.setattr(api, "build_retainer_evidence_payload_v2", fake_ingestion)
     monkeypatch.setattr(api, "build_truth_bound_retainer_ops", lambda payload: _result())
 
     app = FastAPI()
