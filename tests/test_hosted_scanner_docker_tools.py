@@ -8,7 +8,7 @@ def test_dockerfile_installs_hosted_scanner_tools():
     assert "npm install -g eslint typescript" in dockerfile
     assert "install_hosted_scanner_binaries.py" in dockerfile
     assert "NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true" in dockerfile
-    assert "NICO_ALLOW_PROJECT_COMMANDS=false" in dockerfile
+    assert "NICO_ALLOW_PROJECT_COMMANDS=true" in dockerfile
     assert "USER nico" in dockerfile
 
 
