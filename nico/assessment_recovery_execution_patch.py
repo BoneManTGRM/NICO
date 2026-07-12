@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from fastapi import HTTPException
@@ -11,7 +9,10 @@ from nico.assessment_execution_checkpoints import (
     build_checkpoint_result,
     make_checkpoint_writer,
 )
-from nico.storage import STORE, new_id
+from nico.full_assessment_orchestrator import (
+    run_full_assessment_orchestration as canonical_orchestrator,
+)
+from nico.storage import STORE
 
 _PATCHED = False
 
@@ -25,6 +26,22 @@ def _attempt(run_id: str) -> int:
     return max(0, int(recovery.get("attempt") or 0))
 
 
+def _run_checkpointed(
+    api_module: Any,
+    payload: dict[str, Any],
+    handlers: dict[str, Any],
+    writer: Any,
+) -> dict[str, Any]:
+    orchestrator = api_module.run_full_assessment_orchestration
+    return run_checkpointed_assessment_orchestration(
+        payload,
+        handlers=handlers,
+        checkpoint=writer,
+        orchestrator=orchestrator,
+        wrap_handlers=orchestrator is canonical_orchestrator,
+    )
+
+
 def install_assessment_recovery_execution_patch() -> dict[str, Any]:
     global _PATCHED
     if _PATCHED:
@@ -33,9 +50,11 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
     import nico.full_assessment_api as full_api
     import nico.mid_assessment_api as mid_api
 
-    def full_assessment_response(req: full_api.FullAssessmentRequest) -> dict[str, Any]:
+    def full_assessment_response(
+        req: full_api.FullAssessmentRequest,
+    ) -> dict[str, Any]:
         payload = full_api._model_payload(req)
-        payload["run_id"] = str(payload.get("run_id") or new_id("fullrun"))
+        payload["run_id"] = str(payload.get("run_id") or full_api.new_id("fullrun"))
         writer = make_checkpoint_writer(
             payload,
             workflow="full_assessment",
@@ -44,11 +63,7 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
         handlers = full_api.idempotent_full_assessment_handlers(
             timeframe_days=int(payload.get("timeframe_days") or 180)
         )
-        result = run_checkpointed_assessment_orchestration(
-            payload,
-            handlers=handlers,
-            checkpoint=writer,
-        )
+        result = _run_checkpointed(full_api, payload, handlers, writer)
         result = build_checkpoint_result(
             result,
             step="orchestration",
@@ -101,10 +116,11 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
         handlers = full_api.idempotent_full_assessment_handlers(
             timeframe_days=int(continuation_payload.get("timeframe_days") or 180)
         )
-        result = run_checkpointed_assessment_orchestration(
+        result = _run_checkpointed(
+            full_api,
             continuation_payload,
-            handlers=handlers,
-            checkpoint=writer,
+            handlers,
+            writer,
         )
         result = full_api.apply_full_assessment_continuation(result, plan)
         result["status_refresh"] = True
@@ -133,11 +149,13 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
             )
         return result
 
-    def mid_assessment_response(req: mid_api.MidAssessmentRunRequest) -> dict[str, Any]:
+    def mid_assessment_response(
+        req: mid_api.MidAssessmentRunRequest,
+    ) -> dict[str, Any]:
         payload = mid_api._payload(req)
         payload.update(
             {
-                "run_id": new_id("midrun"),
+                "run_id": mid_api.new_id("midrun"),
                 "mode": mid_api.MID_ASSESSMENT_TYPE,
                 "build_reports": False,
                 "create_final_review_request": False,
@@ -151,11 +169,7 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
         handlers = mid_api.mid_assessment_handlers(
             int(payload.get("timeframe_days") or 180)
         )
-        result = run_checkpointed_assessment_orchestration(
-            payload,
-            handlers=handlers,
-            checkpoint=writer,
-        )
+        result = _run_checkpointed(mid_api, payload, handlers, writer)
         result = build_checkpoint_result(
             result,
             step="orchestration",
@@ -220,11 +234,7 @@ def install_assessment_recovery_execution_patch() -> dict[str, Any]:
         handlers = mid_api.mid_assessment_handlers(
             int(continuation.get("timeframe_days") or 180)
         )
-        result = run_checkpointed_assessment_orchestration(
-            continuation,
-            handlers=handlers,
-            checkpoint=writer,
-        )
+        result = _run_checkpointed(mid_api, continuation, handlers, writer)
         result = mid_api.apply_full_assessment_continuation(result, plan)
         result["status_refresh"] = True
         result = build_checkpoint_result(
