@@ -7,7 +7,8 @@ import nico.snapshot_assessment_handlers as snapshot_handlers
 import nico.snapshot_scanner_worker as snapshot_worker
 
 
-TOOL_POLICY_VERSION = "nico-required-assessment-tools-v3"
+TOOL_POLICY_VERSION = "nico-required-assessment-tools-v4"
+REQUIRED_DEPENDENCY_TOOLS: tuple[str, ...] = ("pip-audit", "npm-audit", "osv-scanner")
 REQUIRED_DEPENDENCY_TOOL = "osv-scanner"
 REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
     # Collect fast current-tree evidence first so full-history work cannot consume
@@ -16,7 +17,7 @@ REQUIRED_EXACT_SNAPSHOT_TOOLS: tuple[str, ...] = (
     "nico-static",
     "bandit",
     "semgrep",
-    REQUIRED_DEPENDENCY_TOOL,
+    *REQUIRED_DEPENDENCY_TOOLS,
     # Full-history scanners are intentionally last and independently disclose
     # timeout, shallow history, CLI failure, and findings.
     "gitleaks",
@@ -34,6 +35,7 @@ def complete_assessment_tools(requested: Any) -> list[str]:
     function keeps caller-selected optional tools while ensuring the exact-snapshot
     evidence needed by current scoring is requested on every authorized assessment.
 
+    OSV source resolution is intentionally corroborated by pip-audit and npm audit.
     Current-tree and dependency analyzers are ordered before full-history scanners.
     That ordering does not weaken history requirements; it prevents a long history
     fetch or scan from starving every later evidence category under the total timeout.
@@ -54,11 +56,13 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str
         result["tool_policy"] = {
             "version": TOOL_POLICY_VERSION,
             "required_tools": list(REQUIRED_EXACT_SNAPSHOT_TOOLS),
+            "required_dependency_tools": list(REQUIRED_DEPENDENCY_TOOLS),
             "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
             "requested_tools": list(request["tools"]),
             "stale_client_tools_repaired": any(tool not in original for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS),
+            "dependency_corroboration_rule": "OSV source-resolution records are compared with pip-audit and npm audit resolved dependency evidence before being treated as confirmed installed vulnerabilities.",
             "execution_order_rule": "Current-tree and dependency evidence runs before full-history secret scanning so one expensive history operation cannot starve all later evidence categories.",
-            "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, git-history, and cross-ecosystem dependency evidence tools even when a stale client sends an older explicit list.",
+            "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, git-history, and corroborating dependency evidence tools even when a stale client sends an older explicit list.",
         }
     return result
 
@@ -72,6 +76,7 @@ def install_required_assessment_tools() -> dict[str, Any]:
         "status": "already_installed" if installed else "installed",
         "version": TOOL_POLICY_VERSION,
         "required_tools": list(REQUIRED_EXACT_SNAPSHOT_TOOLS),
+        "required_dependency_tools": list(REQUIRED_DEPENDENCY_TOOLS),
         "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
         "rule": "New Mid and Full exact-snapshot runs always request the evidence tools required by their active scoring model; unavailable execution remains disclosed rather than treated as clean or silently omitted.",
     }
@@ -79,6 +84,7 @@ def install_required_assessment_tools() -> dict[str, Any]:
 
 __all__ = [
     "REQUIRED_DEPENDENCY_TOOL",
+    "REQUIRED_DEPENDENCY_TOOLS",
     "REQUIRED_EXACT_SNAPSHOT_TOOLS",
     "TOOL_POLICY_VERSION",
     "complete_assessment_tools",
