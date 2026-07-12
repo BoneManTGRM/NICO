@@ -34,21 +34,24 @@ class _FakePostgresAdapter:
 
     def _execute(self, sql: str, params: tuple[Any, ...]) -> None:
         self.executions.append((sql, params))
-        if "INSERT INTO nico_schema_migrations" in sql:
-            version, contract_sha256, applied_at, verified_at = params
-            existing = next((item for item in self.ledger if item["version"] == version), None)
-            if existing:
-                existing["contract_sha256"] = contract_sha256
-                existing["verified_at"] = verified_at
-            else:
-                self.ledger.append(
-                    {
-                        "version": version,
-                        "contract_sha256": contract_sha256,
-                        "applied_at": applied_at,
-                        "verified_at": verified_at,
-                    }
-                )
+        if "INSERT INTO nico_schema_migrations" not in sql:
+            return
+        version, contract_sha256, applied_at, verified_at = params
+        existing = next(
+            (item for item in self.ledger if item["version"] == version),
+            None,
+        )
+        if existing:
+            existing["verified_at"] = verified_at
+            return
+        self.ledger.append(
+            {
+                "version": version,
+                "contract_sha256": contract_sha256,
+                "applied_at": applied_at,
+                "verified_at": verified_at,
+            }
+        )
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         if self.fail_queries:
@@ -135,8 +138,43 @@ def test_complete_postgres_schema_records_and_verifies_current_migration() -> No
     assert result["migration"]["current_contract_matches"] is True
     assert result["migration"]["record_count"] == 1
     assert result["client_delivery_allowed"] is False
-    assert any("CREATE TABLE IF NOT EXISTS nico_schema_migrations" in sql for sql, _ in adapter.executions)
-    assert any("INSERT INTO nico_schema_migrations" in sql for sql, _ in adapter.executions)
+    assert any(
+        "CREATE TABLE IF NOT EXISTS nico_schema_migrations" in sql
+        for sql, _ in adapter.executions
+    )
+    assert any(
+        "INSERT INTO nico_schema_migrations" in sql
+        for sql, _ in adapter.executions
+    )
+
+
+def test_existing_version_with_a_different_hash_is_not_rewritten() -> None:
+    adapter = _FakePostgresAdapter()
+    adapter.ledger.append(
+        {
+            "version": STORAGE_SCHEMA_CONTRACT_VERSION,
+            "contract_sha256": "0" * 64,
+            "applied_at": "2026-07-12T00:00:00Z",
+            "verified_at": "2026-07-12T00:00:00Z",
+        }
+    )
+
+    result = verify_storage_schema(_FakeStore(adapter))
+
+    assert result["status"] == "blocked"
+    assert result["schema_ready"] is True
+    assert result["migration_ready"] is False
+    assert result["migration"]["current_version_present"] is True
+    assert result["migration"]["current_contract_matches"] is False
+    assert "migration_contract_mismatch" in result["blockers"]
+    assert adapter.ledger[0]["contract_sha256"] == "0" * 64
+    insert_sql = next(
+        sql
+        for sql, _ in adapter.executions
+        if "INSERT INTO nico_schema_migrations" in sql
+    )
+    assert "contract_sha256=EXCLUDED.contract_sha256" not in insert_sql
+    assert "verified_at=EXCLUDED.verified_at" in insert_sql
 
 
 def test_missing_table_or_column_blocks_schema_readiness() -> None:
@@ -199,8 +237,16 @@ def test_admin_route_requires_auth_supports_refresh_and_is_idempotent(monkeypatc
         calls["count"] += 1
         return dict(ready)
 
-    monkeypatch.setattr(schema_readiness, "refresh_storage_schema_readiness", fake_refresh)
-    monkeypatch.setattr(schema_readiness, "cached_storage_schema_readiness", lambda store=schema_readiness.STORE: dict(ready))
+    monkeypatch.setattr(
+        schema_readiness,
+        "refresh_storage_schema_readiness",
+        fake_refresh,
+    )
+    monkeypatch.setattr(
+        schema_readiness,
+        "cached_storage_schema_readiness",
+        lambda store=schema_readiness.STORE: dict(ready),
+    )
 
     app = FastAPI()
     first = install_storage_schema_readiness(app)
