@@ -11,9 +11,11 @@ from fastapi import HTTPException
 from nico.mid_approval_api import (
     MidApprovalDecisionRequest,
     MidApprovalRequest,
+    MidReviewDispositionRequest,
     mid_approval_decision_response,
     mid_approval_request_response,
     mid_approved_report_pdf_response,
+    mid_review_disposition_response,
 )
 from nico.mid_assessment_approval import (
     MID_APPROVAL_VERSION,
@@ -320,13 +322,27 @@ def test_api_returns_metadata_and_hash_bound_no_store_approved_pdf():
         x_nico_admin_token="test-admin-token",
     )
     requested = requested_response["approval"]
+    accepted_item_ids = []
+    for item_id in requested["exception_item_ids"]:
+        disposition = mid_review_disposition_response(
+            requested["approval_id"],
+            item_id,
+            MidReviewDispositionRequest(
+                decision="accepted",
+                actor="Reviewer",
+                note=f"Reviewed the exact evidence and limitation for {item_id}; accepted as represented.",
+            ),
+            x_nico_admin_token="test-admin-token",
+        )
+        assert disposition["status"] == "recorded"
+        accepted_item_ids = disposition["review_dispositions"]["accepted_item_ids"]
     decided = mid_approval_decision_response(
         requested["approval_id"],
         "approved",
         MidApprovalDecisionRequest(
             actor="Reviewer",
             note="Reviewed every current exception and approved the exact artifact.",
-            reviewed_item_ids=requested["exception_item_ids"],
+            reviewed_item_ids=accepted_item_ids,
         ),
         x_nico_admin_token="test-admin-token",
     )
@@ -338,6 +354,7 @@ def test_api_returns_metadata_and_hash_bound_no_store_approved_pdf():
     )
 
     assert decided["status"] == "approved"
+    assert decided["approval"]["review_disposition_set_sha256"]
     assert response.status_code == 200
     assert response.media_type == "application/pdf"
     assert response.body.startswith(b"%PDF")
