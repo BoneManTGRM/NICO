@@ -8,7 +8,7 @@ NICO is designed for authorized security work only. It focuses on finding defens
 
 CI guard active and passing.
 
-Last verified: 2026-07-05
+Last verified: 2026-07-12
 
 ## Core Features
 
@@ -26,6 +26,7 @@ Last verified: 2026-07-05
 - **Local API** - exposes FastAPI endpoints for local scans, findings, drift, repairs, verification, memory, reports, policy, and audit logs.
 - **Frontend foundation** - includes a local Next.js web app foundation under `apps/web`.
 - **Technical assessment mode** - provides an express assessment path with optional GitHub activity, token-health, dependency, CI/CD, architecture, maturity, resourcing, roadmap, and synthesis modules when available.
+- **Semantic operations readiness** - distinguishes basic process liveness from production prerequisites such as deployment identity, durable storage, scanner execution, truth guards, runtime configuration, and required workflow routes.
 
 ## Safety Boundary
 
@@ -121,15 +122,18 @@ Hosted readiness support is available for operators who need current-run evidenc
 - `/diagnostics` - read-only diagnostics hub.
 - `/scanner-runtime` - deployed scanner runtime tool availability.
 - `/release-readiness` - release-readiness support and output-contract verification.
+- `/operations/readiness` - fail-closed semantic production readiness for deployment identity, truth guards, durable storage, scanner execution, runtime configuration, and required routes.
 - `docs/hosted-readiness-runbook.md` - operator runbook for Refresh Full Evidence review, readiness blockers, evidence hashes, and human signoff checks.
+- `docs/OPERATIONS_READINESS.md` - production operations-readiness contract, deployment gate, and failure procedure.
 
-Run the hosted readiness smoke check after deployment or environment changes:
+Run both production checks after deployment or environment changes:
 
 ```bash
+python scripts/check_operations_readiness.py https://YOUR-NICO-API-HOST
 python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
 ```
 
-Diagnostics and smoke checks do not approve delivery, lift scores by themselves, or replace human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
+The operations checker fails unless semantic readiness is `ready`. The hosted smoke check validates both endpoint reachability and required semantic status. Neither check approves delivery, lifts scores by itself, or replaces human review. Treat unavailable tools and unresolved findings as blockers until they are fixed, verified, or explicitly triaged.
 
 ## License
 

@@ -55,9 +55,20 @@ def test_check_endpoint_marks_successful_json_response_ok():
     assert opener.calls == ["https://api.example.com/health"]
 
 
+def test_check_endpoint_fails_when_operations_readiness_is_semantically_blocked():
+    opener = opener_with_payloads([(200, '{"status":"blocked","operational_ready":false}')])
+
+    check = check_endpoint("https://api.example.com", "/operations/readiness", opener=opener)
+
+    assert check.ok is False
+    assert check.status_code == 200
+    assert "Semantic status blocked" in check.error
+
+
 def test_run_smoke_check_summarizes_failed_endpoint():
     opener = opener_with_payloads([
         (200, '{"status":"ok"}'),
+        (200, '{"status":"blocked","operational_ready":false}'),
         HTTPError("https://api.example.com/diagnostics/hosted-scanner-runtime", 404, "missing", {}, io.BytesIO(b'{"detail":"missing"}')),
         URLError("offline"),
     ])
@@ -65,11 +76,12 @@ def test_run_smoke_check_summarizes_failed_endpoint():
     result = run_smoke_check("https://api.example.com", opener=opener)
 
     assert result["status"] == "failed"
-    assert result["endpoint_count"] == 3
+    assert result["endpoint_count"] == 4
     assert result["passed_count"] == 1
-    assert result["failed_count"] == 2
-    assert result["checks"][1]["status_code"] == 404
-    assert result["checks"][2]["ok"] is False
+    assert result["failed_count"] == 3
+    assert result["checks"][1]["status_code"] == 200
+    assert result["checks"][2]["status_code"] == 404
+    assert result["checks"][3]["ok"] is False
     assert "does not approve client delivery" in result["guardrail"]
 
 
