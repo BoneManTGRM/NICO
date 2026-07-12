@@ -1,0 +1,36 @@
+name: Apply Issue 296 Static Repairs
+
+on:
+  push:
+    branches:
+      - agent/remediate-all-296
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[issue-296-static-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/remediate-all-296
+          fetch-depth: 0
+
+      - name: Apply targeted repairs
+        run: python scripts/apply_issue_296_static_repairs.py
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No targeted source changes were produced."
+            exit 1
+          fi
+          git config user.name "NICO Repair Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add nico/no_server_assessment.py nico/cli.py scripts/apply_issue_296_static_repairs.py .github/workflows/apply-issue-296-static-repairs.yml
+          git commit -m "Apply Issue #296 static repairs [issue-296-static-applied]"
+          git push origin HEAD:agent/remediate-all-296
