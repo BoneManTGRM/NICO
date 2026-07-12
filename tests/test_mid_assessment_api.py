@@ -90,6 +90,34 @@ def _put_evidence(run_id: str) -> None:
         })
 
 
+def _fake_report(run_id: str) -> dict:
+    return {
+        "status": "complete",
+        "draft_status": "human_review_required",
+        "report_id": f"mid_report_{run_id}",
+        "report_path": "mid_run",
+        "report_version": "mid-assessment-draft-v1",
+        "pdf_sha256": "b" * 64,
+        "pdf_filename": "nico-mid-assessment-DRAFT.pdf",
+        "review_packet_id": f"mid_review_{run_id}",
+        "review_packet_sha256": "c" * 64,
+        "formats": {
+            "markdown": "# Mid Assessment",
+            "html": "<h1>Mid Assessment</h1>",
+            "pdf": "JVBERi0xLjQK",
+        },
+    }
+
+
+def _fake_approval(run_id: str, report_id: str) -> dict:
+    return {
+        "approval_id": f"mid_approval_{run_id}",
+        "status": "pending",
+        "exception_item_count": 3,
+        "draft_report_id": report_id,
+    }
+
+
 def test_mid_handler_composition_uses_snapshot_collection_and_evidence_bound_scoring():
     configured = mid_assessment_handlers(180)
 
@@ -154,31 +182,11 @@ def test_completed_mid_run_automatically_returns_dedicated_draft_and_review_requ
     run_id = _run_id()
     _put_evidence(run_id)
     monkeypatch.setattr(api, "new_id", lambda prefix: run_id)
-    monkeypatch.setenv("NICO_ADMIN_TOKEN", "server-admin-token")
+    monkeypatch.setattr(api, "_server_admin_token", lambda: "process-local-authority")
     monkeypatch.setattr(api, "run_full_assessment_orchestration", lambda payload, handlers: _orchestrator_result(payload, status="complete"))
 
-    report = {
-        "status": "complete",
-        "draft_status": "human_review_required",
-        "report_id": f"mid_report_{run_id}",
-        "report_path": "mid_run",
-        "report_version": "mid-assessment-draft-v1",
-        "pdf_sha256": "b" * 64,
-        "pdf_filename": "nico-mid-assessment-DRAFT.pdf",
-        "review_packet_id": f"mid_review_{run_id}",
-        "review_packet_sha256": "c" * 64,
-        "formats": {
-            "markdown": "# Mid Assessment",
-            "html": "<h1>Mid Assessment</h1>",
-            "pdf": "JVBERi0xLjQK",
-        },
-    }
-    approval = {
-        "approval_id": f"mid_approval_{run_id}",
-        "status": "pending",
-        "exception_item_count": 3,
-        "draft_report_id": report["report_id"],
-    }
+    report = _fake_report(run_id)
+    approval = _fake_approval(run_id, report["report_id"])
     report_calls: list[dict] = []
     approval_calls: list[dict] = []
 
@@ -216,8 +224,8 @@ def test_completed_mid_run_automatically_returns_dedicated_draft_and_review_requ
     assert result["express_report_generated"] is False
     assert result["full_report_generated"] is False
     assert result["client_ready"] is False
-    assert report_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "server-admin-token"}]
-    assert approval_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "server-admin-token"}]
+    assert report_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "process-local-authority"}]
+    assert approval_calls == [{"run_id": run_id, "customer_id": "customer_mid", "project_id": "project_mid", "admin_token": "process-local-authority"}]
 
     stored = load_mid_assessment_run(run_id)
     assert stored is not None
@@ -228,17 +236,28 @@ def test_completed_mid_run_automatically_returns_dedicated_draft_and_review_requ
     assert stored["response"]["approval_request"]["status"] == "pending"
 
 
-def test_completed_mid_run_discloses_server_configuration_block_instead_of_skipping(monkeypatch):
+def test_completed_mid_run_uses_process_local_authority_without_operator_configuration(monkeypatch):
     run_id = _run_id()
     _put_evidence(run_id)
     monkeypatch.setattr(api, "new_id", lambda prefix: run_id)
     monkeypatch.delenv("NICO_ADMIN_TOKEN", raising=False)
     monkeypatch.setattr(api, "run_full_assessment_orchestration", lambda payload, handlers: _orchestrator_result(payload, status="complete"))
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("report generation must not be called without server admin configuration")
+    report = _fake_report(run_id)
+    approval = _fake_approval(run_id, report["report_id"])
+    observed_tokens: list[str] = []
 
-    monkeypatch.setattr(api, "generate_mid_draft_report", forbidden)
+    def fake_report(run_id_value, customer_id, project_id, admin_token):
+        observed_tokens.append(admin_token)
+        return report
+
+    def fake_approval(run_id_value, customer_id, project_id, admin_token):
+        observed_tokens.append(admin_token)
+        return {"status": "requested", "approval": approval}
+
+    monkeypatch.setattr(api, "generate_mid_draft_report", fake_report)
+    monkeypatch.setattr(api, "request_mid_approval", fake_approval)
+
     result = api.mid_assessment_response(MidAssessmentRunRequest(
         repository="BoneManTGRM/NICO",
         customer_id="customer_mid",
@@ -247,14 +266,13 @@ def test_completed_mid_run_discloses_server_configuration_block_instead_of_skipp
         authorization_confirmed=True,
     ))
 
-    progress = {item["step"]: item for item in result["progress"]}
-    assert result["status"] == "complete"
-    assert result["report_generation_status"] == "blocked"
-    assert result["report_generation_error"] == "server_admin_token_not_configured"
-    assert progress["reports"]["status"] == "blocked"
-    assert progress["approval_request"]["status"] == "not_started"
-    assert "skipped" not in {progress["reports"]["status"], progress["approval_request"]["status"]}
-    assert "NICO_ADMIN_TOKEN" in result["report_generation_note"]
+    assert result["report_generation_status"] == "complete"
+    assert result["approval_request_status"] == "pending"
+    assert len(observed_tokens) == 2
+    assert observed_tokens[0] == observed_tokens[1]
+    assert observed_tokens[0]
+    assert observed_tokens[0] != "NICO_ADMIN_TOKEN"
+    assert "server_admin_token_not_configured" not in result
 
 
 def test_mid_run_requires_authorization_and_uses_midrun_identity(monkeypatch):
@@ -305,7 +323,7 @@ def test_mid_status_restores_saved_scope_and_forces_mid_downstream_guardrails(mo
         "report_id": "", "approval_id": "", "reason": "same-run scanner complete",
     })
     monkeypatch.setattr(api, "apply_full_assessment_continuation", lambda result, plan: result)
-    monkeypatch.delenv("NICO_ADMIN_TOKEN", raising=False)
+    monkeypatch.setattr(api, "generate_mid_draft_report", lambda *args, **kwargs: {"status": "blocked", "error": "Synthetic test run has no truth model."})
 
     result = api.mid_assessment_status_response(run_id, MidAssessmentStatusRequest())
 
