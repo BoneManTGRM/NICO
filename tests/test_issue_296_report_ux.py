@@ -9,21 +9,29 @@ HELPER = ROOT / "apps" / "web" / "app" / "MidEvidencePacketHelper.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
-def test_report_guard_replaces_empty_score_denominators_with_not_scored():
+def test_report_guard_replaces_only_empty_score_denominators_with_not_scored():
     source = GUARD.read_text(encoding="utf-8")
 
     assert "EMPTY_SCORE" in source
     assert "NOT SCORED" in source
     assert "null|undefined|nan" in source
     assert "normalizeScoreLabels" in source
+    assert "Numeric values such as 85/100" in source
+    # The empty-score matcher must require the start of the label or a separator
+    # immediately before /100. The previous optional prefix matched the /100 suffix
+    # inside every valid numeric score and produced `GREEN · 85 · NOT SCORED`.
+    assert r"(?:^|\s*·\s*)" in source
+    assert r"(?:\s*·\s*)?" not in source
 
 
-def test_report_guard_deduplicates_detail_and_collapses_mobile_cards():
+def test_report_guard_deduplicates_across_paragraphs_and_lists_and_collapses_mobile_cards():
     source = GUARD.read_text(encoding="utf-8")
 
     assert "removeDuplicateDetail" in source
-    assert "seenItems" in source
-    assert "seenParagraphs" in source
+    assert "seenDetail" in source
+    assert 'querySelectorAll<HTMLElement>("p, li")' in source
+    assert "seenItems" not in source
+    assert "seenParagraphs" not in source
     assert 'matchMedia("(max-width: 900px)")' in source
     assert 'removeAttribute("open")' in source
     assert "MutationObserver" in source
