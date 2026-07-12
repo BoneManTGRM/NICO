@@ -12,6 +12,7 @@ from nico.full_assessment_orchestrator import (
 from nico.storage import utc_now
 
 CheckpointWriter = Callable[[dict[str, Any], str, str], None]
+OrchestrationRunner = Callable[..., dict[str, Any]]
 
 
 def _progress(step: str, output: dict[str, Any]) -> dict[str, Any]:
@@ -178,6 +179,7 @@ def run_checkpointed_assessment_orchestration(
     *,
     handlers: dict[str, StepHandler],
     checkpoint: CheckpointWriter,
+    orchestrator: OrchestrationRunner = run_full_assessment_orchestration,
 ) -> dict[str, Any]:
     checkpoint(
         {
@@ -201,7 +203,7 @@ def run_checkpointed_assessment_orchestration(
         "preflight",
         "preflight",
     )
-    result = run_full_assessment_orchestration(
+    result = orchestrator(
         payload,
         handlers=_wrapped_handlers(payload, handlers, checkpoint),
     )
@@ -211,5 +213,6 @@ def run_checkpointed_assessment_orchestration(
 
 __all__ = [
     "CheckpointWriter",
+    "OrchestrationRunner",
     "run_checkpointed_assessment_orchestration",
 ]
