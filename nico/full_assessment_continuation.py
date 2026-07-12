@@ -71,8 +71,18 @@ def plan_full_assessment_continuation(
     run_id = str(planned_payload.get("run_id") or "")
     scan_id = str(planned_payload.get("scan_id") or (record or {}).get("scan_id") or "")
     request = dict((record or {}).get("request") or {})
-    reports_requested = bool(request.get("build_reports", True)) if desired_reports is None else bool(desired_reports)
-    review_requested = bool(request.get("create_final_review_request", True)) if desired_review is None else bool(desired_review)
+    saved_reports = bool(request.get("build_reports", True))
+    saved_review = bool(request.get("create_final_review_request", True))
+    reports_requested = (
+        saved_reports or bool(planned_payload.get("build_reports"))
+        if desired_reports is None
+        else bool(desired_reports)
+    )
+    review_requested = (
+        saved_review or bool(planned_payload.get("create_final_review_request"))
+        if desired_review is None
+        else bool(desired_review)
+    )
     report_id = str((record or {}).get("report_id") or "")
     approval_id = str((record or {}).get("approval_id") or "")
 
