@@ -60,6 +60,34 @@ def test_completed_scanner_enables_saved_report_and_review_steps() -> None:
     assert plan["reuse_approval"] is False
 
 
+def test_explicit_status_intent_repairs_legacy_skipped_report_and_review() -> None:
+    record = _record(
+        request={
+            **_record()["request"],
+            "build_reports": False,
+            "create_final_review_request": False,
+        }
+    )
+    payload = {
+        **_payload(),
+        "build_reports": True,
+        "create_final_review_request": True,
+    }
+
+    plan = plan_full_assessment_continuation(
+        payload,
+        record,
+        auto_continue=True,
+        scan_loader=lambda scan_id: {"scan_id": scan_id, "run_id": "fullrun_auto", "status": "complete"},
+    )
+
+    assert plan["desired_reports"] is True
+    assert plan["desired_review"] is True
+    assert plan["payload"]["build_reports"] is True
+    assert plan["payload"]["create_final_review_request"] is True
+    assert plan["should_continue"] is True
+
+
 def test_running_scanner_keeps_downstream_steps_disabled() -> None:
     plan = plan_full_assessment_continuation(
         _payload(),

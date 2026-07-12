@@ -56,16 +56,33 @@ def plan_full_assessment_continuation(
     record: dict[str, Any] | None,
     *,
     auto_continue: bool,
+    desired_reports: bool | None = None,
+    desired_review: bool | None = None,
     scan_loader: Callable[[str], dict[str, Any]] = get_scan,
 ) -> dict[str, Any]:
-    """Plan safe automatic continuation after a scanner reaches a terminal state."""
+    """Plan safe continuation after a scanner reaches a terminal state.
+
+    Saved run intent remains the default, but an explicit status request may upgrade a
+    previously skipped report or review stage. This lets an operator repair an older run
+    whose intent was accidentally downgraded by polling without re-running its scanner.
+    """
 
     planned_payload = deepcopy(payload)
     run_id = str(planned_payload.get("run_id") or "")
     scan_id = str(planned_payload.get("scan_id") or (record or {}).get("scan_id") or "")
     request = dict((record or {}).get("request") or {})
-    desired_reports = bool(request.get("build_reports", True))
-    desired_review = bool(request.get("create_final_review_request", True))
+    saved_reports = bool(request.get("build_reports", True))
+    saved_review = bool(request.get("create_final_review_request", True))
+    reports_requested = (
+        saved_reports or bool(planned_payload.get("build_reports"))
+        if desired_reports is None
+        else bool(desired_reports)
+    )
+    review_requested = (
+        saved_review or bool(planned_payload.get("create_final_review_request"))
+        if desired_review is None
+        else bool(desired_review)
+    )
     report_id = str((record or {}).get("report_id") or "")
     approval_id = str((record or {}).get("approval_id") or "")
 
@@ -84,19 +101,19 @@ def plan_full_assessment_continuation(
 
     if auto_continue and scan_id and same_run and scan_status == "complete":
         should_continue = True
-        if desired_reports and not report_id:
+        if reports_requested and not report_id:
             planned_payload["build_reports"] = True
-        elif desired_reports and report_id:
+        elif reports_requested and report_id:
             reuse_report = True
 
-        if desired_review and not approval_id:
+        if review_requested and not approval_id:
             if report_id:
                 request_review_from_existing_report = True
             else:
                 planned_payload["create_final_review_request"] = True
-        elif desired_review and approval_id:
+        elif review_requested and approval_id:
             reuse_approval = True
-        reason = "Completed same-run scanner evidence can continue into scoring, reports, and final review according to the saved run request."
+        reason = "Completed same-run scanner evidence can continue into scoring, reports, and final review according to the effective run intent."
     elif not auto_continue:
         reason = "Automatic continuation was explicitly disabled."
     elif not scan_id:
@@ -118,6 +135,8 @@ def plan_full_assessment_continuation(
         "scan_status": scan_status,
         "same_run": same_run,
         "auto_continue": auto_continue,
+        "desired_reports": reports_requested,
+        "desired_review": review_requested,
         "should_continue": should_continue,
         "reuse_report": reuse_report,
         "reuse_approval": reuse_approval,
@@ -156,6 +175,8 @@ def apply_full_assessment_continuation(
         "scan_id": plan.get("scan_id") or "",
         "scanner_status": plan.get("scan_status") or "unknown",
         "same_run": bool(plan.get("same_run")),
+        "desired_reports": bool(plan.get("desired_reports")),
+        "desired_review": bool(plan.get("desired_review")),
         "reason": plan.get("reason") or "",
     }
 
