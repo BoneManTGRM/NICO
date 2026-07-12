@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import nico.assessment_score_integrity as score_integrity
+import nico.exact_snapshot_secret_history as secret_history
 import nico.mid_assessment_handlers as mid_handlers
 import nico.snapshot_assessment_handlers as snapshot_handlers
 
@@ -93,6 +95,14 @@ def preserve_static_triage_attachment(context: dict[str, Any], outputs: dict[str
     return output
 
 
+def _patch_rebinding_sources() -> None:
+    """Keep later idempotent installer calls from bypassing the final bridge."""
+
+    score_integrity.calibrated_attachment_handler = preserve_static_triage_attachment
+    if secret_history._ATTACHMENT_DELEGATE is not None:
+        secret_history.history_attachment_handler = preserve_static_triage_attachment
+
+
 def install_static_triage_evidence_bridge() -> dict[str, Any]:
     global _DELEGATE_HANDLER
 
@@ -100,6 +110,7 @@ def install_static_triage_evidence_bridge() -> dict[str, Any]:
     if not installed:
         _DELEGATE_HANDLER = snapshot_handlers._snapshot_evidence_attachment_handler
 
+    _patch_rebinding_sources()
     snapshot_handlers._snapshot_evidence_attachment_handler = preserve_static_triage_attachment
     mid_handlers._snapshot_evidence_attachment_handler = preserve_static_triage_attachment
     snapshot_handlers._nico_static_triage_evidence_bridge_installed = True
@@ -110,6 +121,7 @@ def install_static_triage_evidence_bridge() -> dict[str, Any]:
         "scanners": sorted(STATIC_SCANNERS),
         "preserved_fields": list(SAFE_TRIAGE_FIELDS),
         "privacy_rule": "Only structured counts, execution state, severity/confidence aggregates, and triage version cross the evidence boundary; raw findings and source snippets remain excluded.",
+        "rebind_rule": "Later score-integrity or secret-history installer calls retain the final evidence bridge instead of restoring an inner handler.",
     }
 
 
