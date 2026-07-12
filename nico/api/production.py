@@ -8,6 +8,7 @@ from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.builtin_static_code_context import install_builtin_static_code_context
+from nico.correlation_header_exposure import install_correlation_header_exposure
 from nico.dependency_scanner_triage import install_dependency_scanner_triage
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
@@ -23,6 +24,10 @@ from nico.mid_report_api import register_mid_report_routes
 from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
 from nico.mid_review_enforcement_compat import install_mid_review_enforcement_compat
+from nico.operational_observability import (
+    OPERATIONS_OBSERVABILITY_ROUTES,
+    install_operational_observability,
+)
 from nico.operations_readiness_api import register_operations_readiness_routes
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.secret_history_triage import install_secret_history_triage
@@ -48,6 +53,7 @@ ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
 ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
+OPERATIONS_OBSERVABILITY = install_operational_observability(app)
 
 OPERATIONS_READINESS_ROUTES = {
     ("GET", "/operations/readiness"),
@@ -74,7 +80,11 @@ REQUIRED_MID_ASSESSMENT_ROUTES = {
     ("POST", "/assessment/mid-run/delivery/redeem"),
     ("POST", LEGACY_MID_PATH),
 }
-REQUIRED_PRODUCTION_ROUTES = REQUIRED_MID_ASSESSMENT_ROUTES | OPERATIONS_READINESS_ROUTES
+REQUIRED_PRODUCTION_ROUTES = (
+    REQUIRED_MID_ASSESSMENT_ROUTES
+    | OPERATIONS_READINESS_ROUTES
+    | OPERATIONS_OBSERVABILITY_ROUTES
+)
 MID_CORE_ROUTES = {
     ("POST", "/assessment/mid-run"),
     ("POST", "/assessment/mid-run/{run_id}/status"),
@@ -137,6 +147,7 @@ def _validate_group(existing: set[tuple[str, str]], required: set[tuple[str, str
 def register_production_routes(target: FastAPI) -> FastAPI:
     existing = _route_pairs(target)
     operations_present = _validate_group(existing, OPERATIONS_READINESS_ROUTES, "operations readiness")
+    observability_present = _validate_group(existing, OPERATIONS_OBSERVABILITY_ROUTES, "operational observability")
     core_present = _validate_group(existing, MID_CORE_ROUTES, "unified Mid")
     optional_present = _validate_group(existing, MID_OPTIONAL_EVIDENCE_ROUTES, "Mid optional-evidence")
     review_present = _validate_group(existing, MID_REVIEW_ROUTES, "Mid review")
@@ -146,6 +157,10 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     if not operations_present:
         register_operations_readiness_routes(target)
         target.openapi_schema = None
+    if not observability_present:
+        install_operational_observability(target)
+        target.openapi_schema = None
+    install_correlation_header_exposure(target)
     if not core_present:
         register_mid_assessment_routes(target)
         target.openapi_schema = None
@@ -197,9 +212,11 @@ __all__ = [
     "ASSESSMENT_TYPESCRIPT_VALIDATION",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "ASSESSMENT_MID_REVIEW_ENFORCEMENT",
+    "OPERATIONS_OBSERVABILITY",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
     "OPERATIONS_READINESS_ROUTES",
+    "OPERATIONS_OBSERVABILITY_ROUTES",
     "REQUIRED_MID_ASSESSMENT_ROUTES",
     "MID_CORE_ROUTES",
     "MID_OPTIONAL_EVIDENCE_ROUTES",
