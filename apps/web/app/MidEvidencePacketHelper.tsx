@@ -11,7 +11,7 @@ function packetPayload() {
   return {
     application_url: origin.startsWith("http") ? origin : undefined,
     architecture_documents: "Version-controlled architecture and deployment context: docs/mid-evidence/ARCHITECTURE.md and docs/mid-evidence/DEPLOYMENT.md. These describe the intended design and configured deployment boundaries and require human validation.",
-    product_requirements: "Version-controlled product context and evidence rules: docs/mid-evidence/PRODUCT_CONTEXT.md. This is design intent, not proof that every runtime behavior is correct.",
+    product_requirements: "Version-controlled product and QA context: docs/mid-evidence/PRODUCT_CONTEXT.md and docs/mid-evidence/QA.md. These describe intended behavior and verification boundaries, not proof that every runtime path is correct.",
     existing_roadmap: "Version-controlled remediation and acceptance roadmap: docs/mid-evidence/ROADMAP.md. Completion still requires a fresh snapshot-bound Mid run and human review.",
     business_priorities: "Documented priorities: authorized defensive use, complete evidence collection, truthful unavailable and failed states, no unsupported clean claims, human approval before delivery, and mobile-readable reports. Sources: docs/mid-evidence/PRODUCT_CONTEXT.md and docs/mid-evidence/ROADMAP.md.",
   };
