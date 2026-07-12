@@ -26,6 +26,10 @@ REQUEST_FIELDS = {
     "auto_continue",
     "tools",
 }
+MONOTONIC_COMPLETION_INTENT_FIELDS = {
+    "build_reports",
+    "create_final_review_request",
+}
 
 
 def _store(store: StorageAdapter | None = None) -> StorageAdapter:
@@ -62,6 +66,32 @@ def _approval_id(result: dict[str, Any]) -> str:
     return str(approval.get("approval_id") or "")
 
 
+def _merge_request_snapshot(
+    existing_request: dict[str, Any],
+    request_payload: dict[str, Any],
+    *,
+    preserve_existing_completion_intent: bool,
+) -> dict[str, Any]:
+    """Merge a request snapshot without letting polling erase completion intent.
+
+    Status polling temporarily disables report and approval execution while a scanner is
+    still running. Those execution flags are not a new user decision and must not replace
+    the original full-run request. Completion intent is monotonic: a later explicit
+    request may turn report/review generation on, but a polling refresh may not turn a
+    previously requested stage off.
+    """
+
+    merged = dict(existing_request)
+    incoming = _request_snapshot(request_payload)
+    if preserve_existing_completion_intent:
+        for field in MONOTONIC_COMPLETION_INTENT_FIELDS:
+            if field not in existing_request and field not in incoming:
+                continue
+            incoming[field] = bool(existing_request.get(field, False)) or bool(incoming.get(field, False))
+    merged.update(incoming)
+    return merged
+
+
 def persistence_metadata(store: StorageAdapter | None = None, *, restored: bool = False) -> dict[str, Any]:
     active = _store(store)
     status = active.status()
@@ -78,6 +108,8 @@ def persist_full_assessment_run(
     result: dict[str, Any],
     request_payload: dict[str, Any],
     store: StorageAdapter | None = None,
+    *,
+    preserve_existing_completion_intent: bool = False,
 ) -> dict[str, Any]:
     active = _store(store)
     run_id = str(result.get("run_id") or request_payload.get("run_id") or "").strip()
@@ -85,8 +117,11 @@ def persist_full_assessment_run(
         raise ValueError("full assessment run_id is required for persistence")
 
     existing = active.get("assessment_runs", run_id) or {}
-    request = dict(existing.get("request") or {})
-    request.update(_request_snapshot(request_payload))
+    request = _merge_request_snapshot(
+        dict(existing.get("request") or {}),
+        request_payload,
+        preserve_existing_completion_intent=preserve_existing_completion_intent,
+    )
     repository = str(result.get("repository") or request.get("repository") or request.get("target") or existing.get("repository") or "")
     customer_id = str(result.get("customer_id") or request.get("customer_id") or existing.get("customer_id") or "default_customer")
     project_id = str(result.get("project_id") or request.get("project_id") or existing.get("project_id") or "default_project")
