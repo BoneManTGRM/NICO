@@ -4,43 +4,61 @@ This runbook explains how to use the hosted readiness and diagnostics surfaces w
 
 ## Scope
 
-Use this runbook for authorized NICO hosted assessments only. The diagnostics pages and release-readiness summary are evidence-support tools. They do not approve delivery, lift scores by themselves, or replace human review.
+Use this runbook for authorized NICO hosted assessments only. The diagnostics pages, operations-readiness decision, and release-readiness summary are evidence-support tools. They do not approve delivery, lift scores by themselves, or replace human review.
 
 ## Primary pages
 
-- `/diagnostics`: read-only hub for hosted diagnostics.
+- `/diagnostics`: read-only diagnostics hub.
 - `/scanner-runtime`: verifies deployed scanner runtime tool availability.
 - `/release-readiness`: verifies that release-readiness support is installed and shows the expected output contract.
+- `/operations/readiness`: fail-closed semantic readiness for deployment identity, report truth guard, durable storage, scanner execution, runtime configuration, and required routes.
 
-## Terminal smoke check
+## Terminal checks
 
-Use the smoke-check utility after deployment or environment changes to confirm the hosted API exposes the required readiness endpoints.
+Run the semantic readiness check first after every production deployment or environment change:
+
+```bash
+python scripts/check_operations_readiness.py https://YOUR-NICO-API-HOST
+```
+
+Then run the hosted smoke check:
 
 ```bash
 python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
 ```
 
-You can also provide the API URL through an environment variable:
+You can provide the API URL through an environment variable:
 
 ```bash
+NICO_API_URL=https://YOUR-NICO-API-HOST python scripts/check_operations_readiness.py
 NICO_API_URL=https://YOUR-NICO-API-HOST python scripts/check_hosted_readiness.py
 ```
 
-The smoke check verifies reachability for:
+The smoke check verifies:
 
-- `/health`
-- `/diagnostics/hosted-scanner-runtime`
-- `/diagnostics/release-readiness`
+- `/health` is reachable and reports `status=ok`.
+- `/operations/readiness` is reachable and reports `status=ready`.
+- `/diagnostics/hosted-scanner-runtime` is reachable.
+- `/diagnostics/release-readiness` is reachable.
 
-Passing smoke checks only prove endpoint reachability. They do not prove scanner output is clean, release evidence is complete, or client delivery is approved.
+A successful operations-readiness decision proves that required production controls are present. Passing smoke checks prove endpoint reachability plus the required semantic status. Neither proves scanner output is clean, release evidence is complete, or client delivery is approved.
 
 ## Before running an assessment
 
 1. Confirm the target repository is owned by the operator or explicitly authorized for review.
-2. Confirm the backend health check is online.
-3. Run the terminal smoke check or open `/diagnostics` and review available diagnostic pages.
-4. Open `/scanner-runtime` and verify whether scanner tools are installed or unavailable.
-5. Treat unavailable tools as missing evidence, not clean results.
+2. Confirm `/health` reports online.
+3. Require `/operations/readiness` to report `ready`.
+4. Run both terminal checks or open `/diagnostics` and review the diagnostic pages.
+5. Open `/scanner-runtime` and verify whether scanner tools are installed or unavailable.
+6. Treat unavailable tools as missing evidence, not clean results.
+
+## Operations-readiness interpretation
+
+- `ready`: all required and advisory operational checks passed.
+- `degraded`: required controls passed, but advisory operator controls need attention.
+- `blocked`: one or more required production controls failed or could not be verified.
+
+Do not accept trusted production assessment traffic from a blocked deployment. Use `--allow-degraded` only for an explicitly approved diagnostic window; it does not authorize normal operator use or client delivery.
 
 ## Refresh Full Evidence workflow
 
@@ -54,7 +72,7 @@ Passing smoke checks only prove endpoint reachability. They do not prove scanner
 
 ## Readiness interpretation
 
-A report is not client-ready just because runtime diagnostics are green. Client delivery remains blocked when any of the following are true:
+A report is not client-ready just because runtime diagnostics or operations readiness are green. Client delivery remains blocked when any of the following are true:
 
 - Required scanners are missing or unavailable.
 - Scanner output is not current-run evidence.
@@ -82,4 +100,4 @@ Before client-facing delivery, verify:
 
 ## Guardrail
 
-Do not treat any diagnostic page, score bridge, readiness summary, smoke-check result, or generated report as final approval. Final client delivery requires explicit human review and accepted signoff.
+Do not treat any diagnostic page, operations-readiness result, score bridge, readiness summary, smoke-check result, or generated report as final approval. Final client delivery requires explicit human review and accepted signoff.
