@@ -99,6 +99,8 @@ jobs:
             > remediation-evidence/manifest.stdout \
             2> remediation-evidence/manifest.stderr
           echo "$?" > remediation-evidence/manifest.exit
+          PYTHONPATH=. python scripts/build_complexity_manifest.py > remediation-evidence/complexity.stdout 2> remediation-evidence/complexity.stderr
+          echo "$?" > remediation-evidence/complexity.exit
           exit 0
 
       - name: Validate manifest schema and redaction boundary
@@ -106,6 +108,10 @@ jobs:
         run: |
           if [ "$(cat remediation-evidence/manifest.exit)" != "0" ]; then
             cat remediation-evidence/manifest.stderr
+            exit 1
+          fi
+          if [ "$(cat remediation-evidence/complexity.exit)" != "0" ]; then
+            cat remediation-evidence/complexity.stderr
             exit 1
           fi
           python - <<'PY'
@@ -117,7 +123,14 @@ jobs:
           text = path.read_text().lower()
           forbidden = ['raw_secret', 'secret_value', 'private_key_value', 'authorization: bearer']
           assert not any(item in text for item in forbidden)
+          complexity = json.loads(Path('remediation-evidence/complexity-manifest.json').read_text())
+          assert complexity.get('status') in {'attached', 'unavailable'}
           print(json.dumps(payload['summary'], sort_keys=True))
+          print(json.dumps({
+              'high_complexity_functions': complexity.get('high_complexity_functions'),
+              'very_high_complexity_functions': complexity.get('very_high_complexity_functions'),
+              'maximum_cyclomatic_complexity': complexity.get('maximum_cyclomatic_complexity'),
+          }, sort_keys=True))
           PY
 
       - name: Upload sanitized remediation artifact
@@ -128,6 +141,8 @@ jobs:
           path: |
             remediation-evidence/remediation-manifest.json
             remediation-evidence/remediation-manifest.md
+            remediation-evidence/complexity-manifest.json
+            remediation-evidence/complexity-manifest.md
             remediation-evidence/osv.json
             remediation-evidence/pip-audit.json
             remediation-evidence/npm-audit.json
@@ -135,6 +150,6 @@ jobs:
             remediation-evidence/semgrep.json
             remediation-evidence/*.exit
             remediation-evidence/*.stderr
-            remediation-evidence/manifest.stdout
+            remediation-evidence/*.stdout
           if-no-files-found: error
           retention-days: 14
