@@ -26,6 +26,7 @@ from nico.operations_readiness_api import register_operations_readiness_routes
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.secret_history_triage import install_secret_history_triage
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
+from nico.typescript_validation_bridge import install_typescript_validation_bridge
 
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
 ASSESSMENT_SCORE_INTEGRITY = install_assessment_score_integrity()
@@ -41,6 +42,7 @@ ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
 ASSESSMENT_DEPENDENCY_TRIAGE = install_dependency_scanner_triage()
 ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
+ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 
 OPERATIONS_READINESS_ROUTES = {
@@ -183,6 +185,7 @@ __all__ = [
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
     "ASSESSMENT_DEPENDENCY_TRIAGE",
     "ASSESSMENT_SECRET_HISTORY_TRIAGE",
+    "ASSESSMENT_TYPESCRIPT_VALIDATION",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
