@@ -4,15 +4,17 @@ from nico.retainer_modules import build_retainer_modules
 from nico.retainer_truth_workflow import build_truth_bound_retainer_ops
 
 
-def _sources(*, issues: str = "verified", workflows: str = "verified") -> dict:
+def _sources(*, open_issues: str = "verified", latest_workflows: str = "verified") -> dict:
     checked_at = "2026-07-12T23:00:00Z"
     return {
         "repository": {"status": "verified", "checked_at": checked_at, "item_count": 1},
         "head_commit": {"status": "verified", "checked_at": checked_at, "item_count": 1},
         "commits": {"status": "verified", "checked_at": checked_at, "item_count": 2},
         "pull_requests": {"status": "verified", "checked_at": checked_at, "item_count": 1},
-        "issues": {"status": issues, "checked_at": checked_at, "item_count": 1 if issues == "verified" else None},
-        "workflow_runs": {"status": workflows, "checked_at": checked_at, "item_count": 2 if workflows == "verified" else None},
+        "issues": {"status": "verified", "checked_at": checked_at, "item_count": 1},
+        "open_issues": {"status": open_issues, "checked_at": checked_at, "item_count": 1 if open_issues == "verified" else None},
+        "workflow_runs": {"status": "verified", "checked_at": checked_at, "item_count": 2},
+        "latest_workflow_state": {"status": latest_workflows, "checked_at": checked_at, "item_count": 2 if latest_workflows == "verified" else None, "derived_from": "workflow_runs"},
         "codeql_runs": {"status": "verified", "checked_at": checked_at, "item_count": 1, "derived_from": "workflow_runs"},
         "releases": {"status": "verified", "checked_at": checked_at, "item_count": 1},
         "deployments": {"status": "verified", "checked_at": checked_at, "item_count": 1},
@@ -52,7 +54,7 @@ def _payload() -> dict:
         },
         "blocker_verification": {
             "status": "verified_clear",
-            "checked_sources": ["issues", "workflow_runs"],
+            "checked_sources": ["open_issues", "latest_workflow_state"],
             "blocker_count": 0,
             "reason": "",
         },
@@ -80,6 +82,8 @@ def test_retainer_modules_builds_source_bound_weekly_monthly_release_and_gates()
     assert modules["release_readiness"]["status"] == "ready_for_human_release_review"
     assert modules["blocker_escalation"]["status"] == "clear"
     assert modules["blocker_escalation"]["score"] == 90
+    assert any("open_issues" in item for item in modules["blocker_escalation"]["evidence"])
+    assert any("latest_workflow_state" in item for item in modules["blocker_escalation"]["evidence"])
     assert modules["renewal_signals"]["positive_signals"]
     assert modules["approval_gates"]
     assert modules["client_delivery_allowed"] is False
@@ -87,12 +91,12 @@ def test_retainer_modules_builds_source_bound_weekly_monthly_release_and_gates()
 
 def test_retainer_modules_do_not_mark_empty_unchecked_blockers_clear() -> None:
     payload = _payload()
-    payload["retainer_evidence_sources"] = _sources(issues="unavailable")
+    payload["retainer_evidence_sources"] = _sources(open_issues="unavailable")
     payload["blocker_verification"] = {
         "status": "unverified",
-        "checked_sources": ["workflow_runs"],
+        "checked_sources": ["latest_workflow_state"],
         "blocker_count": None,
-        "reason": "issue_or_workflow_source_unavailable",
+        "reason": "open_issue_or_latest_workflow_source_unavailable",
     }
     payload["blockers"] = ""
 
@@ -110,7 +114,7 @@ def test_retainer_modules_block_on_verified_delivery_risk() -> None:
     payload["blockers"] = "Workflow blocker: NICO CI · failure"
     payload["blocker_verification"] = {
         "status": "verified_blockers",
-        "checked_sources": ["issues", "workflow_runs"],
+        "checked_sources": ["open_issues", "latest_workflow_state"],
         "blocker_count": 1,
         "reason": "",
     }
