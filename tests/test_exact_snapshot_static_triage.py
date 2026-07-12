@@ -23,6 +23,10 @@ def _scanner(*results: dict) -> dict:
     }
 
 
+def _repo_evidence(risk_hits: int = 0) -> dict:
+    return {"code_signal_evidence": {"risk_pattern_hits": risk_hits}}
+
+
 def test_bandit_parser_separates_material_review_and_test_only_findings() -> None:
     payload = {
         "results": [
@@ -109,6 +113,7 @@ def test_parseable_nonzero_bandit_exit_is_completed_evidence(monkeypatch, tmp_pa
             }
         ]
     }
+    (tmp_path / "sample.py").write_text("value = 1\n", encoding="utf-8")
 
     class FakeProcess:
         pid = 123
@@ -165,7 +170,7 @@ def test_static_score_uses_material_findings_not_raw_nonzero_exit_counts() -> No
         "evidence_summary": "Semgrep completed with classified findings.",
     }
 
-    section = triage.triaged_static_section(_repo(), _scanner(clean_built_in, bandit, semgrep))
+    section = triage.triaged_static_section(_repo_evidence(), _scanner(clean_built_in, bandit, semgrep))
 
     assert section["score"] >= 80
     assert section["status"] == "green"
@@ -203,7 +208,7 @@ def test_material_production_findings_keep_static_score_review_limited() -> None
         "evidence_summary": "Semgrep completed with a material finding.",
     }
 
-    section = triage.triaged_static_section(_repo(), _scanner(clean_built_in, bandit, semgrep))
+    section = triage.triaged_static_section(_repo_evidence(), _scanner(clean_built_in, bandit, semgrep))
 
     assert section["score"] <= 74
     assert section["status"] == "yellow"
@@ -220,7 +225,7 @@ def test_execution_failure_remains_a_coverage_failure() -> None:
         "execution_status": "execution_failed",
     }
 
-    section = triage.triaged_static_section(_repo(), _scanner(clean_built_in, bandit))
+    section = triage.triaged_static_section(_repo_evidence(), _scanner(clean_built_in, bandit))
 
     assert section["static_triage"]["execution_failures"] == 1
     assert any("did not both produce parseable" in note for note in section["unavailable"])
