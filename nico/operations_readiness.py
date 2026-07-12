@@ -298,7 +298,7 @@ def build_operations_readiness(
         "artifact_schema": OPERATIONS_READINESS_SCHEMA,
         "status": status,
         "operational_ready": status == "ready",
-        "required_checks": sum(1 for item in checks if item["required]),
+        "required_checks": sum(1 for item in checks if item["required"]),
         "required_passed": sum(1 for item in checks if item["required"] and item["passed"]),
         "advisory_checks": sum(1 for item in checks if not item["required"]),
         "advisory_passed": sum(1 for item in checks if not item["required"] and item["passed"]),
