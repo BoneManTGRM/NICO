@@ -22,6 +22,7 @@ from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
 from nico.mid_report_api import register_mid_report_routes
 from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
+from nico.mid_review_enforcement_compat import install_mid_review_enforcement_compat
 from nico.operations_readiness_api import register_operations_readiness_routes
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
 from nico.secret_history_triage import install_secret_history_triage
@@ -46,6 +47,7 @@ ASSESSMENT_DEPENDENCY_TRIAGE = install_dependency_scanner_triage()
 ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
 ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
+ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
 
 OPERATIONS_READINESS_ROUTES = {
     ("GET", "/operations/readiness"),
@@ -194,6 +196,7 @@ __all__ = [
     "ASSESSMENT_SECRET_HISTORY_TRIAGE",
     "ASSESSMENT_TYPESCRIPT_VALIDATION",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
+    "ASSESSMENT_MID_REVIEW_ENFORCEMENT",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
     "OPERATIONS_READINESS_ROUTES",
