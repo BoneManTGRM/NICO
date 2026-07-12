@@ -1,5 +1,6 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
+import "../styles/navigation.css";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
