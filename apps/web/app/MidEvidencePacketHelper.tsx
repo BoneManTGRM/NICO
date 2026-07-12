@@ -28,14 +28,23 @@ export default function MidEvidencePacketHelper() {
   useEffect(() => {
     if (window.location.pathname !== "/") return;
     setActive(true);
-    try {
-      const storedRun = sessionStorage.getItem(RUN_KEY) || "";
-      if (!storedRun.startsWith("midrun_")) return;
-      setRunId(storedRun);
-      setTokenAvailable(Boolean(sessionStorage.getItem(TOKEN_PREFIX + storedRun)));
-    } catch {
-      setTokenAvailable(false);
-    }
+    const syncSession = () => {
+      try {
+        const storedRun = sessionStorage.getItem(RUN_KEY) || "";
+        setRunId(storedRun.startsWith("midrun_") ? storedRun : "");
+        setTokenAvailable(Boolean(storedRun && sessionStorage.getItem(TOKEN_PREFIX + storedRun)));
+      } catch {
+        setRunId("");
+        setTokenAvailable(false);
+      }
+    };
+    syncSession();
+    const timer = window.setInterval(syncSession, 1000);
+    window.addEventListener("focus", syncSession);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncSession);
+    };
   }, []);
 
   async function attachPacket() {
