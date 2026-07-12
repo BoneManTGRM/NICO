@@ -23,6 +23,7 @@ from nico.assessment_evidence_bundle_patch import install_assessment_evidence_bu
 from nico.production_release_provider_evidence import install_provider_origin_matching
 from nico.operational_alert_normalization import install_operational_alert_normalization
 from nico.assessment_recovery_execution_patch import install_assessment_recovery_execution_patch
+from nico.assessment_recovery_readiness_patch import install_assessment_recovery_readiness_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -47,5 +48,6 @@ install_assessment_evidence_bundle_patch()
 install_provider_origin_matching()
 install_operational_alert_normalization()
 install_assessment_recovery_execution_patch()
+install_assessment_recovery_readiness_patch()
 
 __version__ = "0.1.0"
