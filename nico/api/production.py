@@ -8,6 +8,7 @@ from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.builtin_static_code_context import install_builtin_static_code_context
+from nico.correlation_header_exposure import install_correlation_header_exposure
 from nico.dependency_scanner_triage import install_dependency_scanner_triage
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
@@ -159,6 +160,7 @@ def register_production_routes(target: FastAPI) -> FastAPI:
     if not observability_present:
         install_operational_observability(target)
         target.openapi_schema = None
+    install_correlation_header_exposure(target)
     if not core_present:
         register_mid_assessment_routes(target)
         target.openapi_schema = None
