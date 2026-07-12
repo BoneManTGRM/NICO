@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 from nico.assessment_recovery import REQUIRED_ASSESSMENT_RECOVERY_ROUTES
@@ -38,3 +41,37 @@ def test_production_contract_does_not_register_a_second_assessment_execution_pat
     assert source.count('"/operations/recovery/assessments"') == 0
     assert source.count('"/operations/recovery/assessment/{run_id}/resume"') == 0
     assert source.count("install_assessment_recovery(target)") == 1
+
+
+def test_production_openapi_resolves_checkpointed_mid_and_full_request_models() -> None:
+    script = r'''
+import json
+from nico.api.production import app
+schema = app.openapi()
+paths = schema.get("paths") or {}
+print(json.dumps({
+    "full": "/assessment/full-run" in paths,
+    "full_status": "/assessment/full-run/{run_id}/status" in paths,
+    "mid": "/assessment/mid-run" in paths,
+    "mid_status": "/assessment/mid-run/{run_id}/status" in paths,
+    "inventory": "/operations/recovery/assessments" in paths,
+    "resume": "/operations/recovery/assessment/{run_id}/resume" in paths,
+}))
+'''
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+
+    assert result == {
+        "full": True,
+        "full_status": True,
+        "mid": True,
+        "mid_status": True,
+        "inventory": True,
+        "resume": True,
+    }
