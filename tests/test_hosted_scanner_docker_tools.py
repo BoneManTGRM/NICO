@@ -8,14 +8,15 @@ def test_dockerfile_installs_hosted_scanner_tools():
     assert "npm install -g eslint typescript" in dockerfile
     assert "install_hosted_scanner_binaries.py" in dockerfile
     assert "NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true" in dockerfile
-    assert "NICO_ALLOW_PROJECT_COMMANDS=true" in dockerfile
+    assert "NICO_ALLOW_PROJECT_COMMANDS=false" in dockerfile
+    assert "USER nico" in dockerfile
 
 
-def test_dockerfile_keeps_project_install_scripts_disabled():
+def test_dockerfile_keeps_dependency_install_scripts_disabled_and_reproducible():
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
-    assert "npm install --legacy-peer-deps --ignore-scripts" in dockerfile
-    assert "npm ci" not in dockerfile
+    assert "npm ci --ignore-scripts --no-audit --no-fund" in dockerfile
+    assert "npm install --legacy-peer-deps" not in dockerfile
 
 
 def test_hosted_scanner_binary_installer_targets_missing_yellow_section_tools():
