@@ -11,6 +11,8 @@ REQUIRED_OPERATION_ROUTES = {
     "GET /health",
     "GET /diagnostics",
     "GET /operations/readiness",
+    "GET /operations/events",
+    "GET /operations/observability",
     "POST /assessment/github",
     "POST /assessment/mid-run",
     "POST /assessment/full-run",
@@ -154,7 +156,7 @@ def build_operations_readiness(
             required=True,
             observed={"registered": len(routes), "missing": missing_routes},
             expected=sorted(REQUIRED_OPERATION_ROUTES),
-            remediation="Register every required operations, assessment, and scanner route in the production application.",
+            remediation="Register every required operations, assessment, scanner, and observability route in the production application.",
         ),
         _check(
             "operator_admin_configured",
