@@ -40,9 +40,11 @@ def test_execution_patch_uses_checkpointed_orchestration_for_all_four_paths() ->
         ROOT / "nico" / "assessment_recovery_execution_patch.py"
     ).read_text(encoding="utf-8")
 
-    assert source.count("run_checkpointed_assessment_orchestration(") == 4
-    assert "new_id(\"fullrun\")" in source
-    assert "new_id(\"midrun\")" in source
+    assert source.count("result = _run_checkpointed(") == 4
+    assert 'full_api.new_id("fullrun")' in source
+    assert 'mid_api.new_id("midrun")' in source
+    assert "orchestrator=orchestrator" in source
+    assert "wrap_handlers=orchestrator is canonical_orchestrator" in source
     assert "full_api.full_assessment_response = full_assessment_response" in source
     assert (
         "full_api.full_assessment_status_response = full_assessment_status_response"
@@ -62,7 +64,7 @@ def test_mid_optional_evidence_compat_reissues_only_when_checkpoint_preseed_omit
 
     assert 'if result.get("optional_evidence_submission")' in source
     assert "issue_mid_evidence_submission_access" in source
-    assert "run_id.startswith(\"midrun_\")" in source
+    assert 'run_id.startswith("midrun_")' in source
     assert "mid_api.mid_assessment_response = mid_assessment_response" in source
 
 
