@@ -5,6 +5,8 @@ import {usePathname} from "next/navigation";
 
 type ServiceKey = "express" | "mid" | "full" | "operations" | "retainer";
 
+type AssessmentMode = "express" | "mid";
+
 export const PRIMARY_SERVICES = [
   {
     key: "express" as ServiceKey,
@@ -66,8 +68,8 @@ const ADVANCED_GROUPS = [
   },
 ] as const;
 
-function serviceForPath(pathname: string, assessment: string): ServiceKey | "" {
-  if (pathname === "/") return assessment === "mid" ? "mid" : "express";
+function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKey | "" {
+  if (pathname === "/") return assessment;
   if (pathname.startsWith("/full-run")) return "full";
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
@@ -84,14 +86,71 @@ function serviceForPath(pathname: string, assessment: string): ServiceKey | "" {
   return "";
 }
 
+function assessmentModeFromButton(button: HTMLButtonElement | undefined): AssessmentMode {
+  return button?.textContent?.trim().toLowerCase().startsWith("mid") ? "mid" : "express";
+}
+
 export default function PrimaryNavigation() {
   const pathname = usePathname();
-  const [assessment, setAssessment] = useState("express");
+  const [assessment, setAssessment] = useState<AssessmentMode>("express");
 
   useEffect(() => {
     if (pathname !== "/") return;
-    const requested = new URLSearchParams(window.location.search).get("assessment");
-    setAssessment(requested === "mid" ? "mid" : "express");
+
+    let observer: MutationObserver | null = null;
+    let frame = 0;
+    let cancelled = false;
+
+    const connectToUnifiedIntake = () => {
+      if (cancelled) return;
+      const controls = document.querySelector<HTMLElement>("[aria-label='Assessment type']");
+      if (!controls) {
+        frame = window.requestAnimationFrame(connectToUnifiedIntake);
+        return;
+      }
+
+      const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>("button"));
+      const requested = new URLSearchParams(window.location.search).get("assessment");
+      const requestedMode: AssessmentMode = requested === "mid" ? "mid" : "express";
+      const requestedButton = buttons.find((button) => assessmentModeFromButton(button) === requestedMode);
+
+      setAssessment(requestedMode);
+      if (requestedButton && requestedButton.getAttribute("aria-pressed") !== "true") {
+        requestedButton.click();
+      }
+
+      const synchronize = () => {
+        const pressed = buttons.find((button) => button.getAttribute("aria-pressed") === "true");
+        const mode = assessmentModeFromButton(pressed);
+        setAssessment(mode);
+
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("assessment") !== mode) {
+          url.searchParams.set("assessment", mode);
+          const hash = url.hash || "#assessment";
+          window.history.replaceState(
+            window.history.state,
+            "",
+            `${url.pathname}?${url.searchParams.toString()}${hash}`,
+          );
+        }
+      };
+
+      synchronize();
+      observer = new MutationObserver(synchronize);
+      observer.observe(controls, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["aria-pressed"],
+      });
+    };
+
+    frame = window.requestAnimationFrame(connectToUnifiedIntake);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
   }, [pathname]);
 
   const activeService = serviceForPath(pathname, assessment);
