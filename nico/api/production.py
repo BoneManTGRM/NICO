@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 from fastapi import FastAPI
 
-from nico.api.hosted import app
 from nico.assessment_network_budget import install_assessment_network_budget
 from nico.assessment_recovery import (
     REQUIRED_ASSESSMENT_RECOVERY_ROUTES,
     install_assessment_recovery,
 )
+from nico.assessment_recovery_execution_patch import install_assessment_recovery_execution_patch
+from nico.assessment_recovery_readiness_patch import install_assessment_recovery_readiness_patch
 from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
@@ -21,6 +24,7 @@ from nico.exact_snapshot_secret_history_exit_guard import install_secret_history
 from nico.exact_snapshot_static_triage import install_exact_snapshot_static_triage
 from nico.mid_approval_api import register_mid_approval_routes
 from nico.mid_assessment_api import register_mid_assessment_routes
+from nico.mid_checkpoint_optional_evidence_compat import install_mid_checkpoint_optional_evidence_compat
 from nico.mid_delivery_api import register_mid_delivery_routes
 from nico.mid_legacy_migration import LEGACY_MID_PATH, register_legacy_mid_migration
 from nico.mid_optional_evidence_api import register_mid_optional_evidence_routes
@@ -50,6 +54,11 @@ from nico.storage_schema_readiness import (
 )
 from nico.typescript_complexity_syntax import install_typescript_complexity_syntax
 from nico.typescript_validation_bridge import install_typescript_validation_bridge
+
+ASSESSMENT_RECOVERY_EXECUTION = install_assessment_recovery_execution_patch()
+ASSESSMENT_MID_CHECKPOINT_COMPATIBILITY = install_mid_checkpoint_optional_evidence_compat()
+ASSESSMENT_RECOVERY_READINESS = install_assessment_recovery_readiness_patch()
+app = import_module("nico.api.hosted").app
 
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
 ASSESSMENT_SCORE_INTEGRITY = install_assessment_score_integrity()
@@ -234,6 +243,9 @@ register_production_routes(app)
 
 __all__ = [
     "app",
+    "ASSESSMENT_RECOVERY_EXECUTION",
+    "ASSESSMENT_MID_CHECKPOINT_COMPATIBILITY",
+    "ASSESSMENT_RECOVERY_READINESS",
     "ASSESSMENT_NETWORK_POLICY",
     "ASSESSMENT_SCORE_INTEGRITY",
     "ASSESSMENT_TYPESCRIPT_COMPLEXITY_SYNTAX",
