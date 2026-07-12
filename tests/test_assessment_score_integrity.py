@@ -60,7 +60,7 @@ API_KEY = 'example_replace_me_token_1234567890'
 
 
 def test_specific_non_example_token_is_high_confidence_and_masked() -> None:
-    raw = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    raw = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
 
     candidates = classify_secret_candidates("nico/runtime_config.py", f"TOKEN = '{raw}'")
     specific = next(item for item in candidates if item["kind"] == "github_token")
@@ -74,7 +74,7 @@ def test_specific_non_example_token_is_high_confidence_and_masked() -> None:
 
 def test_builtin_secret_scanner_never_returns_raw_values(tmp_path: Path) -> None:
     install_score_integrity_compatibility()
-    raw = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    raw = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
     (tmp_path / "config.py").write_text(f"TOKEN = '{raw}'\n", encoding="utf-8")
     (tmp_path / "example.env").write_text("API_KEY=example_replace_me_123456789\n", encoding="utf-8")
 
