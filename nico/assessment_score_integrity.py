@@ -753,8 +753,9 @@ def _rebind() -> None:
 
 def install_assessment_score_integrity() -> dict[str, Any]:
     installed = bool(getattr(scanner_worker, "_nico_score_integrity_installed", False))
-    _rebind()
-    scanner_worker._nico_score_integrity_installed = True
+    if not installed:
+        _rebind()
+        scanner_worker._nico_score_integrity_installed = True
     return {
         "status": "already_installed" if installed else "installed",
         "version": INTEGRITY_VERSION,

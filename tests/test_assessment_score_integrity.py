@@ -214,7 +214,10 @@ export function three(value: number) { return value ? 3 : 0 }
     assert any("function-level lexical extraction" in note for note in result["unavailable_data_notes"])
 
 
-def test_installer_rebinds_scoring_collection_and_mid_attachment() -> None:
+def test_installer_is_idempotent_and_preserves_later_attachment_wrappers() -> None:
+    snapshot_attachment = snapshot_handlers._snapshot_evidence_attachment_handler
+    mid_attachment = mid_handlers._snapshot_evidence_attachment_handler
+
     first = install_assessment_score_integrity()
     second = install_assessment_score_integrity()
     compat_first = install_score_integrity_compatibility()
@@ -233,5 +236,5 @@ def test_installer_rebinds_scoring_collection_and_mid_attachment() -> None:
     assert snapshot_repository.collect_complexity_evidence.__name__ == "calibrated_collect_complexity_evidence"
     assert scorecard._secrets_section.__name__ == "calibrated_secrets_section"
     assert scorecard._static_section.__name__ == "calibrated_static_section"
-    assert snapshot_handlers._snapshot_evidence_attachment_handler.__name__ == "calibrated_attachment_handler"
-    assert mid_handlers._snapshot_evidence_attachment_handler.__name__ == "calibrated_attachment_handler"
+    assert snapshot_handlers._snapshot_evidence_attachment_handler is snapshot_attachment
+    assert mid_handlers._snapshot_evidence_attachment_handler is mid_attachment

@@ -212,10 +212,21 @@ class Store:
             db.execute("INSERT OR REPLACE INTO reports VALUES(?,?,?,?)", (report_id, fmt, path, now()))
 
     def rows(self, table: str) -> list[dict[str, Any]]:
-        if table not in {"scans", "findings", "drift_events", "repairs", "memory", "reports", "audit_log", "verification"}:
+        queries = {
+            "scans": "SELECT * FROM scans ORDER BY rowid DESC",
+            "findings": "SELECT * FROM findings ORDER BY rowid DESC",
+            "drift_events": "SELECT * FROM drift_events ORDER BY rowid DESC",
+            "repairs": "SELECT * FROM repairs ORDER BY rowid DESC",
+            "memory": "SELECT * FROM memory ORDER BY rowid DESC",
+            "reports": "SELECT * FROM reports ORDER BY rowid DESC",
+            "audit_log": "SELECT * FROM audit_log ORDER BY rowid DESC",
+            "verification": "SELECT * FROM verification ORDER BY rowid DESC",
+        }
+        query = queries.get(table)
+        if query is None:
             raise ValueError(f"unsupported table: {table}")
         with self.db() as db:
-            rows = db.execute(f"SELECT * FROM {table} ORDER BY rowid DESC").fetchall()
+            rows = db.execute(query).fetchall()
         return [dict(row) for row in rows]
 
     def payloads(self, table: str) -> list[dict[str, Any]]:

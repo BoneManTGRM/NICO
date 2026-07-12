@@ -6,13 +6,13 @@ ENV PIP_NO_CACHE_DIR=1
 ENV NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true
 ENV NICO_ALLOW_PROJECT_COMMANDS=true
 ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
-ENV NICO_SCANNER_INSTALL_STRICT=false
+ENV NICO_SCANNER_INSTALL_STRICT=true
 ENV NICO_REQUIRE_DURABLE_DELIVERY_STORAGE=true
 ENV NICO_TRUST_PROXY_HEADERS=true
-ENV NICO_TOOL_TIMEOUT_SECONDS=90
-ENV NICO_TOTAL_SCAN_TIMEOUT_SECONDS=900
-ENV NICO_OSV_TIMEOUT_SECONDS=180
-ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=180
+ENV NICO_TOOL_TIMEOUT_SECONDS=120
+ENV NICO_TOTAL_SCAN_TIMEOUT_SECONDS=1500
+ENV NICO_OSV_TIMEOUT_SECONDS=240
+ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=420
 
 WORKDIR /app
 
@@ -24,22 +24,23 @@ RUN apt-get update \
         npm \
         tar \
         unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin nico
 
-RUN npm install -g eslint typescript --no-audit --no-fund \
-    || echo "warning: optional eslint/typescript global install unavailable during Docker build"
+RUN npm install -g eslint typescript --no-audit --no-fund
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && (pip install --no-cache-dir pip-audit bandit semgrep coverage \
-        || echo "warning: optional Python scanner package install unavailable during Docker build") \
-    && (python scripts/install_hosted_scanner_binaries.py \
-        || echo "warning: optional hosted scanner binary install unavailable during Docker build")
+    && pip install --no-cache-dir pip-audit bandit semgrep coverage \
+    && python scripts/install_hosted_scanner_binaries.py
 
 COPY . .
-RUN if [ -f apps/web/package.json ]; then cd apps/web && npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund || echo "warning: optional frontend dependency install unavailable during backend Docker build"; fi
+RUN if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --ignore-scripts --no-audit --no-fund; fi \
+    && chown -R nico:nico /app
+
+USER nico
 
 EXPOSE 8000
 

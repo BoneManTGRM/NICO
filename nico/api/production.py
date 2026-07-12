@@ -8,6 +8,7 @@ from nico.assessment_required_tools import install_required_assessment_tools
 from nico.assessment_score_integrity import install_assessment_score_integrity
 from nico.assessment_score_integrity_compat import install_score_integrity_compatibility
 from nico.builtin_static_code_context import install_builtin_static_code_context
+from nico.dependency_scanner_triage import install_dependency_scanner_triage
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
 from nico.exact_snapshot_secret_history_compat import install_secret_history_score_compatibility
@@ -23,10 +24,14 @@ from nico.mid_report_presentation import install_mid_report_presentation
 from nico.mid_review_api import register_mid_review_routes
 from nico.operations_readiness_api import register_operations_readiness_routes
 from nico.scanner_runtime_compat import install_scanner_runtime_compat
+from nico.secret_history_triage import install_secret_history_triage
 from nico.static_triage_evidence_bridge import install_static_triage_evidence_bridge
+from nico.typescript_complexity_syntax import install_typescript_complexity_syntax
+from nico.typescript_validation_bridge import install_typescript_validation_bridge
 
 ASSESSMENT_NETWORK_POLICY = install_assessment_network_budget()
 ASSESSMENT_SCORE_INTEGRITY = install_assessment_score_integrity()
+ASSESSMENT_TYPESCRIPT_COMPLEXITY_SYNTAX = install_typescript_complexity_syntax()
 ASSESSMENT_SCORE_COMPATIBILITY = install_score_integrity_compatibility()
 ASSESSMENT_BUILTIN_STATIC_CONTEXT = install_builtin_static_code_context()
 ASSESSMENT_STATIC_TRIAGE = install_exact_snapshot_static_triage()
@@ -37,6 +42,9 @@ ASSESSMENT_SECRET_HISTORY_COMPATIBILITY = install_secret_history_score_compatibi
 ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY = install_scanner_runtime_compat()
 ASSESSMENT_REQUIRED_TOOLS = install_required_assessment_tools()
 ASSESSMENT_STATIC_TRIAGE_EVIDENCE = install_static_triage_evidence_bridge()
+ASSESSMENT_DEPENDENCY_TRIAGE = install_dependency_scanner_triage()
+ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
+ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 
 OPERATIONS_READINESS_ROUTES = {
@@ -167,6 +175,7 @@ __all__ = [
     "app",
     "ASSESSMENT_NETWORK_POLICY",
     "ASSESSMENT_SCORE_INTEGRITY",
+    "ASSESSMENT_TYPESCRIPT_COMPLEXITY_SYNTAX",
     "ASSESSMENT_SCORE_COMPATIBILITY",
     "ASSESSMENT_BUILTIN_STATIC_CONTEXT",
     "ASSESSMENT_STATIC_TRIAGE",
@@ -177,6 +186,9 @@ __all__ = [
     "ASSESSMENT_SCANNER_RUNTIME_COMPATIBILITY",
     "ASSESSMENT_REQUIRED_TOOLS",
     "ASSESSMENT_STATIC_TRIAGE_EVIDENCE",
+    "ASSESSMENT_DEPENDENCY_TRIAGE",
+    "ASSESSMENT_SECRET_HISTORY_TRIAGE",
+    "ASSESSMENT_TYPESCRIPT_VALIDATION",
     "ASSESSMENT_MID_REPORT_PRESENTATION",
     "register_production_routes",
     "REQUIRED_PRODUCTION_ROUTES",
