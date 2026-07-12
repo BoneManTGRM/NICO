@@ -73,7 +73,8 @@ def _osv_finding_fingerprints(payload: Any) -> set[str]:
                 if normalized in {"vulnerabilities", "vulns"} and isinstance(child, list):
                     for index, finding in enumerate(child):
                         if isinstance(finding, dict):
-                            identifier = str(finding.get("id") or finding.get("database_specific", {}).get("id") or "")
+                            database_specific = _dict(finding.get("database_specific"))
+                            identifier = str(finding.get("id") or database_specific.get("id") or "")
                             material = identifier or json.dumps(finding, sort_keys=True, default=str)
                         else:
                             material = str(finding)
@@ -197,6 +198,13 @@ def _run_osv(cfg: dict[str, Any], repo_path: Path, env: dict[str, str], deadline
         if normal_exit and parse_error is None:
             fingerprints = _osv_finding_fingerprints(payload)
             finding_count = len(fingerprints)
+            if returncode not in {0, None} and finding_count == 0:
+                stderr_preview, _ = scanner_worker.redact(stderr)
+                attempts.append(
+                    f"{variant}: exit={returncode}; nonzero exit without a parsed vulnerability record; "
+                    f"{stderr_preview[:400] or 'no diagnostic'}"
+                )
+                break
             execution_status = "completed_with_findings" if finding_count else "completed_clean"
             stderr_preview, redacted = scanner_worker.redact(stderr)
             notes = [stderr_preview[:1000]] if stderr_preview else []
@@ -337,6 +345,8 @@ def _run_history(name: str, cfg: dict[str, Any], repo_path: Path, env: dict[str,
             "TruffleHog output could not be parsed as JSON lines.",
         }
         execution_completed = normal_exit and parse_note not in fatal_parse_notes
+        if name == "gitleaks" and returncode not in {0, None} and not findings:
+            execution_completed = False
         verified = sum(bool(item.get("verified")) for item in findings)
         candidates = len(findings) - verified
         execution_status = "completed_with_findings" if findings else "completed_clean"
@@ -345,6 +355,8 @@ def _run_history(name: str, cfg: dict[str, Any], repo_path: Path, env: dict[str,
         notes: list[str] = []
         if parse_note:
             notes.append(parse_note)
+        if name == "gitleaks" and returncode not in {0, None} and not findings:
+            notes.append("Gitleaks returned nonzero without a parseable finding report; this is execution failure, not clean evidence.")
         if not metadata.get("full_history_covered"):
             notes.append("Git history depth could not be verified as full; this result cannot support a full-history clean claim.")
         stderr_preview, stderr_redacted = scanner_worker.redact(stderr)
@@ -366,8 +378,8 @@ def _run_history(name: str, cfg: dict[str, Any], repo_path: Path, env: dict[str,
             "safe_output_preview": history._safe_preview(findings),
             "risk_severity": "critical" if verified else "high" if findings else "low" if execution_completed else "unknown",
             "recommended_repair": "Human-validate every history candidate and rotate any confirmed credential outside NICO before removing it from repository history.",
-            "unavailable_data_notes": notes,
-            "secret_redaction_applied": True or stderr_redacted,
+            "unavailable_data_notes": list(dict.fromkeys(notes)),
+            "secret_redaction_applied": True,
             "finding_count": len(findings),
             "verified_finding_count": verified,
             "candidate_finding_count": candidates,
