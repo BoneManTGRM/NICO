@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# One-time deterministic repair script. Safe to rerun after the target changes land.
+
 
 def replace_once(path: Path, old: str, new: str) -> None:
     text = path.read_text(encoding="utf-8")
