@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import time
+
 import nico.dependency_scanner_triage as triage
 
 
@@ -160,3 +163,31 @@ def test_clean_correlated_scanners_can_recover_dependency_score(monkeypatch) -> 
     assert section["status"] == "green"
     assert section["dependency_scanner_triage"]["material_finding_count"] == 0
     assert section["dependency_scanner_triage"]["review_finding_count"] == 1
+    assert not any("remediate 1 osv vulnerability" in item.lower() for item in section["findings"])
+    assert any("not scored as confirmed installed vulnerabilities" in item for item in section["findings"])
+
+
+def test_osv_runner_executes_once_and_retains_grouped_records(monkeypatch, tmp_path) -> None:
+    calls = []
+    payload = _osv_payload()
+    monkeypatch.setattr(triage.scanner_worker, "ENABLE_SCANNER_EXECUTION", True)
+    monkeypatch.setattr(triage.shutil, "which", lambda _name: "/usr/local/bin/osv-scanner")
+    monkeypatch.setattr(triage.runtime_compat, "_osv_commands", lambda _path: [("v2-source", ["osv-scanner", "scan", "source"])])
+
+    def communicate(command, cwd, env, timeout):
+        calls.append((command, cwd, timeout))
+        return 1, json.dumps(payload), "", 0.2, False
+
+    monkeypatch.setattr(triage.runtime_compat, "_communicate", communicate)
+    result = triage._run_osv(
+        {"intent": "OSV dependency review"},
+        tmp_path,
+        {},
+        time.monotonic() + 30,
+    )
+
+    assert len(calls) == 1
+    assert result["execution_completed"] is True
+    assert result["material_finding_count"] == 0
+    assert result["review_finding_count"] == 1
+    assert len(result["dependency_records"]) == 1
