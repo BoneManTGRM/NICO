@@ -49,7 +49,11 @@ def complete_assessment_tools(requested: Any) -> list[str]:
 def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str, Any]:
     request = deepcopy(payload)
     original = request.get("tools") if isinstance(request.get("tools"), list) else []
-    request["tools"] = complete_assessment_tools(original)
+    missing = [tool for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS if tool not in original]
+    # Preserve an already-complete caller request exactly. This avoids rewriting a
+    # current client payload merely because it contains a harmless duplicate while
+    # still repairing every stale or incomplete tool list deterministically.
+    request["tools"] = list(original) if not missing else complete_assessment_tools(original)
     result = _ORIGINAL_START_SNAPSHOT_SCAN(request)
     if isinstance(result, dict):
         result = deepcopy(result)
@@ -59,7 +63,7 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str
             "required_dependency_tools": list(REQUIRED_DEPENDENCY_TOOLS),
             "required_dependency_tool": REQUIRED_DEPENDENCY_TOOL,
             "requested_tools": list(request["tools"]),
-            "stale_client_tools_repaired": any(tool not in original for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS),
+            "stale_client_tools_repaired": bool(missing),
             "dependency_corroboration_rule": "OSV source-resolution records are compared with pip-audit and npm audit resolved dependency evidence before being treated as confirmed installed vulnerabilities.",
             "execution_order_rule": "Current-tree and dependency evidence runs before full-history secret scanning so one expensive history operation cannot starve all later evidence categories.",
             "rule": "Exact-snapshot assessment scoring must request its current-tree, semantic-static, git-history, and corroborating dependency evidence tools even when a stale client sends an older explicit list.",
