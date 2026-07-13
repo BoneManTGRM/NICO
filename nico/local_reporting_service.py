@@ -154,10 +154,10 @@ def report_text(
     output_dir = Path(report_dir) if report_dir is not None else REPORT_DIR
     generate_reports(store=active_store, report_dir=output_dir)
     mapping = {
-        "owner": "owner.md",
-        "developer": "developer.md",
-        "reparodynamic": "reparodynamic.md",
-        "compliance": "compliance.md",
+        "owner": "latest.owner.md",
+        "developer": "latest.developer.md",
+        "reparodynamic": "latest.reparodynamic.md",
+        "compliance": "latest.compliance.md",
     }
     path = output_dir / mapping.get(kind, "latest.md")
     return path.read_text(encoding="utf-8") if path.exists() else ""
