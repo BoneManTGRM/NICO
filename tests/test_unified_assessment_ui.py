@@ -21,7 +21,7 @@ def test_unified_intake_has_exactly_three_assessment_tiers() -> None:
     assert 'type AssessmentTier = "express" | "mid" | "full"' in source
     assert 'aria-label="Assessment type"' in source
     assert '(["express", "mid", "full"] as AssessmentTier[])' in source
-    assert source.count('key: value') == 1
+    assert source.count('key={value}') == 1
     for label in ("Express", "Mid", "Full"):
         assert f'? "{label}"' in source or f': "{label}"' in source
 
