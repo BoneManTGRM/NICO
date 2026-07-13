@@ -48,7 +48,7 @@ class FullAssessmentRequest(BaseModel):
     authorized_by: str = "unspecified"
     authorization_confirmed: bool = False
     authorized: bool = False
-    mode: str = "express"
+    mode: str = "full"
     timeframe_days: int = 180
     run_scanners: bool = True
     refresh_full_evidence: bool = True
@@ -69,7 +69,7 @@ class FullAssessmentStatusRequest(BaseModel):
     authorized_by: str = "frontend_reviewer"
     authorization_confirmed: bool = True
     authorized: bool = True
-    mode: str = "express"
+    mode: str = "full"
     timeframe_days: int = 180
     build_reports: bool = False
     create_final_review_request: bool = False
