@@ -30,6 +30,11 @@ def _texts(value: Any) -> list[str]:
     return [str(item).strip() for item in _list(value) if str(item).strip()]
 
 
+def _append_unique(values: list[Any], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
+
+
 def build_full_executive_detail(assessment: dict[str, Any]) -> dict[str, Any]:
     """Derive Full-only decision support from retained assessment truth."""
 
@@ -110,6 +115,54 @@ def build_full_executive_detail(assessment: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def attach_full_report_depth(assessment: dict[str, Any]) -> dict[str, Any]:
+    """Attach Full depth before rendering so every format receives the detail.
+
+    The added text is derived from retained sections. It does not alter section
+    scores, evidence status, approval state, or client-delivery authority.
+    """
+
+    enriched = deepcopy(assessment)
+    detail = build_full_executive_detail(enriched)
+    synthesis = detail["cross_domain_synthesis"]
+    risks = detail["risk_and_remediation_plan"]["prioritized_risks"]
+    limitations = synthesis["sections_with_limitations"]
+
+    enriched["report_version"] = FULL_REPORT_VERSION
+    enriched["report_tier"] = "full"
+    enriched["detail_level"] = FULL_DETAIL_LEVEL
+    enriched["detail_relationship"] = detail["detail_relationship"]
+    enriched["included_modules"] = deepcopy(detail["included_modules"])
+    enriched["full_depth_contract"] = deepcopy(detail)
+
+    depth_summary = (
+        "Full-depth analysis reviewed "
+        f"{synthesis['section_count']} retained assessment section(s), identified "
+        f"{len(risks)} evidence-bound risk item(s), and retained "
+        f"{len(limitations)} section(s) with unavailable or review-limited evidence. "
+        "Remediation and verification guidance is advisory; production changes, approval, "
+        "and client delivery remain blocked pending explicit human decisions."
+    )
+    summary = str(enriched.get("executive_summary") or "").strip()
+    if depth_summary not in summary:
+        enriched["executive_summary"] = f"{summary} {depth_summary}".strip()
+
+    next_steps = list(_list(enriched.get("next_steps")))
+    for item in detail["risk_and_remediation_plan"]["recommended_actions"][:8]:
+        _append_unique(next_steps, str(item.get("action") or ""))
+    for step in detail["verification_and_rollback"]["verification_steps"][:8]:
+        _append_unique(next_steps, step)
+    _append_unique(
+        next_steps,
+        "Require a reviewed rollback plan before any approved production change; this report does not authorize implementation.",
+    )
+    _append_unique(next_steps, "Complete final human review before approval or client delivery.")
+    enriched["next_steps"] = next_steps
+    enriched["human_review_required"] = True
+    enriched["client_ready"] = False
+    return enriched
+
+
 def install_progressive_full_report_patch() -> None:
     """Make Full reports explicitly deeper than Mid without weakening gates."""
 
@@ -118,8 +171,17 @@ def install_progressive_full_report_patch() -> None:
         return
 
     from nico import full_assessment_idempotent_handlers as handler_module
+    from nico import full_assessment_trust_pipeline as trust_pipeline
 
+    original_prepare = trust_pipeline.prepare_full_assessment_trust
     original_reports_handler = handler_module._reports_handler
+
+    def progressive_prepare(
+        assessment: dict[str, Any],
+        scanner_evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        prepared = original_prepare(assessment, scanner_evidence)
+        return attach_full_report_depth(prepared)
 
     def progressive_reports_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
         result = original_reports_handler(context, outputs)
@@ -128,7 +190,7 @@ def install_progressive_full_report_patch() -> None:
 
         scoring = _dict(outputs.get("scoring"))
         assessment = _dict(scoring.get("assessment"))
-        detail = build_full_executive_detail(assessment)
+        detail = _dict(assessment.get("full_depth_contract")) or build_full_executive_detail(assessment)
 
         package = _dict(result.get("report_package"))
         reports = _dict(result.get("reports"))
@@ -159,5 +221,6 @@ def install_progressive_full_report_patch() -> None:
         result["evidence"] = evidence
         return result
 
+    trust_pipeline.prepare_full_assessment_trust = progressive_prepare
     handler_module._reports_handler = progressive_reports_handler
     _INSTALLED = True
