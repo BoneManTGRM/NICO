@@ -86,6 +86,8 @@ jobs:
             --confirmation "${CONFIRMATION}" \
             --commit-sha "${EXPECTED_COMMIT_SHA}" \
             --github-repository "${GITHUB_REPOSITORY}" \
+            --customer-id "production_smoke_${GITHUB_RUN_ID}" \
+            --project-id "production_smoke_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
             --frontend-status-context "Vercel" \
             --backend-status-context "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}" \
             --output-json audit-results/production-assessment-smoke.json \
