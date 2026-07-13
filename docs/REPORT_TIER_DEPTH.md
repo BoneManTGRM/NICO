@@ -23,7 +23,16 @@ The Mid executive layer is derived only from existing Mid evidence. It does not 
 
 ## Full — detail level 3
 
-Full is the deepest assessment report. Its target contract includes the Mid evidence and review layers plus deeper cross-domain synthesis, expanded risk and remediation planning, verification and rollback detail, final-review preparation, and the broadest supported evidence appendix.
+Full is the deepest assessment report. It includes the Mid evidence and review layers plus:
+
+- cross-domain synthesis across retained assessment sections;
+- a bounded risk register derived from existing findings;
+- expanded remediation guidance;
+- verification steps and rollback requirements;
+- final-review preparation; and
+- the broadest supported evidence appendix.
+
+Full depth is attached before Markdown, HTML, JSON, and PDF rendering. Existing section scores and section truth remain unchanged. The added executive summary and action plan are derived from retained Full evidence and remain advisory.
 
 Full remains evidence-bound and human-review-required. A more detailed report is not an automatic approval, certification, vulnerability-free claim, or permission to make production changes.
 
