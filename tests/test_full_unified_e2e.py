@@ -188,9 +188,9 @@ def test_one_full_run_remains_identity_bound_through_review_delivery_receipt_and
 
     inspected = access.inspect_approved_delivery_access(token)
     assert inspected["status"] == "available"
-    assert inspected["delivery"]["run_id"] == run_id
-    assert inspected["delivery"]["report_id"] == report_id
-    assert inspected["delivery"]["approval_id"] == approval_id
+    assert inspected["access"]["run_id"] == run_id
+    assert inspected["access"]["report_id"] == report_id
+    assert inspected["access"]["approval_id"] == approval_id
     assert inspected["delivery"]["pdf_sha256"] == artifact["pdf_sha256"]
     assert "pdf" not in inspected
 
@@ -277,11 +277,12 @@ def test_one_full_run_remains_identity_bound_through_review_delivery_receipt_and
     audits = STORE.list("audit_log", customer_id=customer_id, project_id=project_id)
     lifecycle_actions = {
         "final_review.requested",
-        "final_review.transitioned",
+        "final_review.transition",
+        "report.approved_delivery_created",
         "approved_delivery.access_created",
-        "approved_delivery.redeemed",
-        "approved_delivery.receipt_recorded",
-        "approved_delivery.acknowledged",
+        "approved_delivery.access_redeemed",
+        "approved_delivery.receipt_created",
+        "approved_delivery.client_acknowledged",
     }
     recorded_actions = {item.get("action") for item in audits if item.get("payload", {}).get("run_id") == run_id}
     assert lifecycle_actions <= recorded_actions
