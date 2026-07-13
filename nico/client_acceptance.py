@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from copy import deepcopy
 from typing import Any
 
 from nico.approval_queue import create_approval, list_approvals, transition_approval
@@ -9,6 +11,7 @@ CLIENT_ACCEPTANCE_ACTION = "client_acceptance_signoff"
 FINAL_REVIEW_ACTION = "final_report_approval"
 CLIENT_ACCEPTANCE_ACTIONS = {CLIENT_ACCEPTANCE_ACTION, FINAL_REVIEW_ACTION}
 CLIENT_ACCEPTANCE_STATES = {"approved", "needs_more_evidence", "rejected"}
+CLIENT_ACCEPTANCE_TERMINAL_STATES = {"approved", "rejected"}
 
 
 def _safe_list(value: Any) -> list[Any]:
@@ -82,6 +85,12 @@ def _assessment_for_run(run_id: str, customer_id: str = "", project_id: str = ""
     return {}
 
 
+def _acceptance_identity(run_id: str, customer_id: str, project_id: str) -> tuple[str, str]:
+    canonical = f"{customer_id}:{project_id}:{run_id}:{CLIENT_ACCEPTANCE_ACTION}"
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"client_acceptance_{digest[:24]}", f"client-acceptance:{digest}"
+
+
 def build_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
     bundle = _bundle(result)
     findings = _safe_list(result.get("findings"))
@@ -110,14 +119,21 @@ def build_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
     else:
         status = "ready_for_human_signoff"
 
+    accepted_actions = sorted(CLIENT_ACCEPTANCE_ACTIONS)
     return {
         "status": status,
         "client_delivery_allowed": False,
         "automation_finality": "not_final",
-        "rule": "NICO may prepare evidence, but client delivery is not accepted until required human signoffs are approved.",
+        "rule": "NICO may prepare evidence, but client delivery is allowed only after one same-run authorized human signoff: final report approval or client acceptance signoff.",
+        "minimum_approved_signoffs": 1,
+        "accepted_signoff_actions": accepted_actions,
         "required_signoffs": [
-            {"role": "technical_reviewer", "required": True, "status": "pending"},
-            {"role": "client_or_authorized_representative", "required": True, "status": "pending"},
+            {
+                "role": "authorized_human_reviewer",
+                "required": True,
+                "status": "pending",
+                "accepted_actions": accepted_actions,
+            }
         ],
         "checklist": checklist,
         "blockers": blockers,
@@ -160,12 +176,58 @@ def attach_client_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _resolved_gate(
+    gate: dict[str, Any],
+    latest: dict[str, Any] | None,
+    approved: list[dict[str, Any]],
+) -> dict[str, Any]:
+    output = deepcopy(gate) if isinstance(gate, dict) else {}
+    if not output:
+        return output
+    signoffs = output.get("required_signoffs") if isinstance(output.get("required_signoffs"), list) else []
+    if not signoffs:
+        signoffs = [
+            {
+                "role": "authorized_human_reviewer",
+                "required": True,
+                "status": "pending",
+                "accepted_actions": sorted(CLIENT_ACCEPTANCE_ACTIONS),
+            }
+        ]
+        output["required_signoffs"] = signoffs
+
+    selected = approved[0] if approved else latest
+    signoff = signoffs[0] if isinstance(signoffs[0], dict) else {}
+    if selected:
+        signoff.update(
+            {
+                "status": "approved" if selected.get("status") == "approved" else str(selected.get("status") or "pending"),
+                "approval_id": selected.get("approval_id") or "",
+                "approver": selected.get("approver") or "",
+                "action": selected.get("requested_action") or "",
+            }
+        )
+        signoffs[0] = signoff
+
+    if approved:
+        output["status"] = "accepted"
+        output["client_delivery_allowed"] = True
+        output["automation_finality"] = "human_approved"
+        output["human_review_required"] = False
+    elif latest and str(latest.get("status") or "") in {"pending", "needs_more_evidence", "rejected"}:
+        output["status"] = str(latest.get("status"))
+        output["client_delivery_allowed"] = False
+        output["human_review_required"] = True
+    return output
+
+
 def client_acceptance_status(run_id: str, customer_id: str = "default_customer", project_id: str = "default_project") -> dict[str, Any]:
     approvals = _approval_records(run_id, customer_id, project_id)
     approved = [item for item in approvals if item.get("status") == "approved"]
     latest = approved[0] if approved else approvals[0] if approvals else None
     assessment = _assessment_for_run(run_id, customer_id, project_id)
     gate = assessment.get("client_acceptance") if isinstance(assessment.get("client_acceptance"), dict) else build_client_acceptance_gate(assessment) if assessment else {}
+    gate = _resolved_gate(gate, latest, approved)
     accepted = bool(approved)
     status = "accepted" if accepted else latest.get("status") if latest else gate.get("status", "missing")
     return {
@@ -177,14 +239,14 @@ def client_acceptance_status(run_id: str, customer_id: str = "default_customer",
         "client_delivery_allowed": accepted,
         "approval_id": latest.get("approval_id") if latest else "",
         "approver": latest.get("approver") if latest else "",
-        "approval_count": 1 if latest else 0,
-        "approved_count": 1 if approved else 0,
+        "approval_count": len(approvals),
+        "approved_count": len(approved),
         "total_approval_history_count": len(approvals),
         "total_approved_history_count": len(approved),
         "accepted_actions": sorted(CLIENT_ACCEPTANCE_ACTIONS),
         "client_acceptance": gate,
         "approvals": approvals,
-        "rule": "Client delivery is allowed only after same-run final_report_approval or client_acceptance_signoff is approved.",
+        "rule": "Client delivery is allowed only after one same-run final_report_approval or client_acceptance_signoff is approved.",
     }
 
 
@@ -203,28 +265,60 @@ def request_client_acceptance(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     for item in payload.get("evidence") or []:
         evidence.append(str(item))
-    approval = create_approval({
-        "customer_id": customer_id,
-        "project_id": project_id,
-        "requested_action": CLIENT_ACCEPTANCE_ACTION,
-        "issue": "Client acceptance and report delivery signoff",
-        "suggested_fix_summary": "Approve report delivery, request more evidence, or reject delivery.",
-        "evidence": evidence,
-        "affected_files_or_systems": [assessment.get("repository") or payload.get("repository") or "report"],
-        "risk_level": payload.get("risk_level") or "client_delivery_review",
-        "test_plan": payload.get("test_plan") or "Human reviewer must verify report content, evidence bundle hashes, findings, unavailable-data inventory, and client delivery notes.",
-        "rollback_plan": payload.get("rollback_plan") or "If not accepted, transition to needs_more_evidence or rejected and regenerate the report after fixes.",
-        "requester": payload.get("requester") or "nico",
-    })
+
+    default_approval_id, default_idempotency_key = _acceptance_identity(run_id, customer_id, project_id)
+    approval_id = str(payload.get("approval_id") or default_approval_id)
+    idempotency_key = str(payload.get("idempotency_key") or default_idempotency_key)
+    try:
+        approval = create_approval(
+            {
+                "approval_id": approval_id,
+                "idempotency_key": idempotency_key,
+                "customer_id": customer_id,
+                "project_id": project_id,
+                "requested_action": CLIENT_ACCEPTANCE_ACTION,
+                "issue": "Client acceptance and report delivery signoff",
+                "suggested_fix_summary": "Approve report delivery, request more evidence, or reject delivery.",
+                "evidence": evidence,
+                "affected_files_or_systems": [assessment.get("repository") or payload.get("repository") or "report"],
+                "risk_level": payload.get("risk_level") or "client_delivery_review",
+                "test_plan": payload.get("test_plan") or "Human reviewer must verify report content, evidence bundle hashes, findings, unavailable-data inventory, and client delivery notes.",
+                "rollback_plan": payload.get("rollback_plan") or "If not accepted, transition to needs_more_evidence or rejected and regenerate the report after fixes.",
+                "requester": payload.get("requester") or "nico",
+            }
+        )
+    except ValueError as exc:
+        return {"status": "blocked", "error": str(exc), "approval_id": approval_id}
+
+    reused = bool(approval.get("idempotent_reuse"))
     approval["run_id"] = run_id
     approval["client_acceptance_snapshot"] = gate
+    approval["acceptance_validation"] = {
+        "status": "ready_for_human_decision" if gate and not gate.get("blockers") else "blocked",
+        "ready_for_approval": bool(gate) and not bool(gate.get("blockers")),
+        "blockers": list(gate.get("blockers") or []) if isinstance(gate, dict) else ["Client acceptance evidence gate is unavailable."],
+        "evidence_bundle_hash": gate.get("evidence_bundle_hash") if isinstance(gate, dict) else "",
+    }
     STORE.put("approvals", approval["approval_id"], approval)
-    STORE.audit("client_acceptance.requested", {"approval_id": approval["approval_id"], "run_id": run_id}, customer_id=customer_id, project_id=project_id)
-    return {"status": "pending_acceptance", "approval": approval, "acceptance": client_acceptance_status(run_id, customer_id, project_id)}
+    STORE.audit(
+        "client_acceptance.reused" if reused else "client_acceptance.requested",
+        {"approval_id": approval["approval_id"], "run_id": run_id, "idempotency_key": idempotency_key},
+        customer_id=customer_id,
+        project_id=project_id,
+    )
+    acceptance = client_acceptance_status(run_id, customer_id, project_id)
+    response_status = "accepted" if acceptance.get("client_delivery_allowed") else "pending_acceptance" if approval.get("status") == "pending" else "ok"
+    return {
+        "status": response_status,
+        "approval": approval,
+        "acceptance": acceptance,
+        "idempotent_reuse": reused,
+        "idempotency_key": idempotency_key,
+    }
 
 
 def transition_client_acceptance(approval_id: str, state: str, actor: str = "human_reviewer", note: str = "") -> dict[str, Any]:
-    normalized = "approved" if state == "accepted" else state
+    normalized = "approved" if state == "accepted" else str(state or "").strip().lower()
     if normalized not in CLIENT_ACCEPTANCE_STATES:
         return {"status": "blocked", "error": f"Invalid client acceptance state: {state}"}
     item = STORE.get("approvals", approval_id)
@@ -232,7 +326,65 @@ def transition_client_acceptance(approval_id: str, state: str, actor: str = "hum
         return {"status": "not_found", "approval_id": approval_id}
     if item.get("requested_action") not in CLIENT_ACCEPTANCE_ACTIONS:
         return {"status": "blocked", "error": "approval is not a client acceptance or final review signoff", "approval_id": approval_id}
-    updated = transition_approval(approval_id, normalized, actor=actor, note=note)
-    STORE.audit("client_acceptance.transition", {"approval_id": approval_id, "state": normalized, "actor": actor}, customer_id=updated.get("customer_id"), project_id=updated.get("project_id"))
-    run_id = str(updated.get("run_id") or "")
-    return {"status": "ok", "approval": updated, "acceptance": client_acceptance_status(run_id, updated.get("customer_id") or "default_customer", updated.get("project_id") or "default_project") if run_id else {}}
+
+    actor_name = " ".join(str(actor or "").split())[:160]
+    note_text = str(note or "").strip()
+    if not actor_name:
+        return {"status": "blocked", "error": "A human reviewer identity is required.", "approval_id": approval_id}
+    if normalized in {"needs_more_evidence", "rejected"} and not note_text:
+        return {"status": "blocked", "error": "A review note is required when requesting more evidence or rejecting delivery.", "approval_id": approval_id}
+
+    current = str(item.get("status") or "pending")
+    if current in CLIENT_ACCEPTANCE_TERMINAL_STATES:
+        if current == normalized:
+            run_id = str(item.get("run_id") or "")
+            return {
+                "status": "ok",
+                "approval": item,
+                "acceptance": client_acceptance_status(
+                    run_id,
+                    item.get("customer_id") or "default_customer",
+                    item.get("project_id") or "default_project",
+                ) if run_id else {},
+                "idempotent_reuse": True,
+            }
+        return {
+            "status": "blocked",
+            "error": f"Client acceptance is already terminal with state={current}; create a new run after evidence changes.",
+            "approval_id": approval_id,
+        }
+
+    run_id = str(item.get("run_id") or "")
+    customer_id = str(item.get("customer_id") or "default_customer")
+    project_id = str(item.get("project_id") or "default_project")
+    assessment = _assessment_for_run(run_id, customer_id, project_id) if run_id else {}
+    gate = assessment.get("client_acceptance") if isinstance(assessment.get("client_acceptance"), dict) else build_client_acceptance_gate(assessment) if assessment else {}
+    validation = {
+        "status": "ready_for_human_decision" if gate and not gate.get("blockers") else "blocked",
+        "ready_for_approval": bool(gate) and not bool(gate.get("blockers")),
+        "blockers": list(gate.get("blockers") or []) if isinstance(gate, dict) else ["Client acceptance evidence gate is unavailable."],
+        "evidence_bundle_hash": gate.get("evidence_bundle_hash") if isinstance(gate, dict) else "",
+    }
+    if normalized == "approved" and not validation["ready_for_approval"]:
+        return {
+            "status": "blocked",
+            "error": "Client acceptance is blocked because the exact run is missing required evidence or artifact hashes.",
+            "approval_id": approval_id,
+            "acceptance_validation": validation,
+        }
+
+    updated = transition_approval(approval_id, normalized, actor=actor_name, note=note_text)
+    updated["acceptance_validation"] = validation
+    STORE.put("approvals", approval_id, updated)
+    STORE.audit(
+        "client_acceptance.transition",
+        {"approval_id": approval_id, "state": normalized, "actor": actor_name, "run_id": run_id},
+        customer_id=customer_id,
+        project_id=project_id,
+    )
+    return {
+        "status": "ok",
+        "approval": updated,
+        "acceptance": client_acceptance_status(run_id, customer_id, project_id) if run_id else {},
+        "idempotent_reuse": False,
+    }
