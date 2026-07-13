@@ -73,7 +73,10 @@ jobs:
         test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
 
     - name: Run Docker build check
-      run: docker build -t nico-ci:ci .
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        DOCKER_BUILDKIT: "1"
+      run: docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
 
     - name: Run file integrity regression test
       run: |
