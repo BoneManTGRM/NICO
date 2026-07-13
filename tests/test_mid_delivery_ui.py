@@ -18,8 +18,8 @@ def test_workspace_places_delivery_after_approval():
     assert 'path: "/mid-approval"' in context
     assert 'path: "/mid-delivery-admin"' in context
     assert context.index('path: "/mid-approval"') < context.index('path: "/mid-delivery-admin"')
-    assert 'href="/mid-assessment"' in layout
-    assert "controlled Delivery" in layout
+    assert 'href="/assessment?tier=express#assessment"' in layout
+    assert "NICO never approves findings or creates client delivery automatically" in layout
     assert "Client downloads require acknowledgement" in layout
 
 

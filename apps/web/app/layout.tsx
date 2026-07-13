@@ -1,14 +1,17 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
+import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
 import MidEvidencePacketHelper from "./MidEvidencePacketHelper";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
+import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
+import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture";
 
 export const metadata = {
   title: "NICO",
@@ -20,12 +23,15 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <MidWorkspaceProvider>
+          <AssessmentHomeRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
+          <OperationsPreloadGuard />
+          <UnifiedMidTokenCapture />
           <RetainerAutoEvidenceLauncher />
           <PrimaryNavigation />
           <div className="full-run-callout" role="status">
-            <b>Mid workflow:</b> Use the guided <a href="/mid-assessment">Mid Assessment workspace</a> to keep one exact run and move through Start, Review, Report, Approval, and controlled Delivery. Approval creates a separate approved artifact but does not create a client delivery link. Client downloads require acknowledgement and create integrity-bound receipts. Operators can verify deployment, readiness, workload, incidents, and alerts in the <a href="/operations">Operations</a> control center, and review interrupted scanner work in <a href="/operations/recovery">Recovery</a>. <b>Retainer workflow:</b> Run ongoing repository, workflow, release, backlog, and blocker evidence through <a href="/retainer-ops">Retainer Ops</a>; only business context GitHub cannot prove is entered manually.
+            <b>Assessment workflow:</b> Start Express, Mid, or Full from the <a href="/assessment?tier=express#assessment">unified assessment page</a>. One Run action completes every automated stage available for the selected tier. Mid and Full continue through repository evidence, scanners, scoring, and report preparation, then stop at required human review. NICO never approves findings or creates client delivery automatically. Approval creates a separate approved artifact but does not create a client delivery link. Client downloads require acknowledgement and create integrity-bound receipts. Operators can verify deployment, readiness, workload, incidents, backup/restore evidence, and alerts in the <a href="/operations">Operations</a> control center, and review interrupted scanner work in <a href="/operations/recovery">Recovery</a>. <b>Retainer workflow:</b> Run ongoing repository, workflow, release, backlog, and blocker evidence through <a href="/retainer-ops">Retainer Ops</a>; only business context GitHub cannot prove is entered manually.
           </div>
           <GenericRepositoryExample />
           {children}

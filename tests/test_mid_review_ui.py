@@ -15,8 +15,10 @@ def test_workspace_exposes_dedicated_mid_review_stage():
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'path: "/mid-review"' in context
-    assert 'href="/mid-assessment"' in layout
-    assert "Start, Review, Report, Approval, and controlled Delivery" in layout
+    assert 'path: "/assessment?tier=mid#assessment"' in context
+    assert 'href="/assessment?tier=express#assessment"' in layout
+    assert "Mid and Full continue through repository evidence" in layout
+    assert "stop at required human review" in layout
 
 
 def test_review_screen_uses_shared_exact_run_scope_and_admin_token():

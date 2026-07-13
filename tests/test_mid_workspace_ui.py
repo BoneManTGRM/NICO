@@ -16,11 +16,12 @@ STAGE_PAGES = {
 }
 
 
-def test_mid_primary_navigation_opens_one_workspace() -> None:
+def test_mid_primary_navigation_opens_unified_assessment_intake() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert 'label: "Mid Assessment"' in navigation
-    assert 'href: "/mid-assessment"' in navigation
+    assert 'href: "/assessment?tier=mid#assessment"' in navigation
+    assert 'href: "/mid-assessment"' not in navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
     for legacy in (
         '{label: "Mid Review", href: "/mid-review"}',
         '{label: "Mid Report", href: "/mid-report"}',
@@ -30,12 +31,12 @@ def test_mid_primary_navigation_opens_one_workspace() -> None:
         assert legacy not in navigation
 
 
-def test_workspace_stage_sequence_and_existing_routes_are_preserved() -> None:
+def test_advanced_workspace_stage_sequence_and_existing_routes_are_preserved() -> None:
     context = CONTEXT.read_text(encoding="utf-8")
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
     ordered = [
-        ('key: "start"', '/?assessment=mid#assessment'),
+        ('key: "start"', '/assessment?tier=mid#assessment'),
         ('key: "review"', '/mid-review'),
         ('key: "report"', '/mid-report'),
         ('key: "approval"', '/mid-approval'),
@@ -48,7 +49,7 @@ def test_workspace_stage_sequence_and_existing_routes_are_preserved() -> None:
     assert positions == sorted(positions)
     assert "Start → Review → Report → Approval → Delivery" in context
     assert "Start → Review → Report → Approval → Delivery" in workspace
-    assert 'href="/?assessment=mid#assessment"' in workspace
+    assert 'href="/?assessment=mid#assessment"' in workspace or 'href="/assessment?tier=mid#assessment"' in workspace
 
 
 def test_workspace_admin_token_and_reviewer_are_memory_only() -> None:
@@ -92,7 +93,7 @@ def test_direct_mid_stage_pages_consume_shared_workspace_identity() -> None:
         assert "const [adminToken, setAdminToken]" not in source, stage
 
 
-def test_root_layout_keeps_provider_alive_across_mid_routes() -> None:
+def test_root_layout_keeps_provider_alive_for_advanced_mid_routes() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import {MidWorkspaceProvider} from "./MidWorkspaceContext";' in layout
@@ -100,6 +101,6 @@ def test_root_layout_keeps_provider_alive_across_mid_routes() -> None:
     children_index = layout.index("{children}", provider_start)
     provider_end = layout.index("</MidWorkspaceProvider>", children_index)
     assert provider_start < children_index < provider_end
-    assert 'href="/mid-assessment"' in layout
+    assert 'href="/assessment?tier=express#assessment"' in layout
     assert "does not create a client delivery link" in layout
     assert "Client downloads require acknowledgement" in layout
