@@ -2,6 +2,8 @@
 
 import {useMemo, useState} from "react";
 
+import {MidIdentityPanel, MidStageNavigation, useMidWorkspace} from "../MidWorkspaceContext";
+
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
 type Validation = {status?: string; ready_for_approval?: boolean; blockers?: string[]; exception_item_ids?: string[]; exception_item_count?: number};
@@ -82,11 +84,7 @@ function savePdf(blob: Blob, filename: string) {
 }
 
 export default function MidApprovalPage() {
-  const [runId, setRunId] = useState("");
-  const [customerId, setCustomerId] = useState("default_customer");
-  const [projectId, setProjectId] = useState("default_project");
-  const [adminToken, setAdminToken] = useState("");
-  const [actor, setActor] = useState("");
+  const {runId, customerId, projectId, adminToken, reviewer: actor} = useMidWorkspace();
   const [note, setNote] = useState("");
   const [approval, setApproval] = useState<Approval | null>(null);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null);
@@ -249,14 +247,12 @@ export default function MidApprovalPage() {
       <p className="lead">Record a decision for every current exception before approving the exact run, snapshot, truth model, draft PDF, and review packet.</p>
     </section>
 
+    <MidStageNavigation current="approval" />
+    <MidIdentityPanel title="Approve the selected Mid run" />
+
     <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Exact approval source</p><h2>Load or request approval</h2></div><span className={statusClass(approval?.status)}>{approval?.status || "not requested"}</span></div>
-      <div className="form-grid">
-        <label>Mid run ID<input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="midrun_..." /></label>
-        <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
-        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-        <label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
-      </div>
+      <p className="warning-box">Reviewer identity and the admin token are shared from the Mid workspace in live React memory. Approval still requires explicit item-level decisions and a final operator action.</p>
       <div className="report-actions">
         <button type="button" className="primary-button" disabled={!API_URL || !runId.trim() || !adminToken.trim() || loading} onClick={requestApproval}>{loading ? "Validating exact state..." : "Request Mid approval"}</button>
         <button type="button" disabled={!runId.trim() || !adminToken.trim() || loading} onClick={refreshApproval}>Refresh approval</button>
@@ -290,9 +286,7 @@ export default function MidApprovalPage() {
 
       <section className="section panel">
         <div className="section-head"><div><p className="eyebrow">Review by exception</p><h2>Decide each current item</h2></div><span className={structuredReviewReady ? "status green" : "status yellow"}>{reviewProgress}</span></div>
-        <div className="form-grid">
-          <label>Reviewer name or role<input value={actor} onChange={(event) => setActor(event.target.value)} /></label>
-        </div>
+        <p className="muted">Reviewer: {actor || "Enter a reviewer or operator in the shared identity panel."}</p>
         {allItems.map((item) => <article className="result-card" key={item.item_id}>
           <div className="section-head">
             <div><p className="eyebrow">{item.severity || "medium"} · {item.category || "review"}</p><h3>{item.title || item.item_id}</h3></div>
