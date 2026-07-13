@@ -11,6 +11,7 @@ import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
+import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture";
 
 export const metadata = {
   title: "NICO",
@@ -26,6 +27,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
           <OperationsPreloadGuard />
+          <UnifiedMidTokenCapture />
           <RetainerAutoEvidenceLauncher />
           <PrimaryNavigation />
           <div className="full-run-callout" role="status">
