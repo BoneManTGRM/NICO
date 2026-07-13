@@ -20,6 +20,11 @@ from nico.local_scan_service import (
 )
 from nico.local_store import LocalStore
 
+# Compatibility seam for callers and tests that patch the canonical store
+# constructor. This name now resolves to the extracted implementation rather
+# than the legacy nico.cli.Store class.
+Store = LocalStore
+
 
 CLI_COMMANDS = (
     "scan",
@@ -100,7 +105,7 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         print(json.dumps(memory_summary(), indent=2))
         return
     if args.cmd == "policy":
-        print(json.dumps(LocalStore(DB_PATH).policy(), indent=2))
+        print(json.dumps(Store(DB_PATH).policy(), indent=2))
         return
     if args.cmd == "scanner-availability":
         print(json.dumps(scanner_availability(), indent=2))
