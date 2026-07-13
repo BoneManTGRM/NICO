@@ -63,7 +63,8 @@ def complete_evidence() -> dict:
 def test_hosted_smoke_test_passes_with_all_evidence():
     result = build_hosted_smoke_test({"evidence": complete_evidence()})
 
-    assert result["artifact_schema"] == "nico.hosted_smoke_test.v2"
+    assert result["artifact_schema"] == "nico.hosted_smoke_test.v1"
+    assert result["contract_version"] == 2
     assert result["status"] == "passed_smoke_test"
     assert result["readiness_score"] == 100
     assert result["missing_evidence"] == []
