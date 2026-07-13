@@ -121,5 +121,7 @@ def test_workflow_is_manual_secret_bound_and_retains_artifact() -> None:
     assert "secrets.NICO_PRODUCTION_SMOKE_ADMIN_TOKEN" in source
     assert "vars.NICO_PRODUCTION_FRONTEND_URL" in source and "vars.NICO_PRODUCTION_BACKEND_URL" in source
     assert "vars.NICO_PRODUCTION_SMOKE_REPOSITORY" in source and "I_CONFIRM_AUTHORIZED_PRODUCTION_SMOKE" in source
+    assert '--customer-id "production_smoke_${GITHUB_RUN_ID}"' in source
+    assert '--project-id "production_smoke_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"' in source
     assert "actions/upload-artifact@v4" in source and "retention-days: 90" in source
     assert "admin_token" not in source.split("inputs:", 1)[1].split("permissions:", 1)[0].lower()
