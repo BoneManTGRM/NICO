@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 
-COMPANION = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "MidAssessmentCompanion.tsx"
-LAYOUT = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "layout.tsx"
+ROOT = Path(__file__).resolve().parents[1]
+COMPANION = ROOT / "apps" / "web" / "app" / "MidAssessmentCompanion.tsx"
+LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
 def _companion() -> str:
@@ -16,7 +17,8 @@ def test_companion_is_mounted_through_root_layout():
 
     assert 'import MidAssessmentCompanion from "./MidAssessmentCompanion"' in layout
     assert "<MidAssessmentCompanion />" in layout
-    assert "unified Express/Mid intake" in layout
+    assert 'href="/mid-assessment"' in layout
+    assert "Start, Review, Report, Approval, and controlled Delivery" in layout
 
 
 def test_companion_renders_only_on_command_center_after_mid_run_exists():
@@ -74,7 +76,7 @@ def test_optional_evidence_form_contains_all_supported_fields_and_guardrails():
     assert "It is not repository proof" in source
     assert "cannot change a score automatically" in source
     assert "requires human validation" in source
-    assert "referrerPolicy: \"no-referrer\"" in source
+    assert 'referrerPolicy: "no-referrer"' in source
 
 
 def test_truth_status_ui_collapses_verified_sections_and_expands_exceptions():
@@ -105,7 +107,7 @@ def test_optional_evidence_submission_updates_safe_state_without_rendering_token
 
     assert "/assessment/mid-run/${encodeURIComponent(runId)}/evidence" in source
     assert "JSON.stringify({token, ...fields})" in source
-    assert "data.status !== \"submitted\"" in source
+    assert 'data.status !== "submitted"' in source
     assert "optional_evidence: data.optional_evidence" in source
     rendered = source.split("return <div", 1)[1]
     assert "{token}" not in rendered
