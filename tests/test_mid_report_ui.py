@@ -3,22 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
-PAGE = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "mid-report" / "page.tsx"
-PRODUCTION = Path(__file__).resolve().parents[1] / "nico" / "api" / "production.py"
+ROOT = Path(__file__).resolve().parents[1]
+PAGE = ROOT / "apps" / "web" / "app" / "mid-report" / "page.tsx"
+CONTEXT = ROOT / "apps" / "web" / "app" / "MidWorkspaceContext.tsx"
+PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
 def _page() -> str:
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_mid_report_page_requires_exact_scope_and_admin_token():
+def test_mid_report_page_uses_shared_exact_scope_and_admin_token():
     source = _page()
+    context = CONTEXT.read_text(encoding="utf-8")
 
-    assert "Mid run ID" in source
-    assert "Customer ID" in source
-    assert "Project ID" in source
-    assert "NICO admin token" in source
-    assert 'type="password"' in source
+    for label in ("Mid run ID", "Customer ID", "Project ID", "NICO admin token"):
+        assert label in context
+    assert 'type="password"' in context
+    assert "useMidWorkspace" in source
+    assert "MidIdentityPanel" in source
+    assert 'MidStageNavigation current="report"' in source
     assert '"X-NICO-Admin-Token": adminToken' in source
     assert "customer_id: customerId.trim()" in source
     assert "project_id: projectId.trim()" in source

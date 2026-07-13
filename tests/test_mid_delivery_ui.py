@@ -3,30 +3,37 @@ from __future__ import annotations
 from pathlib import Path
 
 
-CLIENT = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "mid-delivery" / "page.tsx"
-ADMIN = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "mid-delivery-admin" / "page.tsx"
-LAYOUT = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "layout.tsx"
-PRODUCTION = Path(__file__).resolve().parents[1] / "nico" / "api" / "production.py"
+ROOT = Path(__file__).resolve().parents[1]
+CLIENT = ROOT / "apps" / "web" / "app" / "mid-delivery" / "page.tsx"
+ADMIN = ROOT / "apps" / "web" / "app" / "mid-delivery-admin" / "page.tsx"
+CONTEXT = ROOT / "apps" / "web" / "app" / "MidWorkspaceContext.tsx"
+LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
-def test_navigation_places_delivery_after_approval():
+def test_workspace_places_delivery_after_approval():
+    context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
-    assert '<a href="/mid-approval">Mid Approval</a>' in layout
-    assert '<a href="/mid-delivery-admin">Mid Delivery</a>' in layout
-    assert layout.index('href="/mid-approval"') < layout.index('href="/mid-delivery-admin"')
-    assert "expiring and download-limited link" in layout
+    assert 'path: "/mid-approval"' in context
+    assert 'path: "/mid-delivery-admin"' in context
+    assert context.index('path: "/mid-approval"') < context.index('path: "/mid-delivery-admin"')
+    assert 'href="/mid-assessment"' in layout
+    assert "controlled Delivery" in layout
     assert "Client downloads require acknowledgement" in layout
 
 
-def test_admin_page_requires_exact_scope_and_admin_identity():
+def test_admin_page_uses_shared_exact_scope_and_admin_identity():
     source = ADMIN.read_text(encoding="utf-8")
+    context = CONTEXT.read_text(encoding="utf-8")
 
-    assert "Mid run ID" in source
-    assert "Customer ID" in source
-    assert "Project ID" in source
-    assert "NICO admin token" in source
-    assert 'type="password"' in source
+    for label in ("Mid run ID", "Customer ID", "Project ID", "NICO admin token", "Reviewer or operator"):
+        assert label in context
+    assert 'type="password"' in context
+    assert "useMidWorkspace" in source
+    assert "MidIdentityPanel" in source
+    assert 'MidStageNavigation current="delivery"' in source
+    assert "reviewer: createdBy" in source
     assert "Recipient label" in source
     assert "Created by" in source
     assert '"X-NICO-Admin-Token": adminToken' in source

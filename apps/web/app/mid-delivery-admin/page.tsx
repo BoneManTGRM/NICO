@@ -2,6 +2,8 @@
 
 import {useState} from "react";
 
+import {MidIdentityPanel, MidStageNavigation, useMidWorkspace} from "../MidWorkspaceContext";
+
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
 type Access = {
@@ -40,12 +42,8 @@ function statusClass(value?: string) {
 }
 
 export default function MidDeliveryAdminPage() {
-  const [runId, setRunId] = useState("");
-  const [customerId, setCustomerId] = useState("default_customer");
-  const [projectId, setProjectId] = useState("default_project");
-  const [adminToken, setAdminToken] = useState("");
+  const {runId, customerId, projectId, adminToken, reviewer: createdBy} = useMidWorkspace();
   const [recipientLabel, setRecipientLabel] = useState("");
-  const [createdBy, setCreatedBy] = useState("");
   const [expiresInHours, setExpiresInHours] = useState(24);
   const [maxDownloads, setMaxDownloads] = useState(1);
   const [access, setAccess] = useState<Access[]>([]);
@@ -162,15 +160,15 @@ export default function MidDeliveryAdminPage() {
       <p className="lead">Create expiring, download-limited links only for the exact approved Mid artifact. Tokens are returned once and every completed download creates an integrity-bound receipt.</p>
     </section>
 
+    <MidStageNavigation current="delivery" />
+    <MidIdentityPanel title="Deliver the selected approved Mid run" />
+
     <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Admin scope</p><h2>Approved Mid run</h2></div><span className={access.length ? "status green" : "status gray"}>{access.length} grants</span></div>
+      <p className="warning-box">Delivery remains a separate explicit action after approval. The operator identity and admin token are shared from the Mid workspace in live React memory only.</p>
       <div className="form-grid">
-        <label>Mid run ID<input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="midrun_..." /></label>
-        <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
-        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-        <label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
         <label>Recipient label<input value={recipientLabel} onChange={(event) => setRecipientLabel(event.target.value)} placeholder="Client name or delivery purpose" /></label>
-        <label>Created by<input value={createdBy} onChange={(event) => setCreatedBy(event.target.value)} placeholder="Reviewer name or role" /></label>
+        <label>Created by<input readOnly value={createdBy} placeholder="Set reviewer or operator in the shared identity panel" /></label>
         <label>Expires in hours<input type="number" min={1} max={168} value={expiresInHours} onChange={(event) => setExpiresInHours(Number(event.target.value))} /></label>
         <label>Maximum downloads<input type="number" min={1} max={20} value={maxDownloads} onChange={(event) => setMaxDownloads(Number(event.target.value))} /></label>
       </div>
