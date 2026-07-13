@@ -113,6 +113,9 @@ def test_local_scan_service_preserves_pipeline_order_and_persistence_contract(
     calls: list[str] = []
 
     class FakeStore:
+        def __init__(self, path: Path) -> None:
+            assert path == service.DB_PATH
+
         def policy(self) -> dict[str, Any]:
             calls.append("policy")
             return {"allowed_actions": ["scan"]}
@@ -161,7 +164,7 @@ def test_local_scan_service_preserves_pipeline_order_and_persistence_contract(
     }
     repairs = [{"id": "repair_1", "finding_id": "finding_1", "rye_score": 72}]
 
-    monkeypatch.setattr(service, "Store", FakeStore)
+    monkeypatch.setattr(service, "LocalStore", FakeStore)
     monkeypatch.setattr(service, "decide_action", lambda action, policy: {"allowed": action == "scan", "reason": "allowed"})
     monkeypatch.setattr(service, "scan_repo", lambda target: calls.append(f"scan_repo:{target}") or dict(raw_scan))
     monkeypatch.setattr(service, "apply_rye", lambda findings, memory: calls.append("apply_rye") or list(enriched))
@@ -203,10 +206,13 @@ def test_local_scan_service_fails_closed_when_governance_blocks_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeStore:
+        def __init__(self, path: Path) -> None:
+            assert path == service.DB_PATH
+
         def policy(self) -> dict[str, Any]:
             return {"kill_switch": True}
 
-    monkeypatch.setattr(service, "Store", FakeStore)
+    monkeypatch.setattr(service, "LocalStore", FakeStore)
     monkeypatch.setattr(
         service,
         "decide_action",
