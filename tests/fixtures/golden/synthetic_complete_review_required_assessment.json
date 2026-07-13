@@ -1,0 +1,92 @@
+{
+  "fixture_version": 1,
+  "fixture_name": "synthetic_complete_review_required_assessment",
+  "evidence_kind": "synthetic",
+  "live_claim": false,
+  "authorization": {
+    "status": "fixture_only",
+    "scope": "synthetic_repository"
+  },
+  "identity": {
+    "run_id": "synthetic-run-complete-0001",
+    "scan_id": "synthetic-scan-complete-0001",
+    "report_id": "synthetic-report-complete-0001",
+    "repository": "example.invalid/nico-complete-fixture",
+    "commit_sha": "1111111111111111111111111111111111111111"
+  },
+  "requested_tools": [
+    "pip-audit",
+    "bandit",
+    "semgrep",
+    "gitleaks"
+  ],
+  "evidence": [
+    {
+      "source": "pip-audit",
+      "status": "complete",
+      "synthetic": true,
+      "run_id": "synthetic-run-complete-0001",
+      "scan_id": "synthetic-scan-complete-0001",
+      "snapshot_commit_sha": "1111111111111111111111111111111111111111",
+      "finding_count": 0,
+      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "source": "bandit",
+      "status": "complete",
+      "synthetic": true,
+      "run_id": "synthetic-run-complete-0001",
+      "scan_id": "synthetic-scan-complete-0001",
+      "snapshot_commit_sha": "1111111111111111111111111111111111111111",
+      "finding_count": 0,
+      "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "source": "semgrep",
+      "status": "complete",
+      "synthetic": true,
+      "run_id": "synthetic-run-complete-0001",
+      "scan_id": "synthetic-scan-complete-0001",
+      "snapshot_commit_sha": "1111111111111111111111111111111111111111",
+      "finding_count": 0,
+      "artifact_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "source": "gitleaks",
+      "status": "complete",
+      "synthetic": true,
+      "run_id": "synthetic-run-complete-0001",
+      "scan_id": "synthetic-scan-complete-0001",
+      "snapshot_commit_sha": "1111111111111111111111111111111111111111",
+      "finding_count": 0,
+      "artifact_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "score": {
+    "value": 92,
+    "status": "synthetic_fixture_score",
+    "source": "fixture_only",
+    "certification": false,
+    "reason": "The numeric value exists only to exercise a complete-evidence report path and is not a live score or certification."
+  },
+  "claims": {
+    "vulnerability_free": false,
+    "security_certified": false,
+    "production_ready": false,
+    "all_possible_evidence_collected": false
+  },
+  "review": {
+    "status": "required",
+    "approved": false,
+    "client_ready": false,
+    "reviewer": null
+  },
+  "repair": {
+    "automatic_production_change_allowed": false,
+    "status": "no_production_action"
+  },
+  "delivery": {
+    "status": "blocked",
+    "reason": "Complete synthetic evidence and a numeric fixture score do not replace explicit human approval."
+  }
+}
