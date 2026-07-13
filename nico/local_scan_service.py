@@ -5,7 +5,8 @@ import shutil
 from collections import Counter
 from typing import Any
 
-from nico.cli import Store, apply_rye, decide_action, generate_reports, repairs_for
+from nico.cli import Store, apply_rye, decide_action, repairs_for
+from nico.local_reporting_service import generate_reports
 from nico.local_runtime_config import DRIFT_REPO, SAMPLE_REPO, TEST_LAB
 from nico.local_scan_engine import (
     detect_drift,
