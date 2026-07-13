@@ -30,6 +30,23 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install --no-deps -e .
+
+    - name: Verify package entry points
+      run: |
+        nico --help
+        python - <<'PY'
+        from importlib.metadata import entry_points
+        from nico.api.production import app
+        from nico.api_runner import main as api_main
+
+        scripts = {item.name: item.value for item in entry_points(group="console_scripts")}
+        assert scripts.get("nico") == "nico.__main__:main"
+        assert scripts.get("nico-api") == "nico.api_runner:main"
+        assert app is not None
+        assert callable(api_main)
+        print("NICO package entry points and complete production API import verified.")
+        PY
 
     - name: Install frontend dependencies
       working-directory: apps/web
@@ -85,7 +102,9 @@ jobs:
         command -v trufflehog
 
     - name: Run Docker build check
-      run: docker build -t nico-ci:ci .
+      run: |
+        docker build -t nico-ci:ci .
+        docker run --rm --entrypoint sh nico-ci:ci -c 'test -w /data && command -v nico && command -v nico-api && python -c "from nico.api.production import app; assert app"'
 
     - name: Run file integrity regression test
       run: |
