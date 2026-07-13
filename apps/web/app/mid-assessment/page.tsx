@@ -123,7 +123,7 @@ export default function MidAssessmentWorkspacePage() {
         report: draftExists
           ? {state: "ready", summary: `Bound draft artifact: ${approval?.draft_report_id || approval?.approved_report?.report_id}`}
           : reviewReady
-          ? {state: "pending", summary: "Review packet is ready; generate the bound draft in the Report stage."}
+          ? {state: "pending", summary: "Review packet is ready; the automated draft should be verified in the Report stage."}
           : {state: "not_checked", summary: "Draft status cannot be inferred until review or approval evidence is available."},
         approval: approved
           ? {state: "approved", summary: `Approved artifact: ${approval?.approved_report?.report_id || "recorded"}`}
@@ -152,20 +152,20 @@ export default function MidAssessmentWorkspacePage() {
   return <main className="shell">
     <section className="hero">
       <p className="eyebrow">NICO Mid Assessment</p>
-      <h1>One guided workspace</h1>
-      <p className="lead">Keep one exact Mid run and move through Start, Review, Report, Approval, and Delivery without treating each guarded stage as a separate product.</p>
+      <h1>Advanced review workspace</h1>
+      <p className="lead">Normal Mid assessments start from the unified one-click intake. This compatibility workspace is for reviewing an existing exact run through Review, Report verification, Approval, and Delivery.</p>
       <div className="hero-actions">
-        <Link className="primary-link" href="/?assessment=mid#assessment">Start a new Mid assessment</Link>
+        <Link className="primary-link" href="/assessment?tier=mid#assessment">Start a new Mid assessment</Link>
         <button type="button" disabled={!API_URL || !identityReady || !adminToken.trim() || loading} onClick={refreshStatus}>{loading ? "Checking exact state..." : "Refresh workspace status"}</button>
       </div>
       {message ? <p className="summary-box">{message}</p> : null}
     </section>
 
-    <MidIdentityPanel title="Select one Mid run for every stage" />
+    <MidIdentityPanel title="Select one Mid run for every advanced stage" />
 
     <section className="section panel">
       <div className="section-head">
-        <div><p className="eyebrow">Guided workflow</p><h2>Start → Review → Report → Approval → Delivery</h2></div>
+        <div><p className="eyebrow">Guarded workflow</p><h2>Start → Review → Report → Approval → Delivery</h2></div>
         <span className={identityReady ? "status green" : "status gray"}>{identityReady ? "identity bound" : "run required"}</span>
       </div>
       <div className="mid-workspace-grid">
@@ -177,7 +177,7 @@ export default function MidAssessmentWorkspacePage() {
             <p>{stage.description}</p>
             <p className="muted">{stageStatus.summary}</p>
             {stageStatus.evidence?.length ? <ul className="tight-list">{stageStatus.evidence.map((item) => <li key={item}>{item}</li>)}</ul> : null}
-            <Link className="secondary-link" href={href}>{stage.key === "start" ? "Open Mid intake" : `Open ${stageMap.get(stage.key)?.label || stage.label}`}</Link>
+            <Link className="secondary-link" href={href}>{stage.key === "start" ? "Open unified Mid intake" : `Open ${stageMap.get(stage.key)?.label || stage.label}`}</Link>
           </article>;
         })}
       </div>
@@ -186,8 +186,8 @@ export default function MidAssessmentWorkspacePage() {
     <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Control boundary</p><h2>Passive refresh is read-only</h2></div><span className="status blue">Human controlled</span></div>
       <ul className="tight-list">
-        <li>Status refresh uses only existing review, approval-status, grant-list, and receipt-list GET endpoints.</li>
-        <li>Draft generation happens only in Report after an explicit operator action.</li>
+        <li>The unified Mid intake automatically performs evidence collection, scanner continuation, draft generation, and review-request creation.</li>
+        <li>This workspace status refresh uses only existing review, approval-status, grant-list, and receipt-list GET endpoints.</li>
         <li>Item dispositions and final approval happen only in Approval.</li>
         <li>Private delivery access happens only in Delivery after approval.</li>
         <li>The admin token remains in memory and is never added to links or browser storage.</li>
