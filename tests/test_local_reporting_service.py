@@ -226,8 +226,6 @@ def test_canonical_reporting_no_longer_sources_functions_from_cli_monolith() -> 
 
     assert "from nico.local_reporting_service import generate_reports, report_text" in entrypoint_source
     assert "from nico.local_reporting_service import generate_reports" in scan_source
-    entrypoint_cli_block = entrypoint_source.split("from nico.cli import (", 1)[1].split(")", 1)[0]
+    assert "from nico.cli import" not in entrypoint_source
     scan_cli_import = next(line for line in scan_source.splitlines() if line.startswith("from nico.cli import"))
-    assert "generate_reports" not in entrypoint_cli_block
-    assert "report_text" not in entrypoint_cli_block
     assert "generate_reports" not in scan_cli_import
