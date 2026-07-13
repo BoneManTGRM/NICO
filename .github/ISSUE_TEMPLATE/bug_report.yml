@@ -1,0 +1,75 @@
+name: Bug or evidence-integrity report
+description: Report a reproducible defect without exposing secrets or private client data.
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this public form for credentials, private data, authorization bypasses, live deployment vulnerabilities, or practical exploit details. Follow SECURITY.md for private reporting.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I used an owned, explicitly authorized, or synthetic target.
+          required: true
+        - label: I removed credentials, tokens, private client data, and raw secret evidence.
+          required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or deployment identity
+      description: Exact commit SHA or clearly identified local version.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Express assessment
+        - Mid assessment
+        - Full assessment
+        - Scanner worker
+        - Scoring or repairs
+        - Reports
+        - Review or approval
+        - Delivery or receipts
+        - Operations or readiness
+        - Persistence or recovery
+        - CLI or local development
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: Include safe error text, state, and correlation ID where available.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction
+      description: Use synthetic or explicitly authorized evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: identities
+    attributes:
+      label: Relevant identities
+      description: Run ID, scan ID, report ID, route, frontend/backend commit, and storage adapter. Do not include tokens.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Explain whether this creates false passing evidence, missing evidence, duplicate work, data exposure, incorrect scoring, or deployment failure.
