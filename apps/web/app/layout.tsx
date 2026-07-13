@@ -1,6 +1,7 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
+import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
@@ -21,6 +22,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <MidWorkspaceProvider>
+          <AssessmentHomeRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
           <OperationsPreloadGuard />
