@@ -8,6 +8,7 @@ PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
 STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment.module.css"
 NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 OPERATIONS_GUARD = ROOT / "apps" / "web" / "app" / "OperationsPreloadGuard.tsx"
+FULL_RUN_REDIRECT = ROOT / "apps" / "web" / "app" / "LegacyFullRunRedirect.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
@@ -128,6 +129,17 @@ def test_primary_navigation_routes_all_tiers_to_unified_intake() -> None:
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
     assert 'href: "/mid-assessment"' not in primary
     assert 'href: "/full-run"' not in primary
+
+
+def test_legacy_full_run_route_defaults_to_unified_full_intake() -> None:
+    redirect = FULL_RUN_REDIRECT.read_text(encoding="utf-8")
+    layout = LAYOUT.read_text(encoding="utf-8")
+
+    assert 'pathname !== "/full-run"' in redirect
+    assert 'params.get("legacy") === "1"' in redirect
+    assert 'params.get("review") === "1"' in redirect
+    assert 'window.location.replace("/assessment?tier=full#assessment")' in redirect
+    assert "<LegacyFullRunRedirect />" in layout
 
 
 def test_operations_preload_guard_hides_failure_colored_placeholders_until_loaded() -> None:

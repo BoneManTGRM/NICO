@@ -4,6 +4,7 @@ import "../styles/navigation.css";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
+import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
 import MidEvidencePacketHelper from "./MidEvidencePacketHelper";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
@@ -24,6 +25,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
       <body>
         <MidWorkspaceProvider>
           <AssessmentHomeRedirect />
+          <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
           <OperationsPreloadGuard />
