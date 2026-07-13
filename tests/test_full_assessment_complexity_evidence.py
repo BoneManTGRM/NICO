@@ -65,7 +65,14 @@ export function choose(value: number) {
     assert result["duplicate_evidence"]["duplicate_line_ratio"] > 0
     assert result["duplicate_evidence"]["samples"]
     assert all("tests/test_alpha.py" not in str(item) for item in result["hotspots"])
-    assert any("bounded lexical heuristic" in note for note in result["unavailable_data_notes"])
+    assert any(
+        "bounded lexical heuristic" in note or "bounded function-level lexical extraction" in note
+        for note in result["unavailable_data_notes"]
+    )
+    assert result["analyzer_version"] in {
+        "nico-bounded-complexity-v1",
+        "nico-bounded-complexity-v2",
+    }
     assert "source contents are not stored" in result["retention_note"]
     assert result["human_review_required"] is True
 
