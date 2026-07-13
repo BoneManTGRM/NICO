@@ -1,0 +1,51 @@
+{
+  "fixture_version": 1,
+  "fixture_name": "synthetic_unavailable_assessment",
+  "evidence_kind": "synthetic",
+  "live_claim": false,
+  "authorization": {
+    "status": "fixture_only",
+    "scope": "synthetic_repository"
+  },
+  "identity": {
+    "run_id": "synthetic-run-0001",
+    "scan_id": "synthetic-scan-0001",
+    "report_id": "synthetic-report-0001",
+    "repository": "example.invalid/nico-fixture",
+    "commit_sha": "0000000000000000000000000000000000000000"
+  },
+  "evidence": [
+    {
+      "source": "built_in_fixture",
+      "status": "complete",
+      "synthetic": true,
+      "finding_count": 0
+    },
+    {
+      "source": "semgrep",
+      "status": "unavailable",
+      "synthetic": true,
+      "reason": "scanner binary intentionally absent from the fixture environment"
+    },
+    {
+      "source": "bandit",
+      "status": "unavailable",
+      "synthetic": true,
+      "reason": "scanner binary intentionally absent from the fixture environment"
+    }
+  ],
+  "score": {
+    "value": null,
+    "status": "insufficient_evidence",
+    "reason": "unavailable scanner evidence is not treated as passing evidence"
+  },
+  "review": {
+    "status": "required",
+    "approved": false,
+    "client_ready": false
+  },
+  "delivery": {
+    "status": "blocked",
+    "reason": "synthetic fixture and unapproved report"
+  }
+}
