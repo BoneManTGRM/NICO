@@ -71,7 +71,10 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
         NICO_SCANNER_INSTALL_DIR: ${{ runner.temp }}/nico-scanners
         NICO_SCANNER_INSTALL_STRICT: "true"
-      run: python scripts/install_hosted_scanner_binaries.py
+      run: |
+        mkdir -p "$NICO_SCANNER_INSTALL_DIR"
+        export PATH="$NICO_SCANNER_INSTALL_DIR:$PATH"
+        python scripts/install_hosted_scanner_binaries.py
 
     - name: Run Python dependency audit evidence
       run: |
