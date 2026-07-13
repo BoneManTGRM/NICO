@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "deployed_assessment_
 SPEC = importlib.util.spec_from_file_location("deployed_assessment_smoke", SCRIPT)
 assert SPEC and SPEC.loader
 smoke = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = smoke
 SPEC.loader.exec_module(smoke)
 
 
