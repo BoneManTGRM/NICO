@@ -1,0 +1,95 @@
+name: Production Assessment Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: Public HTTPS origin for the deployed NICO API, without a path
+        required: true
+        type: string
+      frontend_url:
+        description: Optional public HTTPS origin for the deployed NICO frontend
+        required: false
+        default: ""
+        type: string
+      repository:
+        description: Explicitly authorized owner/repository target
+        required: true
+        default: BoneManTGRM/NICO
+        type: string
+      tiers:
+        description: Comma-separated tiers to prove
+        required: true
+        default: express,mid,full
+        type: string
+      confirm_authorized:
+        description: Confirm you own or are explicitly authorized to assess this repository
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-assessment-smoke
+  cancel-in-progress: false
+
+jobs:
+  authorized-production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Verify explicit authorization
+        env:
+          CONFIRM_AUTHORIZED: ${{ inputs.confirm_authorized }}
+        run: |
+          if [ "$CONFIRM_AUTHORIZED" != "true" ]; then
+            echo "Explicit repository authorization confirmation is required."
+            exit 1
+          fi
+
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run one exact production assessment per selected tier
+        env:
+          NICO_SMOKE_API_URL: ${{ inputs.api_url }}
+          NICO_SMOKE_FRONTEND_URL: ${{ inputs.frontend_url }}
+          NICO_SMOKE_REPOSITORY: ${{ inputs.repository }}
+          NICO_SMOKE_TIERS: ${{ inputs.tiers }}
+          NICO_SMOKE_CUSTOMER_ID: production_smoke_${{ github.run_id }}
+          NICO_SMOKE_PROJECT_ID: production_smoke_${{ github.run_attempt }}
+        run: |
+          args=(
+            --api-url "$NICO_SMOKE_API_URL"
+            --repository "$NICO_SMOKE_REPOSITORY"
+            --tiers "$NICO_SMOKE_TIERS"
+            --customer-id "$NICO_SMOKE_CUSTOMER_ID"
+            --project-id "$NICO_SMOKE_PROJECT_ID"
+            --authorized-by "github_actions:${{ github.actor }}"
+            --authorization-scope "manual authorized production assessment smoke run ${{ github.run_id }}"
+            --request-timeout-seconds 60
+            --poll-interval-seconds 10
+            --max-polls 60
+            --output audit-results/production-assessment-smoke.json
+            --confirm-authorized
+          )
+          if [ -n "$NICO_SMOKE_FRONTEND_URL" ]; then
+            args+=(--frontend-url "$NICO_SMOKE_FRONTEND_URL")
+          fi
+          python scripts/production_assessment_smoke.py "${args[@]}"
+
+      - name: Upload exact-run smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-assessment-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: audit-results/production-assessment-smoke.json
+          if-no-files-found: error
+          retention-days: 30
