@@ -290,6 +290,17 @@ def request_client_acceptance(payload: dict[str, Any]) -> dict[str, Any]:
     except ValueError as exc:
         return {"status": "blocked", "error": str(exc), "approval_id": approval_id}
 
+    if (
+        str(approval.get("requested_action") or "") != CLIENT_ACCEPTANCE_ACTION
+        or str(approval.get("customer_id") or "") != customer_id
+        or str(approval.get("project_id") or "") != project_id
+    ):
+        return {
+            "status": "blocked",
+            "error": "The deterministic client-acceptance identity conflicts with another approval scope or action.",
+            "approval_id": approval_id,
+        }
+
     reused = bool(approval.get("idempotent_reuse"))
     approval["run_id"] = run_id
     approval["client_acceptance_snapshot"] = gate
@@ -324,7 +335,8 @@ def transition_client_acceptance(approval_id: str, state: str, actor: str = "hum
     item = STORE.get("approvals", approval_id)
     if not item:
         return {"status": "not_found", "approval_id": approval_id}
-    if item.get("requested_action") not in CLIENT_ACCEPTANCE_ACTIONS:
+    requested_action = str(item.get("requested_action") or "")
+    if requested_action not in CLIENT_ACCEPTANCE_ACTIONS:
         return {"status": "blocked", "error": "approval is not a client acceptance or final review signoff", "approval_id": approval_id}
 
     actor_name = " ".join(str(actor or "").split())[:160]
@@ -335,6 +347,25 @@ def transition_client_acceptance(approval_id: str, state: str, actor: str = "hum
         return {"status": "blocked", "error": "A review note is required when requesting more evidence or rejecting delivery.", "approval_id": approval_id}
 
     current = str(item.get("status") or "pending")
+    if requested_action == FINAL_REVIEW_ACTION:
+        if current in CLIENT_ACCEPTANCE_TERMINAL_STATES and current == normalized:
+            run_id = str(item.get("run_id") or "")
+            return {
+                "status": "ok",
+                "approval": item,
+                "acceptance": client_acceptance_status(
+                    run_id,
+                    item.get("customer_id") or "default_customer",
+                    item.get("project_id") or "default_project",
+                ) if run_id else {},
+                "idempotent_reuse": True,
+            }
+        return {
+            "status": "blocked",
+            "error": "Final report approvals must be decided through the final-review workflow so report validation and approved-artifact generation cannot be bypassed.",
+            "approval_id": approval_id,
+        }
+
     if current in CLIENT_ACCEPTANCE_TERMINAL_STATES:
         if current == normalized:
             run_id = str(item.get("run_id") or "")
