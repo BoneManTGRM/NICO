@@ -22,7 +22,8 @@ def test_workspace_exposes_mid_approval_after_review_and_report():
     assert 'path: "/mid-report"' in context
     assert 'path: "/mid-approval"' in context
     assert context.index('path: "/mid-review"') < context.index('path: "/mid-report"') < context.index('path: "/mid-approval"')
-    assert 'href="/mid-assessment"' in layout
+    assert 'href="/assessment?tier=express#assessment"' in layout
+    assert "stop at required human review" in layout
     assert "Approval creates a separate approved artifact but does not create a client delivery link" in layout
 
 
