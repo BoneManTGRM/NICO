@@ -234,8 +234,4 @@ def test_canonical_cli_scan_commands_import_the_extracted_service() -> None:
     assert "scan_drift_demo," in source
     assert "scan_test_lab," in source
     assert "scanner_availability," in source
-    legacy_import = source.split("from nico.cli import (", 1)[1].split(")", 1)[0]
-    assert "run_scan" not in legacy_import
-    assert "scan_drift_demo" not in legacy_import
-    assert "scan_test_lab" not in legacy_import
-    assert "scanner_availability" not in legacy_import
+    assert "from nico.cli import" not in source
