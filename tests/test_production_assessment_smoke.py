@@ -80,6 +80,29 @@ def test_changed_continuation_identity_fails_closed(tmp_path: Path) -> None:
     assert result["polled_single_exact_status_url"] is False
 
 
+def test_completed_payload_with_blocked_progress_fails_closed(tmp_path: Path) -> None:
+    response = (
+        200,
+        {
+            "status": "complete",
+            "assessment_id": "express_1",
+            "reports": {"report_id": "report_1"},
+            "human_review_required": True,
+            "client_ready": False,
+            "progress": [
+                {
+                    "step": "scanner_worker",
+                    "status": "unavailable",
+                    "message": "Scanner evidence unavailable.",
+                }
+            ],
+        },
+    )
+    result = smoke.run_tier("express", config(tmp_path), transport=lambda *_: response, sleep=lambda _: None)
+    assert result["status"] == "failed"
+    assert result["unavailable_or_failed_evidence"] == ["Scanner evidence unavailable."]
+
+
 def test_artifact_never_serializes_credentials(tmp_path: Path) -> None:
     cfg = config(tmp_path)
     tiers = [{"tier": tier, "status": "passed", "start_count": 1, "run_id": f"{tier}_run", "polled_single_exact_status_url": True, "human_review_required": True, "client_ready": False} for tier in ("express", "mid", "full")]
