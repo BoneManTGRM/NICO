@@ -32,7 +32,7 @@ scanners = [
 
 [project.scripts]
 nico = "nico.__main__:main"
-nico-api = "run_local:main"
+nico-api = "nico.api_runner:main"
 
 [tool.setuptools.packages.find]
 include = ["nico*"]
