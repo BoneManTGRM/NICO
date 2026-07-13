@@ -45,6 +45,7 @@ const ADVANCED_GROUPS = [
     label: "Operations and diagnostics",
     links: [
       {label: "Recovery", href: "/operations/recovery"},
+      {label: "Backup & Restore", href: "/operations/backup-restore"},
       {label: "Scanner to Express", href: "/scanner-workflow"},
       {label: "Refresh Evidence", href: "/refresh-full-evidence"},
     ],

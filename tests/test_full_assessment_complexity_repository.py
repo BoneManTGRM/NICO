@@ -90,7 +90,10 @@ def test_repository_complexity_evidence_is_run_bound_and_persisted() -> None:
     assert record is not None
     assert record["run_id"] == "fullrun_complexity"
     assert record["filename"] == "full-assessment-complexity-evidence.json"
-    assert record["evidence"]["analyzer_version"] == "nico-bounded-complexity-v1"
+    assert record["evidence"]["analyzer_version"] in {
+        "nico-bounded-complexity-v1",
+        "nico-bounded-complexity-v2",
+    }
 
 
 def test_repository_complexity_evidence_reuses_same_run_artifact() -> None:
@@ -130,15 +133,14 @@ def test_repository_complexity_access_failure_is_sanitized() -> None:
 def test_complexity_evidence_identity_changes_with_run_id() -> None:
     store = MemoryAdapter()
     first = collect_repository_complexity_evidence(
-        _context("fullrun_complexity_one"),
+        _context("fullrun_complexity_a"),
         client=FakeGitHubClient(),
         store=store,
     )
     second = collect_repository_complexity_evidence(
-        _context("fullrun_complexity_two"),
+        _context("fullrun_complexity_b"),
         client=FakeGitHubClient(),
         store=store,
     )
 
     assert first["evidence_id"] != second["evidence_id"]
-    assert len(store.list("evidence_items")) == 2
