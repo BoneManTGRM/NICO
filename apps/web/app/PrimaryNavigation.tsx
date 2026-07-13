@@ -113,7 +113,7 @@ export default function PrimaryNavigation() {
   return (
     <nav className="global-nav" aria-label="NICO primary navigation">
       <div className="global-nav-inner">
-        <a className="global-brand" href="/" aria-label="NICO home">NICO</a>
+        <a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>
 
         <div className="primary-service-links" data-primary-service-count="5">
           {PRIMARY_SERVICES.map((service) => {
