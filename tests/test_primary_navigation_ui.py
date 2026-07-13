@@ -47,6 +47,7 @@ def test_mid_workflow_steps_are_removed_from_global_more_menu() -> None:
     assert "Advanced tools" in source
     for label, href in {
         "Recovery": "/operations/recovery",
+        "Backup & Restore": "/operations/backup-restore",
         "Scanner to Express": "/scanner-workflow",
         "Refresh Evidence": "/refresh-full-evidence",
         "Easy Mode": "/easy",
