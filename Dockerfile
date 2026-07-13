@@ -26,7 +26,9 @@ RUN apt-get update \
         tar \
         unzip \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin nico
+    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin nico \
+    && mkdir -p /data/reports \
+    && chown -R nico:nico /data
 
 RUN npm install -g eslint typescript --no-audit --no-fund
 
@@ -38,8 +40,9 @@ RUN python -m pip install --upgrade pip \
     && python scripts/install_hosted_scanner_binaries.py
 
 COPY . .
-RUN if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --ignore-scripts --no-audit --no-fund; fi \
-    && chown -R nico:nico /app
+RUN python -m pip install --no-cache-dir --no-deps . \
+    && if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --ignore-scripts --no-audit --no-fund; fi \
+    && chown -R nico:nico /app /data
 
 USER nico
 
