@@ -85,7 +85,7 @@ export function MidWorkspaceProvider({children}: {children: ReactNode}) {
   }, [pathname, runId, setRunId]);
 
   useEffect(() => {
-    if (pathname !== "/") return;
+    if (pathname !== "/" && pathname !== "/assessment") return;
     const synchronizeActiveRun = () => {
       const retained = safeSessionRunId();
       if (retained && retained !== runId) setRunIdState(retained);
@@ -170,7 +170,7 @@ export function MidIdentityPanel({title = "Exact Mid workspace identity"}: {titl
 }
 
 const STAGES: Array<{key: MidStage; label: string; description: string; path: string}> = [
-  {key: "start", label: "1. Start", description: "Create or continue the exact Mid run.", path: "/?assessment=mid#assessment"},
+  {key: "start", label: "1. Start", description: "Create or continue the exact Mid run.", path: "/assessment?tier=mid#assessment"},
   {key: "review", label: "2. Review", description: "Inspect exceptions and missing evidence.", path: "/mid-review"},
   {key: "report", label: "3. Report", description: "Generate the bound draft artifact.", path: "/mid-report"},
   {key: "approval", label: "4. Approval", description: "Record item decisions and approve exact state.", path: "/mid-approval"},
