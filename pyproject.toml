@@ -5,8 +5,37 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nico-cyber-defense"
 version = "0.1.0"
-description = "NICO local-first defensive cybersecurity platform"
+description = "NICO local-first, repair-first defensive cybersecurity platform"
+readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.139,<0.140",
+  "uvicorn>=0.50,<0.51",
+  "pydantic>=2.13,<3",
+  "httpx>=0.28,<0.29",
+  "requests>=2.34,<3",
+  "reportlab>=5,<6",
+  "python-multipart>=0.0.32,<0.1",
+  "psycopg>=3.3.4,<4",
+  "PyJWT[crypto]>=2.13,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1,<10",
+]
+scanners = [
+  "pip-audit>=2.10,<3",
+  "bandit>=1.9,<2",
+  "semgrep>=1.168,<2",
+]
+
+[project.scripts]
+nico = "nico.__main__:main"
+nico-api = "run_local:main"
+
+[tool.setuptools.packages.find]
+include = ["nico*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
