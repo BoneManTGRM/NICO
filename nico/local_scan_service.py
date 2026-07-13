@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import shutil
 from collections import Counter
-from pathlib import Path
 from typing import Any
 
 from nico.cli import Store, apply_rye, decide_action, generate_reports, repairs_for
+from nico.local_runtime_config import DRIFT_REPO, SAMPLE_REPO, TEST_LAB
 from nico.local_scan_engine import (
     detect_drift,
     make_baseline,
@@ -15,12 +15,6 @@ from nico.local_scan_engine import (
     scan_repo,
     scanner_availability,
 )
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TEST_LAB = PROJECT_ROOT / "nico" / "test_lab"
-SAMPLE_REPO = TEST_LAB / "sample_repo"
-DRIFT_REPO = TEST_LAB / "drift_workspace"
 
 
 def ensure_test_lab() -> None:
