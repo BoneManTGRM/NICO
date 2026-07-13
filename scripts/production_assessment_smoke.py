@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 CONFIRMATION = "I_CONFIRM_AUTHORIZED_PRODUCTION_SMOKE"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-FAILURES = {"blocked", "failed", "error", "rejected", "timed_out", "timeout"}
+FAILURES = {"blocked", "failed", "error", "rejected", "timed_out", "timeout", "unavailable", "not_found"}
 FULL_TOOLS = ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog"]
 Transport = Callable[[str, str, dict[str, Any] | None, dict[str, str], float], tuple[int, Any]]
 
@@ -80,8 +80,9 @@ def request_json(method: str, url: str, payload: dict[str, Any] | None, headers:
             status, raw = response.status, response.read(2_000_000)
     except HTTPError as exc:
         status, raw = exc.code, exc.read(2_000_000)
-    except URLError as exc:
-        return 0, {"status": "unavailable", "error_type": type(exc.reason).__name__}
+    except (URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        return 0, {"status": "unavailable", "error_type": type(reason).__name__}
     try:
         return int(status), json.loads(raw.decode()) if raw else {}
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -126,9 +127,21 @@ def progress(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in payload.get("progress") or [] if isinstance(item, dict)]
 
 
+def failed(payload: dict[str, Any]) -> bool:
+    observed = {
+        str(payload.get("status") or "").lower(),
+        str(payload.get("report_generation_status") or "").lower(),
+        str(payload.get("approval_request_status") or "").lower(),
+        str(nested(payload, "approval_request").get("status") or "").lower(),
+        str(nested(payload, "approval").get("status") or "").lower(),
+        *{str(item.get("status") or "").lower() for item in progress(payload)},
+    }
+    return bool(observed & FAILURES)
+
+
 def terminal(tier: str, payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "").lower()
-    if status in FAILURES or {str(item.get("status") or "").lower() for item in progress(payload)} & FAILURES:
+    if failed(payload):
         return True
     if tier == "express":
         return bool(payload)
@@ -210,7 +223,7 @@ def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_j
     rid, vid = report_id(current), review_id(current)
     human, client = explicit_bool(current, "human_review_required"), explicit_bool(current, "client_ready")
     identities = bool(rid) and (tier == "express" or bool(vid))
-    passed = 200 <= start_status < 300 and terminal(tier, current) and identities and human is True and client is False and (tier == "express" or exact)
+    passed = 200 <= start_status < 300 and terminal(tier, current) and not failed(current) and identities and human is True and client is False and (tier == "express" or exact)
     return {
         "tier": tier, "status": "passed" if passed else "failed", "assessment_terminal_status": str(current.get("status") or "unknown"),
         "start_count": 1, "start_http_status": start_status, "started_at": started, "finished_at": now(),
