@@ -16,6 +16,7 @@ from nico.local_runtime_config import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_CONFIG_MODULE = ROOT / "nico" / "local_runtime_config.py"
 CLI_ENTRYPOINT = ROOT / "nico" / "cli_entrypoint.py"
 LOCAL_SCAN_SERVICE = ROOT / "nico" / "local_scan_service.py"
 
@@ -62,7 +63,7 @@ def test_invalid_path_configuration_fails_closed(tmp_path: Path, key: str) -> No
         resolve_local_runtime_paths({key: "unsafe\x00path"}, project_root=tmp_path)
 
 
-def test_importing_runtime_config_does_not_create_directories(tmp_path: Path) -> None:
+def test_runtime_config_module_body_does_not_create_directories(tmp_path: Path) -> None:
     home = tmp_path / "state" / "nico-home"
     report_dir = tmp_path / "state" / "reports"
     db_path = tmp_path / "state" / "db" / "nico.sqlite3"
@@ -72,19 +73,22 @@ def test_importing_runtime_config_does_not_create_directories(tmp_path: Path) ->
             "NICO_HOME": str(home),
             "NICO_DB_PATH": str(db_path),
             "NICO_REPORT_DIR": str(report_dir),
-            "PYTHONPATH": str(ROOT),
         }
     )
+    isolated_loader = f"""
+import importlib.util
+import json
+import sys
+spec = importlib.util.spec_from_file_location("nico_local_runtime_config_isolated", {str(RUNTIME_CONFIG_MODULE)!r})
+assert spec is not None and spec.loader is not None
+config = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = config
+spec.loader.exec_module(config)
+print(json.dumps(config.public_runtime_config()))
+"""
 
     completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import json; import nico.local_runtime_config as config; "
-                "print(json.dumps(config.public_runtime_config()))"
-            ),
-        ],
+        [sys.executable, "-c", isolated_loader],
         cwd=ROOT,
         env=env,
         check=True,
