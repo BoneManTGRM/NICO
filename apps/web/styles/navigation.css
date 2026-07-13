@@ -127,7 +127,7 @@
   position: absolute;
   top: calc(100% + 12px);
   right: 0;
-  width: min(680px, calc(100vw - 24px));
+  width: min(520px, calc(100vw - 24px));
   padding: 18px;
   border: 1px solid #334155;
   border-radius: 22px;
@@ -156,7 +156,7 @@
 
 .nav-more-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-top: 14px;
 }
@@ -195,6 +195,71 @@
   outline: none;
 }
 
+.mid-stage-links,
+.mid-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mid-stage-link {
+  display: flex;
+  min-width: 0;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px solid #334155;
+  border-radius: 18px;
+  background: #0b1324;
+  color: #dbeafe;
+  text-decoration: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mid-stage-link b {
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.mid-stage-link span,
+.mid-stage-link small {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mid-stage-link small {
+  margin-top: auto;
+  color: #fbbf24;
+}
+
+.mid-stage-link:hover,
+.mid-stage-link:focus-visible,
+.mid-stage-link.active {
+  border-color: #38bdf8;
+  background: #082f49;
+  outline: none;
+}
+
+.mid-stage-link:focus-visible {
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+.mid-workspace-stage {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+}
+
+.mid-workspace-stage .secondary-link {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+.mid-identity-panel input[type="password"] {
+  letter-spacing: 0.08em;
+}
+
 @media (max-width: 1120px) {
   .primary-service-label {
     display: none;
@@ -202,6 +267,11 @@
 
   .primary-service-short-label {
     display: inline;
+  }
+
+  .mid-stage-links,
+  .mid-workspace-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -238,6 +308,20 @@
   .nav-more {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  .mid-stage-links,
+  .mid-workspace-grid {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-bottom: 4px;
+  }
+
+  .mid-stage-link,
+  .mid-workspace-stage {
+    flex: 0 0 min(82vw, 320px);
   }
 }
 
@@ -276,5 +360,11 @@
 
   .nav-more-group a {
     padding: 11px 10px;
+  }
+
+  .mid-stage-shell .section-head,
+  .mid-identity-panel .section-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
