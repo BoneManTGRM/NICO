@@ -23,7 +23,6 @@ def install_full_scanner_recovery() -> None:
         return
 
     from nico import full_assessment_orchestrator as orchestrator
-    from nico.scanner_worker import start_scan
 
     original = orchestrator._scanner_worker_handler
 
@@ -39,6 +38,8 @@ def install_full_scanner_recovery() -> None:
         )
         if not missing_requested_scan or not context.get("run_scanners"):
             return result
+
+        from nico.scanner_worker import start_scan
 
         replacement = start_scan(
             {
