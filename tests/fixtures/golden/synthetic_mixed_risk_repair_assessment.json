@@ -1,0 +1,129 @@
+{
+  "fixture_version": 1,
+  "fixture_name": "synthetic_mixed_risk_repair_assessment",
+  "evidence_kind": "synthetic",
+  "live_claim": false,
+  "authorization": {
+    "status": "fixture_only",
+    "scope": "synthetic_repository"
+  },
+  "identity": {
+    "run_id": "synthetic-run-mixed-0001",
+    "scan_id": "synthetic-scan-mixed-0001",
+    "report_id": "synthetic-report-mixed-0001",
+    "repository": "example.invalid/nico-mixed-fixture",
+    "commit_sha": "2222222222222222222222222222222222222222"
+  },
+  "evidence": [
+    {
+      "source": "gitleaks",
+      "status": "complete",
+      "synthetic": true,
+      "snapshot_commit_sha": "2222222222222222222222222222222222222222",
+      "finding_ids": [
+        "synthetic-finding-secret-0001"
+      ],
+      "artifact_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "source": "pip-audit",
+      "status": "complete",
+      "synthetic": true,
+      "snapshot_commit_sha": "2222222222222222222222222222222222222222",
+      "finding_ids": [
+        "synthetic-finding-dependency-0001"
+      ],
+      "artifact_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "source": "semgrep",
+      "status": "failed",
+      "synthetic": true,
+      "snapshot_commit_sha": "2222222222222222222222222222222222222222",
+      "reason": "synthetic parser failure used to prove failed evidence receives no passing credit"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "synthetic-finding-secret-0001",
+      "title": "Synthetic credential-shaped test string",
+      "severity": "high",
+      "confidence": "high",
+      "status": "evidence_bound",
+      "source": "gitleaks",
+      "affected_files": [
+        "fixtures/example-secret.txt"
+      ],
+      "production_secret_confirmed": false,
+      "exploitability_confirmed": false,
+      "reason": "The fixture models detection and review routing without claiming a real credential or exploit."
+    },
+    {
+      "finding_id": "synthetic-finding-dependency-0001",
+      "title": "Synthetic outdated dependency advisory",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "evidence_bound",
+      "source": "pip-audit",
+      "affected_files": [
+        "fixtures/requirements.txt"
+      ],
+      "production_exposure_confirmed": false,
+      "exploitability_confirmed": false,
+      "reason": "The fixture models a dependency repair decision without claiming production exposure."
+    }
+  ],
+  "score": {
+    "value": 61,
+    "status": "synthetic_evidence_limited_score",
+    "source": "fixture_only",
+    "certification": false,
+    "limitations": [
+      "Semgrep evidence failed and receives no passing credit.",
+      "Synthetic findings do not prove production exposure or exploitability."
+    ]
+  },
+  "repair_plan": {
+    "status": "draft_requires_review",
+    "automatic_production_change_allowed": false,
+    "candidates": [
+      {
+        "repair_id": "synthetic-repair-secret-0001",
+        "finding_id": "synthetic-finding-secret-0001",
+        "priority": "high",
+        "action": "Remove the synthetic credential-shaped string and replace it with a non-secret fixture token.",
+        "verification": [
+          "Re-run the exact-snapshot secret scanner.",
+          "Confirm the synthetic finding ID is absent.",
+          "Confirm no unrelated fixture content changed."
+        ],
+        "rollback": "Restore the fixture file from the exact pre-repair commit if verification fails."
+      },
+      {
+        "repair_id": "synthetic-repair-dependency-0001",
+        "finding_id": "synthetic-finding-dependency-0001",
+        "priority": "medium",
+        "action": "Review a bounded dependency update in an isolated branch.",
+        "verification": [
+          "Run dependency tests and the dependency scanner.",
+          "Confirm the advisory is resolved without introducing a new blocker."
+        ],
+        "rollback": "Revert the isolated dependency change if tests or compatibility checks fail."
+      }
+    ]
+  },
+  "review": {
+    "status": "required",
+    "approved": false,
+    "client_ready": false,
+    "required_decisions": [
+      "Validate that each finding is correctly interpreted.",
+      "Approve, revise, or reject each repair candidate.",
+      "Decide whether failed Semgrep evidence requires a rerun before delivery."
+    ]
+  },
+  "delivery": {
+    "status": "blocked",
+    "reason": "The report includes synthetic risk findings, failed evidence, and unapproved repair candidates."
+  }
+}
