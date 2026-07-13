@@ -4,27 +4,28 @@ import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
 
 type ServiceKey = "express" | "mid" | "full" | "operations" | "retainer";
+type AssessmentMode = "express" | "mid" | "full";
 
-type AssessmentMode = "express" | "mid";
+const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 
 export const PRIMARY_SERVICES = [
   {
     key: "express" as ServiceKey,
     label: "Express Assessment",
     shortLabel: "Express",
-    href: "/?assessment=express#assessment",
+    href: "/assessment?tier=express#assessment",
   },
   {
     key: "mid" as ServiceKey,
     label: "Mid Assessment",
     shortLabel: "Mid",
-    href: "/mid-assessment",
+    href: "/assessment?tier=mid#assessment",
   },
   {
     key: "full" as ServiceKey,
     label: "Full Assessment",
     shortLabel: "Full",
-    href: "/full-run",
+    href: "/assessment?tier=full#assessment",
   },
   {
     key: "operations" as ServiceKey,
@@ -60,8 +61,12 @@ const ADVANCED_GROUPS = [
   },
 ] as const;
 
+function normalizeAssessmentMode(value: string | null | undefined): AssessmentMode {
+  return value === "mid" || value === "full" ? value : "express";
+}
+
 function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKey | "" {
-  if (pathname === "/") return assessment;
+  if (pathname.startsWith("/assessment")) return assessment;
   if (pathname.startsWith("/full-run")) return "full";
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
@@ -79,70 +84,27 @@ function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKe
   return "";
 }
 
-function assessmentModeFromButton(button: HTMLButtonElement | undefined): AssessmentMode {
-  return button?.textContent?.trim().toLowerCase().startsWith("mid") ? "mid" : "express";
-}
-
 export default function PrimaryNavigation() {
   const pathname = usePathname();
   const [assessment, setAssessment] = useState<AssessmentMode>("express");
 
   useEffect(() => {
-    if (pathname !== "/") return;
+    if (!pathname.startsWith("/assessment")) return;
 
-    let observer: MutationObserver | null = null;
-    let frame = 0;
-    let cancelled = false;
-
-    const connectToUnifiedIntake = () => {
-      if (cancelled) return;
-      const controls = document.querySelector<HTMLElement>("[aria-label='Assessment type']");
-      if (!controls) {
-        frame = window.requestAnimationFrame(connectToUnifiedIntake);
-        return;
-      }
-
-      const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>("button"));
-      const requested = new URLSearchParams(window.location.search).get("assessment");
-      const requestedMode: AssessmentMode = requested === "mid" ? "mid" : "express";
-      const requestedButton = buttons.find((button) => assessmentModeFromButton(button) === requestedMode);
-
-      setAssessment(requestedMode);
-      if (requestedButton && requestedButton.getAttribute("aria-pressed") !== "true") {
-        requestedButton.click();
-      }
-
-      const synchronize = () => {
-        const pressed = buttons.find((button) => button.getAttribute("aria-pressed") === "true");
-        const mode = assessmentModeFromButton(pressed);
-        setAssessment(mode);
-
-        const url = new URL(window.location.href);
-        if (url.searchParams.get("assessment") !== mode) {
-          url.searchParams.set("assessment", mode);
-          const hash = url.hash || "#assessment";
-          window.history.replaceState(
-            window.history.state,
-            "",
-            `${url.pathname}?${url.searchParams.toString()}${hash}`,
-          );
-        }
-      };
-
-      synchronize();
-      observer = new MutationObserver(synchronize);
-      observer.observe(controls, {
-        attributes: true,
-        subtree: true,
-        attributeFilter: ["aria-pressed"],
-      });
+    const synchronizeFromUrl = () => {
+      setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
+    };
+    const synchronizeFromEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{tier?: string}>).detail;
+      setAssessment(normalizeAssessmentMode(detail?.tier));
     };
 
-    frame = window.requestAnimationFrame(connectToUnifiedIntake);
+    synchronizeFromUrl();
+    window.addEventListener("popstate", synchronizeFromUrl);
+    window.addEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
     return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frame);
-      observer?.disconnect();
+      window.removeEventListener("popstate", synchronizeFromUrl);
+      window.removeEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
     };
   }, [pathname]);
 
