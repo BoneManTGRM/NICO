@@ -1,566 +1,320 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
+import re
+import sys
 import time
-from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-
-class SmokeFailure(RuntimeError):
-    """Raised when production smoke evidence cannot be proved truthfully."""
-
-
-@dataclass(frozen=True)
-class TierSpec:
-    name: str
-    start_path: str
-    status_path: str | None
-    expected_mode: str
-    requires_run_id: bool
+CONFIRMATION = "I_CONFIRM_AUTHORIZED_PRODUCTION_SMOKE"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+FAILURES = {"blocked", "failed", "error", "rejected", "timed_out", "timeout"}
+FULL_TOOLS = ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog"]
+Transport = Callable[[str, str, dict[str, Any] | None, dict[str, str], float], tuple[int, Any]]
 
 
-@dataclass(frozen=True)
-class SmokeConfig:
-    api_url: str
-    repository: str
-    customer_id: str
-    project_id: str
-    authorized_by: str
-    authorization_scope: str
-    request_timeout_seconds: float = 45.0
-    poll_interval_seconds: float = 5.0
-    max_polls: int = 60
+def now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-TIER_SPECS: dict[str, TierSpec] = {
-    "express": TierSpec(
-        name="express",
-        start_path="/assessment/github",
-        status_path=None,
-        expected_mode="express",
-        requires_run_id=False,
-    ),
-    "mid": TierSpec(
-        name="mid",
-        start_path="/assessment/mid-run",
-        status_path="/assessment/mid-run/{run_id}/status",
-        expected_mode="mid",
-        requires_run_id=True,
-    ),
-    "full": TierSpec(
-        name="full",
-        start_path="/assessment/full-run",
-        status_path="/assessment/full-run/{run_id}/status",
-        expected_mode="full",
-        requires_run_id=True,
-    ),
-}
-
-PENDING_STATUSES = {
-    "queued",
-    "running",
-    "pending",
-    "in_progress",
-    "planned",
-    "continuing",
-    "collecting",
-}
-FAILURE_STATUSES = {
-    "blocked",
-    "error",
-    "failed",
-    "failure",
-    "unavailable",
-    "not_found",
-    "rejected",
-}
-SUCCESS_STATUSES = {
-    "complete",
-    "completed",
-    "ok",
-    "partial",
-    "human_review_required",
-    "pending_review",
-    "ready_for_review",
-    "accepted",
-}
-
-RequestJson = Callable[[str, str, dict[str, Any] | None, float], dict[str, Any]]
-Sleep = Callable[[float], None]
+def origin(value: str, label: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    if parsed.scheme != "https":
+        raise ValueError(f"{label} must use https")
+    if not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError(f"{label} must be an unauthenticated origin")
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError(f"{label} must not contain a path, query, or fragment")
+    return f"https://{parsed.hostname.lower()}{f':{parsed.port}' if parsed.port else ''}"
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+def allowed_hosts(value: str) -> frozenset[str]:
+    hosts = frozenset(part.strip().lower() for part in str(value or "").split(",") if part.strip())
+    if not hosts or any("/" in host or "://" in host or "@" in host for host in hosts):
+        raise ValueError("Allowed hosts must be comma-separated bare hostnames")
+    return hosts
 
 
-def normalize_base_url(value: str, *, allow_http: bool = False) -> str:
-    text = str(value or "").strip().rstrip("/")
-    parsed = urlparse(text)
-    if not parsed.scheme or not parsed.netloc:
-        raise SmokeFailure("A complete API URL is required.")
-    local_hosts = {"localhost", "127.0.0.1", "::1"}
-    if parsed.scheme != "https" and not (
-        allow_http and parsed.scheme == "http" and parsed.hostname in local_hosts
-    ):
-        raise SmokeFailure("Production smoke targets must use HTTPS. HTTP is allowed only for explicit localhost testing.")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise SmokeFailure("API and frontend URLs must not contain credentials, query strings, or fragments.")
-    return text
+def validate(config: dict[str, Any]) -> dict[str, Any]:
+    if config["confirmation"] != CONFIRMATION:
+        raise ValueError("Explicit production-smoke confirmation is required")
+    if config["repository"] != config["allowlisted_repository"]:
+        raise ValueError("Requested repository does not match the authorized demonstration repository")
+    if not REPO_RE.fullmatch(config["repository"]) or not REPO_RE.fullmatch(config["github_repository"]):
+        raise ValueError("Repositories must use owner/name form")
+    if not config["authorization_reference"]:
+        raise ValueError("An authorization reference is required")
+    if not SHA_RE.fullmatch(config["commit_sha"]):
+        raise ValueError("Commit SHA must be an exact lowercase 40-character SHA")
+    if not config["admin_token"] or not config["github_token"]:
+        raise ValueError("Required secret credentials are unavailable")
+    if not config["customer_id"].startswith("production_smoke_") or not config["project_id"].startswith("production_smoke_"):
+        raise ValueError("Production smoke must use an isolated production_smoke tenant")
+    for label in ("frontend_origin", "backend_origin"):
+        host = (urlparse(config[label]).hostname or "").lower()
+        if host not in config["allowed_hosts"]:
+            raise ValueError(f"{label} host is not explicitly allowlisted")
+    if not 1 <= config["max_polls"] <= 300 or not 0 <= config["poll_interval"] <= 30:
+        raise ValueError("Polling limits are outside the safe bounded range")
+    return config
 
 
-def join_url(base_url: str, path: str) -> str:
-    return urljoin(f"{base_url.rstrip('/')}/", path.lstrip("/"))
-
-
-def response_status(payload: dict[str, Any]) -> str:
-    return str(payload.get("status") or "").strip().lower()
-
-
-def response_identity(payload: dict[str, Any]) -> str:
-    for key in ("run_id", "assessment_id", "report_id", "generated_at"):
-        value = str(payload.get(key) or "").strip()
-        if value:
-            return value
-    assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
-    for key in ("run_id", "assessment_id", "report_id", "generated_at"):
-        value = str(assessment.get(key) or "").strip()
-        if value:
-            return value
-    return ""
-
-
-def response_run_id(payload: dict[str, Any]) -> str:
-    direct = str(payload.get("run_id") or "").strip()
-    if direct:
-        return direct
-    assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
-    return str(assessment.get("run_id") or "").strip()
-
-
-def response_hash(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def safe_error_summary(payload: dict[str, Any]) -> str:
-    detail = payload.get("detail")
-    if isinstance(detail, dict):
-        for key in ("message", "code", "status"):
-            value = str(detail.get(key) or "").strip()
-            if value:
-                return value[:240]
-    for key in ("message", "code", "status"):
-        value = str(payload.get(key) or "").strip()
-        if value:
-            return value[:240]
-    return "No safe error summary was returned."
-
-
-def request_json(
-    method: str,
-    url: str,
-    payload: dict[str, Any] | None,
-    timeout_seconds: float,
-) -> dict[str, Any]:
-    data = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    headers = {"Accept": "application/json"}
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    request = Request(url, data=data, method=method.upper(), headers=headers)
+def request_json(method: str, url: str, payload: dict[str, Any] | None, headers: dict[str, str], timeout: float) -> tuple[int, Any]:
+    body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode()
+    safe_headers = {"Accept": "application/json", "User-Agent": "nico-production-smoke/1", **headers}
+    if body is not None:
+        safe_headers["Content-Type"] = "application/json"
+    request = Request(url, data=body, headers=safe_headers, method=method)
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8", errors="replace")
+        with urlopen(request, timeout=timeout) as response:
+            status, raw = response.status, response.read(2_000_000)
     except HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
-            parsed = {}
-        summary = safe_error_summary(parsed if isinstance(parsed, dict) else {})
-        raise SmokeFailure(f"{method.upper()} request returned HTTP {exc.code}: {summary}") from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise SmokeFailure(f"{method.upper()} request could not reach the configured endpoint: {type(exc).__name__}") from exc
-
+        status, raw = exc.code, exc.read(2_000_000)
+    except URLError as exc:
+        return 0, {"status": "unavailable", "error_type": type(exc.reason).__name__}
     try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SmokeFailure("Endpoint returned a non-JSON response.") from exc
-    if not isinstance(parsed, dict):
-        raise SmokeFailure("Endpoint returned JSON that was not an object.")
-    return parsed
+        return int(status), json.loads(raw.decode()) if raw else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return int(status), {"status": "invalid_json", "body_length": len(raw)}
 
 
-def request_frontend(url: str, timeout_seconds: float) -> dict[str, Any]:
-    request = Request(url, method="GET", headers={"Accept": "text/html"})
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            status_code = int(getattr(response, "status", 200))
-            body = response.read(1_000_000).decode("utf-8", errors="replace")
-    except HTTPError as exc:
-        raise SmokeFailure(f"Frontend assessment page returned HTTP {exc.code}.") from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise SmokeFailure(f"Frontend assessment page was unreachable: {type(exc).__name__}") from exc
-
-    required_labels = ("Express", "Mid", "Full")
-    missing = [label for label in required_labels if label not in body]
-    if status_code != 200 or missing:
-        raise SmokeFailure(
-            f"Frontend assessment page proof failed: status={status_code}, missing_labels={','.join(missing) or 'none'}."
-        )
-    return {
-        "status": "passed",
-        "http_status": status_code,
-        "required_labels": list(required_labels),
-        "response_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
-    }
+def payload_dict(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return value["detail"] if isinstance(value.get("detail"), dict) else value
 
 
-def base_payload(config: SmokeConfig) -> dict[str, Any]:
-    return {
-        "repository": config.repository,
-        "target": config.repository,
-        "authorized": True,
-        "authorization_confirmed": True,
-        "authorized_by": config.authorized_by,
-        "authorization_scope": config.authorization_scope,
-        "customer_id": config.customer_id,
-        "project_id": config.project_id,
-        "client_name": "NICO authorized production smoke",
-        "project_name": "NICO production assessment proof",
-    }
+def nested(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
 
 
-def start_payload(tier: str, config: SmokeConfig) -> dict[str, Any]:
-    payload = base_payload(config)
+def first(*values: Any) -> str:
+    return next((str(value).strip() for value in values if str(value or "").strip()), "")
+
+
+def run_id(payload: dict[str, Any]) -> str:
+    return first(payload.get("run_id"), nested(payload, "assessment").get("run_id"))
+
+
+def report_id(payload: dict[str, Any]) -> str:
+    return first(payload.get("report_id"), nested(payload, "reports").get("report_id"), nested(payload, "mid_report").get("report_id"), nested(payload, "approval").get("report_id"), nested(payload, "final_review").get("report_id"))
+
+
+def review_id(payload: dict[str, Any]) -> str:
+    return first(payload.get("review_request_id"), nested(payload, "approval_request").get("approval_id"), nested(payload, "approval").get("approval_id"), nested(payload, "final_review").get("approval_id"))
+
+
+def explicit_bool(payload: dict[str, Any], key: str) -> bool | None:
+    for candidate in (payload, nested(payload, "assessment"), nested(payload, "reports")):
+        if isinstance(candidate.get(key), bool):
+            return candidate[key]
+    return None
+
+
+def progress(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [item for item in payload.get("progress") or [] if isinstance(item, dict)]
+
+
+def terminal(tier: str, payload: dict[str, Any]) -> bool:
+    status = str(payload.get("status") or "").lower()
+    if status in FAILURES or {str(item.get("status") or "").lower() for item in progress(payload)} & FAILURES:
+        return True
     if tier == "express":
-        payload.update({"assessment_mode": "express", "timeframe_days": 30})
+        return bool(payload)
+    if tier == "mid":
+        report_status = str(payload.get("report_generation_status") or "").lower()
+        review_status = str(nested(payload, "approval_request").get("status") or payload.get("approval_request_status") or "").lower()
+        return status == "complete" and report_status == "complete" and review_status in {"pending", "pending_review", "requested", "review_required"}
+    return status == "complete" and bool(report_id(payload)) and bool(review_id(payload))
+
+
+def unavailable(payload: dict[str, Any]) -> list[str]:
+    notes: list[str] = []
+    def add(value: Any) -> None:
+        text = str(value or "").strip().replace("\n", " ")[:240]
+        if text and text not in notes:
+            notes.append(text)
+    for source in (payload, nested(payload, "assessment")):
+        for key in ("unavailable_data_notes", "limitations", "warnings"):
+            for item in source.get(key) or []:
+                add(item)
+    for item in progress(payload):
+        if str(item.get("status") or "").lower() in {"unavailable", "failed", "blocked", "timed_out"}:
+            add(item.get("message"))
+    return notes[:20]
+
+
+def common(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "repository": config["repository"], "customer_id": config["customer_id"], "project_id": config["project_id"],
+        "client_name": "Authorized Production Smoke", "project_name": "Controlled Demonstration",
+        "authorized_by": "github_actions_production_smoke", "authorization_scope": "authorized defensive repository assessment",
+        "authorization_confirmed": True, "authorized": True, "timeframe_days": 180, "refresh_full_evidence": True,
+    }
+
+
+def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_json, sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+    base = common(config)
+    if tier == "express":
+        start_path, start_payload = "/assessment/github", {**base, "assessment_mode": "express"}
     elif tier == "mid":
-        payload.update(
-            {
-                "timeframe_days": 30,
-                "run_scanners": True,
-                "refresh_full_evidence": True,
-                "auto_continue": True,
-                "tools": [],
-            }
-        )
+        start_path, start_payload = "/assessment/mid-run", {**base, "run_scanners": True, "auto_continue": True}
     elif tier == "full":
-        payload.update(
-            {
-                "mode": "full",
-                "timeframe_days": 30,
-                "run_scanners": True,
-                "refresh_full_evidence": True,
-                "build_reports": True,
-                "create_final_review_request": True,
-                "auto_continue": True,
-                "tools": [],
-            }
-        )
-    else:  # pragma: no cover - guarded by parse_tiers
-        raise SmokeFailure(f"Unsupported tier: {tier}")
-    return payload
+        start_path = "/assessment/full-run"
+        start_payload = {**base, "mode": "full", "run_scanners": True, "build_reports": True, "create_final_review_request": True, "auto_continue": True, "tools": FULL_TOOLS}
+    else:
+        raise ValueError(f"Unsupported tier: {tier}")
 
+    headers = {"X-NICO-Admin-Token": config["admin_token"]}
+    started = now()
+    start_status, raw = transport("POST", config["backend_origin"] + start_path, start_payload, headers, config["timeout"])
+    current = payload_dict(raw)
+    initial_id = run_id(current)
+    continuation_ids: list[str] = []
+    status_paths: list[str] = []
+    status_codes: list[int] = []
 
-def status_payload(tier: str, config: SmokeConfig, initial: dict[str, Any]) -> dict[str, Any]:
-    payload = base_payload(config)
-    payload.update(
-        {
-            "timeframe_days": 30,
-            "auto_continue": True,
-            "run_scanners": True,
-            "refresh_full_evidence": True,
-        }
-    )
-    if tier == "full":
-        payload.update(
-            {
-                "mode": "full",
-                "scan_id": str(initial.get("scan_id") or ""),
-                "build_reports": True,
-                "create_final_review_request": True,
-                "tools": [],
-            }
-        )
-    elif tier == "mid":
-        payload["tools"] = []
-    return payload
-
-
-def mode_values(payload: dict[str, Any]) -> list[str]:
-    assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
-    values: list[str] = []
-    for candidate in (
-        payload.get("mode"),
-        payload.get("assessment_mode"),
-        payload.get("assessment_type"),
-        payload.get("service_tier"),
-        payload.get("report_path"),
-        assessment.get("mode"),
-        assessment.get("assessment_mode"),
-        assessment.get("assessment_type"),
-        assessment.get("service_tier"),
-        assessment.get("report_path"),
-    ):
-        value = str(candidate or "").strip().lower()
-        if value and value not in values:
-            values.append(value)
-    return values
-
-
-def validate_mode(tier: str, payload: dict[str, Any]) -> None:
-    aliases = {
-        "express": {"express"},
-        "mid": {"mid", "mid_run"},
-        "full": {"full", "full_run"},
-    }
-    observed = mode_values(payload)
-    conflicts = [value for value in observed if value in {"express", "mid", "mid_run", "full", "full_run"} and value not in aliases[tier]]
-    if conflicts:
-        raise SmokeFailure(
-            f"{tier.title()} response contained conflicting tier metadata: {', '.join(conflicts)}."
-        )
-
-
-def validate_terminal_response(tier: str, payload: dict[str, Any]) -> None:
-    status = response_status(payload)
-    if status in FAILURE_STATUSES:
-        raise SmokeFailure(f"{tier.title()} ended with status={status}: {safe_error_summary(payload)}")
-    if status in PENDING_STATUSES:
-        raise SmokeFailure(f"{tier.title()} remained pending after the bounded polling window.")
-    if status and status not in SUCCESS_STATUSES:
-        raise SmokeFailure(f"{tier.title()} returned an unrecognized terminal status={status}.")
-    if not response_identity(payload):
-        raise SmokeFailure(f"{tier.title()} response did not provide a run, assessment, report, or generation identity.")
-    validate_mode(tier, payload)
-
-
-def run_tier(
-    tier: str,
-    config: SmokeConfig,
-    *,
-    requester: RequestJson = request_json,
-    sleeper: Sleep = time.sleep,
-) -> dict[str, Any]:
-    spec = TIER_SPECS[tier]
-    start_url = join_url(config.api_url, spec.start_path)
-    start = requester("POST", start_url, start_payload(tier, config), config.request_timeout_seconds)
-    start_status = response_status(start)
-    if start_status in FAILURE_STATUSES:
-        raise SmokeFailure(f"{tier.title()} start failed with status={start_status}: {safe_error_summary(start)}")
-
-    identity = response_identity(start)
-    run_id = response_run_id(start)
-    if spec.requires_run_id and not run_id:
-        raise SmokeFailure(f"{tier.title()} start response did not return the exact run_id required for continuation.")
-    if not identity:
-        raise SmokeFailure(f"{tier.title()} start response did not return a stable identity.")
-    validate_mode(tier, start)
-
-    final = start
-    poll_count = 0
-    polled_urls: list[str] = []
-    if spec.status_path is not None:
-        status_url = join_url(config.api_url, spec.status_path.format(run_id=quote(run_id, safe="")))
-        for attempt in range(1, config.max_polls + 1):
-            poll_count += 1
-            polled_urls.append(status_url)
-            current = requester(
-                "POST",
-                status_url,
-                status_payload(tier, config, start),
-                config.request_timeout_seconds,
-            )
-            current_run_id = response_run_id(current)
-            if current_run_id and current_run_id != run_id:
-                raise SmokeFailure(
-                    f"{tier.title()} continuation changed run identity from {run_id} to {current_run_id}."
-                )
-            final = current
-            current_status = response_status(current)
-            if current_status in FAILURE_STATUSES:
-                raise SmokeFailure(
-                    f"{tier.title()} continuation failed with status={current_status}: {safe_error_summary(current)}"
-                )
-            if current_status not in PENDING_STATUSES:
+    if tier in {"mid", "full"} and initial_id:
+        status_path = f"/assessment/{tier}-run/{initial_id}/status"
+        for _ in range(config["max_polls"]):
+            sleep(config["poll_interval"])
+            status_payload = {**base, "auto_continue": True, "run_scanners": True, "scan_id": first(nested(current, "scanner").get("scan_id"), nested(current, "scanner_evidence").get("scan_id"))}
+            if tier == "full":
+                status_payload.update({"mode": "full", "build_reports": True, "create_final_review_request": True, "tools": FULL_TOOLS})
+            code, raw = transport("POST", config["backend_origin"] + status_path, status_payload, headers, config["timeout"])
+            status_paths.append(status_path)
+            status_codes.append(code)
+            candidate = payload_dict(raw)
+            if run_id(candidate):
+                continuation_ids.append(run_id(candidate))
+            if candidate:
+                current = candidate
+            if terminal(tier, current):
                 break
-            if attempt < config.max_polls:
-                sleeper(config.poll_interval_seconds)
 
-    validate_terminal_response(tier, final)
-    final_run_id = response_run_id(final)
-    if run_id and final_run_id and final_run_id != run_id:
-        raise SmokeFailure(f"{tier.title()} final response did not preserve exact run identity.")
-
+    final_id = run_id(current) or initial_id
+    exact = True
+    if tier in {"mid", "full"}:
+        exact = bool(initial_id and status_paths and continuation_ids and final_id == initial_id and all(item == initial_id for item in continuation_ids) and all(path.endswith(f"/{initial_id}/status") for path in status_paths))
+    rid, vid = report_id(current), review_id(current)
+    human, client = explicit_bool(current, "human_review_required"), explicit_bool(current, "client_ready")
+    identities = bool(rid) and (tier == "express" or bool(vid))
+    passed = 200 <= start_status < 300 and terminal(tier, current) and identities and human is True and client is False and (tier == "express" or exact)
     return {
-        "tier": tier,
-        "status": "passed",
-        "start_count": 1,
-        "poll_count": poll_count,
-        "identity": identity,
-        "run_id": run_id,
-        "start_status": start_status or "unspecified",
-        "final_status": response_status(final) or "unspecified",
-        "start_path": spec.start_path,
-        "status_path": spec.status_path or "",
-        "polled_single_exact_status_url": len(set(polled_urls)) <= 1,
-        "final_response_sha256": response_hash(final),
-        "human_review_required": bool(final.get("human_review_required", True)),
-        "client_ready": bool(final.get("client_ready", False)),
+        "tier": tier, "status": "passed" if passed else "failed", "assessment_terminal_status": str(current.get("status") or "unknown"),
+        "start_count": 1, "start_http_status": start_status, "started_at": started, "finished_at": now(),
+        "run_id": final_id, "initial_run_id": initial_id, "continuation_run_ids": list(dict.fromkeys(continuation_ids)),
+        "continuation_status_paths": status_paths, "continuation_http_statuses": status_codes,
+        "polled_single_exact_status_url": exact, "report_id": rid, "review_request_id": vid,
+        "human_review_required": human, "client_ready": client, "unavailable_or_failed_evidence": unavailable(current),
     }
 
 
-def parse_tiers(value: str) -> list[str]:
-    requested = [item.strip().lower() for item in str(value or "").split(",") if item.strip()]
-    if not requested:
-        raise SmokeFailure("At least one tier is required.")
-    unknown = [item for item in requested if item not in TIER_SPECS]
-    if unknown:
-        raise SmokeFailure(f"Unsupported tier selection: {', '.join(unknown)}")
-    result: list[str] = []
-    for item in requested:
-        if item not in result:
-            result.append(item)
-    return result
+def deployment(config: dict[str, Any], transport: Transport = request_json) -> dict[str, Any]:
+    code, raw = transport("GET", f"https://api.github.com/repos/{config['github_repository']}/commits/{config['commit_sha']}/status", None, {"Authorization": f"Bearer {config['github_token']}", "X-GitHub-Api-Version": "2022-11-28"}, config["timeout"])
+    observed: dict[str, str] = {}
+    for item in payload_dict(raw).get("statuses") or []:
+        if isinstance(item, dict) and item.get("context") not in observed:
+            observed[str(item.get("context") or "")] = str(item.get("state") or "unknown")
+    required = {"frontend": config["frontend_status_context"], "backend": config["backend_status_context"]}
+    return {"http_status": code, "commit_sha": config["commit_sha"], "required_contexts": required, "observed_contexts": {value: observed.get(value, "missing") for value in required.values()}, "verified": code == 200 and all(observed.get(value) == "success" for value in required.values())}
 
 
-def run_smoke(
-    config: SmokeConfig,
-    tiers: list[str],
-    *,
-    authorization_confirmed: bool,
-    frontend_url: str = "",
-    requester: RequestJson = request_json,
-    sleeper: Sleep = time.sleep,
-    frontend_requester: Callable[[str, float], dict[str, Any]] = request_frontend,
-) -> dict[str, Any]:
-    if not authorization_confirmed:
-        raise SmokeFailure("Explicit authorization confirmation is required before production assessment smoke execution.")
-    if not config.repository.strip():
-        raise SmokeFailure("An explicitly authorized repository is required.")
-
-    started_at = utc_now()
-    frontend_evidence: dict[str, Any] = {"status": "not_requested"}
-    if frontend_url:
-        frontend_evidence = frontend_requester(
-            join_url(frontend_url, "/assessment"),
-            config.request_timeout_seconds,
-        )
-
-    tier_results = [
-        run_tier(tier, config, requester=requester, sleeper=sleeper)
-        for tier in tiers
-    ]
-    finished_at = utc_now()
+def preflight(config: dict[str, Any], transport: Transport = request_json) -> dict[str, Any]:
+    front_code, _ = transport("GET", config["frontend_origin"] + "/assessment", None, {}, config["timeout"])
+    health_code, raw = transport("GET", config["backend_origin"] + "/health", None, {"X-NICO-Admin-Token": config["admin_token"]}, config["timeout"])
+    health = payload_dict(raw)
     return {
-        "schema_version": 1,
-        "evidence_kind": "authorized_live_production_smoke",
-        "live_claim": True,
-        "authorization_confirmed": True,
-        "authorization_scope": config.authorization_scope,
-        "repository": config.repository,
-        "customer_id": config.customer_id,
-        "project_id": config.project_id,
-        "api_origin": config.api_url,
-        "frontend_origin": frontend_url,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "status": "passed",
-        "frontend": frontend_evidence,
-        "tiers": tier_results,
-        "proof": {
-            "one_start_per_tier": all(item["start_count"] == 1 for item in tier_results),
-            "exact_run_continuation": all(
-                item["polled_single_exact_status_url"] for item in tier_results if item["tier"] in {"mid", "full"}
-            ),
-            "human_review_boundary_preserved": all(item["human_review_required"] for item in tier_results),
-            "no_client_ready_claim": all(not item["client_ready"] for item in tier_results),
-        },
-        "config": {
-            "request_timeout_seconds": config.request_timeout_seconds,
-            "poll_interval_seconds": config.poll_interval_seconds,
-            "max_polls": config.max_polls,
-        },
+        "frontend": {"origin": config["frontend_origin"], "assessment_http_status": front_code},
+        "backend": {"origin": config["backend_origin"], "health_http_status": health_code, "health_status": str(health.get("status") or "unknown"), "system": str(health.get("system") or "")},
+        "verified": 200 <= front_code < 400 and health_code == 200 and health.get("status") == "ok",
     }
 
 
-def write_evidence(path: str, evidence: dict[str, Any]) -> None:
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+def artifact(config: dict[str, Any], deploy: dict[str, Any], ready: dict[str, Any], tiers: list[dict[str, Any]]) -> dict[str, Any]:
+    proof = {
+        "one_start_per_tier": len(tiers) == 3 and all(item.get("start_count") == 1 for item in tiers),
+        "exact_run_continuation": all(item.get("polled_single_exact_status_url") is True for item in tiers if item.get("tier") in {"mid", "full"}),
+        "human_review_boundary_preserved": all(item.get("human_review_required") is True for item in tiers),
+        "no_client_ready_claim": all(item.get("client_ready") is False for item in tiers),
+    }
+    passed = deploy.get("verified") is True and ready.get("verified") is True and len(tiers) == 3 and all(proof.values()) and all(item.get("status") == "passed" for item in tiers)
+    return {
+        "schema_version": 1, "evidence_kind": "authorized_live_production_smoke", "live_claim": True,
+        "authorization_confirmed": True, "status": "passed" if passed else "failed", "generated_at": now(),
+        "source_commit_sha": config["commit_sha"], "authorization_reference_sha256": hashlib.sha256(config["authorization_reference"].encode()).hexdigest(),
+        "repository": config["repository"], "tenant": {"customer_id": config["customer_id"], "project_id": config["project_id"]},
+        "deployment": deploy, "preflight": ready, "proof": proof, "tiers": tiers,
+        "limitations": [
+            "The workflow sends exactly one start request per tier and does not issue a second start as a destructive duplicate probe.",
+            "This artifact records defensive assessment behavior only; it does not approve, deliver, repair, or modify production code.",
+            "A passed artifact remains subject to human review and does not establish that all defects are absent.",
+        ],
+    }
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Run one authorized, exact-identity production smoke assessment per selected NICO tier."
-    )
-    parser.add_argument("--api-url", required=True)
-    parser.add_argument("--frontend-url", default="")
-    parser.add_argument("--repository", required=True)
-    parser.add_argument("--tiers", default="express,mid,full")
-    parser.add_argument("--customer-id", default="nico_production_smoke")
-    parser.add_argument("--project-id", default="nico_production_smoke")
-    parser.add_argument("--authorized-by", default="github_actions_manual_dispatch")
-    parser.add_argument("--authorization-scope", default="authorized production assessment smoke only")
-    parser.add_argument("--request-timeout-seconds", type=float, default=45.0)
-    parser.add_argument("--poll-interval-seconds", type=float, default=5.0)
-    parser.add_argument("--max-polls", type=int, default=60)
-    parser.add_argument("--output", default="audit-results/production-assessment-smoke.json")
-    parser.add_argument("--confirm-authorized", action="store_true")
-    parser.add_argument("--allow-http-localhost", action="store_true")
-    return parser
+def markdown(result: dict[str, Any]) -> str:
+    lines = ["# NICO Authorized Production Assessment Smoke", "", f"- Status: `{result['status']}`", f"- Commit: `{result['source_commit_sha']}`", f"- Repository: `{result['repository']}`", f"- Generated: `{result['generated_at']}`", "- Human review remains required.", "- Client delivery and production changes were not authorized.", "", "## Tier evidence", "", "| Tier | Proof | Run ID | Report ID | Review request ID | Human review | Client ready |", "| --- | --- | --- | --- | --- | --- | --- |"]
+    for item in result.get("tiers") or []:
+        lines.append(f"| {item.get('tier')} | {item.get('status')} | `{item.get('run_id') or 'unavailable'}` | `{item.get('report_id') or 'unavailable'}` | `{item.get('review_request_id') or 'unavailable'}` | {item.get('human_review_required')} | {item.get('client_ready')} |")
+    return "\n".join(lines + ["", "## Limitations", "", *[f"- {item}" for item in result["limitations"]], ""])
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    try:
-        api_url = normalize_base_url(args.api_url, allow_http=args.allow_http_localhost)
-        frontend_url = (
-            normalize_base_url(args.frontend_url, allow_http=args.allow_http_localhost)
-            if args.frontend_url
-            else ""
-        )
-        config = SmokeConfig(
-            api_url=api_url,
-            repository=args.repository.strip(),
-            customer_id=args.customer_id.strip() or "nico_production_smoke",
-            project_id=args.project_id.strip() or "nico_production_smoke",
-            authorized_by=args.authorized_by.strip() or "github_actions_manual_dispatch",
-            authorization_scope=args.authorization_scope.strip() or "authorized production assessment smoke only",
-            request_timeout_seconds=max(1.0, args.request_timeout_seconds),
-            poll_interval_seconds=max(0.0, args.poll_interval_seconds),
-            max_polls=max(1, args.max_polls),
-        )
-        evidence = run_smoke(
-            config,
-            parse_tiers(args.tiers),
-            authorization_confirmed=bool(args.confirm_authorized),
-            frontend_url=frontend_url,
-        )
-        write_evidence(args.output, evidence)
-        print(json.dumps({"status": "passed", "output": args.output, "tiers": args.tiers}, sort_keys=True))
-        return 0
-    except SmokeFailure as exc:
-        failure = {
-            "schema_version": 1,
-            "evidence_kind": "authorized_live_production_smoke",
-            "live_claim": True,
-            "authorization_confirmed": bool(args.confirm_authorized),
-            "status": "failed",
-            "error": str(exc),
-            "finished_at": utc_now(),
-        }
-        write_evidence(args.output, failure)
-        print(json.dumps({"status": "failed", "output": args.output, "error": str(exc)}, sort_keys=True))
-        return 1
+def parse(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run one guarded production assessment per NICO tier.")
+    for name in ("frontend-url", "backend-url", "repository", "allowlisted-repository", "allowed-hosts", "authorization-reference", "confirmation", "commit-sha", "github-repository", "backend-status-context"):
+        parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--customer-id", default="production_smoke_customer")
+    parser.add_argument("--project-id", default="production_smoke_project")
+    parser.add_argument("--frontend-status-context", default="Vercel")
+    parser.add_argument("--output-json", default="audit-results/production-assessment-smoke.json")
+    parser.add_argument("--output-markdown", default="audit-results/production-assessment-smoke.md")
+    parser.add_argument("--max-polls", type=int, default=200)
+    parser.add_argument("--poll-interval-seconds", type=float, default=3.0)
+    return parser.parse_args(argv)
+
+
+def config_from(args: argparse.Namespace) -> dict[str, Any]:
+    return validate({
+        "frontend_origin": origin(args.frontend_url, "frontend URL"), "backend_origin": origin(args.backend_url, "backend URL"),
+        "repository": args.repository.strip(), "allowlisted_repository": args.allowlisted_repository.strip(), "allowed_hosts": allowed_hosts(args.allowed_hosts),
+        "customer_id": args.customer_id.strip(), "project_id": args.project_id.strip(), "authorization_reference": args.authorization_reference.strip(),
+        "confirmation": args.confirmation, "commit_sha": args.commit_sha.strip().lower(), "github_repository": args.github_repository.strip(),
+        "frontend_status_context": args.frontend_status_context.strip(), "backend_status_context": args.backend_status_context.strip(),
+        "admin_token": os.environ.get("NICO_PRODUCTION_SMOKE_ADMIN_TOKEN", ""), "github_token": os.environ.get("GITHUB_TOKEN", ""),
+        "output_json": Path(args.output_json), "output_markdown": Path(args.output_markdown), "max_polls": args.max_polls,
+        "poll_interval": args.poll_interval_seconds, "timeout": 60.0,
+    })
+
+
+def main(argv: list[str] | None = None) -> int:
+    config = config_from(parse(argv))
+    deploy, ready = deployment(config), preflight(config)
+    tiers = [run_tier(tier, config) for tier in ("express", "mid", "full")] if deploy["verified"] and ready["verified"] else []
+    result = artifact(config, deploy, ready, tiers)
+    config["output_json"].parent.mkdir(parents=True, exist_ok=True)
+    config["output_markdown"].parent.mkdir(parents=True, exist_ok=True)
+    config["output_json"].write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    config["output_markdown"].write_text(markdown(result), encoding="utf-8")
+    print(f"Production assessment smoke status: {result['status']}")
+    print(f"Evidence written to: {config['output_json']}")
+    return 0 if result["status"] == "passed" else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except ValueError as exc:
+        print(f"Configuration blocked: {exc}", file=sys.stderr)
+        raise SystemExit(2)
