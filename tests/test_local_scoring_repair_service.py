@@ -115,8 +115,6 @@ def test_canonical_scan_service_sources_scoring_and_repairs_from_extracted_servi
     scoring_source = SCORING_SERVICE.read_text(encoding="utf-8")
 
     assert "from nico.local_scoring_repair_service import apply_rye, repairs_for" in scan_source
-    legacy_import = scan_source.split("from nico.cli import ", 1)[1].split("\n", 1)[0]
-    assert "apply_rye" not in legacy_import
-    assert "repairs_for" not in legacy_import
+    assert "from nico.cli" not in scan_source
     assert "from nico.cli" not in scoring_source
     assert "Production changes, credential rotation, deployments" in scoring_source
