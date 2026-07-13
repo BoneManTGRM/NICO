@@ -1,0 +1,84 @@
+name: Recorded Golden Demonstration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recorded-golden-demonstration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recorded-demonstration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build first deterministic demonstration
+        run: |
+          python scripts/build_golden_demonstration.py \
+            --manifest tests/fixtures/golden/manifest.json \
+            --output-json first/golden-demonstration.json \
+            --output-markdown first/golden-demonstration.md
+
+      - name: Build second deterministic demonstration
+        run: |
+          python scripts/build_golden_demonstration.py \
+            --manifest tests/fixtures/golden/manifest.json \
+            --output-json second/golden-demonstration.json \
+            --output-markdown second/golden-demonstration.md
+
+      - name: Prove byte-for-byte reproducibility
+        run: |
+          cmp first/golden-demonstration.json second/golden-demonstration.json
+          cmp first/golden-demonstration.md second/golden-demonstration.md
+
+      - name: Verify recorded truth boundaries
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("first/golden-demonstration.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "passed"
+          assert payload["synthetic"] is True
+          assert payload["live_claim"] is False
+          assert payload["fixture_count"] == 3
+          assert all(payload["boundaries"].values())
+          assert "not a live assessment" in payload["guardrail"]
+          PY
+
+      - name: Prepare recorded evidence artifact
+        if: always()
+        run: |
+          mkdir -p audit-results
+          if [ -f first/golden-demonstration.json ]; then
+            cp first/golden-demonstration.json audit-results/golden-demonstration.json
+          fi
+          if [ -f first/golden-demonstration.md ]; then
+            cp first/golden-demonstration.md audit-results/golden-demonstration.md
+          fi
+
+      - name: Upload recorded golden demonstration
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-golden-demonstration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            audit-results/golden-demonstration.json
+            audit-results/golden-demonstration.md
+          if-no-files-found: error
+          retention-days: 90
