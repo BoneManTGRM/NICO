@@ -72,11 +72,20 @@ jobs:
         python -m pip_audit --format json --output audit-results/pip-audit-results.json || true
         test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
 
-    - name: Run Docker build check
+    - name: Verify hosted scanner installer strictly
       env:
         GITHUB_TOKEN: ${{ github.token }}
-        DOCKER_BUILDKIT: "1"
-      run: docker build --build-arg NICO_SCANNER_INSTALL_STRICT=true --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
+        NICO_SCANNER_INSTALL_STRICT: "true"
+      run: |
+        export NICO_SCANNER_INSTALL_DIR="$RUNNER_TEMP/nico-scanners"
+        export PATH="$NICO_SCANNER_INSTALL_DIR:$PATH"
+        python scripts/install_hosted_scanner_binaries.py
+        command -v osv-scanner
+        command -v gitleaks
+        command -v trufflehog
+
+    - name: Run Docker build check
+      run: docker build -t nico-ci:ci .
 
     - name: Run file integrity regression test
       run: |
