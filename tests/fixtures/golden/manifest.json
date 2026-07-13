@@ -59,6 +59,7 @@
   "coverage_requirements": [
     "unavailable_scanner_reason",
     "insufficient_evidence_score",
+    "no_unavailable_credit",
     "all_requested_tools_complete",
     "snapshot_bound_artifact_hashes",
     "fixture_only_numeric_score",
