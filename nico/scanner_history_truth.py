@@ -55,13 +55,21 @@ def _unavailable_history_tool(spec: ScannerToolSpec, reason: str) -> dict[str, A
         "status": "unavailable",
         "category": spec.category,
         "reason": reason,
+        "failure_or_unavailable_reason": reason,
         "findings": [],
+        "findings_count": 0,
         "returncode": None,
         "timed_out": False,
         "output_truncated": False,
+        "current_run": True,
+        "verified_for_this_report": True,
+        "execution_source": "scanner_history_truth_guard",
         "scans_git_history": True,
+        "history_depth": "shallow_or_unverified",
+        "full_history_verified": False,
         "history_depth_verified": False,
         "history_scope": "unavailable",
+        "guardrail": "History-aware scanner completion credit requires a verified non-shallow repository checkout.",
     }
 
 
@@ -82,13 +90,21 @@ def run_scanner_tool_with_history_truth(
     result["history_depth_verified"] = True
     result["history_scope"] = "full_git_history"
     result["history_verification_note"] = note
+    result["history_depth"] = "full"
+    result["full_history_verified"] = True
     return result
 
 
 def install_scanner_history_truth() -> dict[str, Any]:
     installed = bool(getattr(tool_runners, "_nico_scanner_history_truth_installed", False))
-    tool_runners.run_scanner_tool = run_scanner_tool_with_history_truth
-    tool_runners._nico_scanner_history_truth_installed = True
+    if not installed:
+        global _ORIGINAL_RUN_SCANNER_TOOL
+        # Capture the complete wrapper chain at install time. This module is imported
+        # before several hosted scanner patches are installed, so import-time capture
+        # would bypass their current-run, parsing, and verification metadata.
+        _ORIGINAL_RUN_SCANNER_TOOL = tool_runners.run_scanner_tool
+        tool_runners.run_scanner_tool = run_scanner_tool_with_history_truth
+        tool_runners._nico_scanner_history_truth_installed = True
     return {
         "status": "already_installed" if installed else "installed",
         "rule": "Gitleaks, TruffleHog, and any future history-aware scanner may run only after NICO verifies a non-shallow git history; otherwise the tool remains explicitly unavailable.",
