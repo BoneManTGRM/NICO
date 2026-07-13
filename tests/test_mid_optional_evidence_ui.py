@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPANION = ROOT / "apps" / "web" / "app" / "MidAssessmentCompanion.tsx"
+HELPER = ROOT / "apps" / "web" / "app" / "MidEvidencePacketHelper.tsx"
+TOKEN_CAPTURE = ROOT / "apps" / "web" / "app" / "UnifiedMidTokenCapture.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
@@ -12,16 +14,20 @@ def _companion() -> str:
     return COMPANION.read_text(encoding="utf-8")
 
 
-def test_companion_is_mounted_through_root_layout():
+def test_mid_evidence_components_are_mounted_through_root_layout():
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import MidAssessmentCompanion from "./MidAssessmentCompanion"' in layout
+    assert 'import MidEvidencePacketHelper from "./MidEvidencePacketHelper"' in layout
+    assert 'import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture"' in layout
     assert "<MidAssessmentCompanion />" in layout
-    assert 'href="/mid-assessment"' in layout
-    assert "Start, Review, Report, Approval, and controlled Delivery" in layout
+    assert "<MidEvidencePacketHelper />" in layout
+    assert "<UnifiedMidTokenCapture />" in layout
+    assert 'href="/assessment?tier=express#assessment"' in layout
+    assert "One Run action completes every automated stage" in layout
 
 
-def test_companion_renders_only_on_command_center_after_mid_run_exists():
+def test_companion_remains_a_legacy_command_center_console():
     source = _companion()
 
     assert 'window.location.pathname === "/"' in source
@@ -29,6 +35,29 @@ def test_companion_renders_only_on_command_center_after_mid_run_exists():
     assert 'id="mid-evidence-console"' in source
     assert 'runId.startsWith("midrun_")' not in source
     assert 'resolvedRunId.startsWith("midrun_")' in source
+
+
+def test_unified_intake_captures_mid_capability_without_rendering_it():
+    source = TOKEN_CAPTURE.read_text(encoding="utf-8")
+
+    assert 'pathname !== "/assessment"' in source
+    assert 'path === "/assessment/mid-run"' in source
+    assert "isMidStatusPath(path)" in source
+    assert "response.clone().json()" in source
+    assert "sessionStorage.setItem(RUN_KEY, runId)" in source
+    assert "sessionStorage.setItem(TOKEN_PREFIX + runId, token)" in source
+    assert "return null" in source
+    assert "{token}" not in source
+
+
+def test_evidence_packet_helper_runs_silently_on_unified_intake():
+    source = HELPER.read_text(encoding="utf-8")
+
+    assert 'const supported = pathname === "/" || pathname === "/assessment"' in source
+    assert 'setVisible(pathname === "/")' in source
+    assert "if (!active || !visible || !runId) return null" in source
+    assert "void attachPacket(true)" in source
+    assert 'href="/assessment?tier=mid#assessment"' in source
 
 
 def test_successful_mid_responses_are_observed_without_intercepting_unrelated_requests():
