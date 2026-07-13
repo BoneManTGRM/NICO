@@ -113,8 +113,8 @@ def test_default_handlers_bind_repo_and_skipped_scanner_to_run_id() -> None:
     assert by_step["scanner_worker"]["status"] == "skipped"
     assert by_step["scanner_worker"]["evidence"]["run_id"] == "fullrun_123"
     assert by_step["evidence_attachment"]["status"] == "skipped"
-    assert by_step["scoring"]["status"] == "planned"
-    assert by_step["reports"]["status"] == "planned"
+    assert by_step["scoring"]["status"] == "blocked"
+    assert by_step["reports"]["status"] == "blocked"
 
 
 def test_default_handlers_queue_scanner_with_same_run_id(monkeypatch) -> None:
@@ -233,6 +233,6 @@ def test_scanner_run_id_mismatch_blocks_attachment(monkeypatch) -> None:
     assert result["status"] == "failed"
     assert by_step["scanner_worker"]["status"] == "blocked"
     assert by_step["evidence_attachment"]["status"] == "blocked"
-    assert by_step["scoring"]["status"] == "planned"
-    assert by_step["reports"]["status"] == "planned"
+    assert by_step["scoring"]["status"] == "blocked"
+    assert by_step["reports"]["status"] == "blocked"
     assert result["scanner_evidence"]["scanner_status"] == "blocked"
