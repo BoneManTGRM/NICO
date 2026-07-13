@@ -2,6 +2,8 @@
 
 import {useState} from "react";
 
+import {MidIdentityPanel, MidStageNavigation, useMidWorkspace} from "../MidWorkspaceContext";
+
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
 type MidDraftReport = {
@@ -56,10 +58,7 @@ function statusClass(value?: string) {
 }
 
 export default function MidReportPage() {
-  const [runId, setRunId] = useState("");
-  const [customerId, setCustomerId] = useState("default_customer");
-  const [projectId, setProjectId] = useState("default_project");
-  const [adminToken, setAdminToken] = useState("");
+  const {runId, customerId, projectId, adminToken} = useMidWorkspace();
   const [report, setReport] = useState<MidDraftReport | null>(null);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -143,15 +142,12 @@ export default function MidReportPage() {
       <p className="lead">Generate the professional Mid draft only after the exact run, snapshot, truth model, and review-by-exception packet are available.</p>
     </section>
 
+    <MidStageNavigation current="report" />
+    <MidIdentityPanel title="Generate a report for the selected Mid run" />
+
     <section className="section panel">
-      <div className="section-head"><div><p className="eyebrow">Reviewer access</p><h2>Generate exact Mid draft</h2></div><span className={statusClass(report?.draft_status)}>{report?.draft_status || "not generated"}</span></div>
-      <p className="warning-box">Draft generation does not approve the assessment, create a client link, or enable client delivery. The admin token remains in browser state only.</p>
-      <div className="form-grid">
-        <label>Mid run ID<input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="midrun_..." /></label>
-        <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
-        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-        <label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
-      </div>
+      <div className="section-head"><div><p className="eyebrow">Reviewer action</p><h2>Generate exact Mid draft</h2></div><span className={statusClass(report?.draft_status)}>{report?.draft_status || "not generated"}</span></div>
+      <p className="warning-box">Draft generation does not approve the assessment, create a client link, or enable client delivery. The shared admin token remains in React memory only.</p>
       <div className="report-actions">
         <button type="button" className="primary-button" disabled={!API_URL || !runId.trim() || !adminToken.trim() || generating} onClick={generateDraft}>{generating ? "Generating bound draft..." : "Generate Mid draft report"}</button>
         <button type="button" disabled={!report || downloading} onClick={downloadDraftPdf}>{downloading ? "Verifying PDF..." : "Download verified draft PDF"}</button>
