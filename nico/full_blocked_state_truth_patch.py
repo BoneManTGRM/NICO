@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 
 _INSTALLED = False
@@ -26,9 +26,9 @@ def install_full_blocked_state_truth() -> None:
     """Distinguish intentional skips from downstream evidence blockers.
 
     Full-run handlers may intentionally skip reports or review requests only
-    when the requester disabled those stages. When an enabled stage cannot run
-    because scanner evidence, scoring, or reports are unavailable, the state is
-    blocked rather than planned or skipped.
+    when the requester disabled those stages. Enabled stages remain planned
+    while required upstream work is pending, and become blocked only after the
+    required upstream evidence is unavailable, failed, skipped, or blocked.
     """
 
     global _INSTALLED
@@ -56,14 +56,20 @@ def install_full_blocked_state_truth() -> None:
         if not context.get("build_reports") or result.get("status") != "planned":
             return result
         scoring = outputs.get("scoring") if isinstance(outputs.get("scoring"), dict) else {}
-        return _blocked_result("reports", str(context.get("run_id") or ""), str(scoring.get("status") or "not_available"))
+        upstream_status = str(scoring.get("status") or "not_available")
+        if upstream_status in {"planned", "pending", "queued", "running"}:
+            return result
+        return _blocked_result("reports", str(context.get("run_id") or ""), upstream_status)
 
     def truthful_approval(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
         result = original_approval(context, outputs)
         if not context.get("create_final_review_request") or result.get("status") != "planned":
             return result
         reports = outputs.get("reports") if isinstance(outputs.get("reports"), dict) else {}
-        return _blocked_result("approval_request", str(context.get("run_id") or ""), str(reports.get("status") or "not_available"))
+        upstream_status = str(reports.get("status") or "not_available")
+        if upstream_status in {"planned", "pending", "queued", "running"}:
+            return result
+        return _blocked_result("approval_request", str(context.get("run_id") or ""), upstream_status)
 
     orchestrator._scoring_handler = truthful_scoring
     orchestrator._reports_handler = truthful_reports
