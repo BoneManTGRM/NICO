@@ -1,5 +1,6 @@
-# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
+
+ARG NICO_SCANNER_INSTALL_STRICT=true
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -7,7 +8,7 @@ ENV PIP_NO_CACHE_DIR=1
 ENV NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true
 ENV NICO_ALLOW_PROJECT_COMMANDS=true
 ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
-ENV NICO_SCANNER_INSTALL_STRICT=true
+ENV NICO_SCANNER_INSTALL_STRICT=${NICO_SCANNER_INSTALL_STRICT}
 ENV NICO_REQUIRE_DURABLE_DELIVERY_STORAGE=true
 ENV NICO_TRUST_PROXY_HEADERS=true
 ENV NICO_TOOL_TIMEOUT_SECONDS=120
@@ -32,9 +33,7 @@ RUN npm install -g eslint typescript --no-audit --no-fund
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
-RUN --mount=type=secret,id=github_token \
-    if [ -f /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
-    && python -m pip install --upgrade pip \
+RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir pip-audit bandit semgrep coverage \
     && python scripts/install_hosted_scanner_binaries.py
