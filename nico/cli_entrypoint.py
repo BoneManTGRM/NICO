@@ -4,7 +4,9 @@ import argparse
 import json
 from typing import Any
 
-from nico.cli import memory_summary
+from nico.cli import (
+    memory_summary,
+)
 from nico.local_reporting_service import generate_reports, report_text
 from nico.local_runtime_config import DB_PATH
 from nico.local_scan_service import (
