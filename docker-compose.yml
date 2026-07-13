@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        NICO_SCANNER_INSTALL_STRICT: "false"
+    command: uvicorn nico.api.production:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      NICO_HOME: /data
+      NICO_DB_PATH: /data/nico.sqlite3
+      NICO_REPORT_DIR: /data/reports
+      NICO_CORS_ORIGINS: http://localhost:3000
+      NICO_ENABLE_SCANNER_EXECUTION: "true"
+      NICO_ALLOW_PROJECT_COMMANDS: "false"
+      NICO_ENABLE_FULL_HISTORY_SECRET_SCAN: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - nico-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    image: node:20-bookworm-slim
+    working_dir: /workspace/apps/web
+    command: sh -c "npm install --legacy-peer-deps && npm run dev"
+    environment:
+      NEXT_PUBLIC_NICO_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace
+      - web-node-modules:/workspace/apps/web/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  nico-data:
+  web-node-modules:
