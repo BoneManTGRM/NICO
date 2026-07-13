@@ -18,10 +18,14 @@ STAGE_PAGES = {
 
 def test_mid_primary_navigation_opens_unified_assessment_intake() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
+    primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
-    assert 'label: "Mid Assessment"' in navigation
-    assert 'href: "/assessment?tier=mid#assessment"' in navigation
-    assert 'href: "/mid-assessment"' not in navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
+    assert 'label: "Run a Job"' in primary
+    assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'label: "Mid Assessment"' not in primary
+    assert 'href: "/assessment?tier=mid#assessment"' not in primary
+    assert 'href: "/mid-assessment"' not in primary
+    assert 'type AssessmentMode = "express" | "mid" | "full"' in navigation
     for legacy in (
         '{label: "Mid Review", href: "/mid-review"}',
         '{label: "Mid Report", href: "/mid-report"}',
