@@ -5,12 +5,11 @@ import json
 from typing import Any
 
 from nico.cli import (
-    generate_reports,
     memory_summary,
-    report_text,
     verify_latest,
     verify_repair_by_id,
 )
+from nico.local_reporting_service import generate_reports, report_text
 from nico.local_runtime_config import DB_PATH
 from nico.local_scan_service import (
     run_scan,
