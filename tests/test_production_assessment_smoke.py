@@ -1,221 +1,246 @@
 from __future__ import annotations
 
-from collections import Counter
-from pathlib import Path
+import json
 from typing import Any
 
 import pytest
 
-from scripts.production_assessment_smoke import (
+from nico.hosted_smoke_test import SMOKE_TESTS, _production_assessment_smoke_validation, build_hosted_smoke_test
+from nico.production_assessment_smoke import (
+    CONFIRMATION_PHRASE,
     SmokeConfig,
     SmokeFailure,
-    normalize_base_url,
-    parse_tiers,
-    run_smoke,
-    run_tier,
+    build_smoke_artifact,
+    validate_config,
 )
 
-
-ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "production-assessment-smoke.yml"
+SHA = "a" * 40
 
 
-def _config() -> SmokeConfig:
-    return SmokeConfig(
-        api_url="https://api.example.invalid",
-        repository="BoneManTGRM/NICO",
-        customer_id="smoke_customer",
-        project_id="smoke_project",
-        authorized_by="test_reviewer",
-        authorization_scope="authorized synthetic smoke contract",
-        request_timeout_seconds=3,
-        poll_interval_seconds=0,
-        max_polls=4,
-    )
+class FakeTransport:
+    def __init__(self, *, changed_full_run: bool = False, conflicting_express_boundary: bool = False) -> None:
+        self.calls: list[tuple[str, str, dict[str, Any] | None, bool]] = []
+        self.changed_full_run = changed_full_run
+        self.conflicting_express_boundary = conflicting_express_boundary
 
-
-def test_each_tier_starts_once_and_mid_full_only_poll_the_exact_returned_run() -> None:
-    calls: list[tuple[str, str, dict[str, Any] | None]] = []
-    poll_counts: Counter[str] = Counter()
-
-    def requester(method: str, url: str, payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        calls.append((method, url, payload))
-        if url.endswith("/assessment/github"):
+    def request_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        admin: bool = False,
+    ) -> dict[str, Any]:
+        self.calls.append((method, path, payload, admin))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/targets":
+            return {"status": "ok"}
+        if path == "/assessment/github":
+            result: dict[str, Any] = {
+                "status": "complete",
+                "run_id": "express_1",
+                "human_review_required": True,
+                "client_ready": False,
+                "reports": {"report_id": "report_express_1", "markdown": "draft"},
+                "unavailable_data_notes": ["provider token=must-not-be-retained"],
+            }
+            if self.conflicting_express_boundary:
+                result["delivery"] = {"client_delivery_allowed": True}
+            return result
+        if path == "/assessment/mid-run":
+            return {
+                "status": "running",
+                "run_id": "midrun_exact_1",
+                "human_review_required": True,
+                "client_ready": False,
+            }
+        if path == "/assessment/mid-run/midrun_exact_1/status":
             return {
                 "status": "complete",
-                "assessment_id": "express-assessment-1",
-                "assessment_mode": "express",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        if url.endswith("/assessment/mid-run"):
-            return {
-                "status": "queued",
                 "run_id": "midrun_exact_1",
-                "mode": "mid",
                 "human_review_required": True,
                 "client_ready": False,
+                "report_generation_status": "complete",
+                "mid_report": {
+                    "report_id": "report_mid_1",
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                },
+                "approval_request": {"approval_id": "review_mid_1", "status": "pending"},
             }
-        if url.endswith("/assessment/full-run"):
+        if path == "/assessment/full-run":
             return {
-                "status": "queued",
+                "status": "running",
                 "run_id": "fullrun_exact_1",
-                "mode": "full",
                 "human_review_required": True,
                 "client_ready": False,
             }
-        if "/assessment/mid-run/midrun_exact_1/status" in url:
-            poll_counts["mid"] += 1
+        if path == "/assessment/full-run/fullrun_exact_1/status":
             return {
-                "status": "running" if poll_counts["mid"] == 1 else "complete",
-                "run_id": "midrun_exact_1",
-                "assessment_type": "mid",
+                "status": "complete",
+                "run_id": "fullrun_changed" if self.changed_full_run else "fullrun_exact_1",
                 "human_review_required": True,
                 "client_ready": False,
+                "reports": {
+                    "report_id": "report_full_1",
+                    "markdown": "draft",
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                },
+                "approval": {"approval_id": "review_full_1", "status": "pending"},
             }
-        if "/assessment/full-run/fullrun_exact_1/status" in url:
-            poll_counts["full"] += 1
+        if path.startswith("/assessment/full-run/fullrun_exact_1/approved-delivery/readiness?"):
+            assert admin is True
             return {
-                "status": "running" if poll_counts["full"] == 1 else "pending_review",
-                "run_id": "fullrun_exact_1",
-                "report_path": "full_run",
-                "human_review_required": True,
-                "client_ready": False,
+                "status": "blocked",
+                "ready": False,
+                "lifecycle": "blocked",
+                "checks": [{"id": "human_approval", "passed": False}],
+                "summary": {
+                    "access_grant_count": 0,
+                    "verified_receipt_count": 0,
+                    "verified_acknowledgment_count": 0,
+                },
             }
-        raise AssertionError(f"Unexpected URL: {url}")
+        raise AssertionError(f"Unexpected production-smoke path: {path}")
 
-    evidence = run_smoke(
-        _config(),
-        ["express", "mid", "full"],
-        authorization_confirmed=True,
-        requester=requester,
-        sleeper=lambda _seconds: None,
-    )
 
-    endpoints = [url for _method, url, _payload in calls]
-    assert endpoints.count("https://api.example.invalid/assessment/github") == 1
-    assert endpoints.count("https://api.example.invalid/assessment/mid-run") == 1
-    assert endpoints.count("https://api.example.invalid/assessment/full-run") == 1
-    assert all("midrun_exact_1" in url for url in endpoints if "/assessment/mid-run/" in url)
-    assert all("fullrun_exact_1" in url for url in endpoints if "/assessment/full-run/" in url)
-    assert evidence["status"] == "passed"
-    assert evidence["proof"] == {
+def config(**overrides: Any) -> SmokeConfig:
+    values: dict[str, Any] = {
+        "frontend_url": "https://app.nicoaudit.com",
+        "backend_url": "https://nico-production-690a.up.railway.app",
+        "repository": "BoneManTGRM/NICO",
+        "customer_id": "customer_nico_smoke",
+        "project_id": "project_nico_smoke",
+        "authorization_reference": "authorization/ref-1",
+        "github_repository": "BoneManTGRM/NICO",
+        "github_sha": SHA,
+        "confirmation": CONFIRMATION_PHRASE,
+        "poll_attempts": 3,
+        "poll_interval_seconds": 0,
+    }
+    values.update(overrides)
+    return SmokeConfig(**values)
+
+
+def deployment() -> dict[str, Any]:
+    return {
+        "status": "passed",
+        "frontend_commit": SHA,
+        "backend_commit": SHA,
+        "checks": [
+            {"context": "Vercel", "state": "success", "provider": "vercel"},
+            {"context": "successful-cat - NICO", "state": "success", "provider": "railway"},
+        ],
+    }
+
+
+def browser() -> dict[str, Any]:
+    return {
+        "status": "passed",
+        "frontend_commit": SHA,
+        "no_assessment_started": True,
+        "checks": [{"id": "unified_heading", "passed": True}],
+    }
+
+
+def complete_hosted_evidence(artifact: dict[str, Any]) -> dict[str, Any]:
+    evidence: dict[str, Any] = {}
+    for case in SMOKE_TESTS:
+        if case["evidence_key"] == "production_assessment_smoke":
+            evidence[case["evidence_key"]] = artifact
+        else:
+            evidence[case["evidence_key"]] = {"status": case.get("required_status") or "ok"}
+    return evidence
+
+
+def test_controlled_smoke_emits_hosted_contract_and_one_start_per_tier() -> None:
+    transport = FakeTransport()
+    artifact = build_smoke_artifact(config(), transport, deployment(), browser(), sleep=lambda _seconds: None)
+
+    assert artifact["status"] == "passed"
+    assert artifact["proof"] == {
         "one_start_per_tier": True,
         "exact_run_continuation": True,
         "human_review_boundary_preserved": True,
         "no_client_ready_claim": True,
+        "duplicate_start_guard": True,
+        "forbidden_operation_requests": 0,
+        "client_delivery_blocked": True,
     }
-    tiers = {item["tier"]: item for item in evidence["tiers"]}
-    assert tiers["express"]["start_count"] == 1
-    assert tiers["mid"]["run_id"] == "midrun_exact_1"
-    assert tiers["full"]["run_id"] == "fullrun_exact_1"
-    assert tiers["mid"]["poll_count"] == 2
-    assert tiers["full"]["poll_count"] == 2
+    assert [item["tier"] for item in artifact["tiers"]] == ["express", "mid", "full"]
+    assert all(item["start_count"] == 1 for item in artifact["tiers"])
+    assert artifact["tiers"][1]["status_path"] == "/assessment/mid-run/midrun_exact_1/status"
+    assert artifact["tiers"][2]["status_path"] == "/assessment/full-run/fullrun_exact_1/status"
 
-
-def test_continuation_run_identity_mismatch_fails_closed() -> None:
-    def requester(method: str, url: str, payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        assert method == "POST"
-        assert payload
-        if url.endswith("/assessment/mid-run"):
-            return {"status": "queued", "run_id": "midrun_original", "mode": "mid"}
-        return {"status": "complete", "run_id": "midrun_replacement", "mode": "mid"}
-
-    with pytest.raises(SmokeFailure, match="changed run identity"):
-        run_tier("mid", _config(), requester=requester, sleeper=lambda _seconds: None)
-
-
-def test_blocked_or_unavailable_results_never_become_passing_smoke_evidence() -> None:
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "unavailable",
-            "assessment_id": "express-unavailable",
-            "message": "Required repository evidence is unavailable.",
-        }
-
-    with pytest.raises(SmokeFailure, match="Unavailable|unavailable"):
-        run_tier("express", _config(), requester=requester)
-
-
-def test_production_execution_requires_explicit_authorization_confirmation() -> None:
-    with pytest.raises(SmokeFailure, match="Explicit authorization confirmation"):
-        run_smoke(
-            _config(),
-            ["express"],
-            authorization_confirmed=False,
-            requester=lambda *_args: {},
-        )
-
-
-def test_tier_metadata_conflict_is_not_corrected_cosmetically() -> None:
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "complete",
-            "assessment_id": "express-conflict",
-            "assessment_mode": "full",
-            "human_review_required": True,
-            "client_ready": False,
-        }
-
-    with pytest.raises(SmokeFailure, match="conflicting tier metadata"):
-        run_tier("express", _config(), requester=requester)
-
-
-def test_url_and_tier_parsing_are_bounded_and_safe() -> None:
-    assert normalize_base_url("https://api.example.invalid/") == "https://api.example.invalid"
-    assert normalize_base_url("http://127.0.0.1:8000", allow_http=True) == "http://127.0.0.1:8000"
-    with pytest.raises(SmokeFailure, match="HTTPS"):
-        normalize_base_url("http://api.example.invalid")
-    with pytest.raises(SmokeFailure, match="credentials"):
-        normalize_base_url("https://user:password@api.example.invalid")
-    assert parse_tiers("express,mid,full,mid") == ["express", "mid", "full"]
-    with pytest.raises(SmokeFailure, match="Unsupported tier"):
-        parse_tiers("express,enterprise")
-
-
-def test_frontend_proof_is_optional_but_must_pass_when_requested() -> None:
-    requested_urls: list[str] = []
-
-    def frontend_requester(url: str, _timeout: float) -> dict[str, Any]:
-        requested_urls.append(url)
-        return {
-            "status": "passed",
-            "http_status": 200,
-            "required_labels": ["Express", "Mid", "Full"],
-            "response_sha256": "a" * 64,
-        }
-
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "complete",
-            "assessment_id": "express-frontend-proof",
-            "assessment_mode": "express",
-            "human_review_required": True,
-            "client_ready": False,
-        }
-
-    result = run_smoke(
-        _config(),
-        ["express"],
-        authorization_confirmed=True,
-        frontend_url="https://app.example.invalid",
-        requester=requester,
-        frontend_requester=frontend_requester,
+    paths = [path for _method, path, _payload, _admin in transport.calls]
+    assert paths.count("/assessment/github") == 1
+    assert paths.count("/assessment/mid-run") == 1
+    assert paths.count("/assessment/full-run") == 1
+    assert not any(
+        method == "POST" and any(fragment in path for fragment in ("/approval", "/delivery", "/repair"))
+        for method, path, _payload, _admin in transport.calls
     )
+    admin_calls = [(method, path) for method, path, _payload, admin in transport.calls if admin]
+    assert len(admin_calls) == 1
+    assert admin_calls[0][0] == "GET"
+    assert "/approved-delivery/readiness?" in admin_calls[0][1]
+    assert artifact["delivery_boundary"] == {
+        "status": "blocked",
+        "ready": False,
+        "lifecycle": "blocked",
+        "human_approval_passed": False,
+        "access_grant_count": 0,
+        "verified_receipt_count": 0,
+        "verified_acknowledgment_count": 0,
+    }
+    assert "must-not-be-retained" not in json.dumps(artifact)
+    assert artifact["tiers"][0]["unavailable_evidence"][0].startswith("unavailable_note_sha256:")
 
-    assert requested_urls == ["https://app.example.invalid/assessment"]
-    assert result["frontend"]["status"] == "passed"
+    passed, note = _production_assessment_smoke_validation(artifact)
+    assert passed is True
+    assert note
+
+    hosted = build_hosted_smoke_test({"evidence": complete_hosted_evidence(artifact)})
+    tier_case = next(item for item in hosted["cases"] if item["id"] == "production_assessment_tiers")
+    assert tier_case["passed"] is True
 
 
-def test_manual_workflow_requires_authorization_and_uploads_the_evidence_artifact() -> None:
-    source = WORKFLOW.read_text(encoding="utf-8")
+def test_changed_exact_run_identity_fails_closed() -> None:
+    with pytest.raises(SmokeFailure, match="changed the exact run identity") as error:
+        build_smoke_artifact(
+            config(),
+            FakeTransport(changed_full_run=True),
+            deployment(),
+            browser(),
+            sleep=lambda _seconds: None,
+        )
+    assert error.value.code == "run_identity_changed"
 
-    assert "workflow_dispatch:" in source
-    assert "schedule:" not in source
-    assert "confirm_authorized:" in source
-    assert "--confirm-authorized" in source
-    assert "scripts/production_assessment_smoke.py" in source
-    assert "audit-results/production-assessment-smoke.json" in source
-    assert "actions/upload-artifact@v4" in source
-    assert "permissions:\n  contents: read" in source
-    assert "NICO_ADMIN_TOKEN" not in source
+
+def test_conflicting_client_delivery_boundary_fails_closed() -> None:
+    with pytest.raises(SmokeFailure) as error:
+        build_smoke_artifact(
+            config(),
+            FakeTransport(conflicting_express_boundary=True),
+            deployment(),
+            browser(),
+            sleep=lambda _seconds: None,
+        )
+    assert error.value.code == "express_not_stable"
+
+
+def test_configuration_rejects_unallowlisted_hosts_before_execution() -> None:
+    environment = {
+        "NICO_PRODUCTION_SMOKE_ALLOWLIST": "bonemantgrm/nico",
+        "NICO_PRODUCTION_SMOKE_FRONTEND_HOSTS": "app.nicoaudit.com",
+        "NICO_PRODUCTION_SMOKE_BACKEND_HOSTS": "nico-production-690a.up.railway.app",
+        "NICO_PRODUCTION_SMOKE_ADMIN_TOKEN": "configured-secret",
+        "GITHUB_TOKEN": "configured-github-token",
+    }
+    with pytest.raises(SmokeFailure) as error:
+        validate_config(config(backend_url="https://attacker.example"), environment)
+    assert error.value.code == "host_not_allowlisted"
+
+

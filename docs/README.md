@@ -9,6 +9,7 @@ Use this page to find the current authoritative document for an operating questi
 - [`PROJECT_STATUS.md`](PROJECT_STATUS.md) — stable, operational, experimental, legacy, and planned maturity map.
 - [`OPERATIONS_READINESS.md`](OPERATIONS_READINESS.md) — semantic production-readiness contract.
 - [`PRODUCTION_RELEASE_GATE.md`](PRODUCTION_RELEASE_GATE.md) — exact-SHA deployment verification and rollback procedure.
+- [`PRODUCTION_ASSESSMENT_SMOKE.md`](PRODUCTION_ASSESSMENT_SMOKE.md) — protected live Express/Mid/Full browser and API proof workflow.
 - [`hosted-readiness-runbook.md`](hosted-readiness-runbook.md) — hosted evidence and readiness checks.
 - [`NO_SERVER_ASSESSMENT.md`](NO_SERVER_ASSESSMENT.md) — local-first authorized assessment workflow.
 - [`SAFARI_HOSTED_APP.md`](SAFARI_HOSTED_APP.md) — hosted browser deployment setup.
