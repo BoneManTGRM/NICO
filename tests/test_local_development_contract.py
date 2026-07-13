@@ -17,8 +17,8 @@ def test_run_local_uses_packaged_complete_api_runner() -> None:
     assert "from nico.api_runner import main" in launcher
     assert "from nico.api.main import start" not in launcher
     assert 'uvicorn.run("nico.api.production:app"' in runner
-    assert 'NICO_API_HOST' in runner
-    assert 'NICO_API_PORT' in runner
+    assert "NICO_API_HOST" in runner
+    assert "NICO_API_PORT" in runner
 
 
 def test_python_module_and_console_script_share_one_dispatcher() -> None:
@@ -54,3 +54,26 @@ def test_docker_context_excludes_local_state_and_env_files() -> None:
 
     for item in (".git", ".nico", ".env", "node_modules", "apps/web/.next", "*.sqlite3"):
         assert item in ignore
+
+
+def test_runtime_image_installs_package_and_owns_persistent_data_path() -> None:
+    dockerfile = _read("Dockerfile")
+
+    assert "mkdir -p /data/reports" in dockerfile
+    assert "chown -R nico:nico /data" in dockerfile
+    assert "python -m pip install --no-cache-dir --no-deps ." in dockerfile
+    assert "chown -R nico:nico /app /data" in dockerfile
+    assert dockerfile.index("chown -R nico:nico /app /data") < dockerfile.index("USER nico")
+
+
+def test_ci_executes_installed_entry_points_and_runtime_storage_probe() -> None:
+    workflow = _read(".github/workflows/nico-ci.yml")
+
+    assert "pip install --no-deps -e ." in workflow
+    assert "Verify package entry points" in workflow
+    assert "nico --help" in workflow
+    assert 'scripts.get("nico") == "nico.__main__:main"' in workflow
+    assert 'scripts.get("nico-api") == "nico.api_runner:main"' in workflow
+    assert "test -w /data" in workflow
+    assert "command -v nico" in workflow
+    assert "command -v nico-api" in workflow
