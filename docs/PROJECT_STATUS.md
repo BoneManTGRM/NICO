@@ -23,7 +23,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Scanner worker | Operational | Real subprocess execution exists for supported tools. Requested tools execute or are disclosed as unavailable, failed, or timed out; production proof should continue. |
 | RYE/TGRM repair planning | Operational | Repair prioritization and candidate generation exist; public validation and calibration remain separate work. |
 | Drift, baseline, verification, and repair memory | Operational | Core workflows exist; long-running and real-world fixture coverage should expand. |
-| Draft report generation | Operational | Multiple output paths exist. Report-path consolidation and representative golden fixtures remain work. |
+| Draft report generation | Operational | Representative synthetic golden fixtures and a deterministic recorded demonstration exist. Report-path consolidation remains work. |
 | Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
 | Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Production restart and durability evidence should be exercised regularly. |
 | Operations readiness, events, and alerts | Operational | Semantic readiness is implemented. Operator usability and production evidence history should improve. |
@@ -52,7 +52,7 @@ NICO does not claim:
 
 ## Completion roadmap
 
-Completed major workstreams: **8 of 12**.
+Completed major workstreams: **9 of 12**.
 
 - [x] Canonical architecture, operator guide, maturity map, and documentation index.
 - [x] Truthful README, security policy, contribution guidance, and repository templates.
@@ -64,17 +64,27 @@ Completed major workstreams: **8 of 12**.
 - [x] Packaging and one-command local development, including supported `nico` and `nico-api` entry points.
 - [x] Cross-module E2E coverage for assessment, report, review, approved artifact, controlled delivery, receipt, and acknowledgment.
 - [ ] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
-- [ ] Additional representative golden fixtures and recorded evidence-bound demonstrations with no fabricated live claims.
+- [x] Additional representative golden fixtures and recorded evidence-bound demonstrations with no fabricated live claims.
 - [x] Public maturity boundaries for stable, operational, experimental, legacy, and planned areas.
 
 ## Remaining execution order
 
 1. Deployed Express, Mid, and Full browser/API E2E proof.
 2. Restart, persistence, observability, recovery, and graceful-degradation proof.
-3. Additional golden fixtures and recorded demonstrations.
-4. CLI and service modularization after behavior is protected by E2E and restart tests.
+3. CLI and service modularization after behavior is protected by E2E and restart tests.
 
-The remaining estimate is approximately **7–11 small, reviewable pull requests**, subject to defects uncovered during deployed and restart testing.
+The remaining estimate is approximately **5–8 small, reviewable pull requests**, subject to defects uncovered during deployed and restart testing.
+
+## Golden-fixture completion evidence
+
+The completed golden-fixture workstream is bounded to synthetic, non-live evidence:
+
+- `tests/fixtures/golden/manifest.json` governs unavailable-evidence, complete-evidence, and mixed-risk repair scenarios.
+- Every fixture remains review-required, unapproved, non-client-ready, non-certifying, and delivery-blocked.
+- `.github/workflows/recorded-golden-demonstration.yml` builds the suite twice, requires byte-for-byte reproducibility, and uploads bounded JSON and Markdown artifacts.
+- `scripts/build_golden_demonstration.py` fails closed on unsafe paths, coverage drift, duplicate identities, live claims, weakened review or delivery boundaries, certification claims, and automatic production-change permission.
+
+This completion does not count as deployed browser/API E2E proof or live production evidence.
 
 ## Phase 2 gate
 
