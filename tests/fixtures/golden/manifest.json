@@ -1,0 +1,77 @@
+{
+  "manifest_version": 1,
+  "suite_name": "nico_synthetic_golden_assessment_contracts",
+  "evidence_kind": "synthetic_fixture_manifest",
+  "live_claim": false,
+  "purpose": "Provide representative regression contracts for unavailable, complete, and mixed-risk assessment evidence without creating live, certification, approval, or delivery claims.",
+  "required_boundaries": {
+    "synthetic_only": true,
+    "live_claim": false,
+    "human_review_required": true,
+    "approved": false,
+    "client_ready": false,
+    "delivery_blocked": true,
+    "certification_forbidden": true,
+    "automatic_production_change_forbidden": true
+  },
+  "fixtures": [
+    {
+      "id": "unavailable_evidence",
+      "path": "synthetic_unavailable_assessment.json",
+      "fixture_name": "synthetic_unavailable_assessment",
+      "coverage": [
+        "unavailable_scanner_reason",
+        "insufficient_evidence_score",
+        "no_unavailable_credit",
+        "review_required",
+        "delivery_blocked"
+      ]
+    },
+    {
+      "id": "complete_review_boundary",
+      "path": "synthetic_complete_review_required_assessment.json",
+      "fixture_name": "synthetic_complete_review_required_assessment",
+      "coverage": [
+        "all_requested_tools_complete",
+        "snapshot_bound_artifact_hashes",
+        "fixture_only_numeric_score",
+        "no_certification",
+        "review_required",
+        "delivery_blocked"
+      ]
+    },
+    {
+      "id": "mixed_risk_repair_boundary",
+      "path": "synthetic_mixed_risk_repair_assessment.json",
+      "fixture_name": "synthetic_mixed_risk_repair_assessment",
+      "coverage": [
+        "evidence_bound_findings",
+        "failed_scanner_no_credit",
+        "no_real_exposure_claim",
+        "draft_repair_candidates",
+        "verification_and_rollback",
+        "no_automatic_production_change",
+        "review_required",
+        "delivery_blocked"
+      ]
+    }
+  ],
+  "coverage_requirements": [
+    "unavailable_scanner_reason",
+    "insufficient_evidence_score",
+    "no_unavailable_credit",
+    "all_requested_tools_complete",
+    "snapshot_bound_artifact_hashes",
+    "fixture_only_numeric_score",
+    "evidence_bound_findings",
+    "failed_scanner_no_credit",
+    "no_real_exposure_claim",
+    "draft_repair_candidates",
+    "verification_and_rollback",
+    "no_certification",
+    "no_automatic_production_change",
+    "review_required",
+    "delivery_blocked"
+  ],
+  "remaining_boundary": "This synthetic suite does not replace recorded authorized deployment demonstrations or live production smoke evidence."
+}
