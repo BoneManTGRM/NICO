@@ -96,8 +96,10 @@ def test_root_layout_keeps_provider_alive_across_mid_routes() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import {MidWorkspaceProvider} from "./MidWorkspaceContext";' in layout
-    assert layout.index("<MidWorkspaceProvider>") < layout.index("{children}")
-    assert layout.index("{children}") < layout.index("</MidWorkspaceProvider>")
+    provider_start = layout.index("<MidWorkspaceProvider>")
+    children_index = layout.index("{children}", provider_start)
+    provider_end = layout.index("</MidWorkspaceProvider>", children_index)
+    assert provider_start < children_index < provider_end
     assert 'href="/mid-assessment"' in layout
     assert "does not create a client delivery link" in layout
     assert "Client downloads require acknowledgement" in layout
