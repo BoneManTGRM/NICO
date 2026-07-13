@@ -20,6 +20,7 @@ function packetPayload() {
 
 export default function MidEvidencePacketHelper() {
   const [active, setActive] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [runId, setRunId] = useState("");
   const [tokenAvailable, setTokenAvailable] = useState(false);
   const [packetAttached, setPacketAttached] = useState(false);
@@ -28,8 +29,11 @@ export default function MidEvidencePacketHelper() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (window.location.pathname !== "/") return;
+    const pathname = window.location.pathname;
+    const supported = pathname === "/" || pathname === "/assessment";
+    if (!supported) return;
     setActive(true);
+    setVisible(pathname === "/");
     const syncSession = () => {
       try {
         const storedRun = sessionStorage.getItem(RUN_KEY) || "";
@@ -107,7 +111,7 @@ export default function MidEvidencePacketHelper() {
     return () => window.clearTimeout(timer);
   }, [active, runId, tokenAvailable, packetAttached]);
 
-  if (!active || !runId) return null;
+  if (!active || !visible || !runId) return null;
 
   const statusLabel = packetAttached ? "evidence packet attached" : tokenAvailable ? "evidence capability available" : "fresh run required";
   const statusClass = packetAttached ? "status green" : tokenAvailable ? "status blue" : "status gray";
@@ -120,9 +124,9 @@ export default function MidEvidencePacketHelper() {
     <p className="muted">Active run: {runId}. Repository context is attached as human-review evidence; it is never converted into automatic repository proof.</p>
     <div className="report-actions">
       <button type="button" className="primary-button" disabled={!API_URL || !tokenAvailable || submitting || packetAttached} onClick={() => void attachPacket(false)}>{packetAttached ? "Evidence packet attached" : submitting ? "Attaching evidence packet..." : "Attach NICO evidence packet"}</button>
-      <a className="secondary-link" href="/">Start a fresh Mid run</a>
+      <a className="secondary-link" href="/assessment?tier=mid#assessment">Start a fresh Mid run</a>
       <a className="secondary-link" href="/mid-review">Review exceptions</a>
-      <a className="secondary-link" href="/mid-report">Generate Mid draft</a>
+      <a className="secondary-link" href="/mid-report">Verify Mid draft</a>
     </div>
     {error ? <p className="error-box">{error}</p> : null}
     {message ? <p className="summary-box">{message}</p> : null}
