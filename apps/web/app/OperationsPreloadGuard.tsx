@@ -4,6 +4,7 @@ import {useEffect} from "react";
 import {usePathname} from "next/navigation";
 
 const NOTE_ID = "nico-operations-not-loaded";
+const PRELOAD_PILL_ATTRIBUTE = "data-nico-preload-hidden";
 
 export default function OperationsPreloadGuard() {
   const pathname = usePathname();
@@ -36,6 +37,16 @@ export default function OperationsPreloadGuard() {
         if (index > authenticationIndex) section.hidden = !evidenceLoaded;
       });
 
+      const preloadPills = Array.from(main.querySelectorAll<HTMLElement>("span")).filter((element) => {
+        const text = String(element.textContent || "").trim().toLowerCase();
+        return text === "readiness: not loaded" || text === "highest alert: not loaded";
+      });
+      preloadPills.forEach((element) => {
+        element.hidden = !evidenceLoaded;
+        if (!evidenceLoaded) element.setAttribute(PRELOAD_PILL_ATTRIBUTE, "true");
+        else element.removeAttribute(PRELOAD_PILL_ATTRIBUTE);
+      });
+
       const existing = document.getElementById(NOTE_ID);
       if (evidenceLoaded) {
         existing?.remove();
@@ -61,6 +72,10 @@ export default function OperationsPreloadGuard() {
       document.getElementById(NOTE_ID)?.remove();
       document.querySelectorAll<HTMLElement>("main > section[hidden]").forEach((section) => {
         section.hidden = false;
+      });
+      document.querySelectorAll<HTMLElement>(`[${PRELOAD_PILL_ATTRIBUTE}]`).forEach((element) => {
+        element.hidden = false;
+        element.removeAttribute(PRELOAD_PILL_ATTRIBUTE);
       });
     };
   }, [pathname]);
