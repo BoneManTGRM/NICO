@@ -80,7 +80,7 @@ The remaining estimate is approximately **4–7 small, reviewable pull requests*
 
 The completed resilience workstream is bounded to repository and ephemeral-CI proof:
 
-- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh Postgres adapter instances with tenant and run identity preserved.
+- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh adapters with tenant and run identity preserved.
 - `.github/workflows/resilience-proof.yml` exercises stale scanner reconciliation, persisted `recovery_required` state, explicit same-ID resume, duplicate-resume idempotency, memory-fallback blocking, and bounded redacted telemetry degradation.
 - `scripts/postgres_restart_proof.py` and `scripts/build_resilience_proof.py` emit synthetic, non-live evidence artifacts without database URLs, credentials, automatic repair authority, approval, or client-delivery authority.
 - Scanner recovery remains operator-controlled; no automatic resume or production-impacting action is authorized by these proofs.
