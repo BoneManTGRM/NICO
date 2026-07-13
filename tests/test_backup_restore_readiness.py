@@ -251,7 +251,7 @@ def test_unsafe_provider_label_and_invalid_hash_are_rejected() -> None:
     with pytest.raises(HTTPException):
         build_backup_evidence(_backup_request(_now() - timedelta(minutes=1), provider="https://provider.example/backup"))
     with pytest.raises(HTTPException):
-        build_backup_evidence(_backup_request(_now() - timedelta(minutes=1), backup_reference_sha256="not-a-hash"))
+        build_backup_evidence(_backup_request(_now() - timedelta(minutes=1), backup_reference_sha256="z" * 64))
 
 
 def test_audit_actions_are_distinct_and_bounded() -> None:
