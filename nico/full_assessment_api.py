@@ -48,7 +48,7 @@ class FullAssessmentRequest(BaseModel):
     authorized_by: str = "unspecified"
     authorization_confirmed: bool = False
     authorized: bool = False
-    mode: str = "express"
+    mode: str = "full"
     timeframe_days: int = 180
     run_scanners: bool = True
     refresh_full_evidence: bool = True
@@ -69,7 +69,7 @@ class FullAssessmentStatusRequest(BaseModel):
     authorized_by: str = "frontend_reviewer"
     authorization_confirmed: bool = True
     authorized: bool = True
-    mode: str = "express"
+    mode: str = "full"
     timeframe_days: int = 180
     build_reports: bool = False
     create_final_review_request: bool = False
@@ -98,167 +98,120 @@ class ApprovedDeliveryAcknowledgmentRequest(BaseModel):
     token: str = ""
     receipt_id: str = ""
     acknowledged_by: str = ""
-    acknowledged: bool = False
+    acknowledgment_text: str = ""
 
 
-def _model_payload(req: BaseModel) -> dict[str, Any]:
-    if hasattr(req, "model_dump"):
-        return req.model_dump()  # type: ignore[attr-defined]
-    return req.dict()
+def _model_payload(model: BaseModel) -> dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
 
-def _with_report_path(result: dict[str, Any]) -> dict[str, Any]:
-    """Mark this response as the full-run path so it cannot be confused with Express output."""
-
-    return apply_report_path_truth(result, FULL_RUN_REPORT_PATH)
+def _attach_persisted_delivery(result: dict[str, Any]) -> dict[str, Any]:
+    return attach_verified_approved_delivery(result)
 
 
 def _attach_repository_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    for item in result.get("progress") or []:
-        if not isinstance(item, dict) or item.get("step") != "repo_evidence":
-            continue
-        evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
-        bundle = evidence.get("repository_evidence") if isinstance(evidence.get("repository_evidence"), dict) else {}
-        if bundle:
-            result["repository_evidence"] = bundle
-            return result
-    result.setdefault("repository_evidence", {"status": "not_attached", "run_id": result.get("run_id") or ""})
+    evidence = result.get("repository_evidence") if isinstance(result.get("repository_evidence"), dict) else {}
+    if not evidence:
+        return result
+    result["repository_snapshot"] = {
+        "snapshot_id": evidence.get("evidence_id") or "",
+        "commit_sha": evidence.get("snapshot_commit_sha") or "",
+        "default_branch": (evidence.get("repository_metadata") or {}).get("default_branch") or "",
+        "source": evidence.get("source") or "github_api_read_only",
+        "status": evidence.get("status") or "unavailable",
+    }
     return result
 
 
 def _attach_assessment_truth_summary(result: dict[str, Any]) -> dict[str, Any]:
     assessment = result.get("assessment") if isinstance(result.get("assessment"), dict) else {}
-    ledger = assessment.get("evidence_ledger") if isinstance(assessment.get("evidence_ledger"), dict) else {}
-    display = assessment.get("trust_report_display") if isinstance(assessment.get("trust_report_display"), dict) else {}
-    gate = assessment.get("export_truth_gate") if isinstance(assessment.get("export_truth_gate"), dict) else {}
-    if not ledger and not display and not gate:
-        return result
-
-    result["trust_level"] = assessment.get("trust_level") or display.get("trust_level") or "Review-limited"
-    result["client_delivery_status"] = assessment.get("client_delivery_status") or display.get("client_delivery_status") or "Human Review Required"
-    result["evidence_ledger"] = ledger
-    result["trust_report_display"] = display
-    result["export_truth_gate"] = gate
-    result["delivery_verdict"] = "human_review_required"
-    result["human_review_required"] = True
-    result["client_ready"] = False
-    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
-    if reports:
-        reports.setdefault("trust_level", result["trust_level"])
-        reports.setdefault("client_delivery_allowed", False)
-        reports.setdefault("human_review_required", True)
-        reports.setdefault("evidence_ledger_status", str(ledger.get("status") or "missing"))
-        reports.setdefault("export_truth_gate", gate)
+    scorecard = assessment.get("scorecard") if isinstance(assessment.get("scorecard"), dict) else {}
+    result["truth_summary"] = {
+        "technical_score": scorecard.get("technical_score"),
+        "assessment_mode": result.get("mode") or result.get("assessment_mode") or "full",
+        "report_path": result.get("report_path") or FULL_RUN_REPORT_PATH,
+        "human_review_required": bool(result.get("human_review_required", True)),
+        "client_ready": bool(result.get("client_ready", False)),
+        "scanner_finding_truth_applied": bool(scorecard.get("scanner_finding_truth_applied")),
+        "unavailable_data_notes": assessment.get("unavailable_data_notes") or result.get("unavailable_data_notes") or [],
+    }
     return result
 
 
-def _record_result(result: dict[str, Any], payload: dict[str, Any], *, restored: bool) -> dict[str, Any]:
-    metadata = persistence_metadata(restored=restored)
-    result["persistence"] = metadata
-    try:
-        record = persist_full_assessment_run(result, payload)
-    except Exception:  # pragma: no cover - defensive storage boundary
-        result["persistence"] = {
-            "recorded": False,
-            "durable": False,
-            "adapter": metadata.get("adapter") or "unknown",
-            "restored": restored,
-            "note": "Full-run state could not be recorded; the assessment response remains available but must not be treated as restart-resumable.",
-        }
-        return result
-    result["persistence"].update(
-        {
-            "record_id": record.get("run_id") or result.get("run_id"),
-            "created_at": record.get("created_at"),
-            "updated_at": record.get("updated_at"),
-        }
-    )
+def _with_report_path(result: dict[str, Any]) -> dict[str, Any]:
+    return apply_report_path_truth(result, FULL_RUN_REPORT_PATH)
+
+
+def _record_result(result: dict[str, Any], payload: dict[str, Any], *, restored: bool = False) -> dict[str, Any]:
+    saved = persist_full_assessment_run(result, payload, restored=restored)
+    result["persistence"] = persistence_metadata(saved)
     return result
 
 
-def _blocked_detail(result: dict[str, Any], message: str) -> dict[str, Any]:
+def _blocked_detail(result: dict[str, Any], fallback: str) -> dict[str, Any]:
+    progress = result.get("progress") if isinstance(result.get("progress"), list) else []
+    blocked = next((item for item in progress if isinstance(item, dict) and item.get("status") == "blocked"), {})
     return {
         "status": "blocked",
-        "code": str(result.get("error") or "blocked")[:80],
-        "message": message,
+        "code": str(blocked.get("step") or "full_assessment_blocked"),
+        "message": str(blocked.get("message") or fallback),
         "run_id": result.get("run_id") or "",
-        "progress": result.get("progress", []),
-        "persistence": result.get("persistence", {}),
+        "report_path": FULL_RUN_REPORT_PATH,
+        "human_review_required": True,
+        "client_ready": False,
     }
-
-
-def _attach_persisted_delivery(result: dict[str, Any]) -> dict[str, Any]:
-    return attach_verified_approved_delivery(result, include_pdf=True)
 
 
 def _admin_access_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") == "blocked":
-        status_code = 403 if result.get("admin_write") else 400
-        raise HTTPException(
-            status_code=status_code,
-            detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery access action was blocked.")},
-        )
+        raise HTTPException(status_code=403, detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery access action was blocked.")})
     if result.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Approved-delivery access record not found."})
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Approved-delivery access record was not found."})
     return result
 
 
 def _admin_receipt_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") == "blocked":
-        status_code = 403 if result.get("admin_write") else 400
-        raise HTTPException(
-            status_code=status_code,
-            detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery receipt action was blocked.")},
-        )
+        raise HTTPException(status_code=403, detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery receipt action was blocked.")})
     return result
 
 
 def _admin_acknowledgment_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") == "blocked":
-        status_code = 403 if result.get("admin_write") else 400
-        raise HTTPException(
-            status_code=status_code,
-            detail={"status": "blocked", "message": str(result.get("error") or "Client acknowledgment action was blocked.")},
-        )
+        raise HTTPException(status_code=403, detail={"status": "blocked", "message": str(result.get("error") or "Approved-delivery acknowledgment action was blocked.")})
     return result
 
 
 def full_assessment_response(req: FullAssessmentRequest) -> dict[str, Any]:
     payload = _model_payload(req)
-    handlers = idempotent_full_assessment_handlers(timeframe_days=int(payload.get("timeframe_days") or 180))
+    handlers = idempotent_full_assessment_handlers(timeframe_days=req.timeframe_days)
     result = run_full_assessment_orchestration(payload, handlers=handlers)
     result = _attach_repository_evidence(result)
     result = _attach_assessment_truth_summary(result)
     result = _with_report_path(result)
     result = _attach_persisted_delivery(result)
-    result = _record_result(result, payload, restored=False)
+    result = _record_result(result, payload)
     if result.get("status") == "blocked":
         raise HTTPException(
             status_code=400,
-            detail=_blocked_detail(result, "Request blocked by NICO safety, authorization, or review policy."),
+            detail=_blocked_detail(result, "Full Assessment blocked by NICO safety, authorization, or review policy."),
         )
     return result
 
 
 def full_assessment_status_response(run_id: str, req: FullAssessmentStatusRequest) -> dict[str, Any]:
-    request_payload = _model_payload(req)
-    explicit_fields = explicit_model_fields(req)
-    payload, record = build_status_payload(run_id, request_payload, explicit_fields)
-    saved_request = dict((record or {}).get("request") or {})
-    auto_continue = (
-        bool(request_payload.get("auto_continue"))
-        if "auto_continue" in explicit_fields
-        else bool(saved_request.get("auto_continue", True))
-    )
-    plan = plan_full_assessment_continuation(
-        payload,
-        record,
-        auto_continue=auto_continue,
-    )
-    continuation_payload = plan["payload"]
-    handlers = idempotent_full_assessment_handlers(timeframe_days=int(continuation_payload.get("timeframe_days") or 180))
-    result = run_full_assessment_orchestration(continuation_payload, handlers=handlers)
-    result = apply_full_assessment_continuation(result, plan)
+    provided = _model_payload(req)
+    explicit = explicit_model_fields(req)
+    continuation_payload, record = build_status_payload(run_id, provided, explicit_fields=explicit)
+    handlers = idempotent_full_assessment_handlers(timeframe_days=int(continuation_payload.get("timeframe_days") or req.timeframe_days))
+    initial = run_full_assessment_orchestration(continuation_payload, handlers=handlers)
+    plan = plan_full_assessment_continuation(initial, continuation_payload)
+    if plan.get("should_continue"):
+        continuation_payload.update(plan.get("continuation_payload") or {})
+        initial = run_full_assessment_orchestration(continuation_payload, handlers=handlers)
+    result = apply_full_assessment_continuation(initial, plan)
     result["status_refresh"] = True
     result = _attach_repository_evidence(result)
     result = _attach_assessment_truth_summary(result)
