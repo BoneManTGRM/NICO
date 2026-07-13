@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from nico import scanner_history_truth
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts
 from nico.scanner_tool_runners import ScannerToolSpec, run_scanner_tool
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
@@ -7,6 +8,7 @@ from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
     monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda executable: f"/usr/bin/{executable}")
+    monkeypatch.setattr(scanner_history_truth, "_ensure_full_history", lambda _workspace: (True, "verified full history"))
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
     workspace = WorkerWorkspace(root=tmp_path)
@@ -27,12 +29,15 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
 
     assert result["status"] == "completed"
     assert result["scans_git_history"] is True
+    assert result["history_depth_verified"] is True
+    assert result["history_scope"] == "full_git_history"
     assert calls[0][0:2] == ("trufflehog", "git")
     assert calls[0][2] == f"file://{repo_dir}"
 
 
 def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
     monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda executable: f"/usr/bin/{executable}")
+    monkeypatch.setattr(scanner_history_truth, "_ensure_full_history", lambda _workspace: (True, "verified full history"))
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
     workspace = WorkerWorkspace(root=tmp_path)
@@ -51,6 +56,8 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
 
     assert result["status"] == "completed"
     assert result["scans_git_history"] is True
+    assert result["history_depth_verified"] is True
+    assert result["full_history_verified"] is True
     assert result["findings"] == []
 
 

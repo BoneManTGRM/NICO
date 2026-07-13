@@ -26,6 +26,7 @@ from nico.assessment_recovery_execution_patch import install_assessment_recovery
 from nico.assessment_recovery_readiness_patch import install_assessment_recovery_readiness_patch
 from nico.backup_restore_readiness_patch import install_backup_restore_readiness_patch
 from nico.mid_checkpoint_optional_evidence_compat import install_mid_checkpoint_optional_evidence_compat
+from nico.scanner_history_truth import install_scanner_history_truth
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -53,5 +54,6 @@ install_assessment_recovery_execution_patch()
 install_mid_checkpoint_optional_evidence_compat()
 install_assessment_recovery_readiness_patch()
 install_backup_restore_readiness_patch()
+install_scanner_history_truth()
 
 __version__ = "0.1.0"
