@@ -1,6 +1,6 @@
 # NICO Project Status
 
-This file is the canonical maturity map for the current repository. A feature is not considered production-proven merely because code or unit tests exist.
+This file is the canonical maturity map and completion roadmap for the current repository. A feature is not considered production-proven merely because code or unit tests exist.
 
 ## Status definitions
 
@@ -20,11 +20,11 @@ This file is the canonical maturity map for the current repository. A feature is
 | Express assessment | Operational | Produces an evidence-bound draft; human review remains required. |
 | Mid assessment orchestration | Operational | Exact-run continuation, report preparation, and review request exist. Full-cycle production fixtures need expansion. |
 | Full assessment orchestration | Operational | Repository evidence, scanner continuation, scoring, reports, and review request exist. Optional evidence may remain unavailable and must be disclosed. |
-| Scanner worker | Operational | Real subprocess execution exists for supported tools. Requested-tool completeness and result parsing are active hardening work. |
+| Scanner worker | Operational | Real subprocess execution exists for supported tools. Requested tools execute or are disclosed as unavailable, failed, or timed out; production proof should continue. |
 | RYE/TGRM repair planning | Operational | Repair prioritization and candidate generation exist; public validation and calibration remain separate work. |
 | Drift, baseline, verification, and repair memory | Operational | Core workflows exist; long-running and real-world fixture coverage should expand. |
-| Draft report generation | Operational | Multiple output paths exist. Report-path consolidation and golden fixtures remain work. |
-| Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof should expand. |
+| Draft report generation | Operational | Multiple output paths exist. Report-path consolidation and representative golden fixtures remain work. |
+| Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
 | Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Production restart and durability evidence should be exercised regularly. |
 | Operations readiness, events, and alerts | Operational | Semantic readiness is implemented. Operator usability and production evidence history should improve. |
 | Retainer workflows | Experimental | Backend and operator surfaces exist; product contract and real-client fixtures are still developing. |
@@ -50,6 +50,34 @@ NICO does not claim:
 - that synthetic fixtures are live production evidence
 - that Reparodynamics is an independently validated academic discipline
 
-## Active roadmap
+## Completion roadmap
 
-The active workstreams are tracked in GitHub issue #340. This file should be updated when a workstream changes maturity, not for every implementation commit.
+Completed major workstreams: **8 of 12**.
+
+- [x] Canonical architecture, operator guide, maturity map, and documentation index.
+- [x] Truthful README, security policy, contribution guidance, and repository templates.
+- [ ] Deployed browser/API E2E proof for unified Express, Mid, and Full with exact-run identity and no duplicate starts.
+- [x] Full-run metadata and route truth audit, including removal of stale Express/Mid wording.
+- [x] External scanner contract: every requested tool executes or is explicitly unavailable, failed, or timed out.
+- [x] Scanner result parsing and severity truth rather than exit-code-only approximation.
+- [ ] CLI/service modularization across configuration, scanning, scoring, repair, drift, reporting, verification, and persistence.
+- [x] Packaging and one-command local development, including supported `nico` and `nico-api` entry points.
+- [x] Cross-module E2E coverage for assessment, report, review, approved artifact, controlled delivery, receipt, and acknowledgment.
+- [ ] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
+- [ ] Additional representative golden fixtures and recorded evidence-bound demonstrations with no fabricated live claims.
+- [x] Public maturity boundaries for stable, operational, experimental, legacy, and planned areas.
+
+## Remaining execution order
+
+1. Deployed Express, Mid, and Full browser/API E2E proof.
+2. Restart, persistence, observability, recovery, and graceful-degradation proof.
+3. Additional golden fixtures and recorded demonstrations.
+4. CLI and service modularization after behavior is protected by E2E and restart tests.
+
+The remaining estimate is approximately **7–11 small, reviewable pull requests**, subject to defects uncovered during deployed and restart testing.
+
+## Phase 2 gate
+
+Repository-provider expansion remains deferred until the completion roadmap above is finished and production-proven. The intended order is provider-neutral contract, GitHub parity adapter, GitLab, Bitbucket, Azure DevOps, Gitea/Forgejo, then generic Git.
+
+This document is the authoritative tracker. GitHub issues are reserved for actionable defects or bounded implementation work rather than long-lived roadmap bookkeeping.
