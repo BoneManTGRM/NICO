@@ -5,9 +5,9 @@ import shutil
 from collections import Counter
 from typing import Any
 
-from nico.cli import Store, decide_action
+from nico.local_governance_service import decide_action
 from nico.local_reporting_service import generate_reports
-from nico.local_runtime_config import DRIFT_REPO, SAMPLE_REPO, TEST_LAB
+from nico.local_runtime_config import DB_PATH, DRIFT_REPO, SAMPLE_REPO, TEST_LAB
 from nico.local_scan_engine import (
     detect_drift,
     make_baseline,
@@ -17,6 +17,7 @@ from nico.local_scan_engine import (
     scanner_availability,
 )
 from nico.local_scoring_repair_service import apply_rye, repairs_for
+from nico.local_store import LocalStore
 
 
 def ensure_test_lab() -> None:
@@ -60,7 +61,7 @@ def ensure_test_lab() -> None:
 
 
 def run_scan(target: str, kind: str = "local") -> dict[str, Any]:
-    store = Store()
+    store = LocalStore(DB_PATH)
     decision = decide_action("scan", store.policy())
     if not decision["allowed"]:
         raise RuntimeError("scan blocked by governance: " + decision["reason"])
@@ -111,7 +112,7 @@ def scan_drift_demo() -> dict[str, Any]:
     ensure_test_lab()
     shutil.rmtree(DRIFT_REPO, ignore_errors=True)
     shutil.copytree(SAMPLE_REPO, DRIFT_REPO)
-    store = Store()
+    store = LocalStore(DB_PATH)
     clean = scan_repo(str(SAMPLE_REPO))
     clean["findings"] = apply_rye(clean["findings"], store.payloads("memory"))
     store.save_baseline(make_baseline(clean))
