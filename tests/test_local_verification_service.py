@@ -189,6 +189,4 @@ def test_canonical_cli_no_longer_sources_verification_from_cli_monolith() -> Non
     source = CLI_ENTRYPOINT.read_text(encoding="utf-8")
 
     assert "from nico.local_verification_service import verify_latest, verify_repair_by_id" in source
-    cli_import = source.split("from nico.cli import", 1)[1].splitlines()[0]
-    assert "verify_latest" not in cli_import
-    assert "verify_repair_by_id" not in cli_import
+    assert "from nico.cli import" not in source
