@@ -3,34 +3,40 @@ from __future__ import annotations
 from pathlib import Path
 
 
-PAGE = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "mid-approval" / "page.tsx"
-LAYOUT = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "layout.tsx"
-PRODUCTION = Path(__file__).resolve().parents[1] / "nico" / "api" / "production.py"
+ROOT = Path(__file__).resolve().parents[1]
+PAGE = ROOT / "apps" / "web" / "app" / "mid-approval" / "page.tsx"
+CONTEXT = ROOT / "apps" / "web" / "app" / "MidWorkspaceContext.tsx"
+LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
 def _page() -> str:
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_navigation_exposes_mid_approval_after_review_and_report():
+def test_workspace_exposes_mid_approval_after_review_and_report():
+    context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
-    assert '<a href="/mid-review">Mid Review</a>' in layout
-    assert '<a href="/mid-report">Mid Report</a>' in layout
-    assert '<a href="/mid-approval">Mid Approval</a>' in layout
-    assert layout.index('href="/mid-review"') < layout.index('href="/mid-report"') < layout.index('href="/mid-approval"')
+    assert 'path: "/mid-review"' in context
+    assert 'path: "/mid-report"' in context
+    assert 'path: "/mid-approval"' in context
+    assert context.index('path: "/mid-review"') < context.index('path: "/mid-report"') < context.index('path: "/mid-approval"')
+    assert 'href="/mid-assessment"' in layout
     assert "Approval creates a separate approved artifact but does not create a client delivery link" in layout
 
 
-def test_page_requires_exact_scope_admin_reviewer_and_notes():
+def test_page_uses_shared_exact_scope_admin_reviewer_and_notes():
     source = _page()
+    context = CONTEXT.read_text(encoding="utf-8")
 
-    assert "Mid run ID" in source
-    assert "Customer ID" in source
-    assert "Project ID" in source
-    assert "NICO admin token" in source
-    assert 'type="password"' in source
-    assert "Reviewer name or role" in source
+    for label in ("Mid run ID", "Customer ID", "Project ID", "NICO admin token", "Reviewer or operator"):
+        assert label in context
+    assert 'type="password"' in context
+    assert "useMidWorkspace" in source
+    assert "MidIdentityPanel" in source
+    assert 'MidStageNavigation current="approval"' in source
+    assert "reviewer: actor" in source
     assert "Item-level reviewer note" in source
     assert "Final decision note" in source
     assert '"X-NICO-Admin-Token": adminToken' in source
