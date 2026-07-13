@@ -106,28 +106,28 @@ def test_policy_store_is_created_only_for_policy_command(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    stores: list[bool] = []
+    store_paths: list[Path] = []
 
-    class FakeStore:
-        def __init__(self) -> None:
-            stores.append(True)
+    class FakeLocalStore:
+        def __init__(self, path: Path) -> None:
+            store_paths.append(path)
 
         def policy(self) -> dict[str, object]:
             return {"autonomy_level": 1, "kill_switch": False}
 
-    monkeypatch.setattr(entrypoint, "Store", FakeStore)
+    monkeypatch.setattr(entrypoint, "LocalStore", FakeLocalStore)
     monkeypatch.setattr(entrypoint, "scanner_availability", lambda: [])
 
     entrypoint.main(["scanner-availability"])
     assert json.loads(capsys.readouterr().out) == []
-    assert stores == []
+    assert store_paths == []
 
     entrypoint.main(["policy"])
     assert json.loads(capsys.readouterr().out) == {
         "autonomy_level": 1,
         "kill_switch": False,
     }
-    assert stores == [True]
+    assert store_paths == [entrypoint.DB_PATH]
 
 
 def test_package_main_uses_extracted_cli_entrypoint_and_preserves_assess_dispatch() -> None:

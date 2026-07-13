@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from nico.cli import (
-    Store,
+    DB_PATH,
     generate_reports,
     memory_summary,
     report_text,
@@ -18,6 +18,7 @@ from nico.local_scan_service import (
     scan_test_lab,
     scanner_availability,
 )
+from nico.local_store import LocalStore
 
 
 CLI_COMMANDS = (
@@ -99,7 +100,7 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         print(json.dumps(memory_summary(), indent=2))
         return
     if args.cmd == "policy":
-        print(json.dumps(Store().policy(), indent=2))
+        print(json.dumps(LocalStore(DB_PATH).policy(), indent=2))
         return
     if args.cmd == "scanner-availability":
         print(json.dumps(scanner_availability(), indent=2))
