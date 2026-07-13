@@ -85,6 +85,17 @@ export function MidWorkspaceProvider({children}: {children: ReactNode}) {
   }, [pathname, runId, setRunId]);
 
   useEffect(() => {
+    if (pathname !== "/") return;
+    const synchronizeActiveRun = () => {
+      const retained = safeSessionRunId();
+      if (retained && retained !== runId) setRunIdState(retained);
+    };
+    synchronizeActiveRun();
+    const timer = window.setInterval(synchronizeActiveRun, 500);
+    return () => window.clearInterval(timer);
+  }, [pathname, runId]);
+
+  useEffect(() => {
     const onSelected = (event: Event) => {
       const detail = (event as CustomEvent<{run_id?: string}>).detail;
       const nextRunId = String(detail?.run_id || "").trim();
