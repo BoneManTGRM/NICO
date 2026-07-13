@@ -16,7 +16,7 @@ def test_policy_command_uses_extracted_local_store(monkeypatch, capsys):
         def policy(self):
             return {"kill_switch": True, "source": "local-store"}
 
-    monkeypatch.setattr(cli_entrypoint, "Store", FakeLocalStore)
+    monkeypatch.setattr(cli_entrypoint, "LocalStore", FakeLocalStore)
 
     cli_entrypoint.dispatch(argparse.Namespace(cmd="policy"), argparse.ArgumentParser())
 
@@ -27,5 +27,5 @@ def test_policy_command_uses_extracted_local_store(monkeypatch, capsys):
     }
 
 
-def test_canonical_store_compatibility_name_resolves_to_local_store():
-    assert cli_entrypoint.Store is cli_entrypoint.LocalStore
+def test_canonical_entrypoint_does_not_expose_legacy_store():
+    assert not hasattr(cli_entrypoint, "Store")
