@@ -1,221 +1,102 @@
 from __future__ import annotations
 
-from collections import Counter
+import importlib.util
+import json
+import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from scripts.production_assessment_smoke import (
-    SmokeConfig,
-    SmokeFailure,
-    normalize_base_url,
-    parse_tiers,
-    run_smoke,
-    run_tier,
-)
-
-
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "production_assessment_smoke.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "production-assessment-smoke.yml"
+SPEC = importlib.util.spec_from_file_location("production_assessment_smoke", SCRIPT)
+assert SPEC and SPEC.loader
+smoke = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = smoke
+SPEC.loader.exec_module(smoke)
 
 
-def _config() -> SmokeConfig:
-    return SmokeConfig(
-        api_url="https://api.example.invalid",
-        repository="BoneManTGRM/NICO",
-        customer_id="smoke_customer",
-        project_id="smoke_project",
-        authorized_by="test_reviewer",
-        authorization_scope="authorized synthetic smoke contract",
-        request_timeout_seconds=3,
-        poll_interval_seconds=0,
-        max_polls=4,
-    )
-
-
-def test_each_tier_starts_once_and_mid_full_only_poll_the_exact_returned_run() -> None:
-    calls: list[tuple[str, str, dict[str, Any] | None]] = []
-    poll_counts: Counter[str] = Counter()
-
-    def requester(method: str, url: str, payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        calls.append((method, url, payload))
-        if url.endswith("/assessment/github"):
-            return {
-                "status": "complete",
-                "assessment_id": "express-assessment-1",
-                "assessment_mode": "express",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        if url.endswith("/assessment/mid-run"):
-            return {
-                "status": "queued",
-                "run_id": "midrun_exact_1",
-                "mode": "mid",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        if url.endswith("/assessment/full-run"):
-            return {
-                "status": "queued",
-                "run_id": "fullrun_exact_1",
-                "mode": "full",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        if "/assessment/mid-run/midrun_exact_1/status" in url:
-            poll_counts["mid"] += 1
-            return {
-                "status": "running" if poll_counts["mid"] == 1 else "complete",
-                "run_id": "midrun_exact_1",
-                "assessment_type": "mid",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        if "/assessment/full-run/fullrun_exact_1/status" in url:
-            poll_counts["full"] += 1
-            return {
-                "status": "running" if poll_counts["full"] == 1 else "pending_review",
-                "run_id": "fullrun_exact_1",
-                "report_path": "full_run",
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        raise AssertionError(f"Unexpected URL: {url}")
-
-    evidence = run_smoke(
-        _config(),
-        ["express", "mid", "full"],
-        authorization_confirmed=True,
-        requester=requester,
-        sleeper=lambda _seconds: None,
-    )
-
-    endpoints = [url for _method, url, _payload in calls]
-    assert endpoints.count("https://api.example.invalid/assessment/github") == 1
-    assert endpoints.count("https://api.example.invalid/assessment/mid-run") == 1
-    assert endpoints.count("https://api.example.invalid/assessment/full-run") == 1
-    assert all("midrun_exact_1" in url for url in endpoints if "/assessment/mid-run/" in url)
-    assert all("fullrun_exact_1" in url for url in endpoints if "/assessment/full-run/" in url)
-    assert evidence["status"] == "passed"
-    assert evidence["proof"] == {
-        "one_start_per_tier": True,
-        "exact_run_continuation": True,
-        "human_review_boundary_preserved": True,
-        "no_client_ready_claim": True,
+def config(tmp_path: Path) -> dict:
+    return {
+        "frontend_origin": "https://app.nicoaudit.com", "backend_origin": "https://nico-production-690a.up.railway.app",
+        "repository": "BoneManTGRM/NICO", "allowlisted_repository": "BoneManTGRM/NICO",
+        "allowed_hosts": frozenset({"app.nicoaudit.com", "nico-production-690a.up.railway.app"}),
+        "customer_id": "production_smoke_customer", "project_id": "production_smoke_project",
+        "authorization_reference": "owner-approved-demo-2026-07-13", "confirmation": smoke.CONFIRMATION,
+        "commit_sha": "a" * 40, "github_repository": "BoneManTGRM/NICO", "frontend_status_context": "Vercel",
+        "backend_status_context": "successful-cat - NICO", "admin_token": "top-secret-admin-token", "github_token": "github-token",
+        "output_json": tmp_path / "artifact.json", "output_markdown": tmp_path / "artifact.md",
+        "max_polls": 3, "poll_interval": 0, "timeout": 60.0,
     }
-    tiers = {item["tier"]: item for item in evidence["tiers"]}
-    assert tiers["express"]["start_count"] == 1
-    assert tiers["mid"]["run_id"] == "midrun_exact_1"
-    assert tiers["full"]["run_id"] == "fullrun_exact_1"
-    assert tiers["mid"]["poll_count"] == 2
-    assert tiers["full"]["poll_count"] == 2
 
 
-def test_continuation_run_identity_mismatch_fails_closed() -> None:
-    def requester(method: str, url: str, payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        assert method == "POST"
-        assert payload
-        if url.endswith("/assessment/mid-run"):
-            return {"status": "queued", "run_id": "midrun_original", "mode": "mid"}
-        return {"status": "complete", "run_id": "midrun_replacement", "mode": "mid"}
-
-    with pytest.raises(SmokeFailure, match="changed run identity"):
-        run_tier("mid", _config(), requester=requester, sleeper=lambda _seconds: None)
-
-
-def test_blocked_or_unavailable_results_never_become_passing_smoke_evidence() -> None:
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "unavailable",
-            "assessment_id": "express-unavailable",
-            "message": "Required repository evidence is unavailable.",
-        }
-
-    with pytest.raises(SmokeFailure, match="Unavailable|unavailable"):
-        run_tier("express", _config(), requester=requester)
+def test_configuration_requires_exact_authorization_and_allowlisted_hosts(tmp_path: Path) -> None:
+    base = config(tmp_path)
+    smoke.validate(base)
+    with pytest.raises(ValueError, match="confirmation"):
+        smoke.validate({**base, "confirmation": "yes"})
+    with pytest.raises(ValueError, match="authorized demonstration repository"):
+        smoke.validate({**base, "repository": "Other/Repo"})
+    with pytest.raises(ValueError, match="allowlisted"):
+        smoke.validate({**base, "backend_origin": "https://example.com"})
 
 
-def test_production_execution_requires_explicit_authorization_confirmation() -> None:
-    with pytest.raises(SmokeFailure, match="Explicit authorization confirmation"):
-        run_smoke(
-            _config(),
-            ["express"],
-            authorization_confirmed=False,
-            requester=lambda *_args: {},
-        )
+@pytest.mark.parametrize("value", ["http://app.nicoaudit.com", "https://user:password@app.nicoaudit.com", "https://app.nicoaudit.com/assessment", "https://app.nicoaudit.com?token=secret"])
+def test_production_origins_reject_insecure_or_authenticated_urls(value: str) -> None:
+    with pytest.raises(ValueError):
+        smoke.origin(value, "production URL")
 
 
-def test_tier_metadata_conflict_is_not_corrected_cosmetically() -> None:
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "complete",
-            "assessment_id": "express-conflict",
-            "assessment_mode": "full",
-            "human_review_required": True,
-            "client_ready": False,
-        }
-
-    with pytest.raises(SmokeFailure, match="conflicting tier metadata"):
-        run_tier("express", _config(), requester=requester)
-
-
-def test_url_and_tier_parsing_are_bounded_and_safe() -> None:
-    assert normalize_base_url("https://api.example.invalid/") == "https://api.example.invalid"
-    assert normalize_base_url("http://127.0.0.1:8000", allow_http=True) == "http://127.0.0.1:8000"
-    with pytest.raises(SmokeFailure, match="HTTPS"):
-        normalize_base_url("http://api.example.invalid")
-    with pytest.raises(SmokeFailure, match="credentials"):
-        normalize_base_url("https://user:password@api.example.invalid")
-    assert parse_tiers("express,mid,full,mid") == ["express", "mid", "full"]
-    with pytest.raises(SmokeFailure, match="Unsupported tier"):
-        parse_tiers("express,enterprise")
+def test_mid_posts_one_start_and_continues_only_exact_run(tmp_path: Path) -> None:
+    calls: list[tuple[str, str]] = []
+    responses = iter([
+        (200, {"status": "running", "run_id": "midrun_exact_1", "human_review_required": True, "client_ready": False}),
+        (200, {"status": "complete", "run_id": "midrun_exact_1", "report_generation_status": "complete", "mid_report": {"report_id": "report_exact_1"}, "approval_request": {"approval_id": "review_exact_1", "status": "pending"}, "human_review_required": True, "client_ready": False}),
+    ])
+    def transport(method, url, payload, headers, timeout):
+        calls.append((method, url))
+        assert headers["X-NICO-Admin-Token"] == "top-secret-admin-token"
+        return next(responses)
+    result = smoke.run_tier("mid", config(tmp_path), transport=transport, sleep=lambda _: None)
+    assert result["status"] == "passed"
+    assert result["start_count"] == 1
+    assert result["continuation_run_ids"] == ["midrun_exact_1"]
+    assert result["report_id"] == "report_exact_1"
+    assert result["review_request_id"] == "review_exact_1"
+    assert calls == [
+        ("POST", "https://nico-production-690a.up.railway.app/assessment/mid-run"),
+        ("POST", "https://nico-production-690a.up.railway.app/assessment/mid-run/midrun_exact_1/status"),
+    ]
 
 
-def test_frontend_proof_is_optional_but_must_pass_when_requested() -> None:
-    requested_urls: list[str] = []
-
-    def frontend_requester(url: str, _timeout: float) -> dict[str, Any]:
-        requested_urls.append(url)
-        return {
-            "status": "passed",
-            "http_status": 200,
-            "required_labels": ["Express", "Mid", "Full"],
-            "response_sha256": "a" * 64,
-        }
-
-    def requester(_method: str, _url: str, _payload: dict[str, Any] | None, _timeout: float) -> dict[str, Any]:
-        return {
-            "status": "complete",
-            "assessment_id": "express-frontend-proof",
-            "assessment_mode": "express",
-            "human_review_required": True,
-            "client_ready": False,
-        }
-
-    result = run_smoke(
-        _config(),
-        ["express"],
-        authorization_confirmed=True,
-        frontend_url="https://app.example.invalid",
-        requester=requester,
-        frontend_requester=frontend_requester,
-    )
-
-    assert requested_urls == ["https://app.example.invalid/assessment"]
-    assert result["frontend"]["status"] == "passed"
+def test_changed_continuation_identity_fails_closed(tmp_path: Path) -> None:
+    responses = iter([
+        (200, {"status": "running", "run_id": "fullrun_exact_1", "human_review_required": True, "client_ready": False}),
+        (200, {"status": "complete", "run_id": "fullrun_changed", "reports": {"report_id": "report_1"}, "approval": {"approval_id": "review_1"}, "human_review_required": True, "client_ready": False}),
+    ])
+    result = smoke.run_tier("full", config(tmp_path), transport=lambda *_: next(responses), sleep=lambda _: None)
+    assert result["status"] == "failed"
+    assert result["polled_single_exact_status_url"] is False
 
 
-def test_manual_workflow_requires_authorization_and_uploads_the_evidence_artifact() -> None:
+def test_artifact_never_serializes_credentials(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    tiers = [{"tier": tier, "status": "passed", "start_count": 1, "run_id": f"{tier}_run", "polled_single_exact_status_url": True, "human_review_required": True, "client_ready": False} for tier in ("express", "mid", "full")]
+    result = smoke.artifact(cfg, {"verified": True}, {"verified": True}, tiers)
+    encoded = json.dumps(result)
+    assert result["status"] == "passed"
+    assert cfg["admin_token"] not in encoded and cfg["github_token"] not in encoded
+    assert all(result["proof"].values())
+    assert "does not approve, deliver, repair" in " ".join(result["limitations"])
+
+
+def test_workflow_is_manual_secret_bound_and_retains_artifact() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "workflow_dispatch:" in source
-    assert "schedule:" not in source
-    assert "confirm_authorized:" in source
-    assert "--confirm-authorized" in source
-    assert "scripts/production_assessment_smoke.py" in source
-    assert "audit-results/production-assessment-smoke.json" in source
-    assert "actions/upload-artifact@v4" in source
-    assert "permissions:\n  contents: read" in source
-    assert "NICO_ADMIN_TOKEN" not in source
+    assert "workflow_dispatch:" in source and "pull_request:" not in source and "push:" not in source
+    assert "environment: production-smoke" in source
+    assert "secrets.NICO_PRODUCTION_SMOKE_ADMIN_TOKEN" in source
+    assert "vars.NICO_PRODUCTION_FRONTEND_URL" in source and "vars.NICO_PRODUCTION_BACKEND_URL" in source
+    assert "vars.NICO_PRODUCTION_SMOKE_REPOSITORY" in source and "I_CONFIRM_AUTHORIZED_PRODUCTION_SMOKE" in source
+    assert "actions/upload-artifact@v4" in source and "retention-days: 90" in source
+    assert "admin_token" not in source.split("inputs:", 1)[1].split("permissions:", 1)[0].lower()
