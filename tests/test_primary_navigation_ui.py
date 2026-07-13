@@ -30,15 +30,15 @@ def test_navigation_has_exactly_five_primary_service_destinations() -> None:
         "Operations",
         "Retainer",
     }
-    assert 'href: "/?assessment=express#assessment"' in primary
-    assert 'href: "/mid-assessment"' in primary
-    assert 'href: "/full-run"' in primary
+    assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'href: "/assessment?tier=mid#assessment"' in primary
+    assert 'href: "/assessment?tier=full#assessment"' in primary
     assert 'href: "/operations"' in primary
     assert 'href: "/retainer-ops"' in primary
     assert 'data-primary-service-count="5"' in source
 
 
-def test_mid_workflow_steps_are_removed_from_global_more_menu() -> None:
+def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
     primary = _primary_block(source)
     advanced = _advanced_block(source)
@@ -63,6 +63,7 @@ def test_mid_workflow_steps_are_removed_from_global_more_menu() -> None:
         "Mid Report": "/mid-report",
         "Mid Approval": "/mid-approval",
         "Mid Delivery": "/mid-delivery-admin",
+        "Full Run": "/full-run",
     }.items():
         assert label not in advanced
         assert href not in advanced
@@ -71,21 +72,22 @@ def test_mid_workflow_steps_are_removed_from_global_more_menu() -> None:
     assert '<a className="global-brand" href="/" aria-label="NICO home">NICO</a>' in source
 
 
-def test_unified_intake_state_and_mid_workspace_paths_have_active_service_semantics() -> None:
+def test_all_three_assessment_links_use_one_query_selected_intake() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     for required in [
-        'new URLSearchParams(window.location.search).get("assessment")',
-        'requested === "mid" ? "mid" : "express"',
-        'document.querySelector<HTMLElement>("[aria-label=\'Assessment type\']")',
-        'requestedButton.click()',
-        'attributeFilter: ["aria-pressed"]',
-        'url.searchParams.set("assessment", mode)',
-        'window.history.replaceState(',
-        'url.hash || "#assessment"',
+        'type AssessmentMode = "express" | "mid" | "full"',
+        'new URLSearchParams(window.location.search).get("tier")',
+        'value === "mid" || value === "full"',
+        'window.addEventListener(ASSESSMENT_TIER_EVENT',
+        'window.addEventListener("popstate"',
+        'pathname.startsWith("/assessment")',
     ]:
         assert required in source
 
+    assert "MutationObserver" not in source
+    assert "requestedButton.click()" not in source
+    assert 'pathname.startsWith("/full-run")' in source
     assert 'pathname.startsWith("/mid-assessment")' in source
     assert 'pathname.startsWith("/mid-review")' in source
     assert 'pathname.startsWith("/mid-report")' in source
@@ -96,30 +98,33 @@ def test_unified_intake_state_and_mid_workspace_paths_have_active_service_semant
     assert 'aria-current={active ? "page" : undefined}' in source
 
 
-def test_layout_uses_mid_workspace_provider_and_preserves_safety_disclosures() -> None:
+def test_layout_uses_unified_assessment_and_preserves_safety_disclosures() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import "../styles/navigation.css";' in layout
     assert 'import {MidWorkspaceProvider} from "./MidWorkspaceContext";' in layout
+    assert 'import OperationsPreloadGuard from "./OperationsPreloadGuard";' in layout
     assert 'import PrimaryNavigation from "./PrimaryNavigation";' in layout
     assert "<MidWorkspaceProvider>" in layout
     assert "</MidWorkspaceProvider>" in layout
+    assert "<OperationsPreloadGuard />" in layout
     assert "<PrimaryNavigation />" in layout
     assert '<div className="global-links">' not in layout
     for disclosure in [
-        "Mid workflow:",
-        "guided",
-        "Start, Review, Report, Approval, and controlled Delivery",
-        "Approval creates a separate approved artifact",
+        "Assessment workflow:",
+        "unified assessment page",
+        "One Run action completes every automated stage",
+        "stop at required human review",
+        "never approves findings",
         "does not create a client delivery link",
         "Client downloads require acknowledgement",
-        "review interrupted scanner work",
+        "review interrupted work",
         "Retainer workflow:",
     ]:
         assert disclosure in layout
 
 
-def test_navigation_and_mid_stages_stay_compact_and_mobile_scrollable() -> None:
+def test_navigation_and_advanced_stages_stay_compact_and_mobile_scrollable() -> None:
     css = STYLES.read_text(encoding="utf-8")
 
     assert "grid-template-columns: repeat(5, minmax(0, 1fr));" in css
