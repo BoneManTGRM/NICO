@@ -143,7 +143,8 @@ def build_hosted_smoke_test(payload: dict[str, Any]) -> dict[str, Any]:
         status = "needs_smoke_test_review"
 
     return {
-        "artifact_schema": "nico.hosted_smoke_test.v2",
+        "artifact_schema": "nico.hosted_smoke_test.v1",
+        "contract_version": 2,
         "status": status,
         "readiness_score": readiness_score,
         "passed_count": passed_count,
