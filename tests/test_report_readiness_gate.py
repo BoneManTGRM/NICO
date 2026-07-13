@@ -5,8 +5,55 @@ from nico.hosted_smoke_test import SMOKE_TESTS
 from nico.report_readiness_gate import build_report_readiness_gate
 
 
+def _production_smoke_artifact() -> dict:
+    return {
+        "evidence_kind": "authorized_live_production_smoke",
+        "live_claim": True,
+        "authorization_confirmed": True,
+        "status": "passed",
+        "proof": {
+            "one_start_per_tier": True,
+            "exact_run_continuation": True,
+            "human_review_boundary_preserved": True,
+            "no_client_ready_claim": True,
+        },
+        "tiers": [
+            {
+                "tier": "express",
+                "status": "passed",
+                "start_count": 1,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+            {
+                "tier": "mid",
+                "status": "passed",
+                "start_count": 1,
+                "run_id": "midrun_ready_1",
+                "polled_single_exact_status_url": True,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+            {
+                "tier": "full",
+                "status": "passed",
+                "start_count": 1,
+                "run_id": "fullrun_ready_1",
+                "polled_single_exact_status_url": True,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+        ],
+    }
+
+
 def _ready_payload():
-    smoke_evidence = {case["evidence_key"]: {"status": case.get("required_status") or "ok"} for case in SMOKE_TESTS}
+    smoke_evidence = {}
+    for case in SMOKE_TESTS:
+        if case["evidence_key"] == "production_assessment_smoke":
+            smoke_evidence[case["evidence_key"]] = _production_smoke_artifact()
+        else:
+            smoke_evidence[case["evidence_key"]] = {"status": case.get("required_status") or "ok"}
     return {
         "deployment": {
             "backend_health": {"status": "ok"},
