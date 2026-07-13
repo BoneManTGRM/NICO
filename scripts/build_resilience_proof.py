@@ -165,15 +165,16 @@ def _memory_storage() -> Storage:
 def build_resilience_proof(database_url: str, *, suffix: str = "") -> dict[str, Any]:
     if not str(database_url or "").strip():
         raise ResilienceProofFailure("A Postgres database URL is required for the resilience proof.")
-    now = datetime.now(timezone.utc).replace(microsecond=0)
-    scan_id, run_id, scanner_record = synthetic_scanner_record(suffix or uuid4().hex[:12], now=now)
+    seeded_at = datetime.now(timezone.utc).replace(microsecond=0)
+    recovery_now = seeded_at + timedelta(hours=3)
+    scan_id, run_id, scanner_record = synthetic_scanner_record(suffix or uuid4().hex[:12], now=seeded_at)
 
     writer = _postgres_storage(database_url)
     writer.put("scanner_runs", scan_id, scanner_record)
     reconciliation = reconcile_interrupted_scanner_runs(
         store=writer,
         stale_seconds=60,
-        now=now,
+        now=recovery_now,
     )
     if reconciliation.get("reconciled") != 1 or reconciliation.get("recovery_required") != 1:
         raise ResilienceProofFailure("Stale scanner run was not reconciled to recovery-required state.")
@@ -224,7 +225,7 @@ def build_resilience_proof(database_url: str, *, suffix: str = "") -> dict[str, 
         raise ResilienceProofFailure("Recovery transition weakened review or delivery boundaries.")
 
     memory = _memory_storage()
-    memory_reconciliation = reconcile_interrupted_scanner_runs(store=memory, stale_seconds=60, now=now)
+    memory_reconciliation = reconcile_interrupted_scanner_runs(store=memory, stale_seconds=60, now=recovery_now)
     memory_status = scanner_recovery_status(memory)
     if memory_reconciliation.get("status") != "blocked":
         raise ResilienceProofFailure("Memory fallback did not block durable scanner recovery.")
