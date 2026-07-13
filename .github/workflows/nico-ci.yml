@@ -66,6 +66,13 @@ jobs:
         python -m py_compile nico/modules/roadmap.py
         python -m py_compile nico/modules/express_pack.py
 
+    - name: Validate hosted scanner release installation
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        NICO_SCANNER_INSTALL_DIR: ${{ runner.temp }}/nico-scanners
+        NICO_SCANNER_INSTALL_STRICT: "true"
+      run: python scripts/install_hosted_scanner_binaries.py
+
     - name: Run Python dependency audit evidence
       run: |
         mkdir -p audit-results
@@ -73,10 +80,7 @@ jobs:
         test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
 
     - name: Run Docker build check
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-        DOCKER_BUILDKIT: "1"
-      run: docker build --build-arg NICO_SCANNER_INSTALL_STRICT=true --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
+      run: docker build --build-arg NICO_SCANNER_INSTALL_STRICT=false -t nico-ci:ci .
 
     - name: Run file integrity regression test
       run: |
