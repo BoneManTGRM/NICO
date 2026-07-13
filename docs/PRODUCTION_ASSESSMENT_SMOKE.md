@@ -1,78 +1,43 @@
-# Production Assessment Smoke Proof
+# Authorized Production Assessment Smoke
 
-This procedure proves the deployed NICO frontend and canonical Express, Mid, and Full API routes without treating deployment reachability as assessment correctness.
+This workflow is a controlled production proof mechanism. It is not a general-purpose assessment launcher and does not mark the production-proof roadmap item complete until a passing artifact and the required browser evidence are retained and reviewed.
 
-## Safety boundary
+## Required GitHub environment
 
-Run this workflow only against a repository you own or are explicitly authorized to assess.
+Create a protected GitHub Actions environment named `production-smoke`. Configure required reviewers where available, then add:
 
-The workflow:
+Repository or environment variables:
 
-- requires an explicit authorization confirmation;
-- performs exactly one assessment start request for each selected tier;
-- never retries a start request automatically;
-- uses only the exact returned Mid or Full `run_id` for continuation;
-- polls the canonical status route instead of creating replacement runs;
-- keeps unavailable, blocked, failed, and unrecognized states fail-closed;
-- preserves the human-review and non-client-ready boundaries;
-- does not require, print, or persist an admin token; and
-- uploads a bounded JSON evidence artifact for review.
+- `NICO_PRODUCTION_FRONTEND_URL`: the HTTPS frontend origin, without a path, query, credentials, or fragment.
+- `NICO_PRODUCTION_BACKEND_URL`: the HTTPS backend origin, without a path, query, credentials, or fragment.
+- `NICO_PRODUCTION_SMOKE_REPOSITORY`: the single owner/name demonstration repository explicitly authorized for this proof.
+- `NICO_PRODUCTION_SMOKE_ALLOWED_HOSTS`: comma-separated bare hostnames for the configured frontend and backend only.
+- `NICO_PRODUCTION_BACKEND_STATUS_CONTEXT`: the exact successful GitHub deployment-status context for the production backend.
 
-The workflow is manual-only. It is not scheduled because a real assessment can consume scanner, API, storage, and CI resources.
+Environment secret:
 
-## Run through GitHub Actions
+- `NICO_PRODUCTION_SMOKE_ADMIN_TOKEN`: the production admin token. Never place this value in a workflow input, repository variable, issue, pull request, artifact, log, or chat.
 
-Open **Actions → Production Assessment Smoke → Run workflow** and provide:
+## Operator gate
 
-- **API URL**: the deployed API origin, such as `https://your-api.example.com`;
-- **Frontend URL**: optional deployed frontend origin;
-- **Repository**: the explicitly authorized `owner/repository` target;
-- **Tiers**: normally `express,mid,full`; and
-- **Authorization confirmation**: enabled only after authorization is verified.
+Run **Authorized Production Assessment Smoke** manually from `main`. Supply the exact deployed commit, an internal authorization reference, and select `I_CONFIRM_AUTHORIZED_PRODUCTION_SMOKE`.
 
-The workflow creates unique smoke customer and project identities from the GitHub Actions run identity. It does not use production client identifiers.
+The workflow fails closed when the selected ref or exact commit differs, authorization is not explicitly confirmed, a URL is not HTTPS, a URL contains credentials or query data, the repository differs from the allowlist, a host is not allowlisted, a deployment status is not successful, or the secret is missing.
 
-## Evidence artifact
+## Execution boundary
 
-The uploaded `production-assessment-smoke.json` records:
+The runner:
 
-- the authorized repository and scope;
-- the selected deployment origins;
-- one start count per tier;
-- the exact returned assessment or run identity;
-- Mid and Full status-poll counts;
-- proof that one exact status URL was used for each continued run;
-- final response hashes rather than full potentially sensitive responses;
-- final status and tier metadata; and
-- whether human review remained required and client readiness remained false.
+- verifies the exact commit has successful frontend and backend deployment statuses;
+- verifies the deployed assessment page and backend health endpoint;
+- sends exactly one start request for Express, Mid, and Full;
+- polls only the exact Mid and Full run status URL returned by that tier;
+- retains run, report, review-request, terminal-state, and unavailable-evidence summaries;
+- requires explicit human-review and non-client-ready boundaries;
+- writes bounded JSON and Markdown artifacts retained for 90 days.
 
-A failed run also uploads a bounded failure artifact. The artifact contains a safe error summary, not raw server traces, credentials, or scanner output.
+It does not approve reports, create delivery access, redeem delivery links, apply repairs, open pull requests, modify production code, or claim that all defects are absent. It deliberately does not issue a second start request as a destructive duplicate probe. Duplicate-start protection and the visible browser state must be retained separately without creating an unintended second assessment.
 
-## Local contract test
+## Roadmap interpretation
 
-For localhost-only validation:
-
-```bash
-python scripts/production_assessment_smoke.py \
-  --api-url http://127.0.0.1:8000 \
-  --frontend-url http://127.0.0.1:3000 \
-  --repository BoneManTGRM/NICO \
-  --tiers express,mid,full \
-  --confirm-authorized \
-  --allow-http-localhost
-```
-
-HTTP is rejected for non-localhost targets.
-
-## Interpretation
-
-A passing smoke artifact proves that the selected deployment accepted one authorized start per tier, preserved exact continuation identity, returned recognized terminal states, and retained review boundaries at that time.
-
-It does not prove:
-
-- that every scanner was available;
-- that every finding is correct;
-- that a score is a certification;
-- that the report is approved for delivery;
-- that future deployments will behave identically; or
-- that a frontend/backend deployment is correct merely because it returned HTTP 200.
+A passing workflow artifact is API and deployment evidence only. The roadmap remains incomplete until the matching production browser proof is retained, exact deployment identity is reconciled, and the combined evidence package is reviewed. Missing, blocked, failed, or timed-out evidence must remain explicit and cannot be converted into a passing claim.
