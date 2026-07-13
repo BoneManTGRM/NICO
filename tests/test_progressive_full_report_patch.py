@@ -4,17 +4,32 @@ from nico.progressive_full_report_patch import (
     FULL_DETAIL_LEVEL,
     FULL_INCLUDED_MODULES,
     FULL_REPORT_VERSION,
+    attach_full_report_depth,
     build_full_executive_detail,
 )
+from nico.reports import markdown_report
 
 
 def _assessment() -> dict:
     return {
+        "run_id": "fullrun_progressive",
+        "repository": "example/repository",
+        "executive_summary": "Evidence-bound Full Assessment draft.",
+        "maturity_signal": {"level": "Mid", "score": 70},
+        "client_delivery_verdict": {
+            "status": "human_review_required",
+            "confidence": "limited",
+            "blockers": ["Final human review is required."],
+            "unavailable_items": 1,
+        },
+        "next_steps": ["Review retained evidence."],
         "sections": [
             {
                 "id": "dependencies",
                 "label": "Dependencies",
                 "status": "yellow",
+                "score": 70,
+                "summary": "Dependency evidence requires review.",
                 "evidence": ["Dependency scanner completed."],
                 "verified_claims": ["Lockfile was attached."],
                 "findings": ["One dependency requires human triage."],
@@ -25,13 +40,15 @@ def _assessment() -> dict:
                 "id": "complexity",
                 "label": "Complexity",
                 "status": "gray",
+                "score": 0,
+                "summary": "Complexity evidence is unavailable.",
                 "evidence": [],
                 "verified_claims": [],
                 "findings": [],
                 "unavailable": ["No valid same-run complexity measurement."],
                 "unverified_claims": [],
             },
-        ]
+        ],
     }
 
 
@@ -83,3 +100,29 @@ def test_full_depth_contract_is_bounded_to_retained_section_truth() -> None:
         },
     ]
     assert FULL_DETAIL_LEVEL > 2
+
+
+def test_full_depth_is_attached_before_rendering_without_changing_scores_or_sections() -> None:
+    source = _assessment()
+    enriched = attach_full_report_depth(source)
+
+    assert enriched["report_version"] == FULL_REPORT_VERSION
+    assert enriched["report_tier"] == "full"
+    assert enriched["detail_level"] == 3
+    assert enriched["sections"] == source["sections"]
+    assert enriched["maturity_signal"] == source["maturity_signal"]
+    assert enriched["human_review_required"] is True
+    assert enriched["client_ready"] is False
+    assert "Full-depth analysis reviewed 2 retained assessment section(s)" in enriched["executive_summary"]
+    assert "Review and remediate: One dependency requires human triage." in enriched["next_steps"]
+    assert any("rollback plan" in item for item in enriched["next_steps"])
+    assert enriched["full_depth_contract"]["final_review_preparation"]["approval_created"] is False
+
+
+def test_markdown_receives_full_depth_summary_and_action_plan() -> None:
+    rendered = markdown_report(attach_full_report_depth(_assessment()))
+
+    assert "Full-depth analysis reviewed 2 retained assessment section(s)" in rendered
+    assert "Review and remediate: One dependency requires human triage." in rendered
+    assert "Require a reviewed rollback plan" in rendered
+    assert "Final human review is required" in rendered
