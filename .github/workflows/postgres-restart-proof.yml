@@ -34,6 +34,7 @@ jobs:
           --health-retries=12
     env:
       NICO_TEST_DATABASE_URL: postgresql://nico:nico@127.0.0.1:5432/nico
+      PYTHONPATH: .
     steps:
       - name: Check out exact commit
         uses: actions/checkout@v4
