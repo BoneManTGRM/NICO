@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -31,7 +32,9 @@ RUN npm install -g eslint typescript --no-audit --no-fund
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
-RUN python -m pip install --upgrade pip \
+RUN --mount=type=secret,id=github_token \
+    if [ -f /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
+    && python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir pip-audit bandit semgrep coverage \
     && python scripts/install_hosted_scanner_binaries.py
