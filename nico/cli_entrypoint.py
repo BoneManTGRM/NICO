@@ -6,8 +6,6 @@ from typing import Any
 
 from nico.cli import (
     memory_summary,
-    verify_latest,
-    verify_repair_by_id,
 )
 from nico.local_reporting_service import generate_reports, report_text
 from nico.local_runtime_config import DB_PATH
@@ -18,6 +16,7 @@ from nico.local_scan_service import (
     scanner_availability,
 )
 from nico.local_store import LocalStore
+from nico.local_verification_service import verify_latest, verify_repair_by_id
 
 
 CLI_COMMANDS = (
