@@ -68,7 +68,7 @@ def test_mid_report_module_uses_v2_progressive_contract() -> None:
     assert "decision_support" in MID_INCLUDED_MODULES
 
 
-def test_progressive_payload_adds_executive_decision_section(monkeypatch) -> None:
+def test_progressive_payload_adds_top_level_detail_without_changing_truth_sections() -> None:
     record = {
         "run_id": "midrun_progressive",
         "customer_id": "customer_one",
@@ -115,8 +115,9 @@ def test_progressive_payload_adds_executive_decision_section(monkeypatch) -> Non
     assert payload["human_review_required"] is True
     assert payload["client_delivery_allowed"] is False
     assert payload["approved"] is False
-    assert payload["sections"][0]["id"] == "executive_decision_support"
-    assert payload["sections"][0]["score"] is None
-    assert payload["sections"][0]["direct_repository_proof"] is False
-    assert payload["sections"][0]["unsupported_claims_permitted"] is False
-    assert "Mid includes the Express baseline" in " ".join(payload["sections"][0]["evidence"])
+    assert [section["id"] for section in payload["sections"]] == ["dependencies", "complexity"]
+    assert payload["executive_quick_view"]["verified_areas"] == ["Dependencies"]
+    assert payload["executive_quick_view"]["areas_awaiting_verification"] == ["Complexity"]
+    assert payload["decision_support"]["score_changed"] is False
+    assert payload["decision_support"]["evidence_upgraded"] is False
+    assert payload["decision_support"]["client_delivery_allowed"] is False
