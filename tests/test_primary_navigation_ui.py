@@ -118,7 +118,7 @@ def test_layout_uses_unified_assessment_and_preserves_safety_disclosures() -> No
         "never approves findings",
         "does not create a client delivery link",
         "Client downloads require acknowledgement",
-        "review interrupted work",
+        "review interrupted scanner work",
         "Retainer workflow:",
     ]:
         assert disclosure in layout
