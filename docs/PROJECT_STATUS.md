@@ -37,6 +37,8 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
+The latest verified deployed main commit is `71a07669080e84d7e507ebba75819394dbfb7db9` (`Make Full reports explicitly deeper than Mid (#373)`). Its configured Vercel and Railway deployment checks passed. This records deployment verification only; deployed Express, Mid, and Full browser/API E2E proof remains incomplete until an authorized production smoke run is retained.
+
 ## Claims NICO does not make
 
 NICO does not claim:
@@ -78,7 +80,7 @@ The remaining estimate is approximately **4–7 small, reviewable pull requests*
 
 The completed resilience workstream is bounded to repository and ephemeral-CI proof:
 
-- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh adapter instances with tenant and run identity preserved.
+- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh Postgres adapter instances with tenant and run identity preserved.
 - `.github/workflows/resilience-proof.yml` exercises stale scanner reconciliation, persisted `recovery_required` state, explicit same-ID resume, duplicate-resume idempotency, memory-fallback blocking, and bounded redacted telemetry degradation.
 - `scripts/postgres_restart_proof.py` and `scripts/build_resilience_proof.py` emit synthetic, non-live evidence artifacts without database URLs, credentials, automatic repair authority, approval, or client-delivery authority.
 - Scanner recovery remains operator-controlled; no automatic resume or production-impacting action is authorized by these proofs.
