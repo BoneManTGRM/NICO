@@ -120,15 +120,20 @@ def test_full_result_distinguishes_pending_unavailable_and_review_required() -> 
     assert "Missing or failed evidence remains disclosed" in source
 
 
-def test_primary_navigation_routes_all_tiers_to_unified_intake() -> None:
+def test_primary_navigation_has_one_run_job_entry_for_all_tiers() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
-
-    assert 'href: "/assessment?tier=express#assessment"' in navigation
-    assert 'href: "/assessment?tier=mid#assessment"' in navigation
-    assert 'href: "/assessment?tier=full#assessment"' in navigation
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
-    assert 'href: "/mid-assessment"' not in primary
-    assert 'href: "/full-run"' not in primary
+
+    assert 'label: "Run a Job"' in primary
+    assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'data-primary-service-count="3"' in navigation
+    assert 'key: "express"' not in primary
+    assert 'key: "mid"' not in primary
+    assert 'key: "full"' not in primary
+    assert 'label: "Express Assessment"' not in primary
+    assert 'label: "Mid Assessment"' not in primary
+    assert 'label: "Full Assessment"' not in primary
+    assert 'if (pathname.startsWith("/assessment")) return "run-job"' in navigation
 
 
 def test_legacy_full_run_route_defaults_to_unified_full_intake() -> None:

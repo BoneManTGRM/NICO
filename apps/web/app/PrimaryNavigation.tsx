@@ -3,29 +3,17 @@
 import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
 
-type ServiceKey = "express" | "mid" | "full" | "operations" | "retainer";
+type ServiceKey = "run-job" | "operations" | "retainer";
 type AssessmentMode = "express" | "mid" | "full";
 
 const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 
 export const PRIMARY_SERVICES = [
   {
-    key: "express" as ServiceKey,
-    label: "Express Assessment",
-    shortLabel: "Express",
+    key: "run-job" as ServiceKey,
+    label: "Run a Job",
+    shortLabel: "Run a Job",
     href: "/assessment?tier=express#assessment",
-  },
-  {
-    key: "mid" as ServiceKey,
-    label: "Mid Assessment",
-    shortLabel: "Mid",
-    href: "/assessment?tier=mid#assessment",
-  },
-  {
-    key: "full" as ServiceKey,
-    label: "Full Assessment",
-    shortLabel: "Full",
-    href: "/assessment?tier=full#assessment",
   },
   {
     key: "operations" as ServiceKey,
@@ -66,8 +54,9 @@ function normalizeAssessmentMode(value: string | null | undefined): AssessmentMo
 }
 
 function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKey | "" {
-  if (pathname.startsWith("/assessment")) return assessment;
-  if (pathname.startsWith("/full-run")) return "full";
+  void assessment;
+  if (pathname.startsWith("/assessment")) return "run-job";
+  if (pathname.startsWith("/full-run")) return "run-job";
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
   if (
@@ -76,11 +65,9 @@ function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKe
     || pathname.startsWith("/mid-report")
     || pathname.startsWith("/mid-approval")
     || pathname.startsWith("/mid-delivery-admin")
-  ) return "mid";
-  if (
-    pathname.startsWith("/scanner-workflow")
+    || pathname.startsWith("/scanner-workflow")
     || pathname.startsWith("/refresh-full-evidence")
-  ) return "express";
+  ) return "run-job";
   return "";
 }
 
@@ -115,7 +102,7 @@ export default function PrimaryNavigation() {
       <div className="global-nav-inner">
         <a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>
 
-        <div className="primary-service-links" data-primary-service-count="5">
+        <div className="primary-service-links" data-primary-service-count="3">
           {PRIMARY_SERVICES.map((service) => {
             const active = activeService === service.key;
             return (

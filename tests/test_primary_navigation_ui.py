@@ -18,24 +18,22 @@ def _advanced_block(source: str) -> str:
     return source.split("const ADVANCED_GROUPS = [", 1)[1].split("] as const;", 1)[0]
 
 
-def test_navigation_has_exactly_five_primary_service_destinations() -> None:
+def test_navigation_has_three_primary_service_destinations() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
     primary = _primary_block(source)
 
-    assert primary.count('key: "') == 5
+    assert primary.count('key: "') == 3
     assert set(re.findall(r'label: "([^"]+)"', primary)) == {
-        "Express Assessment",
-        "Mid Assessment",
-        "Full Assessment",
+        "Run a Job",
         "Operations",
         "Retainer",
     }
     assert 'href: "/assessment?tier=express#assessment"' in primary
-    assert 'href: "/assessment?tier=mid#assessment"' in primary
-    assert 'href: "/assessment?tier=full#assessment"' in primary
     assert 'href: "/operations"' in primary
     assert 'href: "/retainer-ops"' in primary
-    assert 'data-primary-service-count="5"' in source
+    assert 'data-primary-service-count="3"' in source
+    for legacy_label in ("Express Assessment", "Mid Assessment", "Full Assessment"):
+        assert legacy_label not in primary
 
 
 def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
@@ -72,7 +70,7 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
     assert '<a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>' in source
 
 
-def test_all_three_assessment_links_use_one_query_selected_intake() -> None:
+def test_run_a_job_uses_one_query_selected_intake() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     for required in [
@@ -127,7 +125,7 @@ def test_layout_uses_unified_assessment_and_preserves_safety_disclosures() -> No
 def test_navigation_and_advanced_stages_stay_compact_and_mobile_scrollable() -> None:
     css = STYLES.read_text(encoding="utf-8")
 
-    assert "grid-template-columns: repeat(5, minmax(0, 1fr));" in css
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in css
     assert ".primary-service-link.active" in css
     assert ".nav-more-panel" in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
