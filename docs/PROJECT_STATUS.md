@@ -25,8 +25,8 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Drift, baseline, verification, and repair memory | Operational | Core workflows exist; long-running and real-world fixture coverage should expand. |
 | Draft report generation | Operational | Representative synthetic golden fixtures and a deterministic recorded demonstration exist. Report-path consolidation remains work. |
 | Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
-| Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Production restart and durability evidence should be exercised regularly. |
-| Operations readiness, events, and alerts | Operational | Semantic readiness is implemented. Operator usability and production evidence history should improve. |
+| Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Postgres restart and same-ID recovery are exercised in CI; production restart drills remain recurring operator evidence. |
+| Operations readiness, events, and alerts | Operational | Semantic readiness and bounded telemetry-degradation proof exist. Operator usability and live production evidence history should improve. |
 | Retainer workflows | Experimental | Backend and operator surfaces exist; product contract and real-client fixtures are still developing. |
 | Hosted SaaS multi-tenancy | Experimental | Scope and storage controls exist in parts; a complete commercial tenancy and billing product is not claimed. |
 | Automatic production repair | Planned | NICO currently prepares repair plans and verification. It does not autonomously deploy production changes. |
@@ -52,7 +52,7 @@ NICO does not claim:
 
 ## Completion roadmap
 
-Completed major workstreams: **9 of 12**.
+Completed major workstreams: **10 of 12**.
 
 - [x] Canonical architecture, operator guide, maturity map, and documentation index.
 - [x] Truthful README, security policy, contribution guidance, and repository templates.
@@ -63,17 +63,27 @@ Completed major workstreams: **9 of 12**.
 - [ ] CLI/service modularization across configuration, scanning, scoring, repair, drift, reporting, verification, and persistence.
 - [x] Packaging and one-command local development, including supported `nico` and `nico-api` entry points.
 - [x] Cross-module E2E coverage for assessment, report, review, approved artifact, controlled delivery, receipt, and acknowledgment.
-- [ ] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
+- [x] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
 - [x] Additional representative golden fixtures and recorded evidence-bound demonstrations with no fabricated live claims.
 - [x] Public maturity boundaries for stable, operational, experimental, legacy, and planned areas.
 
 ## Remaining execution order
 
 1. Deployed Express, Mid, and Full browser/API E2E proof.
-2. Restart, persistence, observability, recovery, and graceful-degradation proof.
-3. CLI and service modularization after behavior is protected by E2E and restart tests.
+2. CLI and service modularization after behavior is protected by E2E and resilience tests.
 
-The remaining estimate is approximately **5–8 small, reviewable pull requests**, subject to defects uncovered during deployed and restart testing.
+The remaining estimate is approximately **4–7 small, reviewable pull requests**, subject to defects uncovered during deployed testing and modular extraction.
+
+## Resilience completion evidence
+
+The completed resilience workstream is bounded to repository and ephemeral-CI proof:
+
+- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh adapter instances with tenant and run identity preserved.
+- `.github/workflows/resilience-proof.yml` exercises stale scanner reconciliation, persisted `recovery_required` state, explicit same-ID resume, duplicate-resume idempotency, memory-fallback blocking, and bounded redacted telemetry degradation.
+- `scripts/postgres_restart_proof.py` and `scripts/build_resilience_proof.py` emit synthetic, non-live evidence artifacts without database URLs, credentials, automatic repair authority, approval, or client-delivery authority.
+- Scanner recovery remains operator-controlled; no automatic resume or production-impacting action is authorized by these proofs.
+
+This completion does not claim that Railway restarted, a production backup was restored, or a live client assessment recovered after an outage. Those remain recurring production-operations drills rather than repository completion blockers.
 
 ## Golden-fixture completion evidence
 
