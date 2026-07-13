@@ -69,7 +69,7 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
         assert href not in advanced
 
     assert 'label: "Command Center"' not in source
-    assert '<a className="global-brand" href="/" aria-label="NICO home">NICO</a>' in source
+    assert '<a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>' in source
 
 
 def test_all_three_assessment_links_use_one_query_selected_intake() -> None:
