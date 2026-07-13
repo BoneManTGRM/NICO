@@ -125,4 +125,5 @@ def test_markdown_receives_full_depth_summary_and_action_plan() -> None:
     assert "Full-depth analysis reviewed 2 retained assessment section(s)" in rendered
     assert "Review and remediate: One dependency requires human triage." in rendered
     assert "Require a reviewed rollback plan" in rendered
-    assert "Final human review is required" in rendered
+    assert "## Required Human Review" in rendered
+    assert "code changes require human review" in rendered
