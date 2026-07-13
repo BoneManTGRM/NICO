@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `71a07669080e84d7e507ebba75819394dbfb7db9` (`Make Full reports explicitly deeper than Mid (#373)`). Its configured Vercel and Railway deployment checks passed. This records deployment verification only; deployed Express, Mid, and Full browser/API E2E proof remains incomplete until an authorized production smoke run is retained.
+The latest verified deployed main commit is `f65854f2551f4be7fc198b9e1c8161edfe991130` (`Route the canonical policy command through LocalStore (#376)`). Its configured Vercel and Railway deployment checks passed. This records deployment verification only; deployed Express, Mid, and Full browser/API E2E proof remains incomplete until an authorized production smoke run is retained.
 
 ## Claims NICO does not make
 
