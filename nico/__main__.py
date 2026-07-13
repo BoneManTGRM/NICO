@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from nico.cli import main as cli_main
+from nico.cli_entrypoint import main as cli_main
 from nico.no_server_assessment import main as assess_main
 
 
