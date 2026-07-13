@@ -30,6 +30,7 @@ from nico.scanner_history_truth import install_scanner_history_truth
 from nico.full_scanner_recovery_patch import install_full_scanner_recovery
 from nico.full_blocked_state_truth_patch import install_full_blocked_state_truth
 from nico.progressive_mid_report_patch import install_progressive_mid_report_patch
+from nico.progressive_full_report_patch import install_progressive_full_report_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -61,5 +62,6 @@ install_scanner_history_truth()
 install_full_scanner_recovery()
 install_full_blocked_state_truth()
 install_progressive_mid_report_patch()
+install_progressive_full_report_patch()
 
 __version__ = "0.1.0"
