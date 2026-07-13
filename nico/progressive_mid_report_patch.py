@@ -149,35 +149,6 @@ def install_progressive_mid_report_patch() -> None:
             }
         )
         payload["executive_summary"] = summary
-
-        decision_section = {
-            "id": "executive_decision_support",
-            "label": "Executive Decision Support",
-            "score": None,
-            "truth_status": "Human Review Required",
-            "summary": (
-                "This section summarizes existing Mid evidence for decision support. "
-                "It does not change scores, upgrade evidence, approve findings, or permit client delivery."
-            ),
-            "evidence": [
-                f"Verified areas: {', '.join(detail['decision_support']['strengths']) or 'none verified without limitations'}.",
-                f"Areas awaiting verification: {', '.join(detail['decision_support']['waiting_for']) or 'none'}.",
-                f"Evidence coverage: {detail['executive_quick_view']['evidence_coverage_percent']}%.",
-                f"Review exceptions retained: {detail['executive_quick_view']['review_exception_count']}.",
-                "Mid includes the Express baseline plus snapshot-bound evidence, review-by-exception, and decision-support detail.",
-            ],
-            "findings": deepcopy(detail["decision_support"]["review_required_items"]),
-            "unavailable": [
-                f"Awaiting verification: {item}" for item in detail["decision_support"]["waiting_for"]
-            ],
-            "missing_evidence_sources": [],
-            "failed_evidence_tools": [],
-            "source_classification": "derived_from_retained_mid_evidence",
-            "direct_repository_proof": False,
-            "human_review_required": True,
-            "unsupported_claims_permitted": False,
-        }
-        payload["sections"] = [decision_section] + [deepcopy(item) for item in payload.get("sections") or []]
         return payload
 
     report_module.MID_REPORT_VERSION = MID_REPORT_VERSION
