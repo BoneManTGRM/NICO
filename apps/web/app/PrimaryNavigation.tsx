@@ -18,7 +18,7 @@ export const PRIMARY_SERVICES = [
     key: "mid" as ServiceKey,
     label: "Mid Assessment",
     shortLabel: "Mid",
-    href: "/?assessment=mid#assessment",
+    href: "/mid-assessment",
   },
   {
     key: "full" as ServiceKey,
@@ -41,15 +41,6 @@ export const PRIMARY_SERVICES = [
 ] as const;
 
 const ADVANCED_GROUPS = [
-  {
-    label: "Mid workflow",
-    links: [
-      {label: "Mid Review", href: "/mid-review"},
-      {label: "Mid Report", href: "/mid-report"},
-      {label: "Mid Approval", href: "/mid-approval"},
-      {label: "Mid Delivery", href: "/mid-delivery-admin"},
-    ],
-  },
   {
     label: "Operations and diagnostics",
     links: [
@@ -74,7 +65,8 @@ function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKe
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
   if (
-    pathname.startsWith("/mid-review")
+    pathname.startsWith("/mid-assessment")
+    || pathname.startsWith("/mid-review")
     || pathname.startsWith("/mid-report")
     || pathname.startsWith("/mid-approval")
     || pathname.startsWith("/mid-delivery-admin")
@@ -183,7 +175,7 @@ export default function PrimaryNavigation() {
           <div className="nav-more-panel">
             <div className="nav-more-heading">
               <b>Advanced tools</b>
-              <span>Workflow stages and operator utilities</span>
+              <span>Operator diagnostics and utilities</span>
             </div>
             <div className="nav-more-groups">
               {ADVANCED_GROUPS.map((group) => (
