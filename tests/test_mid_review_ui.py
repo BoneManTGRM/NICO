@@ -3,26 +3,32 @@ from __future__ import annotations
 from pathlib import Path
 
 
-PAGE = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "mid-review" / "page.tsx"
-LAYOUT = Path(__file__).resolve().parents[1] / "apps" / "web" / "app" / "layout.tsx"
-PRODUCTION = Path(__file__).resolve().parents[1] / "nico" / "api" / "production.py"
+ROOT = Path(__file__).resolve().parents[1]
+PAGE = ROOT / "apps" / "web" / "app" / "mid-review" / "page.tsx"
+CONTEXT = ROOT / "apps" / "web" / "app" / "MidWorkspaceContext.tsx"
+LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
-def test_navigation_exposes_dedicated_mid_review_screen():
+def test_workspace_exposes_dedicated_mid_review_stage():
+    context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
-    assert '<a href="/mid-review">Mid Review</a>' in layout
-    assert "admin-authenticated review-by-exception packet" in layout
+    assert 'path: "/mid-review"' in context
+    assert 'href="/mid-assessment"' in layout
+    assert "Start, Review, Report, Approval, and controlled Delivery" in layout
 
 
-def test_review_screen_requires_exact_run_scope_and_admin_token():
+def test_review_screen_uses_shared_exact_run_scope_and_admin_token():
     source = PAGE.read_text(encoding="utf-8")
+    context = CONTEXT.read_text(encoding="utf-8")
 
-    assert "Mid run ID" in source
-    assert "Customer ID" in source
-    assert "Project ID" in source
-    assert "NICO admin token" in source
-    assert 'type="password"' in source
+    for label in ("Mid run ID", "Customer ID", "Project ID", "NICO admin token"):
+        assert label in context
+    assert 'type="password"' in context
+    assert "useMidWorkspace" in source
+    assert "MidIdentityPanel" in source
+    assert 'MidStageNavigation current="review"' in source
     assert 'headers: {"X-NICO-Admin-Token": adminToken}' in source
     assert "customer_id: customerId.trim()" in source
     assert "project_id: projectId.trim()" in source
