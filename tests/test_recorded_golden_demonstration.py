@@ -71,7 +71,7 @@ def test_markdown_is_bounded_and_keeps_synthetic_guardrail_visible() -> None:
 def _copy_suite(tmp_path: Path) -> Path:
     source_dir = MANIFEST.parent
     target_dir = tmp_path / "golden"
-    target_dir.mkdir()
+    target_dir.mkdir(parents=True)
     for path in source_dir.glob("*.json"):
         (target_dir / path.name).write_bytes(path.read_bytes())
     return target_dir / "manifest.json"
