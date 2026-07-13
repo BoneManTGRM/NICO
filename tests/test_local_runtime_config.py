@@ -142,6 +142,11 @@ def test_canonical_path_consumers_no_longer_source_paths_from_cli_monolith() -> 
     scan_source = LOCAL_SCAN_SERVICE.read_text(encoding="utf-8")
 
     assert "from nico.local_runtime_config import DB_PATH" in entrypoint_source
-    assert "from nico.local_runtime_config import DRIFT_REPO, SAMPLE_REPO, TEST_LAB" in scan_source
+    runtime_import = next(
+        line for line in scan_source.splitlines()
+        if line.startswith("from nico.local_runtime_config import ")
+    )
+    assert all(name in runtime_import for name in ("DB_PATH", "DRIFT_REPO", "SAMPLE_REPO", "TEST_LAB"))
     assert "PROJECT_ROOT =" not in scan_source
     assert "from nico.cli import" not in entrypoint_source
+    assert "from nico.cli import" not in scan_source
