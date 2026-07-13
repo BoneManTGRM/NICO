@@ -2,6 +2,8 @@
 
 import {useState} from "react";
 
+import {MidIdentityPanel, MidStageNavigation, useMidWorkspace} from "../MidWorkspaceContext";
+
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
 type ReviewItem = {
@@ -55,10 +57,7 @@ function statusClass(value?: string) {
 }
 
 export default function MidReviewPage() {
-  const [runId, setRunId] = useState("");
-  const [customerId, setCustomerId] = useState("default_customer");
-  const [projectId, setProjectId] = useState("default_project");
-  const [adminToken, setAdminToken] = useState("");
+  const {runId, customerId, projectId, adminToken} = useMidWorkspace();
   const [packet, setPacket] = useState<ReviewPacket | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -91,15 +90,12 @@ export default function MidReviewPage() {
       <p className="lead">Inspect only the findings, conflicts, limitations, missing evidence, failed tools, score-changing claims, and inference-based context that require a human decision.</p>
     </section>
 
+    <MidStageNavigation current="review" />
+    <MidIdentityPanel title="Review the selected Mid run" />
+
     <section className="section panel">
-      <div className="section-head"><div><p className="eyebrow">Reviewer access</p><h2>Load exact Mid run</h2></div><span className={packet ? "status green" : "status gray"}>{packet ? "packet loaded" : "not loaded"}</span></div>
-      <p className="warning-box">Use the exact Mid run and customer/project scope. The admin token remains in browser state only and is not included in the review packet.</p>
-      <div className="form-grid">
-        <label>Mid run ID<input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="midrun_..." /></label>
-        <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
-        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-        <label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
-      </div>
+      <div className="section-head"><div><p className="eyebrow">Reviewer access</p><h2>Load exact review packet</h2></div><span className={packet ? "status green" : "status gray"}>{packet ? "packet loaded" : "not loaded"}</span></div>
+      <p className="warning-box">Use the exact Mid run and customer/project scope shared by the workspace. The admin token remains in React memory only and is not included in the review packet.</p>
       <button type="button" className="primary-button" disabled={!API_URL || !runId.trim() || !adminToken.trim() || loading} onClick={loadPacket}>{loading ? "Building reviewer packet..." : "Load review exceptions"}</button>
       {error ? <p className="error-box">{error}</p> : null}
     </section>
