@@ -5,7 +5,7 @@ import shutil
 from collections import Counter
 from typing import Any
 
-from nico.cli import Store, apply_rye, decide_action, repairs_for
+from nico.cli import Store, decide_action
 from nico.local_reporting_service import generate_reports
 from nico.local_runtime_config import DRIFT_REPO, SAMPLE_REPO, TEST_LAB
 from nico.local_scan_engine import (
@@ -16,6 +16,7 @@ from nico.local_scan_engine import (
     scan_repo,
     scanner_availability,
 )
+from nico.local_scoring_repair_service import apply_rye, repairs_for
 
 
 def ensure_test_lab() -> None:
