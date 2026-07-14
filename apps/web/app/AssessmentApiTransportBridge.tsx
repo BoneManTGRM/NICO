@@ -4,7 +4,10 @@ import {useEffect} from "react";
 
 const CONFIGURED_API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
-const DIRECT_EXPRESS_PATH = "/assessment/github";
+const LEGACY_EXPRESS_PATH = "/assessment/github";
+const EXPRESS_START_PATH = "/assessment/express-run";
+const EXPRESS_POLL_INTERVAL_MS = 3000;
+const EXPRESS_MAX_POLL_ATTEMPTS = 240;
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
 
@@ -75,6 +78,129 @@ function clearFailure() {
   window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: null}));
 }
 
+function jsonFailure(status: number, code: string, message: string, runId = "") {
+  return new Response(JSON.stringify({
+    status: "error",
+    detail: {
+      status: "error",
+      code,
+      message,
+      run_id: runId,
+      assessment_type: "express",
+    },
+  }), {
+    status,
+    headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
+  });
+}
+
+async function responsePayload(response: Response): Promise<Record<string, unknown>> {
+  try {
+    const payload = await response.clone().json();
+    return payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function proxyUrl(path: string) {
+  return new URL(`/api/nico${path}`, window.location.origin);
+}
+
+async function startExpressLifecycle(
+  originalFetch: typeof window.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): Promise<Response> {
+  let startResponse: Response;
+  try {
+    const target = proxyUrl(EXPRESS_START_PATH);
+    startResponse = input instanceof Request
+      ? await originalFetch(new Request(target, input), init)
+      : await originalFetch(target, init);
+  } catch {
+    const failure = jsonFailure(
+      502,
+      "express_start_transport_failed",
+      "NICO could not start the Express lifecycle through the frontend deployment. Review Vercel-to-Railway connectivity before retrying.",
+    );
+    await publishFailure(failure.clone(), EXPRESS_START_PATH);
+    return failure;
+  }
+
+  if (!startResponse.ok) {
+    await publishFailure(startResponse.clone(), EXPRESS_START_PATH);
+    return startResponse;
+  }
+
+  const started = await responsePayload(startResponse);
+  const runId = boundedText(started.run_id, 120);
+  if (!runId.startsWith("express_run_")) {
+    const failure = jsonFailure(
+      502,
+      "express_start_missing_run_id",
+      "The Express lifecycle start response did not include an exact run ID, so NICO stopped rather than risk a duplicate run.",
+    );
+    await publishFailure(failure.clone(), EXPRESS_START_PATH);
+    return failure;
+  }
+
+  for (let attempt = 1; attempt <= EXPRESS_MAX_POLL_ATTEMPTS; attempt += 1) {
+    await sleep(EXPRESS_POLL_INTERVAL_MS);
+    const statusPath = `/assessment/express-run/${encodeURIComponent(runId)}/status`;
+    let statusResponse: Response;
+    try {
+      statusResponse = await originalFetch(proxyUrl(statusPath), {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({}),
+        cache: "no-store",
+      });
+    } catch {
+      const failure = jsonFailure(
+        502,
+        "express_status_transport_failed",
+        "The Express run was accepted, but a short status request was interrupted. The exact run ID is preserved; review Recovery before starting another run.",
+        runId,
+      );
+      await publishFailure(failure.clone(), statusPath);
+      return failure;
+    }
+
+    if (!statusResponse.ok) {
+      await publishFailure(statusResponse.clone(), statusPath);
+      return statusResponse;
+    }
+
+    const payload = await responsePayload(statusResponse);
+    const status = boundedText(payload.status, 40).toLowerCase();
+    if (["complete", "completed"].includes(status)) return statusResponse;
+    if (["blocked", "failed", "error", "interrupted", "rejected"].includes(status)) {
+      const failure = jsonFailure(
+        503,
+        boundedText(payload.code, 80) || "express_terminal_failure",
+        boundedText(payload.message, 320) || "The Express run stopped before completion.",
+        runId,
+      );
+      await publishFailure(failure.clone(), statusPath);
+      return failure;
+    }
+  }
+
+  const timeout = jsonFailure(
+    504,
+    "express_status_poll_limit_reached",
+    `Express continuation reached its bounded ${EXPRESS_MAX_POLL_ATTEMPTS}-check limit. The exact run ID is preserved; review Recovery before starting another run.`,
+    runId,
+  );
+  await publishFailure(timeout.clone(), `/assessment/express-run/${encodeURIComponent(runId)}/status`);
+  return timeout;
+}
+
 export default function AssessmentApiTransportBridge() {
   useEffect(() => {
     if (!CONFIGURED_API_URL) return;
@@ -104,23 +230,12 @@ export default function AssessmentApiTransportBridge() {
       if (!ASSESSMENT_PATH.test(apiPath)) return originalFetch(input, init);
 
       clearFailure();
+      if (apiPath === LEGACY_EXPRESS_PATH) return startExpressLifecycle(originalFetch, input, init);
 
-      if (apiPath === DIRECT_EXPRESS_PATH) {
-        try {
-          const response = await originalFetch(input, init);
-          if (!response.ok) await publishFailure(response.clone(), apiPath);
-          return response;
-        } catch {
-          throw new Error(
-            "Express transport was interrupted before the Railway backend returned a response. Review backend availability and production CORS diagnostics before retrying.",
-          );
-        }
-      }
-
-      const proxyUrl = new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin);
+      const target = new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin);
       const response = input instanceof Request
-        ? await originalFetch(new Request(proxyUrl, input), init)
-        : await originalFetch(proxyUrl, init);
+        ? await originalFetch(new Request(target, input), init)
+        : await originalFetch(target, init);
       if (!response.ok) await publishFailure(response.clone(), apiPath);
       return response;
     };
