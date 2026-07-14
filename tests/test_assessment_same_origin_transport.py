@@ -28,6 +28,41 @@ def test_bridge_replaces_one_long_express_connection_with_exact_run_polling() ->
     assert 'if (window.fetch === bridgedFetch) window.fetch = originalFetch' in source
 
 
+def test_express_status_polling_retries_only_read_only_exact_run_continuation() -> None:
+    source = BRIDGE.read_text(encoding="utf-8")
+
+    assert 'EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 8' in source
+    assert 'EXPRESS_STATUS_RETRY_BASE_MS = 1500' in source
+    assert 'EXPRESS_STATUS_RETRY_MAX_MS = 12000' in source
+    assert 'RETRYABLE_STATUS_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504])' in source
+    assert 'let consecutiveStatusTransportFailures = 0;' in source
+    assert 'consecutiveStatusTransportFailures += 1;' in source
+    assert 'consecutiveStatusTransportFailures = 0;' in source
+    assert 'await sleep(statusRetryDelayMs(consecutiveStatusTransportFailures));' in source
+    assert 'keepalive: true' in source
+    assert 'credentials: "same-origin"' in source
+    assert '"express_status_temporarily_unreachable"' in source
+    assert 'consecutive short status requests could not complete' in source
+
+    start_section = source.split('const started = await responsePayload(startResponse);', 1)[0]
+    polling_section = source.split('let consecutiveStatusTransportFailures = 0;', 1)[1]
+    assert start_section.count('proxyUrl(EXPRESS_START_PATH)') == 1
+    assert 'proxyUrl(EXPRESS_START_PATH)' not in polling_section
+    assert 'body: JSON.stringify({customer_id: customerId, project_id: projectId})' in polling_section
+
+
+def test_status_retries_never_convert_exact_run_terminal_evidence_into_transport_noise() -> None:
+    source = BRIDGE.read_text(encoding="utf-8")
+
+    assert 'responseRunId === exactRunId && TERMINAL_EXPRESS_STATUSES.has(lifecycleStatus)' in source
+    assert 'return false;' in source.split(
+        'responseRunId === exactRunId && TERMINAL_EXPRESS_STATUSES.has(lifecycleStatus)', 1
+    )[1].split('const code', 1)[0]
+    assert '["assessment_backend_not_configured", "assessment_proxy_route_not_allowed"].includes(code)' in source
+    assert 'if (TERMINAL_EXPRESS_STATUSES.has(status))' in source
+    assert 'boundedText(payload.code, 80) || "express_terminal_failure"' in source
+
+
 def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress() -> None:
     source = BRIDGE.read_text(encoding="utf-8")
 
