@@ -10,6 +10,7 @@ from nico.report_evidence_consistency_gate import (
     _recompute_maturity,
     _reconcile_secret_history,
 )
+from nico.report_valid_complexity_reconciliation import reconcile_verified_complexity_report_state
 
 
 def _complexity_signal_present(result: dict[str, Any]) -> bool:
@@ -51,6 +52,7 @@ def apply_report_evidence_consistency_gate(result: dict[str, Any]) -> dict[str, 
     complexity_changed = False
     if _complexity_signal_present(result):
         complexity_changed = _apply_complexity_gate(result)
+        reconcile_verified_complexity_report_state(result)
     _reconcile_secret_history(result)
     if complexity_changed:
         _recompute_maturity(result)
