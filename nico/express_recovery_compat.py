@@ -38,6 +38,10 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
             or ""
         )
         recovery_state = deepcopy(item.get("recovery") or {})
+        if str(record.get("status") or "") == "interrupted":
+            recovery_state.setdefault("state", recovery.RECOVERY_REQUIRED_STATUS)
+            recovery_state.setdefault("reason", "express_worker_interrupted")
+            recovery_state.setdefault("detected_at", record.get("updated_at"))
         recovery_state["resume_allowed"] = False
         recovery_state["automatic_resume"] = False
         item["recovery"] = recovery_state
@@ -73,12 +77,31 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
 
     def assessment_recovery_inventory(*, store=None, refresh: bool = False, limit: int = 200):
         result = original_inventory(store=store, refresh=refresh, limit=limit)
+        active = recovery._store(store)
+        bounded_limit = max(1, min(int(limit), recovery.MAX_INVENTORY_LIMIT))
+        items = list(result.get("recovery_required") or [])
+        known_ids = {str(item.get("run_id") or "") for item in items if isinstance(item, dict)}
+        for record in active.list("assessment_runs")[: recovery.MAX_RECONCILE_RECORDS]:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("workflow") or "") != "express" or str(record.get("status") or "") != "interrupted":
+                continue
+            run_id = str(record.get("run_id") or record.get("id") or "")
+            if not run_id or run_id in known_ids:
+                continue
+            items.append(safe_run_summary(record))
+            known_ids.add(run_id)
+        items.sort(key=lambda item: str(item.get("updated_at") or ""))
+        items = items[:bounded_limit]
+
         counts = deepcopy(result.get("counts") or {})
-        items = result.get("recovery_required") if isinstance(result.get("recovery_required"), list) else []
+        counts["recovery_required"] = len(items)
         counts["express_recovery_required"] = sum(
             1 for item in items if isinstance(item, dict) and item.get("workflow") == "express"
         )
         result["counts"] = counts
+        result["recovery_required"] = items
+        result["status"] = "attention_required" if items else "clear"
         result["operator_action"] = (
             "Review saved scope, authorization, run, snapshot, scanner, report, and approval identities before any continuation. "
             "Mid and Full may resume only through their exact-state controls. Interrupted Express records remain manual-review-only; do not start a replacement until the saved worker is confirmed terminal."
@@ -98,6 +121,7 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
         "status": "installed",
         "version": EXPRESS_RECOVERY_VERSION,
         "supported_workflow": "express",
+        "immediate_interrupted_inventory": True,
         "automatic_resume": False,
         "same_id_resume": False,
         "human_review_required": True,
