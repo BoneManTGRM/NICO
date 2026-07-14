@@ -40,7 +40,7 @@ type Props = {
 
 function tone(status?: string) {
   const value = String(status || "not_loaded").toLowerCase();
-  if (["not_loaded", "unavailable"].includes(value)) return styles.neutral;
+  if (value === "not_loaded") return styles.neutral;
   if (["clear", "complete", "running", "queued"].includes(value)) return styles.good;
   if (["attention_required", "recovery_required", "degraded"].includes(value)) return styles.warn;
   return styles.bad;
