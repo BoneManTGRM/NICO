@@ -63,11 +63,13 @@ def express_record(run_id: str, status: str = "interrupted") -> dict:
 
 
 def test_install_adds_express_without_enabling_resume(installed) -> None:
-    assert installed["status"] == "installed"
+    assert installed["status"] in {"installed", "already_installed"}
+    assert installed["version"] == compat.EXPRESS_RECOVERY_VERSION
     assert "express" in recovery.SUPPORTED_WORKFLOWS
     assert "queued" in recovery.ACTIVE_ASSESSMENT_STATUSES
-    assert installed["automatic_resume"] is False
-    assert installed["same_id_resume"] is False
+    valid, reason = recovery._valid_resume_source(express_record("express_run_install_contract"))
+    assert valid is False
+    assert reason == "express_manual_review_required"
 
 
 def test_interrupted_express_is_immediately_visible_in_inventory(installed) -> None:
