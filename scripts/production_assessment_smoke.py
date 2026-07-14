@@ -20,6 +20,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 FAILURES = {"blocked", "failed", "error", "rejected", "timed_out", "timeout", "unavailable", "not_found"}
 FULL_TOOLS = ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog"]
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
+DEFAULT_EXPRESS_TIMEOUT_SECONDS = 900.0
 Transport = Callable[[str, str, dict[str, Any] | None, dict[str, str], float], tuple[int, Any]]
 
 
@@ -66,6 +68,10 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"{label} host is not explicitly allowlisted")
     if not 1 <= config["max_polls"] <= 300 or not 0 <= config["poll_interval"] <= 30:
         raise ValueError("Polling limits are outside the safe bounded range")
+    if not 5 <= config["request_timeout"] <= 120:
+        raise ValueError("General request timeout must be between 5 and 120 seconds")
+    if not 120 <= config["express_timeout"] <= 1200:
+        raise ValueError("Express start timeout must be between 120 and 1200 seconds")
     return config
 
 
@@ -154,10 +160,12 @@ def terminal(tier: str, payload: dict[str, Any]) -> bool:
 
 def unavailable(payload: dict[str, Any]) -> list[str]:
     notes: list[str] = []
+
     def add(value: Any) -> None:
         text = str(value or "").strip().replace("\n", " ")[:240]
         if text and text not in notes:
             notes.append(text)
+
     for source in (payload, nested(payload, "assessment")):
         for key in ("unavailable_data_notes", "limitations", "warnings"):
             for item in source.get(key) or []:
@@ -190,8 +198,9 @@ def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_j
         raise ValueError(f"Unsupported tier: {tier}")
 
     headers = {"X-NICO-Admin-Token": config["admin_token"]}
+    start_timeout = config["express_timeout"] if tier == "express" else config["request_timeout"]
     started = now()
-    start_status, raw = transport("POST", config["backend_origin"] + start_path, start_payload, headers, config["timeout"])
+    start_status, raw = transport("POST", config["backend_origin"] + start_path, start_payload, headers, start_timeout)
     current = payload_dict(raw)
     initial_id = run_id(current)
     continuation_ids: list[str] = []
@@ -205,7 +214,7 @@ def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_j
             status_payload = {**base, "auto_continue": True, "run_scanners": True, "scan_id": first(nested(current, "scanner").get("scan_id"), nested(current, "scanner_evidence").get("scan_id"))}
             if tier == "full":
                 status_payload.update({"mode": "full", "build_reports": True, "create_final_review_request": True, "tools": FULL_TOOLS})
-            code, raw = transport("POST", config["backend_origin"] + status_path, status_payload, headers, config["timeout"])
+            code, raw = transport("POST", config["backend_origin"] + status_path, status_payload, headers, config["request_timeout"])
             status_paths.append(status_path)
             status_codes.append(code)
             candidate = payload_dict(raw)
@@ -226,7 +235,7 @@ def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_j
     passed = 200 <= start_status < 300 and terminal(tier, current) and not failed(current) and identities and human is True and client is False and (tier == "express" or exact)
     return {
         "tier": tier, "status": "passed" if passed else "failed", "assessment_terminal_status": str(current.get("status") or "unknown"),
-        "start_count": 1, "start_http_status": start_status, "started_at": started, "finished_at": now(),
+        "start_count": 1, "start_http_status": start_status, "start_timeout_seconds": start_timeout, "started_at": started, "finished_at": now(),
         "run_id": final_id, "initial_run_id": initial_id, "continuation_run_ids": list(dict.fromkeys(continuation_ids)),
         "continuation_status_paths": status_paths, "continuation_http_statuses": status_codes,
         "polled_single_exact_status_url": exact, "report_id": rid, "review_request_id": vid,
@@ -235,7 +244,7 @@ def run_tier(tier: str, config: dict[str, Any], transport: Transport = request_j
 
 
 def deployment(config: dict[str, Any], transport: Transport = request_json) -> dict[str, Any]:
-    code, raw = transport("GET", f"https://api.github.com/repos/{config['github_repository']}/commits/{config['commit_sha']}/status", None, {"Authorization": f"Bearer {config['github_token']}", "X-GitHub-Api-Version": "2022-11-28"}, config["timeout"])
+    code, raw = transport("GET", f"https://api.github.com/repos/{config['github_repository']}/commits/{config['commit_sha']}/status", None, {"Authorization": f"Bearer {config['github_token']}", "X-GitHub-Api-Version": "2022-11-28"}, config["request_timeout"])
     observed: dict[str, str] = {}
     for item in payload_dict(raw).get("statuses") or []:
         if isinstance(item, dict) and item.get("context") not in observed:
@@ -245,8 +254,8 @@ def deployment(config: dict[str, Any], transport: Transport = request_json) -> d
 
 
 def preflight(config: dict[str, Any], transport: Transport = request_json) -> dict[str, Any]:
-    front_code, _ = transport("GET", config["frontend_origin"] + "/assessment", None, {}, config["timeout"])
-    health_code, raw = transport("GET", config["backend_origin"] + "/health", None, {"X-NICO-Admin-Token": config["admin_token"]}, config["timeout"])
+    front_code, _ = transport("GET", config["frontend_origin"] + "/assessment", None, {}, config["request_timeout"])
+    health_code, raw = transport("GET", config["backend_origin"] + "/health", None, {"X-NICO-Admin-Token": config["admin_token"]}, config["request_timeout"])
     health = payload_dict(raw)
     return {
         "frontend": {"origin": config["frontend_origin"], "assessment_http_status": front_code},
@@ -295,6 +304,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-markdown", default="audit-results/production-assessment-smoke.md")
     parser.add_argument("--max-polls", type=int, default=200)
     parser.add_argument("--poll-interval-seconds", type=float, default=3.0)
+    parser.add_argument("--request-timeout-seconds", type=float, default=DEFAULT_REQUEST_TIMEOUT_SECONDS)
+    parser.add_argument("--express-timeout-seconds", type=float, default=DEFAULT_EXPRESS_TIMEOUT_SECONDS)
     return parser.parse_args(argv)
 
 
@@ -307,7 +318,7 @@ def config_from(args: argparse.Namespace) -> dict[str, Any]:
         "frontend_status_context": args.frontend_status_context.strip(), "backend_status_context": args.backend_status_context.strip(),
         "admin_token": os.environ.get("NICO_PRODUCTION_SMOKE_ADMIN_TOKEN", ""), "github_token": os.environ.get("GITHUB_TOKEN", ""),
         "output_json": Path(args.output_json), "output_markdown": Path(args.output_markdown), "max_polls": args.max_polls,
-        "poll_interval": args.poll_interval_seconds, "timeout": 60.0,
+        "poll_interval": args.poll_interval_seconds, "request_timeout": args.request_timeout_seconds, "express_timeout": args.express_timeout_seconds,
     })
 
 
