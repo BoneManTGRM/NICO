@@ -31,10 +31,14 @@ The runner:
 - verifies the exact commit has successful frontend and backend deployment statuses;
 - verifies the deployed assessment page and backend health endpoint;
 - sends exactly one start request for Express, Mid, and Full;
+- permits the synchronous Express start request up to 900 seconds while keeping deployment, health, Mid, Full, and continuation requests bounded to 60 seconds each;
+- limits the complete workflow to 60 minutes;
 - polls only the exact Mid and Full run status URL returned by that tier;
-- retains run, report, review-request, terminal-state, and unavailable-evidence summaries;
+- retains run, report, review-request, terminal-state, request-timeout, and unavailable-evidence summaries;
 - requires explicit human-review and non-client-ready boundaries;
 - writes bounded JSON and Markdown artifacts retained for 90 days.
+
+The separate Express allowance exists because production Express execution can legitimately exceed the shorter request boundary. It does not add retries, issue a duplicate start, or convert a timed-out or unavailable response into success.
 
 It does not approve reports, create delivery access, redeem delivery links, apply repairs, open pull requests, modify production code, or claim that all defects are absent. It deliberately does not issue a second start request as a destructive duplicate probe. Duplicate-start protection and the visible browser state must be retained separately without creating an unintended second assessment.
 
