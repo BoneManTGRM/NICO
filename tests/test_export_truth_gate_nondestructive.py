@@ -38,7 +38,7 @@ def test_export_truth_gate_preserves_artifacts_for_review_warnings() -> None:
     assert updated["client_ready"] is False
 
 
-def test_trust_display_treats_export_review_as_yellow_not_red() -> None:
+def test_trust_display_treats_export_review_as_pending_not_red() -> None:
     result = apply_export_truth_gate(
         {
             "status": "complete",
@@ -67,6 +67,8 @@ def test_trust_display_treats_export_review_as_yellow_not_red() -> None:
     trust = displayed["sections"][0]
 
     assert trust["id"] == "trust_readiness"
-    assert trust["status"] == "yellow"
+    assert trust["status"] == "pending"
+    assert trust["workflow_state"] == "review_required"
+    assert trust["status_semantics"] == "review_workflow_state"
     assert "Review-limited" in trust["summary"]
     assert any("draft-only" in item for item in trust["findings"])
