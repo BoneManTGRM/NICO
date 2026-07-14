@@ -255,9 +255,6 @@ def _bind_runtime(
 def install_hosted_api_complexity_fallback() -> dict[str, Any]:
     """Install the request-budget-aware, context-scoped Express dispatcher."""
 
-    fallback.select_balanced_profile_paths = select_budget_aware_profile_paths
-    fallback.fetch_repository_profile_with_complexity = fetch_repository_profile_with_budget_provenance
-    fallback.attach_api_sample_complexity = attach_api_sample_complexity_with_provenance
     detail_bridge_installed = _install_unavailable_detail_bridge()
 
     installed = bool(getattr(hosted, "_nico_api_complexity_fallback_compat_installed", False))
@@ -274,6 +271,7 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
             "version": "nico-hosted-api-complexity-fallback-v4",
             "shared_profile_override": False,
             "context_scoped_express_profile": True,
+            "concurrent_express_requests_supported": True,
             "source_bootstrap_files": SOURCE_BOOTSTRAP_FILES,
             "fetch_provenance_retained": True,
             "unavailable_detail_bridge_installed": detail_bridge_installed,
@@ -320,6 +318,7 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
         "version": "nico-hosted-api-complexity-fallback-v4",
         "shared_profile_override": False,
         "context_scoped_express_profile": True,
+        "concurrent_express_requests_supported": True,
         "source_bootstrap_files": SOURCE_BOOTSTRAP_FILES,
         "fetch_provenance_retained": True,
         "unavailable_detail_bridge_installed": detail_bridge_installed,
