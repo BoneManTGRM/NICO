@@ -54,10 +54,30 @@ def test_normalizer_removes_exact_repetition_but_preserves_distinct_limitations(
     guard = output["report_quality_guards"]["presentation_list_normalization"]
     assert guard["status"] == "normalized"
     assert guard["duplicates_removed"] == 1
+    assert guard["passes"] == 1
+    assert guard["last_pass_duplicates_removed"] == 1
     assert output["maturity_signal"] == {"level": "Senior", "score": 86}
     assert output["trust_level"] == "review_limited"
     assert output["human_review_required"] is True
     assert output["client_ready"] is False
+
+
+def test_repeated_normalization_is_idempotent_and_keeps_cumulative_counts() -> None:
+    result = {
+        "status": "complete",
+        "unavailable_data_notes": ["Repeated warning.", " repeated warning. "],
+        "sections": [],
+    }
+
+    first = normalize_report_presentation_lists(result)
+    second = normalize_report_presentation_lists(first)
+    guard = second["report_quality_guards"]["presentation_list_normalization"]
+
+    assert second["unavailable_data_notes"] == ["Repeated warning."]
+    assert guard["status"] == "normalized"
+    assert guard["duplicates_removed"] == 1
+    assert guard["passes"] == 2
+    assert guard["last_pass_duplicates_removed"] == 0
 
 
 def test_normalizer_cleans_section_and_nested_assessment_presentation_lists() -> None:
