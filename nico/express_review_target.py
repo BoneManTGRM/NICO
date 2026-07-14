@@ -126,7 +126,9 @@ def install_express_storage_compatibility() -> dict[str, Any]:
         storage_fallback = storage_current
 
         def exact_hosted_assessment_storage_record(req: Any) -> tuple[str, dict[str, Any]]:
-            return _exact_storage_record(req, _consume_final_express_payload(), storage_fallback)
+            captured = _consume_final_express_payload()
+            safe_payload = api_main.safe_assessment_response_payload(captured) if captured else {}
+            return _exact_storage_record(req, safe_payload, storage_fallback)
 
         setattr(exact_hosted_assessment_storage_record, _STORAGE_COMPAT_MARKER, True)
         setattr(exact_hosted_assessment_storage_record, "_nico_storage_fallback", storage_fallback)
