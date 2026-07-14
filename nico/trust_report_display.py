@@ -166,7 +166,22 @@ def _client_delivery_status(trust_level: str) -> str:
     return "Draft only — not client-ready"
 
 
+def _workflow_state(trust_level: str) -> str:
+    if trust_level == "Verified":
+        return "verified_evidence"
+    if trust_level == "Review-limited":
+        return "review_required"
+    if trust_level == "Evidence-bound":
+        return "evidence_incomplete"
+    return "draft_only"
+
+
 def _summary_text(display: dict[str, Any]) -> str:
+    if display["trust_level"] == "Review-limited":
+        return (
+            f"Review State: Human review required. Technical Score: {display.get('score', 'unknown')}/100. "
+            f"Trust Level: {display['trust_level']}. Client Delivery: {display['client_delivery_status']}."
+        )
     return (
         f"Trust Level: {display['trust_level']}. "
         f"Client Delivery: {display['client_delivery_status']}. "
@@ -175,9 +190,7 @@ def _summary_text(display: dict[str, Any]) -> str:
 
 
 def _export_summary(display: dict[str, Any]) -> str:
-    lines = [
-        _summary_text(display),
-    ]
+    lines = [_summary_text(display)]
     if display["why_not_higher"]:
         lines.append("Why not higher: " + " ".join(display["why_not_higher"][:3]))
     if display["path_to_verified"]:
@@ -200,7 +213,7 @@ def _canonical_assessment_summary(result: dict[str, Any]) -> str:
 
 def _remove_leading_trust_summary(existing: str) -> str:
     paragraphs = [part.strip() for part in str(existing or "").split("\n\n")]
-    while paragraphs and paragraphs[0].startswith(("Trust Level:", "Why not higher:", "Path to verified:")):
+    while paragraphs and paragraphs[0].startswith(("Trust Level:", "Review State:", "Why not higher:", "Path to verified:")):
         paragraphs.pop(0)
     return "\n\n".join(part for part in paragraphs if part).strip()
 
@@ -220,7 +233,9 @@ def _summary_body(result: dict[str, Any], existing: str) -> str:
 def _trust_section_status(trust_level: str) -> str:
     if trust_level == "Verified":
         return "green"
-    if trust_level in {"Evidence-bound", "Review-limited"}:
+    if trust_level == "Review-limited":
+        return "pending"
+    if trust_level == "Evidence-bound":
         return "yellow"
     return "red"
 
@@ -232,12 +247,34 @@ def _display_score(display: dict[str, Any]) -> int:
         return 0
 
 
+def _trust_unavailable(display: dict[str, Any]) -> list[str]:
+    if display["trust_level"] == "Verified":
+        return []
+    if display["trust_level"] == "Review-limited":
+        return [
+            "Client delivery remains blocked until the listed evidence or export findings are reviewed and resolved or formally accepted by an authorized human reviewer."
+        ]
+    return ["Verified client-clean status requires all critical evidence to remain attached and clean."]
+
+
 def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> None:
     sections = [
         section
         for section in result.get("sections", []) or []
         if not (isinstance(section, dict) and section.get("id") == "trust_readiness")
     ]
+    evidence = [
+        f"Trust Level: {display['trust_level']}",
+        f"Client Delivery: {display['client_delivery_status']}",
+        f"Evidence Ledger: {display['evidence_ledger_status']}",
+        f"Scanner Artifact Integration: {display['scanner_artifact_status']}",
+        f"Export Truth Gate: {display['export_truth_gate_status']}",
+        "Display score mirrors the final maturity score; this supplemental row has scoring_weight=0 and does not change the maturity average.",
+    ]
+    if display["trust_level"] == "Review-limited":
+        evidence.append(
+            "Badge state is PENDING because report review is required. The workflow label does not change the technical score; the Findings list states the actual evidence or export reason."
+        )
     sections.insert(
         0,
         {
@@ -248,17 +285,12 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
             "scoring_weight": 0,
             "supplemental": True,
             "score_basis": "final_maturity_signal_display_only",
+            "status_semantics": "review_workflow_state",
+            "workflow_state": display["workflow_state"],
             "summary": _summary_text(display),
-            "evidence": [
-                f"Trust Level: {display['trust_level']}",
-                f"Client Delivery: {display['client_delivery_status']}",
-                f"Evidence Ledger: {display['evidence_ledger_status']}",
-                f"Scanner Artifact Integration: {display['scanner_artifact_status']}",
-                f"Export Truth Gate: {display['export_truth_gate_status']}",
-                "Display score mirrors the final maturity score; this supplemental row has scoring_weight=0 and does not change the maturity average.",
-            ],
+            "evidence": evidence,
             "findings": display["why_not_higher"] or ["No trust display blockers found."],
-            "unavailable": [] if display["trust_level"] == "Verified" else ["Verified client-clean status requires all critical evidence to remain attached and clean."],
+            "unavailable": _trust_unavailable(display),
         },
     )
     result["sections"] = sections
@@ -288,6 +320,8 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
         "evidence_ledger_status": str(ledger.get("status") or "missing"),
         "scanner_artifact_status": _scanner_status(result),
         "export_truth_gate_status": str(export_gate.get("status") or "pending"),
+        "workflow_state": _workflow_state(trust_level),
+        "status_semantics": "review_workflow_state",
     }
     result["trust_level"] = trust_level
     result["client_delivery_status"] = display["client_delivery_status"]
@@ -296,6 +330,12 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
         "status": "attached",
         "trust_level": trust_level,
         "client_delivery_status": display["client_delivery_status"],
+        "workflow_state": display["workflow_state"],
+        "status_semantics": display["status_semantics"],
+        "score_changed": False,
+        "human_review_changed": False,
+        "delivery_authority_changed": False,
+        "guardrail": "PENDING is a review workflow label. Findings remain authoritative for the underlying evidence or export reason.",
     }
     _attach_display_section(result, display)
     _attach_export_summary(result, display)
