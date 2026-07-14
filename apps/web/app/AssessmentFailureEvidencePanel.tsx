@@ -3,7 +3,6 @@
 import {useEffect, useState} from "react";
 import {
   ASSESSMENT_FAILURE_EVENT,
-  ASSESSMENT_FAILURE_STORAGE_KEY,
   type AssessmentFailureEvidence,
 } from "./AssessmentApiTransportBridge";
 
@@ -22,16 +21,6 @@ export default function AssessmentFailureEvidencePanel() {
 
   useEffect(() => {
     if (!window.location.pathname.startsWith("/assessment")) return;
-
-    try {
-      const stored = window.sessionStorage.getItem(ASSESSMENT_FAILURE_STORAGE_KEY);
-      if (stored) {
-        const parsed: unknown = JSON.parse(stored);
-        if (isFailureEvidence(parsed)) setFailure(parsed);
-      }
-    } catch {
-      // Invalid or unavailable browser storage must not invent failure evidence.
-    }
 
     const handleFailure = (event: Event) => {
       const detail = (event as CustomEvent<AssessmentFailureEvidence | null>).detail;
@@ -65,7 +54,7 @@ export default function AssessmentFailureEvidencePanel() {
       </article>)}
     </div> : <p className="warning-box">The backend did not return bounded step evidence for this failure.</p>}
     <p className="warning-box">
-      This panel preserves only bounded status evidence. It does not convert the failed or unavailable stage into a passing result.
+      This panel preserves only bounded status evidence for the current open page. It does not convert the failed or unavailable stage into a passing result.
       {failure.run_id ? <> Review the same run in <a href="/operations/recovery">Recovery</a> before starting a duplicate.</> : null}
     </p>
   </section>;
