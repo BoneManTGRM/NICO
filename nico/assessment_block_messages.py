@@ -36,11 +36,11 @@ def _safe_code(value: Any) -> str:
 
 def classify_assessment_block(result: dict[str, Any]) -> str:
     explicit = _safe_code(result.get("code"))
-    if explicit in _BLOCK_MESSAGES:
+    if explicit in _BLOCK_MESSAGES and explicit != "authorization_required":
         return explicit
 
     error = str(result.get("error") or result.get("reason") or "").strip().lower()
-    if "explicit authorization" in error or "authorization is required" in error:
+    if "explicit authorization is required before nico assesses a repository" in error:
         return "authorization_required"
     if "repository must be owner/name" in error or "github repository url" in error:
         return "invalid_repository"
@@ -50,7 +50,7 @@ def classify_assessment_block(result: dict[str, Any]) -> str:
         if any(marker in error for marker in ("time budget", "bounded collection", "did not complete", "http 429", "http 5")):
             return "github_temporarily_unavailable"
         return "repository_not_found_or_inaccessible"
-    return explicit or "blocked"
+    return "blocked" if explicit == "authorization_required" else explicit or "blocked"
 
 
 def assessment_block_detail(result: dict[str, Any]) -> dict[str, Any]:
