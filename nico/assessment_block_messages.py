@@ -5,6 +5,8 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
+from nico.express_async_api import register_express_async_routes
+
 SAFE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,80}$")
 _PATCH_MARKER = "_nico_actionable_assessment_blocks_v1"
@@ -82,7 +84,7 @@ def actionable_blocked_exception(result: dict[str, Any]) -> HTTPException:
 
 
 def install_assessment_block_messages() -> dict[str, Any]:
-    """Install actionable public block messages without exposing provider details."""
+    """Install actionable public block messages and the quick Express lifecycle."""
 
     import nico.api.main as api_main
 
@@ -92,10 +94,12 @@ def install_assessment_block_messages() -> dict[str, Any]:
         setattr(actionable_blocked_exception, _PATCH_MARKER, True)
         setattr(actionable_blocked_exception, "_nico_blocked_exception_fallback", current)
         api_main.safe_blocked_exception = actionable_blocked_exception
+    express_async = register_express_async_routes(api_main.app)
     return {
         "status": "already_installed" if already_installed else "installed",
         "raw_provider_detail_exposed": False,
         "classified_codes": sorted(_BLOCK_MESSAGES),
+        "express_async": express_async,
     }
 
 
