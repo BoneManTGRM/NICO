@@ -6,7 +6,13 @@ from typing import Any
 import nico.assessment_score_integrity as integrity
 import nico.full_assessment_scorecard as scorecard
 from nico.hosted_api_complexity_fallback import install_hosted_api_complexity_fallback
+from nico.hosted_api_complexity_fallback_compat import (
+    install_hosted_api_complexity_fallback as _install_hosted_api_complexity_fallback_compat,
+)
 
+
+# Preserve the public installer name while using the scoped v2 implementation.
+install_hosted_api_complexity_fallback = _install_hosted_api_complexity_fallback_compat
 
 _CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
 _ORIGINAL_CLASSIFIER = integrity.classify_secret_candidates
@@ -182,6 +188,7 @@ def install_score_integrity_compatibility() -> dict[str, Any]:
         "legacy_clean_scanner_evidence_supported": True,
         "hosted_api_complexity_fallback": complexity_fallback.get("status"),
         "hosted_api_complexity_fallback_version": complexity_fallback.get("version"),
+        "hosted_api_complexity_shared_profile_override": complexity_fallback.get("shared_profile_override"),
     }
 
 
