@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "46651c337fd84025af07f8ea017a2fd8c64057ab"
+LATEST_DEPLOYED_MAIN = "1d1027ce0655133a14d2434538bd26423ae11f5e"
 
 
 def _release_truth() -> str:
@@ -17,15 +17,17 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Fix interrupted Express assessments with exact-run polling (#436)" in release_truth
+    assert "Keep accepted Express runs alive through transient status outages (#439)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "one quick authorized lifecycle start" in release_truth
+    assert "start remains strictly single-shot" in release_truth
     assert "tenant-bound `express_run_*` identity" in release_truth
-    assert "short same-origin status polling" in release_truth
-    assert "duplicate-active-start prevention" in release_truth
+    assert "up to eight consecutive" in release_truth
+    assert "bounded exponential backoff" in release_truth
+    assert "resets the failure count after any successful status response" in release_truth
+    assert "never creates a replacement assessment" in release_truth
+    assert "cannot be retried into a pass" in release_truth
     assert "authenticated Recovery visibility" in release_truth
-    assert "without issuing duplicate starts" in release_truth
-    assert "human review" in release_truth
+    assert "human review" in release_truth.lower()
     assert "`client_ready: false`" in release_truth
 
 
