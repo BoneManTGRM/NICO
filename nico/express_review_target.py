@@ -172,9 +172,9 @@ def attach_express_review_target(result: dict[str, Any], request_payload: dict[s
     project_id = str(request_payload.get("project_id") or result.get("project_id") or "default_project")
     run_id = assign_express_run_id(result)
     report_id = express_report_id(result, run_id)
-    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
-    reports["report_id"] = report_id
-    result["reports"] = reports
+    reports = result.get("reports")
+    if isinstance(reports, dict):
+        reports["report_id"] = report_id
     result["customer_id"] = customer_id
     result["project_id"] = project_id
     result["run_id"] = run_id
