@@ -31,7 +31,7 @@ concurrency:
 jobs:
   production-assessment-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     environment: production-smoke
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL }}
@@ -90,6 +90,8 @@ jobs:
             --project-id "production_smoke_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
             --frontend-status-context "Vercel" \
             --backend-status-context "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}" \
+            --request-timeout-seconds "60" \
+            --express-timeout-seconds "900" \
             --output-json audit-results/production-assessment-smoke.json \
             --output-markdown audit-results/production-assessment-smoke.md
 
