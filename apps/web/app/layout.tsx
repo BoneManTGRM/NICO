@@ -2,6 +2,7 @@ import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
+import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import GenericRepositoryExample from "./GenericRepositoryExample";
@@ -41,6 +42,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
             </div>
           </WorkflowCallout>
           <GenericRepositoryExample />
+          <AssessmentFailureEvidencePanel />
           {children}
           <MidAssessmentCompanion />
           <MidEvidencePacketHelper />
