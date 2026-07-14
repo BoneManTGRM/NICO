@@ -8,6 +8,11 @@ const LEGACY_EXPRESS_PATH = "/assessment/github";
 const EXPRESS_START_PATH = "/assessment/express-run";
 const EXPRESS_POLL_INTERVAL_MS = 3000;
 const EXPRESS_MAX_POLL_ATTEMPTS = 240;
+const EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 8;
+const EXPRESS_STATUS_RETRY_BASE_MS = 1500;
+const EXPRESS_STATUS_RETRY_MAX_MS = 12000;
+const RETRYABLE_STATUS_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const TERMINAL_EXPRESS_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
 
@@ -47,6 +52,12 @@ function boundedProgress(value: unknown): AssessmentFailureEvidence["progress"] 
   });
 }
 
+function payloadDetail(payload: Record<string, unknown>): Record<string, unknown> {
+  return payload.detail && typeof payload.detail === "object"
+    ? payload.detail as Record<string, unknown>
+    : payload;
+}
+
 async function publishFailure(response: Response, route: string) {
   let payload: Record<string, unknown> = {};
   try {
@@ -56,9 +67,7 @@ async function publishFailure(response: Response, route: string) {
     // The HTTP status and route still provide bounded diagnostic evidence.
   }
 
-  const detail = payload.detail && typeof payload.detail === "object"
-    ? payload.detail as Record<string, unknown>
-    : payload;
+  const detail = payloadDetail(payload);
   const evidence: AssessmentFailureEvidence = {
     http_status: response.status,
     route,
@@ -111,6 +120,41 @@ function proxyUrl(path: string) {
   return new URL(`/api/nico${path}`, window.location.origin);
 }
 
+function statusRetryDelayMs(consecutiveFailures: number) {
+  return Math.min(
+    EXPRESS_STATUS_RETRY_BASE_MS * (2 ** Math.max(0, consecutiveFailures - 1)),
+    EXPRESS_STATUS_RETRY_MAX_MS,
+  );
+}
+
+function retryableStatusResponse(
+  response: Response,
+  payload: Record<string, unknown>,
+  exactRunId: string,
+) {
+  if (!RETRYABLE_STATUS_HTTP_CODES.has(response.status)) return false;
+  const detail = payloadDetail(payload);
+  const lifecycleStatus = boundedText(detail.status || payload.status, 40).toLowerCase();
+  const responseRunId = boundedText(detail.run_id || payload.run_id, 120);
+
+  // A terminal response tied to this exact run is evidence, not a transport outage.
+  if (responseRunId === exactRunId && TERMINAL_EXPRESS_STATUSES.has(lifecycleStatus)) return false;
+
+  const code = boundedText(detail.code || payload.code, 80);
+  if (["assessment_backend_not_configured", "assessment_proxy_route_not_allowed"].includes(code)) return false;
+  return true;
+}
+
+function exhaustedStatusFailure(runId: string, lastCode = "") {
+  const suffix = lastCode ? ` Last bounded transport code: ${lastCode}.` : "";
+  return jsonFailure(
+    503,
+    "express_status_temporarily_unreachable",
+    `The Express run remains accepted under the same exact run ID, but ${EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES} consecutive short status requests could not complete.${suffix} Review Recovery before starting another run.`,
+    runId,
+  );
+}
+
 async function startExpressLifecycle(
   originalFetch: typeof window.fetch,
   input: RequestInfo | URL,
@@ -152,6 +196,7 @@ async function startExpressLifecycle(
     return failure;
   }
 
+  let consecutiveStatusTransportFailures = 0;
   for (let attempt = 1; attempt <= EXPRESS_MAX_POLL_ATTEMPTS; attempt += 1) {
     await sleep(EXPRESS_POLL_INTERVAL_MS);
     const statusPath = `/assessment/express-run/${encodeURIComponent(runId)}/status`;
@@ -162,27 +207,45 @@ async function startExpressLifecycle(
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({customer_id: customerId, project_id: projectId}),
         cache: "no-store",
+        credentials: "same-origin",
+        keepalive: true,
       });
     } catch {
-      const failure = jsonFailure(
-        502,
-        "express_status_transport_failed",
-        "The Express run was accepted, but a short status request was interrupted. The exact run ID is preserved; review Recovery before starting another run.",
-        runId,
-      );
+      consecutiveStatusTransportFailures += 1;
+      if (consecutiveStatusTransportFailures < EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
+        await sleep(statusRetryDelayMs(consecutiveStatusTransportFailures));
+        continue;
+      }
+      const failure = exhaustedStatusFailure(runId, "browser_transport_interrupted");
       await publishFailure(failure.clone(), statusPath);
       return failure;
     }
 
     if (!statusResponse.ok) {
+      const payload = await responsePayload(statusResponse);
+      if (retryableStatusResponse(statusResponse, payload, runId)) {
+        consecutiveStatusTransportFailures += 1;
+        if (consecutiveStatusTransportFailures < EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
+          await sleep(statusRetryDelayMs(consecutiveStatusTransportFailures));
+          continue;
+        }
+        const detail = payloadDetail(payload);
+        const failure = exhaustedStatusFailure(
+          runId,
+          boundedText(detail.code || payload.code, 80) || `http_${statusResponse.status}`,
+        );
+        await publishFailure(failure.clone(), statusPath);
+        return failure;
+      }
       await publishFailure(statusResponse.clone(), statusPath);
       return statusResponse;
     }
 
+    consecutiveStatusTransportFailures = 0;
     const payload = await responsePayload(statusResponse);
     const status = boundedText(payload.status, 40).toLowerCase();
     if (["complete", "completed"].includes(status)) return statusResponse;
-    if (["blocked", "failed", "error", "interrupted", "rejected"].includes(status)) {
+    if (TERMINAL_EXPRESS_STATUSES.has(status)) {
       const failure = jsonFailure(
         503,
         boundedText(payload.code, 80) || "express_terminal_failure",
