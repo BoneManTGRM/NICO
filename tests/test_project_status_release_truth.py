@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "cbaa988b638f90f16663ff3b58423fa6f3bd855c"
+LATEST_DEPLOYED_MAIN = "b8aaba855a68fd33fae0260db23b81ff01b062c6"
 
 
 def _release_truth() -> str:
@@ -17,12 +17,13 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Render unloaded operator evidence neutrally (#425)" in release_truth
+    assert "Combine deployed browser and API production proof (#432)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "direct Railway transport for long synchronous Express requests from PR #423" in release_truth
-    assert "single unified assessment intake and retired duplicate Start Job wizard from PR #424" in release_truth
-    assert "neutral unauthenticated Operations/Recovery presentation from PR #425" in release_truth
-    assert "Loaded unavailable or failed evidence remains fail-closed and red" in release_truth
+    assert "collision-resistant Express run/report identity and exact-run persistence repair from PR #430" in release_truth
+    assert "protected browser-driven Express/Mid/Full production-proof workflow from PR #432" in release_truth
+    assert "without duplicate API starts" in release_truth
+    assert "human review" in release_truth
+    assert "`client_ready: false`" in release_truth
 
 
 def test_release_truth_does_not_overclaim_production_assessment_proof() -> None:
@@ -30,5 +31,4 @@ def test_release_truth_does_not_overclaim_production_assessment_proof() -> None:
 
     assert "does not prove that any Express, Mid, or Full production assessment completed correctly" in release_truth
     assert "Deployed browser/API E2E proof remains incomplete" in release_truth
-    assert "authorized production smoke artifact" in release_truth
-    assert "matching browser evidence" in release_truth
+    assert "protected production smoke is authorized, executed, retained, and reviewed" in release_truth
