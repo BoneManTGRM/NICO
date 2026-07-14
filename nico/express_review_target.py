@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import sys
 import threading
+import uuid
 from copy import deepcopy
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -22,6 +23,11 @@ def express_run_id(result: dict[str, Any]) -> str:
         return explicit
     generated_at = str(result.get("generated_at") or "latest_express")
     return generated_at.replace(":", "_")
+
+
+def assign_express_run_id(result: dict[str, Any]) -> str:
+    explicit = str(result.get("run_id") or result.get("assessment_id") or "").strip()
+    return explicit or f"express_run_{uuid.uuid4().hex}"
 
 
 def express_report_id(result: dict[str, Any], run_id: str) -> str:
@@ -158,12 +164,13 @@ def install_express_storage_compatibility() -> dict[str, Any]:
 
 def attach_express_review_target(result: dict[str, Any], request_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     request_payload = request_payload or {}
-    if not str(result.get("run_id") or result.get("assessment_id") or "").strip():
+    had_explicit_run_id = bool(str(result.get("run_id") or result.get("assessment_id") or "").strip())
+    if not had_explicit_run_id:
         _consume_final_express_payload()
     install_express_storage_compatibility()
     customer_id = str(request_payload.get("customer_id") or result.get("customer_id") or "default_customer")
     project_id = str(request_payload.get("project_id") or result.get("project_id") or "default_project")
-    run_id = express_run_id(result)
+    run_id = assign_express_run_id(result)
     report_id = express_report_id(result, run_id)
     reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
     reports["report_id"] = report_id
