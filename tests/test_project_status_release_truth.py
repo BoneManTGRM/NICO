@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "28b4cf91cc9b08185d67e6096ff8b8a483980952"
+LATEST_DEPLOYED_MAIN = "3e0ae599b5d9e3ced77585f07b0b8c5cc9915d0b"
 
 
 def _release_truth() -> str:
@@ -17,11 +17,12 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Normalize harmless repository separator whitespace (#417)" in release_truth
+    assert "Record PR 417 deployment verification (#418)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "bounded exact-run failure evidence through PR #416" in release_truth
-    assert "same-origin canonical assessment transport through PR #415" in release_truth
-    assert "strict separator-whitespace normalization through PR #417" in release_truth
+    assert "release-truth update through PR #418" in release_truth
+    assert "bounded exact-run failure evidence" in release_truth
+    assert "same-origin canonical assessment transport" in release_truth
+    assert "strict separator-whitespace normalization" in release_truth
 
 
 def test_release_truth_does_not_overclaim_production_assessment_proof() -> None:
