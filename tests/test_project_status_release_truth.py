@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "7cd53c94d863b2d441454f59d21c1396e9b1105d"
+LATEST_DEPLOYED_MAIN = "cbaa988b638f90f16663ff3b58423fa6f3bd855c"
 
 
 def _release_truth() -> str:
@@ -17,13 +17,13 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Keep assessment failure evidence page-scoped (#420)" in release_truth
+    assert "Render unloaded operator evidence neutrally (#425)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "page-scoped current-request failure evidence" in release_truth
-    assert "cleared before a new canonical assessment request" in release_truth
-    assert "bounded exact-run failure details" in release_truth
-    assert "same-origin canonical assessment transport" in release_truth
-    assert "strict repository-target validation" in release_truth
+    assert "long-running Express requests use the configured Railway API directly" in release_truth
+    assert "one canonical assessment intake" in release_truth
+    assert "legacy Start Job route redirects" in release_truth
+    assert "unloaded Operations and Recovery evidence is neutral" in release_truth
+    assert "loaded unavailable or failed evidence remains fail-closed" in release_truth
 
 
 def test_release_truth_does_not_overclaim_production_assessment_proof() -> None:
