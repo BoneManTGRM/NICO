@@ -34,7 +34,7 @@ def test_workflow_uses_pinned_playwright_and_browser_generated_api_starts_only()
 
     assert 'playwright==1.61.0' in source
     assert "python -m playwright install --with-deps chromium" in source
-    assert source.count("python scripts/production_assessment_browser_smoke.py") == 2
+    assert source.count("python scripts/production_assessment_browser_smoke_v2.py") == 2
     assert "python scripts/production_assessment_smoke.py" not in source
     assert "browser_generated_the_only_api_starts" in source
     assert "authorized_live_production_browser_api_smoke" in source

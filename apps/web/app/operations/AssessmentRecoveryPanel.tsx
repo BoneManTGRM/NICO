@@ -33,6 +33,7 @@ type AssessmentRecoveryInventory = {
   counts?: {
     recovery_required?: number;
     active?: number;
+    express_recovery_required?: number;
     mid_recovery_required?: number;
     full_recovery_required?: number;
   };
@@ -50,7 +51,7 @@ function tone(status?: string) {
   const value = String(status || "not_loaded").toLowerCase();
   if (value === "not_loaded") return styles.neutral;
   if (["clear", "complete", "running", "planned"].includes(value)) return styles.good;
-  if (["attention_required", "recovery_required", "resuming", "degraded"].includes(value)) return styles.warn;
+  if (["attention_required", "recovery_required", "resuming", "degraded", "interrupted"].includes(value)) return styles.warn;
   return styles.bad;
 }
 
@@ -113,11 +114,12 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
   return (
     <section className={styles.panel}>
       <div className={styles.sectionHead}>
-        <div><p className={styles.eyebrow}>Assessment recovery</p><h2>Interrupted Mid and Full runs</h2></div>
+        <div><p className={styles.eyebrow}>Assessment recovery</p><h2>Interrupted Express, Mid, and Full runs</h2></div>
         <span className={`${styles.pill} ${tone(inventory?.status)}`}>{inventory?.status || "not loaded"}</span>
       </div>
       <div className={styles.gridFour}>
-        <article className={styles.detailCard}><span>Recovery required</span><b>{loaded ? inventory?.counts?.recovery_required ?? "Unavailable" : "Not loaded"}</b><small>All resumes require an authenticated operator claim.</small></article>
+        <article className={styles.detailCard}><span>Recovery required</span><b>{loaded ? inventory?.counts?.recovery_required ?? "Unavailable" : "Not loaded"}</b><small>All recovery evidence requires an authenticated operator review.</small></article>
+        <article className={styles.detailCard}><span>Express runs</span><b>{loaded ? inventory?.counts?.express_recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Interrupted Express runs are retained for manual review and cannot resume automatically.</small></article>
         <article className={styles.detailCard}><span>Mid runs</span><b>{loaded ? inventory?.counts?.mid_recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Same run, snapshot, report, and approval identities are retained.</small></article>
         <article className={styles.detailCard}><span>Full runs</span><b>{loaded ? inventory?.counts?.full_recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Existing deterministic artifacts are reused rather than duplicated.</small></article>
         <article className={styles.detailCard}><span>Stale threshold</span><b>{loaded ? inventory?.stale_seconds ? `${inventory.stale_seconds} sec` : "Unavailable" : "Not loaded"}</b><small>No automatic continuation is permitted.</small></article>
@@ -127,6 +129,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
         <div />
         <button type="button" onClick={() => void loadRecovery(true)} disabled={loading || !adminToken.trim()}>{loading ? "Working..." : "Refresh assessment reconciliation"}</button>
       </div>
+      <p className={styles.helper}>All resumes require an authenticated operator claim. Interrupted Express runs remain manual-review-only and cannot silently start a replacement.</p>
       {error ? <div className={styles.error}>{error}</div> : null}
       {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => (
         <article className={styles.alertCard} key={item.run_id}>
@@ -140,9 +143,9 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
           <div className={styles.statRow}><span>Snapshot</span><b>{item.snapshot_commit_sha ? item.snapshot_commit_sha.slice(0, 12) : "not captured"}</b></div>
           <div className={styles.statRow}><span>Artifacts</span><b>{item.report_id || "no report"} · {item.approval_id || "no approval"}</b></div>
           <div className={styles.statRow}><span>Attempt</span><b>{item.recovery?.attempt ?? 0}</b></div>
-          <button type="button" onClick={() => void resume(item.run_id || "")} disabled={loading || !item.recovery?.resume_allowed}>Resume same run ID</button>
+          <button type="button" onClick={() => void resume(item.run_id || "")} disabled={loading || !item.recovery?.resume_allowed}>{item.recovery?.resume_allowed ? "Resume same run ID" : "Manual review required"}</button>
         </article>
-      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Mid or Full runs require recovery." : "Enter the admin token and load recovery to inspect Mid and Full run state."}</div>}
+      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Express, Mid, or Full runs require recovery." : "Enter the admin token and load recovery to inspect Express, Mid, and Full run state."}</div>}
       {inventory?.operator_action ? <div className={styles.nextAction}><b>Assessment recovery policy</b><p>{inventory.operator_action}</p></div> : null}
     </section>
   );
