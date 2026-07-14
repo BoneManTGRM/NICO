@@ -47,7 +47,8 @@ type Props = {
 };
 
 function tone(status?: string) {
-  const value = String(status || "unavailable").toLowerCase();
+  const value = String(status || "not_loaded").toLowerCase();
+  if (value === "not_loaded") return styles.neutral;
   if (["clear", "complete", "running", "planned"].includes(value)) return styles.good;
   if (["attention_required", "recovery_required", "resuming", "degraded"].includes(value)) return styles.warn;
   return styles.bad;
@@ -107,6 +108,8 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  const loaded = inventory !== null;
+
   return (
     <section className={styles.panel}>
       <div className={styles.sectionHead}>
@@ -114,10 +117,10 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
         <span className={`${styles.pill} ${tone(inventory?.status)}`}>{inventory?.status || "not loaded"}</span>
       </div>
       <div className={styles.gridFour}>
-        <article className={styles.detailCard}><span>Recovery required</span><b>{inventory?.counts?.recovery_required ?? "Unavailable"}</b><small>All resumes require an authenticated operator claim.</small></article>
-        <article className={styles.detailCard}><span>Mid runs</span><b>{inventory?.counts?.mid_recovery_required ?? "Unavailable"}</b><small>Same run, snapshot, report, and approval identities are retained.</small></article>
-        <article className={styles.detailCard}><span>Full runs</span><b>{inventory?.counts?.full_recovery_required ?? "Unavailable"}</b><small>Existing deterministic artifacts are reused rather than duplicated.</small></article>
-        <article className={styles.detailCard}><span>Stale threshold</span><b>{inventory?.stale_seconds ? `${inventory.stale_seconds} sec` : "Unavailable"}</b><small>No automatic continuation is permitted.</small></article>
+        <article className={styles.detailCard}><span>Recovery required</span><b>{loaded ? inventory?.counts?.recovery_required ?? "Unavailable" : "Not loaded"}</b><small>All resumes require an authenticated operator claim.</small></article>
+        <article className={styles.detailCard}><span>Mid runs</span><b>{loaded ? inventory?.counts?.mid_recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Same run, snapshot, report, and approval identities are retained.</small></article>
+        <article className={styles.detailCard}><span>Full runs</span><b>{loaded ? inventory?.counts?.full_recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Existing deterministic artifacts are reused rather than duplicated.</small></article>
+        <article className={styles.detailCard}><span>Stale threshold</span><b>{loaded ? inventory?.stale_seconds ? `${inventory.stale_seconds} sec` : "Unavailable" : "Not loaded"}</b><small>No automatic continuation is permitted.</small></article>
       </div>
       <div className={styles.filters}>
         <label>Resume actor<input value={actor} onChange={(event) => setActor(event.target.value)} maxLength={120} spellCheck={false} /></label>
@@ -139,7 +142,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
           <div className={styles.statRow}><span>Attempt</span><b>{item.recovery?.attempt ?? 0}</b></div>
           <button type="button" onClick={() => void resume(item.run_id || "")} disabled={loading || !item.recovery?.resume_allowed}>Resume same run ID</button>
         </article>
-      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Mid or Full runs require recovery." : "Load recovery to inspect Mid and Full run state."}</div>}
+      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Mid or Full runs require recovery." : "Enter the admin token and load recovery to inspect Mid and Full run state."}</div>}
       {inventory?.operator_action ? <div className={styles.nextAction}><b>Assessment recovery policy</b><p>{inventory.operator_action}</p></div> : null}
     </section>
   );

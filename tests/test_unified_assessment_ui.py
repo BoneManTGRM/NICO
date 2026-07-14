@@ -154,9 +154,11 @@ def test_operations_preload_guard_hides_failure_colored_placeholders_until_loade
     assert 'pathname !== "/operations"' in guard
     assert 'section.textContent?.includes("Operator authentication")' in guard
     assert 'authentication.textContent?.includes("Last loaded:")' in guard
-    assert "section.hidden = !evidenceLoaded" in guard
+    assert 'element.style.setProperty("display", "none", "important")' in guard
+    assert 'PRELOAD_SECTION_ATTRIBUTE = "data-nico-preload-section-hidden"' in guard
+    assert "section.hidden" not in guard
     assert "Operations evidence is not loaded" in guard
-    assert "Unloaded cards are not failures" in guard
+    assert "No readiness, release, storage, workload, incident, or alert state is inferred" in guard
     assert "<OperationsPreloadGuard />" in layout
 
 

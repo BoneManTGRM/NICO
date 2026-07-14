@@ -39,7 +39,8 @@ type Props = {
 };
 
 function tone(status?: string) {
-  const value = String(status || "unavailable").toLowerCase();
+  const value = String(status || "not_loaded").toLowerCase();
+  if (value === "not_loaded") return styles.neutral;
   if (["clear", "complete", "running", "queued"].includes(value)) return styles.good;
   if (["attention_required", "recovery_required", "degraded"].includes(value)) return styles.warn;
   return styles.bad;
@@ -99,6 +100,8 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  const loaded = inventory !== null;
+
   return (
     <section className={styles.panel}>
       <div className={styles.sectionHead}>
@@ -106,9 +109,9 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
         <span className={`${styles.pill} ${tone(inventory?.status)}`}>{inventory?.status || "not loaded"}</span>
       </div>
       <div className={styles.gridThree}>
-        <article className={styles.detailCard}><span>Recovery required</span><b>{inventory?.counts?.recovery_required ?? "Unavailable"}</b><small>Operator review required before same-ID resume.</small></article>
-        <article className={styles.detailCard}><span>Active scanners</span><b>{inventory?.counts?.active ?? "Unavailable"}</b><small>Recently updated queued or running records are not interrupted.</small></article>
-        <article className={styles.detailCard}><span>Stale threshold</span><b>{inventory?.stale_seconds ? `${inventory.stale_seconds} sec` : "Unavailable"}</b><small>No automatic rerun is permitted.</small></article>
+        <article className={styles.detailCard}><span>Recovery required</span><b>{loaded ? inventory?.counts?.recovery_required ?? "Unavailable" : "Not loaded"}</b><small>Operator review required before same-ID resume.</small></article>
+        <article className={styles.detailCard}><span>Active scanners</span><b>{loaded ? inventory?.counts?.active ?? "Unavailable" : "Not loaded"}</b><small>Recently updated queued or running records are not interrupted.</small></article>
+        <article className={styles.detailCard}><span>Stale threshold</span><b>{loaded ? inventory?.stale_seconds ? `${inventory.stale_seconds} sec` : "Unavailable" : "Not loaded"}</b><small>No automatic rerun is permitted.</small></article>
       </div>
       <div className={styles.filters}>
         <label>Resume actor<input value={actor} onChange={(event) => setActor(event.target.value)} maxLength={120} spellCheck={false} /></label>
@@ -128,7 +131,7 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
           <div className={styles.statRow}><span>Detected</span><b>{item.recovery?.detected_at ? new Date(item.recovery.detected_at).toLocaleString() : "Unavailable"}</b></div>
           <button type="button" onClick={() => void resume(item.scan_id || "")} disabled={loading || !item.recovery?.resume_allowed}>Resume same scan ID</button>
         </article>
-      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted scanner runs require recovery." : "Load operations to inspect scanner recovery state."}</div>}
+      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted scanner runs require recovery." : "Enter the admin token and load recovery to inspect scanner recovery state."}</div>}
       {inventory?.operator_action ? <div className={styles.nextAction}><b>Recovery policy</b><p>{inventory.operator_action}</p></div> : null}
     </section>
   );
