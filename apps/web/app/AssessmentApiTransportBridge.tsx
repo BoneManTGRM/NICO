@@ -6,7 +6,6 @@ const CONFIGURED_API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(
 const ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
-export const ASSESSMENT_FAILURE_STORAGE_KEY = "nico.assessment.last_failure";
 
 export type AssessmentFailureEvidence = {
   http_status: number;
@@ -68,20 +67,10 @@ async function publishFailure(response: Response, route: string) {
     progress: boundedProgress(detail.progress || payload.progress),
   };
 
-  try {
-    window.sessionStorage.setItem(ASSESSMENT_FAILURE_STORAGE_KEY, JSON.stringify(evidence));
-  } catch {
-    // The in-page event still preserves the bounded evidence for this open page.
-  }
   window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: evidence}));
 }
 
 function clearFailure() {
-  try {
-    window.sessionStorage.removeItem(ASSESSMENT_FAILURE_STORAGE_KEY);
-  } catch {
-    // Clearing retained browser evidence is best effort only.
-  }
   window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: null}));
 }
 
@@ -113,12 +102,12 @@ export default function AssessmentApiTransportBridge() {
       const apiPath = configuredPath ? requested.pathname.slice(configuredPath.length) : requested.pathname;
       if (!ASSESSMENT_PATH.test(apiPath)) return originalFetch(input, init);
 
+      clearFailure();
       const proxyUrl = new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin);
       const response = input instanceof Request
         ? await originalFetch(new Request(proxyUrl, input), init)
         : await originalFetch(proxyUrl, init);
-      if (response.ok) clearFailure();
-      else await publishFailure(response.clone(), apiPath);
+      if (!response.ok) await publishFailure(response.clone(), apiPath);
       return response;
     };
 
