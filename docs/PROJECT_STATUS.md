@@ -31,13 +31,13 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Hosted SaaS multi-tenancy | Experimental | Scope and storage controls exist in parts; a complete commercial tenancy and billing product is not claimed. |
 | Automatic production repair | Planned | NICO currently prepares repair plans and verification. It does not autonomously deploy production changes. |
 | Legacy Full/Mid start pages | Legacy | Normal assessment starts must route through the unified assessment page. Advanced review and recovery surfaces remain separate. |
-| CLI monolith | Legacy debt | Supported behavior remains, but core responsibilities should be extracted into services. |
+| CLI compatibility facade | Legacy | `nico.cli` preserves the supported legacy import surface while canonical configuration, scanning, governance, persistence, scoring, repair planning, reporting, verification, memory, and command routing live in extracted modules. |
 
 ## Current release truth
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `9dffd4fd9dc03ea0d0d61f7666a8f27bc3ae8eeb` (`Extract canonical local memory service (#382)`). Its configured Vercel and Railway deployment checks passed. This records deployment verification only; deployed Express, Mid, and Full browser/API E2E proof remains incomplete until an authorized production smoke run is retained.
+The latest verified deployed main commit is `3ca12001cea9ce3e17e5c5d23c904edd624d932b` (`Convert nico.cli into a compatibility facade (#386)`). Its configured Vercel and Railway deployment checks passed. This records deployment verification and code-level modularization evidence only; deployed Express, Mid, and Full browser/API E2E proof remains incomplete until an authorized production smoke run is retained.
 
 ## Claims NICO does not make
 
@@ -54,7 +54,7 @@ NICO does not claim:
 
 ## Completion roadmap
 
-Completed major workstreams: **10 of 12**.
+Completed major workstreams: **11 of 12**.
 
 - [x] Canonical architecture, operator guide, maturity map, and documentation index.
 - [x] Truthful README, security policy, contribution guidance, and repository templates.
@@ -62,7 +62,7 @@ Completed major workstreams: **10 of 12**.
 - [x] Full-run metadata and route truth audit, including removal of stale Express/Mid wording.
 - [x] External scanner contract: every requested tool executes or is explicitly unavailable, failed, or timed out.
 - [x] Scanner result parsing and severity truth rather than exit-code-only approximation.
-- [ ] CLI/service modularization across configuration, scanning, scoring, repair, drift, reporting, verification, and persistence.
+- [x] CLI/service modularization across configuration, scanning, scoring, repair, drift, reporting, verification, and persistence.
 - [x] Packaging and one-command local development, including supported `nico` and `nico-api` entry points.
 - [x] Cross-module E2E coverage for assessment, report, review, approved artifact, controlled delivery, receipt, and acknowledgment.
 - [x] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
@@ -72,9 +72,25 @@ Completed major workstreams: **10 of 12**.
 ## Remaining execution order
 
 1. Deployed Express, Mid, and Full browser/API E2E proof.
-2. CLI and service modularization after behavior is protected by E2E and resilience tests.
 
-The remaining estimate is approximately **4–7 small, reviewable pull requests**, subject to defects uncovered during deployed testing and modular extraction.
+The remaining estimate is approximately **1–2 small, reviewable pull requests**, subject to defects uncovered during authorized deployed testing.
+
+## CLI/service modularization completion evidence
+
+The completed modularization workstream is bounded to code structure, compatibility, regression coverage, CI, and deployment verification:
+
+- `nico.local_runtime_config` owns local runtime path resolution without import-time directory creation.
+- `nico.local_scan_engine` and `nico.local_scan_service` own local scanning and orchestration.
+- `nico.local_governance_service` owns fail-closed local action decisions.
+- `nico.local_store` owns the SQLite persistence contract.
+- `nico.local_scoring_repair_service` owns local RYE scoring and repair-plan generation.
+- `nico.local_reporting_service`, `nico.local_verification_service`, and `nico.local_memory_service` own their respective runtime paths.
+- `nico.cli_entrypoint` owns canonical command parsing and dispatch.
+- `nico.cli` is a bounded compatibility facade and contains no duplicate SQLite schema, scanner traversal, detector, scoring, repair, reporting, verification, memory, or parser implementation.
+- PRs #368, #369, #375, #376, and #379 through #386 provide the staged extraction, compatibility, and facade evidence.
+- The PR #386 head passed NICO CI, CodeQL, audit, security, remediation, Postgres restart, resilience, and recorded golden-demonstration workflows; merged main commit `3ca12001cea9ce3e17e5c5d23c904edd624d932b` passed configured Vercel and Railway checks.
+
+This completion does not claim deployed Express/Mid/Full assessment proof, scanner completeness for a live repository, approved reports, client readiness, autonomous repairs, or elimination of all defects.
 
 ## Resilience completion evidence
 
