@@ -26,18 +26,18 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Draft report generation | Operational | Representative synthetic golden fixtures and a deterministic recorded demonstration exist. Report-path consolidation remains work. |
 | Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
 | Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Postgres restart and same-ID recovery are exercised in CI; production restart drills remain recurring operator evidence. |
-| Operations readiness, events, and alerts | Operational | Semantic readiness and bounded telemetry-degradation proof exist. Operator usability and live production evidence history should improve. |
+| Operations readiness, events, and alerts | Operational | Semantic readiness and bounded telemetry-degradation proof exist. Unauthenticated evidence remains neutral until loaded; live production evidence history should improve. |
 | Retainer workflows | Experimental | Backend and operator surfaces exist; product contract and real-client fixtures are still developing. |
 | Hosted SaaS multi-tenancy | Experimental | Scope and storage controls exist in parts; a complete commercial tenancy and billing product is not claimed. |
 | Automatic production repair | Planned | NICO currently prepares repair plans and verification. It does not autonomously deploy production changes. |
-| Legacy Full/Mid start pages | Legacy | Normal assessment starts must route through the unified assessment page. Advanced review and recovery surfaces remain separate. |
+| Legacy Full/Mid/Start Job routes | Legacy | Normal assessment starts route through the unified assessment page. Advanced review and recovery surfaces remain separate. |
 | CLI and local service architecture | Stable | Canonical configuration, scanning, governance, persistence, scoring, repair planning, drift, reporting, verification, and memory run through extracted modules. `nico.cli` remains only as a compatibility facade. |
 
 ## Current release truth
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `7cd53c94d863b2d441454f59d21c1396e9b1105d` (`Keep assessment failure evidence page-scoped (#420)`). Its Vercel and Railway deployment checks passed. This verifies deployment of page-scoped current-request failure evidence that is cleared before a new canonical assessment request, while preserving bounded exact-run failure details, same-origin canonical assessment transport, and strict repository-target validation; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
+The latest verified deployed main commit is `cbaa988b638f90f16663ff3b58423fa6f3bd855c` (`Render unloaded operator evidence neutrally (#425)`). Its Vercel and Railway deployment checks passed. This verifies the direct Railway transport for long synchronous Express requests from PR #423, the single unified assessment intake and retired duplicate Start Job wizard from PR #424, and neutral unauthenticated Operations/Recovery presentation from PR #425. Loaded unavailable or failed evidence remains fail-closed and red. This deployment does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
 
 ## Claims NICO does not make
 
