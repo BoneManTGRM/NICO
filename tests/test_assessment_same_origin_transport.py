@@ -71,4 +71,4 @@ def test_root_layout_installs_transport_and_failure_panel_before_assessment_page
     assert 'import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge"' in source
     assert 'import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel"' in source
     assert source.index('<AssessmentApiTransportBridge />') < source.index('<AssessmentHomeRedirect />')
-    assert source.index('<AssessmentFailureEvidencePanel />') < source.index('{children}')
+    assert source.index('<AssessmentFailureEvidencePanel />') < source.index('          {children}')
