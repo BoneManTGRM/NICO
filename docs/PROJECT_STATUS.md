@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `ad0e93f622fdfda32dc4e07693a214a07a96c945` (`Label review-limited Trust as a pending workflow state (#393)`). The PR head passed NICO CI, CodeQL, audit, security, remediation, Postgres restart, resilience, and recorded golden-demonstration workflows, and the merged main commit passed the configured Vercel and Railway deployment checks. This verifies deployment of the report-presentation and workflow-state corrections through PR #393; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
+The latest verified deployed main commit is `4b649013aef0fd0f8a0b300b11231b1c64100ffb` (`Record PR 393 deployment verification (#394)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the report-presentation and workflow-state corrections through PR #394; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
 
 ## Claims NICO does not make
 
