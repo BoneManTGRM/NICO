@@ -139,11 +139,14 @@ async function startExpressLifecycle(
 
   const started = await responsePayload(startResponse);
   const runId = boundedText(started.run_id, 120);
-  if (!runId.startsWith("express_run_")) {
+  const customerId = boundedText(started.customer_id, 120);
+  const projectId = boundedText(started.project_id, 120);
+  if (!runId.startsWith("express_run_") || !customerId || !projectId) {
     const failure = jsonFailure(
       502,
-      "express_start_missing_run_id",
-      "The Express lifecycle start response did not include an exact run ID, so NICO stopped rather than risk a duplicate run.",
+      "express_start_missing_identity",
+      "The Express lifecycle start response did not include its exact run and tenant identity, so NICO stopped rather than risk a duplicate or cross-scope run.",
+      runId,
     );
     await publishFailure(failure.clone(), EXPRESS_START_PATH);
     return failure;
@@ -157,7 +160,7 @@ async function startExpressLifecycle(
       statusResponse = await originalFetch(proxyUrl(statusPath), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({}),
+        body: JSON.stringify({customer_id: customerId, project_id: projectId}),
         cache: "no-store",
       });
     } catch {
