@@ -158,6 +158,8 @@ def install_express_storage_compatibility() -> dict[str, Any]:
 
 def attach_express_review_target(result: dict[str, Any], request_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     request_payload = request_payload or {}
+    if not str(result.get("run_id") or result.get("assessment_id") or "").strip():
+        _consume_final_express_payload()
     install_express_storage_compatibility()
     customer_id = str(request_payload.get("customer_id") or result.get("customer_id") or "default_customer")
     project_id = str(request_payload.get("project_id") or result.get("project_id") or "default_project")
