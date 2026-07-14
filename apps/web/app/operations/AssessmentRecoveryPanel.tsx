@@ -129,6 +129,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
         <div />
         <button type="button" onClick={() => void loadRecovery(true)} disabled={loading || !adminToken.trim()}>{loading ? "Working..." : "Refresh assessment reconciliation"}</button>
       </div>
+      <p className={styles.helper}>All resumes require an authenticated operator claim. Interrupted Express runs remain manual-review-only and cannot silently start a replacement.</p>
       {error ? <div className={styles.error}>{error}</div> : null}
       {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => (
         <article className={styles.alertCard} key={item.run_id}>
