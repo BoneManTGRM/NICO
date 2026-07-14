@@ -15,6 +15,7 @@ SYNTHESIS = Path("nico/modules/synthesis.py")
 MATURITY = Path("nico/modules/maturity.py")
 ROADMAP = Path("nico/modules/roadmap.py")
 CLI = Path("nico/cli.py")
+LOCAL_SCAN_ENGINE = Path("nico/local_scan_engine.py")
 PACKAGE_INIT = Path("nico/__init__.py")
 SITECUSTOMIZE = Path("sitecustomize.py")
 
@@ -24,7 +25,7 @@ def test_assessment_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 200
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("#!/", "\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(("#!/", '"""', "import ", "from ")) for line in first_lines)
 
 
 def test_assessment_has_key_functions():
@@ -56,7 +57,7 @@ def test_reporting_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 180
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(('"""', "import ", "from ")) for line in first_lines)
 
 
 def test_reporting_has_write_function():
@@ -99,7 +100,7 @@ def test_dependency_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 100
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(('"""', "import ", "from ")) for line in first_lines)
 
 
 def test_dependency_contains_functions_and_fields():
@@ -119,7 +120,7 @@ def test_synthesis_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 70
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(('"""', "import ", "from ")) for line in first_lines)
 
 
 def test_synthesis_contains_key_logic():
@@ -139,7 +140,7 @@ def test_maturity_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 60
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(('"""', "import ", "from ")) for line in first_lines)
 
 
 def test_maturity_contains_key_elements():
@@ -159,7 +160,7 @@ def test_roadmap_file_size_and_start():
         content = f.read()
     assert len(content.splitlines()) > 50
     first_lines = content.splitlines()[:3]
-    assert any(line.startswith(("\"\"\"", "import ", "from ")) for line in first_lines)
+    assert any(line.startswith(('"""', "import ", "from ")) for line in first_lines)
 
 
 def test_roadmap_contains_key_elements():
@@ -174,10 +175,11 @@ def test_roadmap_contains_key_elements():
     assert "vulnerabilities_found" in content
 
 
-def test_cli_file_size_and_start():
+def test_cli_facade_size_and_start():
     with open(CLI, "r", encoding="utf-8") as f:
         content = f.read()
-    assert len(content.splitlines()) > 450
+    line_count = len(content.splitlines())
+    assert 120 < line_count < 260
     assert "[targeted tuple edit]" not in content
     assert "[full content" not in content
     assert "...fixed tuple..." not in content
@@ -186,27 +188,37 @@ def test_cli_file_size_and_start():
     assert any(line.startswith(("from __future__ import", "import ", "from ")) for line in first_lines)
 
 
-def test_cli_contains_key_symbols():
-    with open(CLI, "r", encoding="utf-8") as f:
-        content = f.read()
+def test_cli_facade_contains_compatibility_surface_and_no_monolith_markers():
+    content = CLI.read_text(encoding="utf-8")
     assert "from __future__ import annotations" in content
     assert "class Store" in content
-    assert "def run_scan" in content
     assert "def apply_rye" in content
     assert "def repairs_for" in content
     assert "def generate_reports" in content
-    assert "def scan_test_lab" in content
-    assert "def scan_drift_demo" in content
     assert "def verify_latest" in content
     assert "def rye_score" in content
-    assert "def main" in content
+    assert "from nico.cli_entrypoint import main" in content
+    assert "from nico.local_scan_service import ensure_test_lab, run_scan, scan_drift_demo, scan_test_lab" in content
     assert "APPSEC_PATTERNS" in content
     assert "REPAIR_LIBRARY" in content
-    assert "def _safe_scan_root" in content
-    assert "def _safe_scan_file" in content
-    assert "def _safe_scan_files" in content
+    assert "import sqlite3" not in content
+    assert "CREATE TABLE" not in content
+    assert "executescript(" not in content
+    assert 'rglob("*")' not in content
+    assert "re.compile(" not in content
+
+
+def test_local_scan_engine_retains_path_and_scanner_integrity():
+    content = LOCAL_SCAN_ENGINE.read_text(encoding="utf-8")
+    assert len(content.splitlines()) > 350
+    assert "def scan_repo" in content
+    assert "def safe_scan_root" in content
+    assert "def safe_scan_file" in content
+    assert "def safe_scan_files" in content
     assert "relative_to(root)" in content
     assert "candidate.is_symlink()" in content
+    assert "APPSEC_PATTERNS" in content
+    assert "SECRET_PATTERNS" in content
 
 
 def test_pycompile_all_critical_files():
@@ -217,13 +229,14 @@ def test_pycompile_all_critical_files():
     py_compile.compile(str(MATURITY), doraise=True)
     py_compile.compile(str(ROADMAP), doraise=True)
     py_compile.compile(str(CLI), doraise=True)
+    py_compile.compile(str(LOCAL_SCAN_ENGINE), doraise=True)
     py_compile.compile(str(PACKAGE_INIT), doraise=True)
 
 
 def test_appsec_patterns_source_tuples_are_7_values():
     import ast
 
-    tree = ast.parse(CLI.read_text(encoding="utf-8"))
+    tree = ast.parse(LOCAL_SCAN_ENGINE.read_text(encoding="utf-8"))
     appsec = None
 
     for node in tree.body:
