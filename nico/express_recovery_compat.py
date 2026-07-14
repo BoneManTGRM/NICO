@@ -7,6 +7,10 @@ import nico.assessment_recovery as recovery
 
 EXPRESS_RECOVERY_VERSION = "nico.express_recovery_compat.v1"
 _MARKER = "_nico_express_recovery_v1"
+EXPRESS_REQUIRED_OPERATION_ROUTES = {
+    "POST /assessment/express-run",
+    "POST /assessment/express-run/{run_id}/status",
+}
 
 
 def install_express_recovery_compatibility() -> dict[str, Any]:
@@ -16,6 +20,8 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
     if bool(getattr(current_summary, _MARKER, False)):
         return {"status": "already_installed", "version": EXPRESS_RECOVERY_VERSION}
 
+    import nico.operations_readiness as operations_readiness
+
     original_summary = current_summary
     original_patch = recovery._recovery_patch
     original_valid_resume = recovery._valid_resume_source
@@ -24,6 +30,7 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
     recovery.SUPPORTED_WORKFLOWS.add("express")
     recovery.ACTIVE_ASSESSMENT_STATUSES.add("queued")
     recovery.TERMINAL_ASSESSMENT_STATUSES.add("interrupted")
+    operations_readiness.REQUIRED_OPERATION_ROUTES.update(EXPRESS_REQUIRED_OPERATION_ROUTES)
 
     def safe_run_summary(record: dict[str, Any]) -> dict[str, Any]:
         item = original_summary(record)
@@ -121,6 +128,7 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
         "status": "installed",
         "version": EXPRESS_RECOVERY_VERSION,
         "supported_workflow": "express",
+        "required_operations_routes": sorted(EXPRESS_REQUIRED_OPERATION_ROUTES),
         "immediate_interrupted_inventory": True,
         "automatic_resume": False,
         "same_id_resume": False,
@@ -128,4 +136,8 @@ def install_express_recovery_compatibility() -> dict[str, Any]:
     }
 
 
-__all__ = ["EXPRESS_RECOVERY_VERSION", "install_express_recovery_compatibility"]
+__all__ = [
+    "EXPRESS_RECOVERY_VERSION",
+    "EXPRESS_REQUIRED_OPERATION_ROUTES",
+    "install_express_recovery_compatibility",
+]
