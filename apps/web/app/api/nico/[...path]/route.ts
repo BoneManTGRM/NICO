@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
+const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -39,7 +39,7 @@ async function proxyAssessment(
 
   const apiPath = `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
   if (!ALLOWED_ASSESSMENT_PATH.test(apiPath)) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Express, Mid, and Full assessment routes are available through this proxy.");
+    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Mid and Full lifecycle routes are available through this proxy.");
   }
 
   const backend = configuredBackend();

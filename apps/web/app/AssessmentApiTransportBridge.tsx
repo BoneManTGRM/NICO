@@ -4,6 +4,7 @@ import {useEffect} from "react";
 
 const CONFIGURED_API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
+const DIRECT_EXPRESS_PATH = "/assessment/github";
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
 
@@ -103,6 +104,19 @@ export default function AssessmentApiTransportBridge() {
       if (!ASSESSMENT_PATH.test(apiPath)) return originalFetch(input, init);
 
       clearFailure();
+
+      if (apiPath === DIRECT_EXPRESS_PATH) {
+        try {
+          const response = await originalFetch(input, init);
+          if (!response.ok) await publishFailure(response.clone(), apiPath);
+          return response;
+        } catch {
+          throw new Error(
+            "Express transport was interrupted before the Railway backend returned a response. Review backend availability and production CORS diagnostics before retrying.",
+          );
+        }
+      }
+
       const proxyUrl = new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin);
       const response = input instanceof Request
         ? await originalFetch(new Request(proxyUrl, input), init)

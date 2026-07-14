@@ -8,14 +8,19 @@ ROUTE = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
-def test_bridge_rewrites_only_configured_canonical_assessment_requests() -> None:
+def test_bridge_keeps_long_express_direct_and_proxies_only_lifecycle_routes() -> None:
     source = BRIDGE.read_text(encoding="utf-8")
 
     assert 'process.env.NEXT_PUBLIC_NICO_API_URL' in source
+    assert 'DIRECT_EXPRESS_PATH = "/assessment/github"' in source
     assert 'requested.origin !== configured.origin' in source
     assert 'ASSESSMENT_PATH.test(apiPath)' in source
+    assert 'if (apiPath === DIRECT_EXPRESS_PATH)' in source
+    direct_block = source.split('if (apiPath === DIRECT_EXPRESS_PATH)', 1)[1].split('const proxyUrl', 1)[0]
+    assert 'await originalFetch(input, init)' in direct_block
+    assert '/api/nico' not in direct_block
     assert 'new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin)' in source
-    assert 'return originalFetch(input, init)' in source
+    assert 'Express transport was interrupted before the Railway backend returned a response' in source
     assert 'window.fetch = bridgedFetch' in source
     assert 'if (window.fetch === bridgedFetch) window.fetch = originalFetch' in source
 
@@ -32,17 +37,20 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert 'sessionStorage' not in source
     assert 'localStorage' not in source
     request_start = source.index('      clearFailure();')
-    upstream_fetch = source.index('      const response = input instanceof Request')
-    assert request_start < upstream_fetch
+    express_branch = source.index('      if (apiPath === DIRECT_EXPRESS_PATH)')
+    assert request_start < express_branch
     assert 'evidence:' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
 
-def test_server_proxy_is_fixed_origin_bounded_and_fail_closed() -> None:
+def test_server_proxy_is_fixed_origin_bounded_and_excludes_synchronous_express() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL || process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'ALLOWED_ASSESSMENT_PATH.test(apiPath)' in source
+    assert '(?:mid-run|full-run)' in source
+    assert '(?:github|mid-run|full-run)' not in source
+    assert 'Only canonical Mid and Full lifecycle routes are available through this proxy.' in source
     assert 'assessment_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
     assert 'assessment_backend_unreachable' in source
