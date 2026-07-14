@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "27ef0a6247c7d4b3436310355295fc1c9c560432"
+LATEST_DEPLOYED_MAIN = "4c0f80af7c10d1881837b850be7d6ed3707c834b"
 
 
 def _release_truth() -> str:
@@ -17,9 +17,10 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Use Git HTTP basic auth for hosted scanner checkout (#412)" in release_truth
+    assert "Record PR 412 deployment verification (#413)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "hosted Git checkout credential-transport correction" in release_truth
+    assert "release-truth update through PR #413" in release_truth
+    assert "hosted Git checkout credential-transport correction through PR #412" in release_truth
 
 
 def test_release_truth_does_not_overclaim_checkout_or_production_assessment_proof() -> None:
