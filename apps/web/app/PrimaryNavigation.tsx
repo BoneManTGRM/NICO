@@ -97,6 +97,8 @@ export default function PrimaryNavigation() {
 
   const activeService = serviceForPath(pathname, assessment);
   const spanishActive = pathname.startsWith("/es-mx");
+  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es-mx";
+  const languageLabel = spanishActive ? "English" : "Español";
 
   return (
     <nav className="global-nav" aria-label="NICO primary navigation">
@@ -123,13 +125,13 @@ export default function PrimaryNavigation() {
 
         <a
           className={`primary-service-link${spanishActive ? " active" : ""}`}
-          href="/es-mx"
-          hrefLang="es-MX"
-          lang="es-MX"
-          aria-current={spanishActive ? "page" : undefined}
+          href={languageHref}
+          hrefLang={spanishActive ? "en" : "es-MX"}
+          lang={spanishActive ? "en" : "es-MX"}
+          aria-label={spanishActive ? "Switch to English" : "Cambiar a Español"}
         >
-          <span className="primary-service-label">Español</span>
-          <span className="primary-service-short-label">ES</span>
+          <span className="primary-service-label">{languageLabel}</span>
+          <span className="primary-service-short-label">{languageLabel}</span>
         </a>
 
         <details className="nav-more">
