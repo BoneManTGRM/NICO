@@ -16,6 +16,7 @@ from nico.report_evidence_consistency_gate import apply_report_evidence_consiste
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / "nico" / "assessment_score_integrity_compat.py"
+FALLBACK = ROOT / "nico" / "hosted_api_complexity_fallback.py"
 
 
 def _section(section_id: str, score: int) -> dict[str, Any]:
@@ -215,3 +216,13 @@ def test_production_compat_installs_the_fallback() -> None:
     assert "from nico.hosted_api_complexity_fallback import install_hosted_api_complexity_fallback" in source
     assert "complexity_fallback = install_hosted_api_complexity_fallback()" in source
     assert '"hosted_api_complexity_fallback"' in source
+
+
+def test_fallback_scopes_profile_replacement_to_one_express_request() -> None:
+    source = FALLBACK.read_text(encoding="utf-8")
+
+    assert "with _PROFILE_PATCH_LOCK:" in source
+    assert "previous_fetch = hosted.fetch_repository_profile" in source
+    assert "hosted.fetch_repository_profile = fetch_repository_profile_with_complexity" in source
+    assert "hosted.fetch_repository_profile = previous_fetch" in source
+    assert "hosted.fetch_repository_profile = fetch_repository_profile_with_complexity\n\n    def" not in source
