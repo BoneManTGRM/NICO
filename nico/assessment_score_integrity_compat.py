@@ -5,6 +5,7 @@ from typing import Any
 
 import nico.assessment_score_integrity as integrity
 import nico.full_assessment_scorecard as scorecard
+from nico.hosted_api_complexity_fallback import install_hosted_api_complexity_fallback
 
 
 _CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
@@ -171,6 +172,7 @@ def install_score_integrity_compatibility() -> dict[str, Any]:
     integrity.calibrated_static_section = calibrated_static_section
     scorecard._secrets_section = calibrated_secrets_section
     scorecard._static_section = calibrated_static_section
+    complexity_fallback = install_hosted_api_complexity_fallback()
     integrity._compatibility_installed = True
     return {
         "status": "already_installed" if installed else "installed",
@@ -178,6 +180,8 @@ def install_score_integrity_compatibility() -> dict[str, Any]:
         "deduplicated_secret_candidates": True,
         "test_only_static_sources_excluded": True,
         "legacy_clean_scanner_evidence_supported": True,
+        "hosted_api_complexity_fallback": complexity_fallback.get("status"),
+        "hosted_api_complexity_fallback_version": complexity_fallback.get("version"),
     }
 
 
