@@ -39,8 +39,7 @@ def _secret_present(value: str | None) -> bool:
 
 
 def _private_key_from_env(value: str) -> str:
-    return value.replace("\n", "
-").strip()
+    return value.replace(chr(92) + "n", chr(10)).strip()
 
 
 def github_app_env_state() -> dict[str, bool]:
