@@ -311,7 +311,7 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
     ledger = result.get("evidence_ledger") if isinstance(result.get("evidence_ledger"), dict) else {}
     export_gate = result.get("export_truth_gate") if isinstance(result.get("export_truth_gate"), dict) else {}
     display = {
-        "version": "trust-report-display-v2",
+        "version": "trust-report-display-v1",
         "trust_level": trust_level,
         "client_delivery_status": _client_delivery_status(trust_level),
         "score": _score(result),
