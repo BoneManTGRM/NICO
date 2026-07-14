@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `27ef0a6247c7d4b3436310355295fc1c9c560432` (`Use Git HTTP basic auth for hosted scanner checkout (#412)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the hosted Git checkout credential-transport correction through PR #412; it does not prove that a production repository checkout or any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
+The latest verified deployed main commit is `4c0f80af7c10d1881837b850be7d6ed3707c834b` (`Record PR 412 deployment verification (#413)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the release-truth update through PR #413 and the hosted Git checkout credential-transport correction through PR #412; it does not prove that a production repository checkout or any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
 
 ## Claims NICO does not make
 
