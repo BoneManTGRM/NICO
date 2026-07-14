@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "cad9299cdcfacc352921e10aa2104ecb1be91b4c"
+LATEST_DEPLOYED_MAIN = "b5d0c1aed82af48c09f1497d1d5457c6a2130af0"
 
 
 def _release_truth() -> str:
@@ -17,7 +17,7 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Record PR 394 deployment verification (#395)" in release_truth
+    assert "Record PR 395 deployment verification (#396)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
 
 
