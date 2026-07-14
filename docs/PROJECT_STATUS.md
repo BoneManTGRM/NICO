@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `97d02309bed5c0c81d4df8fd59d468641eb1c8ac` (`Record PR 398 deployment verification (#399)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the restored Spanish navigation entry point and the report-presentation and workflow-state corrections through PR #399; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
+The latest verified deployed main commit is `fdc4c0c4ab72e4e4d1d227ea316e25670b660ce6` (`Localize the Spanish shell and language switcher (#401)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the localized `/es-mx` workflow callout and language switcher through PR #401; it does not prove that all operator surfaces are localized or that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
 
 ## Claims NICO does not make
 
