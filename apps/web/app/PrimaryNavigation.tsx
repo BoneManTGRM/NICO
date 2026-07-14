@@ -29,6 +29,12 @@ export const PRIMARY_SERVICES = [
   },
 ] as const;
 
+const SPANISH_PRIMARY_LABELS: Record<ServiceKey, string> = {
+  "run-job": "Ejecutar evaluación",
+  operations: "Operaciones",
+  retainer: "Retainer",
+};
+
 const ADVANCED_GROUPS = [
   {
     label: "Operations and diagnostics",
@@ -45,6 +51,26 @@ const ADVANCED_GROUPS = [
       {label: "Easy Mode", href: "/easy"},
       {label: "Start Job", href: "/start-job"},
       {label: "Guide", href: "/guided-workflow"},
+    ],
+  },
+] as const;
+
+const SPANISH_ADVANCED_GROUPS = [
+  {
+    label: "Operaciones y diagnóstico",
+    links: [
+      {label: "Recuperación", href: "/operations/recovery"},
+      {label: "Respaldo y restauración", href: "/operations/backup-restore"},
+      {label: "Escáner a Express", href: "/scanner-workflow"},
+      {label: "Actualizar evidencia", href: "/refresh-full-evidence"},
+    ],
+  },
+  {
+    label: "Utilidades",
+    links: [
+      {label: "Modo fácil", href: "/easy"},
+      {label: "Iniciar trabajo", href: "/start-job"},
+      {label: "Guía", href: "/guided-workflow"},
     ],
   },
 ] as const;
@@ -99,15 +125,17 @@ export default function PrimaryNavigation() {
   const spanishActive = pathname.startsWith("/es-mx");
   const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es-mx";
   const languageLabel = spanishActive ? "English" : "Español";
+  const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS;
 
   return (
-    <nav className="global-nav" aria-label="NICO primary navigation">
+    <nav className="global-nav" aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}>
       <div className="global-nav-inner">
-        <a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>
+        <a className="global-brand" href="/assessment?tier=express#assessment" aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>NICO</a>
 
         <div className="primary-service-links" data-primary-service-count="3">
           {PRIMARY_SERVICES.map((service) => {
             const active = activeService === service.key;
+            const label = spanishActive ? SPANISH_PRIMARY_LABELS[service.key] : service.label;
             return (
               <a
                 key={service.key}
@@ -116,8 +144,8 @@ export default function PrimaryNavigation() {
                 aria-current={active ? "page" : undefined}
                 data-service={service.key}
               >
-                <span className="primary-service-label">{service.label}</span>
-                <span className="primary-service-short-label">{service.shortLabel}</span>
+                <span className="primary-service-label">{label}</span>
+                <span className="primary-service-short-label">{label}</span>
               </a>
             );
           })}
@@ -128,21 +156,21 @@ export default function PrimaryNavigation() {
           href={languageHref}
           hrefLang={spanishActive ? "en" : "es-MX"}
           lang={spanishActive ? "en" : "es-MX"}
-          aria-label={spanishActive ? "Switch to English" : "Cambiar a Español"}
+          aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
         >
           <span className="primary-service-label">{languageLabel}</span>
           <span className="primary-service-short-label">{languageLabel}</span>
         </a>
 
         <details className="nav-more">
-          <summary aria-label="Open advanced NICO tools">More</summary>
-          <div className="nav-more-panel">
+          <summary aria-label={spanishActive ? "Abrir herramientas avanzadas de NICO" : "Open advanced NICO tools"}>{spanishActive ? "Más" : "More"}</summary>
+          <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
             <div className="nav-more-heading">
-              <b>Advanced tools</b>
-              <span>Operator diagnostics and utilities</span>
+              <b>{spanishActive ? "Herramientas avanzadas" : "Advanced tools"}</b>
+              <span>{spanishActive ? "Diagnóstico y utilidades para operadores" : "Operator diagnostics and utilities"}</span>
             </div>
             <div className="nav-more-groups">
-              {ADVANCED_GROUPS.map((group) => (
+              {advancedGroups.map((group) => (
                 <section className="nav-more-group" key={group.label}>
                   <p>{group.label}</p>
                   {group.links.map((link) => (
