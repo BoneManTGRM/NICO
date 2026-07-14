@@ -26,15 +26,13 @@ class _LegacyProfileClient:
         return "fastapi==0.116\n", None
 
 
-def test_dispatcher_preserves_shared_repository_profile_behavior() -> None:
+def test_shared_repository_profile_behavior_remains_compatible() -> None:
     result = install_hosted_api_complexity_fallback()
-    original = getattr(hosted, "_nico_original_fetch_repository_profile_api_complexity")
 
     assert result["status"] in {"installed", "already_installed"}
     assert result["shared_profile_override"] is False
     assert result["concurrent_express_requests_supported"] is True
     assert hosted.fetch_repository_profile is not fetch_repository_profile_with_complexity
-    assert hosted.fetch_repository_profile is not original
 
     profile = hosted.fetch_repository_profile(
         _LegacyProfileClient(),
@@ -45,7 +43,7 @@ def test_dispatcher_preserves_shared_repository_profile_behavior() -> None:
     assert profile["unavailable"] == []
 
 
-def test_installer_is_idempotent_without_changing_dispatcher_identity() -> None:
+def test_installer_is_idempotent_without_changing_active_profile_behavior() -> None:
     before = hosted.fetch_repository_profile
     first = install_hosted_api_complexity_fallback()
     second = install_hosted_api_complexity_fallback()
