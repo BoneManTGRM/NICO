@@ -43,6 +43,26 @@ function boundedProgress(value: unknown): AssessmentFailureEvidence["progress"] 
   });
 }
 
+function assessmentType(route: string): string {
+  if (route.includes("mid-run")) return "mid";
+  if (route.includes("full-run")) return "full";
+  return "express";
+}
+
+function publishTransportFailure(route: string) {
+  const evidence: AssessmentFailureEvidence = {
+    http_status: 0,
+    route,
+    status: "unavailable",
+    code: "assessment_transport_interrupted",
+    message: "The assessment connection ended before NICO returned a response. The request was not marked successful.",
+    run_id: "",
+    assessment_type: assessmentType(route),
+    progress: [],
+  };
+  window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: evidence}));
+}
+
 async function publishFailure(response: Response, route: string) {
   let payload: Record<string, unknown> = {};
   try {
@@ -63,7 +83,7 @@ async function publishFailure(response: Response, route: string) {
     message: boundedText(detail.message || payload.message || payload.error, 320)
       || `Assessment request failed with HTTP ${response.status}.`,
     run_id: boundedText(detail.run_id || payload.run_id, 120),
-    assessment_type: boundedText(detail.assessment_type || payload.assessment_type, 40),
+    assessment_type: boundedText(detail.assessment_type || payload.assessment_type, 40) || assessmentType(route),
     progress: boundedProgress(detail.progress || payload.progress),
   };
 
@@ -103,12 +123,14 @@ export default function AssessmentApiTransportBridge() {
       if (!ASSESSMENT_PATH.test(apiPath)) return originalFetch(input, init);
 
       clearFailure();
-      const proxyUrl = new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin);
-      const response = input instanceof Request
-        ? await originalFetch(new Request(proxyUrl, input), init)
-        : await originalFetch(proxyUrl, init);
-      if (!response.ok) await publishFailure(response.clone(), apiPath);
-      return response;
+      try {
+        const response = await originalFetch(input, init);
+        if (!response.ok) await publishFailure(response.clone(), apiPath);
+        return response;
+      } catch {
+        publishTransportFailure(apiPath);
+        throw new Error("The assessment connection ended before NICO returned a response. The request was not marked successful.");
+      }
     };
 
     window.fetch = bridgedFetch;
