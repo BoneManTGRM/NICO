@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import time
 from dataclasses import dataclass
@@ -40,6 +41,14 @@ def _secret_present(value: str | None) -> bool:
 
 def _private_key_from_env(value: str) -> str:
     return value.replace("\\n", "\n").strip()
+
+
+def _git_http_basic_authorization(token: str) -> str:
+    """Build GitHub's HTTP Git credential header without putting a token in a URL."""
+
+    normalized = str(token or "").strip()
+    credential = base64.b64encode(f"x-access-token:{normalized}".encode("utf-8")).decode("ascii")
+    return f"AUTHORIZATION: basic {credential}"
 
 
 def github_app_env_state() -> dict[str, bool]:
@@ -142,7 +151,8 @@ def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
 
 
 def build_github_clone_auth_env(*, session: Any = requests) -> GitHubCloneAuthResult:
-    """Return git extraheader env for private clone without putting tokens in clone URL."""
+    """Return a Git HTTP Basic extraheader without putting tokens in clone URLs."""
+
     token, evidence, unavailable = _installation_token_result(session=session)
     mode = "github_app_installation"
     if not token:
@@ -158,7 +168,7 @@ def build_github_clone_auth_env(*, session: Any = requests) -> GitHubCloneAuthRe
         extra_env={
             "GIT_CONFIG_COUNT": "1",
             "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+            "GIT_CONFIG_VALUE_0": _git_http_basic_authorization(token),
         },
         mode=mode,
         evidence=evidence,
