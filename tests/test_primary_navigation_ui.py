@@ -49,12 +49,14 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
         "Scanner to Express": "/scanner-workflow",
         "Refresh Evidence": "/refresh-full-evidence",
         "Easy Mode": "/easy",
-        "Start Job": "/start-job",
         "Guide": "/guided-workflow",
     }.items():
         assert f'{{label: "{label}", href: "{href}"}}' in advanced
         assert label not in primary
         assert href not in primary
+
+    assert 'label: "Start Job"' not in source
+    assert 'href: "/start-job"' not in source
 
     for label, href in {
         "Mid Review": "/mid-review",
@@ -74,10 +76,10 @@ def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     assert 'const spanishActive = pathname.startsWith("/es-mx")' in source
-    assert 'SPANISH_PRIMARY_LABELS' in source
+    assert "SPANISH_PRIMARY_LABELS" in source
     assert '"run-job": "Ejecutar evaluación"' in source
     assert 'operations: "Operaciones"' in source
-    assert 'const SPANISH_ADVANCED_GROUPS' in source
+    assert "const SPANISH_ADVANCED_GROUPS" in source
     for translated in (
         "Herramientas avanzadas",
         "Diagnóstico y utilidades para operadores",
@@ -88,15 +90,15 @@ def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
         "Actualizar evidencia",
         "Utilidades",
         "Modo fácil",
-        "Iniciar trabajo",
         "Guía",
     ):
         assert translated in source
 
+    assert "Iniciar trabajo" not in source
     assert 'spanishActive ? "Más" : "More"' in source
     assert 'spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"' in source
     assert 'spanishActive ? "Abrir herramientas avanzadas de NICO" : "Open advanced NICO tools"' in source
-    assert 'const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS' in source
+    assert "const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS" in source
     assert 'lang={spanishActive ? "es-MX" : undefined}' in source
 
 
@@ -107,7 +109,7 @@ def test_run_a_job_uses_one_query_selected_intake() -> None:
         'type AssessmentMode = "express" | "mid" | "full"',
         'new URLSearchParams(window.location.search).get("tier")',
         'value === "mid" || value === "full"',
-        'window.addEventListener(ASSESSMENT_TIER_EVENT',
+        "window.addEventListener(ASSESSMENT_TIER_EVENT",
         'window.addEventListener("popstate"',
         'pathname.startsWith("/assessment")',
     ]:
