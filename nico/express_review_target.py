@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+import threading
 from copy import deepcopy
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -11,6 +12,8 @@ from nico.report_path_truth import apply_report_path_truth
 EXPRESS_REPORT_PATH = "express"
 EXPRESS_REPORT_LABEL = "Express Assessment"
 _STORAGE_COMPAT_MARKER = "_nico_exact_express_storage_v1"
+_ACCEPTANCE_COMPAT_MARKER = "_nico_exact_express_acceptance_v1"
+_STORAGE_CONTEXT = threading.local()
 
 
 def express_run_id(result: dict[str, Any]) -> str:
@@ -93,33 +96,62 @@ def _exact_storage_record(
     }
 
 
+def _capture_final_express_payload(result: dict[str, Any]) -> None:
+    _STORAGE_CONTEXT.payload = deepcopy(result)
+
+
+def _consume_final_express_payload() -> dict[str, Any]:
+    value = getattr(_STORAGE_CONTEXT, "payload", {})
+    if hasattr(_STORAGE_CONTEXT, "payload"):
+        delattr(_STORAGE_CONTEXT, "payload")
+    return value if isinstance(value, dict) else {}
+
+
 def install_express_storage_compatibility() -> dict[str, Any]:
-    """Restore exact-run Express persistence after the shared storage helper regression.
+    """Restore exact-run Express persistence without process-global response races.
 
     `nico.api.main` imports this module while it is still being initialized, so the
-    compatibility hook is installed lazily on the first Express result. The route
-    later sets `_LAST_HOSTED_ASSESSMENT` before invoking the patched storage helper,
-    allowing the final response payload to be retained under its returned run ID.
+    hook is installed lazily on the first Express result. The final client-acceptance
+    wrapper captures the completed response in request-thread-local state. The route's
+    storage helper consumes that payload exactly once under the returned run ID.
     """
 
     api_main = sys.modules.get("nico.api.main")
     if api_main is None or not hasattr(api_main, "hosted_assessment_storage_record"):
         return {"status": "deferred", "exact_run_storage": False}
-    current = getattr(api_main, "hosted_assessment_storage_record")
-    if getattr(current, _STORAGE_COMPAT_MARKER, False):
-        return {"status": "already_installed", "exact_run_storage": True}
 
-    fallback = current
+    storage_current = getattr(api_main, "hosted_assessment_storage_record")
+    storage_installed = bool(getattr(storage_current, _STORAGE_COMPAT_MARKER, False))
+    if not storage_installed:
+        storage_fallback = storage_current
 
-    def exact_hosted_assessment_storage_record(req: Any) -> tuple[str, dict[str, Any]]:
-        response_payload = getattr(api_main, "_LAST_HOSTED_ASSESSMENT", {})
-        payload = response_payload if isinstance(response_payload, dict) else {}
-        return _exact_storage_record(req, payload, fallback)
+        def exact_hosted_assessment_storage_record(req: Any) -> tuple[str, dict[str, Any]]:
+            return _exact_storage_record(req, _consume_final_express_payload(), storage_fallback)
 
-    setattr(exact_hosted_assessment_storage_record, _STORAGE_COMPAT_MARKER, True)
-    setattr(exact_hosted_assessment_storage_record, "_nico_storage_fallback", fallback)
-    setattr(api_main, "hosted_assessment_storage_record", exact_hosted_assessment_storage_record)
-    return {"status": "installed", "exact_run_storage": True}
+        setattr(exact_hosted_assessment_storage_record, _STORAGE_COMPAT_MARKER, True)
+        setattr(exact_hosted_assessment_storage_record, "_nico_storage_fallback", storage_fallback)
+        setattr(api_main, "hosted_assessment_storage_record", exact_hosted_assessment_storage_record)
+
+    acceptance_current = getattr(api_main, "attach_client_acceptance_gate", None)
+    acceptance_installed = bool(getattr(acceptance_current, _ACCEPTANCE_COMPAT_MARKER, False))
+    if callable(acceptance_current) and not acceptance_installed:
+        acceptance_fallback = acceptance_current
+
+        def exact_express_acceptance_gate(result: dict[str, Any]) -> dict[str, Any]:
+            output = acceptance_fallback(result)
+            _capture_final_express_payload(output)
+            return output
+
+        setattr(exact_express_acceptance_gate, _ACCEPTANCE_COMPAT_MARKER, True)
+        setattr(exact_express_acceptance_gate, "_nico_acceptance_fallback", acceptance_fallback)
+        setattr(api_main, "attach_client_acceptance_gate", exact_express_acceptance_gate)
+        acceptance_installed = True
+
+    return {
+        "status": "already_installed" if storage_installed and acceptance_installed else "installed",
+        "exact_run_storage": True,
+        "request_local_final_payload": acceptance_installed,
+    }
 
 
 def attach_express_review_target(result: dict[str, Any], request_payload: dict[str, Any] | None = None) -> dict[str, Any]:
