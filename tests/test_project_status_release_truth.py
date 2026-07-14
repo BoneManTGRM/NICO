@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "b8aaba855a68fd33fae0260db23b81ff01b062c6"
+LATEST_DEPLOYED_MAIN = "b33de6432179f70598c9e865d12643b0a606adcd"
 
 
 def _release_truth() -> str:
@@ -17,10 +17,14 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Combine deployed browser and API production proof (#432)" in release_truth
+    assert "Clarify blocked assessment errors safely (#434)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
     assert "collision-resistant Express run/report identity and exact-run persistence repair from PR #430" in release_truth
     assert "protected browser-driven Express/Mid/Full production-proof workflow from PR #432" in release_truth
+    assert "bounded assessment-block classification from PR #434" in release_truth
+    assert "actionable, redacted guidance" in release_truth
+    assert "without exposing provider bodies, tokens, traces, or internal reasons" in release_truth
+    assert "authorization and unknown policy blocks remain fail-closed and generic" in release_truth
     assert "without duplicate API starts" in release_truth
     assert "human review" in release_truth
     assert "`client_ready: false`" in release_truth
