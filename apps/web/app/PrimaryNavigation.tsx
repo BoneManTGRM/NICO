@@ -49,7 +49,6 @@ const ADVANCED_GROUPS = [
     label: "Utilities",
     links: [
       {label: "Easy Mode", href: "/easy"},
-      {label: "Start Job", href: "/start-job"},
       {label: "Guide", href: "/guided-workflow"},
     ],
   },
@@ -69,7 +68,6 @@ const SPANISH_ADVANCED_GROUPS = [
     label: "Utilidades",
     links: [
       {label: "Modo fácil", href: "/easy"},
-      {label: "Iniciar trabajo", href: "/start-job"},
       {label: "Guía", href: "/guided-workflow"},
     ],
   },
