@@ -21,11 +21,11 @@ _TOP_LEVEL_TEXT_LIST_KEYS = (
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def _display_text(value: Any) -> str:
-    return str(value or "").strip()
+def _display_text(value: str) -> str:
+    return value.strip()
 
 
-def _dedupe_key(value: Any) -> str:
+def _dedupe_key(value: str) -> str:
     text = unicodedata.normalize("NFKC", _display_text(value))
     return _WHITESPACE_RE.sub(" ", text).casefold()
 
@@ -38,11 +38,12 @@ def _count(value: Any) -> int:
 
 
 def deduplicate_text_items(value: Any) -> tuple[list[Any], int]:
-    """Deduplicate exact presentation-equivalent text while preserving first-seen wording.
+    """Deduplicate presentation-equivalent strings while preserving other values.
 
     This is intentionally conservative. It collapses case, Unicode compatibility,
-    and whitespace-only repetition, but it does not merge semantically related or
-    causally linked limitations. Distinct evidence remains distinct.
+    and whitespace-only repetition for strings, but it does not merge semantically
+    related limitations or reinterpret structured records. Non-string values are
+    retained exactly, including repeated dictionaries used by downstream schemas.
     """
 
     if value is None:
@@ -52,6 +53,9 @@ def deduplicate_text_items(value: Any) -> tuple[list[Any], int]:
     seen: set[str] = set()
     removed = 0
     for item in items:
+        if not isinstance(item, str):
+            output.append(item)
+            continue
         key = _dedupe_key(item)
         if not key:
             removed += 1
@@ -96,12 +100,13 @@ def _normalize_document(document: dict[str, Any]) -> dict[str, int]:
 
 
 def normalize_report_presentation_lists(result: dict[str, Any]) -> dict[str, Any]:
-    """Remove duplicate client-visible list lines without changing evidence meaning.
+    """Remove duplicate client-visible string lines without changing evidence meaning.
 
-    Raw scanner artifacts, ledgers, hashes, scores, trust state, review state, and
-    delivery state are not modified. Only client-visible presentation lists on the
-    result and nested assessment document are normalized. Repeated passes are
-    idempotent and keep cumulative instrumentation from earlier final-gate passes.
+    Raw scanner artifacts, ledgers, hashes, structured repair records, scores, trust
+    state, review state, and delivery state are not modified. Only string entries in
+    client-visible presentation lists on the result and nested assessment document
+    are normalized. Repeated passes are idempotent and keep cumulative instrumentation
+    from earlier final-gate passes.
     """
 
     if not isinstance(result, dict):
@@ -130,8 +135,8 @@ def normalize_report_presentation_lists(result: dict[str, Any]) -> dict[str, Any
         "passes": _count(previous.get("passes")) + 1,
         **cumulative,
         "last_pass_duplicates_removed": totals["top_level_items_removed"] + totals["section_items_removed"],
-        "scope": "Client-visible top-level and section presentation lists only.",
-        "guardrail": "Semantically distinct limitations are preserved; raw evidence artifacts, scores, trust, approval, and delivery state are unchanged.",
+        "scope": "Client-visible string entries in top-level and section presentation lists only.",
+        "guardrail": "Semantically distinct limitations and structured records are preserved; raw evidence artifacts, scores, trust, approval, and delivery state are unchanged.",
     }
     return result
 

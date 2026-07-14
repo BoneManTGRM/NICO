@@ -26,6 +26,16 @@ def test_text_deduplication_is_whitespace_case_and_unicode_compatible() -> None:
     assert removed == 2
 
 
+def test_text_deduplication_preserves_structured_records_exactly() -> None:
+    repair = {"repair_id": "repair_1", "status": "suggested"}
+    items, removed = deduplicate_text_items(
+        [repair, deepcopy(repair), "Repeated note.", " repeated note. "]
+    )
+
+    assert items == [repair, repair, "Repeated note."]
+    assert removed == 1
+
+
 def test_normalizer_removes_exact_repetition_but_preserves_distinct_limitations() -> None:
     result = {
         "status": "complete",
@@ -123,6 +133,20 @@ def test_normalizer_cleans_section_and_nested_assessment_presentation_lists() ->
     assert output["assessment"]["sections"][0]["evidence"] == ["Human review required."]
     assert output["assessment"]["sections"][0]["unavailable"] == ["Client approval not recorded."]
     assert output["report_quality_guards"]["presentation_list_normalization"]["duplicates_removed"] == 6
+
+
+def test_normalizer_preserves_structured_top_level_repairs() -> None:
+    repair = {"repair_id": "repair_1", "status": "suggested"}
+    result = {
+        "status": "complete",
+        "repairs": [repair, deepcopy(repair), "Repair note.", " repair note. "],
+        "sections": [],
+    }
+
+    output = normalize_report_presentation_lists(result)
+
+    assert output["repairs"] == [repair, repair, "Repair note."]
+    assert output["report_quality_guards"]["presentation_list_normalization"]["duplicates_removed"] == 1
 
 
 def test_normalizer_does_not_mutate_raw_artifacts_or_ledgers() -> None:
