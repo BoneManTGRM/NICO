@@ -39,7 +39,8 @@ def _secret_present(value: str | None) -> bool:
 
 
 def _private_key_from_env(value: str) -> str:
-    return value.replace("\\n", "\n").strip()
+    return value.replace("\n", "
+").strip()
 
 
 def github_app_env_state() -> dict[str, bool]:
@@ -124,6 +125,37 @@ def _installation_token_result(*, session: Any = requests) -> tuple[str | None, 
     return installation_token, evidence, unavailable
 
 
+def _server_token_fallback(
+    evidence: list[str],
+    preferred_auth_unavailable: list[str],
+    *,
+    purpose: str,
+) -> tuple[list[str], list[str]]:
+    """Reclassify a successful fallback as operational evidence, not missing proof.
+
+    GitHub App installation auth is preferred because it is short-lived and narrowly
+    scoped, but a configured server token is an intentional supported credential mode.
+    Once that fallback is active, the absence or failure of the preferred mode must not
+    leak into client-facing unavailable evidence as though repository access were
+    missing. Actual API or checkout failures remain reported by their callers.
+    """
+
+    updated = list(evidence)
+    if preferred_auth_unavailable:
+        updated.append(
+            "GitHub App installation auth was unavailable; the configured server-side GitHub token fallback was used for authorized repository "
+            + purpose
+            + "."
+        )
+    else:
+        updated.append(
+            "Server-side GitHub token auth is configured for authorized repository "
+            + purpose
+            + "."
+        )
+    return updated, []
+
+
 def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
     headers = _base_headers()
     token, evidence, unavailable = _installation_token_result(session=session)
@@ -134,7 +166,11 @@ def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
     fallback = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
     if fallback:
         headers["Authorization"] = f"Bearer {fallback}"
-        evidence.append("Server-side GitHub token auth is configured for authorized repository assessment.")
+        evidence, unavailable = _server_token_fallback(
+            evidence,
+            unavailable,
+            purpose="assessment",
+        )
         return GitHubAuthResult(headers=headers, mode="server_token", evidence=evidence, unavailable=unavailable)
 
     unavailable.append("No server-side GitHub credential is configured; private repositories will be unavailable.")
@@ -143,12 +179,17 @@ def build_github_auth_headers(*, session: Any = requests) -> GitHubAuthResult:
 
 def build_github_clone_auth_env(*, session: Any = requests) -> GitHubCloneAuthResult:
     """Return git extraheader env for private clone without putting tokens in clone URL."""
+
     token, evidence, unavailable = _installation_token_result(session=session)
     mode = "github_app_installation"
     if not token:
         token = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
         if token:
-            evidence.append("Server-side GitHub token auth is configured for authorized repository checkout.")
+            evidence, unavailable = _server_token_fallback(
+                evidence,
+                unavailable,
+                purpose="checkout",
+            )
             mode = "server_token"
         else:
             unavailable.append("No server-side GitHub credential is configured for private repository checkout.")
