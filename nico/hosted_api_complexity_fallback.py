@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 from collections import defaultdict
 from contextvars import ContextVar
 from pathlib import PurePosixPath
@@ -31,6 +32,7 @@ _CAPTURED_PROFILE: ContextVar[dict[str, Any] | None] = ContextVar(
     "nico_hosted_api_complexity_profile",
     default=None,
 )
+_PROFILE_PATCH_LOCK = threading.RLock()
 
 
 def _int(value: Any) -> int:
@@ -376,12 +378,17 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
 
     original_run = hosted.run_github_assessment
     hosted._nico_original_run_github_assessment_api_complexity = original_run
-    hosted.fetch_repository_profile = fetch_repository_profile_with_complexity
 
     def run_github_assessment_with_api_complexity(payload: dict[str, Any]) -> dict[str, Any]:
         token = _CAPTURED_PROFILE.set(None)
+        with _PROFILE_PATCH_LOCK:
+            previous_fetch = hosted.fetch_repository_profile
+            hosted.fetch_repository_profile = fetch_repository_profile_with_complexity
+            try:
+                result = original_run(payload)
+            finally:
+                hosted.fetch_repository_profile = previous_fetch
         try:
-            result = original_run(payload)
             return attach_api_sample_complexity(result, _CAPTURED_PROFILE.get())
         finally:
             _CAPTURED_PROFILE.reset(token)
