@@ -5,6 +5,17 @@ import {usePathname} from "next/navigation";
 
 const NOTE_ID = "nico-operations-not-loaded";
 const PRELOAD_PILL_ATTRIBUTE = "data-nico-preload-hidden";
+const PRELOAD_SECTION_ATTRIBUTE = "data-nico-preload-section-hidden";
+
+function setPreloadHidden(element: HTMLElement, hidden: boolean, attribute: string) {
+  if (hidden) {
+    element.setAttribute(attribute, "true");
+    element.style.setProperty("display", "none", "important");
+  } else if (element.hasAttribute(attribute)) {
+    element.removeAttribute(attribute);
+    element.style.removeProperty("display");
+  }
+}
 
 export default function OperationsPreloadGuard() {
   const pathname = usePathname();
@@ -34,7 +45,9 @@ export default function OperationsPreloadGuard() {
       const evidenceLoaded = authentication.textContent?.includes("Last loaded:") === true;
       const authenticationIndex = sections.indexOf(authentication);
       sections.forEach((section, index) => {
-        if (index > authenticationIndex) section.hidden = !evidenceLoaded;
+        if (index > authenticationIndex) {
+          setPreloadHidden(section, !evidenceLoaded, PRELOAD_SECTION_ATTRIBUTE);
+        }
       });
 
       const preloadPills = Array.from(main.querySelectorAll<HTMLElement>("span")).filter((element) => {
@@ -42,9 +55,7 @@ export default function OperationsPreloadGuard() {
         return text === "readiness: not loaded" || text === "highest alert: not loaded";
       });
       preloadPills.forEach((element) => {
-        element.hidden = !evidenceLoaded;
-        if (!evidenceLoaded) element.setAttribute(PRELOAD_PILL_ATTRIBUTE, "true");
-        else element.removeAttribute(PRELOAD_PILL_ATTRIBUTE);
+        setPreloadHidden(element, !evidenceLoaded, PRELOAD_PILL_ATTRIBUTE);
       });
 
       const existing = document.getElementById(NOTE_ID);
@@ -56,7 +67,7 @@ export default function OperationsPreloadGuard() {
         const note = document.createElement("p");
         note.id = NOTE_ID;
         note.className = "summary-box";
-        note.textContent = "Operations evidence is not loaded. Enter the admin token and select Load operations. Unloaded cards are not failures and are not shown as red evidence states.";
+        note.textContent = "Operations evidence is not loaded. Enter the admin token and select Load operations. No readiness, release, storage, workload, incident, or alert state is inferred before authentication succeeds.";
         authentication.insertAdjacentElement("afterend", note);
       }
     };
@@ -70,12 +81,11 @@ export default function OperationsPreloadGuard() {
       window.cancelAnimationFrame(frame);
       observer?.disconnect();
       document.getElementById(NOTE_ID)?.remove();
-      document.querySelectorAll<HTMLElement>("main > section[hidden]").forEach((section) => {
-        section.hidden = false;
+      document.querySelectorAll<HTMLElement>(`[${PRELOAD_SECTION_ATTRIBUTE}]`).forEach((section) => {
+        setPreloadHidden(section, false, PRELOAD_SECTION_ATTRIBUTE);
       });
       document.querySelectorAll<HTMLElement>(`[${PRELOAD_PILL_ATTRIBUTE}]`).forEach((element) => {
-        element.hidden = false;
-        element.removeAttribute(PRELOAD_PILL_ATTRIBUTE);
+        setPreloadHidden(element, false, PRELOAD_PILL_ATTRIBUTE);
       });
     };
   }, [pathname]);
