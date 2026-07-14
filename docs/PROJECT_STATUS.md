@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `3e0ae599b5d9e3ced77585f07b0b8c5cc9915d0b` (`Record PR 417 deployment verification (#418)`). Its Vercel and Railway deployment checks passed. This verifies deployment of the release-truth update through PR #418 and preserves the deployed bounded exact-run failure evidence, same-origin canonical assessment transport, and strict separator-whitespace normalization recorded there; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
+The latest verified deployed main commit is `7cd53c94d863b2d441454f59d21c1396e9b1105d` (`Keep assessment failure evidence page-scoped (#420)`). Its Vercel and Railway deployment checks passed. This verifies deployment of page-scoped current-request failure evidence that is cleared before a new canonical assessment request, while preserving bounded exact-run failure details, same-origin canonical assessment transport, and strict repository-target validation; it does not prove that any Express, Mid, or Full production assessment completed correctly. Deployed browser/API E2E proof remains incomplete until an authorized production smoke artifact and matching browser evidence are retained and reviewed.
 
 ## Claims NICO does not make
 
