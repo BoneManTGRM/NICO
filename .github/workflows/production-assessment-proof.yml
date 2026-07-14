@@ -1,0 +1,122 @@
+name: Production Assessment Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/production-assessment-proof.yml
+      - scripts/run_production_assessment_browser_proof.mjs
+      - tests/test_production_assessment_proof_contract.py
+  workflow_dispatch:
+
+concurrency:
+  group: production-assessment-proof
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  statuses: write
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      FRONTEND_URL: https://app.nicoaudit.com
+      EXPECTED_COMMIT: ${{ github.sha }}
+      AUTHORIZED_REPOSITORY: BoneManTGRM/NICO
+      AUTHORIZATION_SCOPE: Owner-authorized defensive production assessment of BoneManTGRM/NICO for Phase 1 evidence only.
+      PROOF_OUTPUT_DIR: ${{ github.workspace }}/artifacts/production-assessment-proof
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Check out exact proof commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Mark production proof pending
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=pending \
+            -f context=production-assessment-proof \
+            -f description='Authorized Express, Mid, and Full production proof is running' \
+            -f target_url="${RUN_URL}"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install isolated browser runner
+        run: |
+          rm -rf .proof-runner
+          mkdir -p .proof-runner
+          cp scripts/run_production_assessment_browser_proof.mjs .proof-runner/run.mjs
+          cd .proof-runner
+          npm init -y
+          npm install --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run authorized production browser proof
+        id: proof
+        continue-on-error: true
+        run: |
+          set +e
+          cd .proof-runner
+          node run.mjs
+          proof_exit=$?
+          echo "exit_code=${proof_exit}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Upload complete production proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-assessment-proof-${{ github.sha }}
+          path: artifacts/production-assessment-proof
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish bounded evidence branch
+        if: always()
+        id: evidence
+        run: |
+          test -s artifacts/production-assessment-proof/summary.json
+          test -s artifacts/production-assessment-proof/summary.md
+          evidence_path="docs/evidence/production-assessment-proof/${GITHUB_SHA}"
+          mkdir -p "${evidence_path}"
+          cp artifacts/production-assessment-proof/summary.json "${evidence_path}/summary.json"
+          cp artifacts/production-assessment-proof/summary.md "${evidence_path}/summary.md"
+          branch="evidence/production-proof-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${branch}"
+          git add "${evidence_path}/summary.json" "${evidence_path}/summary.md"
+          git commit -m "Record production assessment proof for ${GITHUB_SHA}"
+          git push origin "HEAD:refs/heads/${branch}"
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+
+      - name: Mark production proof result
+        if: always()
+        run: |
+          proof_exit='${{ steps.proof.outputs.exit_code }}'
+          if [ "${proof_exit}" = '0' ]; then
+            state=success
+            description='Authorized Express, Mid, and Full production proof passed'
+          else
+            state=failure
+            description='Production proof found a blocker; bounded evidence was retained'
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="${state}" \
+            -f context=production-assessment-proof \
+            -f description="${description}" \
+            -f target_url="${RUN_URL}"
+
+      - name: Fail closed when proof did not pass
+        if: always()
+        run: |
+          test '${{ steps.proof.outputs.exit_code }}' = '0'
