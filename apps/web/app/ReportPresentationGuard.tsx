@@ -22,14 +22,24 @@ function normalizeScoreLabels(root: ParentNode) {
 
 function removeDuplicateDetail(root: ParentNode) {
   root.querySelectorAll<HTMLElement>(".result-card").forEach((card) => {
-    // Use one set in document order so a summary paragraph is retained and an
-    // identical later limitation bullet is removed. Separate paragraph/list sets
-    // allowed the same sentence to appear twice in the screenshots for Issue #296.
-    const seenDetail = new Set<string>();
-    Array.from(card.querySelectorAll<HTMLElement>("p, li")).forEach((element) => {
-      const key = textKey(element.textContent || "");
-      if (!key || seenDetail.has(key)) element.remove();
-      else seenDetail.add(key);
+    // Paragraph summaries and semantic evidence/findings/unavailable lists are
+    // different report fields. Deduplicate only within the same presentation
+    // field so a finding identical to the card summary is not removed and left
+    // behind as an empty `Findings (1)` disclosure.
+    const seenParagraphs = new Set<string>();
+    Array.from(card.querySelectorAll<HTMLParagraphElement>("p")).forEach((paragraph) => {
+      const key = textKey(paragraph.textContent || "");
+      if (!key || seenParagraphs.has(key)) paragraph.remove();
+      else seenParagraphs.add(key);
+    });
+
+    card.querySelectorAll<HTMLElement>("details, ul, ol").forEach((container) => {
+      const seenItems = new Set<string>();
+      Array.from(container.querySelectorAll<HTMLLIElement>("li")).forEach((item) => {
+        const key = textKey(item.textContent || "");
+        if (!key || seenItems.has(key)) item.remove();
+        else seenItems.add(key);
+      });
     });
   });
 }
