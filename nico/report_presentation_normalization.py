@@ -30,6 +30,13 @@ def _dedupe_key(value: Any) -> str:
     return _WHITESPACE_RE.sub(" ", text).casefold()
 
 
+def _count(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def deduplicate_text_items(value: Any) -> tuple[list[Any], int]:
     """Deduplicate exact presentation-equivalent text while preserving first-seen wording.
 
@@ -93,7 +100,8 @@ def normalize_report_presentation_lists(result: dict[str, Any]) -> dict[str, Any
 
     Raw scanner artifacts, ledgers, hashes, scores, trust state, review state, and
     delivery state are not modified. Only client-visible presentation lists on the
-    result and nested assessment document are normalized.
+    result and nested assessment document are normalized. Repeated passes are
+    idempotent and keep cumulative instrumentation from earlier final-gate passes.
     """
 
     if not isinstance(result, dict):
@@ -108,11 +116,20 @@ def normalize_report_presentation_lists(result: dict[str, Any]) -> dict[str, Any
             for key in totals
         }
 
-    removed = totals["top_level_items_removed"] + totals["section_items_removed"]
-    result.setdefault("report_quality_guards", {})["presentation_list_normalization"] = {
+    guards = result.setdefault("report_quality_guards", {})
+    previous = guards.get("presentation_list_normalization")
+    previous = previous if isinstance(previous, dict) else {}
+    cumulative = {
+        "top_level_items_removed": _count(previous.get("top_level_items_removed")) + totals["top_level_items_removed"],
+        "section_items_removed": _count(previous.get("section_items_removed")) + totals["section_items_removed"],
+    }
+    removed = cumulative["top_level_items_removed"] + cumulative["section_items_removed"]
+    guards["presentation_list_normalization"] = {
         "status": "normalized" if removed else "no_duplicates_found",
         "duplicates_removed": removed,
-        **totals,
+        "passes": _count(previous.get("passes")) + 1,
+        **cumulative,
+        "last_pass_duplicates_removed": totals["top_level_items_removed"] + totals["section_items_removed"],
         "scope": "Client-visible top-level and section presentation lists only.",
         "guardrail": "Semantically distinct limitations are preserved; raw evidence artifacts, scores, trust, approval, and delivery state are unchanged.",
     }
