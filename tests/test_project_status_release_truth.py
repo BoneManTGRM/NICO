@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "b8aaba855a68fd33fae0260db23b81ff01b062c6"
+LATEST_DEPLOYED_MAIN = "46651c337fd84025af07f8ea017a2fd8c64057ab"
 
 
 def _release_truth() -> str:
@@ -17,11 +17,14 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Combine deployed browser and API production proof (#432)" in release_truth
+    assert "Fix interrupted Express assessments with exact-run polling (#436)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "collision-resistant Express run/report identity and exact-run persistence repair from PR #430" in release_truth
-    assert "protected browser-driven Express/Mid/Full production-proof workflow from PR #432" in release_truth
-    assert "without duplicate API starts" in release_truth
+    assert "one quick authorized lifecycle start" in release_truth
+    assert "tenant-bound `express_run_*` identity" in release_truth
+    assert "short same-origin status polling" in release_truth
+    assert "duplicate-active-start prevention" in release_truth
+    assert "authenticated Recovery visibility" in release_truth
+    assert "without issuing duplicate starts" in release_truth
     assert "human review" in release_truth
     assert "`client_ready: false`" in release_truth
 
