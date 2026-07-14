@@ -8,19 +8,20 @@ ROUTE = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
-def test_bridge_rewrites_only_configured_canonical_assessment_requests() -> None:
+def test_bridge_intercepts_only_configured_canonical_assessment_requests() -> None:
     source = BRIDGE.read_text(encoding="utf-8")
 
     assert 'process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'requested.origin !== configured.origin' in source
     assert 'ASSESSMENT_PATH.test(apiPath)' in source
-    assert 'new URL(`/api/nico${apiPath}${requested.search}`, window.location.origin)' in source
+    assert 'const response = await originalFetch(input, init)' in source
+    assert '/api/nico' not in source
     assert 'return originalFetch(input, init)' in source
     assert 'window.fetch = bridgedFetch' in source
     assert 'if (window.fetch === bridgedFetch) window.fetch = originalFetch' in source
 
 
-def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress() -> None:
+def test_bridge_retains_bounded_page_scoped_failure_identity_and_transport_state() -> None:
     source = BRIDGE.read_text(encoding="utf-8")
 
     assert 'ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed"' in source
@@ -28,31 +29,36 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert 'value.slice(0, 16)' in source
     assert 'boundedText(record.message, 240)' in source
     assert 'run_id: boundedText(detail.run_id || payload.run_id, 120)' in source
-    assert 'window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT' in source
+    assert 'assessment_transport_interrupted' in source
+    assert 'The request was not marked successful.' in source
+    assert 'publishTransportFailure(apiPath)' in source
     assert 'sessionStorage' not in source
     assert 'localStorage' not in source
     request_start = source.index('      clearFailure();')
-    upstream_fetch = source.index('      const response = input instanceof Request')
+    upstream_fetch = source.index('        const response = await originalFetch(input, init)')
     assert request_start < upstream_fetch
     assert 'evidence:' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
 
-def test_server_proxy_is_fixed_origin_bounded_and_fail_closed() -> None:
+def test_server_transport_redirects_legacy_canonical_routes_without_holding_execution_open() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL || process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'ALLOWED_ASSESSMENT_PATH.test(apiPath)' in source
     assert 'assessment_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
-    assert 'assessment_backend_unreachable' in source
+    assert 'assessment_backend_loop' in source
     assert 'url.username || url.password' in source
     assert 'process.env.NODE_ENV === "production" && url.protocol !== "https:"' in source
-    assert 'request.headers.get("content-type")' in source
+    assert 'status: 307' in source
+    assert 'Location: upstream.toString()' in source
+    assert 'Cache-Control": "no-store"' in source
+    assert 'AbortSignal.timeout' not in source
+    assert 'await fetch(upstream' not in source
+    assert 'request.arrayBuffer()' not in source
     assert 'request.headers.get("authorization")' not in source
     assert 'request.headers.get("cookie")' not in source
-    assert 'Cache-Control": "no-store"' in source
-    assert 'AbortSignal.timeout(285_000)' in source
 
 
 def test_failure_panel_displays_only_current_page_failure_without_hydration() -> None:
