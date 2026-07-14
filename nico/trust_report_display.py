@@ -87,19 +87,6 @@ def _scanner_status(result: dict[str, Any]) -> str:
     return str(scanner.get("status") or "unknown")
 
 
-def _approval_gate_only(result: dict[str, Any]) -> bool:
-    """Return true when technical proof is complete and only human approval remains."""
-
-    return bool(
-        _export_review_required(result)
-        and not _export_blocked(result)
-        and not _missing_coverage(result)
-        and not _critical_not_green(result)
-        and not _trust_violations(result)
-        and _scanner_status(result) == "attached"
-    )
-
-
 def _why_not_higher(result: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     missing = _missing_coverage(result)
@@ -179,10 +166,20 @@ def _client_delivery_status(trust_level: str) -> str:
     return "Draft only — not client-ready"
 
 
+def _workflow_state(trust_level: str) -> str:
+    if trust_level == "Verified":
+        return "verified_evidence"
+    if trust_level == "Review-limited":
+        return "review_required"
+    if trust_level == "Evidence-bound":
+        return "evidence_incomplete"
+    return "draft_only"
+
+
 def _summary_text(display: dict[str, Any]) -> str:
-    if display.get("approval_gate_only"):
+    if display["trust_level"] == "Review-limited":
         return (
-            f"Approval Gate: Pending authorized human decision. Technical Score: {display.get('score', 'unknown')}/100. "
+            f"Review State: Human review required. Technical Score: {display.get('score', 'unknown')}/100. "
             f"Trust Level: {display['trust_level']}. Client Delivery: {display['client_delivery_status']}."
         )
     return (
@@ -193,9 +190,7 @@ def _summary_text(display: dict[str, Any]) -> str:
 
 
 def _export_summary(display: dict[str, Any]) -> str:
-    lines = [
-        _summary_text(display),
-    ]
+    lines = [_summary_text(display)]
     if display["why_not_higher"]:
         lines.append("Why not higher: " + " ".join(display["why_not_higher"][:3]))
     if display["path_to_verified"]:
@@ -218,7 +213,7 @@ def _canonical_assessment_summary(result: dict[str, Any]) -> str:
 
 def _remove_leading_trust_summary(existing: str) -> str:
     paragraphs = [part.strip() for part in str(existing or "").split("\n\n")]
-    while paragraphs and paragraphs[0].startswith(("Trust Level:", "Approval Gate:", "Why not higher:", "Path to verified:")):
+    while paragraphs and paragraphs[0].startswith(("Trust Level:", "Review State:", "Why not higher:", "Path to verified:")):
         paragraphs.pop(0)
     return "\n\n".join(part for part in paragraphs if part).strip()
 
@@ -235,12 +230,12 @@ def _summary_body(result: dict[str, Any], existing: str) -> str:
     return _canonical_assessment_summary(result) + "\n\n" + body
 
 
-def _trust_section_status(trust_level: str, *, approval_gate_only: bool = False) -> str:
+def _trust_section_status(trust_level: str) -> str:
     if trust_level == "Verified":
         return "green"
-    if approval_gate_only:
+    if trust_level == "Review-limited":
         return "pending"
-    if trust_level in {"Evidence-bound", "Review-limited"}:
+    if trust_level == "Evidence-bound":
         return "yellow"
     return "red"
 
@@ -255,9 +250,9 @@ def _display_score(display: dict[str, Any]) -> int:
 def _trust_unavailable(display: dict[str, Any]) -> list[str]:
     if display["trust_level"] == "Verified":
         return []
-    if display.get("approval_gate_only"):
+    if display["trust_level"] == "Review-limited":
         return [
-            "Authorized human approval has not been recorded. This is an intentional delivery gate, not a technical-score penalty."
+            "Client delivery remains blocked until the listed evidence or export findings are reviewed and resolved or formally accepted by an authorized human reviewer."
         ]
     return ["Verified client-clean status requires all critical evidence to remain attached and clean."]
 
@@ -276,24 +271,22 @@ def _attach_display_section(result: dict[str, Any], display: dict[str, Any]) -> 
         f"Export Truth Gate: {display['export_truth_gate_status']}",
         "Display score mirrors the final maturity score; this supplemental row has scoring_weight=0 and does not change the maturity average.",
     ]
-    if display.get("approval_gate_only"):
+    if display["trust_level"] == "Review-limited":
         evidence.append(
-            "Badge state is PENDING because an authorized human decision is required; the yellow tone represents delivery workflow state, not a lower technical score."
+            "Badge state is PENDING because report review is required. The workflow label does not change the technical score; the Findings list states the actual evidence or export reason."
         )
     sections.insert(
         0,
         {
             "id": "trust_readiness",
             "label": "Trust & Client Readiness",
-            "status": _trust_section_status(
-                display["trust_level"],
-                approval_gate_only=bool(display.get("approval_gate_only")),
-            ),
+            "status": _trust_section_status(display["trust_level"]),
             "score": _display_score(display),
             "scoring_weight": 0,
             "supplemental": True,
             "score_basis": "final_maturity_signal_display_only",
-            "workflow_state": "pending_human_approval" if display.get("approval_gate_only") else "evidence_review",
+            "status_semantics": "review_workflow_state",
+            "workflow_state": display["workflow_state"],
             "summary": _summary_text(display),
             "evidence": evidence,
             "findings": display["why_not_higher"] or ["No trust display blockers found."],
@@ -315,7 +308,6 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("status") != "complete":
         return result
     trust_level = _computed_trust_level(result)
-    approval_gate_only = _approval_gate_only(result)
     ledger = result.get("evidence_ledger") if isinstance(result.get("evidence_ledger"), dict) else {}
     export_gate = result.get("export_truth_gate") if isinstance(result.get("export_truth_gate"), dict) else {}
     display = {
@@ -328,8 +320,8 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
         "evidence_ledger_status": str(ledger.get("status") or "missing"),
         "scanner_artifact_status": _scanner_status(result),
         "export_truth_gate_status": str(export_gate.get("status") or "pending"),
-        "approval_gate_only": approval_gate_only,
-        "workflow_state": "pending_human_approval" if approval_gate_only else "evidence_review",
+        "workflow_state": _workflow_state(trust_level),
+        "status_semantics": "review_workflow_state",
     }
     result["trust_level"] = trust_level
     result["client_delivery_status"] = display["client_delivery_status"]
@@ -338,11 +330,12 @@ def attach_trust_report_display(result: dict[str, Any]) -> dict[str, Any]:
         "status": "attached",
         "trust_level": trust_level,
         "client_delivery_status": display["client_delivery_status"],
-        "approval_gate_only": approval_gate_only,
         "workflow_state": display["workflow_state"],
+        "status_semantics": display["status_semantics"],
         "score_changed": False,
         "human_review_changed": False,
         "delivery_authority_changed": False,
+        "guardrail": "PENDING is a review workflow label. Findings remain authoritative for the underlying evidence or export reason.",
     }
     _attach_display_section(result, display)
     _attach_export_summary(result, display)
