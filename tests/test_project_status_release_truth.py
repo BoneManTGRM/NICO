@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "cbaa988b638f90f16663ff3b58423fa6f3bd855c"
+LATEST_DEPLOYED_MAIN = "22c68f83fdaaf666f2a3056f5ed0f81192b35c61"
 
 
 def _release_truth() -> str:
@@ -17,8 +17,9 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Render unloaded operator evidence neutrally (#425)" in release_truth
+    assert "Record PR 425 deployment verification (#426)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
+    assert "deployment of the release-truth update through PR #426" in release_truth
     assert "direct Railway transport for long synchronous Express requests from PR #423" in release_truth
     assert "single unified assessment intake and retired duplicate Start Job wizard from PR #424" in release_truth
     assert "neutral unauthenticated Operations/Recovery presentation from PR #425" in release_truth
