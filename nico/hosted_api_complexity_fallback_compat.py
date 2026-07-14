@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Callable
 
 import nico.hosted_assessment as hosted
 from nico.hosted_api_complexity_fallback import (
@@ -17,24 +17,59 @@ _EXPRESS_PROFILE_ENABLED: ContextVar[bool] = ContextVar(
 )
 
 
+def _bind_runtime(
+    profile_dispatcher: Callable[[Any, str, dict[str, Any]], dict[str, Any]],
+    assessment_runner: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    """Restore the dispatcher if a later compatibility installer rebinds collectors."""
+
+    hosted.fetch_repository_profile = profile_dispatcher
+    hosted.run_github_assessment = assessment_runner
+    try:
+        from nico.api import main as api_main
+
+        api_main.run_github_assessment = assessment_runner
+    except Exception:
+        pass
+
+
 def install_hosted_api_complexity_fallback() -> dict[str, Any]:
     """Install a context-scoped Express profile dispatcher.
 
     Outside an Express invocation the dispatcher delegates directly to the original
     repository-profile collector, preserving Full/Mid and test-client contracts.
+    Repeated installation also repairs the runtime binding if another compatibility
+    installer restored the shared collector after this dispatcher was installed.
     """
 
     installed = bool(getattr(hosted, "_nico_api_complexity_fallback_compat_installed", False))
-    if installed:
+    existing_dispatcher = getattr(hosted, "_nico_api_complexity_profile_dispatcher", None)
+    existing_runner = getattr(hosted, "_nico_api_complexity_assessment_runner", None)
+    if installed and callable(existing_dispatcher) and callable(existing_runner):
+        binding_repaired = bool(
+            hosted.fetch_repository_profile is not existing_dispatcher
+            or hosted.run_github_assessment is not existing_runner
+        )
+        _bind_runtime(existing_dispatcher, existing_runner)
         return {
             "status": "already_installed",
             "version": "nico-hosted-api-complexity-fallback-v3",
             "shared_profile_override": False,
+            "context_scoped_express_profile": True,
             "concurrent_express_requests_supported": True,
+            "runtime_binding_repaired": binding_repaired,
         }
 
-    original_run = hosted.run_github_assessment
-    original_profile_fetcher = hosted.fetch_repository_profile
+    original_run = getattr(
+        hosted,
+        "_nico_original_run_github_assessment_api_complexity",
+        hosted.run_github_assessment,
+    )
+    original_profile_fetcher = getattr(
+        hosted,
+        "_nico_original_fetch_repository_profile_api_complexity",
+        hosted.fetch_repository_profile,
+    )
     hosted._nico_original_run_github_assessment_api_complexity = original_run
     hosted._nico_original_fetch_repository_profile_api_complexity = original_profile_fetcher
 
@@ -53,14 +88,9 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
             _EXPRESS_PROFILE_ENABLED.reset(enabled_token)
             _CAPTURED_PROFILE.reset(capture_token)
 
-    hosted.fetch_repository_profile = profile_dispatcher
-    hosted.run_github_assessment = run_github_assessment_with_api_complexity
-    try:
-        from nico.api import main as api_main
-
-        api_main.run_github_assessment = run_github_assessment_with_api_complexity
-    except Exception:
-        pass
+    hosted._nico_api_complexity_profile_dispatcher = profile_dispatcher
+    hosted._nico_api_complexity_assessment_runner = run_github_assessment_with_api_complexity
+    _bind_runtime(profile_dispatcher, run_github_assessment_with_api_complexity)
     hosted._nico_api_complexity_fallback_compat_installed = True
     return {
         "status": "installed",
@@ -68,6 +98,7 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
         "shared_profile_override": False,
         "context_scoped_express_profile": True,
         "concurrent_express_requests_supported": True,
+        "runtime_binding_repaired": False,
         "truth_boundary": "The dispatcher uses the balanced collector only inside the active Express context; Full/Mid and other callers retain the original profile behavior.",
     }
 
