@@ -20,17 +20,20 @@ def test_bridge_rewrites_only_configured_canonical_assessment_requests() -> None
     assert 'if (window.fetch === bridgedFetch) window.fetch = originalFetch' in source
 
 
-def test_bridge_retains_only_bounded_failure_identity_and_progress() -> None:
+def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress() -> None:
     source = BRIDGE.read_text(encoding="utf-8")
 
     assert 'ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed"' in source
-    assert 'ASSESSMENT_FAILURE_STORAGE_KEY = "nico.assessment.last_failure"' in source
     assert 'response.clone()' in source
     assert 'value.slice(0, 16)' in source
     assert 'boundedText(record.message, 240)' in source
     assert 'run_id: boundedText(detail.run_id || payload.run_id, 120)' in source
-    assert 'window.sessionStorage.setItem' in source
     assert 'window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT' in source
+    assert 'sessionStorage' not in source
+    assert 'localStorage' not in source
+    request_start = source.index('      clearFailure();')
+    upstream_fetch = source.index('      const response = input instanceof Request')
+    assert request_start < upstream_fetch
     assert 'evidence:' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
@@ -52,7 +55,7 @@ def test_server_proxy_is_fixed_origin_bounded_and_fail_closed() -> None:
     assert 'AbortSignal.timeout(285_000)' in source
 
 
-def test_failure_panel_displays_exact_run_identity_without_claiming_success() -> None:
+def test_failure_panel_displays_only_current_page_failure_without_hydration() -> None:
     source = FAILURE_PANEL.read_text(encoding="utf-8")
 
     assert 'ASSESSMENT FAILURE EVIDENCE' in source
@@ -61,7 +64,10 @@ def test_failure_panel_displays_exact_run_identity_without_claiming_success() ->
     assert 'failure.route' in source
     assert 'failure.progress.map' in source
     assert 'href="/operations/recovery"' in source
+    assert 'for the current open page' in source
     assert 'does not convert the failed or unavailable stage into a passing result' in source
+    assert 'sessionStorage' not in source
+    assert 'localStorage' not in source
     assert 'dangerouslySetInnerHTML' not in source
 
 
