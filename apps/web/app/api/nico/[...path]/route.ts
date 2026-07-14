@@ -2,7 +2,6 @@ import type {NextRequest} from "next/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
 
@@ -20,7 +19,7 @@ function configuredBackend(): URL | null {
   try {
     const url = new URL(configured.endsWith("/") ? configured : `${configured}/`);
     if (url.username || url.password) return null;
-    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (!["http:", "https:"].includes(url.protocol)) return null;
     if (process.env.NODE_ENV === "production" && url.protocol !== "https:") return null;
     return url;
   } catch {
@@ -28,53 +27,37 @@ function configuredBackend(): URL | null {
   }
 }
 
-async function proxyAssessment(
+async function redirectAssessment(
   request: NextRequest,
   context: {params: Promise<{path: string[]}>},
 ) {
   const segments = (await context.params).path || [];
   if (!segments.length || segments.some((segment) => !segment || segment === "." || segment === "..")) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "The requested assessment route is not available through this proxy.");
+    return jsonError(404, "assessment_proxy_route_not_allowed", "The requested assessment route is not available through this transport.");
   }
 
   const apiPath = `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
   if (!ALLOWED_ASSESSMENT_PATH.test(apiPath)) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Express, Mid, and Full assessment routes are available through this proxy.");
+    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Express, Mid, and Full assessment routes are available through this transport.");
   }
 
   const backend = configuredBackend();
   if (!backend) {
     return jsonError(503, "assessment_backend_not_configured", "The assessment backend URL is unavailable or unsafe for this deployment.");
   }
+  if (backend.origin === request.nextUrl.origin) {
+    return jsonError(503, "assessment_backend_loop", "The assessment backend URL resolves to the frontend origin and cannot be used.");
+  }
 
   const upstream = new URL(`${apiPath}${request.nextUrl.search}`, backend);
-  const headers = new Headers({Accept: "application/json"});
-  const contentType = request.headers.get("content-type");
-  if (contentType) headers.set("Content-Type", contentType);
-
-  try {
-    const response = await fetch(upstream, {
-      method: request.method,
-      headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
-      cache: "no-store",
-      redirect: "manual",
-      signal: AbortSignal.timeout(285_000),
-    });
-
-    const responseHeaders = new Headers({"Cache-Control": "no-store"});
-    const responseContentType = response.headers.get("content-type");
-    if (responseContentType) responseHeaders.set("Content-Type", responseContentType);
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-    });
-  } catch {
-    return jsonError(502, "assessment_backend_unreachable", "The assessment backend could not be reached from the frontend deployment.");
-  }
+  return new Response(null, {
+    status: 307,
+    headers: {
+      "Cache-Control": "no-store",
+      Location: upstream.toString(),
+    },
+  });
 }
 
-export const GET = proxyAssessment;
-export const POST = proxyAssessment;
+export const GET = redirectAssessment;
+export const POST = redirectAssessment;
