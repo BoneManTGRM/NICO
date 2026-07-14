@@ -67,7 +67,37 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
         assert href not in advanced
 
     assert 'label: "Command Center"' not in source
-    assert '<a className="global-brand" href="/assessment?tier=express#assessment" aria-label="NICO home">NICO</a>' in source
+    assert 'className="global-brand" href="/assessment?tier=express#assessment"' in source
+
+
+def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
+    source = NAVIGATION.read_text(encoding="utf-8")
+
+    assert 'const spanishActive = pathname.startsWith("/es-mx")' in source
+    assert 'SPANISH_PRIMARY_LABELS' in source
+    assert '"run-job": "Ejecutar evaluación"' in source
+    assert 'operations: "Operaciones"' in source
+    assert 'const SPANISH_ADVANCED_GROUPS' in source
+    for translated in (
+        "Herramientas avanzadas",
+        "Diagnóstico y utilidades para operadores",
+        "Operaciones y diagnóstico",
+        "Recuperación",
+        "Respaldo y restauración",
+        "Escáner a Express",
+        "Actualizar evidencia",
+        "Utilidades",
+        "Modo fácil",
+        "Iniciar trabajo",
+        "Guía",
+    ):
+        assert translated in source
+
+    assert 'spanishActive ? "Más" : "More"' in source
+    assert 'spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"' in source
+    assert 'spanishActive ? "Abrir herramientas avanzadas de NICO" : "Open advanced NICO tools"' in source
+    assert 'const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS' in source
+    assert 'lang={spanishActive ? "es-MX" : undefined}' in source
 
 
 def test_run_a_job_uses_one_query_selected_intake() -> None:
