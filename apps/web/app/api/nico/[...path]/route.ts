@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
+const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/status)?$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -20,7 +20,7 @@ function configuredBackend(): URL | null {
   try {
     const url = new URL(configured.endsWith("/") ? configured : `${configured}/`);
     if (url.username || url.password) return null;
-    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (!["http:", "https:"].includes(url.protocol)) return null;
     if (process.env.NODE_ENV === "production" && url.protocol !== "https:") return null;
     return url;
   } catch {
@@ -39,7 +39,7 @@ async function proxyAssessment(
 
   const apiPath = `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
   if (!ALLOWED_ASSESSMENT_PATH.test(apiPath)) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Mid and Full lifecycle routes are available through this proxy.");
+    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Express, Mid, and Full lifecycle routes are available through this proxy.");
   }
 
   const backend = configuredBackend();
@@ -59,7 +59,7 @@ async function proxyAssessment(
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(285_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     const responseHeaders = new Headers({"Cache-Control": "no-store"});
