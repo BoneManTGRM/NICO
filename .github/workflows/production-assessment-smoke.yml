@@ -74,7 +74,7 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          python scripts/production_assessment_browser_smoke.py \
+          python scripts/production_assessment_browser_smoke_v2.py \
             --preflight-only \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --backend-url "${NICO_PRODUCTION_BACKEND_URL}" \
@@ -107,7 +107,7 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          python scripts/production_assessment_browser_smoke.py \
+          python scripts/production_assessment_browser_smoke_v2.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --backend-url "${NICO_PRODUCTION_BACKEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
@@ -169,7 +169,12 @@ jobs:
           assert artifact["proof"]["browser_generated_the_only_api_starts"] is True
           assert browser["status"] == "passed"
           assert browser["playwright_version"] == "1.61.0"
+          assert browser["lifecycle_version"] == "express_async_v1"
+          assert browser["proof"]["exact_run_continuation"] is True
+          assert browser["proof"]["same_origin_lifecycle_transport"] is True
+          assert browser["proof"]["no_long_express_browser_connection"] is True
           assert len(browser["tiers"]) == 3
           assert all(item["start_count"] == 1 for item in browser["tiers"])
+          assert all(item["polled_single_exact_status_url"] is True for item in browser["tiers"])
           assert all(Path(item["screenshot_path"]).is_file() for item in browser["tiers"])
           PY
