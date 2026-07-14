@@ -10,6 +10,7 @@ import requests
 
 import nico.hosted_assessment as hosted
 import nico.snapshot_repository_evidence as snapshot_evidence
+from nico.assessment_block_messages import install_assessment_block_messages
 
 
 def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -248,6 +249,7 @@ def _rebind_collectors() -> None:
 def install_assessment_network_budget() -> dict[str, Any]:
     """Install one bounded network policy for hosted Express and Mid collection."""
 
+    block_messages = install_assessment_block_messages()
     client_cls = hosted.GitHubAssessmentClient
     already_installed = bool(getattr(client_cls, "_nico_budget_installed", False))
     if not already_installed:
@@ -264,7 +266,11 @@ def install_assessment_network_budget() -> dict[str, Any]:
         client_cls._nico_budget_installed = True
 
     _rebind_collectors()
-    return {"status": "already_installed" if already_installed else "installed", **collection_policy()}
+    return {
+        "status": "already_installed" if already_installed else "installed",
+        "block_messages": block_messages,
+        **collection_policy(),
+    }
 
 
 def collection_policy() -> dict[str, Any]:
