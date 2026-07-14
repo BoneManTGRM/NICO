@@ -25,14 +25,17 @@ def test_report_guard_replaces_only_empty_score_denominators_with_not_scored():
     assert r"(?:\s*·\s*)?" not in source
 
 
-def test_report_guard_deduplicates_across_paragraphs_and_lists_and_collapses_mobile_cards():
+def test_report_guard_preserves_semantic_findings_and_collapses_mobile_cards():
     source = GUARD.read_text(encoding="utf-8")
 
     assert "removeDuplicateDetail" in source
-    assert "seenDetail" in source
-    assert 'querySelectorAll<HTMLElement>("p, li")' in source
-    assert "seenItems" not in source
-    assert "seenParagraphs" not in source
+    assert "seenParagraphs" in source
+    assert "seenItems" in source
+    assert 'querySelectorAll<HTMLParagraphElement>("p")' in source
+    assert 'querySelectorAll<HTMLElement>("details, ul, ol")' in source
+    assert 'querySelectorAll<HTMLLIElement>("li")' in source
+    assert 'querySelectorAll<HTMLElement>("p, li")' not in source
+    assert "a finding identical to the card summary is not removed" in source
     assert 'matchMedia("(max-width: 900px)")' in source
     assert 'removeAttribute("open")' in source
     assert "MutationObserver" in source
