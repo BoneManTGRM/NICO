@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = REPO_ROOT / "docs" / "PROJECT_STATUS.md"
-LATEST_DEPLOYED_MAIN = "cbaa988b638f90f16663ff3b58423fa6f3bd855c"
+LATEST_DEPLOYED_MAIN = "c9dab99a47d6d4b0dc924b695ef8d0880277950c"
 
 
 def _release_truth() -> str:
@@ -17,12 +17,16 @@ def test_release_truth_records_latest_verified_main_deployment() -> None:
     release_truth = _release_truth()
 
     assert LATEST_DEPLOYED_MAIN in release_truth
-    assert "Render unloaded operator evidence neutrally (#425)" in release_truth
+    assert "Restore exact Express run and report identity (#430)" in release_truth
     assert "Vercel and Railway deployment checks passed" in release_truth
-    assert "direct Railway transport for long synchronous Express requests from PR #423" in release_truth
-    assert "single unified assessment intake and retired duplicate Start Job wizard from PR #424" in release_truth
-    assert "neutral unauthenticated Operations/Recovery presentation from PR #425" in release_truth
-    assert "Loaded unavailable or failed evidence remains fail-closed and red" in release_truth
+    assert "bounded long-running Express smoke timeout from PR #428" in release_truth
+    assert "collision-resistant Express run identity" in release_truth
+    assert "deterministic report identity" in release_truth
+    assert "exact-run final-review target" in release_truth
+    assert "final returned-payload persistence contract from PR #430" in release_truth
+    assert "Explicit existing identities remain authoritative" in release_truth
+    assert "request-local payload state is consumed once" in release_truth
+    assert "human review and non-client-ready boundaries remain unchanged" in release_truth
 
 
 def test_release_truth_does_not_overclaim_production_assessment_proof() -> None:
