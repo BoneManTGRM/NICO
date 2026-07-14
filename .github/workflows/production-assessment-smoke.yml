@@ -67,7 +67,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run exactly one guarded assessment per tier
+      - name: Verify deployment and health before browser starts
+        env:
+          EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit_sha }}
+          AUTHORIZATION_REFERENCE: ${{ inputs.authorization_reference }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          python scripts/production_assessment_browser_smoke.py \
+            --preflight-only \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --backend-url "${NICO_PRODUCTION_BACKEND_URL}" \
+            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --allowlisted-repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --allowed-hosts "${NICO_PRODUCTION_SMOKE_ALLOWED_HOSTS}" \
+            --authorization-reference "${AUTHORIZATION_REFERENCE}" \
+            --confirmation "${CONFIRMATION}" \
+            --commit-sha "${EXPECTED_COMMIT_SHA}" \
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --customer-id "production_smoke_${GITHUB_RUN_ID}" \
+            --project-id "production_smoke_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
+            --frontend-status-context "Vercel" \
+            --backend-status-context "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}" \
+            --request-timeout-seconds "60" \
+            --express-timeout-seconds "900"
+
+      - name: Install pinned Playwright Chromium
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
+          python -m playwright install --with-deps chromium
+
+      - name: Run exactly one deployed browser start per tier
         id: smoke
         continue-on-error: true
         env:
@@ -76,7 +107,7 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          python scripts/production_assessment_smoke.py \
+          python scripts/production_assessment_browser_smoke.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --backend-url "${NICO_PRODUCTION_BACKEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
@@ -93,7 +124,10 @@ jobs:
             --request-timeout-seconds "60" \
             --express-timeout-seconds "900" \
             --output-json audit-results/production-assessment-smoke.json \
-            --output-markdown audit-results/production-assessment-smoke.md
+            --output-markdown audit-results/production-assessment-smoke.md \
+            --browser-evidence-json audit-results/production-assessment-browser-evidence.json \
+            --preflight-output audit-results/production-assessment-preflight.json \
+            --screenshot-dir audit-results/production-assessment-browser
 
       - name: Upload bounded production proof
         if: always()
@@ -101,12 +135,15 @@ jobs:
         with:
           name: authorized-production-assessment-smoke-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            audit-results/production-assessment-preflight.json
+            audit-results/production-assessment-browser-evidence.json
             audit-results/production-assessment-smoke.json
             audit-results/production-assessment-smoke.md
+            audit-results/production-assessment-browser/
           if-no-files-found: error
           retention-days: 90
 
-      - name: Require passing proof artifact
+      - name: Require passing combined browser and API proof
         if: always()
         run: |
           set -euo pipefail
@@ -116,12 +153,23 @@ jobs:
           from pathlib import Path
 
           artifact = json.loads(Path("audit-results/production-assessment-smoke.json").read_text(encoding="utf-8"))
+          browser = json.loads(Path("audit-results/production-assessment-browser-evidence.json").read_text(encoding="utf-8"))
           assert artifact["status"] == "passed"
-          assert artifact["evidence_kind"] == "authorized_live_production_smoke"
+          assert artifact["evidence_kind"] == "authorized_live_production_browser_api_smoke"
           assert artifact["live_claim"] is True
           assert artifact["authorization_confirmed"] is True
           assert artifact["proof"]["one_start_per_tier"] is True
           assert artifact["proof"]["exact_run_continuation"] is True
           assert artifact["proof"]["human_review_boundary_preserved"] is True
           assert artifact["proof"]["no_client_ready_claim"] is True
+          assert artifact["proof"]["matching_browser_evidence"] is True
+          assert artifact["proof"]["screenshots_retained"] is True
+          assert artifact["proof"]["same_isolated_browser_tenant"] is True
+          assert artifact["proof"]["no_unexpected_assessment_origins"] is True
+          assert artifact["proof"]["browser_generated_the_only_api_starts"] is True
+          assert browser["status"] == "passed"
+          assert browser["playwright_version"] == "1.61.0"
+          assert len(browser["tiers"]) == 3
+          assert all(item["start_count"] == 1 for item in browser["tiers"])
+          assert all(Path(item["screenshot_path"]).is_file() for item in browser["tiers"])
           PY

@@ -1,6 +1,6 @@
 # Authorized Production Assessment Smoke
 
-This workflow is a controlled production proof mechanism. It is not a general-purpose assessment launcher and does not mark the production-proof roadmap item complete until a passing artifact and the required browser evidence are retained and reviewed.
+This workflow is a controlled production proof mechanism. It is not a general-purpose assessment launcher and does not mark the production-proof roadmap item complete until a passing combined artifact is retained and reviewed.
 
 ## Required GitHub environment
 
@@ -16,7 +16,7 @@ Repository or environment variables:
 
 Environment secret:
 
-- `NICO_PRODUCTION_SMOKE_ADMIN_TOKEN`: the production admin token. Never place this value in a workflow input, repository variable, issue, pull request, artifact, log, or chat.
+- `NICO_PRODUCTION_SMOKE_ADMIN_TOKEN`: the production admin token. Never place this value in a workflow input, repository variable, issue, pull request, artifact, log, browser form, screenshot, or chat.
 
 ## Operator gate
 
@@ -26,22 +26,35 @@ The workflow fails closed when the selected ref or exact commit differs, authori
 
 ## Execution boundary
 
-The runner:
+The runner first verifies the exact frontend/backend deployment statuses, the deployed assessment page, and backend health. No assessment starts when preflight fails.
 
-- verifies the exact commit has successful frontend and backend deployment statuses;
-- verifies the deployed assessment page and backend health endpoint;
-- sends exactly one start request for Express, Mid, and Full;
-- permits the synchronous Express start request up to 900 seconds while keeping deployment, health, Mid, Full, and continuation requests bounded to 60 seconds each;
-- limits the complete workflow to 60 minutes;
-- polls only the exact Mid and Full run status URL returned by that tier;
-- retains run, report, review-request, terminal-state, request-timeout, and unavailable-evidence summaries;
-- requires explicit human-review and non-client-ready boundaries;
-- writes bounded JSON and Markdown artifacts retained for 90 days.
+After preflight, pinned Playwright Python `1.61.0` opens the real deployed assessment page and performs the normal authorized UI flow for Express, Mid, and Full. The browser UI creates the only start request for each tier. The evidence finalizer does not issue separate API starts and never retries a start.
 
-The separate Express allowance exists because production Express execution can legitimately exceed the shorter request boundary. It does not add retries, issue a duplicate start, or convert a timed-out or unavailable response into success.
+For each tier, the runner:
 
-It does not approve reports, create delivery access, redeem delivery links, apply repairs, open pull requests, modify production code, or claim that all defects are absent. It deliberately does not issue a second start request as a destructive duplicate probe. Duplicate-start protection and the visible browser state must be retained separately without creating an unintended second assessment.
+- opens the exact deployed `/assessment?tier=<tier>#assessment` route;
+- fills the allowlisted repository and one isolated production-smoke client/project scope;
+- selects the explicit authorization checkbox;
+- clicks the tier Run button exactly once;
+- captures the corresponding backend start response and all Mid/Full continuation responses;
+- verifies Mid and Full poll only the status URL containing the exact returned run ID;
+- compares the visible browser run ID with the final network response identity;
+- verifies report identity, review-request identity where required, human-review status, and `client_ready: false`;
+- rejects unexpected assessment API origins, duplicate starts, changed run identities, failed/unavailable terminal evidence, missing screenshots, or missing identities;
+- retains one full-page screenshot and its SHA-256 for each tier.
 
-## Roadmap interpretation
+The synchronous Express browser flow is allowed up to 900 seconds. General deployment and health requests remain bounded to 60 seconds, while Mid and Full remain bounded by the deployed UI&apos;s exact-run continuation ceiling. The complete protected job remains limited to 60 minutes.
 
-A passing workflow artifact is API and deployment evidence only. The roadmap remains incomplete until the matching production browser proof is retained, exact deployment identity is reconciled, and the combined evidence package is reviewed. Missing, blocked, failed, or timed-out evidence must remain explicit and cannot be converted into a passing claim.
+The retained artifact package includes:
+
+- deployment and health preflight JSON;
+- bounded browser/network evidence JSON;
+- the canonical combined JSON and Markdown proof;
+- Express, Mid, and Full screenshots;
+- no full response bodies, credentials, database URLs, provider secrets, approval authority, or delivery authority.
+
+## Safety and truth boundaries
+
+The workflow does not approve reports, create delivery access, redeem delivery links, apply repairs, open pull requests, modify production code, or claim that all defects are absent. It deliberately does not issue a second start request as a destructive duplicate probe. A timed-out, blocked, missing, changed-identity, unexpected-origin, or unavailable result remains failed evidence.
+
+A passing combined artifact proves only the bounded behavior recorded for the exact deployed commit and authorized repository. Human review of the retained package remains required before the final roadmap item can be marked complete.
