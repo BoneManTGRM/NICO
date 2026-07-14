@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from hmac import compare_digest
 from importlib import import_module
 from threading import Lock
 from typing import Any
@@ -18,9 +19,12 @@ EXPRESS_ASYNC_ROUTES = {
     ("POST", "/assessment/express-run"),
     ("POST", "/assessment/express-run/{run_id}/status"),
 }
+MAX_ACTIVE_EXPRESS_RUNS = 2
 _TERMINAL_FAILURES = {"blocked", "failed", "error", "interrupted", "rejected"}
-_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="nico-express")
+_TERMINAL_SUCCESS = {"complete", "completed"}
+_EXECUTOR = ThreadPoolExecutor(max_workers=MAX_ACTIVE_EXPRESS_RUNS, thread_name_prefix="nico-express")
 _ACTIVE_RUNS: set[str] = set()
+_ACTIVE_SCOPE_RUNS: dict[tuple[str, str, str], str] = {}
 _ACTIVE_LOCK = Lock()
 
 
@@ -88,6 +92,14 @@ def _safe_request(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scope_key(payload: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(payload.get("repository") or ""),
+        str(payload.get("customer_id") or "default_customer"),
+        str(payload.get("project_id") or "default_project"),
+    )
+
+
 def _response(
     run_id: str,
     payload: dict[str, Any],
@@ -143,6 +155,11 @@ def _record(run_id: str, request_payload: dict[str, Any], response: dict[str, An
     return STORE.put("assessment_runs", run_id, record)
 
 
+def _record_response(record: dict[str, Any]) -> dict[str, Any]:
+    value = record.get("response") if isinstance(record.get("response"), dict) else record.get("payload")
+    return deepcopy(value) if isinstance(value, dict) else {}
+
+
 def _blocked_detail(result: dict[str, Any], run_id: str) -> dict[str, Any]:
     api_main = import_module("nico.api.main")
     exc = api_main.safe_blocked_exception(result)
@@ -163,6 +180,14 @@ def _blocked_detail(result: dict[str, Any], run_id: str) -> dict[str, Any]:
         "human_review_required": True,
         "client_ready": False,
     }
+
+
+def _release_active(run_id: str, request_payload: dict[str, Any]) -> None:
+    key = _scope_key(request_payload)
+    with _ACTIVE_LOCK:
+        _ACTIVE_RUNS.discard(run_id)
+        if _ACTIVE_SCOPE_RUNS.get(key) == run_id:
+            _ACTIVE_SCOPE_RUNS.pop(key, None)
 
 
 def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
@@ -243,8 +268,7 @@ def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
         )
         _record(run_id, request_payload, failure)
     finally:
-        with _ACTIVE_LOCK:
-            _ACTIVE_RUNS.discard(run_id)
+        _release_active(run_id, request_payload)
 
 
 def express_assessment_start(req: ExpressAssessmentRunRequest) -> dict[str, Any]:
@@ -263,21 +287,45 @@ def express_assessment_start(req: ExpressAssessmentRunRequest) -> dict[str, Any]
         api_main = import_module("nico.api.main")
         raise api_main.safe_blocked_exception({"status": "blocked", "error": str(exc)})
 
-    run_id = f"express_run_{uuid4().hex}"
+    key = _scope_key(payload)
+    with _ACTIVE_LOCK:
+        existing_run_id = _ACTIVE_SCOPE_RUNS.get(key, "")
+        if existing_run_id:
+            existing = STORE.get("assessment_runs", existing_run_id)
+            if isinstance(existing, dict):
+                response = _record_response(existing)
+                if str(response.get("status") or "").lower() in {"queued", "running"}:
+                    response["duplicate_start_prevented"] = True
+                    return response
+            _ACTIVE_SCOPE_RUNS.pop(key, None)
+            _ACTIVE_RUNS.discard(existing_run_id)
+        if len(_ACTIVE_RUNS) >= MAX_ACTIVE_EXPRESS_RUNS:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "blocked",
+                    "code": "express_capacity_reached",
+                    "message": "Express capacity is currently occupied by authorized active runs. Wait for an existing run to finish before starting another.",
+                    "assessment_type": "express",
+                    "human_review_required": True,
+                    "client_ready": False,
+                },
+            )
+        run_id = f"express_run_{uuid4().hex}"
+        _ACTIVE_RUNS.add(run_id)
+        _ACTIVE_SCOPE_RUNS[key] = run_id
+
     queued = _response(
         run_id,
         payload,
         "queued",
         "Express run accepted. NICO will continue this exact run on the backend and the browser will poll short status requests.",
     )
-    _record(run_id, payload, queued)
-    with _ACTIVE_LOCK:
-        _ACTIVE_RUNS.add(run_id)
     try:
+        _record(run_id, payload, queued)
         _EXECUTOR.submit(_execute, run_id, deepcopy(payload))
     except Exception:
-        with _ACTIVE_LOCK:
-            _ACTIVE_RUNS.discard(run_id)
+        _release_active(run_id, payload)
         failed = _response(
             run_id,
             payload,
@@ -290,16 +338,25 @@ def express_assessment_start(req: ExpressAssessmentRunRequest) -> dict[str, Any]
     return queued
 
 
-def express_assessment_status(run_id: str, _req: ExpressAssessmentStatusRequest) -> dict[str, Any]:
+def express_assessment_status(run_id: str, req: ExpressAssessmentStatusRequest) -> dict[str, Any]:
     if not str(run_id or "").startswith("express_run_"):
         raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Express assessment run not found."})
     record = STORE.get("assessment_runs", run_id)
     if not isinstance(record, dict):
         raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Express assessment run not found."})
 
-    response = record.get("response") if isinstance(record.get("response"), dict) else record.get("payload")
-    response = deepcopy(response) if isinstance(response, dict) else {}
+    request_record = record.get("request") if isinstance(record.get("request"), dict) else record
+    stored_customer = str(record.get("customer_id") or request_record.get("customer_id") or "default_customer")
+    stored_project = str(record.get("project_id") or request_record.get("project_id") or "default_project")
+    if not compare_digest(str(req.customer_id or "default_customer"), stored_customer) or not compare_digest(
+        str(req.project_id or "default_project"), stored_project
+    ):
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": "Express assessment run not found."})
+
+    response = _record_response(record)
     response["run_id"] = run_id
+    response["customer_id"] = stored_customer
+    response["project_id"] = stored_project
     response.setdefault("assessment_type", "express")
     response.setdefault("human_review_required", True)
     response["client_ready"] = False
@@ -311,16 +368,26 @@ def express_assessment_status(run_id: str, _req: ExpressAssessmentStatusRequest)
         if not active:
             interrupted = _response(
                 run_id,
-                record.get("request") if isinstance(record.get("request"), dict) else record,
+                request_record,
                 "interrupted",
                 "The backend process restarted or stopped before this Express run reached a terminal result. The exact run ID is preserved; review Recovery before starting another run.",
                 code="express_worker_interrupted",
             )
-            _record(run_id, record.get("request") if isinstance(record.get("request"), dict) else record, interrupted)
+            _record(run_id, request_record, interrupted)
             raise HTTPException(status_code=503, detail=interrupted)
         return response
     if status in _TERMINAL_FAILURES:
         raise HTTPException(status_code=400 if status in {"blocked", "rejected"} else 503, detail=response)
+    if status not in _TERMINAL_SUCCESS:
+        unknown = _response(
+            run_id,
+            request_record,
+            "failed",
+            "Express run state was not recognized. NICO stopped rather than infer a successful result.",
+            code="express_unknown_terminal_state",
+        )
+        _record(run_id, request_record, unknown)
+        raise HTTPException(status_code=503, detail=unknown)
     return response
 
 
@@ -353,12 +420,15 @@ def register_express_async_routes(app: FastAPI) -> dict[str, Any]:
         "routes": sorted(f"{method} {path}" for method, path in EXPRESS_ASYNC_ROUTES),
         "single_long_browser_connection_required": False,
         "exact_run_polling": True,
+        "duplicate_active_scope_start_prevented": True,
+        "max_active_runs": MAX_ACTIVE_EXPRESS_RUNS,
     }
 
 
 __all__ = [
     "EXPRESS_ASYNC_ROUTES",
     "EXPRESS_ASYNC_VERSION",
+    "MAX_ACTIVE_EXPRESS_RUNS",
     "ExpressAssessmentRunRequest",
     "ExpressAssessmentStatusRequest",
     "express_assessment_start",
