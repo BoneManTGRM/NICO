@@ -1,5 +1,9 @@
 """NICO package."""
 
+from nico.frontend_cors_policy import install_required_frontend_cors_origins
+
+install_required_frontend_cors_origins()
+
 from nico.hosted_metadata_auth import install_metadata_auth_for_hosted_assessment
 from nico.hosted_dependency_normalization import patch_hosted_assessment_dependency_parsing
 from nico.hosted_truth_delivery_gate import patch_client_acceptance_gate_for_report_truth
