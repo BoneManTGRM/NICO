@@ -23,12 +23,19 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
         integrity = payload.get("score_integrity") if isinstance(payload.get("score_integrity"), dict) else {}
         calculated = integrity.get("calculated_score")
         reported = integrity.get("reported_score")
-        if not isinstance(calculated, int):
+        rows = [item for item in integrity.get("weighted_rows", []) or [] if isinstance(item, dict)]
+        complete_scorecard = len(rows) == 7 and sum(int(item.get("weight") or 0) for item in rows) == 100
+        integrity["complete_seven_section_scorecard"] = complete_scorecard
+        integrity["reported_score_before_final_report_reconciliation"] = reported
+        if not isinstance(calculated, int) or not complete_scorecard:
+            integrity["display_score_reconciliation_deferred"] = True
+            integrity["final_report_score"] = reported
+            payload["score_integrity"] = integrity
             return payload
 
-        integrity["reported_score_before_final_report_reconciliation"] = reported
         integrity["final_report_score"] = calculated
         integrity["display_score_reconciled_to_weighted_technical_sections"] = reported != calculated
+        integrity["display_score_reconciliation_deferred"] = False
         integrity["score_match"] = reported is None or reported == calculated
         payload["score_integrity"] = integrity
         payload["technical_score"] = calculated
@@ -55,6 +62,7 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
     return {
         "status": "installed",
         "score_source": "seven_weighted_technical_sections",
+        "complete_scorecard_required": True,
         "evidence_coverage_changes_score": False,
         "human_context_changes_score_without_review": False,
     }
