@@ -33,7 +33,7 @@ def test_safe_failure_frame_records_only_deepest_nico_code_identity() -> None:
     assert "secret_collector.py" not in encoded
 
 
-def test_installer_extends_existing_diagnostic_without_exposing_exception_text(monkeypatch) -> None:
+def test_installer_extends_diagnostic_and_public_message_without_exception_text(monkeypatch) -> None:
     calls: list[tuple[str, str, str]] = []
 
     def base_diagnostic(run_id: str, stage: str, exc: BaseException) -> dict[str, str]:
@@ -44,15 +44,33 @@ def test_installer_extends_existing_diagnostic_without_exposing_exception_text(m
             "exception_class": type(exc).__name__,
         }
 
+    def base_failure(run_id: str, request_payload: dict, stage: str, exc: BaseException) -> dict:
+        diagnostic = backend_diagnostics._diagnostic(run_id, stage, exc)
+        message = "opaque base failure"
+        return {
+            **diagnostic,
+            "status": "failed",
+            "run_id": run_id,
+            "message": message,
+            "progress": [{"step": stage, "status": "failed", "message": message}],
+        }
+
     monkeypatch.setattr(backend_diagnostics, "_diagnostic", base_diagnostic)
+    monkeypatch.setattr(backend_diagnostics, "_diagnostic_failure", base_failure)
 
     first = safe_trace.install_express_safe_trace_diagnostics()
     second = safe_trace.install_express_safe_trace_diagnostics()
     exc = _synthetic_nico_exception()
-    result = backend_diagnostics._diagnostic("express_run_test", "collect_assessment", exc)
+    result = backend_diagnostics._diagnostic_failure(
+        "express_run_test",
+        {"repository": "BoneManTGRM/NICO"},
+        "collect_assessment",
+        exc,
+    )
 
     assert first["status"] == "installed"
     assert second["status"] == "already_installed"
+    assert first["bounded_location_in_public_message"] is True
     assert first["exception_text_exposed"] is False
     assert first["locals_exposed"] is False
     assert first["absolute_paths_exposed"] is False
@@ -60,7 +78,12 @@ def test_installer_extends_existing_diagnostic_without_exposing_exception_text(m
     assert result["failure_module"] == "nico.synthetic_collection_failure"
     assert result["failure_function"] == "collect"
     assert result["failure_line"] == 3
+    assert result["safe_failure_location"] == "nico.synthetic_collection_failure.collect:3"
+    assert "NICO frame nico.synthetic_collection_failure.collect:3" in result["message"]
+    assert result["progress"][0]["message"] == result["message"]
+    assert len(result["message"]) <= 320
     assert "provider-token-supersecret" not in repr(result)
+    assert "/private/runtime" not in repr(result)
 
 
 def test_non_nico_traceback_does_not_publish_external_frame_identity() -> None:
