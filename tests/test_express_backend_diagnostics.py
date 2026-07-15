@@ -171,8 +171,10 @@ def test_success_preserves_request_fields_and_uses_one_exact_final_record(monkey
 
 
 def test_installer_replaces_worker_idempotently(monkeypatch) -> None:
-    original = express._execute
-    monkeypatch.setattr(express, "_execute", original)
+    def previous_execute(_run_id, _payload):
+        return None
+
+    monkeypatch.setattr(express, "_execute", previous_execute)
 
     first = diagnostics.install_express_backend_diagnostics()
     second = diagnostics.install_express_backend_diagnostics()
