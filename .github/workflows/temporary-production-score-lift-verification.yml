@@ -1,0 +1,254 @@
+name: Temporary Production Score Lift Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-production-score-lift-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Start one authorized production Express assessment
+        id: verify
+        continue-on-error: true
+        env:
+          NICO_PUBLIC_PROXY_URL: https://app.nicoaudit.com/api/nico
+          NICO_AUTHORIZED_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p audit-results
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          proxy = os.environ["NICO_PUBLIC_PROXY_URL"].rstrip("/")
+          repository = os.environ["NICO_AUTHORIZED_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"score_lift_verify_{scope}"
+          project_id = f"score_lift_verify_{scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          output = Path("audit-results/production-score-lift-verification.json")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-temporary-production-score-lift-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      payload = json.loads(raw)
+                  except ValueError:
+                      payload = {"status": "error", "message": "Production proxy returned non-JSON data."}
+                  return exc.code, payload
+
+          def find_report(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  sections = value.get("sections")
+                  if isinstance(sections, list) and any(
+                      isinstance(item, dict) and item.get("id") == "velocity_complexity"
+                      for item in sections
+                  ):
+                      return value
+                  for nested in value.values():
+                      found = find_report(nested)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for nested in value:
+                      found = find_report(nested)
+                      if found:
+                          return found
+              return {}
+
+          def section(report: dict[str, Any], section_id: str) -> dict[str, Any]:
+              for item in report.get("sections") or []:
+                  if isinstance(item, dict) and item.get("id") == section_id:
+                      return item
+              return {}
+
+          def section_row(report: dict[str, Any], section_id: str) -> dict[str, Any]:
+              details = report.get("score_details") if isinstance(report.get("score_details"), dict) else {}
+              for item in details.get("sections") or []:
+                  if isinstance(item, dict) and item.get("id") == section_id:
+                      return item
+              return {}
+
+          request_payload = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "authorized_by": "repository_owner_production_verification",
+              "authorization_scope": "read-only repository assessment only",
+              "client_name": "NICO production score lift verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "refresh_full_evidence": True,
+          }
+          start_http, started = post("/assessment/express-run", request_payload)
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
+          evidence: dict[str, Any] = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_count": 1,
+              "start_http_status": start_http,
+              "start_response": started,
+              "run_id": run_id,
+              "automatic_retry": False,
+              "replacement_run": False,
+          }
+          if start_http >= 400 or not run_id.startswith("express_run_"):
+              evidence["status"] = "start_failed"
+              output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Production Express assessment did not start")
+
+          deadline = time.monotonic() + 1800
+          terminal_http = 0
+          terminal: dict[str, Any] = {}
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out", "message": "Bounded production verification expired."}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          final_status = str(detail.get("status") or terminal.get("status") or "unknown")
+          report = find_report(terminal)
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+          score_details = report.get("score_details") if isinstance(report.get("score_details"), dict) else {}
+          release = report.get("release_readiness") if isinstance(report.get("release_readiness"), dict) else {}
+          reconciliation = report.get("final_score_reconciliation") if isinstance(report.get("final_score_reconciliation"), dict) else {}
+
+          section_ids = (
+              "code_audit",
+              "dependency_health",
+              "secrets_review",
+              "static_analysis",
+              "ci_cd",
+              "architecture_debt",
+              "velocity_complexity",
+          )
+          visible_scores = {name: section(report, name).get("score") for name in section_ids}
+          detail_scores = {name: section_row(report, name).get("score") for name in section_ids}
+          code = section(report, "code_audit")
+          code_text = json.dumps(code, sort_keys=True).lower()
+
+          artifact = report.get("complexity_artifact") if isinstance(report.get("complexity_artifact"), dict) else {}
+          profile = artifact.get("profile") if isinstance(artifact.get("profile"), dict) else {}
+          if not profile and isinstance(report.get("complexity_engine"), dict):
+              profile = report["complexity_engine"]
+          summary = report.get("complexity_engine_summary") if isinstance(report.get("complexity_engine_summary"), dict) else {}
+
+          result_summary = {
+              "overall_score": maturity.get("score"),
+              "maturity_level": maturity.get("level"),
+              "score_details_score": score_details.get("score"),
+              "visible_scores": visible_scores,
+              "score_detail_scores": detail_scores,
+              "release_readiness_status": release.get("status"),
+              "release_readiness_missing_signals": release.get("missing_signals") or [],
+              "reconciliation": reconciliation,
+              "contradicted_no_test_finding_present": "no test-path signals were found" in code_text,
+              "complexity": {
+                  "scoring_model": profile.get("scoring_model") or summary.get("scoring_model"),
+                  "churn_window_days": profile.get("churn_window_days") or summary.get("churn_window_days"),
+                  "max_function_complexity": profile.get("max_function_cyclomatic_complexity") or summary.get("max_function_cyclomatic_complexity"),
+                  "complexity_score": profile.get("complexity_score") or summary.get("complexity_score"),
+                  "risk_level": profile.get("risk_level") or summary.get("risk_level"),
+                  "analyzed_files": profile.get("analyzed_file_count") or profile.get("source_file_count") or summary.get("source_file_count"),
+                  "source_loc": profile.get("total_loc") or summary.get("total_loc"),
+                  "function_units": profile.get("total_functions") or summary.get("total_functions"),
+              },
+              "human_review_required": report.get("human_review_required"),
+              "client_ready": report.get("client_ready"),
+          }
+          evidence.update(
+              {
+                  "status_http_status": terminal_http,
+                  "status": final_status,
+                  "score_summary": result_summary,
+                  "terminal_response": terminal,
+              }
+          )
+          output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+
+          errors: list[str] = []
+          if final_status.lower() not in {"complete", "completed"}:
+              errors.append(f"terminal status was {final_status}")
+          if not report:
+              errors.append("completed response contained no report")
+          if int(maturity.get("score") or 0) < 92:
+              errors.append(f"overall score below 92: {maturity.get('score')}")
+          required_scores = {
+              "code_audit": 90,
+              "dependency_health": 90,
+              "velocity_complexity": 90,
+              "architecture_debt": 94,
+              "ci_cd": 95,
+          }
+          for name, minimum in required_scores.items():
+              actual = int(visible_scores.get(name) or 0)
+              if actual < minimum:
+                  errors.append(f"{name} below {minimum}: {actual}")
+          if release.get("status") != "provisionally_ready_for_human_review":
+              errors.append(f"release readiness not provisional-ready: {release.get('status')}")
+          if release.get("missing_signals"):
+              errors.append(f"release readiness still missing signals: {release.get('missing_signals')}")
+          if result_summary["contradicted_no_test_finding_present"]:
+              errors.append("bounded-sample no-test finding remains despite recursive-tree test evidence")
+          if score_details.get("score") != maturity.get("score"):
+              errors.append(f"score_details score {score_details.get('score')} differs from maturity {maturity.get('score')}")
+          for name in section_ids:
+              if visible_scores.get(name) != detail_scores.get(name):
+                  errors.append(f"score_details mismatch for {name}: visible={visible_scores.get(name)} details={detail_scores.get(name)}")
+          if reconciliation.get("status") != "reconciled":
+              errors.append(f"final score reconciliation missing: {reconciliation.get('status')}")
+          if errors:
+              raise SystemExit("; ".join(errors))
+          PY
+
+      - name: Upload bounded production score evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-score-lift-verification
+          path: audit-results/production-score-lift-verification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve verification result
+        if: always()
+        run: test "${{ steps.verify.outcome }}" = "success"
