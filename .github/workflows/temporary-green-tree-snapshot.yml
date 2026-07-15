@@ -1,0 +1,35 @@
+name: Temporary Green Tree Snapshot
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR tree
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Record Git tree identity
+        run: |
+          mkdir -p snapshot
+          git rev-parse HEAD > snapshot/commit-sha.txt
+          git rev-parse 'HEAD^{tree}' > snapshot/tree-sha.txt
+          printf 'COMMIT_SHA=%s\n' "$(cat snapshot/commit-sha.txt)"
+          printf 'TREE_SHA=%s\n' "$(cat snapshot/tree-sha.txt)"
+
+      - name: Upload tree identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: green-tree-snapshot
+          path: snapshot/
+          if-no-files-found: error
+          retention-days: 1
