@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from nico import scanner_recovery, scanner_worker, snapshot_scanner_worker
+from nico.mid_assessment_api import MidAssessmentStatusRequest
 from nico.mid_live_progress_patch import attach_mid_live_progress
 from nico.snapshot_scanner_resilience_patch import _run_with_failure_boundary
 from nico.storage import MemoryAdapter
@@ -30,6 +31,25 @@ def _snapshot_record(scan_id: str = "scan_snapshot_recovery_test") -> dict[str, 
             "resume_allowed": True,
         },
     }
+
+
+def test_mid_status_contract_accepts_exact_scanner_identity() -> None:
+    request = MidAssessmentStatusRequest(
+        repository="owner/repository",
+        scan_id="scan_snapshot_exact_status",
+        customer_id="customer_recovery",
+        project_id="project_recovery",
+        authorization_confirmed=True,
+        authorized=True,
+        auto_continue=True,
+    )
+    payload = request.model_dump() if hasattr(request, "model_dump") else request.dict()
+
+    assert payload["scan_id"] == "scan_snapshot_exact_status"
+    assert payload["repository"] == "owner/repository"
+    assert payload["customer_id"] == "customer_recovery"
+    assert payload["project_id"] == "project_recovery"
+    assert payload["auto_continue"] is True
 
 
 def test_snapshot_recovery_reuses_exact_scan_run_and_snapshot_identity() -> None:
