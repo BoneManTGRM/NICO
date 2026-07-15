@@ -69,7 +69,11 @@ function progressSummary(payload: ProgressPayload) {
   const total = items.length;
   const itemPercent = active ? boundedPercent(active.progress_percent) : null;
   const payloadPercent = boundedPercent(payload.progress_percent);
-  const derivedPercent = total ? Math.round((completed / total) * 100) : null;
+  // One generic Express running record is not a defensible percentage. Keep the
+  // bar animated until the backend returns a real percent or multiple stages.
+  const derivedPercent = total > 1 || completed > 0
+    ? Math.round((completed / Math.max(1, total)) * 100)
+    : null;
   return {
     completed,
     total,
@@ -188,7 +192,7 @@ export default function AssessmentLiveProgress() {
 
   const progressClass = live.percent === null && !live.terminal ? "nico-live-progress-fill indeterminate" : "nico-live-progress-fill";
   const width = live.percent === null ? undefined : `${Math.max(live.terminal ? 0 : 4, live.percent)}%`;
-  const evidenceText = live.total
+  const evidenceText = live.total > 1
     ? `${live.completed} of ${live.total} recorded stages complete`
     : `${live.pollCount} live backend status update${live.pollCount === 1 ? "" : "s"}`;
 
