@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import wraps
 from typing import Any, Callable
 
-MID_LIVE_PROGRESS_VERSION = "nico.mid_live_progress.v1"
+MID_LIVE_PROGRESS_VERSION = "nico.mid_live_progress.v2"
 _START_MARKER = "_nico_mid_live_progress_start_v1"
 _STATUS_MARKER = "_nico_mid_live_progress_status_v1"
 
@@ -102,8 +103,13 @@ def install_mid_live_progress() -> dict[str, Any]:
 
     current_start: Callable[..., dict[str, Any]] = api.mid_assessment_response
     if not getattr(current_start, _START_MARKER, False):
-        def start_with_live_progress(req: Any) -> dict[str, Any]:
-            return attach_mid_live_progress(current_start(req))
+        # FastAPI derives body/query placement from the callable signature.
+        # Preserve the wrapped Pydantic request-model signature so this
+        # presentation-only progress layer cannot turn `req` into a required
+        # query parameter and cause HTTP 422 before the handler executes.
+        @wraps(current_start)
+        def start_with_live_progress(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return attach_mid_live_progress(current_start(*args, **kwargs))
 
         setattr(start_with_live_progress, _START_MARKER, True)
         setattr(start_with_live_progress, "_nico_previous", current_start)
@@ -111,8 +117,9 @@ def install_mid_live_progress() -> dict[str, Any]:
 
     current_status: Callable[..., dict[str, Any]] = api.mid_assessment_status_response
     if not getattr(current_status, _STATUS_MARKER, False):
-        def status_with_live_progress(run_id: str, req: Any) -> dict[str, Any]:
-            return attach_mid_live_progress(current_status(run_id, req))
+        @wraps(current_status)
+        def status_with_live_progress(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return attach_mid_live_progress(current_status(*args, **kwargs))
 
         setattr(status_with_live_progress, _STATUS_MARKER, True)
         setattr(status_with_live_progress, "_nico_previous", current_status)
@@ -122,6 +129,7 @@ def install_mid_live_progress() -> dict[str, Any]:
         "status": "installed",
         "version": MID_LIVE_PROGRESS_VERSION,
         "scanner_progress_is_dynamic": True,
+        "fastapi_request_signatures_preserved": True,
         "scanner_window_start": 18,
         "scanner_window_end": 61,
         "evidence_attachment_start": 62,
