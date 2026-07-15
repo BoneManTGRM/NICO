@@ -3,8 +3,9 @@
 import {useEffect} from "react";
 
 const MID_ACTIVE_RUN_KEY = "nico.mid.active_run";
+const MID_LAST_TERMINAL_RUN_KEY = "nico.mid.last_terminal_run";
 const MID_START_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run$/;
-const TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
+const FAILURE_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -48,6 +49,18 @@ function lifecycleIdentity(payload: JsonRecord | null) {
   };
 }
 
+function finalMidArtifactsReady(payload: JsonRecord | null): boolean {
+  if (!payload) return false;
+  const detail = record(payload.detail);
+  const source = Object.keys(detail).length ? detail : payload;
+  const status = String(source.status || "").toLowerCase();
+  const reportStatus = String(source.report_generation_status || "").toLowerCase();
+  const approval = record(source.approval_request);
+  return ["complete", "completed"].includes(status)
+    && reportStatus === "complete"
+    && Boolean(approval.approval_id);
+}
+
 function clearSavedRun(runId: string) {
   try {
     if (window.sessionStorage.getItem(MID_ACTIVE_RUN_KEY) === runId) {
@@ -56,6 +69,30 @@ function clearSavedRun(runId: string) {
   } catch {
     // The backend response remains authoritative when browser storage is unavailable.
   }
+}
+
+function rememberTerminalRun(runId: string, payload: JsonRecord | null) {
+  try {
+    const identity = lifecycleIdentity(payload);
+    window.sessionStorage.setItem(MID_LAST_TERMINAL_RUN_KEY, JSON.stringify({
+      run_id: runId,
+      status: identity.status || "terminal",
+      recorded_at: new Date().toISOString(),
+    }));
+  } catch {
+    // The durable backend record remains the source of truth.
+  }
+}
+
+function statusProbeBody(body: JsonRecord): JsonRecord {
+  return {
+    repository: String(body.repository || ""),
+    customer_id: String(body.customer_id || "default_customer"),
+    project_id: String(body.project_id || "default_project"),
+    authorization_confirmed: true,
+    authorized: true,
+    auto_continue: true,
+  };
 }
 
 function safeUnavailableResponse(runId: string, body: JsonRecord): Response {
@@ -112,20 +149,25 @@ export default function AssessmentSavedMidRunGuard() {
         const statusResponse = await originalFetch(statusUrl, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({...body, auto_continue: true}),
+          body: JSON.stringify(statusProbeBody(body)),
           cache: "no-store",
           credentials: "same-origin",
           keepalive: true,
         });
         const payload = await responsePayload(statusResponse);
         const identity = lifecycleIdentity(payload);
+        const exactTerminalFailure = identity.runId === savedRunId && FAILURE_STATUSES.has(identity.status);
+        const exactTerminalSuccess = identity.runId === savedRunId && finalMidArtifactsReady(payload);
 
-        // Exact-run failed or blocked evidence stays terminal. It is never
-        // rewritten as a transport outage or retried into a new assessment.
-        if (identity.runId === savedRunId && TERMINAL_STATUSES.has(identity.status)) {
+        // The operator explicitly pressed Run. Preserve the old terminal record,
+        // clear only its browser continuation pointer, and start a distinct run
+        // in the same click instead of returning the old 4xx response to the form.
+        if (exactTerminalFailure || exactTerminalSuccess) {
+          rememberTerminalRun(savedRunId, payload);
           clearSavedRun(savedRunId);
-          return statusResponse;
+          return originalFetch(input, init);
         }
+
         if (statusResponse.ok && payload) return statusResponse;
         if (statusResponse.status === 404) {
           clearSavedRun(savedRunId);
