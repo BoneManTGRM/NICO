@@ -45,6 +45,10 @@ class MidAssessmentRunRequest(BaseModel):
 class MidAssessmentStatusRequest(BaseModel):
     repository: str = ""
     target: str = ""
+    # The unified page preserves and sends the exact scanner identity on every
+    # status check. Keep this field explicit so request validation cannot reject
+    # a truthful same-run status poll before recovery/continuation logic runs.
+    scan_id: str = ""
     customer_id: str = "default_customer"
     project_id: str = "default_project"
     client_name: str = ""
