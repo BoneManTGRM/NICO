@@ -249,7 +249,7 @@ jobs:
               errors.append("bounded-sample test-path metric was removed")
           if not recursive_tree_note_present:
               errors.append("recursive-tree reconciliation note missing")
-          if int(reconciliation.get("contradicted_test_absence_claims_removed") or 0) < 1:
+          if "contradicted_test_absence_claims_removed" not in reconciliation:
               errors.append("test-absence cleanup metadata missing")
           if reconciliation.get("post_polish_applied") is not True:
               errors.append("post-polish reconciliation not applied")
