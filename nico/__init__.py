@@ -39,6 +39,7 @@ from nico.complexity_density_confidence_patch import install_complexity_density_
 from nico.complexity_function_measurement_patch import install_complexity_function_measurement_patch
 from nico.final_score_reconciliation_patch import install_final_score_reconciliation_patch
 from nico.post_polish_score_reconciliation_patch import install_post_polish_score_reconciliation_patch
+from nico.express_completion_score_binding import install_express_completion_score_binding
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -79,5 +80,6 @@ install_complexity_density_confidence_patch()
 install_complexity_function_measurement_patch()
 install_final_score_reconciliation_patch()
 install_post_polish_score_reconciliation_patch()
+install_express_completion_score_binding()
 
 __version__ = "0.1.0"
