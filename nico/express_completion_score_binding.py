@@ -59,16 +59,16 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         else None
     )
     finalized = dict(value)
+
+    if not isinstance(finalized.get("repository_quality_signals"), dict):
+        finalized = enrichment.enrich_hosted_result(hosted, finalized)
+
     prior_repairs = finalized.get("repair_intelligence")
     prior_candidate_count = (
         int(prior_repairs.get("candidate_count") or 0)
         if isinstance(prior_repairs, dict)
         else 0
     )
-
-    if not isinstance(finalized.get("repository_quality_signals"), dict):
-        finalized = enrichment.enrich_hosted_result(hosted, finalized)
-
     quality_findings = _final_quality_findings(finalized)
     repair_source = _final_repair_source(finalized)
     final_repairs = build_report_repair_intelligence(
