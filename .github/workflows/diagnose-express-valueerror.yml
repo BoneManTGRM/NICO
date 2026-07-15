@@ -1,0 +1,59 @@
+name: Diagnose Express ValueError
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install focused runtime dependencies
+        run: python -m pip install requests==2.34.2 reportlab==5.0.0
+      - name: Reproduce hosted Express collection
+        run: |
+          python - <<'PY'
+          import json
+          import traceback
+          from nico.hosted_assessment import run_github_assessment
+
+          payload = {
+              "repository": "BoneManTGRM/NICO",
+              "authorized": True,
+              "authorization_confirmed": True,
+              "client_name": "",
+              "project_name": "",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": "default_customer",
+              "project_id": "default_project",
+              "authorized_by": "requester_confirmation",
+              "authorization_scope": "repository assessment only",
+              "refresh_full_evidence": True,
+          }
+          try:
+              result = run_github_assessment(payload)
+          except Exception:
+              traceback.print_exc()
+              raise
+          print(json.dumps({
+              "status": result.get("status"),
+              "repository": result.get("repository"),
+              "section_count": len(result.get("sections") or []),
+              "report_keys": sorted((result.get("reports") or {}).keys()),
+              "unavailable_data_notes": result.get("unavailable_data_notes") or [],
+          }, indent=2))
+          if result.get("status") != "complete":
+              raise SystemExit(f"Unexpected terminal status: {result.get('status')}")
+          PY
