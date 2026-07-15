@@ -6,6 +6,7 @@ import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard";
+import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
@@ -31,6 +32,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
         <MidWorkspaceProvider>
           <AssessmentStatusResilience />
           <AssessmentSavedMidRunGuard />
+          <AssessmentStatusOutcomeGuard />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
