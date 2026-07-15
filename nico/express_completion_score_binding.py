@@ -1,16 +1,36 @@
 from __future__ import annotations
 
 from importlib import import_module
+import re
 import sys
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_completion_score_binding.v4"
-_RESPONSE_MARKER = "_nico_express_completion_score_response_v4"
+PATCH_VERSION = "nico.express_completion_score_binding.v5"
+_RESPONSE_MARKER = "_nico_express_completion_score_response_v5"
 _EXECUTE_MARKER = "_nico_express_completion_score_execute_v1"
 _BOOTSTRAP_MARKER = "_nico_express_completion_score_bootstrap_v1"
 _QUALITY_HEADING = "## Repository Quality and Governance Signals"
 _REPAIR_HEADING = "## Prioritized Repair Intelligence"
 _NON_REPAIR_SECTION_IDS = {"trust_readiness", "client_acceptance"}
+_UNAVAILABLE_MEASUREMENT_PATTERN = re.compile(
+    r"\b(max_function_cyclomatic|density|function_cyclomatic|complexity_density)=None\b"
+)
+
+
+def _sanitize_client_text(value: str) -> str:
+    return _UNAVAILABLE_MEASUREMENT_PATTERN.sub(r"\1=unavailable", value)
+
+
+def _sanitize_client_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _sanitize_client_text(value)
+    if isinstance(value, dict):
+        return {key: _sanitize_client_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_client_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_client_value(item) for item in value)
+    return value
 
 
 def _section(payload: dict[str, Any], section_id: str) -> dict[str, Any] | None:
@@ -84,6 +104,22 @@ def _secrets_are_clean(section: dict[str, Any] | None) -> bool:
     )
 
 
+def _ci_is_clean(section: dict[str, Any] | None) -> bool:
+    if not section or str(section.get("status") or "").lower() != "green":
+        return False
+    evidence = " ".join(str(item) for item in section.get("evidence", []) or []).lower()
+    findings = " ".join(str(item) for item in section.get("findings", []) or []).lower()
+    required_checks = all(
+        marker in evidence
+        for marker in ("nico ci=success", "codeql advanced=success", "audit evidence=success")
+    )
+    unresolved_current = any(
+        marker in findings
+        for marker in ("current release readiness is red", "latest required check failed", "required check is failing")
+    )
+    return required_checks and not unresolved_current
+
+
 def _reconcile_final_section_truth(finalized: dict[str, Any]) -> None:
     dependency = _section(finalized, "dependency_health")
     if dependency and _dependency_is_clean(dependency):
@@ -106,6 +142,7 @@ def _reconcile_final_section_truth(finalized: dict[str, Any]) -> None:
 def _refresh_client_actions(finalized: dict[str, Any], final_repairs: dict[str, Any]) -> None:
     dependency_clean = _dependency_is_clean(_section(finalized, "dependency_health"))
     secrets_clean = _secrets_are_clean(_section(finalized, "secrets_review"))
+    ci_clean = _ci_is_clean(_section(finalized, "ci_cd"))
     existing = [str(item) for item in finalized.get("quick_wins", []) or [] if str(item).strip()]
     retained: list[str] = []
     for item in existing:
@@ -113,6 +150,15 @@ def _refresh_client_actions(finalized: dict[str, Any], final_repairs: dict[str, 
         if secrets_clean and any(marker in lower for marker in ("secret-pattern hit", "rotate real credentials", "confirmed secret")):
             continue
         if dependency_clean and any(marker in lower for marker in ("add lockfiles or tighter dependency pinning", "missing dependency proof")):
+            continue
+        if ci_clean and any(
+            marker in lower
+            for marker in (
+                "add or strengthen ci checks",
+                "add ci checks",
+                "where missing",
+            )
+        ):
             continue
         if item not in retained:
             retained.append(item)
@@ -151,17 +197,18 @@ def _refresh_client_actions(finalized: dict[str, Any], final_repairs: dict[str, 
         "top_actions": candidate_actions[:4],
         "secret_quick_win_suppressed_because_scanners_clean": secrets_clean,
         "dependency_quick_win_suppressed_because_scanners_clean": dependency_clean,
+        "generic_ci_quick_win_suppressed_because_required_checks_green": ci_clean,
         "human_review_required": True,
     }
 
 
 def finalize_report_intelligence_at_response(value: Any) -> Any:
-    """Attach, reconcile, and export report intelligence at the last response boundary.
+    """Attach, reconcile, sanitize, and export intelligence at the last response boundary.
 
     Repair candidates are rebuilt from final reconciled findings, generic evidence
-    contradictions are removed, and client actions are derived from the final ranked
-    portfolio. The finalizer never edits the assessed repository and never marks a
-    proposed repair as verified or applied.
+    contradictions are removed, client actions are derived from the final portfolio,
+    and unavailable measurements are rendered truthfully. The finalizer never edits
+    the assessed repository and never marks a proposed repair as verified or applied.
     """
 
     if not isinstance(value, dict) or value.get("status") != "complete" or not value.get("repository"):
@@ -177,10 +224,11 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         if isinstance(value.get("maturity_signal"), dict)
         else None
     )
-    finalized = dict(value)
+    finalized = _sanitize_client_value(dict(value))
 
     if not isinstance(finalized.get("repository_quality_signals"), dict):
         finalized = enrichment.enrich_hosted_result(hosted, finalized)
+    finalized = _sanitize_client_value(finalized)
 
     _reconcile_final_section_truth(finalized)
     prior_repairs = finalized.get("repair_intelligence")
@@ -195,6 +243,7 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         repair_source,
         structured_findings=quality_findings,
     )
+    final_repairs = _sanitize_client_value(final_repairs)
     finalized["repair_intelligence"] = final_repairs
     finalized["repairs"] = [
         str(item.get("recommended_action"))
@@ -214,11 +263,12 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         "early_source_regex_candidates_carried_forward": False,
         "superseded_pre_polish_findings_carried_forward": False,
         "repository_size_ranked_as_defect": False,
+        "unavailable_measurements_rendered_as_unavailable": True,
         "human_review_required": True,
         "automatic_application_allowed": False,
     }
 
-    # Rebuild unconditionally because final candidate and client-action reconciliation
+    # Rebuild unconditionally because final candidate, action, and display truth
     # changes the client-visible Markdown, HTML, and professional PDF.
     finalized = accuracy.rebuild_enriched_reports(hosted, finalized)
     reports = finalized.get("reports") if isinstance(finalized.get("reports"), dict) else {}
@@ -248,6 +298,7 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         "repair_candidate_count": candidate_count,
         "code_suggestion_count": code_suggestion_count,
         "advisory_count": len(final_repairs.get("advisories", []) or []),
+        "unavailable_measurements_rendered_as_unavailable": True,
         "score_before": original_score,
         "score_after": final_score,
         "score_changed": original_score != final_score,
@@ -385,6 +436,7 @@ def install_express_completion_score_binding() -> dict[str, Any]:
         "report_intelligence_export_bound": True,
         "repair_intelligence_reconciled_from_final_findings": True,
         "client_actions_reconciled_from_final_findings": True,
+        "client_output_measurements_sanitized": True,
         "score_inflation_allowed": False,
         "guardrail": (
             "The response-bound reconciliation and report export can only use final evidence present in, or fetched for, "
