@@ -22,10 +22,13 @@ jobs:
       - name: Install focused runtime dependencies
         run: python -m pip install requests==2.34.2 reportlab==5.0.0
       - name: Reproduce hosted Express collection
+        id: reproduce
+        continue-on-error: true
         run: |
           python - <<'PY'
           import json
           import traceback
+          from pathlib import Path
           from nico.hosted_assessment import run_github_assessment
 
           payload = {
@@ -45,15 +48,29 @@ jobs:
           try:
               result = run_github_assessment(payload)
           except Exception:
-              traceback.print_exc()
+              text = traceback.format_exc()
+              Path("express-reproduction.txt").write_text(text, encoding="utf-8")
+              print(text)
               raise
-          print(json.dumps({
+          summary = json.dumps({
               "status": result.get("status"),
               "repository": result.get("repository"),
               "section_count": len(result.get("sections") or []),
               "report_keys": sorted((result.get("reports") or {}).keys()),
               "unavailable_data_notes": result.get("unavailable_data_notes") or [],
-          }, indent=2))
+          }, indent=2)
+          Path("express-reproduction.txt").write_text(summary, encoding="utf-8")
+          print(summary)
           if result.get("status") != "complete":
               raise SystemExit(f"Unexpected terminal status: {result.get('status')}")
           PY
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-valueerror-reproduction
+          path: express-reproduction.txt
+          if-no-files-found: error
+      - name: Preserve reproduction failure
+        if: steps.reproduce.outcome == 'failure'
+        run: exit 1
