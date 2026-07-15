@@ -1,6 +1,7 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
+import AssessmentLiveProgress from "./AssessmentLiveProgress";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
@@ -27,6 +28,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <MidWorkspaceProvider>
+          <AssessmentLiveProgress />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
