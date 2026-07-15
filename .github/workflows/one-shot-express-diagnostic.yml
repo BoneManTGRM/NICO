@@ -14,15 +14,14 @@ concurrency:
 
 jobs:
   diagnose:
-    if: contains(github.event.head_commit.message, 'Report production Express failure location')
+    if: contains(github.event.head_commit.message, 'Run public-proxy production Express diagnostic')
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    environment: production-smoke
     env:
-      NICO_PRODUCTION_BACKEND_URL: ${{ vars.NICO_PRODUCTION_BACKEND_URL }}
-      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY }}
-      NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT }}
       GITHUB_TOKEN: ${{ github.token }}
+      NICO_PUBLIC_PROXY_URL: https://app.nicoaudit.com/api/nico
+      NICO_AUTHORIZED_REPOSITORY: BoneManTGRM/NICO
+      NICO_BACKEND_STATUS_CONTEXT: successful-cat - NICO
     steps:
       - name: Wait for exact Vercel and Railway deployment statuses
         run: |
@@ -35,8 +34,7 @@ jobs:
           repository = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["GITHUB_SHA"]
           token = os.environ["GITHUB_TOKEN"]
-          backend_context = os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]
-          required = {"Vercel", backend_context}
+          required = {"Vercel", os.environ["NICO_BACKEND_STATUS_CONTEXT"]}
           deadline = time.monotonic() + 1200
           while time.monotonic() < deadline:
               request = urllib.request.Request(
@@ -62,7 +60,7 @@ jobs:
               raise SystemExit("Timed out waiting for exact Vercel and Railway deployment statuses")
           PY
 
-      - name: Start exactly one Express run and report terminal evidence
+      - name: Start exactly one Express run and publish bounded terminal evidence
         id: diagnostic
         continue-on-error: true
         run: |
@@ -75,35 +73,16 @@ jobs:
           import urllib.request
           from pathlib import Path
 
-          backend = os.environ["NICO_PRODUCTION_BACKEND_URL"].rstrip("/")
-          repository = os.environ["NICO_PRODUCTION_SMOKE_REPOSITORY"]
+          proxy = os.environ["NICO_PUBLIC_PROXY_URL"].rstrip("/")
+          repository = os.environ["NICO_AUTHORIZED_REPOSITORY"]
           github_repository = os.environ["GITHUB_REPOSITORY"]
           github_sha = os.environ["GITHUB_SHA"]
           github_token = os.environ["GITHUB_TOKEN"]
-          run_url = f"https://github.com/{github_repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
-          if repository != "BoneManTGRM/NICO":
-              raise SystemExit("One-shot diagnostic is restricted to the authorized BoneManTGRM/NICO repository")
-          customer_id = f"express_diagnostic_{os.environ['GITHUB_RUN_ID']}"
-          project_id = f"express_diagnostic_{os.environ['GITHUB_RUN_ID']}_{os.environ['GITHUB_RUN_ATTEMPT']}"
-
-          def post(path: str, body: dict) -> tuple[int, dict]:
-              data = json.dumps(body).encode("utf-8")
-              request = urllib.request.Request(
-                  backend + path,
-                  data=data,
-                  method="POST",
-                  headers={"Content-Type": "application/json", "User-Agent": "NICO-one-shot-production-diagnostic"},
-              )
-              try:
-                  with urllib.request.urlopen(request, timeout=90) as response:
-                      return response.status, json.load(response)
-              except urllib.error.HTTPError as exc:
-                  raw = exc.read().decode("utf-8", errors="replace")
-                  try:
-                      payload = json.loads(raw)
-                  except ValueError:
-                      payload = {"status": "error", "message": "Backend returned a non-JSON terminal response."}
-                  return exc.code, payload
+          actions_run_id = os.environ["GITHUB_RUN_ID"]
+          run_url = f"https://github.com/{github_repository}/actions/runs/{actions_run_id}"
+          customer_id = f"express_diagnostic_{actions_run_id}"
+          project_id = f"express_diagnostic_{actions_run_id}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          output = Path("audit-results/production-express-diagnostic.json")
 
           def publish_status(label: str, state: str, description: str) -> None:
               context = f"NICO Express Diagnostic | {label}"[:100]
@@ -128,6 +107,24 @@ jobs:
                   json.load(response)
               print(f"Published bounded diagnostic status: {context}")
 
+          def post(path: str, body: dict) -> tuple[int, dict]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={"Content-Type": "application/json", "User-Agent": "NICO-one-shot-production-diagnostic"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      payload = json.loads(raw)
+                  except ValueError:
+                      payload = {"status": "error", "message": "Production proxy returned a non-JSON terminal response."}
+                  return exc.code, payload
+
           request_payload = {
               "repository": repository,
               "authorized": True,
@@ -142,7 +139,14 @@ jobs:
               "authorization_scope": "read-only repository assessment only",
               "refresh_full_evidence": True,
           }
-          start_status, started = post("/assessment/express-run", request_payload)
+          try:
+              start_status, started = post("/assessment/express-run", request_payload)
+          except Exception as exc:
+              evidence = {"status": "transport_failed", "start_count": 1, "exception_class": type(exc).__name__}
+              output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              publish_status("transport_failed", "error", f"Production proxy transport failed: {type(exc).__name__}")
+              raise
+
           start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
           run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
           evidence = {
@@ -157,7 +161,6 @@ jobs:
               "automatic_retry": False,
               "replacement_run": False,
           }
-          output = Path("audit-results/production-express-diagnostic.json")
           if start_status >= 400 or not run_id.startswith("express_run_"):
               label = str(start_detail.get("code") or "start_failed")
               evidence["status"] = "start_failed"
@@ -200,7 +203,7 @@ jobs:
               or status
               or "unknown_failure"
           )
-          publish_status(label, "error", f"Express {status}; HTTP {terminal_http}; exact run {run_id}"[:140])
+          publish_status(label, "error", f"Express {status}; HTTP {terminal_http}; exact run {run_id}")
           raise SystemExit(f"Express diagnostic ended with {status}")
           PY
 
