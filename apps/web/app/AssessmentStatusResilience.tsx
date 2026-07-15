@@ -8,7 +8,9 @@ const STATUS_RETRY_MAX_MS = 12000;
 const RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 const START_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|full-run)$/;
+const MID_START_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run$/;
 const STATUS_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|full-run)\/([^/]+)\/status$/;
+const MID_ACTIVE_RUN_KEY = "nico.mid.active_run";
 
 const STAGE_PROGRESS: Record<string, number> = {
   request_accepted: 4,
@@ -47,6 +49,17 @@ function requestUrl(input: RequestInfo | URL): URL | null {
   }
 }
 
+function requestBody(input: RequestInfo | URL, init?: RequestInit): JsonRecord {
+  const raw = init?.body;
+  if (typeof raw !== "string") return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed as JsonRecord : {};
+  } catch {
+    return {};
+  }
+}
+
 function boundedNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : null;
@@ -65,7 +78,7 @@ function progressItems(payload: JsonRecord): ProgressRecord[] {
 function activeProgress(payload: JsonRecord): ProgressRecord | null {
   const active = new Set(["queued", "running", "pending", "planned", "starting"]);
   const items = progressItems(payload);
-  return items.find((item) => active.has(String(item.status || "").toLowerCase())) || items.at(-1) || null;
+  return items.find((item) => active.has(String(item.status || "").toLowerCase())) || items[items.length - 1] || null;
 }
 
 function scannerProgress(payload: JsonRecord): number | null {
@@ -170,6 +183,24 @@ function matchingTerminalEvidence(payload: JsonRecord | null, runId: string) {
   return responseRunId === runId && TERMINAL_STATUSES.has(status);
 }
 
+function rememberMidRun(payload: JsonRecord) {
+  const runId = String(payload.run_id || "");
+  if (!runId.startsWith("midrun_")) return;
+  const status = String(payload.status || "").toLowerCase();
+  const final = status === "complete"
+    && String(payload.report_generation_status || "").toLowerCase() === "complete"
+    && Boolean(record(payload.approval_request).approval_id);
+  try {
+    if (final || TERMINAL_STATUSES.has(status)) {
+      if (window.sessionStorage.getItem(MID_ACTIVE_RUN_KEY) === runId) window.sessionStorage.removeItem(MID_ACTIVE_RUN_KEY);
+    } else {
+      window.sessionStorage.setItem(MID_ACTIVE_RUN_KEY, runId);
+    }
+  } catch {
+    // Exact-run state remains in the response even if browser storage is unavailable.
+  }
+}
+
 function temporarilyUnreachable(lastGood: JsonRecord, runId: string): Response {
   const output = normalizedProgress(lastGood);
   const items = progressItems(output);
@@ -194,7 +225,38 @@ function temporarilyUnreachable(lastGood: JsonRecord, runId: string): Response {
     recovery_required_if_stale: true,
     duplicate_start_allowed: false,
   };
+  rememberMidRun(output);
   return new Response(JSON.stringify(output), {
+    status: 200,
+    headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
+  });
+}
+
+function savedRunUnavailable(runId: string, body: JsonRecord): Response {
+  const payload: JsonRecord = {
+    status: "running",
+    run_id: runId,
+    repository: body.repository || "",
+    customer_id: body.customer_id || "default_customer",
+    project_id: body.project_id || "default_project",
+    assessment_type: "mid",
+    service_tier: "mid",
+    current_stage: "status_recovery",
+    progress_percent: 4,
+    progress: [{
+      step: "status_recovery",
+      status: "running",
+      message: `A saved Mid run (${runId}) exists, but its status is temporarily unreachable. NICO did not start a duplicate assessment. Review Recovery if the run becomes stale.`,
+    }],
+    status_transport: {
+      status: "temporarily_unreachable",
+      recovery_required_if_stale: true,
+      duplicate_start_allowed: false,
+    },
+    human_review_required: true,
+    client_ready: false,
+  };
+  return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
   });
@@ -212,12 +274,52 @@ export default function AssessmentStatusResilience() {
       const statusMatch = STATUS_PATH.exec(url.pathname);
 
       if (startMatch) {
+        const body = requestBody(input, init);
+        if (MID_START_PATH.test(url.pathname)) {
+          let savedRunId = "";
+          try {
+            savedRunId = window.sessionStorage.getItem(MID_ACTIVE_RUN_KEY) || "";
+          } catch {
+            savedRunId = "";
+          }
+          if (savedRunId.startsWith("midrun_")) {
+            const savedStatusUrl = new URL(`${url.pathname}/${encodeURIComponent(savedRunId)}/status`, url.origin);
+            try {
+              const savedResponse = await resilientFetch(savedStatusUrl, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({...body, auto_continue: true}),
+                cache: "no-store",
+                credentials: "same-origin",
+                keepalive: true,
+              });
+              const savedPayload = await jsonPayload(savedResponse);
+              if (savedResponse.ok && savedPayload) {
+                const normalized = normalizedProgress(savedPayload);
+                lastGoodByRun.set(savedRunId, normalized);
+                rememberMidRun(normalized);
+                return responseFromPayload(savedResponse, normalized);
+              }
+              if (savedResponse.status !== 404) return savedRunUnavailable(savedRunId, body);
+              try {
+                window.sessionStorage.removeItem(MID_ACTIVE_RUN_KEY);
+              } catch {
+                // A missing saved run may still proceed through normal start validation.
+              }
+            } catch {
+              return savedRunUnavailable(savedRunId, body);
+            }
+          }
+        }
+
+        // Assessment starts remain single-shot. Only exact-run status reads retry.
         const response = await originalFetch(input, init);
         const payload = await jsonPayload(response);
         if (response.ok && payload) {
           const normalized = normalizedProgress(payload);
           const runId = String(normalized.run_id || "");
           if (runId) lastGoodByRun.set(runId, normalized);
+          rememberMidRun(normalized);
           return responseFromPayload(response, normalized);
         }
         return response;
@@ -253,6 +355,7 @@ export default function AssessmentStatusResilience() {
           if (payload) {
             const normalized = normalizedProgress(payload);
             lastGoodByRun.set(runId, normalized);
+            rememberMidRun(normalized);
             return responseFromPayload(response, normalized);
           }
           return response;
