@@ -5,6 +5,7 @@ import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
+import AssessmentStatusResilience from "./AssessmentStatusResilience";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
@@ -27,6 +28,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <MidWorkspaceProvider>
+          <AssessmentStatusResilience />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
