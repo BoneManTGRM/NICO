@@ -44,6 +44,7 @@ from nico.post_polish_score_reconciliation_patch import install_post_polish_scor
 from nico.express_completion_score_binding import install_express_completion_score_binding
 from nico.hosted_report_intelligence_enrichment import install_hosted_report_intelligence_enrichment
 from nico.report_intelligence_accuracy_patch import install_report_intelligence_accuracy_patch
+from nico.triage_aware_scanner_finding_truth import install_triage_aware_scanner_finding_truth
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -73,6 +74,7 @@ install_mid_checkpoint_optional_evidence_compat()
 install_assessment_recovery_readiness_patch()
 install_backup_restore_readiness_patch()
 install_scanner_history_truth()
+install_triage_aware_scanner_finding_truth()
 install_full_scanner_recovery()
 install_full_blocked_state_truth()
 install_progressive_mid_report_patch()
