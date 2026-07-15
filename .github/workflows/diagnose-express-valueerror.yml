@@ -11,25 +11,31 @@ permissions:
 jobs:
   reproduce:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GITHUB_TOKEN: ${{ github.token }}
+      NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install focused runtime dependencies
-        run: python -m pip install requests==2.34.2 reportlab==5.0.0
-      - name: Reproduce hosted Express collection
+      - name: Install production runtime dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Reproduce production Express collection
         id: reproduce
         continue-on-error: true
         run: |
+          TRACE_PATH="$RUNNER_TEMP/express-reproduction.txt"
+          echo "TRACE_PATH=$TRACE_PATH" >> "$GITHUB_ENV"
           python - <<'PY'
           import json
+          import os
           import traceback
           from pathlib import Path
-          from nico.hosted_assessment import run_github_assessment
+
+          import nico.api.production_bootstrap  # installs the Railway production patch stack
+          import nico.api.main as api_main
 
           payload = {
               "repository": "BoneManTGRM/NICO",
@@ -45,11 +51,12 @@ jobs:
               "authorization_scope": "repository assessment only",
               "refresh_full_evidence": True,
           }
+          trace_path = Path(os.environ["RUNNER_TEMP"]) / "express-reproduction.txt"
           try:
-              result = run_github_assessment(payload)
+              result = api_main.run_github_assessment(payload)
           except Exception:
               text = traceback.format_exc()
-              Path("express-reproduction.txt").write_text(text, encoding="utf-8")
+              trace_path.write_text(text, encoding="utf-8")
               print(text)
               raise
           summary = json.dumps({
@@ -59,7 +66,7 @@ jobs:
               "report_keys": sorted((result.get("reports") or {}).keys()),
               "unavailable_data_notes": result.get("unavailable_data_notes") or [],
           }, indent=2)
-          Path("express-reproduction.txt").write_text(summary, encoding="utf-8")
+          trace_path.write_text(summary, encoding="utf-8")
           print(summary)
           if result.get("status") != "complete":
               raise SystemExit(f"Unexpected terminal status: {result.get('status')}")
@@ -69,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: express-valueerror-reproduction
-          path: express-reproduction.txt
+          path: ${{ env.TRACE_PATH }}
           if-no-files-found: error
       - name: Preserve reproduction failure
         if: steps.reproduce.outcome == 'failure'
