@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
-"""Real MalamuteNICO-Auditor (local, no server)
+"""NICO local authorized repository auditor.
 
-Usage (recommended):
+Usage:
     python -m nico.auditor <url> --tier full --swarm
 
-Or add 'auditor' subcommand to cli.py for `python -m nico auditor ...`"""
+The auditor clones an explicitly authorized repository into a temporary workspace,
+runs NICO's real local scanner, and returns evidence-bound findings and report-only
+repair candidates. It does not edit, commit, push, or deploy changes to the target.
+"""
+
+from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
-try:
-    from nico.cli import (
-        run_scan, apply_rye, repairs_for, generate_reports,
-        scan_test_lab, scan_drift_demo, verify_latest,
-        rye_score, Store
-    )
-except ImportError:
-    print("Importing from nico.cli... ensure PYTHONPATH or installed package")
-    raise
+from nico.cli import generate_reports, run_scan
+from nico.swarm_bugs import swarm_audit
 
-def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: bool = False) -> dict:
-    print(f"\n🚀 Starting {tier.upper()} audit for {repo_url} (local mode)")
 
+def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: bool = False) -> dict[str, Any]:
     repo_name = repo_url.rstrip("/").split("/")[-1]
     workdir = Path("/tmp/nico_audit") / repo_name
     if workdir.exists():
@@ -35,54 +32,87 @@ def audit(repo_url: str, tier: str = "full", mode: str = "audit", use_swarm: boo
     try:
         subprocess.run(
             ["git", "clone", "--depth", "1", repo_url, str(workdir)],
-            check=True, capture_output=True, text=True
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
-    except subprocess.CalledProcessError as e:
-        return {"error": f"Clone failed: {e.stderr}", "semaphore": "Red"}
-
-    result = run_scan(str(workdir), kind="url_audit")
-    findings = result.get("scan", {}).get("findings", [])
-    repairs = result.get("repairs", [])
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        message = getattr(exc, "stderr", None) or str(exc)
+        return {
+            "status": "failed",
+            "error": f"Clone failed: {message}",
+            "semaphore": "red",
+            "code_changes_applied": False,
+        }
 
     if use_swarm:
-        for f in findings:
-            f["rye"] = rye_score(f)
+        swarm_result = swarm_audit(str(workdir))
+        findings = [item for item in swarm_result.get("findings", []) or [] if isinstance(item, dict)]
+        repairs = [item for item in swarm_result.get("repair_candidates", []) or [] if isinstance(item, dict)]
+        scan_id = swarm_result.get("scan_id")
+        detector_evidence = swarm_result.get("truth_rules", [])
+    else:
+        scan_result = run_scan(str(workdir), kind="url_audit")
+        scan = scan_result.get("scan") if isinstance(scan_result.get("scan"), dict) else {}
+        findings = [item for item in scan.get("findings", []) or [] if isinstance(item, dict)]
+        repairs = [item for item in scan_result.get("repairs", []) or [] if isinstance(item, dict)]
+        scan_id = scan.get("id")
+        detector_evidence = ["Standard NICO local scanner path was used."]
 
     report_paths = generate_reports()
-
+    semaphore = "green" if not findings else "yellow" if len(findings) < 10 else "red"
     report = {
+        "status": "complete",
         "repo": repo_url,
         "tier": tier,
         "mode": mode,
-        "semaphore": "🟢 Green" if len(findings) == 0 else "🟡 Mid" if len(findings) < 10 else "🔴 Red",
+        "scan_id": scan_id,
+        "semaphore": semaphore,
         "findings_count": len(findings),
-        "repairs_count": len(repairs),
+        "repair_candidate_count": len(repairs),
         "rye_top": sorted(
-            [{"issue": f.get("title"), "rye": f.get("rye", {}).get("score", 0)} for f in findings],
-            key=lambda x: x["rye"], reverse=True
-        )[:5],
-        "quick_wins": [r.get("smallest_safe_change") for r in repairs[:3]],
-        "roadmap_6mo": "TGRM repairs prioritized by RYE score. Start with top 3.",
-        "resourcing": "1 Product Engineering Architect (AI-augmented) + 2 Mobile/Product Engineers + QA swarm",
-        "retainer": "Persistent RYE monitoring + auto ceremonies active" if mode == "retainer" else "Audit complete",
+            [
+                {
+                    "issue": finding.get("title"),
+                    "rye": (finding.get("rye") or {}).get("score", 0),
+                    "severity": finding.get("severity"),
+                    "affected_file": finding.get("affected_file"),
+                }
+                for finding in findings
+            ],
+            key=lambda item: item["rye"],
+            reverse=True,
+        )[:10],
+        "quick_wins": [repair.get("smallest_safe_change") for repair in repairs[:5]],
+        "repair_candidates": repairs[:15],
+        "roadmap_6mo": "Prioritize evidence-bound TGRM repair candidates by RYE score and verify each adopted change.",
+        "resourcing": "Assign owners from the affected capability and require independent review for high-risk repairs.",
+        "retainer": (
+            "Ongoing evidence collection and repair-memory review are available; no automatic code change is enabled."
+            if mode == "retainer"
+            else "Audit complete; human review required."
+        ),
         "report_files": report_paths,
         "swarm_used": use_swarm,
+        "detector_evidence": detector_evidence,
+        "code_changes_applied": False,
+        "automatic_application_allowed": False,
+        "human_review_required": True,
     }
-
-    print("\n✅ Real audit complete (local clone + NICO engine + RYE)")
     print(json.dumps(report, indent=2, default=str))
     return report
 
 
-def main():
-    parser = argparse.ArgumentParser(description="MalamuteNICO-Auditor - Real local agent")
-    parser.add_argument("url", help="Public GitHub repo URL")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="NICO authorized local repository auditor")
+    parser.add_argument("url", help="Authorized GitHub repository URL")
     parser.add_argument("--tier", default="full", choices=["express", "mid", "full"])
     parser.add_argument("--mode", default="audit", choices=["audit", "retainer"])
     parser.add_argument("--swarm", action="store_true")
     args = parser.parse_args()
-
     audit(args.url, args.tier, args.mode, args.swarm)
+
 
 if __name__ == "__main__":
     main()

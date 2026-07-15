@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from nico.code_repair_suggestions import build_code_suggestion
 from nico.local_scan_engine import new_id, now
 
 
@@ -60,9 +61,9 @@ def rye_score(
         "why_this_ranks_above_others": (
             f"{severity} severity, {category} category, recurrence {recurrence}, and verification availability."
         ),
-        "what_can_be_safely_automated": "Scan, report, score, generate repair prompt, and run local verification.",
+        "what_can_be_safely_automated": "Scan, report, score, generate a report-only repair candidate, and run local verification.",
         "what_needs_approval": (
-            "Production changes, credential rotation, deployments, destructive actions, or broad infrastructure changes."
+            "Any code change, production change, credential rotation, deployment, destructive action, or broad infrastructure change."
         ),
         "what_can_wait": "Lower-scoring repairs with limited exposure and no recurrence.",
         "what_would_be_overkill": "Broad rewrites before targeted local verification.",
@@ -90,21 +91,35 @@ def repairs_for(
     id_factory: Callable[[str], str] = new_id,
     clock: Callable[[], str] = now,
 ) -> list[dict[str, Any]]:
-    """Build the existing bounded repair-plan variants without applying changes."""
+    """Build bounded report-only repair variants without applying changes."""
 
     repairs: list[dict[str, Any]] = []
     for finding in findings:
         base_score = finding.get("rye", rye_score(finding, memory)).get("score", 0)
-        fix = REPAIR_LIBRARY.get(finding["category"], "Apply smallest defensive fix and verify.")
+        category = str(finding.get("category") or "unknown")
+        fix = REPAIR_LIBRARY.get(category, "Apply smallest defensive fix and verify.")
         files = [finding["affected_file"]] if finding.get("affected_file") else []
+        evidence = [
+            str(value)
+            for value in (
+                finding.get("evidence")
+                or [finding.get("masked_evidence"), finding.get("technical_impact")]
+            )
+            if value
+        ]
+        code_suggestion = build_code_suggestion(
+            category=category,
+            issue=str(finding.get("title") or category),
+            evidence=evidence,
+            affected_files=files,
+        )
         prompt = (
-            f"Fix only the {finding.get('title', finding['category'])} issue in "
+            f"Prepare a report-only repair proposal for the {finding.get('title', category)} issue in "
             f"{finding.get('affected_file', 'the affected file')}.\n"
-            "Do not rewrite unrelated code.\n"
-            f"Apply this targeted defensive repair: {fix}\n"
-            "Add the smallest relevant tests.\n"
-            "Run local tests or a NICO rescan.\n"
-            "Return a short verification summary.\n"
+            "Do not edit, commit, push, deploy, or open a pull request against the assessed repository.\n"
+            f"Use this targeted defensive repair direction: {fix}\n"
+            "Include the suggested code only as an unverified candidate.\n"
+            "Add the smallest relevant tests and a rollback plan.\n"
             "Never expose raw secrets."
         )
         for repair_type, delta, level in (
@@ -119,30 +134,33 @@ def repairs_for(
                     "id": repair_id,
                     "finding_id": finding["id"],
                     "repair_type": repair_type,
-                    "exact_issue": finding.get("title", finding["category"]),
+                    "exact_issue": finding.get("title", category),
                     "affected_files": files,
                     "smallest_safe_change": fix,
+                    "code_suggestion": code_suggestion,
                     "tests_to_add": [
-                        "Add focused regression test if available.",
-                        "Run NICO rescan after repair.",
+                        "Add the smallest focused regression test that fails before the repair and passes after it.",
+                        "Run the affected test, full suite, build, and NICO rescan before human approval.",
                     ],
                     "verification_command": "python -m nico verify latest",
-                    "rollback_plan": "Revert targeted change if verification fails or new drift appears.",
+                    "rollback_plan": "Revert only the approved targeted change if verification fails or new drift appears.",
                     "codex_ready_patch_prompt": prompt,
                     "owner_friendly_explanation": (
-                        f"This {repair_type} repair reduces {finding['category']} risk without broad rewrites."
+                        f"This {repair_type} report candidate describes how to reduce {category} risk without changing the client repository."
                     ),
                     "developer_ready_explanation": (
-                        f"Target {files or ['affected code']}; verify with: {finding.get('verification_method')}"
+                        f"Review {files or ['affected code']}; verify with: {finding.get('verification_method')}"
                     ),
                     "rye_score": max(0, round(base_score + delta, 2)),
                     "autonomy_level": level,
-                    "approval_requirement": (
-                        "human_review_required_before_production_change"
-                        if finding["severity"] in {"high", "critical"}
-                        else "safe_for_local_repair_prompt_generation"
-                    ),
+                    "approval_requirement": "human_review_required_before_any_code_change",
                     "status": "suggested",
+                    "candidate_status": "report_only_unverified_candidate",
+                    "mode": "report_only",
+                    "code_change_applied": False,
+                    "automatic_application_allowed": False,
+                    "automatic_commit_allowed": False,
+                    "automatic_pull_request_allowed": False,
                     "created_at": clock(),
                 }
             )

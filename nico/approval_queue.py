@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from nico.storage import STORE
 
+
 VALID_STATES = {"pending", "approved", "rejected", "needs_more_evidence", "expired", "executed"}
 
 
@@ -27,6 +28,7 @@ def create_approval(payload: dict[str, Any]) -> dict[str, Any]:
             reused["idempotent_reuse"] = True
             return reused
 
+    code_suggestion = payload.get("code_suggestion") if isinstance(payload.get("code_suggestion"), dict) else {}
     item = {
         "approval_id": approval_id,
         "customer_id": payload.get("customer_id") or "default_customer",
@@ -39,6 +41,7 @@ def create_approval(payload: dict[str, Any]) -> dict[str, Any]:
         "suggested_fix_summary": payload.get("suggested_fix_summary", ""),
         "patch_steps": payload.get("patch_steps") or [],
         "patch_prompt": payload.get("patch_prompt", ""),
+        "code_suggestion": code_suggestion,
         "evidence": payload.get("evidence") or [],
         "affected_files_or_systems": payload.get("affected_files_or_systems") or [],
         "risk_level": payload.get("risk_level") or "unknown",
@@ -46,15 +49,33 @@ def create_approval(payload: dict[str, Any]) -> dict[str, Any]:
         "rollback_plan": payload.get("rollback_plan") or "Human reviewer must define or approve the rollback plan before execution.",
         "requester": payload.get("requester") or "nico",
         "approver": "",
+        "mode": payload.get("mode") or (code_suggestion.get("mode") if code_suggestion else "approval_required"),
+        "automatic_application_allowed": bool(payload.get("automatic_application_allowed", False)),
+        "code_change_applied": False,
+        "human_review_required": True,
         "idempotency_key": idempotency_key,
         "idempotent_reuse": False,
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "audit_log": [],
     }
+    if code_suggestion:
+        item["automatic_application_allowed"] = False
+        item["mode"] = "report_only"
     item["audit_log"].append({"timestamp": now_iso(), "action": "created", "actor": item["requester"]})
     STORE.put("approvals", approval_id, item)
-    STORE.audit("approval.created", {"approval_id": approval_id, "requested_action": item["requested_action"], "idempotency_key": idempotency_key}, customer_id=item["customer_id"], project_id=item["project_id"])
+    STORE.audit(
+        "approval.created",
+        {
+            "approval_id": approval_id,
+            "requested_action": item["requested_action"],
+            "idempotency_key": idempotency_key,
+            "mode": item["mode"],
+            "automatic_application_allowed": item["automatic_application_allowed"],
+        },
+        customer_id=item["customer_id"],
+        project_id=item["project_id"],
+    )
     return item
 
 
@@ -97,11 +118,14 @@ def draft_pr_request(payload: dict[str, Any]) -> dict[str, Any]:
         "title": payload.get("title") or "NICO proposed repair",
         "body": payload.get("body") or "Draft PR creation is approval-gated. GitHub write integration is not enabled in this safe MVP.",
         "evidence": item.get("evidence", []),
+        "code_suggestion": item.get("code_suggestion") or {},
         "test_plan": item.get("test_plan"),
         "rollback_plan": item.get("rollback_plan"),
+        "code_change_applied": False,
+        "automatic_application_allowed": False,
         "unavailable_data_notes": ["GitHub write integration is not enabled. No branch, commit, or PR was created."],
         "created_at": now_iso(),
     }
     STORE.put("draft_pr_records", record_id, record)
-    STORE.audit("draft_pr.requested", {"draft_pr_id": record_id, "approval_id": approval_id}, customer_id=record.get("customer_id"), project_id=record.get("project_id"))
+    STORE.audit("draft_pr.requested", {"draft_pr_id": record_id, "approval_id": approval_id, "code_change_applied": False}, customer_id=record.get("customer_id"), project_id=record.get("project_id"))
     return record
