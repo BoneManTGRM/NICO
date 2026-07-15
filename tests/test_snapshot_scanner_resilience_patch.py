@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from nico import scanner_recovery, scanner_worker, snapshot_scanner_worker
-from nico.mid_assessment_api import MidAssessmentStatusRequest
+from nico.mid_assessment_api import MidAssessmentStatusRequest, register_mid_assessment_routes
 from nico.mid_live_progress_patch import attach_mid_live_progress
 from nico.snapshot_scanner_resilience_patch import _run_with_failure_boundary
 from nico.storage import MemoryAdapter
@@ -50,6 +53,27 @@ def test_mid_status_contract_accepts_exact_scanner_identity() -> None:
     assert payload["customer_id"] == "customer_recovery"
     assert payload["project_id"] == "project_recovery"
     assert payload["auto_continue"] is True
+
+
+def test_mid_status_route_with_scan_id_reaches_handler_instead_of_422() -> None:
+    app = FastAPI()
+    register_mid_assessment_routes(app)
+    response = TestClient(app).post(
+        "/assessment/mid-run/midrun_missing_status_contract/status",
+        json={
+            "repository": "owner/repository",
+            "scan_id": "scan_snapshot_exact_status",
+            "customer_id": "customer_recovery",
+            "project_id": "project_recovery",
+            "authorization_confirmed": True,
+            "authorized": True,
+            "auto_continue": False,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.status_code != 422
+    assert response.json()["detail"]["status"] == "not_found"
 
 
 def test_snapshot_recovery_reuses_exact_scan_run_and_snapshot_identity() -> None:
