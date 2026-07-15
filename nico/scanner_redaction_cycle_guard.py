@@ -7,6 +7,7 @@ import nico.scanner_tool_runners as scanner_tools
 
 SCANNER_REDACTION_CYCLE_GUARD_VERSION = "nico.scanner_redaction_cycle_guard.v1"
 _MARKER = "_nico_scanner_redaction_cycle_guard_v1"
+_COMPATIBILITY_MARKER = "_nico_scanner_redaction_safety_v1"
 _MAX_REDACTION_DEPTH = 64
 
 
@@ -97,12 +98,21 @@ def cycle_safe_redact_payload(
 
 def install_cycle_safe_scanner_redaction() -> dict[str, Any]:
     current: Callable[[Any], Any] = scanner_tools.redact_payload
-    already_installed = bool(getattr(current, _MARKER, False))
+    already_installed = bool(
+        getattr(current, _MARKER, False)
+        or getattr(current, _COMPATIBILITY_MARKER, False)
+    )
     safe_redactor = current if already_installed else cycle_safe_redact_payload
     if not already_installed:
-        setattr(safe_redactor, _MARKER, True)
         setattr(safe_redactor, "_nico_previous", current)
-        scanner_tools.redact_payload = safe_redactor
+
+    # Two independently deployed repairs used different marker names for the same
+    # cycle-safe contract. Mark the active implementation as satisfying both so the
+    # production bootstrap cannot replace one safe redactor with another and then
+    # incorrectly report that redaction protection is absent.
+    setattr(safe_redactor, _MARKER, True)
+    setattr(safe_redactor, _COMPATIBILITY_MARKER, True)
+    scanner_tools.redact_payload = safe_redactor
 
     hosted_worker_patched = False
     try:
@@ -120,6 +130,7 @@ def install_cycle_safe_scanner_redaction() -> dict[str, Any]:
         "maximum_depth": _MAX_REDACTION_DEPTH,
         "json_safe_output": True,
         "hosted_worker_patched": hosted_worker_patched,
+        "compatibility_markers_reconciled": True,
         "raw_secret_exposure_allowed": False,
     }
 
