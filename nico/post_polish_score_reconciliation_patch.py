@@ -5,6 +5,43 @@ from typing import Any, Callable
 
 PATCH_VERSION = "nico.post_polish_score_reconciliation.v1"
 _MARKER = "_nico_post_polish_score_reconciliation_v1"
+_EXPLICIT_TEST_ABSENCE = (
+    "no test-path signals were found",
+    "no test path signals were found",
+)
+
+
+def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
+    for item in result.get("sections", []) or []:
+        if isinstance(item, dict) and item.get("id") == section_id:
+            return item
+    return None
+
+
+def _remove_contradicted_test_absence(result: dict[str, Any]) -> int:
+    """Remove explicit repository-wide absence wording when tree proof is positive."""
+
+    stage = result.get("final_score_reconciliation")
+    if not isinstance(stage, dict) or int(stage.get("recursive_tree_test_path_count") or 0) <= 0:
+        return 0
+    code = _section(result, "code_audit")
+    if not code:
+        return 0
+
+    removed = 0
+    for key in ("evidence", "verified_claims", "findings", "unavailable"):
+        values = code.get(key)
+        if not isinstance(values, list):
+            continue
+        kept = []
+        for item in values:
+            lowered = str(item or "").lower()
+            if any(fragment in lowered for fragment in _EXPLICIT_TEST_ABSENCE):
+                removed += 1
+                continue
+            kept.append(item)
+        code[key] = kept
+    return removed
 
 
 def reconcile_after_polish(result: dict[str, Any]) -> dict[str, Any]:
@@ -17,6 +54,7 @@ def reconcile_after_polish(result: dict[str, Any]) -> dict[str, Any]:
     from nico.final_score_reconciliation_patch import reconcile_final_evidence_scores
 
     reconciled = reconcile_final_evidence_scores(result)
+    removed_absence_claims = _remove_contradicted_test_absence(reconciled)
     reconciled["executive_summary"] = consistency._build_executive_summary(reconciled)
     maturity = reconciled.get("maturity_signal") if isinstance(reconciled.get("maturity_signal"), dict) else {}
     source = reconciled.get("score_source_of_truth") if isinstance(reconciled.get("score_source_of_truth"), dict) else {}
@@ -37,6 +75,7 @@ def reconcile_after_polish(result: dict[str, Any]) -> dict[str, Any]:
     stage["final_stage"] = "post_polish"
     stage["post_polish_applied"] = True
     stage["exports_rebuilt_after_post_polish"] = True
+    stage["contradicted_test_absence_claims_removed"] = removed_absence_claims
     reconciled["final_score_reconciliation"] = stage
     consistency._rebuild_reports(reconciled)
     return reconciled
@@ -54,6 +93,7 @@ def install_post_polish_score_reconciliation_patch() -> dict[str, Any]:
             "executive_summary_refreshed": True,
             "score_details_refreshed": True,
             "exports_rebuilt": True,
+            "contradicted_test_absence_removed": True,
         }
     original = current
 
@@ -83,6 +123,7 @@ def install_post_polish_score_reconciliation_patch() -> dict[str, Any]:
         "executive_summary_refreshed": True,
         "score_details_refreshed": True,
         "exports_rebuilt": True,
+        "contradicted_test_absence_removed": True,
         "rebound_import_references": rebound,
         "score_inflation_allowed": False,
         "guardrail": (
