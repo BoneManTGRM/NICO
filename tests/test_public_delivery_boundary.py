@@ -179,4 +179,4 @@ def test_boundary_status_is_sanitized(monkeypatch):
 def test_docker_enables_proxy_headers_on_production_entrypoint():
     dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NICO_TRUST_PROXY_HEADERS=true" in dockerfile
-    assert "uvicorn nico.api.production:app" in dockerfile
+    assert "uvicorn nico.api.production_bootstrap:app" in dockerfile
