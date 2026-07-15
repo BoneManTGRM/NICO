@@ -41,6 +41,7 @@ from nico.final_score_reconciliation_patch import install_final_score_reconcilia
 from nico.post_polish_score_reconciliation_patch import install_post_polish_score_reconciliation_patch
 from nico.express_completion_score_binding import install_express_completion_score_binding
 from nico.hosted_report_intelligence_enrichment import install_hosted_report_intelligence_enrichment
+from nico.report_intelligence_accuracy_patch import install_report_intelligence_accuracy_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -83,5 +84,6 @@ install_final_score_reconciliation_patch()
 install_post_polish_score_reconciliation_patch()
 install_express_completion_score_binding()
 install_hosted_report_intelligence_enrichment()
+install_report_intelligence_accuracy_patch()
 
 __version__ = "0.1.0"
