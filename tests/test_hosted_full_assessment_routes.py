@@ -75,6 +75,7 @@ def test_hosted_openapi_schema_exposes_full_assessment_routes():
 
 def test_docker_starts_the_canonical_production_entrypoint():
     dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
-    assert "uvicorn nico.api.production:app" in dockerfile
+    assert "uvicorn nico.api.production_bootstrap:app" in dockerfile
+    assert "uvicorn nico.api.production:app" not in dockerfile
     assert "uvicorn nico.api.hosted:app" not in dockerfile
     assert "uvicorn nico.api.main:app" not in dockerfile
