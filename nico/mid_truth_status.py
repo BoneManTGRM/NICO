@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -28,6 +30,25 @@ TECHNICAL_SECTION_IDS = {
     "architecture_debt",
     "velocity_complexity",
 }
+_SCOPE_DISCLOSURE_MARKERS = (
+    "does not replace",
+    "does not prove",
+    "not proof that",
+    "clean scanner result",
+    "clean scanner execution",
+    "human review is still required",
+    "human triage",
+    "story-point expectations",
+    "developer seniority",
+    "review quality",
+    "business-value delivery",
+    "outside the scanned repository history",
+    "time-window operational evidence",
+    "not exact-commit code evidence",
+)
+_ARCHITECTURE_SUPERSEDED_MARKERS = (
+    "call-graph, coupling, duplication, and cyclomatic-complexity conclusions require language-specific analyzer output",
+)
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -49,6 +70,10 @@ def _tool_set(scanner: dict[str, Any], key: str) -> set[str]:
     return {str(item).strip().lower() for item in _list(scanner.get(key)) if str(item).strip()}
 
 
+def _hash(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+
+
 def _coverage_unit(unit_id: str, label: str, available: bool, evidence: str, limitation: str = "") -> dict[str, Any]:
     return {
         "id": unit_id,
@@ -60,15 +85,74 @@ def _coverage_unit(unit_id: str, label: str, available: bool, evidence: str, lim
     }
 
 
-def build_mid_evidence_coverage(result: dict[str, Any]) -> dict[str, Any]:
-    """Calculate coverage from twelve explicit evidence units, never from a score."""
+def _ensure_mid_evidence_ledger(result: dict[str, Any]) -> dict[str, Any]:
+    assessment = _dict(result.get("assessment"))
+    existing = _dict(assessment.get("evidence_ledger")) or _dict(result.get("evidence_ledger"))
+    if existing.get("entry_count"):
+        result["evidence_ledger"] = existing
+        if assessment:
+            assessment["evidence_ledger"] = existing
+            result["assessment"] = assessment
+        return existing
 
     snapshot = _dict(result.get("repository_snapshot"))
     repository = _dict(result.get("repository_evidence"))
     complexity = _dict(result.get("complexity_evidence"))
     scanner = _dict(result.get("scanner_evidence")) or _dict(result.get("scanner"))
-    assessment = _dict(result.get("assessment"))
-    ledger = _dict(assessment.get("evidence_ledger")) or _dict(result.get("evidence_ledger"))
+    entries: list[dict[str, Any]] = []
+
+    def add(entry_id: str, source: str, available: bool, reference: Any) -> None:
+        entries.append(
+            {
+                "entry_id": entry_id,
+                "source": source,
+                "status": "verified" if available else "unavailable",
+                "reference_hash": _hash(reference) if available else "",
+            }
+        )
+
+    add("repository_snapshot", "repository_snapshot", snapshot.get("status") == "attached", snapshot)
+    add("repository_evidence", "repository_evidence", repository.get("status") == "attached", repository)
+    add("complexity_evidence", "complexity_evidence", complexity.get("status") in {"attached", "available", "complete"}, complexity)
+    add("scanner_evidence", "scanner_evidence", scanner.get("status") in {"attached", "complete"}, scanner)
+    for tool in sorted(_tool_set(scanner, "tools_requested")):
+        available = tool in _tool_set(scanner, "tools_run")
+        add(f"scanner_tool:{tool}", "scanner_tool", available, {"tool": tool, "scan_id": scanner.get("scan_id")})
+    for section in _list(assessment.get("sections")):
+        if not isinstance(section, dict) or not section.get("id"):
+            continue
+        evidence = [str(item) for item in _list(section.get("evidence")) if str(item).strip()]
+        add(f"section:{section.get('id')}", "section_evidence", bool(evidence), evidence)
+
+    verified = sum(1 for item in entries if item["status"] == "verified")
+    unavailable = len(entries) - verified
+    ledger = {
+        "status": "complete" if entries and unavailable == 0 else "partial" if entries else "unavailable",
+        "entry_count": len(entries),
+        "verified_entry_count": verified,
+        "unavailable_entry_count": unavailable,
+        "entries": entries,
+        "ledger_hash": _hash(entries),
+        "run_id": result.get("run_id") or "",
+        "snapshot_commit_sha": snapshot.get("commit_sha") or "",
+        "generated_from_attached_evidence_only": True,
+        "human_review_required": True,
+    }
+    result["evidence_ledger"] = ledger
+    if assessment:
+        assessment["evidence_ledger"] = ledger
+        result["assessment"] = assessment
+    return ledger
+
+
+def build_mid_evidence_coverage(result: dict[str, Any]) -> dict[str, Any]:
+    """Calculate coverage from twelve explicit evidence units, never from a score."""
+
+    ledger = _ensure_mid_evidence_ledger(result)
+    snapshot = _dict(result.get("repository_snapshot"))
+    repository = _dict(result.get("repository_evidence"))
+    complexity = _dict(result.get("complexity_evidence"))
+    scanner = _dict(result.get("scanner_evidence")) or _dict(result.get("scanner"))
 
     files = _dict(repository.get("file_evidence"))
     dependencies = _dict(repository.get("dependency_evidence"))
@@ -123,7 +207,7 @@ def build_mid_evidence_coverage(result: dict[str, Any]) -> dict[str, Any]:
             "Snapshot-bound complexity measurement",
             complexity.get("status") in {"attached", "available", "complete"} and _count(complexity.get("files_analyzed")) > 0,
             f"files_analyzed={_count(complexity.get('files_analyzed'))}; snapshot_sha={complexity.get('snapshot_commit_sha')}",
-            "Complexity covers only readable sampled source files from the captured commit.",
+            "Complexity covers readable source files from the captured commit and records parser limitations separately.",
         ),
         _coverage_unit(
             "snapshot_scanner_match",
@@ -143,7 +227,7 @@ def build_mid_evidence_coverage(result: dict[str, Any]) -> dict[str, Any]:
             "secret_scanners",
             "Secrets and credential scanners",
             bool(tools_run & SECRET_TOOLS),
-            f"completed_tools={sorted(tools_run & SECRET_TOOLS)}",
+            f"completed_tools={sorted(tools_run & SECRET_TOOLS)}; full_history_verified={sorted(_tool_set(scanner, 'full_history_verified_tools') & SECRET_TOOLS)}",
             f"failed_or_unavailable={sorted((failed_tools | unavailable_tools) & SECRET_TOOLS)}" if (failed_tools | unavailable_tools) & SECRET_TOOLS else "",
         ),
         _coverage_unit(
@@ -197,6 +281,11 @@ def _technical_source_state(section_id: str, coverage_by_id: dict[str, dict[str,
     return VERIFIED, []
 
 
+def _is_scope_disclosure(note: str) -> bool:
+    lower = str(note or "").strip().lower()
+    return any(marker in lower for marker in _SCOPE_DISCLOSURE_MARKERS)
+
+
 def _technical_sections(result: dict[str, Any], coverage: dict[str, Any]) -> list[dict[str, Any]]:
     assessment = _dict(result.get("assessment"))
     sections = [
@@ -213,7 +302,14 @@ def _technical_sections(result: dict[str, Any], coverage: dict[str, Any]) -> lis
         section_id = str(section.get("id") or "unknown")
         status, missing_sources = _technical_source_state(section_id, coverage_by_id)
         evidence = [str(item) for item in _list(section.get("evidence")) if str(item).strip()]
-        limitations = [str(item) for item in _list(section.get("unavailable")) if str(item).strip()]
+        raw_limitations = [str(item) for item in _list(section.get("unavailable")) if str(item).strip()]
+        if section_id == "architecture_debt" and coverage_by_id.get("complexity_measurement", {}).get("available"):
+            raw_limitations = [
+                item for item in raw_limitations
+                if not any(marker in item.lower() for marker in _ARCHITECTURE_SUPERSEDED_MARKERS)
+            ]
+        scope_disclosures = [item for item in raw_limitations if _is_scope_disclosure(item)]
+        material_limitations = [item for item in raw_limitations if item not in scope_disclosures]
         relevant_failures: set[str] = set()
         if section_id == "dependency_health":
             relevant_failures = failed_tools & DEPENDENCY_TOOLS
@@ -225,12 +321,15 @@ def _technical_sections(result: dict[str, Any], coverage: dict[str, Any]) -> lis
             status = FAILED
         elif relevant_failures and status == VERIFIED:
             status = VERIFIED_WITH_LIMITATIONS
-        if status == VERIFIED and limitations:
+        if status == VERIFIED and material_limitations:
             status = VERIFIED_WITH_LIMITATIONS
         section["truth_status"] = status
         section["truth_status_slug"] = status.lower().replace(" ", "_")
         section["direct_evidence_count"] = len(evidence)
-        section["limitation_count"] = len(limitations) + len(missing_sources) + len(relevant_failures)
+        section["limitation_count"] = len(material_limitations) + len(missing_sources) + len(relevant_failures)
+        section["scope_disclosure_count"] = len(scope_disclosures)
+        section["scope_disclosures"] = scope_disclosures
+        section["unavailable"] = material_limitations
         section["missing_evidence_sources"] = missing_sources
         section["failed_evidence_tools"] = sorted(relevant_failures)
         section["human_review_required"] = status in {VERIFIED_WITH_LIMITATIONS, FAILED, HUMAN_REVIEW_REQUIRED}
@@ -258,6 +357,7 @@ def _external_sections(optional: dict[str, Any]) -> list[dict[str, Any]]:
                 "evidence": [f"User submitted field: {field}" for field in submitted],
                 "findings": [],
                 "unavailable": [] if submitted else [str(item.get("message") or "Required external evidence was not supplied.")],
+                "scope_disclosures": ["User-submitted context requires human validation and does not automatically change the technical score."],
                 "source_classification": "user_submitted_external_context" if submitted else "unavailable",
                 "direct_repository_proof": False,
                 "direct_evidence_count": len(submitted),
@@ -280,7 +380,7 @@ def build_mid_truth_status(result: dict[str, Any]) -> dict[str, Any]:
     review_items = [item["id"] for item in sections if item.get("human_review_required")]
     unavailable_sources = sum(len(_list(item.get("missing_evidence_sources"))) + len(_list(item.get("unavailable"))) for item in sections)
     return {
-        "version": "mid-truth-status-v1",
+        "version": "mid-truth-status-v2",
         "allowed_statuses": [VERIFIED, VERIFIED_WITH_LIMITATIONS, UNAVAILABLE, FAILED, HUMAN_REVIEW_REQUIRED],
         "sections": sections,
         "summary": {
@@ -292,13 +392,14 @@ def build_mid_truth_status(result: dict[str, Any]) -> dict[str, Any]:
             "human_review_required": counts[HUMAN_REVIEW_REQUIRED],
             "items_requiring_review": len(review_items),
             "unavailable_evidence_sources": unavailable_sources,
+            "scope_disclosures": sum(len(_list(item.get("scope_disclosures"))) for item in sections),
             "unsupported_claims_permitted": 0,
         },
         "review_item_ids": review_items,
         "evidence_coverage": coverage,
         "human_approval_required": True,
         "unsupported_claims_permitted": 0,
-        "rule": "Missing or failed evidence cannot be represented as a clean result. User-submitted context remains human-review-bound and cannot alter a score automatically.",
+        "rule": "Missing or failed evidence cannot be represented as clean. General epistemic caveats remain disclosed but do not downgrade otherwise complete evidence to unavailable or limited.",
     }
 
 
@@ -311,6 +412,7 @@ def attach_mid_truth_status(result: dict[str, Any]) -> dict[str, Any]:
         assessment["sections"] = truth["sections"]
         assessment["evidence_coverage"] = truth["evidence_coverage"]
         assessment["truth_status_summary"] = truth["summary"]
+        assessment["evidence_ledger"] = result.get("evidence_ledger") or assessment.get("evidence_ledger") or {}
         assessment["unsupported_claims_permitted"] = 0
         result["assessment"] = assessment
     result["review_summary"] = {
@@ -318,6 +420,7 @@ def attach_mid_truth_status(result: dict[str, Any]) -> dict[str, Any]:
         "sections_verified_with_limitations": truth["summary"]["verified_with_limitations"],
         "items_require_review": truth["summary"]["items_requiring_review"],
         "unavailable_evidence_sources": truth["summary"]["unavailable_evidence_sources"],
+        "scope_disclosures": truth["summary"]["scope_disclosures"],
         "unsupported_claims_permitted": 0,
     }
     return result
