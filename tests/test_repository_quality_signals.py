@@ -80,7 +80,7 @@ def test_deployed_sha_difference_requires_provider_verification() -> None:
     assert result["findings"][0]["code"] == "documentation_release_claim_verification_needed"
     assert documented_sha in result["findings"][0]["evidence"][0]
     assert current_sha in result["findings"][0]["evidence"][0]
-    assert "provider deployment evidence" in result["truth_rule"]
+    assert "provider deployment identity is required" in result["truth_rule"].lower()
 
 
 def test_relative_doc_links_resolve_from_document_directory() -> None:
