@@ -85,7 +85,7 @@ def test_structured_source_findings_produce_report_only_security_candidate() -> 
 
 
 def test_secret_source_finding_masks_raw_value() -> None:
-    token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    token = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     findings = structured_source_findings(
         FakeHosted,
         {"settings.py": f"TOKEN = '{token}'\n"},
