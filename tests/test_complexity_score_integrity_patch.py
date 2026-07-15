@@ -159,7 +159,7 @@ def test_calibrated_profile_reports_function_risk_density(tmp_path) -> None:
 
     profile = complexity_engine.build_complexity_profile(repo)
 
-    assert profile["scoring_model"] == "function_risk_density_v2"
+    assert profile["scoring_model"] == "function_risk_density_v3"
     assert profile["max_function_cyclomatic_complexity"] >= 2
     assert profile["complexity_density_per_100_loc"] > 0
     assert profile["architecture_score"] >= profile["complexity_score"]
