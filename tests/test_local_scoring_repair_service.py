@@ -67,7 +67,9 @@ def test_repair_plans_match_legacy_contract_with_deterministic_identity(monkeypa
     assert [item["repair_type"] for item in actual] == ["minimal", "moderate", "strong"]
     assert [item["autonomy_level"] for item in actual] == [1, 2, 3]
     assert all(item["approval_requirement"] == "human_review_required_before_any_code_change" for item in actual)
-    assert all(item["status"] == "report_only_unverified_candidate" for item in actual)
+    assert all(item["status"] == "suggested" for item in actual)
+    assert all(item["candidate_status"] == "report_only_unverified_candidate" for item in actual)
+    assert all(item["mode"] == "report_only" for item in actual)
     assert all("Do not edit, commit, push, deploy, or open a pull request" in item["codex_ready_patch_prompt"] for item in actual)
     assert all(item["code_change_applied"] is False for item in actual)
     assert all(item["automatic_application_allowed"] is False for item in actual)
