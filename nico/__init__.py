@@ -34,6 +34,7 @@ from nico.full_scanner_recovery_patch import install_full_scanner_recovery
 from nico.full_blocked_state_truth_patch import install_full_blocked_state_truth
 from nico.progressive_mid_report_patch import install_progressive_mid_report_patch
 from nico.mid_report_professional_v3 import install_mid_report_professional_v3
+from nico.mid_report_score_integrity import install_mid_report_score_integrity
 from nico.mid_report_truth_disclosure import install_mid_report_truth_disclosure
 from nico.report_flowable_safety import install_report_flowable_safety
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
@@ -85,6 +86,7 @@ install_full_scanner_recovery()
 install_full_blocked_state_truth()
 install_progressive_mid_report_patch()
 install_mid_report_professional_v3()
+install_mid_report_score_integrity()
 install_mid_report_truth_disclosure()
 install_report_flowable_safety()
 install_progressive_full_report_patch()
