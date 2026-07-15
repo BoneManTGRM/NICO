@@ -68,7 +68,7 @@ def test_finding_summary_preserves_tool_category_and_severity_counts() -> None:
     assert summary["severity_by_category"]["secret"] == {"critical": 1}
 
 
-def test_scanner_findings_cap_sections_instead_of_rewarding_execution_as_clean() -> None:
+def test_only_material_scanner_findings_cap_sections() -> None:
     assessment = {
         "sections": [
             {"id": "dependency_health", "score": 88, "status": "green", "evidence": [], "findings": []},
@@ -98,10 +98,14 @@ def test_scanner_findings_cap_sections_instead_of_rewarding_execution_as_clean()
     assert sections["dependency_health"]["score"] == 54
     assert sections["dependency_health"]["status"] == "red"
     assert sections["secrets_review"]["score"] == 54
-    assert sections["static_analysis"]["score"] == 79
-    assert sections["static_analysis"]["status"] == "yellow"
+    assert sections["static_analysis"]["score"] == 84
+    assert sections["static_analysis"]["status"] == "green"
+    assert sections["static_analysis"]["confidence"] == "scanner-review-items-disclosed"
     assert result["scorecard"]["scanner_finding_truth_applied"] is True
-    assert "not treated as a clean result" in result["findings"][0]
+    assert result["scorecard"]["raw_scanner_counts_used_as_material"] is False
+    assert result["scorecard"]["scanner_material_finding_count"] == 2
+    assert result["scorecard"]["scanner_review_required_count"] == 2
+    assert "material item(s) requiring human triage" in result["findings"][0]
 
 
 def test_idempotent_full_pipeline_uses_scanner_truth_handlers() -> None:
