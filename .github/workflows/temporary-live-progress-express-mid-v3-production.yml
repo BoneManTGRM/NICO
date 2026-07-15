@@ -1,0 +1,233 @@
+name: Temporary Live Progress and Mid v3 Production Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-live-progress-express-mid-v3-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PDF verifier
+        run: python -m pip install --disable-pip-version-check pypdf==6.14.2
+
+      - name: Verify deployed Express progress and Mid v3
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import io
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+          from pypdf import PdfReader
+
+          proxy = os.environ["NICO_PROXY"].rstrip("/")
+          repository = os.environ["NICO_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          out = Path("verification")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode(),
+                  method="POST",
+                  headers={"Content-Type": "application/json", "User-Agent": "NICO-progress-mid-v3-verifier"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode(errors="replace")
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {"status": "error", "message": raw[:500]}
+
+          def detail(value: dict[str, Any]) -> dict[str, Any]:
+              return value.get("detail") if isinstance(value.get("detail"), dict) else value
+
+          def pdf_text(encoded: str, filename: str) -> tuple[str, int, int]:
+              data = base64.b64decode(encoded)
+              (out / filename).write_bytes(data)
+              reader = PdfReader(io.BytesIO(data))
+              text = "\n".join(page.extract_text() or "" for page in reader.pages)
+              (out / filename.replace(".pdf", ".txt")).write_text(text, encoding="utf-8")
+              return text, len(reader.pages), len(data)
+
+          def run_express() -> dict[str, Any]:
+              customer = f"express_progress_{scope}"
+              project = f"express_progress_{scope}"
+              start_http, started = post("/assessment/express-run", {
+                  "repository": repository,
+                  "authorized": True,
+                  "authorization_confirmed": True,
+                  "authorized_by": "repository_owner_production_verification",
+                  "authorization_scope": "read-only production assessment verification",
+                  "client_name": "NICO Express progress verification",
+                  "project_name": "NICO",
+                  "assessment_mode": "express",
+                  "timeframe_days": 180,
+                  "customer_id": customer,
+                  "project_id": project,
+                  "refresh_full_evidence": True,
+              })
+              started = detail(started)
+              run_id = str(started.get("run_id") or "")
+              if start_http >= 400 or not run_id.startswith("express_run_"):
+                  raise AssertionError(f"Express did not start: {start_http} {started}")
+              snapshots = []
+              current = started
+              deadline = time.monotonic() + 1800
+              while time.monotonic() < deadline:
+                  current = detail(current)
+                  snapshots.append({
+                      "status": current.get("status"),
+                      "stage": current.get("current_stage"),
+                      "percent": current.get("progress_percent"),
+                      "updated_at": current.get("updated_at"),
+                  })
+                  if str(current.get("status") or "").lower() in {"complete", "completed", "failed", "blocked", "error", "interrupted"}:
+                      break
+                  time.sleep(1)
+                  _http, current = post(f"/assessment/express-run/{run_id}/status", {"customer_id": customer, "project_id": project})
+              current = detail(current)
+              if str(current.get("status") or "").lower() not in {"complete", "completed"}:
+                  raise AssertionError(f"Express terminal state={current.get('status')}")
+              stages = []
+              percents = []
+              for item in snapshots:
+                  stage = str(item.get("stage") or "")
+                  if stage and stage not in stages:
+                      stages.append(stage)
+                  value = item.get("percent")
+                  if isinstance(value, (int, float)):
+                      percents.append(int(value))
+              reports = current.get("reports") if isinstance(current.get("reports"), dict) else {}
+              text, pages, size = pdf_text(str(reports.get("pdf_base64") or ""), "express-v13-production.pdf")
+              normalized = " ".join(text.split())
+              errors = []
+              if len(stages) < 3:
+                  errors.append(f"only {len(stages)} observed stages: {stages}")
+              if not percents or percents[-1] != 100 or any(a > b for a, b in zip(percents, percents[1:])):
+                  errors.append(f"progress not monotonic to 100: {percents}")
+              for required in ("Decision Summary", "Highest-priority risks", "Immediate actions", "Verified controls", "Prioritized Repair Intelligence"):
+                  if required not in normalized:
+                      errors.append(f"Express PDF missing {required}")
+              if current.get("human_review_required") is not True or current.get("client_ready") is not False:
+                  errors.append("Express review guard changed")
+              if errors:
+                  raise AssertionError("; ".join(errors))
+              return {"run_id": run_id, "stages": stages, "percents": percents, "page_count": pages, "pdf_size": size, "score": (current.get("maturity_signal") or {}).get("score"), "terminal": current}
+
+          def run_mid() -> dict[str, Any]:
+              customer = f"mid_v3_{scope}"
+              project = f"mid_v3_{scope}"
+              common = {
+                  "repository": repository,
+                  "authorized": True,
+                  "authorization_confirmed": True,
+                  "authorized_by": "repository_owner_production_verification",
+                  "authorization_scope": "read-only snapshot-bound production assessment verification",
+                  "client_name": "NICO Mid v3 verification",
+                  "project_name": "NICO",
+                  "timeframe_days": 180,
+                  "customer_id": customer,
+                  "project_id": project,
+                  "run_scanners": True,
+                  "refresh_full_evidence": True,
+                  "auto_continue": True,
+                  "tools": ["pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog"],
+              }
+              start_http, started = post("/assessment/mid-run", common)
+              started = detail(started)
+              run_id = str(started.get("run_id") or "")
+              if start_http >= 400 or not run_id.startswith("midrun_"):
+                  raise AssertionError(f"Mid did not start: {start_http} {started}")
+              snapshots = []
+              current = started
+              deadline = time.monotonic() + 2100
+              while time.monotonic() < deadline:
+                  current = detail(current)
+                  active = next((item for item in current.get("progress", []) or [] if str(item.get("status") or "").lower() in {"running", "queued", "pending"}), {})
+                  snapshots.append({"status": current.get("status"), "step": active.get("step"), "message": active.get("message"), "scanner": current.get("scanner")})
+                  report_ready = current.get("report_generation_status") == "complete" and isinstance(current.get("reports"), dict) and bool((current.get("reports") or {}).get("pdf_base64"))
+                  review_ready = isinstance(current.get("approval_request"), dict) and bool((current.get("approval_request") or {}).get("approval_id"))
+                  if str(current.get("status") or "").lower() == "complete" and report_ready and review_ready:
+                      break
+                  if str(current.get("status") or "").lower() in {"failed", "blocked", "error", "interrupted"}:
+                      break
+                  time.sleep(2)
+                  body = dict(common)
+                  scan = current.get("scanner") if isinstance(current.get("scanner"), dict) else {}
+                  scanner_evidence = current.get("scanner_evidence") if isinstance(current.get("scanner_evidence"), dict) else {}
+                  body["scan_id"] = scan.get("scan_id") or scanner_evidence.get("scan_id") or ""
+                  _http, current = post(f"/assessment/mid-run/{run_id}/status", body)
+              current = detail(current)
+              reports = current.get("reports") if isinstance(current.get("reports"), dict) else {}
+              if not reports.get("pdf_base64"):
+                  raise AssertionError(f"Mid PDF missing; state={current.get('status')} report={current.get('report_generation_status')}")
+              text, pages, size = pdf_text(str(reports.get("pdf_base64")), "mid-v3-production.pdf")
+              normalized = " ".join(text.split())
+              assessment = current.get("assessment") if isinstance(current.get("assessment"), dict) else {}
+              scanner = current.get("scanner_evidence") if isinstance(current.get("scanner_evidence"), dict) else {}
+              ledger = current.get("evidence_ledger") if isinstance(current.get("evidence_ledger"), dict) else assessment.get("evidence_ledger") if isinstance(assessment.get("evidence_ledger"), dict) else {}
+              coverage = current.get("evidence_coverage") if isinstance(current.get("evidence_coverage"), dict) else assessment.get("evidence_coverage") if isinstance(assessment.get("evidence_coverage"), dict) else {}
+              errors = []
+              if scanner.get("snapshot_match") is not True or scanner.get("status") != "attached":
+                  errors.append(f"snapshot scanner not attached: {scanner.get('status')} match={scanner.get('snapshot_match')}")
+              if not isinstance(scanner.get("finding_summary"), dict) or "material_total" not in scanner.get("finding_summary", {}):
+                  errors.append("triage-aware finding summary missing")
+              if int(ledger.get("entry_count") or 0) < 1 or not ledger.get("ledger_hash"):
+                  errors.append(f"evidence ledger missing: {ledger}")
+              if int(coverage.get("denominator") or 0) != 12:
+                  errors.append(f"Mid coverage contract invalid: {coverage}")
+              for required in ("MID TECHNICAL ASSESSMENT", "Decision Summary", "Weighted Technical Scorecard", "Primary score constraints", "Prioritized Repair Intelligence", "Human-Context Modules", "Review by Exception"):
+                  if required not in normalized:
+                      errors.append(f"Mid PDF missing {required}")
+              if current.get("human_review_required") is not True or current.get("client_ready") is not False:
+                  errors.append("Mid review guard changed")
+              if errors:
+                  raise AssertionError("; ".join(errors))
+              return {"run_id": run_id, "snapshots": snapshots, "page_count": pages, "pdf_size": size, "score": (assessment.get("maturity_signal") or {}).get("score"), "coverage": coverage, "ledger": {k: ledger.get(k) for k in ("status", "entry_count", "verified_entry_count", "unavailable_entry_count", "ledger_hash")}, "scanner_summary": scanner.get("finding_summary"), "terminal": current}
+
+          evidence: dict[str, Any] = {"repository": repository}
+          try:
+              evidence["express"] = run_express()
+              evidence["mid"] = run_mid()
+              evidence["status"] = "passed"
+          except Exception as exc:
+              evidence["status"] = "failed"
+              evidence["error"] = f"{type(exc).__name__}: {exc}"
+              raise
+          finally:
+              (out / "production-verification.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          PY
+
+      - name: Upload production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-progress-express-mid-v3-production
+          path: verification/
+          if-no-files-found: error
+          retention-days: 7
