@@ -1,0 +1,131 @@
+name: Temporary Production Express Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-production-express-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Start one authorized Express run through production proxy
+        id: verify
+        continue-on-error: true
+        env:
+          NICO_PUBLIC_PROXY_URL: https://app.nicoaudit.com/api/nico
+          NICO_AUTHORIZED_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p audit-results
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          proxy = os.environ["NICO_PUBLIC_PROXY_URL"].rstrip("/")
+          repository = os.environ["NICO_AUTHORIZED_REPOSITORY"]
+          run_scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"express_verify_{run_scope}"
+          project_id = f"express_verify_{run_scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          output = Path("audit-results/production-express-verification.json")
+
+          def post(path: str, body: dict) -> tuple[int, dict]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={"Content-Type": "application/json", "User-Agent": "NICO-temporary-production-express-verification"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      payload = json.loads(raw)
+                  except ValueError:
+                      payload = {"status": "error", "message": "Production proxy returned a non-JSON response."}
+                  return exc.code, payload
+
+          request_payload = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "client_name": "NICO production verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "authorized_by": "repository_owner_production_verification",
+              "authorization_scope": "read-only repository assessment only",
+              "refresh_full_evidence": True,
+          }
+          start_status, started = post("/assessment/express-run", request_payload)
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
+          evidence = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_count": 1,
+              "start_http_status": start_status,
+              "start_response": started,
+              "run_id": run_id,
+              "automatic_retry": False,
+              "replacement_run": False,
+          }
+          if start_status >= 400 or not run_id.startswith("express_run_"):
+              evidence["status"] = "start_failed"
+              output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express verification start failed")
+
+          deadline = time.monotonic() + 1800
+          terminal_http = 0
+          terminal: dict = {}
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out", "message": "Bounded production verification polling expired."}
+
+          evidence["status_http_status"] = terminal_http
+          evidence["terminal_response"] = terminal
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          evidence["status"] = str(detail.get("status") or terminal.get("status") or "unknown")
+          output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          if evidence["status"].lower() not in {"complete", "completed"}:
+              raise SystemExit(f"Express verification ended with {evidence['status']}")
+          PY
+
+      - name: Upload bounded production verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temporary-production-express-verification
+          path: audit-results/production-express-verification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve verification result
+        if: always()
+        run: test "${{ steps.verify.outcome }}" = "success"
