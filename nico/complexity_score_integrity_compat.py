@@ -9,13 +9,26 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _append_unique(items: list[Any], value: str) -> None:
+    if value not in items:
+        items.append(value)
+
+
+def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
+    for section in result.get("sections", []) or []:
+        if isinstance(section, dict) and section.get("id") == section_id:
+            return section
+    return None
+
+
 def install_complexity_score_integrity_compat() -> dict[str, Any]:
     """Preserve the legacy attachment marker without overwriting measured profiles.
 
-    Older report-state tests and consumers expect a `complexity_engine` key whenever
-    all complexity tools are attached. The evidence-integrity patch deliberately does
-    not treat artifact presence as score-eligible proof. This wrapper retains the
-    non-scoring key only when no measured profile was selected.
+    Older report-state tests and consumers expect a `complexity_engine` key and an
+    attachment evidence line whenever all complexity tools are attached. The
+    evidence-integrity patch deliberately does not treat artifact presence as
+    score-eligible proof. This wrapper retains those compatibility signals only when
+    no measured profile was selected.
     """
 
     from nico import evidence_status
@@ -42,6 +55,7 @@ def install_complexity_score_integrity_compat() -> dict[str, Any]:
         )
         if not tools_complete or isinstance(result.get("complexity_engine"), dict):
             return
+
         result["complexity_engine"] = {
             "status": "attached",
             "source": "current-run scanner artifact evidence",
@@ -53,6 +67,21 @@ def install_complexity_score_integrity_compat() -> dict[str, Any]:
                 "LOC, and function-unit measurements are required for scoring."
             ),
         }
+
+        velocity = _section(result, "velocity_complexity")
+        if velocity:
+            velocity.setdefault("evidence", [])
+            _append_unique(
+                velocity["evidence"],
+                "Complexity evidence attached: current-run complexity-profile.json supports call-graph, cyclomatic-complexity, and hotspot/churn review; positive measurements remain required for scoring.",
+            )
+        architecture = _section(result, "architecture_debt")
+        if architecture:
+            architecture.setdefault("evidence", [])
+            _append_unique(
+                architecture["evidence"],
+                "Complexity evidence attached: complexity-profile.json is present for this run; positive analyzed-file, LOC, and function-unit measurements remain required before architecture score credit.",
+            )
 
     setattr(apply_complexity_language_with_attachment_compat, _COMPAT_MARKER, True)
     setattr(apply_complexity_language_with_attachment_compat, "_nico_previous", original)
