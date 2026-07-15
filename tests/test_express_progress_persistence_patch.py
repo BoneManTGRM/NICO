@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from fastapi import HTTPException
+
 from nico import express_async_api as api
 from nico.express_progress_persistence_patch import install_express_progress_persistence
 from nico.storage import MemoryAdapter
@@ -104,11 +107,39 @@ def test_running_status_uses_independent_latest_stage(monkeypatch) -> None:
     assert next(item for item in response["progress"] if item["step"] == "report_generation")["status"] == "running"
 
 
+def test_progress_overlay_never_replaces_tenant_scope_not_found(monkeypatch) -> None:
+    store = MemoryAdapter()
+    monkeypatch.setattr(api, "STORE", store)
+    install_express_progress_persistence()
+    run_id = "express_run_progress_scope"
+    request = _payload()
+
+    queued = api._response(run_id, request, "queued", "Accepted", stage="request_accepted", progress_percent=4)
+    api._record(run_id, request, queued)
+    monkeypatch.setattr(api, "_ACTIVE_RUNS", {run_id})
+
+    with pytest.raises(HTTPException) as exc:
+        api.express_assessment_status(
+            run_id,
+            api.ExpressAssessmentStatusRequest(
+                customer_id=request["customer_id"],
+                project_id="different_project",
+            ),
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == {
+        "status": "not_found",
+        "message": "Express assessment run not found.",
+    }
+
+
 def test_installer_is_idempotent() -> None:
     first = install_express_progress_persistence()
     second = install_express_progress_persistence()
 
     assert first["terminal_success_forces_100_percent"] is True
+    assert first["tenant_scope_failures_are_never_overlaid"] is True
     assert second["status"] == "installed"
     assert getattr(api._record, "_nico_express_progress_record_v1", False) is True
     assert getattr(api.express_assessment_status, "_nico_express_progress_status_v1", False) is True
