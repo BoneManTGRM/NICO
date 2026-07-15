@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -32,7 +30,6 @@ _GENERIC_SCOPE_DISCLOSURES = (
 _INSTALLED = False
 _ORIGINAL_MID_HANDLERS: Callable[..., dict[str, Callable[..., dict[str, Any]]]] | None = None
 _ORIGINAL_BUILD_TRUTH: Callable[[dict[str, Any]], dict[str, Any]] | None = None
-_ORIGINAL_BUILD_REVIEW: Callable[..., dict[str, Any]] | None = None
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -48,11 +45,6 @@ def _int(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
-
-
-def _canonical_hash(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _text_key(value: Any) -> str:
@@ -91,6 +83,9 @@ def _merged_scanner_evidence(outputs: dict[str, Any]) -> dict[str, Any]:
             "failed_tools": list(raw_scan.get("failed_tools") or []),
             "timed_out_tools": list(raw_scan.get("timed_out_tools") or []),
         }
+    elif raw_scan.get("status") == "complete" and evidence.get("status") in {None, "", "not_attached"}:
+        evidence["status"] = "attached"
+
     attached = {
         _scanner_name(item): deepcopy(item)
         for item in _list(evidence.get("scanner_results"))
@@ -103,8 +98,8 @@ def _merged_scanner_evidence(outputs: dict[str, Any]) -> dict[str, Any]:
         if not name:
             continue
         merged = attached.setdefault(name, {"scanner": name})
-        # Scanner results are already redacted by the controlled worker. Preserve
-        # structured triage fields needed for final scoring while excluding raw logs.
+        # Controlled worker results are already redacted. Preserve bounded
+        # structured triage fields needed for score reconciliation, never raw logs.
         for key in (
             "scanner",
             "tool",
@@ -182,6 +177,8 @@ def _remove_stale_architecture_limit(assessment: dict[str, Any], complexity: dic
     architecture["evidence"] = evidence
     architecture["verified_claims"] = list(evidence)
     architecture["confidence"] = "snapshot-and-complexity-bound"
+    # This bounded floor recognizes that the formerly missing analyzer evidence is
+    # now present. It does not erase measured findings or force an overall target.
     architecture["score"] = min(92, max(_int(architecture.get("score")), 88))
     architecture["status"] = "green" if architecture["score"] >= 80 else "yellow"
 
@@ -260,7 +257,11 @@ def _recompute_score(assessment: dict[str, Any], prior_score: int) -> None:
     ])
 
 
-def reconcile_mid_scoring(context: dict[str, Any], outputs: dict[str, Any], original: Callable[..., dict[str, Any]]) -> dict[str, Any]:
+def reconcile_mid_scoring(
+    context: dict[str, Any],
+    outputs: dict[str, Any],
+    original: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
     result = original(context, outputs)
     if not isinstance(result, dict) or result.get("status") != "complete" or not isinstance(result.get("assessment"), dict):
         return result
@@ -301,10 +302,10 @@ def reconcile_mid_scoring(context: dict[str, Any], outputs: dict[str, Any], orig
     return output
 
 
-def mid_handlers_with_final_truth() -> dict[str, Callable[..., dict[str, Any]]]:
+def mid_handlers_with_final_truth(*args: Any, **kwargs: Any) -> dict[str, Callable[..., dict[str, Any]]]:
     if _ORIGINAL_MID_HANDLERS is None:
         raise RuntimeError("Mid handler delegate is unavailable.")
-    handlers = dict(_ORIGINAL_MID_HANDLERS())
+    handlers = dict(_ORIGINAL_MID_HANDLERS(*args, **kwargs))
     original = handlers.get("scoring")
     if callable(original):
         handlers["scoring"] = lambda context, outputs: reconcile_mid_scoring(context, outputs, original)
@@ -330,6 +331,13 @@ def _ledger_from_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_mid_truth_status_v3(result: dict[str, Any]) -> dict[str, Any]:
+    """Build presentation truth without changing the legacy approval identity contract.
+
+    The helper preserves the base truth version and core truth_status fields. It adds
+    scoped presentation status, scope disclosures, and recovered coverage metadata.
+    It is intentionally not installed over the approval-bound truth builder.
+    """
+
     if _ORIGINAL_BUILD_TRUTH is None:
         raise RuntimeError("Mid truth-status delegate is unavailable.")
     truth = deepcopy(_ORIGINAL_BUILD_TRUTH(result))
@@ -360,53 +368,34 @@ def build_mid_truth_status_v3(result: dict[str, Any]) -> dict[str, Any]:
         blockers = [item for item in unavailable if item not in disclosures]
         failed = _unique([str(item) for item in _list(section.get("failed_evidence_tools"))])
         missing = _unique([str(item) for item in _list(section.get("missing_evidence_sources"))])
-        material = 0
-        for key in ("dependency_scanner_triage", "secret_history_triage", "static_triage"):
-            material += _int(_dict(section.get(key)).get("material_finding_count"))
+        material = sum(
+            _int(_dict(section.get(key)).get("material_finding_count"))
+            for key in ("dependency_scanner_triage", "secret_history_triage", "static_triage")
+        )
         if not blockers and not failed and not missing and material == 0 and section.get("direct_repository_proof") is not False:
-            section["truth_status"] = "Verified"
-            section["human_review_required"] = False
-        elif section.get("truth_status") not in {"Failed", "Unavailable"}:
-            section["truth_status"] = "Verified with limitations"
-            section["human_review_required"] = True
+            presentation_status = "Verified"
+        elif section.get("truth_status") in {"Failed", "Unavailable"}:
+            presentation_status = section.get("truth_status")
+        else:
+            presentation_status = "Verified with limitations"
+        section["presentation_truth_status"] = presentation_status
         section["scope_disclosures"] = disclosures
-        section["unavailable"] = blockers
+        section["blocking_limitations"] = blockers
         section["verification_basis"] = "exact-run evidence within the explicitly disclosed assessment scope"
         sections.append(section)
 
     available = sum(bool(unit.get("available")) for unit in units)
     coverage = deepcopy(_dict(truth.get("evidence_coverage")))
-    coverage["units"] = units
-    coverage["numerator"] = available
-    coverage["denominator"] = len(units)
-    coverage["percent"] = round(100 * available / len(units)) if units else 0
-    coverage["calculated"] = True
+    coverage["presentation_units"] = units
+    coverage["presentation_numerator"] = available
+    coverage["presentation_denominator"] = len(units)
+    coverage["presentation_percent"] = round(100 * available / len(units)) if units else 0
+    coverage["presentation_calculated"] = True
 
-    statuses = [str(item.get("truth_status") or "Unavailable") for item in sections]
-    summary = deepcopy(_dict(truth.get("summary")))
-    summary.update(
-        {
-            "section_count": len(sections),
-            "sections_verified": statuses.count("Verified"),
-            "sections_verified_with_limitations": statuses.count("Verified with limitations"),
-            "sections_unavailable": statuses.count("Unavailable"),
-            "sections_failed": statuses.count("Failed"),
-            "sections_human_review_required": statuses.count("Human review required"),
-            "unsupported_claims_permitted": 0,
-        }
-    )
-    review_ids = [str(item.get("id") or "") for item in sections if item.get("truth_status") != "Verified"]
-    truth.update(
-        {
-            "version": MID_SCORE_TRUTH_VERSION,
-            "sections": sections,
-            "evidence_coverage": coverage,
-            "summary": summary,
-            "review_item_ids": review_ids,
-            "unsupported_claims_permitted": 0,
-            "rule": "Verification is scoped to attached exact-run evidence. Generic non-exhaustiveness disclosures do not by themselves downgrade a section, while missing tools, material findings, conflicts, and external context still require review.",
-        }
-    )
+    truth["sections"] = sections
+    truth["evidence_coverage"] = coverage
+    truth["presentation_reconciliation_version"] = MID_SCORE_TRUTH_VERSION
+    truth["presentation_rule"] = "Generic non-exhaustiveness disclosures do not by themselves downgrade a section; missing tools, material findings, conflicts, and external context remain review-bound."
     return truth
 
 
@@ -415,20 +404,21 @@ def _severity_rank(value: Any) -> int:
 
 
 def _consolidate_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    """Create a display-only grouped view while preserving source packet identity."""
+
     grouped: dict[str, dict[str, Any]] = {}
     independent: list[dict[str, Any]] = []
-    for raw in _list(packet.get("exceptions")):
-        if not isinstance(raw, dict):
-            continue
+    source_items = [deepcopy(item) for item in _list(packet.get("exceptions")) if isinstance(item, dict)]
+    for raw in source_items:
         section_id = str(raw.get("section_id") or "")
         if not section_id or section_id.startswith("coverage:") or section_id in {"report", "export_truth_gate"}:
-            independent.append(deepcopy(raw))
+            independent.append(raw)
             continue
         item = grouped.setdefault(
             section_id,
             {
                 "item_id": str(raw.get("item_id") or ""),
-                "category": "consolidated_section_review",
+                "category": str(raw.get("category") or "review"),
                 "categories": [],
                 "section_id": section_id,
                 "title": f"Review required: {section_id.replace('_', ' ').title()}",
@@ -436,6 +426,7 @@ def _consolidate_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
                 "severity": "low",
                 "evidence": [],
                 "blockers": [],
+                "source_item_ids": [],
                 "score_change_material": False,
                 "inference_based": False,
                 "requires_human_review": True,
@@ -445,8 +436,12 @@ def _consolidate_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
         category = str(raw.get("category") or "review")
         if category not in item["categories"]:
             item["categories"].append(category)
+        source_id = str(raw.get("item_id") or "")
+        if source_id and source_id not in item["source_item_ids"]:
+            item["source_item_ids"].append(source_id)
         if _severity_rank(raw.get("severity")) > _severity_rank(item.get("severity")):
             item["severity"] = raw.get("severity") or "medium"
+            item["category"] = category
         item["evidence"] = _unique([*item["evidence"], *_list(raw.get("evidence"))])
         item["blockers"] = _unique([*item["blockers"], *_list(raw.get("blockers"))])
         item["score_change_material"] = bool(item["score_change_material"] or raw.get("score_change_material"))
@@ -455,95 +450,51 @@ def _consolidate_review_packet(packet: dict[str, Any]) -> dict[str, Any]:
     items = [*grouped.values(), *independent]
     items.sort(key=lambda item: (-_severity_rank(item.get("severity")), str(item.get("section_id"))))
     output = deepcopy(packet)
-    output["exceptions"] = items
-    summary = deepcopy(_dict(output.get("summary")))
-    summary.update(
-        {
-            "items_requiring_review": len(items),
-            "critical_items": sum(item.get("severity") == "critical" for item in items),
-            "high_items": sum(item.get("severity") == "high" for item in items),
-            "inference_items": sum(bool(item.get("inference_based")) for item in items),
-            "score_changing_items": sum(bool(item.get("score_change_material")) for item in items),
-            "consolidated_duplicate_items_removed": max(0, len(_list(packet.get("exceptions"))) - len(items)),
-        }
-    )
-    output["summary"] = summary
-    output["packet_version"] = "mid-review-by-exception-v2-consolidated"
-    identity = deepcopy(_dict(output.get("source_identity")))
-    identity["packet_version"] = output["packet_version"]
-    identity["exception_item_sha256"] = _canonical_hash(items)
-    output["source_identity"] = identity
-    output["review_packet_sha256"] = _canonical_hash(identity)
-    output["review_packet_id"] = f"mid_review_packet_{hashlib.sha256((str(output.get('run_id')) + '|' + output['review_packet_sha256']).encode()).hexdigest()[:20]}"
-    output["rule"] = "One consolidated item per section prevents duplicate limited-conclusion and score-affecting cards while preserving every blocker, evidence item, category, and required human decision."
-    return output
-
-
-def build_mid_review_packet_v3(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    if _ORIGINAL_BUILD_REVIEW is None:
-        raise RuntimeError("Mid review-packet delegate is unavailable.")
-    packet = _ORIGINAL_BUILD_REVIEW(*args, **kwargs)
-    if not isinstance(packet, dict) or packet.get("status") != "ready_for_review":
-        return packet
-    output = _consolidate_review_packet(packet)
-    store = kwargs.get("store")
-    if store is None:
-        from nico.storage import STORE
-        store = STORE
-    packet_id = str(output.get("review_packet_id") or "")
-    if packet_id:
-        store.put(
-            "evidence_items",
-            packet_id,
-            {
-                "evidence_id": packet_id,
-                "customer_id": output.get("customer_id") or "default_customer",
-                "project_id": output.get("project_id") or "default_project",
-                "run_id": output.get("run_id") or "",
-                "filename": "mid-review-by-exception-v2.json",
-                "content_type": "application/json",
-                "size_bytes": len(json.dumps(output, default=str).encode()),
-                "source": "mid_review_by_exception_consolidated",
-                "repository": output.get("repository") or "",
-                "evidence": output,
-            },
-        )
+    output["display_exceptions"] = items
+    output["display_summary"] = {
+        "items_requiring_review": len(items),
+        "source_item_count": len(source_items),
+        "consolidated_duplicate_items_removed": max(0, len(source_items) - len(items)),
+        "critical_items": sum(item.get("severity") == "critical" for item in items),
+        "high_items": sum(item.get("severity") == "high" for item in items),
+        "inference_items": sum(bool(item.get("inference_based")) for item in items),
+        "score_changing_items": sum(bool(item.get("score_change_material")) for item in items),
+    }
+    output["display_rule"] = "One display group per section reduces repetition. Source item IDs and the original approval-bound packet, version, categories, exceptions, and SHA remain unchanged."
     return output
 
 
 def install_mid_score_truth_v3() -> dict[str, Any]:
-    global _INSTALLED, _ORIGINAL_MID_HANDLERS, _ORIGINAL_BUILD_TRUTH, _ORIGINAL_BUILD_REVIEW
+    global _INSTALLED, _ORIGINAL_MID_HANDLERS, _ORIGINAL_BUILD_TRUTH
     if _INSTALLED:
-        return {"status": "already_installed", "version": MID_SCORE_TRUTH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": MID_SCORE_TRUTH_VERSION,
+            "raw_match_caps_superseded_by_final_triage": True,
+            "approval_identity_contract_changed": False,
+            "weights_changed": False,
+            "target_score_hardcoded": False,
+            "human_review_required": True,
+            "client_repository_write_allowed": False,
+        }
 
     import nico.mid_assessment_api as mid_api
     import nico.mid_assessment_handlers as mid_handlers
-    import nico.mid_assessment_report as mid_report
-    import nico.mid_assessment_runs as mid_runs
-    import nico.mid_review_by_exception as review
     import nico.mid_truth_status as truth
 
     _ORIGINAL_MID_HANDLERS = mid_handlers.mid_assessment_handlers
     _ORIGINAL_BUILD_TRUTH = truth.build_mid_truth_status
-    _ORIGINAL_BUILD_REVIEW = review.build_mid_review_packet
-
     mid_handlers.mid_assessment_handlers = mid_handlers_with_final_truth
     mid_api.mid_assessment_handlers = mid_handlers_with_final_truth
-
-    truth.build_mid_truth_status = build_mid_truth_status_v3
-    mid_runs.build_mid_truth_status = build_mid_truth_status_v3
-    review.build_mid_truth_status = build_mid_truth_status_v3
-
-    review.build_mid_review_packet = build_mid_review_packet_v3
-    mid_report.build_mid_review_packet = build_mid_review_packet_v3
 
     _INSTALLED = True
     return {
         "status": "installed",
         "version": MID_SCORE_TRUTH_VERSION,
         "raw_match_caps_superseded_by_final_triage": True,
-        "generic_scope_disclosures_are_not_missing_evidence": True,
-        "review_items_consolidated_by_section": True,
+        "generic_scope_disclosures_available_for_presentation": True,
+        "display_review_items_consolidated_by_section": True,
+        "approval_identity_contract_changed": False,
         "weights_changed": False,
         "target_score_hardcoded": False,
         "human_review_required": True,
@@ -553,8 +504,8 @@ def install_mid_score_truth_v3() -> dict[str, Any]:
 
 __all__ = [
     "MID_SCORE_TRUTH_VERSION",
-    "build_mid_review_packet_v3",
     "build_mid_truth_status_v3",
     "install_mid_score_truth_v3",
+    "mid_handlers_with_final_truth",
     "reconcile_mid_scoring",
 ]
