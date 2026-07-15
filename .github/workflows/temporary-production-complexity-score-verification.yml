@@ -1,0 +1,215 @@
+name: Temporary Production Complexity Score Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-production-complexity-score-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Start one authorized Express run through production proxy
+        id: verify
+        continue-on-error: true
+        env:
+          NICO_PUBLIC_PROXY_URL: https://app.nicoaudit.com/api/nico
+          NICO_AUTHORIZED_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p audit-results
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          proxy = os.environ["NICO_PUBLIC_PROXY_URL"].rstrip("/")
+          repository = os.environ["NICO_AUTHORIZED_REPOSITORY"]
+          run_scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"complexity_verify_{run_scope}"
+          project_id = f"complexity_verify_{run_scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          output = Path("audit-results/production-complexity-score-verification.json")
+
+          def post(path: str, body: dict) -> tuple[int, dict]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-temporary-production-complexity-score-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      payload = json.loads(raw)
+                  except ValueError:
+                      payload = {"status": "error", "message": "Production proxy returned a non-JSON response."}
+                  return exc.code, payload
+
+          def find_report(value: Any) -> dict:
+              if isinstance(value, dict):
+                  sections = value.get("sections")
+                  if isinstance(sections, list) and sections and any(
+                      isinstance(item, dict) and item.get("id") in {"architecture_debt", "velocity_complexity"}
+                      for item in sections
+                  ):
+                      return value
+                  for item in value.values():
+                      found = find_report(item)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for item in value:
+                      found = find_report(item)
+                      if found:
+                          return found
+              return {}
+
+          def section_score(report: dict, section_id: str) -> dict:
+              for item in report.get("sections") or []:
+                  if isinstance(item, dict) and item.get("id") == section_id:
+                      return {
+                          "score": item.get("score"),
+                          "status": item.get("status"),
+                          "summary": item.get("summary"),
+                          "evidence": item.get("evidence") or [],
+                          "findings": item.get("findings") or [],
+                          "unavailable": item.get("unavailable") or item.get("unavailable_data") or [],
+                      }
+              return {}
+
+          request_payload = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "client_name": "NICO production complexity verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "authorized_by": "repository_owner_production_verification",
+              "authorization_scope": "read-only repository assessment only",
+              "refresh_full_evidence": True,
+          }
+          start_status, started = post("/assessment/express-run", request_payload)
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
+          evidence = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_count": 1,
+              "start_http_status": start_status,
+              "start_response": started,
+              "run_id": run_id,
+              "automatic_retry": False,
+              "replacement_run": False,
+          }
+          if start_status >= 400 or not run_id.startswith("express_run_"):
+              evidence["status"] = "start_failed"
+              output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express verification start failed")
+
+          deadline = time.monotonic() + 1800
+          terminal_http = 0
+          terminal: dict = {}
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out", "message": "Bounded production verification polling expired."}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          final_status = str(detail.get("status") or terminal.get("status") or "unknown")
+          report = find_report(terminal)
+          architecture = section_score(report, "architecture_debt")
+          velocity = section_score(report, "velocity_complexity")
+          ci_cd = section_score(report, "ci_cd")
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+          profile = report.get("complexity_engine") if isinstance(report.get("complexity_engine"), dict) else {}
+          artifact = report.get("complexity_artifact") if isinstance(report.get("complexity_artifact"), dict) else {}
+          artifact_profile = artifact.get("profile") if isinstance(artifact.get("profile"), dict) else {}
+          selected_profile = artifact_profile or profile
+          rendered = json.dumps(report, sort_keys=True).lower() if report else ""
+
+          summary = {
+              "overall_score": maturity.get("score"),
+              "maturity_level": maturity.get("level"),
+              "architecture": architecture,
+              "velocity": velocity,
+              "ci_cd": ci_cd,
+              "complexity_profile": {
+                  "status": artifact.get("status") or profile.get("status"),
+                  "verified_for_this_report": artifact.get("verified_for_this_report") or profile.get("verified_for_this_report"),
+                  "score_eligible": selected_profile.get("score_eligible", report.get("complexity_evidence_marker", {}).get("score_eligible")),
+                  "analyzed_files": selected_profile.get("analyzed_file_count") or selected_profile.get("source_file_count"),
+                  "source_loc": selected_profile.get("total_loc") or selected_profile.get("source_loc"),
+                  "function_units": selected_profile.get("total_functions") or selected_profile.get("function_count"),
+                  "complexity_score": selected_profile.get("complexity_score"),
+                  "architecture_score": selected_profile.get("architecture_score"),
+                  "velocity_score": selected_profile.get("velocity_score"),
+                  "risk_level": selected_profile.get("risk_level"),
+                  "scoring_model": selected_profile.get("scoring_model"),
+              },
+              "stale_zero_measurement_text_present": any(
+                  marker in rendered
+                  for marker in (
+                      "analyzed_files=0",
+                      "loc=0, function_units=0",
+                      "same-run analyzer did not produce valid measurements",
+                  )
+              ),
+          }
+          evidence["status_http_status"] = terminal_http
+          evidence["status"] = final_status
+          evidence["score_summary"] = summary
+          evidence["terminal_response"] = terminal
+          output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+
+          if final_status.lower() not in {"complete", "completed"}:
+              raise SystemExit(f"Express verification ended with {final_status}")
+          if not report:
+              raise SystemExit("Completed Express verification did not return a report payload")
+          if summary["stale_zero_measurement_text_present"]:
+              raise SystemExit("Completed report still contains stale zero-measurement complexity language")
+          if not architecture or not velocity:
+              raise SystemExit("Completed report did not contain Architecture and Velocity sections")
+          PY
+
+      - name: Upload bounded production verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-complexity-score-verification
+          path: audit-results/production-complexity-score-verification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve verification result
+        if: always()
+        run: test "${{ steps.verify.outcome }}" = "success"
