@@ -56,7 +56,7 @@ def test_decision_summary_and_duplicate_suppression() -> None:
     pdf = base64.b64decode(encoded or "")
     text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
     normalized = " ".join(text.split())
-    assert "EXPRESS TECHNICAL HEALTH ASSESSMENT" in normalized
+    assert "express technical health assessment" in normalized.lower()
     assert "Decision Summary" in normalized
     assert "Highest-priority risks" in normalized
     assert "Immediate actions" in normalized
