@@ -1,0 +1,311 @@
+name: Temporary Final v12 Sanitized Production Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-final-v12-sanitized-production-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PDF verifier
+        run: python -m pip install --disable-pip-version-check pypdf==6.14.2
+
+      - name: Run authorized production assessment and verify final v12 output
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import io
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          from pypdf import PdfReader
+
+          proxy = os.environ["NICO_PROXY"].rstrip("/")
+          repository = os.environ["NICO_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"final_v12_sanitized_{scope}"
+          project_id = f"final_v12_sanitized_{scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          json_path = Path("verification/final-v12-sanitized-production.json")
+          pdf_path = Path("verification/final-v12-sanitized-production.pdf")
+          text_path = Path("verification/final-v12-sanitized-production.txt")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-final-v12-sanitized-production-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {"status": "error", "message": "non-JSON response"}
+
+          def find_report(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  if (
+                      isinstance(value.get("sections"), list)
+                      and isinstance(value.get("reports"), dict)
+                      and isinstance(value.get("maturity_signal"), dict)
+                  ):
+                      return value
+                  for nested in value.values():
+                      found = find_report(nested)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for nested in value:
+                      found = find_report(nested)
+                      if found:
+                          return found
+              return {}
+
+          request_body = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "authorized_by": "repository_owner_final_v12_verification",
+              "authorization_scope": "read-only repository assessment and final output verification only",
+              "client_name": "NICO final v12 production verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "refresh_full_evidence": True,
+          }
+          start_http, started = post("/assessment/express-run", request_body)
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
+          evidence: dict[str, Any] = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_http_status": start_http,
+              "run_id": run_id,
+          }
+          if start_http >= 400 or not run_id.startswith("express_run_"):
+              evidence["start_response"] = started
+              json_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express assessment did not start")
+
+          terminal_http = 0
+          terminal: dict[str, Any] = {}
+          deadline = time.monotonic() + 2100
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out"}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          status = str(detail.get("status") or terminal.get("status") or "unknown").lower()
+          report = find_report(terminal)
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+          reports = report.get("reports") if isinstance(report.get("reports"), dict) else {}
+          repairs = report.get("repair_intelligence") if isinstance(report.get("repair_intelligence"), dict) else {}
+          candidates = [item for item in repairs.get("candidates", []) or [] if isinstance(item, dict)]
+          advisories = [item for item in repairs.get("advisories", []) or [] if isinstance(item, dict)]
+          action_summary = report.get("repair_action_summary") if isinstance(report.get("repair_action_summary"), dict) else {}
+          reconciliation = report.get("repair_intelligence_reconciliation") if isinstance(report.get("repair_intelligence_reconciliation"), dict) else {}
+          export = report.get("report_intelligence_export") if isinstance(report.get("report_intelligence_export"), dict) else {}
+          pdf_meta = report.get("report_intelligence_pdf") if isinstance(report.get("report_intelligence_pdf"), dict) else {}
+          quality = report.get("repository_quality_signals") if isinstance(report.get("repository_quality_signals"), dict) else {}
+          groups = quality.get("groups") if isinstance(quality.get("groups"), dict) else {}
+          branch = groups.get("branch_hygiene") if isinstance(groups.get("branch_hygiene"), dict) else {}
+          frontend = groups.get("frontend_routes") if isinstance(groups.get("frontend_routes"), dict) else {}
+          runtime = groups.get("runtime_patch_surface") if isinstance(groups.get("runtime_patch_surface"), dict) else {}
+          sections = [item for item in report.get("sections", []) or [] if isinstance(item, dict)]
+          dependency = next((item for item in sections if item.get("id") == "dependency_health"), {})
+          secrets = next((item for item in sections if item.get("id") == "secrets_review"), {})
+          ci = next((item for item in sections if item.get("id") == "ci_cd"), {})
+          quick_wins = [str(item) for item in report.get("quick_wins", []) or []]
+          markdown = str(reports.get("markdown") or "")
+          pdf_base64 = str(reports.get("pdf_base64") or "")
+
+          pdf_text = ""
+          page_count = 0
+          if pdf_base64:
+              pdf_bytes = base64.b64decode(pdf_base64)
+              pdf_path.write_bytes(pdf_bytes)
+              reader = PdfReader(io.BytesIO(pdf_bytes))
+              page_count = len(reader.pages)
+              pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+              text_path.write_text(pdf_text, encoding="utf-8")
+          normalized_pdf_text = " ".join(pdf_text.split())
+
+          priority_scores = [float(item.get("priority_score") or 0) for item in candidates]
+          tgrm_levels = [
+              int((item.get("tgrm") or {}).get("level") or 0)
+              for item in candidates
+              if isinstance(item.get("tgrm"), dict)
+          ]
+          candidate_titles = [str(item.get("title") or "") for item in candidates]
+          candidate_efforts = [str(item.get("effort") or "") for item in candidates]
+          advisory_titles = [str(item.get("title") or "") for item in advisories]
+          complexity_candidates = [title for title in candidate_titles if "complexity" in title.lower()]
+          dependency_text = " ".join(str(item) for item in dependency.get("evidence", []) or []).lower()
+          secret_text = " ".join(str(item) for item in secrets.get("evidence", []) or []).lower()
+          ci_text = " ".join(str(item) for item in ci.get("evidence", []) or []).lower()
+          dependency_clean = str(dependency.get("status") or "").lower() == "green" and not (dependency.get("findings") or []) and "scanner-worker dependency tools completed" in dependency_text
+          secrets_clean = str(secrets.get("status") or "").lower() == "green" and not (secrets.get("findings") or []) and "gitleaks" in secret_text and "trufflehog" in secret_text
+          ci_clean = str(ci.get("status") or "").lower() == "green" and all(marker in ci_text for marker in ("nico ci=success", "codeql advanced=success", "audit evidence=success"))
+
+          summary = {
+              "terminal_status": status,
+              "overall_score": maturity.get("score"),
+              "pdf_style": reports.get("pdf_style"),
+              "pdf_page_count": page_count,
+              "pdf_size_bytes": pdf_path.stat().st_size if pdf_path.exists() else 0,
+              "pdf_metadata": pdf_meta,
+              "priority_model": repairs.get("priority_model"),
+              "candidate_count": repairs.get("candidate_count"),
+              "code_suggestion_count": repairs.get("code_suggestion_count"),
+              "advisory_count": len(advisories),
+              "priority_scores": priority_scores,
+              "tgrm_levels": tgrm_levels,
+              "candidate_titles": candidate_titles,
+              "candidate_efforts": candidate_efforts,
+              "advisory_titles": advisory_titles,
+              "action_summary": action_summary,
+              "quick_wins": quick_wins,
+              "branch_count": branch.get("branch_count"),
+              "route_alias_count": len(frontend.get("route_aliases") or []),
+              "explicit_placeholders": frontend.get("explicit_placeholders") or [],
+              "runtime_patch_module_count": runtime.get("patch_compat_fallback_count"),
+              "runtime_installer_call_count": runtime.get("package_installer_call_count"),
+              "dependency_clean": dependency_clean,
+              "dependency_unavailable": dependency.get("unavailable") or [],
+              "secrets_clean": secrets_clean,
+              "ci_clean": ci_clean,
+              "reconciliation": reconciliation,
+              "export": export,
+              "human_review_required": report.get("human_review_required"),
+              "client_ready": report.get("client_ready"),
+          }
+          evidence.update({
+              "status": status,
+              "status_http_status": terminal_http,
+              "summary": summary,
+              "terminal_response": terminal,
+          })
+          json_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+
+          errors: list[str] = []
+          if status not in {"complete", "completed"}:
+              errors.append(f"terminal status={status}")
+          if int(maturity.get("score") or 0) < 90:
+              errors.append(f"overall score={maturity.get('score')}")
+          if reports.get("pdf_style") != "professional_report_v12_decision_ready":
+              errors.append(f"pdf style={reports.get('pdf_style')}")
+          if pdf_meta.get("decision_ready_portfolio") is not True:
+              errors.append(f"decision-ready PDF metadata missing: {pdf_meta}")
+          if repairs.get("priority_model") != "calibrated_weighted_v2":
+              errors.append(f"priority model={repairs.get('priority_model')}")
+          if not 5 <= len(candidates) <= 12:
+              errors.append(f"candidate count={len(candidates)}")
+          if len(advisories) < 2:
+              errors.append(f"advisory count={len(advisories)}")
+          if len(set(priority_scores)) < 3 or (priority_scores and max(priority_scores) >= 100):
+              errors.append(f"priority calibration invalid: {priority_scores}")
+          if len(set(tgrm_levels)) < 2:
+              errors.append(f"TGRM levels are not differentiated: {tgrm_levels}")
+          if any(value not in {"low", "medium", "high"} for value in candidate_efforts):
+              errors.append(f"effort values invalid: {candidate_efforts}")
+          if len(complexity_candidates) != 1:
+              errors.append(f"complexity findings not consolidated: {complexity_candidates}")
+          if any("source-file footprint" in title.lower() or "total source loc" in title.lower() for title in candidate_titles):
+              errors.append(f"repository size remains ranked as a defect: {candidate_titles}")
+          if not any("source-file footprint" in title.lower() for title in advisory_titles):
+              errors.append(f"source-footprint advisory missing: {advisory_titles}")
+          if secrets_clean and any("secret-pattern" in item.lower() or "rotate real credentials" in item.lower() for item in quick_wins):
+              errors.append(f"contradicted secret action remains: {quick_wins}")
+          if dependency_clean and any(
+              any(marker in str(item).lower() for marker in ("pip-audit", "npm audit", "osv scanner", "scanner-clean dependency"))
+              for item in dependency.get("unavailable", []) or []
+          ):
+              errors.append(f"contradicted dependency note remains: {dependency.get('unavailable')}")
+          if ci_clean and any("add or strengthen ci checks" in item.lower() or "add ci checks" in item.lower() for item in quick_wins):
+              errors.append(f"stale generic CI advice remains: {quick_wins}")
+          if ci_clean and action_summary.get("generic_ci_quick_win_suppressed_because_required_checks_green") is not True:
+              errors.append(f"CI suppression metadata missing: {action_summary}")
+          if int(branch.get("branch_count") or 0) < 500:
+              errors.append(f"branch inventory missing: {branch.get('branch_count')}")
+          if len(frontend.get("route_aliases") or []) < 5 or frontend.get("explicit_placeholders"):
+              errors.append(f"route classification incorrect: {frontend}")
+          if int(runtime.get("patch_compat_fallback_count") or 0) < 20 or int(runtime.get("package_installer_call_count") or 0) < 20:
+              errors.append(f"runtime patch signal missing: {runtime}")
+          if "Decision-Ready Repository Quality and Repair Intelligence" not in normalized_pdf_text:
+              errors.append("decision-ready appendix title missing")
+          if "Critical / High" not in pdf_text or "Planning Advisories - Not Ranked as Defects" not in pdf_text:
+              errors.append("portfolio or advisory section missing")
+          if "&quot;" in pdf_text or "-&gt;" in pdf_text:
+              errors.append("HTML entities remain in PDF")
+          if "density=None" in pdf_text or "max_function_cyclomatic=None" in pdf_text:
+              errors.append("client-visible None measurement remains")
+          if "density=None" in markdown or "max_function_cyclomatic=None" in markdown:
+              errors.append("None measurement remains in Markdown")
+          if not pdf_path.exists() or pdf_path.stat().st_size < 20000:
+              errors.append("PDF missing or too small")
+          if page_count < 9 or page_count > 16:
+              errors.append(f"unexpected page count={page_count}")
+          if export.get("score_changed") is not False:
+              errors.append(f"score changed during export: {export}")
+          if reconciliation.get("repository_size_ranked_as_defect") is not False:
+              errors.append(f"size advisory guard missing: {reconciliation}")
+          if report.get("human_review_required") is not True or report.get("client_ready") is not False:
+              errors.append("human review/client-ready guard changed")
+          if export.get("code_changes_applied") is not False or export.get("automatic_application_allowed") is not False:
+              errors.append("no-write guard changed")
+          if errors:
+              raise SystemExit("; ".join(errors))
+          PY
+
+      - name: Upload final production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-v12-sanitized-production-verification
+          path: verification/
+          if-no-files-found: error
+          retention-days: 7
