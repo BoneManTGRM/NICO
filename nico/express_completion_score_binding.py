@@ -263,7 +263,6 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         "early_source_regex_candidates_carried_forward": False,
         "superseded_pre_polish_findings_carried_forward": False,
         "repository_size_ranked_as_defect": False,
-        "unavailable_measurements_rendered_as_unavailable": True,
         "human_review_required": True,
         "automatic_application_allowed": False,
     }
@@ -298,7 +297,6 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         "repair_candidate_count": candidate_count,
         "code_suggestion_count": code_suggestion_count,
         "advisory_count": len(final_repairs.get("advisories", []) or []),
-        "unavailable_measurements_rendered_as_unavailable": True,
         "score_before": original_score,
         "score_after": final_score,
         "score_changed": original_score != final_score,
