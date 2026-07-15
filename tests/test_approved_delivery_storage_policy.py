@@ -107,4 +107,4 @@ def test_hosted_readiness_endpoint_is_public_and_sanitized(monkeypatch):
 def test_docker_requires_durable_delivery_storage():
     dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NICO_REQUIRE_DURABLE_DELIVERY_STORAGE=true" in dockerfile
-    assert "uvicorn nico.api.production:app" in dockerfile
+    assert "uvicorn nico.api.production_bootstrap:app" in dockerfile
