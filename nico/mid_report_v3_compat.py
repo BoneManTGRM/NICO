@@ -49,6 +49,8 @@ def _material_finding_count(section: dict[str, Any]) -> int:
 
 
 def _presentation_sections(payload: dict[str, Any]) -> None:
+    """Attach display fields without changing approval-bound source truth fields."""
+
     for section in _list(payload.get("sections")):
         if not isinstance(section, dict):
             continue
@@ -59,24 +61,21 @@ def _presentation_sections(payload: dict[str, Any]) -> None:
         ])
         disclosures = [item for item in unavailable if _is_generic_disclosure(item)]
         blockers = [item for item in unavailable if item not in disclosures]
-        original_status = str(section.get("truth_status") or "Unavailable")
+        source_status = str(section.get("truth_status") or "Unavailable")
         direct = section.get("direct_repository_proof") is not False
         material = _material_finding_count(section)
         if (
-            original_status not in {"Failed", "Unavailable", "Human review required"}
+            source_status not in {"Failed", "Unavailable", "Human review required"}
             and direct
             and not blockers
             and material == 0
         ):
             display_status = "Verified"
         else:
-            display_status = original_status
-        section["source_truth_status"] = original_status
-        section["truth_status"] = display_status
+            display_status = source_status
+        section["display_truth_status"] = display_status
         section["scope_disclosures"] = _unique([*_list(section.get("scope_disclosures")), *disclosures])
-        section["unavailable"] = blockers
-        section["missing_evidence_sources"] = []
-        section["failed_evidence_tools"] = []
+        section["display_blocking_limitations"] = blockers
         section["verification_basis"] = section.get("verification_basis") or "exact-run evidence within the explicitly disclosed assessment scope"
 
 
@@ -127,13 +126,14 @@ def _presentation_review(payload: dict[str, Any]) -> None:
     }
     display = _consolidate_review_packet(source_packet)
     review["source_exception_count"] = len(_list(source_packet.get("exceptions")))
-    review["exceptions"] = deepcopy(_list(display.get("display_exceptions")))
+    review["display_exceptions"] = deepcopy(_list(display.get("display_exceptions")))
     review["display_summary"] = deepcopy(_dict(display.get("display_summary")))
     review["display_rule"] = display.get("display_rule") or ""
-    # Approval and delivery continue to use the unchanged source packet identity.
+    # Preserve the original packet version, exception rows, item IDs, and SHA.
     review["packet_version"] = source_packet["packet_version"]
     review["review_packet_id"] = source_packet["review_packet_id"]
     review["review_packet_sha256"] = source_packet["review_packet_sha256"]
+    review["exceptions"] = source_packet["exceptions"]
     payload["review_packet"] = review
     decision = _dict(payload.get("decision_summary"))
     decision["review_items"] = int(_dict(display.get("display_summary")).get("items_requiring_review") or 0)
@@ -146,6 +146,24 @@ def _presentation_review(payload: dict[str, Any]) -> None:
     payload["executive_summary"] = executive
 
 
+def _rendering_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a presentation copy; never mutate the JSON evidence contract."""
+
+    rendered = deepcopy(payload)
+    for section in _list(rendered.get("sections")):
+        if not isinstance(section, dict):
+            continue
+        section["truth_status"] = section.get("display_truth_status") or section.get("truth_status")
+        section["unavailable"] = deepcopy(_list(section.get("display_blocking_limitations")))
+        section["missing_evidence_sources"] = []
+        section["failed_evidence_tools"] = []
+    review = _dict(rendered.get("review_packet"))
+    if review.get("display_exceptions") is not None:
+        review["exceptions"] = deepcopy(_list(review.get("display_exceptions")))
+    rendered["review_packet"] = review
+    return rendered
+
+
 def install_mid_report_v3_compat() -> dict[str, Any]:
     global _INSTALLED
     from nico import mid_assessment_report as report
@@ -155,6 +173,7 @@ def install_mid_report_v3_compat() -> dict[str, Any]:
         "identity_version": MID_REPORT_IDENTITY_VERSION,
         "presentation_version": MID_REPORT_PRESENTATION_VERSION,
         "approval_identity_preserved": True,
+        "source_truth_fields_preserved": True,
         "display_review_consolidated": True,
         "generic_scope_disclosures_separated": True,
         "material_findings_preserve_review_status": True,
@@ -181,12 +200,15 @@ def install_mid_report_v3_compat() -> dict[str, Any]:
         return payload
 
     def compatible_markdown(payload: dict[str, Any]) -> str:
-        value = original_markdown(payload)
-        return value.replace("DRAFT - HUMAN REVIEW REQUIRED", report.DRAFT_LABEL)
+        value = original_markdown(_rendering_payload(payload))
+        value = value.replace("DRAFT - HUMAN REVIEW REQUIRED", report.DRAFT_LABEL)
+        return value.replace("## Consolidated human review", "## Review by exception - Consolidated human review")
 
     def compatible_html(payload: dict[str, Any]) -> str:
-        value = original_html(payload)
-        return value.replace("DRAFT - HUMAN REVIEW REQUIRED", report.DRAFT_LABEL)
+        value = original_html(_rendering_payload(payload))
+        value = value.replace("DRAFT - HUMAN REVIEW REQUIRED", report.DRAFT_LABEL)
+        value = value.replace("Consolidated human review", "Review by exception - Consolidated human review")
+        return value.replace("Evidence coverage", "Automated evidence coverage", 1)
 
     def compatible_pdf(payload: dict[str, Any]) -> bytes:
         original_paragraph = v3._paragraph
@@ -195,12 +217,15 @@ def install_mid_report_v3_compat() -> dict[str, Any]:
             text = str(value or "").replace(
                 "DRAFT - HUMAN REVIEW REQUIRED - CLIENT DELIVERY BLOCKED",
                 f"{report.DRAFT_LABEL} - CLIENT DELIVERY BLOCKED",
+            ).replace(
+                "Consolidated human review",
+                "Review by exception - Consolidated human review",
             )
             return original_paragraph(text, style, limit)
 
         v3._paragraph = paragraph_with_legacy_label
         try:
-            return original_pdf(payload)
+            return original_pdf(_rendering_payload(payload))
         finally:
             v3._paragraph = original_paragraph
 
