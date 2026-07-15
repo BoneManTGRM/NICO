@@ -5,7 +5,7 @@ import styles from "./assessment.module.css";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 200;
+const MAX_POLL_ATTEMPTS = 240;
 const MID_RUN_EVENT = "nico:mid-run-selected";
 const TIER_EVENT = "nico:assessment-tier-selected";
 const FULL_TOOLS = [
@@ -19,6 +19,40 @@ const FULL_TOOLS = [
   "gitleaks",
   "trufflehog",
 ];
+
+const DEFAULT_STAGE_PERCENT: Record<string, number> = {
+  request_accepted: 4,
+  repo_evidence: 18,
+  repository_evidence: 18,
+  scanner_worker: 42,
+  scanner_reconciliation: 52,
+  evidence_attachment: 62,
+  accuracy_review: 66,
+  scoring: 74,
+  score_reconciliation: 76,
+  reports: 86,
+  report_generation: 86,
+  approval_request: 94,
+  truth_and_review_gates: 96,
+  complete: 100,
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  request_accepted: "Request accepted",
+  repo_evidence: "Repository evidence",
+  repository_evidence: "Repository evidence",
+  scanner_worker: "Scanner suite",
+  scanner_reconciliation: "Scanner reconciliation",
+  evidence_attachment: "Evidence attachment",
+  accuracy_review: "Accuracy review",
+  scoring: "Technical scoring",
+  score_reconciliation: "Score reconciliation",
+  reports: "Report generation",
+  report_generation: "Report generation",
+  approval_request: "Human-review request",
+  truth_and_review_gates: "Truth and review gates",
+  complete: "Complete",
+};
 
 type AssessmentTier = "express" | "mid" | "full";
 type RunPhase = "idle" | "starting" | "running" | "review_required" | "complete" | "failed" | "timed_out";
@@ -54,6 +88,9 @@ type AssessmentResult = AssessmentDocument & {
   customer_id?: string;
   project_id?: string;
   generated_at?: string;
+  updated_at?: string;
+  current_stage?: string;
+  progress_percent?: number;
   progress?: ProgressItem[];
   assessment?: AssessmentDocument;
   repository_snapshot?: {snapshot_id?: string; commit_sha?: string};
@@ -81,31 +118,27 @@ type AssessmentResult = AssessmentDocument & {
   human_review_required?: boolean;
   client_ready?: boolean;
 };
-
-type RunScope = {
-  customerId: string;
-  projectId: string;
-};
+type RunScope = {customerId: string; projectId: string};
 
 const TIER_COPY: Record<AssessmentTier, {eyebrow: string; title: string; summary: string; instructions: string[]}> = {
   express: {
     eyebrow: "EXPRESS ASSESSMENT",
     title: "Fast evidence-bound technical baseline",
-    summary: "Repository evidence, rapid scoring, and a downloadable draft report in one request.",
+    summary: "Repository evidence, calibrated scoring, decision-ready repair intelligence, and a downloadable draft report.",
     instructions: [
-      "Use Express for the fastest authorized repository baseline.",
-      "NICO generates the report directly from the evidence returned by this run.",
+      "Express now publishes real backend stages instead of displaying a fake poll-based percentage.",
+      "The report is generated directly from this run's reconciled evidence.",
       "Missing or failed evidence remains disclosed and human review is still required.",
     ],
   },
   mid: {
     eyebrow: "MID ASSESSMENT",
     title: "Complete snapshot-bound assessment",
-    summary: "One exact commit, scanner suite, evidence attachment, scorecard, draft report, and human-review request.",
+    summary: "One exact commit, modern scanner suite, evidence attachment, technical score, decision-ready draft, and human-review request.",
     instructions: [
       "Mid binds repository evidence and scanners to one exact run and snapshot.",
-      "After Run is selected, NICO continues the same run automatically until the draft and review request are ready.",
-      "NICO stops at human review. It never approves or delivers the report automatically.",
+      "NICO continues the same run through evidence, scanners, scoring, report generation, and review-request creation.",
+      "The score reflects verified evidence and material findings; it is not forced upward.",
     ],
   },
   full: {
@@ -113,9 +146,9 @@ const TIER_COPY: Record<AssessmentTier, {eyebrow: string; title: string; summary
     title: "Deep multi-section technical assessment",
     summary: "Repository evidence, comprehensive scanners, multi-section scoring, trust-gated reports, and final-review request.",
     instructions: [
-      "Full runs the complete repository and scanner evidence pipeline using the Full Assessment endpoint.",
-      "NICO continues automatically through evidence attachment, scoring, report generation, and review-request creation.",
-      "NICO stops at human review. Approval and client delivery remain separate explicit decisions.",
+      "Full runs the complete repository and scanner evidence pipeline.",
+      "NICO continues through evidence attachment, scoring, report generation, and review-request creation.",
+      "Approval and client delivery remain separate human decisions.",
     ],
   },
 };
@@ -125,20 +158,15 @@ function normalizeTier(value: string | null | undefined): AssessmentTier {
 }
 
 function scopeId(prefix: "customer" | "project", value: string, fallback: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 72);
+  const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 72);
   return slug ? `${prefix}_${slug}` : fallback;
 }
 
 function statusClass(status?: string) {
   const normalized = String(status || "").toLowerCase();
-  if (["green", "passed", "approved", "complete", "attached", "verified", "available", "ok", "ready_for_human_decision", "review_required"].includes(normalized)) return "status green";
+  if (["green", "passed", "approved", "complete", "completed", "attached", "verified", "available", "ok", "ready_for_human_decision", "review_required"].includes(normalized)) return "status green";
   if (["yellow", "pending", "running", "queued", "planned", "skipped", "human_review_required", "pending_review", "requested"].includes(normalized)) return "status yellow";
-  if (["red", "failed", "error", "rejected", "timeout", "timed_out", "blocked", "unavailable"].includes(normalized)) return "status red";
+  if (["red", "failed", "error", "rejected", "timeout", "timed_out", "blocked", "unavailable", "interrupted"].includes(normalized)) return "status red";
   return "status gray";
 }
 
@@ -185,14 +213,16 @@ function currentReviewStatus(tier: AssessmentTier, result: AssessmentResult | nu
 }
 
 function hasFailedProgress(result: AssessmentResult) {
-  return (result.progress || []).some((item) => ["failed", "blocked", "error"].includes(String(item.status || "").toLowerCase()));
+  return (result.progress || []).some((item) => ["failed", "blocked", "error", "interrupted"].includes(String(item.status || "").toLowerCase()));
 }
 
 function stablePhase(tier: AssessmentTier, result: AssessmentResult): RunPhase | null {
   const status = String(result.status || "").toLowerCase();
-  if (["failed", "blocked", "error", "rejected"].includes(status) || hasFailedProgress(result)) return "failed";
+  if (["failed", "blocked", "error", "rejected", "interrupted"].includes(status) || hasFailedProgress(result)) return "failed";
 
-  if (tier === "express") return "complete";
+  if (tier === "express") {
+    return ["complete", "completed"].includes(status) ? "complete" : null;
+  }
 
   if (tier === "mid") {
     if (result.report_generation_status === "blocked" || result.approval_request_status === "blocked") return "failed";
@@ -208,12 +238,41 @@ function stablePhase(tier: AssessmentTier, result: AssessmentResult): RunPhase |
   return null;
 }
 
+function activeProgressItem(result: AssessmentResult | null): ProgressItem | null {
+  if (!result?.progress?.length) return null;
+  return result.progress.find((item) => ["queued", "running", "pending", "planned"].includes(String(item.status || "").toLowerCase()))
+    || result.progress[result.progress.length - 1]
+    || null;
+}
+
 function progressMessage(tier: AssessmentTier, result: AssessmentResult | null, attempt: number) {
   if (!result) return `Starting ${TIER_COPY[tier].eyebrow.toLowerCase()}...`;
-  const pending = (result.progress || []).find((item) => ["queued", "running", "pending", "planned"].includes(String(item.status || "").toLowerCase()));
-  if (pending?.message) return pending.message;
+  const active = activeProgressItem(result);
+  if (active?.message) return active.message;
   if (tier === "mid" && result.report_generation_note) return result.report_generation_note;
   return `Continuing exact run ${result.run_id || ""}. Status check ${attempt}/${MAX_POLL_ATTEMPTS}.`;
+}
+
+function calculatedProgress(tier: AssessmentTier, result: AssessmentResult | null, phase: RunPhase): number | null {
+  if (phase === "complete" || phase === "review_required") return 100;
+  const explicit = Number(result?.progress_percent);
+  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
+  const active = activeProgressItem(result);
+  const step = String(active?.step || result?.current_stage || "");
+  if (DEFAULT_STAGE_PERCENT[step] != null) return DEFAULT_STAGE_PERCENT[step];
+  if (phase === "starting") return 3;
+  if (phase === "running") return tier === "express" ? 12 : 8;
+  return null;
+}
+
+function stageLabel(result: AssessmentResult | null, phase: RunPhase): string {
+  const step = String(activeProgressItem(result)?.step || result?.current_stage || "");
+  return STAGE_LABELS[step] || (phase === "starting" ? "Request submission" : phaseLabel(phase));
+}
+
+function assessmentUrl(path: string): string {
+  if (typeof window !== "undefined") return new URL(`/api/nico${path}`, window.location.origin).href;
+  return `${API_URL}${path}`;
 }
 
 async function sleep(ms: number) {
@@ -221,7 +280,7 @@ async function sleep(ms: number) {
 }
 
 async function parseResponse(response: Response): Promise<AssessmentResult> {
-  let data: AssessmentResult & {detail?: {message?: string; code?: string}; error?: string};
+  let data: AssessmentResult & {detail?: AssessmentResult & {message?: string; code?: string}; error?: string};
   try {
     data = await response.json();
   } catch {
@@ -266,6 +325,8 @@ export default function UnifiedAssessmentPage() {
   const [pollAttempt, setPollAttempt] = useState(0);
   const [copied, setCopied] = useState("");
   const [scope, setScope] = useState<RunScope>({customerId: "default_customer", projectId: "default_project"});
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const runSequence = useRef(0);
 
   useEffect(() => {
@@ -275,6 +336,14 @@ export default function UnifiedAssessmentPage() {
     return () => { runSequence.current += 1; };
   }, []);
 
+  useEffect(() => {
+    if (!startedAt || !(phase === "starting" || phase === "running")) return;
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt, phase]);
+
   const copy = TIER_COPY[tier];
   const document = useMemo(() => assessmentDocument(tier, result), [tier, result]);
   const coverage = document?.evidence_coverage || result?.evidence_coverage;
@@ -282,6 +351,8 @@ export default function UnifiedAssessmentPage() {
   const sections = document?.sections || [];
   const running = phase === "starting" || phase === "running";
   const backendConfigured = Boolean(API_URL);
+  const percent = calculatedProgress(tier, result, phase);
+  const currentStage = stageLabel(result, phase);
 
   function selectTier(next: AssessmentTier) {
     if (running) return;
@@ -291,10 +362,11 @@ export default function UnifiedAssessmentPage() {
     setMessage("");
     setPhase("idle");
     setPollAttempt(0);
+    setElapsedSeconds(0);
+    setStartedAt(null);
     setCopied("");
     const url = new URL(window.location.href);
     url.searchParams.set("tier", next);
-    url.hash = "assessment";
     window.history.replaceState(window.history.state, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
     window.dispatchEvent(new CustomEvent(TIER_EVENT, {detail: {tier: next}}));
   }
@@ -305,13 +377,13 @@ export default function UnifiedAssessmentPage() {
     try {
       window.sessionStorage.setItem("nico.mid.active_run", runId);
     } catch {
-      // The live result still carries the exact run identity if session storage is unavailable.
+      // The result still carries the exact run identity.
     }
     window.dispatchEvent(new CustomEvent(MID_RUN_EVENT, {detail: {run_id: runId}}));
   }
 
   async function continueAssessment(
-    selectedTier: "mid" | "full",
+    selectedTier: AssessmentTier,
     initial: AssessmentResult,
     currentScope: RunScope,
     sequence: number,
@@ -324,9 +396,12 @@ export default function UnifiedAssessmentPage() {
       const stable = stablePhase(selectedTier, current);
       if (stable) {
         setPhase(stable);
+        setPollAttempt(attempt);
         setMessage(stable === "review_required"
-          ? `${TIER_COPY[selectedTier].eyebrow} completed its automated stages and stopped at the required human-review gate.`
-          : `${TIER_COPY[selectedTier].eyebrow} stopped because a required stage failed or was blocked.`);
+          ? `${TIER_COPY[selectedTier].eyebrow} completed every automated stage and stopped at the required human-review gate.`
+          : stable === "complete"
+            ? "Express completed its evidence, scoring, report, and truth-gate stages. Human review remains required before delivery."
+            : `${TIER_COPY[selectedTier].eyebrow} stopped because a required stage failed or was blocked.`);
         return;
       }
 
@@ -338,32 +413,36 @@ export default function UnifiedAssessmentPage() {
 
       const runId = String(current.run_id || "");
       if (!runId) throw new Error("The assessment response did not include a run ID for autonomous continuation.");
-      const statusPath = selectedTier === "mid"
-        ? `/assessment/mid-run/${encodeURIComponent(runId)}/status`
-        : `/assessment/full-run/${encodeURIComponent(runId)}/status`;
-      const body: Record<string, unknown> = {
-        repository: current.repository || repository,
-        customer_id: current.customer_id || currentScope.customerId,
-        project_id: current.project_id || currentScope.projectId,
-        client_name: clientName,
-        project_name: projectName,
-        authorized_by: "unified_assessment_requester",
-        authorization_scope: "authorized defensive repository assessment",
-        authorization_confirmed: true,
-        authorized: true,
-        timeframe_days: 180,
-        run_scanners: true,
-        refresh_full_evidence: true,
-        auto_continue: true,
-        scan_id: current.scanner?.scan_id || current.scanner_evidence?.scan_id || "",
-      };
+      const statusPath = selectedTier === "express"
+        ? `/assessment/express-run/${encodeURIComponent(runId)}/status`
+        : selectedTier === "mid"
+          ? `/assessment/mid-run/${encodeURIComponent(runId)}/status`
+          : `/assessment/full-run/${encodeURIComponent(runId)}/status`;
+      const body: Record<string, unknown> = selectedTier === "express"
+        ? {customer_id: current.customer_id || currentScope.customerId, project_id: current.project_id || currentScope.projectId}
+        : {
+            repository: current.repository || repository,
+            customer_id: current.customer_id || currentScope.customerId,
+            project_id: current.project_id || currentScope.projectId,
+            client_name: clientName,
+            project_name: projectName,
+            authorized_by: "unified_assessment_requester",
+            authorization_scope: "authorized defensive repository assessment",
+            authorization_confirmed: true,
+            authorized: true,
+            timeframe_days: 180,
+            run_scanners: true,
+            refresh_full_evidence: true,
+            auto_continue: true,
+            scan_id: current.scanner?.scan_id || current.scanner_evidence?.scan_id || "",
+          };
       if (selectedTier === "full") {
         body.mode = "full";
         body.build_reports = true;
         body.create_final_review_request = true;
         body.tools = FULL_TOOLS;
       }
-      const response = await fetch(`${API_URL}${statusPath}`, {
+      const response = await fetch(assessmentUrl(statusPath), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(body),
@@ -398,6 +477,8 @@ export default function UnifiedAssessmentPage() {
     setError("");
     setMessage(`Starting ${copy.eyebrow.toLowerCase()}...`);
     setPollAttempt(0);
+    setStartedAt(Date.now());
+    setElapsedSeconds(0);
     setCopied("");
 
     const common = {
@@ -415,50 +496,23 @@ export default function UnifiedAssessmentPage() {
     };
 
     try {
-      if (tier === "express") {
-        const response = await fetch(`${API_URL}/assessment/github`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({...common, assessment_mode: "express"}),
-          cache: "no-store",
-        });
-        const data = await parseResponse(response);
-        if (sequence !== runSequence.current) return;
-        setResult(data);
-        setPhase("complete");
-        setMessage("Express completed and returned its evidence-bound draft report. Human review is still required before client delivery.");
-        return;
-      }
-
-      if (tier === "mid") {
-        const response = await fetch(`${API_URL}/assessment/mid-run`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({...common, run_scanners: true, auto_continue: true}),
-          cache: "no-store",
-        });
-        const data = await parseResponse(response);
-        rememberMidRun(data);
-        await continueAssessment("mid", data, currentScope, sequence);
-        return;
-      }
-
-      const response = await fetch(`${API_URL}/assessment/full-run`, {
+      const startPath = tier === "express" ? "/assessment/express-run" : tier === "mid" ? "/assessment/mid-run" : "/assessment/full-run";
+      const payload = tier === "express"
+        ? {...common, assessment_mode: "express"}
+        : tier === "mid"
+          ? {...common, run_scanners: true, auto_continue: true, tools: FULL_TOOLS}
+          : {...common, mode: "full", run_scanners: true, build_reports: true, create_final_review_request: true, auto_continue: true, tools: FULL_TOOLS};
+      const response = await fetch(assessmentUrl(startPath), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          ...common,
-          mode: "full",
-          run_scanners: true,
-          build_reports: true,
-          create_final_review_request: true,
-          auto_continue: true,
-          tools: FULL_TOOLS,
-        }),
+        body: JSON.stringify(payload),
         cache: "no-store",
       });
       const data = await parseResponse(response);
-      await continueAssessment("full", data, currentScope, sequence);
+      if (sequence !== runSequence.current) return;
+      setResult(data);
+      if (tier === "mid") rememberMidRun(data);
+      await continueAssessment(tier, data, currentScope, sequence);
     } catch (caught) {
       if (sequence !== runSequence.current) return;
       setPhase("failed");
@@ -487,12 +541,13 @@ export default function UnifiedAssessmentPage() {
   const coverageLabel = coverage?.calculated && Number.isFinite(Number(coverage.percent))
     ? `${coverage.label || "Evidence coverage"}: ${Math.max(0, Math.min(100, Number(coverage.percent)))}%`
     : "Coverage calculated after run";
+  const elapsedLabel = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
 
   return <main className="shell">
     <section className="hero">
       <p className="eyebrow">NICO ASSESSMENTS</p>
       <h1>One form. Three assessment depths.</h1>
-      <p className="lead">Choose Express, Mid, or Full. After Run is selected, NICO completes every automated stage available for that tier and stops only at a truthful completion or human-review gate.</p>
+      <p className="lead">Choose Express, Mid, or Full. NICO displays truthful backend stages, completes every automated step available for the tier, and stops at completion or a required human-review gate.</p>
     </section>
 
     <section id="assessment" className="section panel">
@@ -501,7 +556,6 @@ export default function UnifiedAssessmentPage() {
         <span className="status gray">{coverageLabel}</span>
       </div>
       <p className="summary-box">{copy.summary}</p>
-
       <div className={styles.tierGrid} aria-label="Assessment type">
         {(["express", "mid", "full"] as AssessmentTier[]).map((value) => <button
           type="button"
@@ -512,10 +566,8 @@ export default function UnifiedAssessmentPage() {
           onClick={() => selectTier(value)}
         >{value === "express" ? "Express" : value === "mid" ? "Mid" : "Full"}</button>)}
       </div>
-
       <details className="help-details"><summary>{tier === "express" ? "Express" : tier === "mid" ? "Mid" : "Full"} instructions</summary><ul>{copy.instructions.map((item) => <li key={item}>{item}</li>)}</ul></details>
       <p className="warning-box">Only assess repositories you own or are explicitly authorized to review. NICO performs defensive read-only assessment and does not make destructive changes.</p>
-
       <div className="form-grid">
         <label>Repository owner/name or GitHub URL<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="your-org/your-repo" disabled={running} /></label>
         <label>Client name, optional<input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Client name" disabled={running} /></label>
@@ -535,7 +587,22 @@ export default function UnifiedAssessmentPage() {
         <span className={statusClass(phaseStatus(phase))}>{phaseLabel(phase)}</span>
       </div>
       <p className={phase === "failed" ? "error-box" : phase === "review_required" ? "warning-box" : "summary-box"}>{message || "Select an assessment tier and run an authorized repository."}</p>
-      {running ? <div className={styles.progressBar} aria-label="Automatic continuation in progress"><span style={{width: `${Math.max(8, Math.min(96, (pollAttempt / MAX_POLL_ATTEMPTS) * 100))}%`}} /></div> : null}
+      {running ? <>
+        <div className={styles.progressMeta}>
+          <span><b>Current stage</b>{currentStage}</span>
+          <span><b>Progress</b>{percent == null ? "Working" : `${Math.round(percent)}%`}</span>
+          <span><b>Elapsed</b>{elapsedLabel}</span>
+          <span><b>Status checks</b>{pollAttempt}</span>
+        </div>
+        <div
+          className={`${styles.progressBar} ${percent == null ? styles.indeterminate : ""}`}
+          role="progressbar"
+          aria-label={`${currentStage} in progress`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent == null ? undefined : Math.round(percent)}
+        ><span style={percent == null ? undefined : {width: `${Math.max(2, Math.min(100, percent))}%`}} /></div>
+      </> : null}
       {phase === "timed_out" && result?.run_id ? <p className="warning-box">Run ID {result.run_id} was preserved. Review it through <a href="/operations/recovery">Recovery</a>; do not start a duplicate run unless the saved run is explicitly terminal.</p> : null}
 
       {result ? <>
@@ -554,7 +621,7 @@ export default function UnifiedAssessmentPage() {
         {document?.executive_summary ? <p className="summary-box">{document.executive_summary}</p> : null}
 
         {result.progress?.length ? <div className={styles.timeline}>{result.progress.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}>
-          <div className="result-head"><b>{String(item.step || "step").replaceAll("_", " ")}</b><span className={statusClass(item.status)}>{item.status || "unknown"}</span></div>
+          <div className="result-head"><b>{STAGE_LABELS[String(item.step || "")] || String(item.step || "step").replaceAll("_", " ")}</b><span className={statusClass(item.status)}>{item.status || "unknown"}</span></div>
           <p>{item.message || "No message returned."}</p>
           {item.evidence && Object.keys(item.evidence).length ? <details className="help-details"><summary>Step evidence</summary><pre className="json-block">{JSON.stringify(item.evidence, null, 2)}</pre></details> : null}
         </article>)}</div> : null}
@@ -576,7 +643,7 @@ export default function UnifiedAssessmentPage() {
           {tier === "mid" && result.run_id && phase === "review_required" ? <a className="secondary-link" href={`/mid-review?run_id=${encodeURIComponent(result.run_id)}&customer_id=${encodeURIComponent(scope.customerId)}&project_id=${encodeURIComponent(scope.projectId)}`}>Open human review</a> : null}
           {copied ? <span className="muted">{copied}</span> : null}
         </div>
-        {phase === "review_required" ? <p className="warning-box">Automated assessment work is complete. NICO did not approve the findings, create a delivery link, or deliver the report. A human must review the exact evidence-bound artifact.</p> : null}
+        {phase === "review_required" ? <p className="warning-box">Automated assessment work is complete. NICO did not approve findings, create a delivery link, or deliver the report. A human must review the exact evidence-bound artifact.</p> : null}
         {document?.unavailable_data_notes?.length ? <details className="help-details"><summary>Assessment-wide unavailable evidence ({document.unavailable_data_notes.length})</summary><ListBlock items={document.unavailable_data_notes} /></details> : null}
       </> : null}
     </section>
