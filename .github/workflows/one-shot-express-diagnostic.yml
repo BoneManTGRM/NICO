@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  statuses: read
+  statuses: write
 
 concurrency:
   group: one-shot-production-express-diagnostic
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   diagnose:
-    if: contains(github.event.head_commit.message, 'Deploy bounded Express failure-frame diagnostics')
+    if: contains(github.event.head_commit.message, 'Report production Express failure location')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: production-smoke
@@ -62,7 +62,7 @@ jobs:
               raise SystemExit("Timed out waiting for exact Vercel and Railway deployment statuses")
           PY
 
-      - name: Start exactly one Express run and retain terminal evidence
+      - name: Start exactly one Express run and report terminal evidence
         id: diagnostic
         continue-on-error: true
         run: |
@@ -77,6 +77,10 @@ jobs:
 
           backend = os.environ["NICO_PRODUCTION_BACKEND_URL"].rstrip("/")
           repository = os.environ["NICO_PRODUCTION_SMOKE_REPOSITORY"]
+          github_repository = os.environ["GITHUB_REPOSITORY"]
+          github_sha = os.environ["GITHUB_SHA"]
+          github_token = os.environ["GITHUB_TOKEN"]
+          run_url = f"https://github.com/{github_repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
           if repository != "BoneManTGRM/NICO":
               raise SystemExit("One-shot diagnostic is restricted to the authorized BoneManTGRM/NICO repository")
           customer_id = f"express_diagnostic_{os.environ['GITHUB_RUN_ID']}"
@@ -101,6 +105,29 @@ jobs:
                       payload = {"status": "error", "message": "Backend returned a non-JSON terminal response."}
                   return exc.code, payload
 
+          def publish_status(label: str, state: str, description: str) -> None:
+              context = f"NICO Express Diagnostic | {label}"[:100]
+              payload = json.dumps({
+                  "state": state,
+                  "context": context,
+                  "description": description[:140],
+                  "target_url": run_url,
+              }).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{github_repository}/statuses/{github_sha}",
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {github_token}",
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-one-shot-production-diagnostic",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  json.load(response)
+              print(f"Published bounded diagnostic status: {context}")
+
           request_payload = {
               "repository": repository,
               "authorized": True,
@@ -116,9 +143,10 @@ jobs:
               "refresh_full_evidence": True,
           }
           start_status, started = post("/assessment/express-run", request_payload)
-          run_id = str(started.get("run_id") or (started.get("detail") or {}).get("run_id") or "")
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
           evidence = {
-              "commit_sha": os.environ["GITHUB_SHA"],
+              "commit_sha": github_sha,
               "repository": repository,
               "customer_id": customer_id,
               "project_id": project_id,
@@ -131,8 +159,10 @@ jobs:
           }
           output = Path("audit-results/production-express-diagnostic.json")
           if start_status >= 400 or not run_id.startswith("express_run_"):
+              label = str(start_detail.get("code") or "start_failed")
               evidence["status"] = "start_failed"
               output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              publish_status(label, "error", f"Express start failed with HTTP {start_status}")
               raise SystemExit("Express diagnostic start failed")
 
           deadline = time.monotonic() + 1200
@@ -156,10 +186,22 @@ jobs:
           evidence["status_http_status"] = terminal_http
           evidence["terminal_response"] = terminal
           detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
-          evidence["status"] = str(detail.get("status") or terminal.get("status") or "unknown")
+          status = str(detail.get("status") or terminal.get("status") or "unknown").lower()
+          evidence["status"] = status
           output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
-          if evidence["status"].lower() not in {"complete", "completed"}:
-              raise SystemExit(f"Express diagnostic ended with {evidence['status']}")
+          if status in {"complete", "completed"}:
+              publish_status("complete", "success", f"Express completed under exact run {run_id}")
+              raise SystemExit(0)
+
+          label = str(
+              detail.get("safe_failure_location")
+              or detail.get("failure_module")
+              or detail.get("code")
+              or status
+              or "unknown_failure"
+          )
+          publish_status(label, "error", f"Express {status}; HTTP {terminal_http}; exact run {run_id}"[:140])
+          raise SystemExit(f"Express diagnostic ended with {status}")
           PY
 
       - name: Upload exact production terminal evidence
