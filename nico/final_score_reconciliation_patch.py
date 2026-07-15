@@ -105,6 +105,10 @@ def _dependency_tool_records(result: dict[str, Any]) -> dict[str, dict[str, Any]
     return merged
 
 
+def dependency_scanner_proof_is_present(result: dict[str, Any]) -> bool:
+    return _REQUIRED_DEPENDENCY_TOOLS.issubset(_dependency_tool_records(result))
+
+
 def dependency_scanner_proof_is_clean(result: dict[str, Any]) -> bool:
     records = _dependency_tool_records(result)
     return _REQUIRED_DEPENDENCY_TOOLS.issubset(records) and all(
@@ -145,6 +149,8 @@ def reconcile_code_audit_test_evidence(result: dict[str, Any]) -> bool:
         return False
 
     before_score = _int(code.get("score"))
+    before_findings = list(code.get("findings") or [])
+    before_unavailable = list(code.get("unavailable") or [])
     absence_fragments = (
         "no test-path signals were found",
         "no test path signals were found",
@@ -169,7 +175,11 @@ def reconcile_code_audit_test_evidence(result: dict[str, Any]) -> bool:
             "Code audit combines recent commit and pull-request traceability, clean actionable-marker review, "
             "and recursive repository test-path evidence. Bounded text sampling is not used to claim that tests are absent."
         )
-    return _int(code.get("score")) != before_score or bool(absence_fragments)
+    return (
+        _int(code.get("score")) != before_score
+        or code.get("findings") != before_findings
+        or code.get("unavailable") != before_unavailable
+    )
 
 
 def _patch_release_readiness_signals() -> None:
@@ -197,14 +207,18 @@ def _patch_release_readiness_signals() -> None:
             "no vulnerability records" in dependency_text
             or "zero dependency vulnerabilities" in dependency_text
         )
-        if (
-            dependency
-            and _int(dependency.get("score")) >= 88
-            and dependency_scanner_proof_is_clean(result)
-            and no_vulnerability_statement
-        ):
-            signals["dependency_scanner_clean_artifacts_attached"] = True
-            signals["dependency_no_osv_vulnerabilities"] = True
+        structured_present = dependency_scanner_proof_is_present(result)
+        structured_clean = dependency_scanner_proof_is_clean(result)
+        if structured_present:
+            dependency_ready = bool(
+                dependency
+                and _int(dependency.get("score")) >= 88
+                and structured_clean
+                and no_vulnerability_statement
+            )
+            signals["dependency_scanner_clean_artifacts_attached"] = dependency_ready
+            if dependency_ready:
+                signals["dependency_no_osv_vulnerabilities"] = True
         passed = [name for name, ok in signals.items() if ok]
         missing = [name for name, ok in signals.items() if not ok]
         return {
@@ -212,7 +226,8 @@ def _patch_release_readiness_signals() -> None:
             "passed": passed,
             "missing": missing,
             "signals": signals,
-            "structured_dependency_proof": dependency_scanner_proof_is_clean(result),
+            "structured_dependency_proof_present": structured_present,
+            "structured_dependency_proof": structured_clean,
         }
 
     setattr(release_readiness_signals, _MARKER, True)
@@ -263,6 +278,7 @@ def reconcile_final_evidence_scores(result: dict[str, Any]) -> dict[str, Any]:
             "dependency_health": _int((_section(result, "dependency_health") or {}).get("score")),
             "velocity_complexity": _int((_section(result, "velocity_complexity") or {}).get("score")),
         },
+        "dependency_scanner_proof_present": dependency_scanner_proof_is_present(result),
         "dependency_scanner_proof_clean": dependency_scanner_proof_is_clean(result),
         "recursive_tree_test_path_count": _test_path_count(result),
         "score_inflation_allowed": False,
@@ -323,6 +339,7 @@ def install_final_score_reconciliation_patch() -> dict[str, Any]:
 __all__ = [
     "PATCH_VERSION",
     "dependency_scanner_proof_is_clean",
+    "dependency_scanner_proof_is_present",
     "install_final_score_reconciliation_patch",
     "reconcile_code_audit_test_evidence",
     "reconcile_final_evidence_scores",
