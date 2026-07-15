@@ -6,6 +6,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from nico.express_async_api import register_express_async_routes
+from nico.express_backend_diagnostics import install_express_backend_diagnostics
 from nico.express_recovery_compat import install_express_recovery_compatibility
 
 SAFE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -85,7 +86,7 @@ def actionable_blocked_exception(result: dict[str, Any]) -> HTTPException:
 
 
 def install_assessment_block_messages() -> dict[str, Any]:
-    """Install safe block messages, quick Express lifecycle, and recovery inventory support."""
+    """Install safe block messages, exact-run diagnostics, lifecycle, and recovery support."""
 
     import nico.api.main as api_main
 
@@ -95,12 +96,14 @@ def install_assessment_block_messages() -> dict[str, Any]:
         setattr(actionable_blocked_exception, _PATCH_MARKER, True)
         setattr(actionable_blocked_exception, "_nico_blocked_exception_fallback", current)
         api_main.safe_blocked_exception = actionable_blocked_exception
+    express_diagnostics = install_express_backend_diagnostics()
     express_async = register_express_async_routes(api_main.app)
     express_recovery = install_express_recovery_compatibility()
     return {
         "status": "already_installed" if already_installed else "installed",
         "raw_provider_detail_exposed": False,
         "classified_codes": sorted(_BLOCK_MESSAGES),
+        "express_backend_diagnostics": express_diagnostics,
         "express_async": express_async,
         "express_recovery": express_recovery,
     }
