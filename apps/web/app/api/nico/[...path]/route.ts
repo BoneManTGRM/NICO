@@ -59,7 +59,9 @@ async function proxyAssessment(
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(apiPath.endsWith("/live-status") ? 15_000 : 120_000),
+      signal: apiPath.endsWith("/live-status")
+        ? AbortSignal.timeout(15_000)
+        : AbortSignal.timeout(120_000),
     });
 
     const responseHeaders = new Headers({"Cache-Control": "no-store"});
