@@ -90,6 +90,17 @@ def _scan_matches_snapshot(scan: dict[str, Any], snapshot: dict[str, Any], run_i
     )
 
 
+def _scan_progress(scan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scanner_status": scan.get("status") or "unknown",
+        "scanner_stage": scan.get("current_stage") or "unknown",
+        "scanner_progress_percent": int(scan.get("progress_percent") or 0),
+        "active_tool": scan.get("active_tool") or "",
+        "tools_requested": scan.get("tools_requested") or [],
+        "tools_run": scan.get("tools_run") or [],
+    }
+
+
 def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
     snapshot = _snapshot_from_outputs(outputs)
     if snapshot.get("status") != "attached":
@@ -123,9 +134,15 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
                     "scanner_snapshot_commit_sha": scan.get("snapshot_commit_sha"),
                 },
             }
+        progress = _scan_progress(scan)
+        active_tool = str(progress.get("active_tool") or "").replace("-", " ")
         return {
             "status": scan.get("status") or "unknown",
-            "message": "Existing scanner run was loaded and matched to the exact assessment snapshot.",
+            "message": (
+                f"Snapshot-bound scanner is running {active_tool}."
+                if scan.get("status") in {"queued", "running"} and active_tool
+                else "Existing scanner run was loaded and matched to the exact assessment snapshot."
+            ),
             "scan": scan,
             "evidence": {
                 "run_id": context["run_id"],
@@ -134,6 +151,7 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
                 "snapshot_commit_sha": snapshot.get("commit_sha") or "",
                 "actual_commit_sha": scan.get("actual_commit_sha") or "",
                 "snapshot_match": bool(scan.get("snapshot_match")),
+                **progress,
             },
         }
 
@@ -175,14 +193,14 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
         }
     return {
         "status": scan.get("status") or "queued",
-        "message": "Snapshot-bound scanner execution was queued for the exact captured commit.",
+        "message": "Modern snapshot-bound dependency, static, secret, and history-aware scanners were queued for the exact captured commit.",
         "scan": scan,
         "evidence": {
             "run_id": context["run_id"],
             "scan_id": scan.get("scan_id") or "",
             "snapshot_id": snapshot.get("snapshot_id") or "",
             "snapshot_commit_sha": snapshot.get("commit_sha") or "",
-            "tools_requested": scan.get("tools_requested") or [],
+            **_scan_progress(scan),
         },
     }
 
@@ -218,7 +236,7 @@ def _snapshot_evidence_attachment_handler(context: dict[str, Any], outputs: dict
                 "scan_id": scan_id,
                 "snapshot_id": snapshot.get("snapshot_id") or "",
                 "snapshot_commit_sha": snapshot.get("commit_sha") or "",
-                "scanner_status": scan.get("status"),
+                **_scan_progress(scan),
             },
         }
     if scan.get("status") != "complete" or not scan.get("snapshot_match"):
@@ -237,6 +255,7 @@ def _snapshot_evidence_attachment_handler(context: dict[str, Any], outputs: dict
         }
 
     results = scan.get("scanner_results") if isinstance(scan.get("scanner_results"), list) else []
+    summary = scan.get("finding_summary") if isinstance(scan.get("finding_summary"), dict) else {}
     evidence = {
         "status": "attached",
         "run_id": context["run_id"],
@@ -251,16 +270,26 @@ def _snapshot_evidence_attachment_handler(context: dict[str, Any], outputs: dict
         "unavailable_tools": scan.get("unavailable_tools") or [],
         "failed_tools": scan.get("failed_tools") or [],
         "timed_out_tools": scan.get("timed_out_tools") or [],
+        "full_history_verified_tools": scan.get("full_history_verified_tools") or [],
         "scanner_results_count": len(results),
+        "scanner_results": results,
+        "finding_summary": summary,
+        "finding_count": int(scan.get("finding_count") or summary.get("raw_total") or 0),
+        "material_finding_count": int(scan.get("material_finding_count") or summary.get("material_total") or 0),
+        "review_required_finding_count": int(scan.get("review_required_finding_count") or summary.get("review_required_total") or 0),
+        "excluded_test_only_finding_count": int(scan.get("excluded_test_only_finding_count") or summary.get("excluded_test_only_total") or 0),
         "evidence_summary": scan.get("evidence_summary") if isinstance(scan.get("evidence_summary"), dict) else {},
         "unavailable_data_notes": scan.get("unavailable_data_notes") or [],
         "secret_redaction_applied": bool(scan.get("secret_redaction_applied")),
+        "redaction_policy_applied": bool(scan.get("redaction_policy_applied")),
         "retention_note": scan.get("retention_note") or "Snapshot-bound scanner evidence was loaded from the retained scanner record.",
         "human_review_required": True,
+        "code_modification_allowed": False,
+        "draft_pr_creation_allowed": False,
     }
     return {
         "status": "complete",
-        "message": "Completed scanner evidence was attached only after run ID and exact commit snapshot verification.",
+        "message": "Completed modern scanner evidence was attached only after run ID, exact commit snapshot, finding-triage, and history-scope verification.",
         "scanner_evidence": evidence,
         "evidence": evidence,
     }

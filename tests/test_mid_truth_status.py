@@ -214,7 +214,7 @@ def test_attach_updates_assessment_sections_coverage_and_review_summary():
     result = _result()
     attached = attach_mid_truth_status(result)
 
-    assert attached["mid_truth_status"]["version"] == "mid-truth-status-v1"
+    assert attached["mid_truth_status"]["version"] == "mid-truth-status-v2"
     assert attached["evidence_coverage"]["percent"] == 100
     assert attached["assessment"]["evidence_coverage"]["percent"] == 100
     assert attached["assessment"]["unsupported_claims_permitted"] == 0
@@ -244,7 +244,7 @@ def test_persisted_mid_run_retains_truth_status_but_not_optional_capability_toke
     token = result["optional_evidence_submission"]["token"]
     stored = load_mid_assessment_run(run_id)
     assert stored is not None
-    assert stored["response"]["mid_truth_status"]["version"] == "mid-truth-status-v1"
+    assert stored["response"]["mid_truth_status"]["version"] == "mid-truth-status-v2"
     assert stored["response"]["evidence_coverage"]["calculated"] is True
     assert "optional_evidence_submission" not in stored["response"]
     assert token not in repr(stored)
