@@ -1,0 +1,271 @@
+name: Temporary Final Reconciled Report Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-final-reconciled-report-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Run one authorized production Express assessment
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          proxy = os.environ["NICO_PROXY"].rstrip("/")
+          repository = os.environ["NICO_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"final_reconciled_report_{scope}"
+          project_id = f"final_reconciled_report_{scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          json_path = Path("verification/final-reconciled-report.json")
+          pdf_path = Path("verification/final-reconciled-report.pdf")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-final-reconciled-report-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {"status": "error", "message": "non-JSON response"}
+
+          def find_report(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  if (
+                      isinstance(value.get("sections"), list)
+                      and isinstance(value.get("reports"), dict)
+                      and isinstance(value.get("maturity_signal"), dict)
+                  ):
+                      return value
+                  for nested in value.values():
+                      found = find_report(nested)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for nested in value:
+                      found = find_report(nested)
+                      if found:
+                          return found
+              return {}
+
+          request_body = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "authorized_by": "repository_owner_final_report_verification",
+              "authorization_scope": "read-only repository assessment and report verification only",
+              "client_name": "NICO final reconciled report verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "refresh_full_evidence": True,
+          }
+          start_http, started = post("/assessment/express-run", request_body)
+          start_detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or start_detail.get("run_id") or "")
+          evidence: dict[str, Any] = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_http_status": start_http,
+              "run_id": run_id,
+          }
+          if start_http >= 400 or not run_id.startswith("express_run_"):
+              evidence["start_response"] = started
+              json_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express assessment did not start")
+
+          terminal_http = 0
+          terminal: dict[str, Any] = {}
+          deadline = time.monotonic() + 2100
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out"}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          status = str(detail.get("status") or terminal.get("status") or "unknown").lower()
+          report = find_report(terminal)
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+          quality = report.get("repository_quality_signals") if isinstance(report.get("repository_quality_signals"), dict) else {}
+          groups = quality.get("groups") if isinstance(quality.get("groups"), dict) else {}
+          branch = groups.get("branch_hygiene") if isinstance(groups.get("branch_hygiene"), dict) else {}
+          frontend = groups.get("frontend_routes") if isinstance(groups.get("frontend_routes"), dict) else {}
+          runtime = groups.get("runtime_patch_surface") if isinstance(groups.get("runtime_patch_surface"), dict) else {}
+          docs = groups.get("documentation_alignment") if isinstance(groups.get("documentation_alignment"), dict) else {}
+          security_config = groups.get("security_configuration") if isinstance(groups.get("security_configuration"), dict) else {}
+          repairs = report.get("repair_intelligence") if isinstance(report.get("repair_intelligence"), dict) else {}
+          reconciliation = report.get("repair_intelligence_reconciliation") if isinstance(report.get("repair_intelligence_reconciliation"), dict) else {}
+          export = report.get("report_intelligence_export") if isinstance(report.get("report_intelligence_export"), dict) else {}
+          reports = report.get("reports") if isinstance(report.get("reports"), dict) else {}
+          markdown = str(reports.get("markdown") or "")
+          pdf_base64 = str(reports.get("pdf_base64") or "")
+          sections = [item for item in report.get("sections", []) or [] if isinstance(item, dict)]
+          secrets_section = next((item for item in sections if item.get("id") == "secrets_review"), {})
+          candidates = [item for item in repairs.get("candidates", []) or [] if isinstance(item, dict)]
+          candidate_titles = [str(item.get("title") or "") for item in candidates]
+          candidate_categories = [str(item.get("category") or "") for item in candidates]
+          code_candidates = [
+              item for item in candidates
+              if isinstance(item.get("code_suggestion"), dict)
+              and item["code_suggestion"].get("status") == "available"
+          ]
+          runtime_findings = [item for item in runtime.get("findings", []) or [] if isinstance(item, dict)]
+          secrets_findings = [str(item) for item in secrets_section.get("findings", []) or []]
+          secrets_evidence = [str(item) for item in secrets_section.get("evidence", []) or []]
+          clean_secret_scanners = any(
+              "zero" in item.lower() and ("gitleaks" in item.lower() or "trufflehog" in item.lower())
+              for item in secrets_evidence
+          ) or (not secrets_findings and int(secrets_section.get("score") or 0) >= 90)
+
+          summary = {
+              "terminal_status": status,
+              "overall_score": maturity.get("score"),
+              "branch_count": branch.get("branch_count"),
+              "route_alias_count": len(frontend.get("route_aliases") or []),
+              "explicit_placeholders": frontend.get("explicit_placeholders") or [],
+              "runtime_patch_module_count": runtime.get("patch_compat_fallback_count"),
+              "runtime_installer_call_count": runtime.get("package_installer_call_count"),
+              "runtime_finding_codes": [item.get("code") for item in runtime_findings],
+              "documents_checked": docs.get("documents_checked"),
+              "security_configuration_status": security_config.get("status"),
+              "prior_candidate_count": reconciliation.get("prior_candidate_count"),
+              "final_candidate_count": reconciliation.get("final_candidate_count"),
+              "final_code_suggestion_count": reconciliation.get("final_code_suggestion_count"),
+              "candidate_titles": candidate_titles,
+              "candidate_categories": candidate_categories,
+              "clean_secret_scanners": clean_secret_scanners,
+              "secret_findings": secrets_findings,
+              "quality_heading_present": "## Repository Quality and Governance Signals" in markdown,
+              "repair_heading_present": "## Prioritized Repair Intelligence" in markdown,
+              "suggested_code_present": "Suggested code" in markdown,
+              "pdf_present": bool(pdf_base64),
+              "report_intelligence_export": export,
+              "repair_intelligence_reconciliation": reconciliation,
+              "human_review_required": report.get("human_review_required"),
+              "client_ready": report.get("client_ready"),
+          }
+          evidence.update({
+              "status": status,
+              "status_http_status": terminal_http,
+              "score_summary": summary,
+              "terminal_response": terminal,
+          })
+          json_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          if pdf_base64:
+              pdf_path.write_bytes(base64.b64decode(pdf_base64))
+
+          errors: list[str] = []
+          if status not in {"complete", "completed"}:
+              errors.append(f"terminal status={status}")
+          if not report:
+              errors.append("report missing")
+          if int(maturity.get("score") or 0) < 92:
+              errors.append(f"overall score={maturity.get('score')}")
+          if export.get("status") != "complete" or export.get("final_response_boundary_applied") is not True:
+              errors.append(f"final export incomplete: {export}")
+          if export.get("repair_intelligence_reconciled_from_final_findings") is not True:
+              errors.append("final repair reconciliation not recorded in export")
+          if export.get("score_changed") is not False:
+              errors.append(f"score changed during export: {export}")
+          if reconciliation.get("status") != "reconciled":
+              errors.append(f"repair reconciliation status={reconciliation.get('status')}")
+          if reconciliation.get("early_source_regex_candidates_carried_forward") is not False:
+              errors.append("early regex candidates were carried forward")
+          if reconciliation.get("superseded_pre_polish_findings_carried_forward") is not False:
+              errors.append("superseded findings were carried forward")
+          if not isinstance(branch.get("branch_count"), int) or int(branch.get("branch_count") or 0) < 500:
+              errors.append(f"branch inventory missing: {branch.get('branch_count')}")
+          if len(frontend.get("route_aliases") or []) < 5:
+              errors.append("route aliases missing")
+          if frontend.get("explicit_placeholders"):
+              errors.append(f"route aliases misclassified: {frontend.get('explicit_placeholders')}")
+          if int(runtime.get("patch_compat_fallback_count") or 0) < 20:
+              errors.append(f"runtime patch surface missing: {runtime.get('patch_compat_fallback_count')}")
+          if int(runtime.get("package_installer_call_count") or 0) < 20:
+              errors.append(f"installer surface missing: {runtime.get('package_installer_call_count')}")
+          if "runtime_patch_surface" not in [item.get("code") for item in runtime_findings]:
+              errors.append("runtime patch finding missing")
+          if int(docs.get("documents_checked") or 0) < 1:
+              errors.append("documentation alignment missing")
+          if int(repairs.get("candidate_count") or 0) < 1:
+              errors.append("final repair candidates missing")
+          if int(repairs.get("code_suggestion_count") or 0) < 1 or not code_candidates:
+              errors.append("final report-only code suggestions missing")
+          if clean_secret_scanners and any(category == "secret_exposure" for category in candidate_categories):
+              errors.append(f"contradicted secret candidate survived: {candidate_titles}")
+          if any("potential secret exposure" in title.lower() for title in candidate_titles):
+              errors.append(f"preliminary secret title survived: {candidate_titles}")
+          if any(category in {"trust_readiness", "client_acceptance"} for category in candidate_categories):
+              errors.append(f"workflow-only state became repair candidate: {candidate_categories}")
+          if "## Repository Quality and Governance Signals" not in markdown:
+              errors.append("quality heading missing from final markdown")
+          if "## Prioritized Repair Intelligence" not in markdown:
+              errors.append("repair heading missing from final markdown")
+          if "Suggested code" not in markdown:
+              errors.append("suggested code missing from final markdown")
+          if not pdf_base64 or not pdf_path.exists() or pdf_path.stat().st_size < 1000:
+              errors.append("final PDF missing or too small")
+          if report.get("human_review_required") is not True:
+              errors.append("human review guard missing")
+          if report.get("client_ready") is not False:
+              errors.append("client_ready guard changed")
+          if export.get("code_changes_applied") is not False:
+              errors.append("report claims code was changed")
+          if export.get("automatic_application_allowed") is not False:
+              errors.append("automatic code application enabled")
+          if errors:
+              raise SystemExit("; ".join(errors))
+          PY
+
+      - name: Upload final verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-reconciled-report-verification
+          path: verification/
+          if-no-files-found: error
+          retention-days: 7
