@@ -29,4 +29,6 @@ def test_existing_fake_attempt_bar_is_hidden_when_live_progress_is_present() -> 
 
     assert '[aria-label="Automatic continuation in progress"] { display: none !important; }' in source
     assert "progress_percent" in source
-    assert "completed / total" in source
+    assert "completed / Math.max(1, total)" in source
+    assert "total > 1 || completed > 0" in source
+    assert "live.total > 1" in source
