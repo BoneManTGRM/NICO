@@ -6,6 +6,7 @@ from typing import Any
 import nico.mid_approval_api as approval_api
 import nico.mid_assessment_approval as approval_service
 import nico.mid_review_enforcement as enforcement
+from nico.mid_report_v3 import install_mid_report_v3
 from nico.mid_score_truth_v3 import install_mid_score_truth_v3
 from nico.storage import STORE, StorageAdapter
 
@@ -122,12 +123,14 @@ def install_mid_review_enforcement_compat() -> dict[str, Any]:
     global _COMPAT_INSTALLED
     base = enforcement.install_mid_review_enforcement()
     mid_score_truth = install_mid_score_truth_v3()
+    mid_report = install_mid_report_v3()
     if _COMPAT_INSTALLED:
         return {
             **base,
             "compatibility_installed": True,
             "compatibility_idempotent_reuse": True,
             "mid_score_truth": mid_score_truth,
+            "mid_report": mid_report,
         }
 
     approval_service.MID_APPROVAL_VERSION = "mid-report-approval-v2"
@@ -146,6 +149,7 @@ def install_mid_review_enforcement_compat() -> dict[str, Any]:
         "service_api_legacy_default": "mid-report-approval-v2",
         "production_api_enforced_default": enforcement.MID_APPROVAL_ENFORCED_VERSION,
         "mid_score_truth": mid_score_truth,
+        "mid_report": mid_report,
     }
 
 
