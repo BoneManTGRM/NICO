@@ -64,11 +64,11 @@ def test_runtime_patch_surface_is_detected() -> None:
     assert result["findings"][0]["code"] == "runtime_patch_surface"
 
 
-def test_latest_deployed_sha_drift_is_detected() -> None:
-    old_sha = "1" * 40
+def test_deployed_sha_difference_requires_provider_verification() -> None:
+    documented_sha = "1" * 40
     current_sha = "2" * 40
     path = "docs/PROJECT_STATUS.md"
-    text = f"The latest verified deployed main commit is `{old_sha}`."
+    text = f"The latest verified deployed main commit is `{documented_sha}`."
 
     result = analyze_documentation_alignment(
         [path],
@@ -76,10 +76,22 @@ def test_latest_deployed_sha_drift_is_detected() -> None:
         current_default_branch_sha=current_sha,
     )
 
-    assert result["stale_release_claim_count"] == 1
-    assert result["findings"][0]["code"] == "documentation_deployment_sha_drift"
-    assert old_sha in result["findings"][0]["evidence"][0]
+    assert result["release_claim_verification_count"] == 1
+    assert result["findings"][0]["code"] == "documentation_release_claim_verification_needed"
+    assert documented_sha in result["findings"][0]["evidence"][0]
     assert current_sha in result["findings"][0]["evidence"][0]
+    assert "provider deployment evidence" in result["truth_rule"]
+
+
+def test_relative_doc_links_resolve_from_document_directory() -> None:
+    path = "docs/guide.md"
+    result = analyze_documentation_alignment(
+        [path, "docs/OPERATOR_GUIDE.md"],
+        {path: "See [operator guide](OPERATOR_GUIDE.md)."},
+        current_default_branch_sha="a" * 40,
+    )
+
+    assert result["missing_link_count"] == 0
 
 
 def test_security_configuration_requires_provider_evidence() -> None:
