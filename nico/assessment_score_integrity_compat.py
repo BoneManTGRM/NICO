@@ -9,6 +9,7 @@ from nico.hosted_api_complexity_fallback import install_hosted_api_complexity_fa
 from nico.hosted_api_complexity_fallback_compat import (
     install_hosted_api_complexity_fallback as _install_hosted_api_complexity_fallback_compat,
 )
+from nico.production_score_endpoint_binding import install_production_score_endpoint_binding
 
 
 # Preserve the public installer name while using the scoped v2 implementation.
@@ -179,6 +180,7 @@ def install_score_integrity_compatibility() -> dict[str, Any]:
     scorecard._secrets_section = calibrated_secrets_section
     scorecard._static_section = calibrated_static_section
     complexity_fallback = install_hosted_api_complexity_fallback()
+    endpoint_binding = install_production_score_endpoint_binding()
     integrity._compatibility_installed = True
     return {
         "status": "already_installed" if installed else "installed",
@@ -189,6 +191,9 @@ def install_score_integrity_compatibility() -> dict[str, Any]:
         "hosted_api_complexity_fallback": complexity_fallback.get("status"),
         "hosted_api_complexity_fallback_version": complexity_fallback.get("version"),
         "hosted_api_complexity_shared_profile_override": complexity_fallback.get("shared_profile_override"),
+        "production_score_endpoint_binding": endpoint_binding.get("status"),
+        "production_score_endpoint_binding_version": endpoint_binding.get("version"),
+        "production_score_endpoint_final_mutation_stage": endpoint_binding.get("final_mutation_stage"),
     }
 
 
