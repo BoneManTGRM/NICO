@@ -24,7 +24,9 @@ def _scan_result() -> dict:
         "repairs": [
             {
                 "id": "repair_1",
-                "status": "report_only_unverified_candidate",
+                "status": "suggested",
+                "candidate_status": "report_only_unverified_candidate",
+                "mode": "report_only",
                 "code_change_applied": False,
             }
         ],
@@ -42,7 +44,9 @@ def test_swarm_audit_returns_real_findings_without_change_claim(monkeypatch) -> 
     assert result["repair_candidate_count"] == 1
     assert result["code_changes_applied"] is False
     assert result["automatic_application_allowed"] is False
-    assert result["repair_candidates"][0]["status"] == "report_only_unverified_candidate"
+    assert result["repair_candidates"][0]["status"] == "suggested"
+    assert result["repair_candidates"][0]["candidate_status"] == "report_only_unverified_candidate"
+    assert result["repair_candidates"][0]["mode"] == "report_only"
     assert result["repair_candidates"][0]["code_change_applied"] is False
     assert not any(
         finding.get("status") in {"fixed", "applied", "deployed"}
