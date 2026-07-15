@@ -31,7 +31,7 @@ def _scan_result() -> dict:
     }
 
 
-def test_swarm_audit_returns_real_findings_without_fixed_claim(monkeypatch) -> None:
+def test_swarm_audit_returns_real_findings_without_change_claim(monkeypatch) -> None:
     monkeypatch.setattr(swarm_bugs, "run_scan", lambda repo, kind: _scan_result())
 
     result = swarm_bugs.swarm_audit("/authorized/repo")
@@ -42,7 +42,13 @@ def test_swarm_audit_returns_real_findings_without_fixed_claim(monkeypatch) -> N
     assert result["repair_candidate_count"] == 1
     assert result["code_changes_applied"] is False
     assert result["automatic_application_allowed"] is False
-    assert "fixed" not in str(result).lower()
+    assert result["repair_candidates"][0]["status"] == "report_only_unverified_candidate"
+    assert result["repair_candidates"][0]["code_change_applied"] is False
+    assert not any(
+        finding.get("status") in {"fixed", "applied", "deployed"}
+        for finding in result["findings"]
+        if isinstance(finding, dict)
+    )
 
 
 def test_async_swarm_facade_uses_evidence_bound_result(monkeypatch) -> None:
