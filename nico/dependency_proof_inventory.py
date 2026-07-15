@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +15,94 @@ EXPECTED_DEPENDENCY_FILES = (
     "apps/web/package-lock.json",
 )
 DEPENDENCY_SCANNER_TOOLS = ("pip-audit", "npm-audit", "osv-scanner")
+_MAX_HASH_DEPTH = 64
+
+
+def _hash_key(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return f"{type(value).__name__}:{value}"
+
+
+def _canonical_hash_value(
+    value: Any,
+    *,
+    active_container_ids: set[int] | None = None,
+    depth: int = 0,
+) -> Any:
+    """Convert arbitrary scanner evidence into a deterministic JSON-safe hash shape.
+
+    Scanner integrations are third-party boundaries and may return self-referential
+    containers or non-JSON-native values. Hashing must never terminate an assessment
+    for those representation details. Circular references and excessive nesting are
+    represented explicitly; the original evidence remains untouched.
+    """
+
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else {"$non_finite_float": str(value)}
+    if depth >= _MAX_HASH_DEPTH:
+        return {"$truncated": "maximum_hash_depth"}
+
+    active = active_container_ids if active_container_ids is not None else set()
+    if isinstance(value, dict):
+        identity = id(value)
+        if identity in active:
+            return {"$circular_reference": "dict"}
+        active.add(identity)
+        try:
+            return {
+                _hash_key(key): _canonical_hash_value(item, active_container_ids=active, depth=depth + 1)
+                for key, item in value.items()
+            }
+        finally:
+            active.remove(identity)
+
+    if isinstance(value, (list, tuple)):
+        identity = id(value)
+        if identity in active:
+            return {"$circular_reference": type(value).__name__}
+        active.add(identity)
+        try:
+            return [
+                _canonical_hash_value(item, active_container_ids=active, depth=depth + 1)
+                for item in value
+            ]
+        finally:
+            active.remove(identity)
+
+    if isinstance(value, (set, frozenset)):
+        identity = id(value)
+        if identity in active:
+            return {"$circular_reference": type(value).__name__}
+        active.add(identity)
+        try:
+            normalized = [
+                _canonical_hash_value(item, active_container_ids=active, depth=depth + 1)
+                for item in value
+            ]
+        finally:
+            active.remove(identity)
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+        )
+
+    return {
+        "$type": f"{type(value).__module__}.{type(value).__qualname__}",
+        "$value": str(value),
+    }
 
 
 def _json_hash(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    encoded = json.dumps(
+        _canonical_hash_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
