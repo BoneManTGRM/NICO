@@ -95,7 +95,9 @@ def _canonical_hash_value(
     }
 
 
-def _json_hash(value: Any) -> str:
+def stable_json_hash(value: Any) -> str:
+    """Return a deterministic SHA-256 hash for arbitrary scanner evidence."""
+
     encoded = json.dumps(
         _canonical_hash_value(value),
         sort_keys=True,
@@ -104,6 +106,12 @@ def _json_hash(value: Any) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _json_hash(value: Any) -> str:
+    """Backward-compatible private alias for existing dependency-proof callers."""
+
+    return stable_json_hash(value)
 
 
 def _file_row(root: Path, relative_path: str) -> dict[str, Any]:
@@ -133,7 +141,7 @@ def _scanner_row(tool_name: str, tools: dict[str, Any]) -> dict[str, Any]:
         "exit_code": payload.get("returncode"),
         "timed_out": bool(payload.get("timed_out")),
         "finding_count": len(findings),
-        "artifact_hash": _json_hash(payload) if payload else None,
+        "artifact_hash": stable_json_hash(payload) if payload else None,
     }
     if payload.get("reason"):
         row["reason"] = payload.get("reason")
@@ -165,5 +173,14 @@ def build_dependency_proof_inventory(repo_dir: Path, tools: dict[str, Any] | Non
         "current_run_evidence_complete": all(item["status"] == "completed" for item in scanners),
         "guardrail": "Dependency proof requires current-run scanner artifacts and hashes for expected dependency files. Missing files, unavailable scanners, and findings remain explicit.",
     }
-    inventory["inventory_hash"] = _json_hash({key: value for key, value in inventory.items() if key != "inventory_hash"})
+    inventory["inventory_hash"] = stable_json_hash({key: value for key, value in inventory.items() if key != "inventory_hash"})
     return inventory
+
+
+__all__ = [
+    "DEPENDENCY_SCANNER_TOOLS",
+    "EXPECTED_DEPENDENCY_FILES",
+    "SCHEMA",
+    "build_dependency_proof_inventory",
+    "stable_json_hash",
+]
