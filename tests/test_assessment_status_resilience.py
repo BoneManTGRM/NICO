@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RESILIENCE = ROOT / "apps" / "web" / "app" / "AssessmentStatusResilience.tsx"
 SAVED_RUN_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentSavedMidRunGuard.tsx"
+OUTCOME_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
 
@@ -39,6 +40,28 @@ def test_one_transport_or_json_failure_does_not_become_a_failed_assessment() -> 
     assert 'output.status = "running"' in source
     assert "Exact run ${runId} remains preserved" in source
     assert "duplicate_start_allowed: false" in source
+
+
+def test_nonterminal_status_http_error_is_not_converted_into_a_failed_run() -> None:
+    source = OUTCOME_GUARD.read_text(encoding="utf-8")
+
+    assert "function recoveryResponse" in source
+    assert "without exact-run terminal evidence" in source
+    assert 'output.status = "running"' in source
+    assert 'status: "request_rejected"' in source
+    assert "http_status: response.status" in source
+    assert "exact_run_terminal_evidence: false" in source
+    assert "duplicate_start_allowed: false" in source
+    assert "return recoveryResponse(runId, response, payload, lastGoodByRun.get(runId))" in source
+
+
+def test_exact_terminal_status_response_still_passes_through_unchanged() -> None:
+    source = OUTCOME_GUARD.read_text(encoding="utf-8")
+
+    assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
+    terminal_line = "if (identity.runId === runId && TERMINAL_STATUSES.has(identity.status)) return response"
+    assert terminal_line in source
+    assert source.index(terminal_line) < source.index("return recoveryResponse(runId, response, payload, lastGoodByRun.get(runId))")
 
 
 def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
@@ -117,7 +140,10 @@ def test_resilience_wrappers_are_installed_before_transport_bridge() -> None:
 
     assert 'import AssessmentStatusResilience from "./AssessmentStatusResilience"' in layout
     assert 'import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard"' in layout
+    assert 'import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard"' in layout
     assert "<AssessmentStatusResilience />" in layout
     assert "<AssessmentSavedMidRunGuard />" in layout
+    assert "<AssessmentStatusOutcomeGuard />" in layout
     assert layout.index("<AssessmentStatusResilience />") < layout.index("<AssessmentSavedMidRunGuard />")
-    assert layout.index("<AssessmentSavedMidRunGuard />") < layout.index("<AssessmentApiTransportBridge />")
+    assert layout.index("<AssessmentSavedMidRunGuard />") < layout.index("<AssessmentStatusOutcomeGuard />")
+    assert layout.index("<AssessmentStatusOutcomeGuard />") < layout.index("<AssessmentApiTransportBridge />")
