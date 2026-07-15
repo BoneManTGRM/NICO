@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from types import SimpleNamespace
 
 from nico.hosted_report_intelligence_enrichment import (
     enrich_hosted_result,
@@ -53,6 +52,23 @@ class FakeHosted:
             "unavailable": [],
         }
 
+    @staticmethod
+    def build_markdown(result):
+        return (
+            "# Report\n\n"
+            "## Repository Quality and Governance Signals\n\n"
+            f"Findings: {result.get('repository_quality_signals', {}).get('finding_count', 0)}\n\n"
+            "## Prioritized Repair Intelligence\n"
+        )
+
+    @staticmethod
+    def build_html(markdown: str) -> str:
+        return f"<html><body><pre>{markdown}</pre></body></html>"
+
+    @staticmethod
+    def build_pdf_base64(markdown: str):
+        return None, "PDF unavailable in unit fixture."
+
 
 def test_structured_source_findings_produce_report_only_security_candidate() -> None:
     findings = structured_source_findings(
@@ -65,6 +81,7 @@ def test_structured_source_findings_produce_report_only_security_candidate() -> 
     assert findings[0]["severity"] == "high"
     assert findings[0]["affected_files"] == ["nico/worker.py"]
     assert "shell=True" in findings[0]["evidence"][1]
+    assert findings[0]["source_context"] == "production_or_configuration"
 
 
 def test_secret_source_finding_masks_raw_value() -> None:
@@ -80,7 +97,19 @@ def test_secret_source_finding_masks_raw_value() -> None:
     assert "ghp_...WXYZ" in rendered
 
 
-def test_enrichment_attaches_quality_and_repair_intelligence(monkeypatch) -> None:
+def test_nonproduction_source_patterns_are_not_prioritized() -> None:
+    findings = structured_source_findings(
+        FakeHosted,
+        {
+            "tests/test_worker.py": "subprocess.run(command, shell=True)\n",
+            "docs/example.py": "subprocess.run(command, shell=True)\n",
+        },
+    )
+
+    assert findings == []
+
+
+def test_enrichment_attaches_quality_repair_intelligence_and_exports(monkeypatch) -> None:
     monkeypatch.setattr(
         "nico.hosted_report_intelligence_enrichment.get_default_branch_head",
         lambda client, repo, branch: ("a" * 40, None),
@@ -131,3 +160,7 @@ def test_enrichment_attaches_quality_and_repair_intelligence(monkeypatch) -> Non
     frontend = enriched["repository_quality_signals"]["groups"]["frontend_routes"]
     assert frontend["explicit_placeholders"] == []
     assert frontend["route_aliases"] == ["apps/web/app/dashboard/page.tsx"]
+    assert "## Prioritized Repair Intelligence" in enriched["reports"]["markdown"]
+    assert "## Repository Quality and Governance Signals" in enriched["reports"]["markdown"]
+    assert enriched["reports"]["html"].startswith("<html>")
+    assert "PDF unavailable in unit fixture." in enriched["unavailable_data_notes"]
