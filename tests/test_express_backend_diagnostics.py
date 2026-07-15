@@ -73,7 +73,7 @@ def test_unhandled_backend_failure_records_only_bounded_public_diagnostics(monke
         run_github_assessment=fail_assessment,
         run_github_assessment_with_scanner_artifacts=fail_assessment,
     )
-    monkeypatch.setattr(diagnostics, "import_module", lambda _name: fake_main)
+    monkeypatch.setattr(express, "import_module", lambda _name: fake_main)
 
     with caplog.at_level("ERROR", logger="nico.express_backend_diagnostics"):
         diagnostics.execute_with_diagnostics(run_id, payload)
@@ -150,7 +150,7 @@ def test_success_preserves_request_fields_and_uses_one_exact_final_record(monkey
         ),
         _LAST_HOSTED_ASSESSMENT={},
     )
-    monkeypatch.setattr(diagnostics, "import_module", lambda _name: fake_main)
+    monkeypatch.setattr(express, "import_module", lambda _name: fake_main)
     monkeypatch.setattr(diagnostics, "_clear_request_local_payload", lambda: None)
 
     diagnostics.execute_with_diagnostics(run_id, payload)
