@@ -35,6 +35,7 @@ from nico.repository_input_normalization_compat import install_repository_input_
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
 from nico.complexity_score_integrity_compat import install_complexity_score_integrity_compat
 from nico.complexity_score_integrity_install_compat import install_complexity_score_integrity_reentry_compat
+from nico.complexity_density_confidence_patch import install_complexity_density_confidence_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -71,5 +72,6 @@ install_repository_input_normalization()
 install_complexity_score_integrity_patch()
 install_complexity_score_integrity_compat()
 install_complexity_score_integrity_reentry_compat()
+install_complexity_density_confidence_patch()
 
 __version__ = "0.1.0"
