@@ -3,9 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable
 
-from fastapi import HTTPException
-
-EXPRESS_PROGRESS_PERSISTENCE_VERSION = "nico.express_progress_persistence.v1"
+EXPRESS_PROGRESS_PERSISTENCE_VERSION = "nico.express_progress_persistence.v2"
 _RECORD_MARKER = "_nico_express_progress_record_v1"
 _STATUS_MARKER = "_nico_express_progress_status_v1"
 _PROGRESS_COLLECTION = "express_run_progress"
@@ -42,6 +40,11 @@ def _progress_identity(response: dict[str, Any]) -> dict[str, Any]:
 def _overlay_progress(api: Any, run_id: str, response: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(response)
     status = str(output.get("status") or "unknown").lower()
+
+    # The authoritative status function has already completed tenant/run scope
+    # validation before this function is called. Error and not-found responses
+    # are never passed here, so an independently persisted progress record cannot
+    # disclose another tenant's run or replace an authorization failure.
     if status in _TERMINAL_SUCCESS:
         output["current_stage"] = "complete"
         output["progress_percent"] = 100
@@ -96,12 +99,10 @@ def install_express_progress_persistence() -> dict[str, Any]:
     current_status: Callable[..., dict[str, Any]] = api.express_assessment_status
     if not getattr(current_status, _STATUS_MARKER, False):
         def status_with_independent_progress(run_id: str, req: Any) -> dict[str, Any]:
-            try:
-                result = current_status(run_id, req)
-            except HTTPException as exc:
-                if isinstance(exc.detail, dict):
-                    exc.detail = _overlay_progress(api, run_id, exc.detail)
-                raise
+            # Preserve all exceptions and scoped not-found responses exactly as
+            # produced by the authoritative status function. Overlay progress only
+            # after the request has passed exact tenant and run identity checks.
+            result = current_status(run_id, req)
             return _overlay_progress(api, run_id, result)
 
         setattr(status_with_independent_progress, _STATUS_MARKER, True)
@@ -114,6 +115,7 @@ def install_express_progress_persistence() -> dict[str, Any]:
         "collection": _PROGRESS_COLLECTION,
         "report_record_overwrite_can_reset_progress": False,
         "terminal_success_forces_100_percent": True,
+        "tenant_scope_failures_are_never_overlaid": True,
         "human_review_required": True,
         "client_ready": False,
     }
