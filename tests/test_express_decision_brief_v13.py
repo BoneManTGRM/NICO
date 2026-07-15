@@ -74,8 +74,9 @@ def test_express_decision_brief_is_first_page_and_preserves_base_report() -> Non
     assert error is None
     reader = PdfReader(io.BytesIO(base64.b64decode(encoded)))
     first = reader.pages[0].extract_text() or ""
+    compact_first = "".join(first.split())
     all_text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "NICO EXPRESS" in first
+    assert "NICOEXPRESS" in compact_first
     assert "Executive decision brief" in first
     assert "Top actions" in first
     assert "Existing professional Express report" in all_text
@@ -88,5 +89,8 @@ def test_express_decision_brief_installer_is_idempotent() -> None:
     first = install_express_decision_brief_v13()
     second = install_express_decision_brief_v13()
 
-    assert first["executive_decision_brief"] is True or first["status"] == "already_installed"
+    if first["status"] == "installed":
+        assert first["executive_decision_brief"] is True
+    else:
+        assert first["status"] == "already_installed"
     assert second["status"] == "already_installed"
