@@ -36,6 +36,8 @@ from nico.complexity_score_integrity_patch import install_complexity_score_integ
 from nico.complexity_score_integrity_compat import install_complexity_score_integrity_compat
 from nico.complexity_score_integrity_install_compat import install_complexity_score_integrity_reentry_compat
 from nico.complexity_density_confidence_patch import install_complexity_density_confidence_patch
+from nico.complexity_function_measurement_patch import install_complexity_function_measurement_patch
+from nico.final_score_reconciliation_patch import install_final_score_reconciliation_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -73,5 +75,7 @@ install_complexity_score_integrity_patch()
 install_complexity_score_integrity_compat()
 install_complexity_score_integrity_reentry_compat()
 install_complexity_density_confidence_patch()
+install_complexity_function_measurement_patch()
+install_final_score_reconciliation_patch()
 
 __version__ = "0.1.0"
