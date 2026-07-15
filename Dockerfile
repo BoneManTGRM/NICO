@@ -48,4 +48,4 @@ USER nico
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-}; if [ -z \"$workers\" ]; then if [ -n \"${DATABASE_URL:-}\" ]; then workers=2; else workers=1; fi; fi; exec uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
