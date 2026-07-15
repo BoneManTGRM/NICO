@@ -22,19 +22,20 @@ def _continuation_body(source: str) -> str:
 def test_each_tier_has_one_canonical_start_request() -> None:
     body = _run_body(_source())
 
-    assert body.count("/assessment/github") == 1
-    assert body.count("/assessment/mid-run`") == 1
-    assert body.count("/assessment/full-run`") == 1
+    assert body.count('"/assessment/express-run"') == 1
+    assert body.count('"/assessment/mid-run"') == 1
+    assert body.count('"/assessment/full-run"') == 1
     assert 'assessment_mode: "express"' in body
     assert 'mode: "full"' in body
 
 
-def test_mid_and_full_continuation_never_restart_the_assessment() -> None:
+def test_all_three_tiers_continue_the_exact_run_without_restarting() -> None:
     body = _continuation_body(_source())
 
-    assert "/assessment/github" not in body
-    assert "`${API_URL}/assessment/mid-run`" not in body
-    assert "`${API_URL}/assessment/full-run`" not in body
+    assert '"/assessment/express-run"' not in body
+    assert '"/assessment/mid-run"' not in body
+    assert '"/assessment/full-run"' not in body
+    assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in body
     assert "/assessment/mid-run/${encodeURIComponent(runId)}/status" in body
     assert "/assessment/full-run/${encodeURIComponent(runId)}/status" in body
 
