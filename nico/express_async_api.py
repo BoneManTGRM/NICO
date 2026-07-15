@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 import nico.hosted_assessment as hosted
 from nico.storage import STORE, utc_now
 
-EXPRESS_ASYNC_VERSION = "nico.express_async_api.v1"
+EXPRESS_ASYNC_VERSION = "nico.express_async_api.v2"
 EXPRESS_ASYNC_ROUTES = {
     ("POST", "/assessment/express-run"),
     ("POST", "/assessment/express-run/{run_id}/status"),
@@ -26,6 +26,30 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=MAX_ACTIVE_EXPRESS_RUNS, thread_name_
 _ACTIVE_RUNS: set[str] = set()
 _ACTIVE_SCOPE_RUNS: dict[tuple[str, str, str], str] = {}
 _ACTIVE_LOCK = Lock()
+
+_EXPRESS_STAGE_DEFINITIONS: tuple[tuple[str, str], ...] = (
+    ("request_accepted", "Request accepted and exact run identity recorded."),
+    ("repository_evidence", "Collecting repository, activity, workflow, dependency, and source evidence."),
+    ("scanner_reconciliation", "Reconciling current-run dependency, secret, and static-analysis evidence."),
+    ("accuracy_review", "Applying evidence classification, false-positive controls, and report accuracy rules."),
+    ("score_reconciliation", "Reconciling section scores and maturity against final evidence."),
+    ("report_generation", "Generating Markdown, HTML, professional PDF, and repair intelligence."),
+    ("truth_and_review_gates", "Applying final consistency, evidence-ledger, and human-review gates."),
+    ("complete", "Assessment completed and draft report artifacts are ready for human review."),
+)
+_STAGE_PERCENT = {
+    "request_accepted": 4,
+    "repository_evidence": 14,
+    "scanner_reconciliation": 48,
+    "accuracy_review": 62,
+    "score_reconciliation": 72,
+    "report_generation": 82,
+    "truth_and_review_gates": 94,
+    "complete": 100,
+    "failed": 100,
+    "blocked": 100,
+    "interrupted": 100,
+}
 
 
 class ExpressAssessmentRunRequest(BaseModel):
@@ -100,6 +124,37 @@ def _scope_key(payload: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def _stage_progress(
+    active_step: str,
+    active_status: str,
+    message: str,
+    *,
+    evidence: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    active_index = next((index for index, (step, _label) in enumerate(_EXPRESS_STAGE_DEFINITIONS) if step == active_step), 0)
+    progress: list[dict[str, Any]] = []
+    for index, (step, label) in enumerate(_EXPRESS_STAGE_DEFINITIONS):
+        if step == active_step:
+            status = active_status
+            step_message = message
+        elif index < active_index:
+            status = "complete"
+            step_message = label
+        else:
+            status = "pending"
+            step_message = label
+        item: dict[str, Any] = {
+            "step": step,
+            "status": status,
+            "message": step_message,
+            "evidence": {"same_run_continuation": True},
+        }
+        if step == active_step and evidence:
+            item["evidence"].update(deepcopy(evidence))
+        progress.append(item)
+    return progress
+
+
 def _response(
     run_id: str,
     payload: dict[str, Any],
@@ -107,7 +162,12 @@ def _response(
     message: str,
     *,
     code: str = "",
+    stage: str = "request_accepted",
+    progress_percent: int | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    stage_status = status if status in _TERMINAL_FAILURES | _TERMINAL_SUCCESS else "running" if status == "running" else "queued"
+    bounded_percent = max(0, min(100, int(progress_percent if progress_percent is not None else _STAGE_PERCENT.get(stage, 0))))
     response = {
         "status": status,
         "run_id": run_id,
@@ -116,14 +176,9 @@ def _response(
         "repository": str(payload.get("repository") or ""),
         "customer_id": str(payload.get("customer_id") or "default_customer"),
         "project_id": str(payload.get("project_id") or "default_project"),
-        "progress": [
-            {
-                "step": "express_assessment",
-                "status": status,
-                "message": message,
-                "evidence": {"same_run_continuation": True},
-            }
-        ],
+        "current_stage": stage,
+        "progress_percent": bounded_percent,
+        "progress": _stage_progress(stage, stage_status, message, evidence=evidence),
         "human_review_required": True,
         "client_ready": False,
         "persistence": _persistence(),
@@ -155,31 +210,47 @@ def _record(run_id: str, request_payload: dict[str, Any], response: dict[str, An
     return STORE.put("assessment_runs", run_id, record)
 
 
+def _record_stage(
+    run_id: str,
+    request_payload: dict[str, Any],
+    stage: str,
+    message: str,
+    *,
+    progress_percent: int | None = None,
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    response = _response(
+        run_id,
+        request_payload,
+        "running",
+        message,
+        stage=stage,
+        progress_percent=progress_percent,
+        evidence=evidence,
+    )
+    _record(run_id, request_payload, response)
+    return response
+
+
 def _record_response(record: dict[str, Any]) -> dict[str, Any]:
     value = record.get("response") if isinstance(record.get("response"), dict) else record.get("payload")
     return deepcopy(value) if isinstance(value, dict) else {}
 
 
-def _blocked_detail(result: dict[str, Any], run_id: str) -> dict[str, Any]:
+def _blocked_detail(result: dict[str, Any], run_id: str, request_payload: dict[str, Any]) -> dict[str, Any]:
     api_main = import_module("nico.api.main")
     exc = api_main.safe_blocked_exception(result)
     detail = exc.detail if isinstance(exc.detail, dict) else {}
-    return {
-        "status": "blocked",
-        "code": str(detail.get("code") or "blocked")[:80],
-        "message": str(detail.get("message") or "Express assessment was blocked.")[:320],
-        "run_id": run_id,
-        "assessment_type": "express",
-        "progress": [
-            {
-                "step": "express_assessment",
-                "status": "blocked",
-                "message": str(detail.get("message") or "Express assessment was blocked.")[:320],
-            }
-        ],
-        "human_review_required": True,
-        "client_ready": False,
-    }
+    message = str(detail.get("message") or "Express assessment was blocked.")[:320]
+    return _response(
+        run_id,
+        request_payload,
+        "blocked",
+        message,
+        code=str(detail.get("code") or "blocked")[:80],
+        stage="blocked",
+        progress_percent=100,
+    )
 
 
 def _release_active(run_id: str, request_payload: dict[str, Any]) -> None:
@@ -191,13 +262,12 @@ def _release_active(run_id: str, request_payload: dict[str, Any]) -> None:
 
 
 def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
-    running = _response(
+    _record_stage(
         run_id,
         request_payload,
-        "running",
-        "Express repository evidence collection and report generation are running on the Railway backend. The browser may poll this exact run without holding one long connection.",
+        "repository_evidence",
+        "Collecting authorized repository structure, activity, workflows, manifests, source signals, and baseline evidence.",
     )
-    _record(run_id, request_payload, running)
     try:
         api_main = import_module("nico.api.main")
         req = api_main.GithubAssessmentRequest(**request_payload)
@@ -207,27 +277,53 @@ def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
         else:
             result = api_main.run_github_assessment(payload)
         if result.get("status") == "blocked":
-            blocked = _blocked_detail(result, run_id)
-            blocked.update(
-                {
-                    "repository": request_payload.get("repository") or "",
-                    "customer_id": request_payload.get("customer_id") or "default_customer",
-                    "project_id": request_payload.get("project_id") or "default_project",
-                    "persistence": _persistence(),
-                    "updated_at": utc_now(),
-                }
-            )
+            blocked = _blocked_detail(result, run_id, request_payload)
             _record(run_id, request_payload, blocked)
             return
 
         result["run_id"] = run_id
+        _record_stage(
+            run_id,
+            request_payload,
+            "scanner_reconciliation",
+            "Repository evidence is attached. Reconciling dependency, secret, static-analysis, CI, and complexity evidence for this exact run.",
+            evidence={"repository_evidence_attached": True},
+        )
         result = api_main.attach_existing_worker_evidence(result, payload)
         result = api_main.enrich_payload_with_scanner_evidence(result)
+
+        _record_stage(
+            run_id,
+            request_payload,
+            "accuracy_review",
+            "Scanner evidence is attached. Applying source classification, contradiction removal, and false-positive controls.",
+        )
         result = api_main.apply_report_accuracy(result)
         result = api_main.attach_express_review_target(result, payload)
+
+        _record_stage(
+            run_id,
+            request_payload,
+            "score_reconciliation",
+            "Evidence classification is complete. Reconciling section scores and the maturity signal without score inflation.",
+        )
         result = api_main.polish_express_result(result)
+
+        _record_stage(
+            run_id,
+            request_payload,
+            "report_generation",
+            "Final scores are available. Generating the professional report, decision summary, repair intelligence, and downloadable formats.",
+        )
         result = api_main.finalize_express_result_consistency(result)
         result = api_main.attach_express_review_target(result, payload)
+
+        _record_stage(
+            run_id,
+            request_payload,
+            "truth_and_review_gates",
+            "Report formats are generated. Applying evidence-ledger, consistency, acceptance, and human-review gates.",
+        )
         result = api_main.attach_evidence_artifact_bundle(result)
         result = api_main.attach_client_acceptance_gate(result)
         response_payload = api_main.safe_assessment_response_payload(result)
@@ -237,6 +333,17 @@ def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
         response_payload["human_review_required"] = True
         response_payload["client_ready"] = False
         response_payload["persistence"] = _persistence()
+        response_payload["current_stage"] = "complete"
+        response_payload["progress_percent"] = 100
+        response_payload["progress"] = _stage_progress(
+            "complete",
+            "complete",
+            "Express assessment completed. Draft report artifacts are ready for required human review.",
+            evidence={
+                "report_formats_ready": bool((response_payload.get("reports") or {}).get("pdf_base64")),
+                "score_reconciled": True,
+            },
+        )
         response_payload["updated_at"] = utc_now()
         api_main._LAST_HOSTED_ASSESSMENT = response_payload
 
@@ -250,12 +357,15 @@ def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
         _record(run_id, request_payload, response_payload)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
+        terminal_status = "blocked" if exc.status_code < 500 else "failed"
         failure = _response(
             run_id,
             request_payload,
-            "blocked" if exc.status_code < 500 else "failed",
+            terminal_status,
             str(detail.get("message") or "Express assessment execution was blocked.")[:320],
             code=str(detail.get("code") or f"http_{exc.status_code}")[:80],
+            stage=terminal_status,
+            progress_percent=100,
         )
         _record(run_id, request_payload, failure)
     except Exception:
@@ -265,6 +375,8 @@ def _execute(run_id: str, request_payload: dict[str, Any]) -> None:
             "failed",
             "Express assessment execution failed on the backend. Internal exception details remain redacted; review authorized backend diagnostics before retrying.",
             code="express_backend_execution_failed",
+            stage="failed",
+            progress_percent=100,
         )
         _record(run_id, request_payload, failure)
     finally:
@@ -319,7 +431,9 @@ def express_assessment_start(req: ExpressAssessmentRunRequest) -> dict[str, Any]
         run_id,
         payload,
         "queued",
-        "Express run accepted. NICO will continue this exact run on the backend and the browser will poll short status requests.",
+        "Express run accepted. The exact run is recorded and will publish truthful stage updates while the browser polls short status requests.",
+        stage="request_accepted",
+        progress_percent=4,
     )
     try:
         _record(run_id, payload, queued)
@@ -332,6 +446,8 @@ def express_assessment_start(req: ExpressAssessmentRunRequest) -> dict[str, Any]
             "failed",
             "Express run could not be scheduled on the backend.",
             code="express_run_schedule_failed",
+            stage="failed",
+            progress_percent=100,
         )
         _record(run_id, payload, failed)
         raise HTTPException(status_code=503, detail=failed)
@@ -372,6 +488,8 @@ def express_assessment_status(run_id: str, req: ExpressAssessmentStatusRequest) 
                 "interrupted",
                 "The backend process restarted or stopped before this Express run reached a terminal result. The exact run ID is preserved; review Recovery before starting another run.",
                 code="express_worker_interrupted",
+                stage="interrupted",
+                progress_percent=100,
             )
             _record(run_id, request_record, interrupted)
             raise HTTPException(status_code=503, detail=interrupted)
@@ -385,6 +503,8 @@ def express_assessment_status(run_id: str, req: ExpressAssessmentStatusRequest) 
             "failed",
             "Express run state was not recognized. NICO stopped rather than infer a successful result.",
             code="express_unknown_terminal_state",
+            stage="failed",
+            progress_percent=100,
         )
         _record(run_id, request_record, unknown)
         raise HTTPException(status_code=503, detail=unknown)
@@ -418,17 +538,12 @@ def register_express_async_routes(app: FastAPI) -> dict[str, Any]:
         "status": "installed",
         "version": EXPRESS_ASYNC_VERSION,
         "routes": sorted(f"{method} {path}" for method, path in EXPRESS_ASYNC_ROUTES),
-        "single_long_browser_connection_required": False,
-        "exact_run_polling": True,
-        "duplicate_active_scope_start_prevented": True,
-        "max_active_runs": MAX_ACTIVE_EXPRESS_RUNS,
     }
 
 
 __all__ = [
     "EXPRESS_ASYNC_ROUTES",
     "EXPRESS_ASYNC_VERSION",
-    "MAX_ACTIVE_EXPRESS_RUNS",
     "ExpressAssessmentRunRequest",
     "ExpressAssessmentStatusRequest",
     "express_assessment_start",
