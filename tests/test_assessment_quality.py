@@ -98,7 +98,7 @@ def test_polished_pdf_is_generated_for_complete_assessment():
     polished = polish_express_result(result)
     pdf_base64 = polished["reports"]["pdf_base64"]
     pdf_bytes = base64.b64decode(pdf_base64)
-    assert polished["reports"]["pdf_style"] == "professional_report_v11_intelligence"
+    assert polished["reports"]["pdf_style"] == "professional_report_v12_decision_ready"
     assert polished["reports"]["pdf_filename"] == "nico-express-owner-repo.pdf"
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 3000
