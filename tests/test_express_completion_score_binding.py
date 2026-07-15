@@ -88,11 +88,14 @@ def test_final_response_attaches_reconciles_and_exports_report_intelligence(monk
         return {
             "status": "complete",
             "mode": "report_only",
+            "priority_model": "calibrated_weighted_v2",
             "candidate_count": 2,
             "code_suggestion_count": 1,
+            "advisories": [{"title": "Repository size context"}],
             "candidates": [
                 {
                     "title": "Final verified candidate",
+                    "priority_score": 64.2,
                     "recommended_action": "Review the final finding.",
                     "code_suggestion": {"status": "available"},
                 }
@@ -127,17 +130,23 @@ def test_final_response_attaches_reconciles_and_exports_report_intelligence(monk
     assert response["maturity_signal"]["score"] == 92
     assert response["repair_intelligence"]["candidate_count"] == 2
     assert response["repairs"] == ["Review the final finding."]
+    assert response["quick_wins"][0] == "Review the final finding."
+    assert response["repair_action_summary"]["immediate_count"] == 1
+    assert response["repair_action_summary"]["advisory_count"] == 1
     assert QUALITY_HEADING in response["reports"]["markdown"]
     assert REPAIR_HEADING in response["reports"]["markdown"]
     assert response["repair_intelligence_reconciliation"] == {
         "status": "reconciled",
         "source": "final_reconciled_sections_and_verified_repository_quality_findings",
+        "priority_model": "calibrated_weighted_v2",
         "excluded_workflow_only_sections": ["client_acceptance", "trust_readiness"],
         "prior_candidate_count": 3,
         "final_candidate_count": 2,
         "final_code_suggestion_count": 1,
+        "final_advisory_count": 1,
         "early_source_regex_candidates_carried_forward": False,
         "superseded_pre_polish_findings_carried_forward": False,
+        "repository_size_ranked_as_defect": False,
         "human_review_required": True,
         "automatic_application_allowed": False,
     }
@@ -149,8 +158,10 @@ def test_final_response_attaches_reconciles_and_exports_report_intelligence(monk
         "repair_intelligence_attached": True,
         "repository_quality_markdown_exported": True,
         "repair_intelligence_markdown_exported": True,
+        "priority_model": "calibrated_weighted_v2",
         "repair_candidate_count": 2,
         "code_suggestion_count": 1,
+        "advisory_count": 1,
         "score_before": 92,
         "score_after": 92,
         "score_changed": False,
@@ -163,6 +174,72 @@ def test_final_response_attaches_reconciles_and_exports_report_intelligence(monk
     }
     assert response["human_review_required"] is True
     assert response["client_ready"] is False
+
+
+def test_clean_dependency_artifacts_remove_contradicted_unavailable_note(monkeypatch) -> None:
+    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", _fake_rebuild)
+
+    response = finalize_report_intelligence_at_response(
+        {
+            "status": "complete",
+            "repository": "owner/repo",
+            "maturity_signal": {"score": 92},
+            "repository_quality_signals": {"status": "complete", "findings": []},
+            "sections": [
+                {
+                    "id": "dependency_health",
+                    "status": "green",
+                    "score": 90,
+                    "evidence": [
+                        "Verified score lift: current-run dependency scanner artifacts are clean and bound to this report run.",
+                        "Scanner-worker dependency tools completed: pip-audit, npm-audit, osv-scanner.",
+                    ],
+                    "findings": [],
+                    "unavailable": [
+                        "Full pip-audit, npm audit, and OSV Scanner CLI artifacts are still required before claiming final scanner-clean dependency status.",
+                        "License-policy mapping requires human review.",
+                    ],
+                }
+            ],
+        }
+    )
+
+    unavailable = response["sections"][0]["unavailable"]
+    assert unavailable == ["License-policy mapping requires human review."]
+    assert response["repair_action_summary"]["dependency_quick_win_suppressed_because_scanners_clean"] is True
+
+
+def test_clean_secret_scanners_remove_generic_secret_quick_win(monkeypatch) -> None:
+    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", _fake_rebuild)
+
+    response = finalize_report_intelligence_at_response(
+        {
+            "status": "complete",
+            "repository": "owner/repo",
+            "maturity_signal": {"score": 92},
+            "repository_quality_signals": {"status": "complete", "findings": []},
+            "quick_wins": [
+                "Address any confirmed secret-pattern hit first and rotate real credentials outside NICO if applicable.",
+                "Maintain current CI evidence.",
+            ],
+            "sections": [
+                {
+                    "id": "secrets_review",
+                    "status": "green",
+                    "score": 92,
+                    "findings": [],
+                    "evidence": [
+                        "Parsed Gitleaks and TruffleHog full-history artifacts reported zero credential findings.",
+                        "Current-run artifacts are clean.",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert not any("secret-pattern" in item.lower() for item in response["quick_wins"])
+    assert "Maintain current CI evidence." in response["quick_wins"]
+    assert response["repair_action_summary"]["secret_quick_win_suppressed_because_scanners_clean"] is True
 
 
 def test_final_response_discards_early_regex_secret_candidates(monkeypatch) -> None:
@@ -205,6 +282,7 @@ def test_final_response_discards_early_regex_secret_candidates(monkeypatch) -> N
             "sections": [
                 {
                     "id": "secrets_review",
+                    "status": "green",
                     "score": 92,
                     "findings": [],
                     "evidence": [
@@ -302,3 +380,4 @@ def test_installer_is_idempotent() -> None:
     assert second["score_inflation_allowed"] is False
     assert second["report_intelligence_export_bound"] is True
     assert second["repair_intelligence_reconciled_from_final_findings"] is True
+    assert second["client_actions_reconciled_from_final_findings"] is True
