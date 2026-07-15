@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from nico.express_async_api import register_express_async_routes
 from nico.express_backend_diagnostics import install_express_backend_diagnostics
 from nico.express_recovery_compat import install_express_recovery_compatibility
+from nico.express_safe_trace_diagnostics import install_express_safe_trace_diagnostics
 
 SAFE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,80}$")
@@ -97,6 +98,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         setattr(actionable_blocked_exception, "_nico_blocked_exception_fallback", current)
         api_main.safe_blocked_exception = actionable_blocked_exception
     express_diagnostics = install_express_backend_diagnostics()
+    express_safe_trace = install_express_safe_trace_diagnostics()
     express_async = register_express_async_routes(api_main.app)
     express_recovery = install_express_recovery_compatibility()
     return {
@@ -104,6 +106,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         "raw_provider_detail_exposed": False,
         "classified_codes": sorted(_BLOCK_MESSAGES),
         "express_backend_diagnostics": express_diagnostics,
+        "express_safe_trace_diagnostics": express_safe_trace,
         "express_async": express_async,
         "express_recovery": express_recovery,
     }
