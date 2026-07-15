@@ -172,19 +172,20 @@ def test_professional_intelligence_pdf_is_decision_ready_and_not_raw_markdown() 
     assert encoded
     reader = PdfReader(io.BytesIO(base64.b64decode(encoded)))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    normalized_text = " ".join(text.split())
     assert "Base NICO assessment" in text
-    assert "Decision-Ready Repository Quality and Repair Intelligence" in text
+    assert "Decision-Ready Repository Quality and Repair Intelligence" in normalized_text
     assert "Repository Quality and Governance Signals" in text
     assert "Prioritized Repair Intelligence" in text
     assert "Critical / High" in text
     assert "Planning Advisories - Not Ranked as Defects" in text
     assert "Suggested replacement code - not applied and not yet verified" in text
     assert "class BootstrapStep" in text
-    assert 'BootstrapStep(name="metadata_auth")' in text
+    assert 'BootstrapStep(name="metadata_auth")' in normalized_text
     assert "&quot;" not in text
     assert "-&gt;" not in text
     assert "density=None" not in text
-    assert "density=unavailable" in text
+    assert "density=unavailable" in normalized_text
     assert "## Prioritized Repair Intelligence" not in text
     assert "**Report-only safety boundary:**" not in text
     assert "```" not in text
