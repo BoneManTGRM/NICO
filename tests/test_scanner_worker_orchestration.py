@@ -10,6 +10,17 @@ def test_stable_artifact_hash_is_order_independent() -> None:
     assert stable_artifact_hash(left) == stable_artifact_hash(right)
 
 
+def test_stable_artifact_hash_handles_circular_scanner_payloads() -> None:
+    payload: dict[str, object] = {"status": "completed", "findings": []}
+    payload["self"] = payload
+
+    first = stable_artifact_hash(payload)
+    second = stable_artifact_hash(payload)
+
+    assert len(first) == 64
+    assert first == second
+
+
 def test_orchestration_manifest_lists_every_required_tool() -> None:
     artifact = {
         "tools": {
@@ -69,6 +80,30 @@ def test_orchestration_manifest_lists_every_required_tool() -> None:
     assert "npm-audit" in manifest["unavailable_tools"]
     assert "bandit" in manifest["finding_tools"]
     assert manifest["manifest_hash"]
+
+
+def test_orchestration_manifest_hashes_self_referential_tool_evidence() -> None:
+    tool: dict[str, object] = {
+        "tool": "pip-audit",
+        "status": "completed",
+        "category": "dependency",
+        "returncode": 0,
+        "timed_out": False,
+        "findings": [],
+    }
+    tool["self"] = tool
+
+    manifest = build_scanner_worker_orchestration_manifest(
+        {"tools": {"pip-audit": tool}},
+        repository="BoneManTGRM/NICO",
+        run_id="cycle-run",
+        started_at="2026-07-10T00:00:00Z",
+        finished_at="2026-07-10T00:00:01Z",
+    )
+
+    pip_audit = next(item for item in manifest["tools"] if item["tool"] == "pip-audit")
+    assert len(pip_audit["artifact_hash"]) == 64
+    assert len(manifest["manifest_hash"]) == 64
 
 
 def test_orchestration_manifest_is_evidence_only_guarded() -> None:

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
+from nico.dependency_proof_inventory import stable_json_hash
 from nico.scanner_tool_runners import TOOL_SPECS
 
 ORCHESTRATION_SCHEMA = "nico.scanner_worker_orchestration.v1"
 
 
 def stable_artifact_hash(payload: Any) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    """Return a deterministic cycle-safe hash for scanner-worker artifacts."""
+
+    return stable_json_hash(payload)
 
 
 def _tool_payload_hash(payload: dict[str, Any]) -> str:
