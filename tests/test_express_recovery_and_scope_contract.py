@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASYNC_API = ROOT / "nico" / "express_async_api.py"
+ASYNC_METADATA = ROOT / "nico" / "express_async_contract_metadata.py"
 RECOVERY_COMPAT = ROOT / "nico" / "express_recovery_compat.py"
 BLOCK_INSTALLER = ROOT / "nico" / "assessment_block_messages.py"
 BRIDGE = ROOT / "apps" / "web" / "app" / "AssessmentApiTransportBridge.tsx"
@@ -23,16 +24,19 @@ def test_express_status_is_tenant_bound_and_unknown_states_fail_closed() -> None
     assert 'if status not in _TERMINAL_SUCCESS:' in source
 
 
-def test_express_start_is_idempotent_per_active_scope_and_capacity_bounded() -> None:
+def test_express_start_is_idempotent_per_active_scope_capacity_bounded_and_staged() -> None:
     source = ASYNC_API.read_text(encoding="utf-8")
+    metadata = ASYNC_METADATA.read_text(encoding="utf-8")
 
     assert "MAX_ACTIVE_EXPRESS_RUNS = 2" in source
     assert "_ACTIVE_SCOPE_RUNS" in source
     assert "existing_run_id = _ACTIVE_SCOPE_RUNS.get(key" in source
     assert 'response["duplicate_start_prevented"] = True' in source
     assert 'code": "express_capacity_reached"' in source
-    assert '"duplicate_active_scope_start_prevented": True' in source
-    assert '"max_active_runs": MAX_ACTIVE_EXPRESS_RUNS' in source
+    assert '"duplicate_active_scope_start_prevented": True' in metadata
+    assert '"max_active_runs": express_async_api.MAX_ACTIVE_EXPRESS_RUNS' in metadata
+    assert '"staged_progress_available": True' in metadata
+    assert '"progress_source": "backend_stage_records"' in metadata
 
 
 def test_browser_polls_with_the_exact_start_tenant_scope() -> None:
