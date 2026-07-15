@@ -202,6 +202,7 @@ def install_mid_report_v3_compat() -> dict[str, Any]:
     def compatible_markdown(payload: dict[str, Any]) -> str:
         value = original_markdown(_rendering_payload(payload))
         value = value.replace("DRAFT - HUMAN REVIEW REQUIRED", report.DRAFT_LABEL)
+        value = value.replace("Unsupported claims permitted: **0**", "Unsupported claims permitted: 0")
         return value.replace("## Consolidated human review", "## Review by exception - Consolidated human review")
 
     def compatible_html(payload: dict[str, Any]) -> str:
