@@ -151,11 +151,11 @@ def test_material_final_triage_remains_a_score_constraint(monkeypatch) -> None:
     assert next(item for item in result["assessment"]["sections"] if item["id"] == "dependency_health")["score"] == 55
 
 
-def test_generic_scope_disclosure_does_not_make_direct_evidence_unverified(monkeypatch) -> None:
+def test_generic_scope_disclosure_is_presented_separately_without_identity_change() -> None:
     original_truth = v3._ORIGINAL_BUILD_TRUTH
     try:
         v3._ORIGINAL_BUILD_TRUTH = lambda _result: {
-            "version": "old",
+            "version": "mid-truth-status-v1",
             "sections": [
                 {
                     "id": "code_audit",
@@ -187,22 +187,21 @@ def test_generic_scope_disclosure_does_not_make_direct_evidence_unverified(monke
         v3._ORIGINAL_BUILD_TRUTH = original_truth
 
     section = truth["sections"][0]
-    ledger = truth["evidence_coverage"]["units"][0]
-    assert section["truth_status"] == "Verified"
-    assert section["unavailable"] == []
+    coverage = truth["evidence_coverage"]
+    assert truth["version"] == "mid-truth-status-v1"
+    assert section["truth_status"] == "Verified with limitations"
+    assert section["presentation_truth_status"] == "Verified"
     assert section["scope_disclosures"] == ["This score does not replace line-by-line semantic code review."]
-    assert ledger["available"] is True
-    assert truth["evidence_coverage"]["percent"] == 100
+    assert coverage["presentation_units"][0]["available"] is True
+    assert coverage["presentation_percent"] == 100
 
 
-def test_review_packet_consolidates_duplicate_section_cards() -> None:
+def test_review_packet_consolidates_for_display_without_mutating_source_identity() -> None:
     packet = {
         "status": "ready_for_review",
-        "run_id": "midrun_one",
-        "customer_id": "customer",
-        "project_id": "project",
-        "repository": "owner/repo",
-        "source_identity": {"run_id": "midrun_one"},
+        "packet_version": "mid-review-by-exception-v1",
+        "review_packet_id": "packet_one",
+        "review_packet_sha256": "abc123",
         "exceptions": [
             {
                 "item_id": "one",
@@ -232,8 +231,13 @@ def test_review_packet_consolidates_duplicate_section_cards() -> None:
 
     consolidated = v3._consolidate_review_packet(packet)
 
-    assert len(consolidated["exceptions"]) == 1
-    item = consolidated["exceptions"][0]
+    assert consolidated["packet_version"] == "mid-review-by-exception-v1"
+    assert consolidated["review_packet_id"] == "packet_one"
+    assert consolidated["review_packet_sha256"] == "abc123"
+    assert len(consolidated["exceptions"]) == 2
+    assert len(consolidated["display_exceptions"]) == 1
+    item = consolidated["display_exceptions"][0]
     assert item["categories"] == ["low_confidence_or_limited_conclusion", "score_changing_claim"]
     assert item["blockers"] == ["blocker one", "blocker two"]
-    assert consolidated["summary"]["consolidated_duplicate_items_removed"] == 1
+    assert item["source_item_ids"] == ["one", "two"]
+    assert consolidated["display_summary"]["consolidated_duplicate_items_removed"] == 1
