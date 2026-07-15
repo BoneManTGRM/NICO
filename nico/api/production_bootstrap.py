@@ -8,11 +8,14 @@ import nico.express_async_api as express
 from nico.api.production import app as production_app
 from nico.assessment_block_messages import install_assessment_block_messages
 from nico.express_backend_diagnostics import EXPRESS_BACKEND_DIAGNOSTICS_VERSION
+from nico.mid_live_status_api import MID_LIVE_STATUS_ROUTE, register_mid_live_status_routes
+from nico.postgres_timeout_patch import install_postgres_timeout_patch
 from nico.scanner_redaction_safety import (
     SCANNER_REDACTION_SAFETY_VERSION,
     install_scanner_redaction_safety,
     scanner_redaction_safety_status,
 )
+from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 
 EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/express-runtime"
 EXPRESS_RUNTIME_REQUIRED_ROUTES = {
@@ -76,12 +79,15 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
     target.openapi_schema = None
 
 
-# The Railway process imports this module directly. Install compatibility repairs here,
-# after the complete production app has loaded, so import ordering cannot leave the
-# recursive scanner redactor or original opaque Express worker active.
+# Railway imports this module directly. Install late-bound production repairs only
+# after the complete app has loaded so import order cannot leave an old route or
+# scanner function active.
+POSTGRES_TIMEOUTS = install_postgres_timeout_patch()
 SCANNER_REDACTION_SAFETY = install_scanner_redaction_safety()
+SNAPSHOT_SCANNER_HEARTBEAT = install_snapshot_scanner_heartbeat()
 EXPRESS_PRODUCTION_BOOTSTRAP = install_assessment_block_messages()
 app = production_app
+MID_LIVE_STATUS = register_mid_live_status_routes(app)
 _register_runtime_diagnostics(app)
 EXPRESS_PRODUCTION_RUNTIME = express_runtime_status(app)
 
@@ -93,16 +99,24 @@ if any(count != 1 for count in EXPRESS_PRODUCTION_RUNTIME["route_counts"].values
     raise RuntimeError(
         f"Express production routes are missing or duplicated: {EXPRESS_PRODUCTION_RUNTIME['route_counts']}"
     )
+if _route_count(app, MID_LIVE_STATUS_ROUTE[0], MID_LIVE_STATUS_ROUTE[1]) != 1:
+    raise RuntimeError("Mid live-status route must be registered exactly once")
 
+app.state.nico_postgres_timeouts = POSTGRES_TIMEOUTS
 app.state.nico_scanner_redaction_safety = SCANNER_REDACTION_SAFETY
+app.state.nico_snapshot_scanner_heartbeat = SNAPSHOT_SCANNER_HEARTBEAT
 app.state.nico_express_production_bootstrap = EXPRESS_PRODUCTION_BOOTSTRAP
 app.state.nico_express_production_runtime = EXPRESS_PRODUCTION_RUNTIME
+app.state.nico_mid_live_status = MID_LIVE_STATUS
 
 __all__ = [
     "app",
+    "POSTGRES_TIMEOUTS",
     "SCANNER_REDACTION_SAFETY",
+    "SNAPSHOT_SCANNER_HEARTBEAT",
     "EXPRESS_PRODUCTION_BOOTSTRAP",
     "EXPRESS_PRODUCTION_RUNTIME",
+    "MID_LIVE_STATUS",
     "EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE",
     "EXPRESS_RUNTIME_REQUIRED_ROUTES",
     "express_runtime_status",

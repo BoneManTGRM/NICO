@@ -4,6 +4,7 @@ import "../styles/navigation.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
+import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
@@ -33,6 +34,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentStatusResilience />
           <AssessmentSavedMidRunGuard />
           <AssessmentStatusOutcomeGuard />
+          <AssessmentMidLiveStatusTransport />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />

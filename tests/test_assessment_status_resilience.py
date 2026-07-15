@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESILIENCE = ROOT / "apps" / "web" / "app" / "AssessmentStatusResilience.tsx"
 SAVED_RUN_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentSavedMidRunGuard.tsx"
 OUTCOME_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
+LIVE_TRANSPORT = ROOT / "apps" / "web" / "app" / "AssessmentMidLiveStatusTransport.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
 
@@ -65,31 +66,30 @@ def test_exact_terminal_status_response_still_passes_through_unchanged() -> None
 
 
 def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
-    source = RESILIENCE.read_text(encoding="utf-8")
-
-    assert 'MID_ACTIVE_RUN_KEY = "nico.mid.active_run"' in source
-    assert "savedRunId.startsWith(\"midrun_\")" in source
-    assert "savedStatusUrl" in source
-    assert "await resilientFetch(savedStatusUrl" in source
-    assert "savedRunUnavailable(savedRunId, body)" in source
-    assert "NICO did not start a duplicate assessment" in source
-
-    start_block = source.split("if (startMatch)", 1)[1].split("// Assessment starts remain single-shot", 1)[0]
-    assert "savedStatusUrl" in start_block
-    assert "originalFetch(input, init)" not in start_block
-
-
-def test_saved_mid_guard_uses_a_bounded_status_probe_contract() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
 
-    assert "function statusProbeBody" in source
+    assert 'MID_ACTIVE_RUN_KEY = "nico.mid.active_run"' in source
+    assert 'savedRunId.startsWith("midrun_")' in source
+    assert "/live-status" in source
+    assert 'method: "GET"' in source
+    assert "signal: AbortSignal.timeout(12_000)" in source
+    assert "safeUnavailableResponse(savedRunId, body)" in source
+    assert "did not create a duplicate assessment" in source
+
+
+def test_saved_mid_guard_uses_live_read_then_canonical_terminal_handoff() -> None:
+    source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
+
+    assert "function canonicalStatusBody" in source
     assert 'repository: String(body.repository || "")' in source
     assert 'customer_id: String(body.customer_id || "default_customer")' in source
     assert 'project_id: String(body.project_id || "default_project")' in source
     assert "authorization_confirmed: true" in source
     assert "authorized: true" in source
     assert "auto_continue: true" in source
-    assert "body: JSON.stringify(statusProbeBody(body))" in source
+    assert "payload?.continuation_required === true" in source
+    assert "/status" in source
+    assert "body: JSON.stringify(canonicalStatusBody(body))" in source
 
 
 def test_terminal_saved_mid_run_is_preserved_then_replaced_in_the_same_click() -> None:
@@ -98,11 +98,10 @@ def test_terminal_saved_mid_run_is_preserved_then_replaced_in_the_same_click() -
     assert 'FAILURE_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
     assert "exactTerminalFailure" in source
     assert "exactTerminalSuccess" in source
-    terminal_block = source.split("if (exactTerminalFailure || exactTerminalSuccess)", 1)[1].split("if (statusResponse.ok", 1)[0]
+    terminal_block = source.split("if (exactTerminalFailure || exactTerminalSuccess)", 1)[1].split("if (liveResponse.ok", 1)[0]
     assert "rememberTerminalRun(savedRunId, payload)" in terminal_block
     assert "clearSavedRun(savedRunId)" in terminal_block
     assert "return originalFetch(input, init)" in terminal_block
-    assert "return statusResponse" not in terminal_block
     assert 'MID_LAST_TERMINAL_RUN_KEY = "nico.mid.last_terminal_run"' in source
 
 
@@ -132,18 +131,18 @@ def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_at_4
     assert "18 + (scanPercent * 0.43)" in source
     assert "Math.min(61" in source
     assert "scanner_progress_percent" in source
-    assert "scanner_worker: 42" in page  # the resilience layer replaces this fallback with live evidence.
+    assert "scanner_worker: 42" in page
 
 
-def test_resilience_wrappers_are_installed_before_transport_bridge() -> None:
+def test_live_transport_is_installed_outside_old_guards_and_inside_api_bridge() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
+    live = LIVE_TRANSPORT.read_text(encoding="utf-8")
 
-    assert 'import AssessmentStatusResilience from "./AssessmentStatusResilience"' in layout
-    assert 'import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard"' in layout
-    assert 'import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard"' in layout
-    assert "<AssessmentStatusResilience />" in layout
-    assert "<AssessmentSavedMidRunGuard />" in layout
-    assert "<AssessmentStatusOutcomeGuard />" in layout
+    assert 'import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport"' in layout
+    assert "<AssessmentMidLiveStatusTransport />" in layout
     assert layout.index("<AssessmentStatusResilience />") < layout.index("<AssessmentSavedMidRunGuard />")
     assert layout.index("<AssessmentSavedMidRunGuard />") < layout.index("<AssessmentStatusOutcomeGuard />")
-    assert layout.index("<AssessmentStatusOutcomeGuard />") < layout.index("<AssessmentApiTransportBridge />")
+    assert layout.index("<AssessmentStatusOutcomeGuard />") < layout.index("<AssessmentMidLiveStatusTransport />")
+    assert layout.index("<AssessmentMidLiveStatusTransport />") < layout.index("<AssessmentApiTransportBridge />")
+    assert "LIVE_RETRY_COUNT = 2" in live
+    assert "/live-status" in live

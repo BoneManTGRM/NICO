@@ -84,7 +84,7 @@ function rememberTerminalRun(runId: string, payload: JsonRecord | null) {
   }
 }
 
-function statusProbeBody(body: JsonRecord): JsonRecord {
+function canonicalStatusBody(body: JsonRecord): JsonRecord {
   return {
     repository: String(body.repository || ""),
     customer_id: String(body.customer_id || "default_customer"),
@@ -105,7 +105,7 @@ function safeUnavailableResponse(runId: string, body: JsonRecord): Response {
     assessment_type: "mid",
     service_tier: "mid",
     current_stage: "status_recovery",
-    progress_percent: 4,
+    progress_percent: 18,
     progress: [{
       step: "status_recovery",
       status: "running",
@@ -144,32 +144,41 @@ export default function AssessmentSavedMidRunGuard() {
       if (!savedRunId.startsWith("midrun_")) return originalFetch(input, init);
 
       const body = requestBody(init);
-      const statusUrl = new URL(`${url.pathname}/${encodeURIComponent(savedRunId)}/status`, url.origin);
+      const prefix = url.pathname.startsWith("/api/nico/") ? "/api/nico" : "";
+      const liveUrl = new URL(`${prefix}/assessment/mid-run/${encodeURIComponent(savedRunId)}/live-status`, url.origin);
+      liveUrl.searchParams.set("customer_id", String(body.customer_id || "default_customer"));
+      liveUrl.searchParams.set("project_id", String(body.project_id || "default_project"));
       try {
-        const statusResponse = await originalFetch(statusUrl, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(statusProbeBody(body)),
+        const liveResponse = await originalFetch(liveUrl, {
+          method: "GET",
           cache: "no-store",
           credentials: "same-origin",
-          keepalive: true,
+          signal: AbortSignal.timeout(12_000),
         });
-        const payload = await responsePayload(statusResponse);
+        const payload = await responsePayload(liveResponse);
         const identity = lifecycleIdentity(payload);
         const exactTerminalFailure = identity.runId === savedRunId && FAILURE_STATUSES.has(identity.status);
         const exactTerminalSuccess = identity.runId === savedRunId && finalMidArtifactsReady(payload);
 
-        // The operator explicitly pressed Run. Preserve the old terminal record,
-        // clear only its browser continuation pointer, and start a distinct run
-        // in the same click instead of returning the old 4xx response to the form.
         if (exactTerminalFailure || exactTerminalSuccess) {
           rememberTerminalRun(savedRunId, payload);
           clearSavedRun(savedRunId);
           return originalFetch(input, init);
         }
 
-        if (statusResponse.ok && payload) return statusResponse;
-        if (statusResponse.status === 404) {
+        if (liveResponse.ok && payload?.continuation_required === true) {
+          const canonicalUrl = new URL(`${prefix}/assessment/mid-run/${encodeURIComponent(savedRunId)}/status`, url.origin);
+          return originalFetch(canonicalUrl, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(canonicalStatusBody(body)),
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+        }
+
+        if (liveResponse.ok && payload) return liveResponse;
+        if (liveResponse.status === 404) {
           clearSavedRun(savedRunId);
           return originalFetch(input, init);
         }

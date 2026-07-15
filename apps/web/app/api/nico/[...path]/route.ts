@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/status)?$/;
+const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/(?:status|live-status))?$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -59,7 +59,9 @@ async function proxyAssessment(
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(120_000),
+      signal: apiPath.endsWith("/live-status")
+        ? AbortSignal.timeout(15_000)
+        : AbortSignal.timeout(120_000),
     });
 
     const responseHeaders = new Headers({"Cache-Control": "no-store"});
