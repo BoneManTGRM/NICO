@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import re
 from copy import deepcopy
-from importlib import import_module
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -131,7 +130,9 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
         express._record(run_id, request_payload, running)
 
         stage = "import_api"
-        api_main = import_module("nico.api.main")
+        # Keep the established Express injection seam. Existing tests and bounded
+        # runtime wrappers replace express.import_module rather than a second importer.
+        api_main = express.import_module("nico.api.main")
 
         stage = "validate_request"
         _req, payload = _validated_payload(api_main, request_payload)
