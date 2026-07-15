@@ -9,6 +9,7 @@ from nico.express_async_api import register_express_async_routes
 from nico.express_backend_diagnostics import install_express_backend_diagnostics
 from nico.express_recovery_compat import install_express_recovery_compatibility
 from nico.express_safe_trace_diagnostics import install_express_safe_trace_diagnostics
+from nico.scanner_redaction_cycle_guard import install_cycle_safe_scanner_redaction
 
 SAFE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,80}$")
@@ -87,7 +88,7 @@ def actionable_blocked_exception(result: dict[str, Any]) -> HTTPException:
 
 
 def install_assessment_block_messages() -> dict[str, Any]:
-    """Install safe block messages, exact-run diagnostics, lifecycle, and recovery support."""
+    """Install safe blocks, diagnostics, scanner redaction, lifecycle, and recovery support."""
 
     import nico.api.main as api_main
 
@@ -97,6 +98,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         setattr(actionable_blocked_exception, _PATCH_MARKER, True)
         setattr(actionable_blocked_exception, "_nico_blocked_exception_fallback", current)
         api_main.safe_blocked_exception = actionable_blocked_exception
+    scanner_redaction = install_cycle_safe_scanner_redaction()
     express_diagnostics = install_express_backend_diagnostics()
     express_safe_trace = install_express_safe_trace_diagnostics()
     express_async = register_express_async_routes(api_main.app)
@@ -105,6 +107,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         "status": "already_installed" if already_installed else "installed",
         "raw_provider_detail_exposed": False,
         "classified_codes": sorted(_BLOCK_MESSAGES),
+        "scanner_redaction_cycle_guard": scanner_redaction,
         "express_backend_diagnostics": express_diagnostics,
         "express_safe_trace_diagnostics": express_safe_trace,
         "express_async": express_async,
