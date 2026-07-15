@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -60,7 +58,7 @@ def _scanner_record(status: str = "running") -> dict:
         "snapshot_id": "snapshot_live_status",
         "snapshot_commit_sha": "a" * 40,
         "created_at": "2026-07-15T22:00:00Z",
-        "updated_at": "2099-07-15T22:00:00Z",
+        "updated_at": "2026-07-15T22:05:00Z",
     }
 
 
@@ -76,6 +74,7 @@ def _store() -> MemoryAdapter:
 def test_live_status_reads_retained_records_without_canonical_orchestration(monkeypatch) -> None:
     store = _store()
     monkeypatch.setattr(live, "STORE", store)
+    monkeypatch.setattr(live, "scanner_is_stale", lambda _scan: False)
 
     result = live.mid_live_status_response(
         "midrun_live_status_test",
@@ -117,10 +116,9 @@ def test_terminal_scanner_requests_one_canonical_continuation(monkeypatch) -> No
 
 def test_stale_scanner_is_atomically_marked_recovery_required(monkeypatch) -> None:
     store = _store()
-    scanner = _scanner_record("running")
-    scanner["updated_at"] = "2020-01-01T00:00:00Z"
-    store.put("scanner_runs", scanner["scan_id"], scanner)
     monkeypatch.setattr(live, "STORE", store)
+    monkeypatch.setattr(live, "scanner_is_stale", lambda _scan: True)
+    monkeypatch.setattr(live, "scanner_age_seconds", lambda _scan: 901.0)
 
     result = live.mid_live_status_response(
         "midrun_live_status_test",
@@ -128,7 +126,7 @@ def test_stale_scanner_is_atomically_marked_recovery_required(monkeypatch) -> No
         project_id="project_live",
     )
 
-    durable = store.get("scanner_runs", scanner["scan_id"])
+    durable = store.get("scanner_runs", "scan_snapshot_live_status")
     assert durable["status"] == "recovery_required"
     assert result["status"] == "interrupted"
     assert result["recovery_required"] is True
@@ -155,6 +153,7 @@ def test_live_status_route_is_registered_once() -> None:
 def test_live_status_http_contract_is_get_and_scope_bound(monkeypatch) -> None:
     store = _store()
     monkeypatch.setattr(live, "STORE", store)
+    monkeypatch.setattr(live, "scanner_is_stale", lambda _scan: False)
     app = FastAPI()
     live.register_mid_live_status_routes(app)
     client = TestClient(app)
