@@ -8,6 +8,11 @@ import nico.express_async_api as express
 from nico.api.production import app as production_app
 from nico.assessment_block_messages import install_assessment_block_messages
 from nico.express_backend_diagnostics import EXPRESS_BACKEND_DIAGNOSTICS_VERSION
+from nico.scanner_redaction_safety import (
+    SCANNER_REDACTION_SAFETY_VERSION,
+    install_scanner_redaction_safety,
+    scanner_redaction_safety_status,
+)
 
 EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/express-runtime"
 EXPRESS_RUNTIME_REQUIRED_ROUTES = {
@@ -33,12 +38,20 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
         for method, path in sorted(EXPRESS_RUNTIME_REQUIRED_ROUTES)
     }
     installed = bool(getattr(worker, "_nico_express_backend_diagnostics_v1", False))
+    redaction = scanner_redaction_safety_status()
     return {
-        "status": "ok" if installed and all(count == 1 for count in route_counts.values()) else "blocked",
+        "status": "ok"
+        if installed
+        and redaction["cycle_safe_redaction_installed"]
+        and all(count == 1 for count in route_counts.values())
+        else "blocked",
         "version": EXPRESS_BACKEND_DIAGNOSTICS_VERSION,
         "bounded_backend_diagnostics_installed": installed,
         "worker_name": str(getattr(worker, "__name__", "unknown"))[:120],
         "route_counts": route_counts,
+        "scanner_redaction_safety_version": SCANNER_REDACTION_SAFETY_VERSION,
+        "cycle_safe_scanner_redaction_installed": redaction["cycle_safe_redaction_installed"],
+        "scanner_redaction_maximum_depth": redaction["maximum_depth"],
         "single_start_only": True,
         "replacement_run_allowed": False,
         "automatic_retry_allowed": False,
@@ -63,14 +76,17 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
     target.openapi_schema = None
 
 
-# The Railway process imports this module directly. Install the worker patch here,
-# after the complete production app has loaded, so indirect package import ordering
-# cannot leave the original opaque express_async_api._execute function active.
+# The Railway process imports this module directly. Install compatibility repairs here,
+# after the complete production app has loaded, so import ordering cannot leave the
+# recursive scanner redactor or original opaque Express worker active.
+SCANNER_REDACTION_SAFETY = install_scanner_redaction_safety()
 EXPRESS_PRODUCTION_BOOTSTRAP = install_assessment_block_messages()
 app = production_app
 _register_runtime_diagnostics(app)
 EXPRESS_PRODUCTION_RUNTIME = express_runtime_status(app)
 
+if not SCANNER_REDACTION_SAFETY["cycle_safe_redaction_installed"]:
+    raise RuntimeError("Express production bootstrap did not install cycle-safe scanner redaction")
 if not EXPRESS_PRODUCTION_RUNTIME["bounded_backend_diagnostics_installed"]:
     raise RuntimeError("Express production bootstrap did not install bounded backend diagnostics")
 if any(count != 1 for count in EXPRESS_PRODUCTION_RUNTIME["route_counts"].values()):
@@ -78,11 +94,13 @@ if any(count != 1 for count in EXPRESS_PRODUCTION_RUNTIME["route_counts"].values
         f"Express production routes are missing or duplicated: {EXPRESS_PRODUCTION_RUNTIME['route_counts']}"
     )
 
+app.state.nico_scanner_redaction_safety = SCANNER_REDACTION_SAFETY
 app.state.nico_express_production_bootstrap = EXPRESS_PRODUCTION_BOOTSTRAP
 app.state.nico_express_production_runtime = EXPRESS_PRODUCTION_RUNTIME
 
 __all__ = [
     "app",
+    "SCANNER_REDACTION_SAFETY",
     "EXPRESS_PRODUCTION_BOOTSTRAP",
     "EXPRESS_PRODUCTION_RUNTIME",
     "EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE",
