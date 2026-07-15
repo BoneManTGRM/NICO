@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RESILIENCE = ROOT / "apps" / "web" / "app" / "AssessmentStatusResilience.tsx"
+SAVED_RUN_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentSavedMidRunGuard.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
 
@@ -55,6 +56,18 @@ def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
     assert "originalFetch(input, init)" not in start_block
 
 
+def test_saved_mid_guard_preserves_terminal_evidence_instead_of_masking_it() -> None:
+    source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
+
+    assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
+    assert "identity.runId === savedRunId && TERMINAL_STATUSES.has(identity.status)" in source
+    terminal_block = source.split("identity.runId === savedRunId", 1)[1].split("if (statusResponse.ok", 1)[0]
+    assert "clearSavedRun(savedRunId)" in terminal_block
+    assert "return statusResponse" in terminal_block
+    assert "safeUnavailableResponse(savedRunId, body)" in source
+    assert "did not create a duplicate assessment" in source
+
+
 def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
 
@@ -76,9 +89,12 @@ def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_at_4
     assert "scanner_worker: 42" in page  # the resilience layer replaces this fallback with live evidence.
 
 
-def test_resilience_wrapper_is_installed_before_transport_bridge() -> None:
+def test_resilience_wrappers_are_installed_before_transport_bridge() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import AssessmentStatusResilience from "./AssessmentStatusResilience"' in layout
+    assert 'import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard"' in layout
     assert "<AssessmentStatusResilience />" in layout
-    assert layout.index("<AssessmentStatusResilience />") < layout.index("<AssessmentApiTransportBridge />")
+    assert "<AssessmentSavedMidRunGuard />" in layout
+    assert layout.index("<AssessmentStatusResilience />") < layout.index("<AssessmentSavedMidRunGuard />")
+    assert layout.index("<AssessmentSavedMidRunGuard />") < layout.index("<AssessmentApiTransportBridge />")
