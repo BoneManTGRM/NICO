@@ -29,6 +29,7 @@ def _post_polish_state() -> dict:
             90,
             [
                 "Text files inspected for code-risk markers: actionable TODO/FIXME/security markers=0, risky pattern hits=0, test-path signals=0.",
+                "No test-path signals were found in fetched text files.",
             ],
             ["No test-path signals were found in fetched text files."],
         ),
@@ -96,6 +97,10 @@ def _post_polish_state() -> dict:
             "unavailable": ["No approval record."],
         },
     ]
+    sections[0]["verified_claims"] = [
+        "Text files inspected for code-risk markers: actionable TODO/FIXME/security markers=0, risky pattern hits=0, test-path signals=0.",
+        "No test-path signals were found in fetched text files.",
+    ]
     return {
         "status": "complete",
         "repository": "BoneManTGRM/NICO",
@@ -147,11 +152,15 @@ def test_post_polish_reconciliation_is_the_final_score_source(monkeypatch) -> No
     result = reconcile_after_polish(_post_polish_state())
     by_id = {item["id"]: item for item in result["sections"]}
     detail_by_id = {item["id"]: item for item in result["score_details"]["sections"]}
+    code = by_id["code_audit"]
 
     assert result["maturity_signal"]["score"] == 92
     assert result["score_details"]["score"] == 92
-    assert by_id["code_audit"]["score"] == 90
-    assert not any("No test-path signals" in item for item in by_id["code_audit"]["findings"])
+    assert code["score"] == 90
+    for key in ("evidence", "verified_claims", "findings", "unavailable"):
+        assert not any("No test-path signals" in str(item) for item in code.get(key, []))
+    assert any("test-path signals=0" in item for item in code["evidence"])
+    assert any("recursive repository tree contains 348" in item for item in code["evidence"])
     assert by_id["dependency_health"]["score"] == 90
     assert detail_by_id["dependency_health"]["score"] == 90
     assert by_id["velocity_complexity"]["score"] == 90
@@ -161,6 +170,7 @@ def test_post_polish_reconciliation_is_the_final_score_source(monkeypatch) -> No
     assert "92/100" in result["executive_summary"]
     assert result["score_source_of_truth"]["final_stage"] == "post_polish_score_reconciliation"
     assert result["final_score_reconciliation"]["post_polish_applied"] is True
+    assert result["final_score_reconciliation"]["contradicted_test_absence_claims_removed"] == 2
     assert rebuild_calls[-1] == 92
     assert result["human_review_required"] is True
     assert result["client_ready"] is False
@@ -173,4 +183,5 @@ def test_installer_is_idempotent_and_active_last() -> None:
     assert getattr(assessment_quality.polish_express_result, "_nico_post_polish_score_reconciliation_v1", False) is True
     assert first["post_polish_reconciliation"] is True
     assert second["post_polish_reconciliation"] is True
+    assert second["contradicted_test_absence_removed"] is True
     assert second["status"] == "already_installed"
