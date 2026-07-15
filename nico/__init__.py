@@ -32,6 +32,7 @@ from nico.full_blocked_state_truth_patch import install_full_blocked_state_truth
 from nico.progressive_mid_report_patch import install_progressive_mid_report_patch
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
+from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
 
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -65,5 +66,6 @@ install_full_blocked_state_truth()
 install_progressive_mid_report_patch()
 install_progressive_full_report_patch()
 install_repository_input_normalization()
+install_complexity_score_integrity_patch()
 
 __version__ = "0.1.0"
