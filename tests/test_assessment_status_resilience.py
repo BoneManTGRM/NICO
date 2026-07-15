@@ -40,6 +40,21 @@ def test_one_transport_or_json_failure_does_not_become_a_failed_assessment() -> 
     assert "duplicate_start_allowed: false" in source
 
 
+def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
+    source = RESILIENCE.read_text(encoding="utf-8")
+
+    assert 'MID_ACTIVE_RUN_KEY = "nico.mid.active_run"' in source
+    assert "savedRunId.startsWith(\"midrun_\")" in source
+    assert "savedStatusUrl" in source
+    assert "await resilientFetch(savedStatusUrl" in source
+    assert "savedRunUnavailable(savedRunId, body)" in source
+    assert "NICO did not start a duplicate assessment" in source
+
+    start_block = source.split("if (startMatch)", 1)[1].split("// Assessment starts remain single-shot", 1)[0]
+    assert "savedStatusUrl" in start_block
+    assert "originalFetch(input, init)" not in start_block
+
+
 def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
 
@@ -58,7 +73,7 @@ def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_at_4
     assert "18 + (scanPercent * 0.43)" in source
     assert "Math.min(61" in source
     assert "scanner_progress_percent" in source
-    assert "scanner_worker: 42" in page  # the bridge overrides this old fallback with live evidence.
+    assert "scanner_worker: 42" in page  # the resilience layer replaces this fallback with live evidence.
 
 
 def test_resilience_wrapper_is_installed_before_transport_bridge() -> None:
