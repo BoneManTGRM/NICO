@@ -1,0 +1,263 @@
+name: Temporary Production Report Intelligence Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-production-report-intelligence-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Run authorized production Express assessment and verify final exports
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          proxy = os.environ["NICO_PROXY"].rstrip("/")
+          repository = os.environ["NICO_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"report_intelligence_verify_{scope}"
+          project_id = f"report_intelligence_verify_{scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          json_output = Path("verification/production-report-intelligence.json")
+          pdf_output = Path("verification/production-report-intelligence.pdf")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-production-report-intelligence-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {"status": "error", "message": "non-JSON response"}
+
+          def find_report(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  sections = value.get("sections")
+                  reports = value.get("reports")
+                  if (
+                      isinstance(sections, list)
+                      and isinstance(reports, dict)
+                      and isinstance(value.get("maturity_signal"), dict)
+                  ):
+                      return value
+                  for nested in value.values():
+                      found = find_report(nested)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for nested in value:
+                      found = find_report(nested)
+                      if found:
+                          return found
+              return {}
+
+          body = {
+              "repository": repository,
+              "authorized": True,
+              "authorization_confirmed": True,
+              "authorized_by": "repository_owner_production_report_verification",
+              "authorization_scope": "read-only repository assessment and report verification only",
+              "client_name": "NICO production report intelligence verification",
+              "project_name": "NICO",
+              "assessment_mode": "express",
+              "timeframe_days": 180,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "refresh_full_evidence": True,
+          }
+          start_http, started = post("/assessment/express-run", body)
+          detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or detail.get("run_id") or "")
+          evidence: dict[str, Any] = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_http_status": start_http,
+              "run_id": run_id,
+          }
+          if start_http >= 400 or not run_id.startswith("express_run_"):
+              evidence["start_response"] = started
+              json_output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express assessment did not start")
+
+          terminal_http = 0
+          terminal: dict[str, Any] = {}
+          deadline = time.monotonic() + 2100
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out"}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          status = str(detail.get("status") or terminal.get("status") or "unknown").lower()
+          report = find_report(terminal)
+          quality = report.get("repository_quality_signals") if isinstance(report.get("repository_quality_signals"), dict) else {}
+          groups = quality.get("groups") if isinstance(quality.get("groups"), dict) else {}
+          branch = groups.get("branch_hygiene") if isinstance(groups.get("branch_hygiene"), dict) else {}
+          frontend = groups.get("frontend_routes") if isinstance(groups.get("frontend_routes"), dict) else {}
+          runtime_patch = groups.get("runtime_patch_surface") if isinstance(groups.get("runtime_patch_surface"), dict) else {}
+          docs = groups.get("documentation_alignment") if isinstance(groups.get("documentation_alignment"), dict) else {}
+          security = groups.get("security_configuration") if isinstance(groups.get("security_configuration"), dict) else {}
+          repairs = report.get("repair_intelligence") if isinstance(report.get("repair_intelligence"), dict) else {}
+          export = report.get("report_intelligence_export") if isinstance(report.get("report_intelligence_export"), dict) else {}
+          reports = report.get("reports") if isinstance(report.get("reports"), dict) else {}
+          markdown = str(reports.get("markdown") or "")
+          pdf_base64 = str(reports.get("pdf_base64") or "")
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+
+          runtime_findings = [
+              item for item in runtime_patch.get("findings", []) or []
+              if isinstance(item, dict)
+          ]
+          quality_findings = [
+              item for item in quality.get("findings", []) or []
+              if isinstance(item, dict)
+          ]
+          candidates = [
+              item for item in repairs.get("candidates", []) or []
+              if isinstance(item, dict)
+          ]
+          code_candidates = [
+              item for item in candidates
+              if isinstance(item.get("code_suggestion"), dict)
+              and item["code_suggestion"].get("status") == "available"
+          ]
+
+          summary = {
+              "terminal_status": status,
+              "status_http_status": terminal_http,
+              "overall_score": maturity.get("score"),
+              "report_intelligence_export": export,
+              "quality_status": quality.get("status"),
+              "quality_finding_count": quality.get("finding_count"),
+              "branch_count": branch.get("branch_count"),
+              "branch_status": branch.get("status"),
+              "frontend_route_count": frontend.get("route_count"),
+              "frontend_route_alias_count": len(frontend.get("route_aliases") or []),
+              "frontend_explicit_placeholders": frontend.get("explicit_placeholders") or [],
+              "runtime_patch_module_count": runtime_patch.get("patch_compat_fallback_count"),
+              "runtime_installer_call_count": runtime_patch.get("package_installer_call_count"),
+              "runtime_patch_finding_codes": [item.get("code") for item in runtime_findings],
+              "documentation_status": docs.get("status"),
+              "documents_checked": docs.get("documents_checked"),
+              "security_configuration_status": security.get("status"),
+              "repair_candidate_count": repairs.get("candidate_count"),
+              "code_suggestion_count": repairs.get("code_suggestion_count"),
+              "candidate_titles": [item.get("title") for item in candidates[:10]],
+              "quality_heading_present": "## Repository Quality and Governance Signals" in markdown,
+              "repair_heading_present": "## Prioritized Repair Intelligence" in markdown,
+              "suggested_code_present": "Suggested code" in markdown,
+              "pdf_present": bool(pdf_base64),
+              "human_review_required": report.get("human_review_required"),
+              "client_ready": report.get("client_ready"),
+          }
+          evidence.update({
+              "status": status,
+              "score_summary": summary,
+              "terminal_response": terminal,
+          })
+          json_output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          if pdf_base64:
+              pdf_output.write_bytes(base64.b64decode(pdf_base64))
+
+          errors: list[str] = []
+          if status not in {"complete", "completed"}:
+              errors.append(f"terminal status={status}")
+          if not report:
+              errors.append("report missing")
+          if int(maturity.get("score") or 0) < 92:
+              errors.append(f"overall score={maturity.get('score')}")
+          if export.get("status") != "complete":
+              errors.append(f"report intelligence export status={export.get('status')}")
+          if export.get("final_response_boundary_applied") is not True:
+              errors.append("final response intelligence boundary not applied")
+          if export.get("score_changed") is not False:
+              errors.append(f"score changed during intelligence export: {export}")
+          if quality.get("status") != "complete":
+              errors.append(f"quality status={quality.get('status')}")
+          if not isinstance(branch.get("branch_count"), int) or int(branch.get("branch_count") or 0) < 100:
+              errors.append(f"branch inventory missing or implausibly small: {branch.get('branch_count')}")
+          if len(frontend.get("route_aliases") or []) < 1:
+              errors.append("frontend route aliases were not recognized")
+          if frontend.get("explicit_placeholders"):
+              errors.append(f"route aliases were misclassified as placeholders: {frontend.get('explicit_placeholders')}")
+          if int(runtime_patch.get("patch_compat_fallback_count") or 0) < 20:
+              errors.append(f"runtime patch surface missing: {runtime_patch.get('patch_compat_fallback_count')}")
+          if "runtime_patch_surface" not in [item.get("code") for item in runtime_findings]:
+              errors.append("runtime patch-surface finding missing")
+          if docs.get("status") != "available" or int(docs.get("documents_checked") or 0) < 1:
+              errors.append(f"documentation alignment missing: {docs}")
+          if not quality_findings:
+              errors.append("quality findings missing")
+          if int(repairs.get("candidate_count") or 0) < 1:
+              errors.append("prioritized repair candidates missing")
+          if int(repairs.get("code_suggestion_count") or 0) < 1 or not code_candidates:
+              errors.append("report-only code suggestions missing")
+          if "## Repository Quality and Governance Signals" not in markdown:
+              errors.append("repository quality heading missing from final markdown")
+          if "## Prioritized Repair Intelligence" not in markdown:
+              errors.append("repair intelligence heading missing from final markdown")
+          if "Suggested code" not in markdown:
+              errors.append("suggested code block missing from final markdown")
+          if not pdf_base64 or not pdf_output.exists() or pdf_output.stat().st_size < 1000:
+              errors.append("final PDF export missing or too small")
+          if report.get("human_review_required") is not True:
+              errors.append("human review guard missing")
+          if report.get("client_ready") is not False:
+              errors.append("client_ready guard changed")
+          if export.get("code_changes_applied") is not False:
+              errors.append("report claims code changes were applied")
+          if export.get("automatic_application_allowed") is not False:
+              errors.append("automatic application was enabled")
+          if errors:
+              raise SystemExit("; ".join(errors))
+          PY
+
+      - name: Upload production verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-report-intelligence-verification
+          path: verification/
+          if-no-files-found: error
+          retention-days: 7
