@@ -1,0 +1,281 @@
+name: Temporary Professional Intelligence PDF Production Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-professional-intelligence-pdf-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PDF verification dependency
+        run: python -m pip install --disable-pip-version-check pypdf==5.9.0
+
+      - name: Run production assessment and verify downloadable PDF structure
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import io
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          from pypdf import PdfReader
+
+          proxy = os.environ["NICO_PROXY"].rstrip("/")
+          repository = os.environ["NICO_REPOSITORY"]
+          scope = os.environ["GITHUB_RUN_ID"]
+          customer_id = f"professional_pdf_verify_{scope}"
+          project_id = f"professional_pdf_verify_{scope}_{os.environ['GITHUB_RUN_ATTEMPT']}"
+          json_output = Path("verification/professional-intelligence-pdf.json")
+          pdf_output = Path("verification/professional-intelligence-pdf.pdf")
+          text_output = Path("verification/professional-intelligence-pdf.txt")
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": "NICO-professional-intelligence-pdf-production-verification",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", errors="replace")
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {"status": "error", "message": "non-JSON response"}
+
+          def find_report(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  if (
+                      isinstance(value.get("sections"), list)
+                      and isinstance(value.get("reports"), dict)
+                      and isinstance(value.get("maturity_signal"), dict)
+                  ):
+                      return value
+                  for nested in value.values():
+                      found = find_report(nested)
+                      if found:
+                          return found
+              elif isinstance(value, list):
+                  for nested in value:
+                      found = find_report(nested)
+                      if found:
+                          return found
+              return {}
+
+          start_http, started = post(
+              "/assessment/express-run",
+              {
+                  "repository": repository,
+                  "authorized": True,
+                  "authorization_confirmed": True,
+                  "authorized_by": "repository_owner_professional_pdf_verification",
+                  "authorization_scope": "read-only repository assessment and report verification only",
+                  "client_name": "NICO professional PDF production verification",
+                  "project_name": "NICO",
+                  "assessment_mode": "express",
+                  "timeframe_days": 180,
+                  "customer_id": customer_id,
+                  "project_id": project_id,
+                  "refresh_full_evidence": True,
+              },
+          )
+          detail = started.get("detail") if isinstance(started.get("detail"), dict) else started
+          run_id = str(started.get("run_id") or detail.get("run_id") or "")
+          evidence: dict[str, Any] = {
+              "repository": repository,
+              "customer_id": customer_id,
+              "project_id": project_id,
+              "start_http_status": start_http,
+              "run_id": run_id,
+          }
+          if start_http >= 400 or not run_id.startswith("express_run_"):
+              evidence["start_response"] = started
+              json_output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+              raise SystemExit("Express assessment did not start")
+
+          terminal_http = 0
+          terminal: dict[str, Any] = {}
+          deadline = time.monotonic() + 2100
+          while time.monotonic() < deadline:
+              time.sleep(5)
+              terminal_http, terminal = post(
+                  f"/assessment/express-run/{run_id}/status",
+                  {"customer_id": customer_id, "project_id": project_id},
+              )
+              detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+              status = str(detail.get("status") or terminal.get("status") or "").lower()
+              print(f"run={run_id} http={terminal_http} status={status or 'unknown'}")
+              if status in {"complete", "completed", "blocked", "failed", "error", "interrupted", "rejected"}:
+                  break
+          else:
+              terminal_http = 504
+              terminal = {"status": "timed_out"}
+
+          detail = terminal.get("detail") if isinstance(terminal.get("detail"), dict) else terminal
+          status = str(detail.get("status") or terminal.get("status") or "unknown").lower()
+          report = find_report(terminal)
+          reports = report.get("reports") if isinstance(report.get("reports"), dict) else {}
+          pdf_meta = report.get("report_intelligence_pdf") if isinstance(report.get("report_intelligence_pdf"), dict) else {}
+          professional_export = report.get("professional_report_intelligence_export") if isinstance(report.get("professional_report_intelligence_export"), dict) else {}
+          intelligence_export = report.get("report_intelligence_export") if isinstance(report.get("report_intelligence_export"), dict) else {}
+          reconciliation = report.get("repair_intelligence_reconciliation") if isinstance(report.get("repair_intelligence_reconciliation"), dict) else {}
+          repairs = report.get("repair_intelligence") if isinstance(report.get("repair_intelligence"), dict) else {}
+          quality = report.get("repository_quality_signals") if isinstance(report.get("repository_quality_signals"), dict) else {}
+          groups = quality.get("groups") if isinstance(quality.get("groups"), dict) else {}
+          branch = groups.get("branch_hygiene") if isinstance(groups.get("branch_hygiene"), dict) else {}
+          runtime_patch = groups.get("runtime_patch_surface") if isinstance(groups.get("runtime_patch_surface"), dict) else {}
+          frontend = groups.get("frontend_routes") if isinstance(groups.get("frontend_routes"), dict) else {}
+          maturity = report.get("maturity_signal") if isinstance(report.get("maturity_signal"), dict) else {}
+          pdf_base64 = str(reports.get("pdf_base64") or "")
+
+          pdf_text = ""
+          page_count = 0
+          pdf_size = 0
+          if pdf_base64:
+              pdf_bytes = base64.b64decode(pdf_base64)
+              pdf_output.write_bytes(pdf_bytes)
+              pdf_size = len(pdf_bytes)
+              reader = PdfReader(io.BytesIO(pdf_bytes))
+              page_count = len(reader.pages)
+              pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+              text_output.write_text(pdf_text, encoding="utf-8")
+
+          candidates = [item for item in repairs.get("candidates", []) or [] if isinstance(item, dict)]
+          candidate_titles = [str(item.get("title") or "") for item in candidates]
+          candidate_categories = [str(item.get("category") or "") for item in candidates]
+
+          summary = {
+              "terminal_status": status,
+              "overall_score": maturity.get("score"),
+              "pdf_style": reports.get("pdf_style"),
+              "pdf_page_count": page_count,
+              "pdf_size_bytes": pdf_size,
+              "report_intelligence_pdf": pdf_meta,
+              "professional_report_intelligence_export": professional_export,
+              "report_intelligence_export": intelligence_export,
+              "repair_intelligence_reconciliation": reconciliation,
+              "branch_count": branch.get("branch_count"),
+              "route_alias_count": len(frontend.get("route_aliases") or []),
+              "explicit_placeholder_count": len(frontend.get("explicit_placeholders") or []),
+              "runtime_patch_module_count": runtime_patch.get("patch_compat_fallback_count"),
+              "runtime_installer_call_count": runtime_patch.get("package_installer_call_count"),
+              "repair_candidate_count": repairs.get("candidate_count"),
+              "code_suggestion_count": repairs.get("code_suggestion_count"),
+              "candidate_titles": candidate_titles,
+              "candidate_categories": candidate_categories,
+              "human_review_required": report.get("human_review_required"),
+              "client_ready": report.get("client_ready"),
+          }
+          evidence.update({"status": status, "summary": summary, "terminal_response": terminal})
+          json_output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+
+          errors: list[str] = []
+          if status not in {"complete", "completed"}:
+              errors.append(f"terminal status={status}")
+          if not report:
+              errors.append("report missing")
+          if int(maturity.get("score") or 0) < 92:
+              errors.append(f"overall score={maturity.get('score')}")
+          if reports.get("pdf_style") != "professional_report_v11_intelligence":
+              errors.append(f"pdf style={reports.get('pdf_style')}")
+          if pdf_meta.get("status") != "complete" or pdf_meta.get("structured_appendix") is not True:
+              errors.append(f"structured PDF metadata incomplete: {pdf_meta}")
+          if pdf_meta.get("raw_markdown_rendered") is not False:
+              errors.append(f"raw Markdown renderer remained active: {pdf_meta}")
+          if professional_export.get("status") != "complete":
+              errors.append(f"professional export status={professional_export.get('status')}")
+          if professional_export.get("structured_appendix") is not True:
+              errors.append("professional export did not record structured appendix")
+          if professional_export.get("raw_markdown_rendered") is not False:
+              errors.append("professional export says raw Markdown was rendered")
+          if intelligence_export.get("status") != "complete" or intelligence_export.get("score_changed") is not False:
+              errors.append(f"intelligence export invalid: {intelligence_export}")
+          if reconciliation.get("status") != "reconciled":
+              errors.append(f"repair reconciliation={reconciliation}")
+          if reconciliation.get("early_source_regex_candidates_carried_forward") is not False:
+              errors.append("early regex candidates survived")
+          if not pdf_base64 or pdf_size < 5000 or page_count < 8:
+              errors.append(f"PDF missing or implausibly small: size={pdf_size}, pages={page_count}")
+
+          required_text = (
+              "Repository Quality and Repair Intelligence",
+              "Repository Quality and Governance Signals",
+              "Prioritized Repair Intelligence",
+              "Branch governance",
+              "Runtime patch surface",
+              "Suggested replacement code - not applied and not yet verified",
+          )
+          for marker in required_text:
+              if marker not in pdf_text:
+                  errors.append(f"structured PDF text missing: {marker}")
+
+          forbidden_text = (
+              "## Repository Quality and Governance Signals",
+              "## Prioritized Repair Intelligence",
+              "**Report-only safety boundary:**",
+              "```python",
+              "```",
+          )
+          for marker in forbidden_text:
+              if marker in pdf_text:
+                  errors.append(f"raw Markdown leaked into PDF: {marker}")
+
+          if not isinstance(branch.get("branch_count"), int) or int(branch.get("branch_count") or 0) < 100:
+              errors.append(f"branch inventory missing: {branch.get('branch_count')}")
+          if len(frontend.get("route_aliases") or []) < 1 or frontend.get("explicit_placeholders"):
+              errors.append(f"frontend route classification incorrect: {frontend}")
+          if int(runtime_patch.get("patch_compat_fallback_count") or 0) < 20:
+              errors.append(f"runtime patch surface missing: {runtime_patch}")
+          if int(repairs.get("candidate_count") or 0) < 1:
+              errors.append("repair candidates missing")
+          if int(repairs.get("code_suggestion_count") or 0) < 1:
+              errors.append("report-only code suggestion missing")
+          if any(category == "secret_exposure" for category in candidate_categories):
+              errors.append(f"contradicted secret candidate survived: {candidate_titles}")
+          if report.get("human_review_required") is not True or report.get("client_ready") is not False:
+              errors.append("human-review/client-ready guard changed")
+          if professional_export.get("code_changes_applied") is not False:
+              errors.append("professional export claims code was applied")
+          if professional_export.get("automatic_application_allowed") is not False:
+              errors.append("automatic application was enabled")
+
+          if errors:
+              raise SystemExit("; ".join(errors))
+          PY
+
+      - name: Upload production PDF verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: professional-intelligence-pdf-production-verification
+          path: verification/
+          if-no-files-found: error
+          retention-days: 7
