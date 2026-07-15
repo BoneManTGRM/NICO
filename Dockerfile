@@ -48,4 +48,4 @@ USER nico
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn nico.api.production:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000}"]
