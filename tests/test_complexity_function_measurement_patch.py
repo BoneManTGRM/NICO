@@ -28,9 +28,10 @@ def outer(value):
     assert result["function_count"] == 2
     assert result["function_complexity_method"] == "python_ast_function_level_v2"
     assert result["max_function_complexity"] >= 4
-    assert result["max_function_complexity"] < result["cyclomatic_complexity"]
-    names = {item["name"] for item in result["highest_risk_functions"]}
-    assert names == {"outer", "inner"}
+    by_name = {item["name"]: item["cyclomatic_complexity"] for item in result["highest_risk_functions"]}
+    assert by_name["outer"] == 1
+    assert by_name["inner"] >= 4
+    assert result["max_function_complexity"] == by_name["inner"]
 
 
 def test_javascript_module_aggregate_is_not_substituted_for_function_risk() -> None:
