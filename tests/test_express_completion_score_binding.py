@@ -7,6 +7,7 @@ from nico import express_async_api
 from nico import hosted_report_intelligence_enrichment as enrichment
 from nico import post_polish_score_reconciliation_patch as post_polish
 from nico import report_intelligence_accuracy_patch as accuracy
+from nico import report_repair_intelligence as repair_builder
 from nico.express_completion_score_binding import (
     bind_api_main_response,
     finalize_report_intelligence_at_response,
@@ -16,6 +17,16 @@ from nico.express_completion_score_binding import (
 
 QUALITY_HEADING = "## Repository Quality and Governance Signals"
 REPAIR_HEADING = "## Prioritized Repair Intelligence"
+
+
+def _fake_rebuild(_hosted, value: dict) -> dict:
+    rebuilt = dict(value)
+    rebuilt["reports"] = {
+        "markdown": f"# NICO\n\n{QUALITY_HEADING}\n\nquality\n\n{REPAIR_HEADING}\n\nrepairs\n",
+        "html": "<html>quality and repairs</html>",
+        "pdf_base64": "cGRm",
+    }
+    return rebuilt
 
 
 def test_response_boundary_reconciles_completed_assessment(monkeypatch) -> None:
@@ -46,44 +57,62 @@ def test_response_boundary_reconciles_completed_assessment(monkeypatch) -> None:
     assert calls and calls[0]["maturity_signal"]["score"] == 92
 
 
-def test_final_response_attaches_and_exports_report_intelligence(monkeypatch) -> None:
+def test_final_response_attaches_reconciles_and_exports_report_intelligence(monkeypatch) -> None:
     enrich_calls: list[dict] = []
-    rebuild_calls: list[dict] = []
+    build_calls: list[tuple[dict, list[dict]]] = []
 
     def fake_enrich(_hosted, value: dict) -> dict:
         enrich_calls.append(dict(value))
         enriched = dict(value)
         enriched["repository_quality_signals"] = {
             "status": "complete",
-            "findings": [{"title": "Large branch inventory"}],
+            "findings": [
+                {
+                    "code": "branch_inventory_large",
+                    "title": "Large branch inventory",
+                    "severity": "high",
+                    "category": "repository_hygiene",
+                }
+            ],
         }
         enriched["repair_intelligence"] = {
             "status": "complete",
-            "mode": "report_only",
             "candidate_count": 3,
-            "code_suggestion_count": 1,
-            "candidates": [],
+            "code_suggestion_count": 2,
+            "candidates": [{"title": "early candidate"}],
         }
         return enriched
 
-    def fake_rebuild(_hosted, value: dict) -> dict:
-        rebuild_calls.append(dict(value))
-        rebuilt = dict(value)
-        rebuilt["reports"] = {
-            "markdown": f"# NICO\n\n{QUALITY_HEADING}\n\nquality\n\n{REPAIR_HEADING}\n\nrepairs\n",
-            "html": "<html>quality and repairs</html>",
-            "pdf_base64": "cGRm",
+    def fake_build(payload: dict, *, structured_findings: list[dict] | None = None) -> dict:
+        build_calls.append((dict(payload), list(structured_findings or [])))
+        return {
+            "status": "complete",
+            "mode": "report_only",
+            "candidate_count": 2,
+            "code_suggestion_count": 1,
+            "candidates": [
+                {
+                    "title": "Final verified candidate",
+                    "recommended_action": "Review the final finding.",
+                    "code_suggestion": {"status": "available"},
+                }
+            ],
         }
-        return rebuilt
 
     monkeypatch.setattr(enrichment, "enrich_hosted_result", fake_enrich)
-    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", fake_rebuild)
+    monkeypatch.setattr(repair_builder, "build_report_repair_intelligence", fake_build)
+    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", _fake_rebuild)
 
     response = finalize_report_intelligence_at_response(
         {
             "status": "complete",
             "repository": "owner/repo",
             "maturity_signal": {"score": 92},
+            "sections": [
+                {"id": "trust_readiness", "findings": ["workflow state"]},
+                {"id": "architecture_debt", "findings": ["final architecture finding"]},
+                {"id": "client_acceptance", "findings": ["approval state"]},
+            ],
             "human_review_required": True,
             "client_ready": False,
             "reports": {"markdown": "stale report without intelligence"},
@@ -91,18 +120,36 @@ def test_final_response_attaches_and_exports_report_intelligence(monkeypatch) ->
     )
 
     assert len(enrich_calls) == 1
-    assert len(rebuild_calls) == 1
+    assert len(build_calls) == 1
+    repair_source, structured = build_calls[0]
+    assert [section["id"] for section in repair_source["sections"]] == ["architecture_debt"]
+    assert structured[0]["code"] == "branch_inventory_large"
     assert response["maturity_signal"]["score"] == 92
+    assert response["repair_intelligence"]["candidate_count"] == 2
+    assert response["repairs"] == ["Review the final finding."]
     assert QUALITY_HEADING in response["reports"]["markdown"]
     assert REPAIR_HEADING in response["reports"]["markdown"]
+    assert response["repair_intelligence_reconciliation"] == {
+        "status": "reconciled",
+        "source": "final_reconciled_sections_and_verified_repository_quality_findings",
+        "excluded_workflow_only_sections": ["client_acceptance", "trust_readiness"],
+        "prior_candidate_count": 3,
+        "final_candidate_count": 2,
+        "final_code_suggestion_count": 1,
+        "early_source_regex_candidates_carried_forward": False,
+        "superseded_pre_polish_findings_carried_forward": False,
+        "human_review_required": True,
+        "automatic_application_allowed": False,
+    }
     assert response["report_intelligence_export"] == {
         "status": "complete",
         "final_response_boundary_applied": True,
+        "repair_intelligence_reconciled_from_final_findings": True,
         "repository_quality_signals_attached": True,
         "repair_intelligence_attached": True,
         "repository_quality_markdown_exported": True,
         "repair_intelligence_markdown_exported": True,
-        "repair_candidate_count": 3,
+        "repair_candidate_count": 2,
         "code_suggestion_count": 1,
         "score_before": 92,
         "score_after": 92,
@@ -118,7 +165,69 @@ def test_final_response_attaches_and_exports_report_intelligence(monkeypatch) ->
     assert response["client_ready"] is False
 
 
-def test_final_response_rebuilds_stale_export_without_refetching(monkeypatch) -> None:
+def test_final_response_discards_early_regex_secret_candidates(monkeypatch) -> None:
+    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", _fake_rebuild)
+
+    response = finalize_report_intelligence_at_response(
+        {
+            "status": "complete",
+            "repository": "owner/repo",
+            "maturity_signal": {"score": 92},
+            "repository_quality_signals": {
+                "status": "complete",
+                "findings": [
+                    {
+                        "code": "runtime_patch_surface",
+                        "title": "Large runtime patch surface",
+                        "severity": "high",
+                        "confidence": 0.99,
+                        "category": "runtime_patch_surface",
+                        "evidence": ["38 patch modules and 42 installers"],
+                        "affected_files": ["nico/__init__.py"],
+                        "business_impact": "Import-order defects increase release cost.",
+                        "technical_impact": "Runtime installer order is fragile.",
+                        "recommendation": "Consolidate installers in stages.",
+                        "verification_method": "Run import-order and full regression tests.",
+                    }
+                ],
+            },
+            "repair_intelligence": {
+                "status": "complete",
+                "candidate_count": 12,
+                "code_suggestion_count": 12,
+                "candidates": [
+                    {
+                        "title": "Potential secret exposure in config.py",
+                        "category": "secret_exposure",
+                    }
+                ],
+            },
+            "sections": [
+                {
+                    "id": "secrets_review",
+                    "score": 92,
+                    "findings": [],
+                    "evidence": [
+                        "Parsed Gitleaks and TruffleHog full-history artifacts reported zero credential findings."
+                    ],
+                },
+                {
+                    "id": "architecture_debt",
+                    "findings": ["At least one function has high complexity."],
+                },
+            ],
+        }
+    )
+
+    titles = [item["title"] for item in response["repair_intelligence"]["candidates"]]
+    assert not any("secret exposure" in title.lower() for title in titles)
+    assert "Large runtime patch surface" in titles
+    assert response["repair_intelligence_reconciliation"]["prior_candidate_count"] == 12
+    assert response["repair_intelligence_reconciliation"]["early_source_regex_candidates_carried_forward"] is False
+    assert response["report_intelligence_export"]["repair_intelligence_reconciled_from_final_findings"] is True
+
+
+def test_final_response_rebuilds_from_final_findings_without_refetching(monkeypatch) -> None:
     enrich_called = False
 
     def unexpected_enrich(_hosted, value: dict) -> dict:
@@ -126,35 +235,32 @@ def test_final_response_rebuilds_stale_export_without_refetching(monkeypatch) ->
         enrich_called = True
         return value
 
-    def fake_rebuild(_hosted, value: dict) -> dict:
-        rebuilt = dict(value)
-        rebuilt["reports"] = {
-            "markdown": f"{QUALITY_HEADING}\n\n{REPAIR_HEADING}\n",
-        }
-        return rebuilt
-
     monkeypatch.setattr(enrichment, "enrich_hosted_result", unexpected_enrich)
-    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", fake_rebuild)
+    monkeypatch.setattr(accuracy, "rebuild_enriched_reports", _fake_rebuild)
 
     response = finalize_report_intelligence_at_response(
         {
             "status": "complete",
             "repository": "owner/repo",
             "maturity_signal": {"score": 92},
-            "repository_quality_signals": {"status": "complete"},
+            "repository_quality_signals": {"status": "complete", "findings": []},
             "repair_intelligence": {
                 "status": "complete",
-                "candidate_count": 2,
-                "code_suggestion_count": 1,
+                "candidate_count": 99,
+                "code_suggestion_count": 99,
             },
+            "sections": [
+                {"id": "ci_cd", "findings": ["Historical failures require review."]},
+            ],
             "reports": {"markdown": "old export"},
         }
     )
 
     assert enrich_called is False
     assert response["report_intelligence_export"]["status"] == "complete"
-    assert response["report_intelligence_export"]["repair_candidate_count"] == 2
-    assert response["report_intelligence_export"]["code_suggestion_count"] == 1
+    assert response["report_intelligence_export"]["repair_candidate_count"] == 1
+    assert response["repair_intelligence_reconciliation"]["prior_candidate_count"] == 99
+    assert response["repair_intelligence_reconciliation"]["final_candidate_count"] == 1
 
 
 def test_response_boundary_does_not_reconcile_nonterminal_state(monkeypatch) -> None:
@@ -178,10 +284,6 @@ def test_response_boundary_does_not_reconcile_nonterminal_state(monkeypatch) -> 
 
 
 def test_production_bootstrap_is_the_authoritative_binding() -> None:
-    # Late diagnostics installers may legitimately become the outermost _execute
-    # wrapper. Railway imports and calls this patched score-integrity installer only
-    # after nico.api.main is fully loaded, so the final response boundary—not wrapper
-    # name or nesting order—is the production contract.
     assert callable(express_async_api._execute)
     assert getattr(
         assessment_score_integrity.install_assessment_score_integrity,
@@ -199,3 +301,4 @@ def test_installer_is_idempotent() -> None:
     assert second["production_bootstrap"]["status"] == "already_installed"
     assert second["score_inflation_allowed"] is False
     assert second["report_intelligence_export_bound"] is True
+    assert second["repair_intelligence_reconciled_from_final_findings"] is True
