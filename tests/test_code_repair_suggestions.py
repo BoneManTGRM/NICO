@@ -37,7 +37,7 @@ def test_unknown_issue_returns_no_fabricated_code() -> None:
 
 
 def test_secret_candidate_never_contains_supplied_secret() -> None:
-    raw_secret = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    raw_secret = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
     result = build_code_suggestion(
         category="secret_exposure",
         issue="Potential GitHub token",
