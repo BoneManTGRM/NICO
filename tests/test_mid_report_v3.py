@@ -5,6 +5,13 @@ import io
 from pypdf import PdfReader
 
 import nico.mid_report_v3 as v3
+from nico.mid_report_v3_compat import (
+    MID_REPORT_IDENTITY_VERSION,
+    MID_REPORT_PRESENTATION_VERSION,
+    _presentation_review,
+    _presentation_sections,
+    _rendering_payload,
+)
 
 
 def _payload() -> dict:
@@ -19,14 +26,28 @@ def _payload() -> dict:
         "generated_at": "2026-07-15T18:00:00Z",
         "source_identity_sha256": "b" * 64,
         "review_packet": {
+            "packet_version": "mid-review-by-exception-v1",
+            "review_packet_id": "packet_one",
             "review_packet_sha256": "c" * 64,
             "exceptions": [
                 {
+                    "item_id": "limited",
+                    "category": "low_confidence_or_limited_conclusion",
+                    "section_id": "dependency_health",
                     "severity": "high",
-                    "title": "Review required: Dependency Health",
+                    "title": "Limited dependency conclusion",
                     "reason": "Two material records require validation.",
                     "blockers": ["Confirm affected resolved versions."],
-                }
+                },
+                {
+                    "item_id": "score",
+                    "category": "score_changing_claim",
+                    "section_id": "dependency_health",
+                    "severity": "medium",
+                    "title": "Dependency score claim",
+                    "reason": "The score depends on review.",
+                    "blockers": ["Confirm the score evidence."],
+                },
             ],
         },
         "evidence_coverage": {
@@ -61,14 +82,14 @@ def _payload() -> dict:
                 "id": "code_audit",
                 "label": "Code Audit",
                 "score": 88,
-                "truth_status": "Verified",
+                "truth_status": "Verified with limitations",
                 "summary": "Exact snapshot code evidence is attached.",
                 "evidence": ["361 test paths and 100 pull requests were observed."],
                 "findings": [],
-                "unavailable": [],
+                "unavailable": ["This score does not replace line-by-line semantic review."],
                 "missing_evidence_sources": [],
                 "failed_evidence_tools": [],
-                "scope_disclosures": ["This score does not replace line-by-line semantic review."],
+                "scope_disclosures": [],
             },
             {
                 "id": "dependency_health",
@@ -81,6 +102,20 @@ def _payload() -> dict:
                 "unavailable": [],
                 "missing_evidence_sources": [],
                 "failed_evidence_tools": [],
+                "scope_disclosures": [],
+                "dependency_scanner_triage": {"material_finding_count": 2},
+            },
+            {
+                "id": "static_analysis",
+                "label": "Static Analysis",
+                "score": 64,
+                "truth_status": "Failed",
+                "summary": "One required tool failed.",
+                "evidence": [],
+                "findings": [],
+                "unavailable": [],
+                "missing_evidence_sources": [],
+                "failed_evidence_tools": ["semgrep"],
                 "scope_disclosures": [],
             },
         ],
@@ -127,12 +162,40 @@ def test_mid_v3_pdf_is_decision_ready_and_explains_score() -> None:
 
 
 def test_mid_v3_markdown_has_score_contributions_and_no_duplicate_review_headings() -> None:
-    markdown = v3.decision_ready_markdown(_payload())
+    payload = _payload()
+    _presentation_review(payload)
+    rendered = _rendering_payload(payload)
+    markdown = v3.decision_ready_markdown(rendered)
 
     assert "## Why the score is what it is" in markdown
     assert "| Code Audit | 88 | 20% | 17.6 |" in markdown
     assert markdown.count("Review required: Dependency Health") == 1
     assert "Suggested repairs are report-only" in markdown
+
+
+def test_mid_v3_presentation_preserves_source_truth_and_review_identity() -> None:
+    payload = _payload()
+    source_exceptions = list(payload["review_packet"]["exceptions"])
+
+    _presentation_sections(payload)
+    _presentation_review(payload)
+
+    code = next(item for item in payload["sections"] if item["id"] == "code_audit")
+    dependency = next(item for item in payload["sections"] if item["id"] == "dependency_health")
+    static = next(item for item in payload["sections"] if item["id"] == "static_analysis")
+    assert code["truth_status"] == "Verified with limitations"
+    assert code["display_truth_status"] == "Verified"
+    assert dependency["display_truth_status"] == "Verified with limitations"
+    assert static["failed_evidence_tools"] == ["semgrep"]
+    assert payload["review_packet"]["packet_version"] == "mid-review-by-exception-v1"
+    assert payload["review_packet"]["review_packet_id"] == "packet_one"
+    assert payload["review_packet"]["review_packet_sha256"] == "c" * 64
+    assert payload["review_packet"]["exceptions"] == source_exceptions
+    assert len(payload["review_packet"]["display_exceptions"]) == 1
+    assert payload["decision_summary"]["source_review_items"] == 2
+    assert payload["decision_summary"]["review_items"] == 1
+    assert MID_REPORT_IDENTITY_VERSION == "mid-assessment-draft-v2"
+    assert MID_REPORT_PRESENTATION_VERSION == "mid-assessment-decision-ready-v3"
 
 
 def test_mid_v3_install_rebinds_all_report_formats() -> None:
