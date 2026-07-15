@@ -54,12 +54,12 @@ def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization()
     assert 'scopeId("project", projectName, "default_project")' in source
 
 
-def test_one_run_action_uses_existing_tier_endpoints() -> None:
+def test_one_run_action_uses_asynchronous_exact_run_endpoints() -> None:
     source = _page()
 
-    assert "`${API_URL}/assessment/github`" in source
-    assert "`${API_URL}/assessment/mid-run`" in source
-    assert "`${API_URL}/assessment/full-run`" in source
+    assert '"/assessment/express-run"' in source
+    assert '"/assessment/mid-run"' in source
+    assert '"/assessment/full-run"' in source
     assert 'assessment_mode: "express"' in source
     assert 'mode: "full"' in source
     assert "run_scanners: true" in source
@@ -68,12 +68,13 @@ def test_one_run_action_uses_existing_tier_endpoints() -> None:
     assert "tools: FULL_TOOLS" in source
 
 
-def test_mid_and_full_continue_the_exact_same_run_automatically() -> None:
+def test_every_tier_continues_the_exact_same_run_automatically() -> None:
     source = _page()
 
     assert "const POLL_INTERVAL_MS = 3000" in source
-    assert "const MAX_POLL_ATTEMPTS = 200" in source
+    assert "const MAX_POLL_ATTEMPTS = 240" in source
     assert "for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1)" in source
+    assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in source
     assert "/assessment/mid-run/${encodeURIComponent(runId)}/status" in source
     assert "/assessment/full-run/${encodeURIComponent(runId)}/status" in source
     assert "await sleep(POLL_INTERVAL_MS)" in source
@@ -101,13 +102,29 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
     source = _page()
 
     assert 'return "review_required"' in source
-    assert "NICO stops at human review" in source
-    assert "did not approve the findings" in source
+    assert "stopped at the required human-review gate" in source
+    assert "did not approve findings" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
     assert "/delivery/access" not in source
     assert "/delivery/redeem" not in source
     assert "X-NICO-Admin-Token" not in source
+
+
+def test_progress_uses_backend_stages_elapsed_time_and_indeterminate_fallback() -> None:
+    source = _page()
+    css = STYLES.read_text(encoding="utf-8")
+
+    assert "progress_percent?: number" in source
+    assert "current_stage?: string" in source
+    assert "Current stage" in source
+    assert "Elapsed" in source
+    assert "Status checks" in source
+    assert "activeProgressItem" in source
+    assert "DEFAULT_STAGE_PERCENT" in source
+    assert "aria-valuenow" in source
+    assert ".indeterminate" in css
+    assert "@keyframes assessmentProgress" in css
 
 
 def test_full_result_distinguishes_pending_unavailable_and_review_required() -> None:
