@@ -4,23 +4,45 @@ from importlib import import_module
 import sys
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_completion_score_binding.v2"
-_RESPONSE_MARKER = "_nico_express_completion_score_response_v2"
+PATCH_VERSION = "nico.express_completion_score_binding.v3"
+_RESPONSE_MARKER = "_nico_express_completion_score_response_v3"
 _EXECUTE_MARKER = "_nico_express_completion_score_execute_v1"
 _BOOTSTRAP_MARKER = "_nico_express_completion_score_bootstrap_v1"
 _QUALITY_HEADING = "## Repository Quality and Governance Signals"
 _REPAIR_HEADING = "## Prioritized Repair Intelligence"
+_NON_REPAIR_SECTION_IDS = {"trust_readiness", "client_acceptance"}
+
+
+def _final_repair_source(finalized: dict[str, Any]) -> dict[str, Any]:
+    source = dict(finalized)
+    source["sections"] = [
+        section
+        for section in finalized.get("sections", []) or []
+        if isinstance(section, dict)
+        and str(section.get("id") or "") not in _NON_REPAIR_SECTION_IDS
+    ]
+    return source
+
+
+def _final_quality_findings(finalized: dict[str, Any]) -> list[dict[str, Any]]:
+    quality = finalized.get("repository_quality_signals")
+    if not isinstance(quality, dict):
+        return []
+    return [
+        item
+        for item in quality.get("findings", []) or []
+        if isinstance(item, dict)
+    ]
 
 
 def finalize_report_intelligence_at_response(value: Any) -> Any:
-    """Attach and export report intelligence at the last Express response boundary.
+    """Attach, reconcile, and export report intelligence at the last response boundary.
 
-    Earlier assessment stages may legitimately rebuild Markdown, HTML, or PDF output
-    after scanner evidence, truth gates, score reconciliation, and review metadata are
-    applied. This finalizer therefore runs after those mutations and guarantees that
-    the client-visible exports contain the already evidence-bound quality and repair
-    intelligence. It never edits the assessed repository and never marks a proposed
-    repair as verified or applied.
+    Repair candidates are rebuilt from the final reconciled section findings and the
+    verified repository-quality findings. Early regex candidates, stale pre-polish
+    wording, and superseded scanner observations cannot survive merely because an
+    earlier assessment stage produced them. The finalizer never edits the assessed
+    repository and never marks a proposed repair as verified or applied.
     """
 
     if not isinstance(value, dict) or value.get("status") != "complete" or not value.get("repository"):
@@ -29,6 +51,7 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
     from nico import hosted_assessment as hosted
     from nico import hosted_report_intelligence_enrichment as enrichment
     from nico import report_intelligence_accuracy_patch as accuracy
+    from nico.report_repair_intelligence import build_report_repair_intelligence
 
     original_score = (
         value.get("maturity_signal", {}).get("score")
@@ -36,29 +59,53 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
         else None
     )
     finalized = dict(value)
-    has_quality = isinstance(finalized.get("repository_quality_signals"), dict)
-    has_repairs = isinstance(finalized.get("repair_intelligence"), dict)
 
-    if not (has_quality and has_repairs):
+    if not isinstance(finalized.get("repository_quality_signals"), dict):
         finalized = enrichment.enrich_hosted_result(hosted, finalized)
 
+    prior_repairs = finalized.get("repair_intelligence")
+    prior_candidate_count = (
+        int(prior_repairs.get("candidate_count") or 0)
+        if isinstance(prior_repairs, dict)
+        else 0
+    )
+    quality_findings = _final_quality_findings(finalized)
+    repair_source = _final_repair_source(finalized)
+    final_repairs = build_report_repair_intelligence(
+        repair_source,
+        structured_findings=quality_findings,
+    )
+    finalized["repair_intelligence"] = final_repairs
+    finalized["repairs"] = [
+        str(item.get("recommended_action"))
+        for item in final_repairs.get("candidates", [])[:10]
+        if isinstance(item, dict) and item.get("recommended_action")
+    ]
+    finalized["repair_intelligence_reconciliation"] = {
+        "status": "reconciled",
+        "source": "final_reconciled_sections_and_verified_repository_quality_findings",
+        "excluded_workflow_only_sections": sorted(_NON_REPAIR_SECTION_IDS),
+        "prior_candidate_count": prior_candidate_count,
+        "final_candidate_count": int(final_repairs.get("candidate_count") or 0),
+        "final_code_suggestion_count": int(final_repairs.get("code_suggestion_count") or 0),
+        "early_source_regex_candidates_carried_forward": False,
+        "superseded_pre_polish_findings_carried_forward": False,
+        "human_review_required": True,
+        "automatic_application_allowed": False,
+    }
+
+    # Rebuild unconditionally because final candidate reconciliation changes the
+    # client-visible repair section even when an earlier export already had headings.
+    finalized = accuracy.rebuild_enriched_reports(hosted, finalized)
     reports = finalized.get("reports") if isinstance(finalized.get("reports"), dict) else {}
     markdown = str(reports.get("markdown") or "")
-    if _QUALITY_HEADING not in markdown or _REPAIR_HEADING not in markdown:
-        finalized = accuracy.rebuild_enriched_reports(hosted, finalized)
-        reports = finalized.get("reports") if isinstance(finalized.get("reports"), dict) else {}
-        markdown = str(reports.get("markdown") or "")
 
     quality_present = isinstance(finalized.get("repository_quality_signals"), dict)
     repairs_present = isinstance(finalized.get("repair_intelligence"), dict)
     quality_exported = _QUALITY_HEADING in markdown
     repairs_exported = _REPAIR_HEADING in markdown
-    candidate_count = 0
-    code_suggestion_count = 0
-    if repairs_present:
-        repair_intelligence = finalized.get("repair_intelligence") or {}
-        candidate_count = int(repair_intelligence.get("candidate_count") or 0)
-        code_suggestion_count = int(repair_intelligence.get("code_suggestion_count") or 0)
+    candidate_count = int(final_repairs.get("candidate_count") or 0)
+    code_suggestion_count = int(final_repairs.get("code_suggestion_count") or 0)
 
     final_score = (
         finalized.get("maturity_signal", {}).get("score")
@@ -68,6 +115,7 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
     finalized["report_intelligence_export"] = {
         "status": "complete" if quality_present and repairs_present and quality_exported and repairs_exported else "incomplete",
         "final_response_boundary_applied": True,
+        "repair_intelligence_reconciled_from_final_findings": True,
         "repository_quality_signals_attached": quality_present,
         "repair_intelligence_attached": repairs_present,
         "repository_quality_markdown_exported": quality_exported,
@@ -90,7 +138,7 @@ def finalize_report_intelligence_at_response(value: Any) -> Any:
 
 
 def bind_api_main_response(api_main: Any) -> dict[str, Any]:
-    """Bind score reconciliation and intelligence export to the final response boundary."""
+    """Bind score and report reconciliation to the final response boundary."""
 
     current = getattr(api_main, "safe_assessment_response_payload", None)
     if not callable(current):
@@ -209,11 +257,13 @@ def install_express_completion_score_binding() -> dict[str, Any]:
         "immediate_api_binding": immediate,
         "final_response_boundary": "safe_assessment_response_payload",
         "report_intelligence_export_bound": True,
+        "repair_intelligence_reconciled_from_final_findings": True,
         "score_inflation_allowed": False,
         "guardrail": (
-            "The response-bound reconciliation and report export can only use evidence already present in, or fetched "
-            "for, the authorized completed assessment. They cannot edit the assessed repository, create scanner proof, "
-            "invent test evidence, fabricate acceptance, bypass human approval, or set client-ready state."
+            "The response-bound reconciliation and report export can only use final evidence present in, or fetched for, "
+            "the authorized completed assessment. They cannot edit the assessed repository, retain contradicted early "
+            "candidates, create scanner proof, invent test evidence, fabricate acceptance, bypass human approval, or set "
+            "client-ready state."
         ),
     }
 
