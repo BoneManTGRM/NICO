@@ -66,9 +66,16 @@ def test_repair_plans_match_legacy_contract_with_deterministic_identity(monkeypa
     assert actual == expected
     assert [item["repair_type"] for item in actual] == ["minimal", "moderate", "strong"]
     assert [item["autonomy_level"] for item in actual] == [1, 2, 3]
-    assert all(item["approval_requirement"] == "human_review_required_before_production_change" for item in actual)
-    assert all(item["status"] == "suggested" for item in actual)
-    assert all("Never expose raw secrets." in item["codex_ready_patch_prompt"] for item in actual)
+    assert all(item["approval_requirement"] == "human_review_required_before_any_code_change" for item in actual)
+    assert all(item["status"] == "report_only_unverified_candidate" for item in actual)
+    assert all("Do not edit, commit, push, deploy, or open a pull request" in item["codex_ready_patch_prompt"] for item in actual)
+    assert all(item["code_change_applied"] is False for item in actual)
+    assert all(item["automatic_application_allowed"] is False for item in actual)
+    assert all(item["automatic_commit_allowed"] is False for item in actual)
+    assert all(item["automatic_pull_request_allowed"] is False for item in actual)
+    assert all(item["code_suggestion"]["status"] == "available" for item in actual)
+    assert all(item["code_suggestion"]["mode"] == "report_only" for item in actual)
+    assert all(item["code_suggestion"]["verified_fix"] is False for item in actual)
     assert all("production_deploy" not in item for item in actual)
 
 
@@ -89,8 +96,10 @@ def test_unknown_category_preserves_smallest_safe_fallback_and_local_boundary() 
     assert len(plans) == 3
     assert all(item["smallest_safe_change"] == "Apply smallest defensive fix and verify." for item in plans)
     assert all(item["affected_files"] == [] for item in plans)
-    assert all(item["approval_requirement"] == "safe_for_local_repair_prompt_generation" for item in plans)
-    assert all(item["rollback_plan"].startswith("Revert targeted change") for item in plans)
+    assert all(item["approval_requirement"] == "human_review_required_before_any_code_change" for item in plans)
+    assert all(item["rollback_plan"].startswith("Revert only the approved targeted change") for item in plans)
+    assert all(item["code_suggestion"]["status"] == "unavailable" for item in plans)
+    assert all(item["automatic_application_allowed"] is False for item in plans)
 
 
 def test_repair_planning_does_not_mutate_findings_or_memory() -> None:
@@ -117,4 +126,6 @@ def test_canonical_scan_service_sources_scoring_and_repairs_from_extracted_servi
     assert "from nico.local_scoring_repair_service import apply_rye, repairs_for" in scan_source
     assert "from nico.cli" not in scan_source
     assert "from nico.cli" not in scoring_source
-    assert "Production changes, credential rotation, deployments" in scoring_source
+    assert "Any code change, production change" in scoring_source
+    assert "automatic_application_allowed" in scoring_source
+    assert "report_only_unverified_candidate" in scoring_source
