@@ -1,1 +1,0 @@
-Final verification requires rebuilt Markdown, HTML, and PDF outputs to contain no client-visible unavailable measurements expressed as None while preserving the original score, evidence provenance, historical reliability findings, and report-only no-write boundary.
