@@ -15,10 +15,13 @@ def test_repair_suggestion_includes_detailed_patch_plan():
     assert result["test_plan"]
     assert result["rollback_plan"]
     assert result["human_review_required"] is True
+    assert result["automatic_application_allowed"] is False
+    assert result["code_change_applied"] is False
 
 
 def test_repair_policy_requires_review_and_evidence():
     policy = repair_quality_policy()
     assert policy["status"] == "ok"
     assert "quality_checklist" in policy
-    assert any("approval" in rule.lower() for rule in policy["rules"])
+    assert any("review" in rule.lower() for rule in policy["rules"])
+    assert policy["code_suggestion_policy"]["automatic_application_allowed"] is False

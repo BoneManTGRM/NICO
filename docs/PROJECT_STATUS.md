@@ -21,7 +21,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Mid assessment orchestration | Operational | Exact-run continuation, report preparation, and review request exist. Full-cycle production fixtures need expansion. |
 | Full assessment orchestration | Operational | Repository evidence, scanner continuation, scoring, reports, and review request exist. Optional evidence may remain unavailable and must be disclosed. |
 | Scanner worker | Operational | Real subprocess execution exists for supported tools. Requested tools execute or are disclosed as unavailable, failed, or timed out; production proof should continue. |
-| RYE/TGRM repair planning | Operational | Repair prioritization and candidate generation exist; public validation and calibration remain separate work. |
+| RYE/TGRM repair planning | Operational | Repair prioritization and report-only code candidates exist. Suggested code is never applied automatically and remains unverified until the exact tests pass and a human approves implementation. Public validation and calibration remain separate work. |
 | Drift, baseline, verification, and repair memory | Operational | Core workflows exist; long-running and real-world fixture coverage should expand. |
 | Draft report generation | Operational | Representative synthetic golden fixtures and a deterministic recorded demonstration exist. Report-path consolidation remains work. |
 | Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
@@ -29,7 +29,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 | Operations readiness, events, and alerts | Operational | Semantic readiness and bounded telemetry-degradation proof exist. Unauthenticated evidence remains neutral until loaded; live production evidence history should improve. |
 | Retainer workflows | Experimental | Backend and operator surfaces exist; product contract and real-client fixtures are still developing. |
 | Hosted SaaS multi-tenancy | Experimental | Scope and storage controls exist in parts; a complete commercial tenancy and billing product is not claimed. |
-| Automatic production repair | Planned | NICO currently prepares repair plans and verification. It does not autonomously deploy production changes. |
+| Automatic production repair | Planned | NICO prepares report-only repair candidates, tests, and rollback guidance. It does not autonomously edit, commit, push, deploy, or change client repositories. |
 | Legacy Full/Mid/Start Job routes | Legacy | Normal assessment starts route through the unified assessment page. Advanced review and recovery surfaces remain separate. |
 | CLI and local service architecture | Stable | Canonical configuration, scanning, governance, persistence, scoring, repair planning, drift, reporting, verification, and memory run through extracted modules. `nico.cli` remains only as a compatibility facade. |
 
@@ -37,7 +37,7 @@ This file is the canonical maturity map and completion roadmap for the current r
 
 A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
 
-The latest verified deployed main commit is `48010dd066c9c511d11951383bb2fbcdbbdff5d5` (`Fix opaque Express backend execution failures (#442)`). Its Vercel and Railway deployment checks passed. The Express worker now records a bounded named failure stage, non-secret diagnostic ID, exception class, timestamp, and exact `express_run_*` identity while retaining the authorized traceback only in backend logs. Raw exception text, request secrets, locals, and repository contents are not added to the public failure response. The async lifecycle preserves request fields that are not represented by the compatibility request model and writes the exact final run record once instead of routing through the synchronous storage compatibility path and then writing the same run again. Express starts remain single-shot; diagnostic handling never retries the assessment start, creates a replacement run, resumes a terminal run, or converts failed evidence into a pass. Tenant scope, human review, `client_ready: false`, bounded capacity, duplicate-active-start prevention, transient status recovery, and authenticated Recovery visibility remain enforced. This deployment does not prove that any Express, Mid, or Full production assessment completed correctly or that the production exception observed in `express_run_42393e95d3c84706b1eed8f042d0eacc` is resolved. Deployed browser/API E2E proof remains incomplete until a new protected production smoke is authorized, executed once, retained, and reviewed.
+The latest verified deployed main commit is `7101df90e04f02780ef34763ae9c98d1e40ecc8e` (`Remove contradicted test-absence evidence from final report (#468)`). Its configured Vercel and Railway deployment checks passed. Authorized production run `express_run_fae863e57088494d8c4000e1e5521257` completed with Senior 92/100, aligned visible and detailed section scores, no missing release-readiness signals, the contradicted standalone no-test claim absent, the bounded-sample metric preserved, human review required, and `client_ready: false`. The verification workflow's substantive assessment step passed; its temporary assertion expected a positive cleanup count even though the fresh report was already clean, and that assertion was corrected and successfully reverified in workflow run `29413945233` with exact Express run `express_run_a1a93d3a93ef49b7a81129eed86ca6a5`. Historical workflow failures remain historical evidence and are not rewritten.
 
 ## Claims NICO does not make
 
@@ -47,7 +47,7 @@ NICO does not claim:
 - certification or compliance attestation
 - that unavailable scanners passed
 - that a score proves security
-- that generated repairs are safe to deploy without review
+- that generated repairs or code candidates are safe to implement without exact-context review and tests
 - that a draft report is approved or client-ready
 - that synthetic fixtures are live production evidence
 - that Reparodynamics is an independently validated academic discipline
