@@ -1,10 +1,16 @@
 from pathlib import Path
 
 
-def test_dockerfile_installs_hosted_scanner_tools():
+def test_dockerfile_installs_hosted_scanner_tools_without_polluting_app_python():
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
-    assert "pip install --no-cache-dir pip-audit bandit semgrep coverage" in dockerfile
+    assert "pip install --no-cache-dir -r requirements.txt" in dockerfile
+    assert "pip install --no-cache-dir coverage" in dockerfile
+    assert "NICO_SEMGREP_HOME=/opt/nico-tools/semgrep" in dockerfile
+    assert 'python -m venv "$NICO_SEMGREP_HOME"' in dockerfile
+    assert '"$NICO_SEMGREP_HOME/bin/pip" install --no-cache-dir "semgrep==${NICO_SEMGREP_VERSION}"' in dockerfile
+    assert 'ln -s "$NICO_SEMGREP_HOME/bin/semgrep" /usr/local/bin/semgrep' in dockerfile
+    assert "pip install --no-cache-dir pip-audit bandit semgrep coverage" not in dockerfile
     assert "npm install -g eslint typescript" in dockerfile
     assert "install_hosted_scanner_binaries.py" in dockerfile
     assert "NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true" in dockerfile
