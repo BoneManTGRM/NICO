@@ -139,7 +139,7 @@ def test_workflow_builds_twice_compares_and_uploads_recorded_artifacts() -> None
     assert source.count("scripts/build_golden_demonstration.py") == 2
     assert "cmp first/golden-demonstration.json second/golden-demonstration.json" in source
     assert "cmp first/golden-demonstration.md second/golden-demonstration.md" in source
-    assert "actions/upload-artifact@v4" in source
+    assert "actions/upload-artifact@v7" in source
     assert "audit-results/golden-demonstration.json" in source
     assert "audit-results/golden-demonstration.md" in source
     assert "permissions:\n  contents: read" in source
