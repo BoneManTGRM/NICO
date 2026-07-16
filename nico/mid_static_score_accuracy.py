@@ -3,8 +3,8 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-MID_STATIC_SCORE_ACCURACY_VERSION = "nico.mid_static_score_accuracy.v3"
-_MARKER = "_nico_mid_static_score_accuracy_v3"
+MID_STATIC_SCORE_ACCURACY_VERSION = "nico.mid_static_score_accuracy.v4"
+_MARKER = "_nico_mid_static_score_accuracy_v4"
 _INSTALLED_WRAPPER: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
 
 
@@ -42,14 +42,15 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
 
     @wraps(current)
     def static_section_with_typescript(repo: dict[str, Any], scanner: dict[str, Any]) -> dict[str, Any]:
-        section = current(repo, scanner)
+        # Capture the exact scanner contract before invoking downstream scoring.
+        # Compatibility layers may normalize or narrow tool lists in place; that
+        # must not erase the evidence that TypeScript was requested or completed.
         run = _set(scanner.get("tools_run"))
         requested = _set(scanner.get("tools_requested"))
         unavailable = _set(scanner.get("unavailable_tools"))
         failed = _set(scanner.get("failed_tools"))
         timed_out = _set(scanner.get("timed_out_tools"))
 
-        previous = int(section.get("score") or 0)
         delta = 0
         state = "not_requested"
         if "typescript" in run:
@@ -67,6 +68,8 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
         elif "typescript" in requested:
             state = "requested_without_terminal_evidence"
 
+        section = current(repo, scanner)
+        previous = int(section.get("score") or 0)
         breakdown = section.setdefault("score_evidence_breakdown", {})
         prior_post = breakdown.get("post_typescript_score")
         prior_state = str(breakdown.get("typescript_state") or "")
@@ -99,6 +102,7 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
                 "post_typescript_score": revised,
                 "typescript_execution_treated_as_clean": False,
                 "typescript_accuracy_applied": True,
+                "typescript_state_captured_before_downstream_normalization": True,
                 "typescript_reapplied_after_score_rewrite": prior_post is not None and prior_post != previous,
                 "version": MID_STATIC_SCORE_ACCURACY_VERSION,
             }
@@ -118,6 +122,7 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
         "status": "installed",
         "version": MID_STATIC_SCORE_ACCURACY_VERSION,
         "typescript_counted_as_static_analysis": True,
+        "typescript_state_captured_before_downstream_normalization": True,
         "execution_treated_as_clean": False,
         "finding_truth_changed": False,
         "score_forced_upward": False,
