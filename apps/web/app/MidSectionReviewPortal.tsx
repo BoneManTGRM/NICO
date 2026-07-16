@@ -4,22 +4,13 @@ import {useEffect, useState} from "react";
 import {createPortal} from "react-dom";
 import MidSectionReview from "./assessment/MidSectionReview";
 
-const MID_RESPONSE_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run(?:\/[^/]+\/status)?$/;
 const TIER_EVENT = "nico:assessment-tier-selected";
+const MID_PAYLOAD_EVENT = "nico:mid-status-payload";
 const MOUNT_ID = "nico-mid-section-review-mount";
 const REPLACED_ATTRIBUTE = "data-nico-mid-section-grid-replaced";
 
 type JsonRecord = Record<string, unknown>;
 type ReviewSections = NonNullable<Parameters<typeof MidSectionReview>[0]["sections"]>;
-
-function requestUrl(input: RequestInfo | URL): URL | null {
-  try {
-    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return new URL(raw, window.location.origin);
-  } catch {
-    return null;
-  }
-}
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -79,26 +70,14 @@ export default function MidSectionReviewPortal() {
   }, []);
 
   useEffect(() => {
-    const previousFetch = window.fetch.bind(window);
-    const captureFetch: typeof window.fetch = async (input, init) => {
-      const response = await previousFetch(input, init);
-      const url = requestUrl(input);
-      if (url && MID_RESPONSE_PATH.test(url.pathname) && response.ok) {
-        try {
-          const parsed = await response.clone().json();
-          if (isRecord(parsed) && String(parsed.assessment_type || parsed.service_tier || "mid") === "mid") {
-            setPayload(parsed);
-          }
-        } catch {
-          // The assessment page remains authoritative when a response is not JSON.
-        }
+    const onPayload = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (isRecord(detail) && String(detail.assessment_type || detail.service_tier || "mid") === "mid") {
+        setPayload(detail);
       }
-      return response;
     };
-    window.fetch = captureFetch;
-    return () => {
-      if (window.fetch === captureFetch) window.fetch = previousFetch;
-    };
+    window.addEventListener(MID_PAYLOAD_EVENT, onPayload);
+    return () => window.removeEventListener(MID_PAYLOAD_EVENT, onPayload);
   }, []);
 
   useEffect(() => {
