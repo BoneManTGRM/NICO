@@ -3,8 +3,8 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-MID_STATIC_SCORE_ACCURACY_VERSION = "nico.mid_static_score_accuracy.v2"
-_MARKER = "_nico_mid_static_score_accuracy_v2"
+MID_STATIC_SCORE_ACCURACY_VERSION = "nico.mid_static_score_accuracy.v3"
+_MARKER = "_nico_mid_static_score_accuracy_v3"
 _INSTALLED_WRAPPER: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
 
 
@@ -40,9 +40,6 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
     if _INSTALLED_WRAPPER is not None and current is _INSTALLED_WRAPPER:
         return {"status": "already_installed", "version": MID_STATIC_SCORE_ACCURACY_VERSION}
 
-    # If an earlier instance of this exact wrapper is below a later compatibility
-    # layer, wrap the current final layer once. This avoids losing the TypeScript
-    # boundary while preserving every newer scoring adjustment.
     @wraps(current)
     def static_section_with_typescript(repo: dict[str, Any], scanner: dict[str, Any]) -> dict[str, Any]:
         section = current(repo, scanner)
@@ -70,13 +67,22 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
         elif "typescript" in requested:
             state = "requested_without_terminal_evidence"
 
-        # Prevent duplicate adjustment if a copied compatibility layer calls an
-        # earlier instance of this patch. The existing breakdown is same-call
-        # evidence that the TypeScript state has already been accounted for.
         breakdown = section.setdefault("score_evidence_breakdown", {})
-        if breakdown.get("typescript_accuracy_applied") is True:
+        prior_post = breakdown.get("post_typescript_score")
+        prior_state = str(breakdown.get("typescript_state") or "")
+        prior_delta = breakdown.get("typescript_score_adjustment")
+        already_preserved = (
+            breakdown.get("typescript_accuracy_applied") is True
+            and prior_state == state
+            and prior_delta == delta
+            and prior_post == previous
+        )
+        if already_preserved:
             return section
 
+        # A later compatibility layer may retain our breakdown while resetting or
+        # recomputing the score. In that case, reapply the bounded delta to the
+        # final active score rather than trusting a copied marker alone.
         revised = max(0, min(88, previous + delta))
         section["score"] = revised
         section["status"] = _status(revised)
@@ -93,10 +99,11 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
                 "post_typescript_score": revised,
                 "typescript_execution_treated_as_clean": False,
                 "typescript_accuracy_applied": True,
+                "typescript_reapplied_after_score_rewrite": prior_post is not None and prior_post != previous,
                 "version": MID_STATIC_SCORE_ACCURACY_VERSION,
             }
         )
-        if state in {"failed", "timed_out"}:
+        if state in {"failed", "timed_out", "unavailable", "requested_without_terminal_evidence"}:
             finding = f"TypeScript static-analysis execution {state.replace('_', ' ')}; typed-code conclusions remain incomplete."
             findings = section.setdefault("findings", [])
             if finding not in findings:
@@ -115,6 +122,7 @@ def install_mid_static_score_accuracy() -> dict[str, Any]:
         "finding_truth_changed": False,
         "score_forced_upward": False,
         "final_active_function_wrapped": True,
+        "copied_marker_trusted_as_installation_proof": False,
         "human_review_required": True,
     }
 
