@@ -25,6 +25,10 @@ from nico.scanner_redaction_safety import (
 )
 from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 from nico.storage import STORE
+from nico.storage_serialization_safety import (
+    STORAGE_SERIALIZATION_SAFETY_VERSION,
+    install_storage_serialization_safety,
+)
 
 EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/express-runtime"
 EXPRESS_RUNTIME_REQUIRED_ROUTES = {
@@ -66,6 +70,11 @@ def _express_backend_contract() -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _serialization_contract() -> dict[str, Any]:
+    value = globals().get("STORAGE_SERIALIZATION_SAFETY")
+    return value if isinstance(value, dict) else {}
+
+
 def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     worker = express._execute
     route_counts = {
@@ -75,6 +84,12 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     diagnostics_installed = bool(getattr(worker, "_nico_express_backend_diagnostics_v1", False))
     heartbeat_installed = bool(getattr(worker, "_nico_express_runtime_heartbeat_v1", False))
     atomic_heartbeat_installed = callable(getattr(STORE, "patch_heartbeat", None))
+    serialization = _serialization_contract()
+    serialization_installed = bool(
+        serialization.get("storage_metadata_boundary_installed")
+        and serialization.get("sqlite_metadata_boundary_installed")
+        and serialization.get("express_scanner_boundary_installed")
+    )
     backend_contract = _express_backend_contract()
     exact_snapshot_scanner_required = bool(backend_contract.get("exact_snapshot_scanner_required"))
     report_artifact_gate = bool(backend_contract.get("report_artifact_gate"))
@@ -98,6 +113,7 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
         diagnostics_installed
         and heartbeat_installed
         and atomic_heartbeat_installed
+        and serialization_installed
         and exact_snapshot_scanner_required
         and same_run_scanner_identity_required
         and report_artifact_gate
@@ -112,6 +128,10 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
         "bounded_backend_diagnostics_installed": diagnostics_installed,
         "durable_lifecycle_heartbeat_installed": heartbeat_installed,
         "atomic_heartbeat_status_guard_installed": atomic_heartbeat_installed,
+        "storage_serialization_safety_version": STORAGE_SERIALIZATION_SAFETY_VERSION,
+        "cycle_safe_storage_serialization_installed": serialization_installed,
+        "circular_scanner_evidence_is_terminal": False,
+        "storage_serialization_maximum_depth": serialization.get("maximum_depth"),
         "heartbeat_can_reopen_terminal_state": False,
         "status_read_can_write_terminal_interruption": False,
         "scanner_liveness_corroboration": True,
@@ -160,6 +180,7 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 
 
 DURABLE_RUNTIME_STORAGE = install_durable_runtime_storage()
+STORAGE_SERIALIZATION_SAFETY = install_storage_serialization_safety()
 RUNTIME_HEARTBEAT_ATOMIC = install_runtime_heartbeat_atomic_patch()
 RUNTIME_STORAGE_TRUTH = install_runtime_storage_truth()
 POSTGRES_TIMEOUTS = install_postgres_timeout_patch()
@@ -177,6 +198,12 @@ EXPRESS_PRODUCTION_RUNTIME = express_runtime_status(app)
 
 if _durable_required() and not STORE.status().get("persistence_available"):
     raise RuntimeError(f"Assessment lifecycle storage is unavailable: {STORE.status()}")
+if not STORAGE_SERIALIZATION_SAFETY.get("storage_metadata_boundary_installed"):
+    raise RuntimeError("Production bootstrap did not install cycle-safe storage serialization")
+if not STORAGE_SERIALIZATION_SAFETY.get("sqlite_metadata_boundary_installed"):
+    raise RuntimeError("SQLite runtime storage is not bound to cycle-safe serialization")
+if not STORAGE_SERIALIZATION_SAFETY.get("express_scanner_boundary_installed"):
+    raise RuntimeError("Express scanner projection is not bound to cycle-safe serialization")
 if not SCANNER_REDACTION_SAFETY["cycle_safe_redaction_installed"]:
     raise RuntimeError("Express production bootstrap did not install cycle-safe scanner redaction")
 if not EXPRESS_PRODUCTION_RUNTIME["bounded_backend_diagnostics_installed"]:
@@ -185,6 +212,8 @@ if not EXPRESS_PRODUCTION_RUNTIME["durable_lifecycle_heartbeat_installed"]:
     raise RuntimeError("Express production bootstrap did not install lifecycle heartbeats")
 if not EXPRESS_PRODUCTION_RUNTIME["atomic_heartbeat_status_guard_installed"]:
     raise RuntimeError("Express production bootstrap did not install atomic heartbeat status guards")
+if not EXPRESS_PRODUCTION_RUNTIME["cycle_safe_storage_serialization_installed"]:
+    raise RuntimeError("Express production runtime did not verify cycle-safe storage serialization")
 if EXPRESS_PRODUCTION_RUNTIME["status_read_can_write_terminal_interruption"]:
     raise RuntimeError("Express status reads can still write terminal interruption evidence")
 if not EXPRESS_PRODUCTION_RUNTIME["exact_snapshot_scanner_required"]:
@@ -215,6 +244,7 @@ if EXPRESS_PRODUCTION_RUNTIME.get("status") != "ok":
     raise RuntimeError(f"Express production runtime diagnostics are blocked: {EXPRESS_PRODUCTION_RUNTIME}")
 
 app.state.nico_durable_runtime_storage = DURABLE_RUNTIME_STORAGE
+app.state.nico_storage_serialization_safety = STORAGE_SERIALIZATION_SAFETY
 app.state.nico_runtime_heartbeat_atomic = RUNTIME_HEARTBEAT_ATOMIC
 app.state.nico_runtime_storage_truth = RUNTIME_STORAGE_TRUTH
 app.state.nico_postgres_timeouts = POSTGRES_TIMEOUTS
@@ -231,6 +261,7 @@ app.state.nico_mid_runtime = MID_RUNTIME
 __all__ = [
     "app",
     "DURABLE_RUNTIME_STORAGE",
+    "STORAGE_SERIALIZATION_SAFETY",
     "RUNTIME_HEARTBEAT_ATOMIC",
     "RUNTIME_STORAGE_TRUTH",
     "POSTGRES_TIMEOUTS",
