@@ -4,14 +4,45 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v1"
-_MARKER = "_nico_mid_stage_truth_v1"
+MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v2"
+_MARKER = "_nico_mid_stage_truth_v2"
 _ACTIVE = {"queued", "running", "pending", "planned"}
 _TERMINAL = {"complete", "completed", "blocked", "failed", "error", "not_started"}
+_MID_PRESENTATION_REPLACEMENTS = (
+    ("evidence-bound Full Assessment draft", "evidence-bound Mid Assessment draft"),
+    ("evidence-bound full assessment draft", "evidence-bound Mid Assessment draft"),
+    ("Full Technical Assessment", "Mid Technical Assessment"),
+    ("Full Assessment", "Mid Assessment"),
+    ("full assessment", "Mid assessment"),
+)
 
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _mid_presentation_text(value: Any) -> Any:
+    """Correct inherited Full-tier labels only in bounded presentation fields."""
+
+    if not isinstance(value, str):
+        return value
+    output = value
+    for source, replacement in _MID_PRESENTATION_REPLACEMENTS:
+        output = output.replace(source, replacement)
+    return output
+
+
+def _normalize_mid_presentation_labels(output: dict[str, Any]) -> None:
+    for key in ("executive_summary", "summary", "report_generation_note"):
+        if key in output:
+            output[key] = _mid_presentation_text(output.get(key))
+
+    assessment = deepcopy(output.get("assessment")) if isinstance(output.get("assessment"), dict) else {}
+    if assessment:
+        for key in ("executive_summary", "summary", "title", "assessment_name"):
+            if key in assessment:
+                assessment[key] = _mid_presentation_text(assessment.get(key))
+        output["assessment"] = assessment
 
 
 def _replace_progress(
@@ -37,6 +68,7 @@ def _replace_progress(
 
 def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
+    _normalize_mid_presentation_labels(output)
     progress = [deepcopy(item) for item in _list(output.get("progress")) if isinstance(item, dict)]
     report_status = str(output.get("report_generation_status") or "mid_report_generation_pending").lower()
     approval_status = str(output.get("approval_request_status") or "pending").lower()
@@ -108,6 +140,11 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
 
     output["progress"] = progress
     output["mid_stage_truth_version"] = MID_STAGE_TRUTH_VERSION
+    output["mid_presentation_label_truth"] = {
+        "generic_full_label_exposed": False,
+        "assessment_type": "mid",
+        "evidence_or_findings_rewritten": False,
+    }
     output["mid_artifact_execution_contract"] = {
         "generic_full_report_handler_enabled": False,
         "generic_full_review_handler_enabled": False,
@@ -138,6 +175,7 @@ def install_mid_stage_truth_patch() -> dict[str, Any]:
         "status": "installed",
         "version": MID_STAGE_TRUTH_VERSION,
         "generic_full_skipped_labels_exposed": False,
+        "generic_full_presentation_labels_exposed": False,
         "dedicated_mid_planned_labels_exposed": True,
         "mid_scorecard_wording": True,
         "same_run_identity_required": True,
