@@ -25,15 +25,7 @@ def _heartbeat_interval_seconds() -> int:
 
 
 def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float) -> None:
-    """Persist liveness while a scanner subprocess is executing.
-
-    Snapshot scanner workers import ``run_scanner_tool`` into their own module
-    namespace. The installer below therefore binds this wrapper both to the
-    source module and to that already-imported worker symbol. Without that
-    second binding, production scanners could run normally while never writing
-    a heartbeat, leaving live status unable to distinguish a long tool from a
-    dead worker.
-    """
+    """Persist bounded liveness evidence while a scanner tool executes."""
 
     try:
         durable = STORE.get("scanner_runs", scan_id)
@@ -60,8 +52,7 @@ def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float) -> 
         STORE.put("scanner_runs", scan_id, current)
     except Exception as exc:
         # Heartbeat persistence must never terminate the authorized scanner.
-        # Retain bounded local diagnostics for the worker failure boundary and
-        # Operations diagnostics without exposing exception text or secrets.
+        # Keep only bounded exception type evidence in process memory.
         local = deepcopy(scanner_worker.SCAN_JOBS.get(scan_id) or {})
         local["heartbeat_persistence_status"] = "failed"
         local["heartbeat_failure_type"] = type(exc).__name__[:80]
@@ -90,15 +81,8 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
         setattr(worker_with_context, "_nico_previous", current_worker)
         snapshot_scanner_worker._run_snapshot_scan = worker_with_context
 
-    source_tool: Callable[..., Any] = scanner_tool_runners.run_scanner_tool
-    existing_bound = getattr(snapshot_scanner_worker, "run_scanner_tool", source_tool)
-    if getattr(source_tool, _TOOL_MARKER, False):
-        tool_with_heartbeat = source_tool
-    elif getattr(existing_bound, _TOOL_MARKER, False):
-        tool_with_heartbeat = existing_bound
-    else:
-        current_tool = source_tool
-
+    current_tool: Callable[..., Any] = scanner_tool_runners.run_scanner_tool
+    if not getattr(current_tool, _TOOL_MARKER, False):
         @wraps(current_tool)
         def tool_with_heartbeat(spec: Any, workspace: Any, *args: Any, **kwargs: Any) -> Any:
             scan_id = str(getattr(_CONTEXT, "scan_id", "") or "")
@@ -129,20 +113,24 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
 
         setattr(tool_with_heartbeat, _TOOL_MARKER, True)
         setattr(tool_with_heartbeat, "_nico_previous", current_tool)
+    else:
+        tool_with_heartbeat = current_tool
 
-    # Critical production binding: snapshot_scanner_worker imported the function
-    # directly, so changing only scanner_tool_runners.run_scanner_tool does not
-    # affect the name used inside _run_snapshot_scan.
     scanner_tool_runners.run_scanner_tool = tool_with_heartbeat
-    snapshot_scanner_worker.run_scanner_tool = tool_with_heartbeat
+    # The snapshot worker imports the scanner tool module as ``tool_runners``.
+    # Verify and normalize that exact module alias rather than inventing a
+    # separate function attribute that the worker never calls.
+    snapshot_scanner_worker.tool_runners.run_scanner_tool = tool_with_heartbeat
 
+    actual_worker_runner = snapshot_scanner_worker.tool_runners.run_scanner_tool
     return {
         "status": "installed",
         "version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
         "heartbeat_interval_seconds": _heartbeat_interval_seconds(),
         "durable_heartbeat": True,
         "source_runner_binding_installed": scanner_tool_runners.run_scanner_tool is tool_with_heartbeat,
-        "snapshot_worker_binding_installed": snapshot_scanner_worker.run_scanner_tool is tool_with_heartbeat,
+        "snapshot_worker_binding_installed": actual_worker_runner is tool_with_heartbeat,
+        "snapshot_worker_module_alias_verified": snapshot_scanner_worker.tool_runners is scanner_tool_runners,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
