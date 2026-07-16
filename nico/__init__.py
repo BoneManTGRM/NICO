@@ -69,6 +69,7 @@ from nico.mid_terminal_truth_patch import install_mid_terminal_truth_patch
 from nico.mid_terminal_truth_compat import install_mid_terminal_truth_compat
 from nico.mid_quality_issue_display_patch import install_mid_quality_issue_display_patch
 from nico.mid_truth_identity_consistency import install_mid_truth_identity_consistency
+from nico.mid_truth_identity_transport import install_mid_truth_identity_transport
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
@@ -139,5 +140,6 @@ install_mid_terminal_truth_patch()
 install_mid_terminal_truth_compat()
 install_mid_quality_issue_display_patch()
 install_mid_truth_identity_consistency()
+install_mid_truth_identity_transport()
 
 __version__ = "0.1.0"
