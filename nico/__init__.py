@@ -40,6 +40,7 @@ from nico.mid_report_score_integrity import install_mid_report_score_integrity
 from nico.mid_report_section_boundary_patch import install_mid_report_section_boundary_patch
 from nico.mid_report_truth_disclosure import install_mid_report_truth_disclosure
 from nico.report_flowable_safety import install_report_flowable_safety
+from nico.mid_report_professional_v4 import install_mid_report_professional_v4
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
@@ -149,5 +150,8 @@ install_mid_quality_issue_display_patch()
 install_mid_truth_identity_consistency()
 install_mid_truth_identity_transport()
 install_mid_approval_truth_freeze()
+# Install after all compatibility layers so the full-depth Mid renderer and its
+# final payload enrichment remain the active report boundary.
+install_mid_report_professional_v4()
 
 __version__ = "0.1.0"
