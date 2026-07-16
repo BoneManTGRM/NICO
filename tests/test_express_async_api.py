@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 import nico.express_async_api as express
+import nico.express_backend_diagnostics as diagnostics
 from nico.storage import MemoryAdapter
 
 
@@ -54,6 +55,87 @@ def status_request(**overrides):
     payload = {"customer_id": "customer_test", "project_id": "project_test"}
     payload.update(overrides)
     return express.ExpressAssessmentStatusRequest(**payload)
+
+
+def _reports(report_id: str) -> dict:
+    markdown = "# Express Technical Health Assessment\n\n" + ("Evidence-bound exact-snapshot scanner report. " * 30)
+    html = "<!doctype html><html><body>" + ("<p>Evidence-bound exact-snapshot scanner report.</p>" * 20) + "</body></html>"
+    return {
+        "report_id": report_id,
+        "markdown": markdown,
+        "html": html,
+        "pdf_base64": "JVBERi0xLjQK" + ("A" * 240),
+    }
+
+
+def _install_exact_scanner_test_path(monkeypatch, run_id: str) -> None:
+    snapshot = {
+        "status": "attached",
+        "snapshot_id": f"snapshot_{run_id}",
+        "run_id": run_id,
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "a" * 40,
+        "tree_sha": "b" * 40,
+        "default_branch": "main",
+        "captured_at": "2026-07-16T03:10:00Z",
+    }
+    queued = {
+        "scan_id": f"scan_{run_id}",
+        "run_id": run_id,
+        "repository": "BoneManTGRM/NICO",
+        "status": "queued",
+        "current_stage": "queued",
+        "progress_percent": 2,
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_commit_sha": snapshot["commit_sha"],
+        "snapshot_match": False,
+        "scanner_results": [],
+    }
+    completed = {
+        **queued,
+        "status": "complete",
+        "current_stage": "complete",
+        "progress_percent": 100,
+        "actual_commit_sha": snapshot["commit_sha"],
+        "snapshot_match": True,
+        "tools_requested": ["pip-audit", "semgrep", "trufflehog"],
+        "tools_run": ["pip-audit", "semgrep", "trufflehog"],
+        "unavailable_tools": [],
+        "failed_tools": [],
+        "timed_out_tools": [],
+        "scanner_results": [
+            {"tool": "pip-audit", "status": "completed", "category": "dependency", "findings": []},
+            {"tool": "semgrep", "status": "completed", "category": "static", "findings": []},
+            {"tool": "trufflehog", "status": "completed", "category": "secret", "findings": []},
+        ],
+    }
+    monkeypatch.setattr(
+        diagnostics,
+        "start_express_snapshot_scan",
+        lambda exact_run_id, _payload: (deepcopy(snapshot), deepcopy(queued)) if exact_run_id == run_id else ({}, {}),
+    )
+    monkeypatch.setattr(
+        diagnostics,
+        "wait_for_express_snapshot_scan",
+        lambda exact_run_id, _snapshot, _initial, on_update=None: deepcopy(completed) if exact_run_id == run_id else {},
+    )
+
+    def attach(result, snapshot_value, scan_value):
+        output = deepcopy(result)
+        output["repository_snapshot"] = deepcopy(snapshot_value)
+        output["scanner"] = deepcopy(scan_value)
+        output["scanner_run"] = deepcopy(scan_value)
+        output["scanner_results"] = deepcopy(scan_value.get("scanner_results") or [])
+        output["worker_evidence_attachment"] = {
+            "status": "complete",
+            "mode": "exact_same_run_snapshot_bound",
+            "run_id": run_id,
+            "scan_id": scan_value["scan_id"],
+            "snapshot_match": True,
+        }
+        return output
+
+    monkeypatch.setattr(diagnostics, "attach_exact_express_scanner_evidence", attach)
 
 
 def test_start_requires_both_authorization_signals(monkeypatch) -> None:
@@ -132,8 +214,10 @@ def test_active_capacity_is_bounded_without_creating_third_run(monkeypatch) -> N
 def test_worker_preserves_start_run_id_through_final_report(monkeypatch) -> None:
     store = MemoryAdapter()
     monkeypatch.setattr(express, "STORE", store)
+    monkeypatch.setattr(diagnostics.express, "STORE", store)
     run_id = "express_run_exact_identity"
     payload = request().model_dump()
+    _install_exact_scanner_test_path(monkeypatch, run_id)
 
     def attach_review(result, _payload):
         assert result["run_id"] == run_id
@@ -148,10 +232,10 @@ def test_worker_preserves_start_run_id_through_final_report(monkeypatch) -> None
         run_github_assessment=lambda _payload: {
             "status": "complete",
             "repository": "BoneManTGRM/NICO",
-            "reports": {"markdown": "# Express draft"},
+            "reports": _reports("express_report_exact"),
+            "sections": [],
         },
         run_github_assessment_with_scanner_artifacts=lambda _payload: {},
-        attach_existing_worker_evidence=lambda result, _payload: result,
         enrich_payload_with_scanner_evidence=lambda result: result,
         apply_report_accuracy=lambda result: result,
         attach_express_review_target=attach_review,
@@ -189,6 +273,9 @@ def test_worker_preserves_start_run_id_through_final_report(monkeypatch) -> None
     assert response["run_id"] == run_id
     assert response["report_id"] == "express_report_exact"
     assert response["reports"]["report_id"] == "express_report_exact"
+    assert response["scanner"]["status"] == "complete"
+    assert response["scanner"]["snapshot_match"] is True
+    assert response["worker_evidence_attachment"]["mode"] == "exact_same_run_snapshot_bound"
     assert response["human_review_required"] is True
     assert response["client_ready"] is False
     assert fake_main._LAST_HOSTED_ASSESSMENT["run_id"] == run_id
