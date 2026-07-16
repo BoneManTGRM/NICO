@@ -17,10 +17,37 @@ def test_mid_status_transport_replaces_repeated_canonical_polling_with_live_get(
     assert "/live-status" in source
     assert 'method: "GET"' in source
     assert "LIVE_RETRY_COUNT = 2" in source
-    assert "LIVE_TIMEOUT_MS = 12_000" in source
-    assert "livePayload.continuation_required === true" in source
+    assert "LIVE_TIMEOUT_MS = 10_000" in source
+    assert "stable.continuation_required === true" in source
     assert "const continuation = await previousFetch(input, init)" in source
     assert "duplicate_start_allowed: false" in source
+
+
+def test_mid_transport_preserves_highest_confirmed_progress_and_stage() -> None:
+    source = TRANSPORT.read_text(encoding="utf-8")
+
+    assert "highWaterProgress" in source
+    assert "highWaterScannerProgress" in source
+    assert "highWaterStageRank" in source
+    assert "function stabilizePayload" in source
+    assert "state.highWaterProgress = Math.max(state.highWaterProgress, incomingProgress)" in source
+    assert "output.progress_percent = state.highWaterProgress" in source
+    assert "active && incomingRank < state.highWaterStageRank" in source
+    assert "highest_confirmed_progress_percent" in source
+    assert "const stable = stabilizePayload(livePayload, state)" in source
+    assert "const continued = stabilizePayload(continuationPayload, state)" in source
+    assert "const stable = stabilizePayload(fallbackPayload, state)" in source
+
+
+def test_mid_transport_uses_bounded_retry_without_thirty_second_backoff() -> None:
+    source = TRANSPORT.read_text(encoding="utf-8")
+
+    assert "LIVE_RETRY_DELAY_MS = 750" in source
+    assert "LIVE_BACKOFF_BASE_MS = 2_000" in source
+    assert "LIVE_BACKOFF_MAX_MS = 12_000" in source
+    assert "LIVE_BACKOFF_MAX_MS = 30_000" not in source
+    assert "Live status is temporarily unavailable" in source
+    assert "highest confirmed progress" in source
 
 
 def test_live_transport_is_outer_than_old_status_guards_but_inside_api_bridge() -> None:

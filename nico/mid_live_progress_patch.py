@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-MID_LIVE_PROGRESS_VERSION = "nico.mid_live_progress.v2"
+MID_LIVE_PROGRESS_VERSION = "nico.mid_live_progress.v3"
 _START_MARKER = "_nico_mid_live_progress_start_v1"
 _STATUS_MARKER = "_nico_mid_live_progress_status_v1"
 
@@ -12,6 +12,7 @@ _STAGE_PROGRESS = {
     "authorization": 4,
     "repo_evidence": 18,
     "scanner_worker": 18,
+    "scanner_reconciliation": 62,
     "evidence_attachment": 62,
     "scoring": 74,
     "reports": 86,
@@ -44,15 +45,19 @@ def _scanner_percent(result: dict[str, Any], active: dict[str, Any]) -> int | No
     scanner = result.get("scanner") if isinstance(result.get("scanner"), dict) else {}
     scanner_evidence = result.get("scanner_evidence") if isinstance(result.get("scanner_evidence"), dict) else {}
     evidence = active.get("evidence") if isinstance(active.get("evidence"), dict) else {}
+    candidates: list[int] = []
     for value in (
         scanner.get("progress_percent"),
         scanner_evidence.get("scanner_progress_percent"),
         evidence.get("scanner_progress_percent"),
         evidence.get("progress_percent"),
+        result.get("scanner_progress_percent"),
     ):
         percent = _bounded_percent(value)
         if percent is not None:
-            return percent
+            candidates.append(percent)
+    if candidates:
+        return max(candidates)
 
     requested = scanner.get("tools_requested") or evidence.get("tools_requested") or []
     completed = scanner.get("tools_run") or evidence.get("tools_run") or []
@@ -74,27 +79,33 @@ def attach_mid_live_progress(result: dict[str, Any]) -> dict[str, Any]:
         output["current_stage"] = "complete"
         output["progress_percent"] = 100
         output["scanner_progress_percent"] = 100
+        output["progress_monotonic"] = True
         return output
 
     active = _active_item(output)
     step = str(active.get("step") or output.get("current_stage") or "")
     scanner = output.get("scanner") if isinstance(output.get("scanner"), dict) else {}
     scanner_status = str(scanner.get("status") or "").lower()
+    existing = _bounded_percent(output.get("progress_percent")) or 0
+
     if step == "scanner_worker" or scanner_status in {"queued", "running"}:
         scan_percent = _scanner_percent(output, active)
+        computed = 18 if scan_percent is None else max(18, min(61, round(18 + scan_percent * 0.43)))
         output["current_stage"] = "scanner_worker"
-        if scan_percent is None:
-            output["progress_percent"] = 18
-        else:
-            output["scanner_progress_percent"] = scan_percent
-            output["progress_percent"] = max(18, min(61, round(18 + scan_percent * 0.43)))
+        output["progress_percent"] = max(existing, computed)
+        if scan_percent is not None:
+            previous_scanner = _bounded_percent(output.get("scanner_progress_percent")) or 0
+            output["scanner_progress_percent"] = max(previous_scanner, scan_percent)
+        output["progress_monotonic"] = True
         return output
 
     stage_percent = _STAGE_PROGRESS.get(step)
-    existing = _bounded_percent(output.get("progress_percent"))
     if stage_percent is not None:
-        output["progress_percent"] = max(stage_percent, existing or 0)
+        output["progress_percent"] = max(stage_percent, existing)
         output["current_stage"] = step
+    else:
+        output["progress_percent"] = existing
+    output["progress_monotonic"] = True
     return output
 
 
@@ -129,6 +140,7 @@ def install_mid_live_progress() -> dict[str, Any]:
         "status": "installed",
         "version": MID_LIVE_PROGRESS_VERSION,
         "scanner_progress_is_dynamic": True,
+        "progress_is_monotonic": True,
         "fastapi_request_signatures_preserved": True,
         "scanner_window_start": 18,
         "scanner_window_end": 61,
