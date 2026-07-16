@@ -6,9 +6,10 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
-MID_TERMINAL_TRUTH_COMPAT_VERSION = "nico.mid_terminal_truth_compat.v1"
+MID_TERMINAL_TRUTH_COMPAT_VERSION = "nico.mid_terminal_truth_compat.v2"
 _NORMALIZE_MARKER = "_nico_mid_terminal_truth_compat_normalize_v1"
 _LIVE_MARKER = "_nico_mid_terminal_truth_compat_live_v1"
+_INSTALLER_MARKER = "_nico_mid_terminal_truth_compat_installer_v1"
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -24,6 +25,16 @@ def _optional_scope_matches(record: dict[str, Any], customer_id: str, project_id
     if project_id and project_id != stored_project:
         return False
     return True
+
+
+def _route_count(app: Any, method: str, path: str) -> int:
+    expected = method.upper()
+    return sum(
+        1
+        for route in app.routes
+        if str(getattr(route, "path", "")) == path
+        and expected in {str(item).upper() for item in (getattr(route, "methods", set()) or set())}
+    )
 
 
 def _report_payload(report: dict[str, Any]) -> dict[str, Any]:
@@ -127,12 +138,40 @@ def install_mid_terminal_truth_compat() -> dict[str, Any]:
         lifecycle.mid_live_status_response = strict_live_status
         live_installed = True
 
+    current_installer: Callable[[Any], dict[str, Any]] = lifecycle.install_lifecycle_status_hardening
+    installer_installed = False
+    if not getattr(current_installer, _INSTALLER_MARKER, False):
+        @wraps(current_installer)
+        def fresh_app_safe_installer(app: Any) -> dict[str, Any]:
+            count = _route_count(app, "POST", terminal.MID_STATUS_PATH)
+            if count == 0:
+                app.add_api_route(
+                    terminal.MID_STATUS_PATH,
+                    terminal.mid_status_endpoint,
+                    methods=["POST"],
+                    tags=["assessment", "mid", "status"],
+                )
+                app.openapi_schema = None
+            elif count > 1:
+                raise RuntimeError(
+                    f"Expected at most one POST {terminal.MID_STATUS_PATH} route before lifecycle hardening; found={count}"
+                )
+            result = dict(current_installer(app))
+            result["mid_fresh_app_status_route_supported"] = True
+            return result
+
+        setattr(fresh_app_safe_installer, _INSTALLER_MARKER, True)
+        setattr(fresh_app_safe_installer, "_nico_previous", current_installer)
+        lifecycle.install_lifecycle_status_hardening = fresh_app_safe_installer
+        installer_installed = True
+
     return {
-        "status": "installed" if normalize_installed or live_installed else "already_installed",
+        "status": "installed" if normalize_installed or live_installed or installer_installed else "already_installed",
         "version": MID_TERMINAL_TRUTH_COMPAT_VERSION,
         "blocked_report_summary_projected": True,
         "optional_scope_fields_validated_independently": True,
         "partial_wrong_scope_allowed": False,
+        "fresh_app_status_route_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
