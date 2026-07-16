@@ -36,6 +36,7 @@ type Props = {
   apiUrl: string;
   adminToken: string;
   refreshKey: string;
+  targetScanId?: string;
 };
 
 function tone(status?: string) {
@@ -46,7 +47,7 @@ function tone(status?: string) {
   return styles.bad;
 }
 
-export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: Props) {
+export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey, targetScanId = ""}: Props) {
   const [inventory, setInventory] = useState<RecoveryInventory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -100,7 +101,14 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  useEffect(() => {
+    if (!inventory || !targetScanId) return;
+    window.setTimeout(() => document.getElementById(`scanner-recovery-${targetScanId}`)?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
+  }, [inventory, targetScanId]);
+
   const loaded = inventory !== null;
+  const targetFound = Boolean(targetScanId && inventory?.recovery_required?.some((item) => item.scan_id === targetScanId));
+  const targetActive = Boolean(targetScanId && inventory?.active?.some((item) => item.scan_id === targetScanId));
 
   return (
     <section className={styles.panel}>
@@ -118,9 +126,18 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
         <div />
         <button type="button" onClick={() => void loadRecovery(true)} disabled={loading || !adminToken.trim()}>{loading ? "Working..." : "Refresh reconciliation"}</button>
       </div>
+      {targetScanId && loaded && targetActive ? <div className={styles.nextAction}><b>Target scanner is still active</b><p>{targetScanId} is receiving current updates and is not eligible for recovery. Do not resume or replace it.</p></div> : null}
+      {targetScanId && loaded && !targetFound && !targetActive ? <div className={styles.nextAction}><b>Target scanner not found</b><p>{targetScanId} is not in the current active or recovery inventory. Refresh reconciliation to reclassify stale durable records.</p></div> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
-      {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => (
-        <article className={styles.alertCard} key={item.scan_id}>
+      {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => {
+        const targeted = Boolean(targetScanId && item.scan_id === targetScanId);
+        return <article
+          className={styles.alertCard}
+          id={item.scan_id ? `scanner-recovery-${item.scan_id}` : undefined}
+          key={item.scan_id}
+          aria-current={targeted ? "true" : undefined}
+          style={targeted ? {borderColor: "#38bdf8", boxShadow: "0 0 0 2px rgba(56,189,248,.28)"} : undefined}
+        >
           <div className={styles.cardHead}>
             <div><span>{item.repository || "repository unavailable"}</span><b>{item.scan_id || "unknown scan"}</b></div>
             <span className={`${styles.pill} ${tone(item.status)}`}>{item.status || "unknown"}</span>
@@ -130,8 +147,8 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey}: P
           <div className={styles.statRow}><span>Attempt</span><b>{item.recovery?.attempt ?? 0}</b></div>
           <div className={styles.statRow}><span>Detected</span><b>{item.recovery?.detected_at ? new Date(item.recovery.detected_at).toLocaleString() : "Unavailable"}</b></div>
           <button type="button" onClick={() => void resume(item.scan_id || "")} disabled={loading || !item.recovery?.resume_allowed}>Resume same scan ID</button>
-        </article>
-      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted scanner runs require recovery." : "Enter the admin token and load recovery to inspect scanner recovery state."}</div>}
+        </article>;
+      })}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted scanner runs require recovery." : "Enter the admin token and load recovery to inspect scanner recovery state."}</div>}
       {inventory?.operator_action ? <div className={styles.nextAction}><b>Recovery policy</b><p>{inventory.operator_action}</p></div> : null}
     </section>
   );
