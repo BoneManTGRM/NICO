@@ -10,7 +10,7 @@ const MOUNT_ID = "nico-mid-section-review-mount";
 const REPLACED_ATTRIBUTE = "data-nico-mid-section-grid-replaced";
 
 type JsonRecord = Record<string, unknown>;
-type Section = Parameters<typeof MidSectionReview>[0]["sections"];
+type ReviewSections = NonNullable<Parameters<typeof MidSectionReview>[0]["sections"]>;
 
 function requestUrl(input: RequestInfo | URL): URL | null {
   try {
@@ -121,7 +121,7 @@ export default function MidSectionReviewPortal() {
 
   if (!midSelected || !payload || !mount) return null;
   const assessment = isRecord(payload.assessment) ? payload.assessment : null;
-  const sections = Array.isArray(assessment?.sections) ? assessment.sections as Section : [];
+  const sections: ReviewSections = Array.isArray(assessment?.sections) ? assessment.sections as ReviewSections : [];
   if (!sections.length) return null;
 
   return createPortal(<MidSectionReview sections={sections} />, mount);
