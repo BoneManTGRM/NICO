@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
@@ -7,9 +9,10 @@ from typing import Any, Callable
 from nico.mid_assessment_runs import build_mid_status_payload, explicit_model_fields
 from nico.mid_live_progress_patch import attach_mid_live_progress
 from nico.scanner_worker import get_scan
+from nico.storage import STORE
 
-MID_STATUS_READ_PATH_VERSION = "nico.mid_status_read_path.v3"
-_PATCH_MARKER = "_nico_mid_status_read_path_v3"
+MID_STATUS_READ_PATH_VERSION = "nico.mid_status_read_path.v4"
+_PATCH_MARKER = "_nico_mid_status_read_path_v4"
 _ACTIVE_SCAN_STATUSES = {"queued", "running"}
 _IDENTITY_FIELDS = {"repository", "customer_id", "project_id", "scan_id"}
 
@@ -246,8 +249,92 @@ def _active_status_response(record: dict[str, Any], scan: dict[str, Any]) -> dic
     return attach_mid_live_progress(result)
 
 
+def _report_identity_matches(record: dict[str, Any], report: dict[str, Any], report_id: str) -> bool:
+    return (
+        report.get("record_type") == "mid_assessment_report"
+        and str(report.get("status") or "").lower() == "complete"
+        and str(report.get("report_id") or "") == report_id
+        and str(report.get("run_id") or "") == str(record.get("run_id") or "")
+        and str(report.get("customer_id") or "default_customer") == str(record.get("customer_id") or "default_customer")
+        and str(report.get("project_id") or "default_project") == str(record.get("project_id") or "default_project")
+        and report.get("client_delivery_allowed") is not True
+    )
+
+
+def _validated_pdf(formats: dict[str, Any], report: dict[str, Any]) -> str:
+    encoded = str(formats.get("pdf") or "")
+    if not encoded:
+        return ""
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except Exception:
+        return ""
+    expected_hash = str(report.get("pdf_sha256") or "")
+    if not decoded.startswith(b"%PDF") or not expected_hash:
+        return ""
+    if hashlib.sha256(decoded).hexdigest() != expected_hash:
+        return ""
+    return encoded
+
+
+def _rehydrate_final_report(record: dict[str, Any], result: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    output = deepcopy(result)
+    mid_report = _record(output.get("mid_report"))
+    report_id = str(mid_report.get("report_id") or record.get("report_id") or "")
+    if not report_id:
+        output["report_artifact_status"] = {
+            "status": "unavailable",
+            "reason": "retained_final_report_id_missing",
+            "run_state_pdf_duplicated": False,
+        }
+        return output, False
+
+    try:
+        report = STORE.get("reports", report_id)
+    except Exception:
+        report = None
+    if not isinstance(report, dict) or not _report_identity_matches(record, report, report_id):
+        output["report_artifact_status"] = {
+            "status": "unavailable",
+            "reason": "scoped_report_record_unavailable",
+            "report_id": report_id,
+            "run_state_pdf_duplicated": False,
+        }
+        return output, False
+
+    formats = _record(report.get("formats"))
+    pdf_base64 = _validated_pdf(formats, report)
+    markdown = str(formats.get("markdown") or "")
+    html = str(formats.get("html") or "")
+    output["reports"] = {
+        "markdown": markdown,
+        "html": html,
+        "pdf_base64": pdf_base64,
+        "pdf_filename": str(report.get("pdf_filename") or "nico-mid-assessment-DRAFT.pdf"),
+        "pdf_sha256": str(report.get("pdf_sha256") or ""),
+        "report_id": report_id,
+        "report_path": str(report.get("report_path") or "mid_run"),
+        "pdf_error": "" if pdf_base64 else "The retained Mid report exists, but its PDF integrity check failed.",
+    }
+    artifact_complete = bool(markdown and pdf_base64)
+    output["report_artifact_status"] = {
+        "status": "complete" if artifact_complete else "limited",
+        "source": "scoped_reports_store",
+        "report_id": report_id,
+        "markdown_available": bool(markdown),
+        "html_available": bool(html),
+        "pdf_available": bool(pdf_base64),
+        "pdf_integrity_verified": bool(pdf_base64),
+        "run_state_pdf_duplicated": False,
+        "client_delivery_allowed": False,
+        "human_review_required": True,
+    }
+    return output, artifact_complete
+
+
 def _retained_final_response(record: dict[str, Any]) -> dict[str, Any]:
     result = _retained_response(record)
+    result, report_rehydrated = _rehydrate_final_report(record, result)
     result["status_refresh"] = True
     result["status_read_path"] = {
         "version": MID_STATUS_READ_PATH_VERSION,
@@ -255,6 +342,8 @@ def _retained_final_response(record: dict[str, Any]) -> dict[str, Any]:
         "orchestrator_reentered": False,
         "repository_recaptured": False,
         "assessment_run_rewritten": False,
+        "report_artifact_rehydrated": report_rehydrated,
+        "report_artifact_source": "scoped_reports_store" if report_rehydrated else "unavailable",
         "read_only": True,
     }
     return attach_mid_live_progress(result)
@@ -299,6 +388,9 @@ def install_mid_status_read_path() -> dict[str, Any]:
         "heartbeat_evidence_exposed": True,
         "scanner_watchdog_visible": True,
         "intra_tool_progress_visible": True,
+        "terminal_report_formats_rehydrated": True,
+        "report_pdf_integrity_verified_before_return": True,
+        "run_state_pdf_bytes_duplicated": False,
         "repository_recapture_during_polling": False,
         "orchestrator_reentry_during_polling": False,
         "terminal_continuation_preserved": True,
