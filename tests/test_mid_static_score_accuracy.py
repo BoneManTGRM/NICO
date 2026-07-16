@@ -1,15 +1,42 @@
 from __future__ import annotations
 
-from nico import full_assessment_scorecard as scorecard
+from copy import deepcopy
+
+from nico.mid_assessment_handlers import mid_assessment_handlers
 from nico.mid_static_score_accuracy import (
     MID_STATIC_SCORE_ACCURACY_VERSION,
-    install_mid_static_score_accuracy,
+    apply_typescript_static_evidence,
+    mid_scoring_handler,
 )
 
 
-def _repo(risks: int = 0) -> dict:
+def _assessment(static_score: int = 68) -> dict:
+    scores = {
+        "code_audit": 60,
+        "dependency_health": 72,
+        "secrets_review": 80,
+        "static_analysis": static_score,
+        "ci_cd": 95,
+        "architecture_debt": 85,
+        "velocity_complexity": 76,
+    }
     return {
-        "code_signal_evidence": {"risk_pattern_hits": risks},
+        "status": "draft",
+        "maturity_signal": {"score": 76, "level": "Mid"},
+        "scorecard": {"technical_score": 76},
+        "sections": [
+            {
+                "id": section_id,
+                "label": section_id.replace("_", " ").title(),
+                "score": score,
+                "status": "green" if score >= 80 else "yellow" if score >= 55 else "red",
+                "evidence": [f"Evidence for {section_id}."],
+                "verified_claims": [f"Evidence for {section_id}."],
+                "findings": [],
+                "unavailable": [],
+            }
+            for section_id, score in scores.items()
+        ],
     }
 
 
@@ -22,6 +49,8 @@ def _scanner(
     unavailable: list[str] | None = None,
 ) -> dict:
     return {
+        "status": "attached",
+        "run_id": "midrun_static_accuracy",
         "tools_run": run or [],
         "tools_requested": requested or [],
         "failed_tools": failed or [],
@@ -30,20 +59,17 @@ def _scanner(
     }
 
 
-def test_typescript_completion_receives_bounded_static_analysis_credit() -> None:
-    installed = install_mid_static_score_accuracy()
-    assert installed["version"] == MID_STATIC_SCORE_ACCURACY_VERSION
+def _static(adjusted: dict) -> dict:
+    return next(item for item in adjusted["sections"] if item["id"] == "static_analysis")
 
-    section = scorecard._static_section(
-        _repo(),
-        _scanner(
-            run=["bandit", "typescript"],
-            requested=["bandit", "typescript"],
-        ),
+
+def test_typescript_completion_receives_bounded_mid_static_analysis_credit() -> None:
+    adjusted = apply_typescript_static_evidence(
+        _assessment(68),
+        _scanner(run=["bandit", "typescript"], requested=["bandit", "typescript"]),
     )
+    section = _static(adjusted)
 
-    # Legacy scoring credited Bandit but ignored TypeScript: 48 + 10 + 10 = 68.
-    # The compiler evidence now receives the same bounded per-tool credit.
     assert section["score"] == 78
     assert section["status"] == "yellow"
     breakdown = section["score_evidence_breakdown"]
@@ -52,21 +78,18 @@ def test_typescript_completion_receives_bounded_static_analysis_credit() -> None
     assert breakdown["typescript_score_adjustment"] == 10
     assert breakdown["post_typescript_score"] == 78
     assert breakdown["typescript_execution_treated_as_clean"] is False
-    assert breakdown["typescript_accuracy_applied"] is True
     assert breakdown["version"] == MID_STATIC_SCORE_ACCURACY_VERSION
     assert any("TypeScript compiler static-analysis state=completed" in item for item in section["evidence"])
+    assert adjusted["mid_static_score_accuracy"]["express_score_changed"] is False
+    assert adjusted["mid_static_score_accuracy"]["full_score_changed"] is False
 
 
-def test_typescript_failure_reduces_score_and_preserves_incomplete_conclusion() -> None:
-    install_mid_static_score_accuracy()
-    section = scorecard._static_section(
-        _repo(),
-        _scanner(
-            run=["bandit"],
-            requested=["bandit", "typescript"],
-            failed=["typescript"],
-        ),
+def test_typescript_failure_reduces_mid_score_and_preserves_incomplete_conclusion() -> None:
+    adjusted = apply_typescript_static_evidence(
+        _assessment(68),
+        _scanner(run=["bandit"], requested=["bandit", "typescript"], failed=["typescript"]),
     )
+    section = _static(adjusted)
 
     assert section["score"] == 56
     assert section["score_evidence_breakdown"]["typescript_score_adjustment"] == -12
@@ -75,28 +98,60 @@ def test_typescript_failure_reduces_score_and_preserves_incomplete_conclusion() 
 
 
 def test_typescript_unavailable_is_not_treated_as_clean_or_successful() -> None:
-    install_mid_static_score_accuracy()
-    section = scorecard._static_section(
-        _repo(risks=1),
-        _scanner(
-            run=["bandit"],
-            requested=["bandit", "typescript"],
-            unavailable=["typescript"],
-        ),
+    adjusted = apply_typescript_static_evidence(
+        _assessment(58),
+        _scanner(run=["bandit"], requested=["bandit", "typescript"], unavailable=["typescript"]),
     )
-
+    section = _static(adjusted)
     breakdown = section["score_evidence_breakdown"]
+
+    assert section["score"] == 53
     assert breakdown["typescript_state"] == "unavailable"
     assert breakdown["typescript_score_adjustment"] == -5
     assert breakdown["typescript_execution_treated_as_clean"] is False
-    assert section["score"] < 60
     assert section["findings"]
-    assert not any("clean" in item.lower() for item in section["verified_claims"])
+    assert not any("clean result" in item.lower() for item in section["verified_claims"])
 
 
-def test_installation_is_idempotent() -> None:
-    first = install_mid_static_score_accuracy()
-    second = install_mid_static_score_accuracy()
+def test_mid_static_accuracy_is_idempotent_for_same_assessment_and_scanner_state() -> None:
+    scanner = _scanner(run=["bandit", "typescript"], requested=["bandit", "typescript"])
+    once = apply_typescript_static_evidence(_assessment(68), scanner)
+    twice = apply_typescript_static_evidence(once, scanner)
 
-    assert first["version"] == MID_STATIC_SCORE_ACCURACY_VERSION
-    assert second == {"status": "already_installed", "version": MID_STATIC_SCORE_ACCURACY_VERSION}
+    assert _static(once)["score"] == 78
+    assert _static(twice)["score"] == 78
+    assert twice == once
+
+
+def test_mid_pipeline_uses_mid_only_scoring_handler() -> None:
+    handlers = mid_assessment_handlers()
+
+    assert handlers["scoring"] is mid_scoring_handler
+
+
+def test_mid_scoring_handler_applies_accuracy_after_shared_scorecard(monkeypatch) -> None:
+    base = {
+        "status": "complete",
+        "message": "Shared scorecard complete.",
+        "assessment": _assessment(68),
+        "evidence": {"technical_score": 76},
+    }
+
+    monkeypatch.setattr(
+        "nico.mid_static_score_accuracy.full_assessment_scoring_handler",
+        lambda context, outputs: deepcopy(base),
+    )
+    outputs = {
+        "evidence_attachment": {
+            "scanner_evidence": _scanner(
+                run=["bandit", "typescript"],
+                requested=["bandit", "typescript"],
+            )
+        }
+    }
+    result = mid_scoring_handler({"run_id": "midrun_static_accuracy"}, outputs)
+
+    assert result["status"] == "complete"
+    assert _static(result["assessment"])["score"] == 78
+    assert result["evidence"]["technical_score"] == result["assessment"]["maturity_signal"]["score"]
+    assert result["evidence"]["mid_static_score_accuracy"]["typescript_state"] == "completed"
