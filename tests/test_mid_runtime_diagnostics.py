@@ -36,6 +36,15 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_canonical_status_an
     assert status["same_run_duplicate_prevention"] is True
     assert status["canonical_status_not_found_generic_500_possible"] is False
     assert status["pre_reconciliation_score_mismatch_is_terminal"] is False
+    assert status["generic_full_skipped_labels_exposed_for_mid"] is False
+    assert status["dedicated_mid_artifact_stages_projected"] is True
+    assert status["mid_scorecard_wording"] is True
+    assert status["retained_mid_section_boundaries_reconciled"] is True
+    assert status["non_verified_empty_section_uses_explicit_limitation"] is True
+    assert status["verified_empty_section_still_blocked"] is True
+    assert status["missing_evidence_converted_to_pass"] is False
+    assert status["section_specific_quality_issue_labels"] is True
+    assert status["client_delivery_allowed"] is False
 
 
 def test_mid_runtime_diagnostics_fail_closed_when_worker_module_alias_uses_unwrapped_runner(monkeypatch) -> None:
@@ -73,5 +82,8 @@ def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
 
     assert first["status"] in {"ok", "blocked"}
     assert second["status"] in {"ok", "blocked"}
+    assert first["mid_stage_truth_version"].startswith("nico.mid_stage_truth.")
+    assert first["mid_report_section_boundary_version"].startswith("nico.mid_report_section_boundary.")
+    assert first["mid_quality_issue_display_version"].startswith("nico.mid_quality_issue_display.")
     assert len(routes) == 1
     assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
