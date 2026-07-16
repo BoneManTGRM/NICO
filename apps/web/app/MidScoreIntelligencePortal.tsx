@@ -7,6 +7,7 @@ import MidScoreIntelligence from "./assessment/MidScoreIntelligence";
 
 const MID_RESPONSE_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run(?:\/[^/]+\/status)?$/;
 const TIER_EVENT = "nico:assessment-tier-selected";
+const MID_PAYLOAD_EVENT = "nico:mid-status-payload";
 const MOUNT_ID = "nico-mid-score-intelligence-mount";
 
 type JsonRecord = Record<string, unknown>;
@@ -23,6 +24,10 @@ function requestUrl(input: RequestInfo | URL): URL | null {
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function publishMidPayload(payload: JsonRecord) {
+  window.dispatchEvent(new CustomEvent<JsonRecord>(MID_PAYLOAD_EVENT, {detail: payload}));
 }
 
 function findOrCreateMount(): HTMLElement | null {
@@ -69,6 +74,7 @@ export default function MidScoreIntelligencePortal() {
           const parsed = await response.clone().json();
           if (isRecord(parsed) && String(parsed.assessment_type || parsed.service_tier || "mid") === "mid") {
             setPayload(parsed);
+            publishMidPayload(parsed);
           }
         } catch {
           // The assessment page remains authoritative when a response is not JSON.
