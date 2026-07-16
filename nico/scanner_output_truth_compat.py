@@ -8,9 +8,11 @@ from typing import Any, Callable
 from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult
 
-SCANNER_OUTPUT_TRUTH_COMPAT_VERSION = "nico.scanner_output_truth_compat.v2"
+SCANNER_OUTPUT_TRUTH_COMPAT_VERSION = "nico.scanner_output_truth_compat.v3"
 _COMPLETE_MARKER = "_nico_scanner_output_truth_clean_gitleaks_v1"
-_RUN_MARKER = "_nico_scanner_history_timeout_ceiling_v1"
+_RUN_MARKER = "_nico_scanner_history_timeout_ceiling_v2"
+_GITLEAKS_ABSOLUTE_CEILING_SECONDS = 120
+_TRUFFLEHOG_ABSOLUTE_CEILING_SECONDS = 180
 
 
 def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -22,14 +24,27 @@ def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
 
 
 def _history_timeout_cap(spec: ScannerToolSpec) -> int:
-    generic_cap = _bounded_int("NICO_HISTORY_TOOL_TIMEOUT_SECONDS", 420, 120, 1800)
+    # The generic setting may shorten a history scan, but it may never extend a
+    # tool beyond NICO's absolute non-blocking ceiling. A deployment-level value
+    # left over from an older release therefore cannot recreate the stall.
+    generic_cap = _bounded_int("NICO_HISTORY_TOOL_TIMEOUT_SECONDS", 300, 30, 900)
     if spec.name == "gitleaks":
-        tool_cap = _bounded_int("NICO_GITLEAKS_TIMEOUT_SECONDS", 240, 60, 900)
-    elif spec.name == "trufflehog":
-        tool_cap = _bounded_int("NICO_TRUFFLEHOG_TIMEOUT_SECONDS", 300, 60, 1200)
-    else:
-        tool_cap = generic_cap
-    return min(generic_cap, tool_cap)
+        configured = _bounded_int(
+            "NICO_GITLEAKS_TIMEOUT_SECONDS",
+            _GITLEAKS_ABSOLUTE_CEILING_SECONDS,
+            30,
+            _GITLEAKS_ABSOLUTE_CEILING_SECONDS,
+        )
+        return min(generic_cap, configured, _GITLEAKS_ABSOLUTE_CEILING_SECONDS)
+    if spec.name == "trufflehog":
+        configured = _bounded_int(
+            "NICO_TRUFFLEHOG_TIMEOUT_SECONDS",
+            _TRUFFLEHOG_ABSOLUTE_CEILING_SECONDS,
+            30,
+            _TRUFFLEHOG_ABSOLUTE_CEILING_SECONDS,
+        )
+        return min(generic_cap, configured, _TRUFFLEHOG_ABSOLUTE_CEILING_SECONDS)
+    return generic_cap
 
 
 def install_scanner_output_truth_compat() -> dict[str, Any]:
@@ -74,10 +89,9 @@ def install_scanner_output_truth_compat() -> dict[str, Any]:
 
     current_run: Callable[..., dict[str, Any]] = secret._run_secret_tool
     if not getattr(current_run, _RUN_MARKER, False):
-        # scanner_output_truth_patch previously treated the configured history
-        # timeout as a minimum by using max(...), which could extend gitleaks from
-        # its 240-second specification to 420 seconds or more. Call the wrapped
-        # implementation beneath that policy and impose a real upper bound.
+        # Bypass the legacy minimum-timeout wrapper and impose a true ceiling.
+        # This remains fail-closed: a timed-out scan is disclosed as unverified,
+        # then the snapshot pipeline continues to the next requested tool.
         underlying_run: Callable[..., dict[str, Any]] = getattr(current_run, "_nico_previous", current_run)
 
         @wraps(current_run)
@@ -104,7 +118,8 @@ def install_scanner_output_truth_compat() -> dict[str, Any]:
                     "requested_timeout_seconds": int(spec.timeout_seconds),
                     "timeout_limit_seconds": timeout_cap,
                     "effective_timeout_seconds": effective_timeout,
-                    "timeout_policy": "hard_ceiling",
+                    "timeout_policy": "absolute_hard_ceiling",
+                    "timeout_ceiling_source": SCANNER_OUTPUT_TRUTH_COMPAT_VERSION,
                     "pipeline_blocking_allowed": False,
                 }
             )
@@ -124,6 +139,7 @@ def install_scanner_output_truth_compat() -> dict[str, Any]:
         "timeout_treated_as_clean": False,
         "truncated_output_treated_as_clean": False,
         "history_timeout_is_hard_ceiling": True,
+        "deployment_env_can_extend_absolute_ceiling": False,
         "gitleaks_timeout_seconds": _history_timeout_cap(
             ScannerToolSpec("gitleaks", ("gitleaks",), "secret", timeout_seconds=240)
         ),

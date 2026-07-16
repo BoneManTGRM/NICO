@@ -23,10 +23,10 @@ def _history() -> dict[str, object]:
     }
 
 
-def test_gitleaks_timeout_configuration_is_a_hard_ceiling(tmp_path: Path, monkeypatch) -> None:
+def test_gitleaks_deployment_configuration_cannot_extend_absolute_ceiling(tmp_path: Path, monkeypatch) -> None:
     workspace = _workspace(tmp_path)
     monkeypatch.setenv("NICO_HISTORY_TOOL_TIMEOUT_SECONDS", "420")
-    monkeypatch.setenv("NICO_GITLEAKS_TIMEOUT_SECONDS", "240")
+    monkeypatch.setenv("NICO_GITLEAKS_TIMEOUT_SECONDS", "900")
     monkeypatch.setattr(secret, "_history_metadata", lambda _workspace: _history())
     monkeypatch.setattr(secret.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     observed: dict[str, object] = {}
@@ -56,20 +56,20 @@ def test_gitleaks_timeout_configuration_is_a_hard_ceiling(tmp_path: Path, monkey
         runner=runner,
     )
 
-    assert observed["timeout_seconds"] == 240
+    assert observed["timeout_seconds"] == 120
     assert observed["max_output_chars"] == 500_000
     assert payload["status"] == "completed"
     assert payload["requested_timeout_seconds"] == 900
-    assert payload["timeout_limit_seconds"] == 240
-    assert payload["effective_timeout_seconds"] == 240
-    assert payload["timeout_policy"] == "hard_ceiling"
+    assert payload["timeout_limit_seconds"] == 120
+    assert payload["effective_timeout_seconds"] == 120
+    assert payload["timeout_policy"] == "absolute_hard_ceiling"
     assert payload["pipeline_blocking_allowed"] is False
 
 
-def test_trufflehog_uses_its_bounded_tool_ceiling(tmp_path: Path, monkeypatch) -> None:
+def test_trufflehog_deployment_configuration_cannot_extend_absolute_ceiling(tmp_path: Path, monkeypatch) -> None:
     workspace = _workspace(tmp_path)
     monkeypatch.setenv("NICO_HISTORY_TOOL_TIMEOUT_SECONDS", "420")
-    monkeypatch.setenv("NICO_TRUFFLEHOG_TIMEOUT_SECONDS", "300")
+    monkeypatch.setenv("NICO_TRUFFLEHOG_TIMEOUT_SECONDS", "900")
     monkeypatch.setattr(secret, "_history_metadata", lambda _workspace: _history())
     monkeypatch.setattr(secret.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     observed: dict[str, int] = {}
@@ -95,10 +95,32 @@ def test_trufflehog_uses_its_bounded_tool_ceiling(tmp_path: Path, monkeypatch) -
         runner=runner,
     )
 
-    assert observed["timeout_seconds"] == 300
-    assert payload["timeout_limit_seconds"] == 300
-    assert payload["effective_timeout_seconds"] == 300
-    assert payload["timeout_policy"] == "hard_ceiling"
+    assert observed["timeout_seconds"] == 180
+    assert payload["timeout_limit_seconds"] == 180
+    assert payload["effective_timeout_seconds"] == 180
+    assert payload["timeout_policy"] == "absolute_hard_ceiling"
+
+
+def test_generic_history_setting_can_shorten_gitleaks_but_not_extend_it(tmp_path: Path, monkeypatch) -> None:
+    workspace = _workspace(tmp_path)
+    monkeypatch.setenv("NICO_HISTORY_TOOL_TIMEOUT_SECONDS", "75")
+    monkeypatch.setenv("NICO_GITLEAKS_TIMEOUT_SECONDS", "120")
+    monkeypatch.setattr(secret, "_history_metadata", lambda _workspace: _history())
+    monkeypatch.setattr(secret.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    observed: dict[str, int] = {}
+
+    def runner(command, *, cwd, limits):
+        observed["timeout_seconds"] = limits.timeout_seconds
+        return WorkerCommandResult(args=tuple(command), returncode=0, stdout="[]", stderr="")
+
+    payload = secret._run_secret_tool(
+        ScannerToolSpec("gitleaks", ("gitleaks",), "secret", timeout_seconds=900, scans_git_history=True),
+        workspace,
+        runner=runner,
+    )
+
+    assert observed["timeout_seconds"] == 75
+    assert payload["effective_timeout_seconds"] == 75
 
 
 def test_gitleaks_timeout_remains_unverified_and_nonblocking(tmp_path: Path, monkeypatch) -> None:

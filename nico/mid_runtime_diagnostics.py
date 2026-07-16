@@ -19,8 +19,8 @@ from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VER
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v7"
-_HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v7-watchdog"
+_HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v3"
 
 
 def _route_count(app: FastAPI, method: str, path: str) -> int:
@@ -116,10 +116,13 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "section_specific_quality_issue_labels": True,
         "report_quality_issue_codes_exposed": True,
         "scanner_heartbeat_version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
+        "scanner_heartbeat_marker": _HEARTBEAT_MARKER,
         "source_runner_heartbeat_binding": source_binding,
         "snapshot_worker_heartbeat_binding": worker_binding,
         "heartbeat_bindings_identical": same_binding,
         "snapshot_worker_module_alias_verified": module_alias_verified,
+        "watchdog_countdown_required": True,
+        "hard_timeout_then_continue_required": True,
         "report_quality_gate_version": REPORT_QUALITY_GATE_VERSION,
         "storage_adapter": adapter,
         "storage_mode": storage.get("mode") or adapter,

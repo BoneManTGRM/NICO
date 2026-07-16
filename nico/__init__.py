@@ -55,6 +55,7 @@ from nico.express_progress_persistence_patch import install_express_progress_per
 from nico.hosted_report_intelligence_enrichment import install_hosted_report_intelligence_enrichment
 from nico.report_intelligence_accuracy_patch import install_report_intelligence_accuracy_patch
 from nico.triage_aware_scanner_finding_truth import install_triage_aware_scanner_finding_truth
+from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
@@ -111,6 +112,7 @@ install_assessment_recovery_readiness_patch()
 install_backup_restore_readiness_patch()
 install_scanner_history_truth()
 install_triage_aware_scanner_finding_truth()
+install_snapshot_scanner_heartbeat()
 install_snapshot_scanner_resilience()
 install_full_scanner_recovery()
 install_full_blocked_state_truth()
