@@ -136,6 +136,16 @@ def _guarded_reuse(state: dict[str, Any], other_active_run_ids: list[str]) -> di
     return output
 
 
+def _guard_enabled() -> bool:
+    status = STORE.status() if hasattr(STORE, "status") else {}
+    if bool(status.get("persistence_available")):
+        return True
+    # Memory-only enforcement is opt-in for isolated local tests and single-
+    # process development. Production duplicate guarantees require durable
+    # shared state so multiple web workers make the same decision.
+    return os.getenv("NICO_ENABLE_MEMORY_START_GUARD", "false").lower() == "true"
+
+
 def _lock_wait_seconds() -> float:
     try:
         configured = float(os.getenv("NICO_MID_START_LOCK_WAIT_SECONDS", "15"))
@@ -213,6 +223,9 @@ def _serialized_start(lock_key: str) -> Iterator[None]:
                     if acquired:
                         with connection.cursor() as cursor:
                             cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (lock_key,))
+                except Exception:
+                    # Closing the session releases any remaining advisory lock.
+                    pass
                 finally:
                     try:
                         connection.close()
@@ -233,7 +246,7 @@ def install_mid_start_guard() -> dict[str, Any]:
         customer_id = str(request.get("customer_id") or "default_customer")
         project_id = str(request.get("project_id") or "default_project")
         repository = _canonical_repository(request.get("repository") or request.get("target"))
-        if not repository:
+        if not repository or not _guard_enabled():
             return current(req)
 
         lock_key = f"nico:mid-start:{customer_id}:{project_id}:{repository}"
@@ -263,6 +276,8 @@ def install_mid_start_guard() -> dict[str, Any]:
         "status": "installed",
         "version": MID_START_GUARD_VERSION,
         "server_side_duplicate_prevention": True,
+        "durable_shared_state_required": True,
+        "memory_mode_opt_in_only": True,
         "same_scope_repository_reuse": True,
         "cross_worker_postgres_advisory_lock": True,
         "fail_closed_when_serialization_unavailable": True,
