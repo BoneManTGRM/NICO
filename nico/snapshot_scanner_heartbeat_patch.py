@@ -10,39 +10,64 @@ from typing import Any, Callable
 from nico import scanner_tool_runners, scanner_worker, snapshot_scanner_worker
 from nico.storage import STORE, utc_now
 
-SNAPSHOT_SCANNER_HEARTBEAT_VERSION = "nico.snapshot_scanner_heartbeat.v3"
-_WORKER_MARKER = "_nico_snapshot_scanner_heartbeat_worker_v2"
-_TOOL_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
+SNAPSHOT_SCANNER_HEARTBEAT_VERSION = "nico.snapshot_scanner_heartbeat.v4"
+_WORKER_MARKER = "_nico_snapshot_scanner_heartbeat_worker_v3"
+_TOOL_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v3"
 _CONTEXT = threading.local()
 _ACTIVE_STATUSES = {"queued", "running"}
 
 
 def _heartbeat_interval_seconds() -> int:
     try:
-        configured = int(os.getenv("NICO_SCANNER_HEARTBEAT_SECONDS", "15"))
+        configured = int(os.getenv("NICO_SCANNER_HEARTBEAT_SECONDS", "10"))
     except (TypeError, ValueError):
-        configured = 15
-    return max(5, min(configured, 60))
+        configured = 10
+    return max(5, min(configured, 30))
 
 
-def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float) -> None:
-    """Persist bounded liveness without replacing newer scanner state."""
+def _effective_timeout_seconds(spec: Any) -> int:
+    requested = max(1, int(getattr(spec, "timeout_seconds", 120) or 120))
+    name = str(getattr(spec, "name", "") or "")
+    if name in {"gitleaks", "trufflehog"}:
+        try:
+            from nico.scanner_output_truth_compat import _history_timeout_cap
+
+            return min(requested, int(_history_timeout_cap(spec)))
+        except Exception:
+            return requested
+    return requested
+
+
+def _heartbeat_patch(tool_name: str, started_monotonic: float, timeout_seconds: int) -> dict[str, Any]:
+    elapsed = round(max(0.0, time.monotonic() - started_monotonic), 1)
+    remaining = round(max(0.0, float(timeout_seconds) - elapsed), 1)
+    return {
+        "heartbeat_at": utc_now(),
+        "heartbeat_process_id": os.getpid(),
+        "heartbeat_thread": threading.current_thread().name[:120],
+        "heartbeat_tool": tool_name[:120],
+        "active_tool": tool_name[:120],
+        "tool_elapsed_seconds": elapsed,
+        "tool_timeout_seconds": int(timeout_seconds),
+        "tool_timeout_remaining_seconds": remaining,
+        "tool_watchdog_policy": "hard_timeout_then_continue",
+        "heartbeat_persistence_status": "active",
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float, timeout_seconds: int) -> None:
+    """Persist bounded liveness and watchdog state without replacing newer terminal state."""
 
     try:
+        patch = _heartbeat_patch(tool_name, started_monotonic, timeout_seconds)
         patcher = getattr(STORE, "patch_heartbeat", None)
         if callable(patcher):
             updated = patcher(
                 "scanner_runs",
                 scan_id,
-                patch={
-                    "heartbeat_at": utc_now(),
-                    "heartbeat_process_id": os.getpid(),
-                    "heartbeat_thread": threading.current_thread().name[:120],
-                    "heartbeat_tool": tool_name[:120],
-                    "tool_elapsed_seconds": round(max(0.0, time.monotonic() - started_monotonic), 1),
-                    "human_review_required": True,
-                    "client_delivery_allowed": False,
-                },
+                patch=patch,
                 active_statuses=_ACTIVE_STATUSES,
                 nested_key=None,
             )
@@ -56,23 +81,19 @@ def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float) -> 
             return
         now_text = scanner_worker.now_iso()
         sequence = int(current.get("heartbeat_sequence") or 0) + 1
+        current.update(patch)
         current.update(
             {
                 "scan_id": scan_id,
                 "heartbeat_at": now_text,
                 "updated_at": now_text,
                 "heartbeat_sequence": sequence,
-                "heartbeat_process_id": os.getpid(),
-                "heartbeat_thread": threading.current_thread().name[:120],
-                "heartbeat_tool": tool_name[:120],
-                "tool_elapsed_seconds": round(max(0.0, time.monotonic() - started_monotonic), 1),
             }
         )
         scanner_worker.SCAN_JOBS[scan_id] = deepcopy(current)
         STORE.put("scanner_runs", scan_id, current)
     except Exception as exc:
         # Heartbeat persistence must never terminate the authorized scanner.
-        # Keep only bounded exception type evidence in process memory.
         local = deepcopy(scanner_worker.SCAN_JOBS.get(scan_id) or {})
         local["heartbeat_persistence_status"] = "failed"
         local["heartbeat_failure_type"] = type(exc).__name__[:80]
@@ -110,13 +131,14 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
                 return current_tool(spec, workspace, *args, **kwargs)
 
             tool_name = str(getattr(spec, "name", "unknown") or "unknown")
+            timeout_seconds = _effective_timeout_seconds(spec)
             started = time.monotonic()
             stop = threading.Event()
 
             def pulse() -> None:
-                _write_heartbeat(scan_id, tool_name, started)
+                _write_heartbeat(scan_id, tool_name, started, timeout_seconds)
                 while not stop.wait(_heartbeat_interval_seconds()):
-                    _write_heartbeat(scan_id, tool_name, started)
+                    _write_heartbeat(scan_id, tool_name, started, timeout_seconds)
 
             heartbeat = threading.Thread(
                 target=pulse,
@@ -129,7 +151,7 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
             finally:
                 stop.set()
                 heartbeat.join(timeout=2)
-                _write_heartbeat(scan_id, tool_name, started)
+                _write_heartbeat(scan_id, tool_name, started, timeout_seconds)
 
         setattr(tool_with_heartbeat, _TOOL_MARKER, True)
         setattr(tool_with_heartbeat, "_nico_previous", current_tool)
@@ -146,6 +168,8 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
         "version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
         "heartbeat_interval_seconds": _heartbeat_interval_seconds(),
         "durable_heartbeat": True,
+        "watchdog_countdown_persisted": True,
+        "hard_timeout_then_continue": True,
         "atomic_status_guard": callable(getattr(STORE, "patch_heartbeat", None)),
         "terminal_state_can_be_reopened": False,
         "source_runner_binding_installed": scanner_tool_runners.run_scanner_tool is tool_with_heartbeat,
