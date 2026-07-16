@@ -128,6 +128,20 @@ def test_nested_full_report_package_is_audited_against_its_json_and_rendered_for
     assert manifest["rendered_formats"]["pdf_signature_valid"] is True
 
 
+def test_full_report_without_exact_snapshot_remains_review_limited_instead_of_false_failure() -> None:
+    payload = _payload()
+    payload["run_id"] = "fullrun_review_limited_snapshot"
+    payload.pop("snapshot_commit_sha")
+
+    manifest = evaluate_report_payload(payload, "full")
+
+    assert manifest["status"] in {"review_required", "ready_for_human_review"}
+    assert manifest["critical_issue_count"] == 0
+    snapshot_issue = next(item for item in manifest["issues"] if item["code"] == "missing_snapshot_identity")
+    assert snapshot_issue["severity"] == "warning"
+    assert manifest["checks"]["full_missing_snapshot_policy"] == "warning_and_review_limited"
+
+
 def test_placeholder_content_is_never_permitted_in_client_visible_report() -> None:
     payload = deepcopy(_payload())
     payload["sections"][2]["summary"] = "TODO: insert summary after review."
@@ -136,3 +150,14 @@ def test_placeholder_content_is_never_permitted_in_client_visible_report() -> No
 
     assert manifest["status"] == "blocked"
     assert any(item["code"] == "placeholder_content" for item in manifest["issues"])
+
+
+def test_todo_text_inside_retained_repository_evidence_does_not_false_block_report() -> None:
+    payload = deepcopy(_payload())
+    payload["sections"][1]["evidence"].append("Repository source contains literal TODO: rotate this test fixture token.")
+
+    manifest = evaluate_report_payload(payload, "mid")
+
+    assert manifest["status"] == "ready_for_human_review"
+    assert not any(item["code"] == "placeholder_content" for item in manifest["issues"])
+    assert manifest["checks"]["placeholder_scope"] == "client_presentation_prose_only"
