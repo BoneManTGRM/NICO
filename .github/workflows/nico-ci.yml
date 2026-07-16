@@ -34,8 +34,10 @@ jobs:
 
     - name: Verify package entry points
       run: |
-        nico --help
-        python - <<'PY'
+        set +e
+        {
+          nico --help
+          python - <<'PY'
         from importlib.metadata import entry_points
         from nico.api.production import app
         from nico.api_runner import main as api_main
@@ -47,6 +49,17 @@ jobs:
         assert callable(api_main)
         print("NICO package entry points and complete production API import verified.")
         PY
+        } > entrypoint-debug.log 2>&1
+        status=$?
+        cat entrypoint-debug.log
+        exit $status
+
+    - name: Upload entrypoint debug
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: entrypoint-debug
+        path: entrypoint-debug.log
 
     - name: Install frontend dependencies
       working-directory: apps/web
