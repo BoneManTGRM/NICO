@@ -51,6 +51,7 @@ def test_active_same_repository_run_is_reused_instead_of_starting_duplicate(monk
     existing = _record()
     store.put("assessment_runs", existing["run_id"], existing)
     monkeypatch.setattr(guard, "STORE", store)
+    monkeypatch.setenv("NICO_ENABLE_MEMORY_START_GUARD", "true")
     monkeypatch.setattr(
         guard,
         "_live_state",
@@ -67,6 +68,7 @@ def test_active_same_repository_run_is_reused_instead_of_starting_duplicate(monk
     response = api.mid_assessment_response(_request())
 
     assert result["server_side_duplicate_prevention"] is True
+    assert result["durable_shared_state_required"] is True
     assert starts["count"] == 0
     assert response["run_id"] == existing["run_id"]
     assert response["idempotent_start_reuse"] is True
@@ -89,6 +91,7 @@ def test_completed_report_and_review_run_releases_new_start(monkeypatch) -> None
     existing["response"]["scanner"] = {"scan_id": "scan_existing_guard", "status": "complete"}
     store.put("assessment_runs", existing["run_id"], existing)
     monkeypatch.setattr(guard, "STORE", store)
+    monkeypatch.setenv("NICO_ENABLE_MEMORY_START_GUARD", "true")
     monkeypatch.setattr(
         guard,
         "_live_state",
@@ -106,6 +109,25 @@ def test_completed_report_and_review_run_releases_new_start(monkeypatch) -> None
 
     assert starts["count"] == 1
     assert response["run_id"] == "midrun_new_guard"
+
+
+def test_memory_only_mode_does_not_scan_shared_history_without_explicit_opt_in(monkeypatch) -> None:
+    store = MemoryAdapter()
+    store.put("assessment_runs", "midrun_memory_old", _record("midrun_memory_old"))
+    monkeypatch.setattr(guard, "STORE", store)
+    monkeypatch.delenv("NICO_ENABLE_MEMORY_START_GUARD", raising=False)
+    starts = {"count": 0}
+
+    def fake_start(_req):
+        starts["count"] += 1
+        return {"status": "running", "run_id": "midrun_memory_new"}
+
+    monkeypatch.setattr(api, "mid_assessment_response", fake_start)
+    guard.install_mid_start_guard()
+    response = api.mid_assessment_response(_request())
+
+    assert starts["count"] == 1
+    assert response["run_id"] == "midrun_memory_new"
 
 
 def test_recovery_required_exact_run_blocks_replacement() -> None:
