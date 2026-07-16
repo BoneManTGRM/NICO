@@ -1,5 +1,6 @@
 "use client";
 
+import type {ComponentProps} from "react";
 import {useEffect, useState} from "react";
 import {createPortal} from "react-dom";
 import MidScoreIntelligence from "./assessment/MidScoreIntelligence";
@@ -9,6 +10,7 @@ const TIER_EVENT = "nico:assessment-tier-selected";
 const MOUNT_ID = "nico-mid-score-intelligence-mount";
 
 type JsonRecord = Record<string, unknown>;
+type IntelligenceProps = ComponentProps<typeof MidScoreIntelligence>;
 
 function requestUrl(input: RequestInfo | URL): URL | null {
   try {
@@ -98,8 +100,10 @@ export default function MidScoreIntelligencePortal() {
 
   if (!midSelected || !payload || !mount) return null;
   const assessment = isRecord(payload.assessment) ? payload.assessment : null;
+  const intelligenceResult = payload as unknown as IntelligenceProps["result"];
+  const intelligenceDocument = assessment as unknown as IntelligenceProps["document"];
   return createPortal(
-    <MidScoreIntelligence result={payload as any} document={assessment as any} />,
+    <MidScoreIntelligence result={intelligenceResult} document={intelligenceDocument} />,
     mount,
   );
 }
