@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-ASSESSMENT_PERSISTENCE_TRUTH_VERSION = "nico.assessment_persistence_truth.v1"
+ASSESSMENT_PERSISTENCE_TRUTH_VERSION = "nico.assessment_persistence_truth.v2"
 _MARKER = "_nico_assessment_persistence_truth_v1"
 
 
@@ -44,23 +44,23 @@ def _truthful_persistence_metadata(store: Any = None, *, restored: bool = False)
 
 
 def install_assessment_persistence_truth() -> dict[str, Any]:
-    from nico import full_assessment_runs, mid_assessment_runs
+    from nico import full_assessment_runs, mid_assessment_api, mid_assessment_runs
 
     current = full_assessment_runs.persistence_metadata
-    if getattr(current, _MARKER, False):
-        return {
-            "status": "already_installed",
-            "version": ASSESSMENT_PERSISTENCE_TRUTH_VERSION,
-        }
-    setattr(_truthful_persistence_metadata, _MARKER, True)
-    setattr(_truthful_persistence_metadata, "_nico_previous", current)
+    already_installed = bool(getattr(current, _MARKER, False))
+    if not already_installed:
+        setattr(_truthful_persistence_metadata, _MARKER, True)
+        setattr(_truthful_persistence_metadata, "_nico_previous", current)
     full_assessment_runs.persistence_metadata = _truthful_persistence_metadata
-    # Mid imports the helper by value, so rebind that module explicitly.
+    # Mid imports the helper by value in both the persistence and API modules,
+    # so all call sites must be rebound explicitly.
     mid_assessment_runs.persistence_metadata = _truthful_persistence_metadata
+    mid_assessment_api.persistence_metadata = _truthful_persistence_metadata
     return {
-        "status": "installed",
+        "status": "already_installed" if already_installed else "installed",
         "version": ASSESSMENT_PERSISTENCE_TRUTH_VERSION,
-        "mid_binding_installed": mid_assessment_runs.persistence_metadata is _truthful_persistence_metadata,
+        "mid_run_binding_installed": mid_assessment_runs.persistence_metadata is _truthful_persistence_metadata,
+        "mid_api_binding_installed": mid_assessment_api.persistence_metadata is _truthful_persistence_metadata,
         "full_binding_installed": full_assessment_runs.persistence_metadata is _truthful_persistence_metadata,
         "sqlite_writable_equals_durable": False,
         "container_survival_requires_verification": True,
