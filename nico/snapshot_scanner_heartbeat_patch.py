@@ -13,6 +13,8 @@ from nico.storage import STORE, utc_now
 SNAPSHOT_SCANNER_HEARTBEAT_VERSION = "nico.snapshot_scanner_heartbeat.v4"
 _WORKER_MARKER = "_nico_snapshot_scanner_heartbeat_worker_v3"
 _TOOL_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v3"
+_LEGACY_WORKER_MARKER = "_nico_snapshot_scanner_heartbeat_worker_v2"
+_LEGACY_TOOL_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 _CONTEXT = threading.local()
 _ACTIVE_STATUSES = {"queued", "running"}
 
@@ -38,6 +40,14 @@ def _effective_timeout_seconds(spec: Any) -> int:
     return requested
 
 
+def _fallback_tool_timeout(tool_name: str) -> int:
+    if tool_name == "gitleaks":
+        return 120
+    if tool_name == "trufflehog":
+        return 180
+    return 120
+
+
 def _heartbeat_patch(tool_name: str, started_monotonic: float, timeout_seconds: int) -> dict[str, Any]:
     elapsed = round(max(0.0, time.monotonic() - started_monotonic), 1)
     remaining = round(max(0.0, float(timeout_seconds) - elapsed), 1)
@@ -57,11 +67,17 @@ def _heartbeat_patch(tool_name: str, started_monotonic: float, timeout_seconds: 
     }
 
 
-def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float, timeout_seconds: int) -> None:
+def _write_heartbeat(
+    scan_id: str,
+    tool_name: str,
+    started_monotonic: float,
+    timeout_seconds: int | None = None,
+) -> None:
     """Persist bounded liveness and watchdog state without replacing newer terminal state."""
 
     try:
-        patch = _heartbeat_patch(tool_name, started_monotonic, timeout_seconds)
+        effective_timeout = int(timeout_seconds or _fallback_tool_timeout(tool_name))
+        patch = _heartbeat_patch(tool_name, started_monotonic, effective_timeout)
         patcher = getattr(STORE, "patch_heartbeat", None)
         if callable(patcher):
             updated = patcher(
@@ -119,6 +135,7 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
                     _CONTEXT.scan_id = previous
 
         setattr(worker_with_context, _WORKER_MARKER, True)
+        setattr(worker_with_context, _LEGACY_WORKER_MARKER, True)
         setattr(worker_with_context, "_nico_previous", current_worker)
         snapshot_scanner_worker._run_snapshot_scan = worker_with_context
 
@@ -154,10 +171,14 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
                 _write_heartbeat(scan_id, tool_name, started, timeout_seconds)
 
         setattr(tool_with_heartbeat, _TOOL_MARKER, True)
+        setattr(tool_with_heartbeat, _LEGACY_TOOL_MARKER, True)
         setattr(tool_with_heartbeat, "_nico_previous", current_tool)
     else:
         tool_with_heartbeat = current_tool
+        setattr(tool_with_heartbeat, _LEGACY_TOOL_MARKER, True)
 
+    active_worker = snapshot_scanner_worker._run_snapshot_scan
+    setattr(active_worker, _LEGACY_WORKER_MARKER, True)
     scanner_tool_runners.run_scanner_tool = tool_with_heartbeat
     # The snapshot worker imports the scanner tool module as ``tool_runners``.
     snapshot_scanner_worker.tool_runners.run_scanner_tool = tool_with_heartbeat
@@ -170,6 +191,7 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
         "durable_heartbeat": True,
         "watchdog_countdown_persisted": True,
         "hard_timeout_then_continue": True,
+        "legacy_marker_compatibility": True,
         "atomic_status_guard": callable(getattr(STORE, "patch_heartbeat", None)),
         "terminal_state_can_be_reopened": False,
         "source_runner_binding_installed": scanner_tool_runners.run_scanner_tool is tool_with_heartbeat,
