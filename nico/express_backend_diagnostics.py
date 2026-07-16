@@ -12,9 +12,15 @@ from fastapi import HTTPException
 
 import nico.express_async_api as express
 import nico.express_review_target as express_review
+from nico.express_snapshot_pipeline import (
+    EXPRESS_SNAPSHOT_PIPELINE_VERSION,
+    attach_exact_express_scanner_evidence,
+    start_express_snapshot_scan,
+    wait_for_express_snapshot_scan,
+)
 from nico.storage import utc_now
 
-EXPRESS_BACKEND_DIAGNOSTICS_VERSION = "nico.express_backend_diagnostics.v2"
+EXPRESS_BACKEND_DIAGNOSTICS_VERSION = "nico.express_backend_diagnostics.v3"
 _MARKER = "_nico_express_backend_diagnostics_v1"
 _LOGGER = logging.getLogger(__name__)
 _SAFE_EXCEPTION_CLASS = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,119}$")
@@ -22,9 +28,11 @@ _SAFE_STAGES = {
     "record_running",
     "import_api",
     "validate_request",
+    "start_snapshot_scanner",
     "collect_assessment",
     "classify_blocked_result",
-    "attach_existing_worker_evidence",
+    "wait_snapshot_scanner",
+    "attach_exact_scanner_evidence",
     "enrich_scanner_evidence",
     "apply_report_accuracy",
     "attach_review_target",
@@ -34,6 +42,7 @@ _SAFE_STAGES = {
     "attach_evidence_bundle",
     "attach_client_acceptance",
     "sanitize_response",
+    "validate_final_artifacts",
     "persist_final_response",
 }
 
@@ -62,7 +71,6 @@ def _attach_failure_stage(failure: dict[str, Any], stage: str) -> dict[str, Any]
     failure["failure_stage"] = safe_stage
     progress = failure.get("progress") if isinstance(failure.get("progress"), list) else []
     if progress and isinstance(progress[0], dict):
-        progress[0]["step"] = safe_stage
         evidence = progress[0].get("evidence") if isinstance(progress[0].get("evidence"), dict) else {}
         evidence["failure_stage"] = safe_stage
         progress[0]["evidence"] = evidence
@@ -92,13 +100,7 @@ def _diagnostic_failure(
         evidence=diagnostic,
     )
     failure.update(diagnostic)
-    progress = failure.get("progress") if isinstance(failure.get("progress"), list) else []
-    if progress and isinstance(progress[0], dict):
-        progress[0]["step"] = diagnostic["failure_stage"]
-        evidence = progress[0].get("evidence") if isinstance(progress[0].get("evidence"), dict) else {}
-        evidence.update(diagnostic)
-        progress[0]["evidence"] = evidence
-    return failure
+    return _attach_failure_stage(failure, stage)
 
 
 def _validated_payload(api_main: Any, request_payload: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
@@ -106,6 +108,10 @@ def _validated_payload(api_main: Any, request_payload: dict[str, Any]) -> tuple[
     validated = req.model_dump() if hasattr(req, "model_dump") else req.dict()
     payload = deepcopy(request_payload)
     payload.update(validated)
+    payload["authorized"] = bool(request_payload.get("authorized") or request_payload.get("authorization_confirmed"))
+    payload["authorization_confirmed"] = bool(request_payload.get("authorization_confirmed") or request_payload.get("authorized"))
+    payload["authorized_by"] = str(request_payload.get("authorized_by") or "requester_confirmation")
+    payload["authorization_scope"] = str(request_payload.get("authorization_scope") or "repository assessment only")
     return req, payload
 
 
@@ -135,6 +141,7 @@ def _publish_live_stage(
     message: str,
     worker_started_at: str,
     scanner: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evidence = _worker_identity(worker_started_at, backend_stage)
     response = express._response(
@@ -149,13 +156,18 @@ def _publish_live_stage(
     response["status_truth"] = "durable_worker_stage"
     if scanner:
         response["scanner"] = deepcopy(scanner)
+        response["scan_id"] = str(scanner.get("scan_id") or "")
     elif ui_stage == "repository_evidence":
         response["scanner"] = {
             "status": "pending",
-            "current_stage": "awaiting_repository_evidence",
+            "current_stage": "awaiting_repository_snapshot",
             "progress_percent": 0,
-            "message": "Scanner reconciliation starts after repository evidence collection completes.",
+            "message": "Exact-commit scanner execution starts after snapshot capture.",
         }
+    if snapshot:
+        response["repository_snapshot"] = deepcopy(snapshot)
+        response["snapshot_id"] = str(snapshot.get("snapshot_id") or "")
+        response["snapshot_commit_sha"] = str(snapshot.get("commit_sha") or "")
     express._record(run_id, request_payload, response)
     return response
 
@@ -163,6 +175,7 @@ def _publish_live_stage(
 def _scanner_projection(result: dict[str, Any], *, fallback_status: str, fallback_stage: str) -> dict[str, Any]:
     candidates = (
         result.get("scanner"),
+        result.get("scanner_run"),
         result.get("scanner_evidence"),
         result.get("scanner_worker"),
     )
@@ -173,14 +186,85 @@ def _scanner_projection(result: dict[str, Any], *, fallback_status: str, fallbac
     return scanner
 
 
-def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> None:
-    """Execute one accepted Express run with bounded diagnostics and truthful stages.
+def _scan_message(scan: dict[str, Any]) -> str:
+    status = str(scan.get("status") or "unknown")
+    tool = str(scan.get("active_tool") or "").replace("-", " ")
+    progress = max(0, min(100, int(scan.get("progress_percent") or 0)))
+    if tool and status in {"queued", "running"}:
+        return f"Exact-snapshot scanner is running {tool} ({progress}% scanner progress)."
+    return f"Exact-snapshot scanner status is {status} ({progress}% scanner progress)."
 
-    The public failure record contains only a bounded stage, exception class, and
-    non-secret diagnostic ID. Live lifecycle records are written before each
-    material phase so the browser never remains at request-accepted while the
-    backend is performing repository, scanner, scoring, or report work.
-    """
+
+def _validate_final_artifacts(result: dict[str, Any]) -> None:
+    scanner = _scanner_projection(result, fallback_status="not_started", fallback_stage="not_started")
+    attachment = result.get("worker_evidence_attachment") if isinstance(result.get("worker_evidence_attachment"), dict) else {}
+    if scanner.get("status") != "complete" or scanner.get("snapshot_match") is not True:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "failed",
+                "code": "express_scanner_completion_gate_failed",
+                "message": "Express report generation was blocked because exact-snapshot scanner completion was not verified.",
+                "scanner": scanner,
+                "scan_id": scanner.get("scan_id") or "",
+                "duplicate_start_allowed": False,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+        )
+    if attachment.get("status") != "complete" or attachment.get("mode") != "exact_same_run_snapshot_bound":
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "failed",
+                "code": "express_scanner_attachment_gate_failed",
+                "message": "Express report generation was blocked because the completed scanner was not attached to the same exact run and snapshot.",
+                "scanner": scanner,
+                "scan_id": scanner.get("scan_id") or "",
+                "duplicate_start_allowed": False,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+        )
+
+    reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
+    markdown = str(reports.get("markdown") or "")
+    html = str(reports.get("html") or "")
+    pdf = str(reports.get("pdf_base64") or reports.get("pdf") or "")
+    if len(markdown.strip()) < 500 or len(html.strip()) < 500 or len(pdf.strip()) < 100:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "failed",
+                "code": "express_report_artifacts_missing",
+                "message": "Express execution finished its analysis but did not produce complete Markdown, HTML, and PDF report artifacts. NICO refused to publish a completed result.",
+                "scanner": scanner,
+                "scan_id": scanner.get("scan_id") or "",
+                "duplicate_start_allowed": False,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+        )
+    manifest = result.get("report_quality_manifest") if isinstance(result.get("report_quality_manifest"), dict) else {}
+    if manifest.get("status") == "blocked":
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "blocked",
+                "code": "express_report_quality_gate_blocked",
+                "message": "The Express report quality gate blocked the generated report. The draft was not published as complete.",
+                "scanner": scanner,
+                "scan_id": scanner.get("scan_id") or "",
+                "report_quality_manifest": manifest,
+                "duplicate_start_allowed": False,
+                "human_review_required": True,
+                "client_ready": False,
+            },
+        )
+
+
+def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> None:
+    """Execute one Express run with exact-snapshot scanners and bounded diagnostics."""
 
     stage = "record_running"
     worker_started_at = utc_now()
@@ -190,7 +274,7 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             request_payload,
             ui_stage="repository_evidence",
             backend_stage=stage,
-            message="Express worker started. Collecting authorized repository structure, activity, workflows, manifests, source signals, and baseline evidence.",
+            message="Express worker started. Capturing the exact repository commit before analysis and scanner execution.",
             worker_started_at=worker_started_at,
         )
 
@@ -199,6 +283,19 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
 
         stage = "validate_request"
         _req, payload = _validated_payload(api_main, request_payload)
+
+        stage = "start_snapshot_scanner"
+        snapshot, initial_scan = start_express_snapshot_scan(run_id, payload)
+        _publish_live_stage(
+            run_id,
+            request_payload,
+            ui_stage="repository_evidence",
+            backend_stage=stage,
+            message="Exact repository snapshot captured. Hosted evidence collection and the scanner suite are running against the same commit.",
+            worker_started_at=worker_started_at,
+            scanner=initial_scan,
+            snapshot=snapshot,
+        )
 
         stage = "collect_assessment"
         if api_main.extract_scanner_worker_artifact(payload):
@@ -216,6 +313,9 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
                     "project_id": request_payload.get("project_id") or "default_project",
                     "persistence": express._persistence(),
                     "updated_at": utc_now(),
+                    "scanner": initial_scan,
+                    "scan_id": initial_scan.get("scan_id") or "",
+                    "repository_snapshot": snapshot,
                     **_worker_identity(worker_started_at, stage),
                 }
             )
@@ -224,17 +324,39 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
 
         result["run_id"] = run_id
 
-        stage = "attach_existing_worker_evidence"
+        stage = "wait_snapshot_scanner"
+
+        def publish_scan(scan: dict[str, Any]) -> None:
+            _publish_live_stage(
+                run_id,
+                request_payload,
+                ui_stage="scanner_reconciliation",
+                backend_stage=stage,
+                message=_scan_message(scan),
+                worker_started_at=worker_started_at,
+                scanner=scan,
+                snapshot=snapshot,
+            )
+
+        scan = wait_for_express_snapshot_scan(
+            run_id,
+            snapshot,
+            initial_scan,
+            on_update=publish_scan,
+        )
+
+        stage = "attach_exact_scanner_evidence"
+        result = attach_exact_express_scanner_evidence(result, snapshot, scan)
         _publish_live_stage(
             run_id,
             request_payload,
             ui_stage="scanner_reconciliation",
             backend_stage=stage,
-            message="Repository evidence is attached. Reconciling dependency, secret, static-analysis, CI, complexity, and current-run scanner evidence.",
+            message="Exact-snapshot scanner suite completed and its same-run evidence was attached.",
             worker_started_at=worker_started_at,
-            scanner=_scanner_projection(result, fallback_status="reconciling", fallback_stage="scanner_reconciliation"),
+            scanner=scan,
+            snapshot=snapshot,
         )
-        result = api_main.attach_existing_worker_evidence(result, payload)
 
         stage = "enrich_scanner_evidence"
         result = api_main.enrich_payload_with_scanner_evidence(result)
@@ -247,7 +369,8 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             backend_stage=stage,
             message="Scanner evidence is attached. Applying source classification, contradiction removal, unavailable-evidence disclosure, and false-positive controls.",
             worker_started_at=worker_started_at,
-            scanner=_scanner_projection(result, fallback_status="complete", fallback_stage="scanner_reconciliation_complete"),
+            scanner=scan,
+            snapshot=snapshot,
         )
         result = api_main.apply_report_accuracy(result)
 
@@ -262,7 +385,8 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             backend_stage=stage,
             message="Evidence classification is complete. Reconciling section scores and maturity against the final retained evidence without score inflation.",
             worker_started_at=worker_started_at,
-            scanner=_scanner_projection(result, fallback_status="complete", fallback_stage="complete"),
+            scanner=scan,
+            snapshot=snapshot,
         )
         result = api_main.polish_express_result(result)
 
@@ -272,9 +396,10 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             request_payload,
             ui_stage="report_generation",
             backend_stage=stage,
-            message="Final scores are available. Generating the professional report, decision summary, repair intelligence, and downloadable formats.",
+            message="Final scores are available. Generating Markdown, HTML, professional PDF, repair intelligence, and the decision summary.",
             worker_started_at=worker_started_at,
-            scanner=_scanner_projection(result, fallback_status="complete", fallback_stage="complete"),
+            scanner=scan,
+            snapshot=snapshot,
         )
         result = api_main.finalize_express_result_consistency(result)
 
@@ -289,7 +414,8 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             backend_stage=stage,
             message="Report formats are generated. Applying evidence-ledger, consistency, acceptance, report-quality, and required human-review gates.",
             worker_started_at=worker_started_at,
-            scanner=_scanner_projection(result, fallback_status="complete", fallback_stage="complete"),
+            scanner=scan,
+            snapshot=snapshot,
         )
         result = api_main.attach_evidence_artifact_bundle(result)
 
@@ -306,19 +432,32 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
         response_payload["persistence"] = express._persistence()
         response_payload["current_stage"] = "complete"
         response_payload["progress_percent"] = 100
+        response_payload.update(_worker_identity(worker_started_at, stage))
+        response_payload["scanner"] = deepcopy(scan)
+        response_payload["scan_id"] = str(scan.get("scan_id") or "")
+        response_payload["repository_snapshot"] = deepcopy(snapshot)
+        response_payload["snapshot_id"] = str(snapshot.get("snapshot_id") or "")
+        response_payload["snapshot_commit_sha"] = str(snapshot.get("commit_sha") or "")
+        response_payload["worker_evidence_attachment"] = deepcopy(result.get("worker_evidence_attachment") or {})
+        response_payload["updated_at"] = utc_now()
+
+        stage = "validate_final_artifacts"
+        _validate_final_artifacts(response_payload)
         response_payload["progress"] = express._stage_progress(
             "complete",
             "complete",
-            "Express assessment completed. Draft report artifacts are ready for required human review.",
+            "Express assessment completed. Exact-snapshot scanner evidence and draft report artifacts are ready for required human review.",
             evidence={
                 **_worker_identity(worker_started_at, stage),
-                "report_formats_ready": bool((response_payload.get("reports") or {}).get("pdf_base64")),
+                "scan_id": scan.get("scan_id") or "",
+                "snapshot_id": snapshot.get("snapshot_id") or "",
+                "snapshot_commit_sha": snapshot.get("commit_sha") or "",
+                "snapshot_match": True,
+                "report_formats_ready": True,
                 "score_reconciled": True,
             },
         )
-        response_payload.update(_worker_identity(worker_started_at, stage))
-        response_payload["scanner"] = _scanner_projection(result, fallback_status="complete", fallback_stage="complete")
-        response_payload["updated_at"] = utc_now()
+        response_payload["backend_stage"] = stage
         api_main._LAST_HOSTED_ASSESSMENT = response_payload
 
         _clear_request_local_payload()
@@ -327,7 +466,8 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
         express._record(run_id, request_payload, response_payload)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        terminal_status = "blocked" if exc.status_code < 500 else "failed"
+        detail_status = str(detail.get("status") or "").lower()
+        terminal_status = "interrupted" if detail_status == "interrupted" else "blocked" if detail_status == "blocked" or exc.status_code < 500 else "failed"
         failure = express._response(
             run_id,
             request_payload,
@@ -339,9 +479,22 @@ def execute_with_diagnostics(run_id: str, request_payload: dict[str, Any]) -> No
             evidence={
                 **_worker_identity(worker_started_at, stage),
                 "http_status": exc.status_code,
+                "scan_id": detail.get("scan_id") or "",
+                "recovery_required": bool(detail.get("recovery_required")),
             },
         )
         failure.update(_worker_identity(worker_started_at, stage))
+        for key in (
+            "scan_id",
+            "scanner",
+            "repository_snapshot",
+            "recovery_required",
+            "recovery_path",
+            "report_quality_manifest",
+        ):
+            if key in detail:
+                failure[key] = deepcopy(detail[key])
+        failure["client_ready"] = False
         _attach_failure_stage(failure, stage)
         express._record(run_id, request_payload, failure)
     except Exception as exc:
@@ -375,6 +528,8 @@ def install_express_backend_diagnostics() -> dict[str, Any]:
             "version": EXPRESS_BACKEND_DIAGNOSTICS_VERSION,
             "bounded_diagnostics": True,
             "truthful_live_stages": True,
+            "exact_snapshot_scanner_required": True,
+            "report_artifact_gate": True,
             "single_final_record_write": True,
         }
 
@@ -384,9 +539,14 @@ def install_express_backend_diagnostics() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": EXPRESS_BACKEND_DIAGNOSTICS_VERSION,
+        "snapshot_pipeline_version": EXPRESS_SNAPSHOT_PIPELINE_VERSION,
         "bounded_diagnostics": True,
         "truthful_live_stages": True,
         "worker_start_identity": True,
+        "exact_snapshot_scanner_required": True,
+        "same_run_scanner_identity_required": True,
+        "report_artifact_gate": True,
+        "report_without_scanner_allowed": False,
         "public_exception_text_exposed": False,
         "authorized_traceback_logging": True,
         "single_final_record_write": True,
