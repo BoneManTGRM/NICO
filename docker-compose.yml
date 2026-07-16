@@ -4,11 +4,16 @@ services:
       context: .
       args:
         NICO_SCANNER_INSTALL_STRICT: "false"
-    command: uvicorn nico.api.production:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port 8000 --workers 1
     environment:
       NICO_HOME: /data
-      NICO_DB_PATH: /data/nico.sqlite3
       NICO_REPORT_DIR: /data/reports
+      NICO_ENABLE_SQLITE_DURABLE_STORAGE: "true"
+      NICO_SQLITE_PATH: /data/nico-runtime.sqlite3
+      NICO_SQLITE_DURABLE_MOUNT_VERIFIED: "true"
+      NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE: "true"
+      NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "true"
+      NICO_WEB_WORKERS: "1"
       NICO_CORS_ORIGINS: http://localhost:3000
       NICO_ENABLE_SCANNER_EXECUTION: "true"
       NICO_ALLOW_PROJECT_COMMANDS: "false"
