@@ -28,7 +28,6 @@ dev = [
 scanners = [
   "pip-audit>=2.10,<3",
   "bandit>=1.9,<2",
-  "semgrep>=1.168,<2",
 ]
 
 [project.scripts]
