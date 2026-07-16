@@ -72,6 +72,7 @@ def test_active_same_repository_run_is_reused_instead_of_starting_duplicate(monk
     assert response["idempotent_start_reuse"] is True
     assert response["duplicate_start_prevented"] is True
     assert response["start_guard"]["decision"] == "reuse_existing_exact_run"
+    assert response["start_guard"]["cross_worker_serialization"] is True
 
 
 def test_completed_report_and_review_run_releases_new_start(monkeypatch) -> None:
@@ -131,3 +132,81 @@ def test_terminal_failed_run_does_not_permanently_block_a_new_assessment() -> No
 def test_repository_identity_is_normalized_for_server_side_deduplication() -> None:
     assert guard._canonical_repository("https://github.com/Owner/Repository.git?x=1") == "owner/repository"
     assert guard._canonical_repository("owner/repository/") == "owner/repository"
+
+
+def test_postgres_mode_acquires_and_releases_cross_worker_advisory_lock(monkeypatch) -> None:
+    executed: list[tuple[str, tuple]] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql: str, params: tuple):
+            executed.append((sql, params))
+
+        def fetchone(self):
+            return {"pg_try_advisory_lock": True}
+
+    class Connection:
+        closed = False
+
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            self.closed = True
+
+    connection = Connection()
+
+    class Adapter:
+        def _connect(self):
+            return connection
+
+    class Store:
+        adapter = Adapter()
+
+        @staticmethod
+        def status():
+            return {"adapter": "postgres", "persistence_available": True}
+
+        @staticmethod
+        def list(table: str, customer_id: str | None = None, project_id: str | None = None):
+            return []
+
+    monkeypatch.setattr(guard, "STORE", Store())
+    monkeypatch.setenv("NICO_MID_START_LOCK_WAIT_SECONDS", "1")
+
+    with guard._serialized_start("nico:mid-start:customer:project:owner/repository"):
+        assert connection.closed is False
+
+    assert connection.closed is True
+    assert any("pg_try_advisory_lock" in sql for sql, _ in executed)
+    assert any("pg_advisory_unlock" in sql for sql, _ in executed)
+
+
+def test_postgres_serialization_failure_is_fail_closed(monkeypatch) -> None:
+    class Adapter:
+        def _connect(self):
+            raise RuntimeError("database unavailable")
+
+    class Store:
+        adapter = Adapter()
+
+        @staticmethod
+        def status():
+            return {"adapter": "postgres", "persistence_available": True}
+
+    monkeypatch.setattr(guard, "STORE", Store())
+
+    try:
+        with guard._serialized_start("nico:mid-start:test"):
+            raise AssertionError("unreachable")
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 503
+        assert exc.detail["code"] == "mid_start_guard_unavailable"
+        assert exc.detail["duplicate_start_allowed"] is False
+    else:
+        raise AssertionError("Expected fail-closed HTTPException")
