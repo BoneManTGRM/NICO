@@ -61,15 +61,21 @@ function limitationItems(section: Section): string[] {
   ]);
 }
 
+function isUnscored(section: Section): boolean {
+  const status = statusText(section).toLowerCase();
+  return section.score == null || status.includes("gray") || status.includes("unavailable") || status.includes("not scored");
+}
+
 function sectionTone(section: Section): Tone {
   const status = statusText(section).toLowerCase();
   const score = typeof section.score === "number" ? section.score : null;
   const limitations = limitationItems(section).length;
-  if (["red", "failed", "error", "blocked"].some((value) => status.includes(value)) || (score != null && score < 60)) return "critical";
+  if (["red", "failed", "error", "blocked"].some((value) => status.includes(value))) return "critical";
+  if (isUnscored(section)) return "neutral";
+  if (score != null && score < 60) return "critical";
   if (["yellow", "limited", "pending", "review"].some((value) => status.includes(value)) || limitations > 0 || (score != null && score < 80)) return "warning";
-  if (score == null || status.includes("gray") || status.includes("unavailable") || status.includes("not scored")) return "neutral";
-  if (["green", "verified", "complete", "passed"].some((value) => status.includes(value)) && score >= 80) return "healthy";
-  return score >= 80 ? "healthy" : "warning";
+  if (["green", "verified", "complete", "passed"].some((value) => status.includes(value)) && score != null && score >= 80) return "healthy";
+  return score != null && score >= 80 ? "healthy" : "warning";
 }
 
 function sectionKey(section: Section, index: number): string {
@@ -84,7 +90,7 @@ function matchesFilter(section: Section, filter: Filter): boolean {
   const tone = sectionTone(section);
   if (filter === "attention") return tone === "critical" || tone === "warning";
   if (filter === "verified") return tone === "healthy";
-  if (filter === "unscored") return tone === "neutral" || section.score == null;
+  if (filter === "unscored") return isUnscored(section);
   return true;
 }
 
@@ -157,7 +163,7 @@ export default function MidSectionReview({sections = []}: Props) {
     return {
       attention: tones.filter((tone) => tone === "critical" || tone === "warning").length,
       verified: tones.filter((tone) => tone === "healthy").length,
-      unscored: tones.filter((tone) => tone === "neutral").length,
+      unscored: rows.filter(isUnscored).length,
       evidence: rows.reduce((total, section) => total + unique(section.evidence || []).length, 0),
       findings: rows.reduce((total, section) => total + unique(section.findings || []).length, 0),
       gaps: rows.reduce((total, section) => total + limitationItems(section).length, 0),
@@ -165,7 +171,7 @@ export default function MidSectionReview({sections = []}: Props) {
   }, [rows]);
 
   const priorities = useMemo(() => rows
-    .filter((section) => ["critical", "warning"].includes(sectionTone(section)))
+    .filter((section) => TECHNICAL_IDS.has(String(section.id || "")) && ["critical", "warning"].includes(sectionTone(section)))
     .sort((left, right) => {
       const leftScore = typeof left.score === "number" ? left.score : 101;
       const rightScore = typeof right.score === "number" ? right.score : 101;
@@ -207,7 +213,7 @@ export default function MidSectionReview({sections = []}: Props) {
     </div>
 
     <div className={styles.reviewMetrics}>
-      <article><b>Needs attention</b><span>{metrics.attention}</span><small>Red, limited, or below 80</small></article>
+      <article><b>Needs attention</b><span>{metrics.attention}</span><small>Scored controls with risk or limitations</small></article>
       <article><b>Verified strength</b><span>{metrics.verified}</span><small>Evidence-supported controls</small></article>
       <article><b>Unscored context</b><span>{metrics.unscored}</span><small>Requires human evidence</small></article>
       <article><b>Evidence units</b><span>{metrics.evidence}</span><small>{metrics.findings} findings · {metrics.gaps} gaps</small></article>
