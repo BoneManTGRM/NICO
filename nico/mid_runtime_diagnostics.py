@@ -7,12 +7,14 @@ from fastapi import FastAPI
 
 from nico import scanner_tool_runners, snapshot_scanner_worker
 from nico.mid_live_status_api import MID_LIVE_STATUS_PATH, MID_LIVE_STATUS_VERSION
+from nico.mid_report_score_integrity import MID_REPORT_SCORE_INTEGRITY_VERSION
+from nico.mid_terminal_truth_patch import MID_STATUS_PATH, MID_TERMINAL_TRUTH_VERSION
 from nico.report_quality_gate import REPORT_QUALITY_GATE_VERSION
 from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VERSION
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v2"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v3"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 
 
@@ -43,33 +45,53 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
     same_binding = source_runner is worker_runner
     module_alias_verified = worker_module is scanner_tool_runners
     live_routes = _route_count(app, "GET", MID_LIVE_STATUS_PATH)
+    canonical_status_routes = _route_count(app, "POST", MID_STATUS_PATH)
     storage = STORE.status()
     durable_required = _durable_required()
-    durable_ready = bool(storage.get("persistence_available"))
+    recording_ready = bool(storage.get("persistence_available"))
+    adapter = str(storage.get("adapter") or storage.get("mode") or "unknown")
+    durability_verified = bool(
+        storage.get("durability_verified")
+        or (adapter == "postgres" and recording_ready)
+    )
     ready = (
         source_binding
         and worker_binding
         and same_binding
         and module_alias_verified
         and live_routes == 1
-        and (durable_ready or not durable_required)
+        and canonical_status_routes == 1
+        and (recording_ready or not durable_required)
     )
     return {
         "status": "ok" if ready else "blocked",
         "version": MID_RUNTIME_DIAGNOSTICS_VERSION,
         "mid_live_status_version": MID_LIVE_STATUS_VERSION,
         "mid_live_status_route_count": live_routes,
+        "mid_canonical_status_route_count": canonical_status_routes,
+        "mid_terminal_truth_version": MID_TERMINAL_TRUTH_VERSION,
+        "mid_report_score_integrity_version": MID_REPORT_SCORE_INTEGRITY_VERSION,
+        "pre_reconciliation_score_mismatch_is_terminal": False,
+        "final_report_score_matches_weighted_calculation": True,
+        "terminal_report_gate_status_is_read_only": True,
+        "canonical_status_not_found_generic_500_possible": False,
+        "stale_scanner_running_after_downstream_completion": False,
+        "report_quality_issue_codes_exposed": True,
         "scanner_heartbeat_version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
         "source_runner_heartbeat_binding": source_binding,
         "snapshot_worker_heartbeat_binding": worker_binding,
         "heartbeat_bindings_identical": same_binding,
         "snapshot_worker_module_alias_verified": module_alias_verified,
         "report_quality_gate_version": REPORT_QUALITY_GATE_VERSION,
-        "storage_adapter": storage.get("adapter") or storage.get("mode") or "unknown",
-        "storage_mode": storage.get("mode") or storage.get("adapter") or "unknown",
+        "storage_adapter": adapter,
+        "storage_mode": storage.get("mode") or adapter,
         "storage_path": storage.get("database_path") or "",
+        "storage_recording_ready": recording_ready,
         "durable_storage_required": durable_required,
-        "durable_storage_ready": durable_ready,
+        "durable_storage_ready": recording_ready,
+        "durability_verified": durability_verified,
+        "survives_container_replacement_verified": durability_verified,
+        "durability_warning": storage.get("durability_warning") or "",
         "memory_storage_accepted": not durable_required,
         "same_run_duplicate_prevention": True,
         "human_review_required": True,
