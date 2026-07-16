@@ -4,8 +4,10 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v2"
-_MARKER = "_nico_mid_stage_truth_v2"
+from nico.mid_score_intelligence import attach_mid_score_intelligence
+
+MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v4"
+_MARKER = "_nico_mid_stage_truth_v4"
 _ACTIVE = {"queued", "running", "pending", "planned"}
 _TERMINAL = {"complete", "completed", "blocked", "failed", "error", "not_started"}
 _MID_PRESENTATION_REPLACEMENTS = (
@@ -83,6 +85,8 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
             evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
             evidence["assessment_type"] = "mid"
             evidence["generic_full_report_generated"] = False
+            evidence["score_contract"] = "seven_fixed_technical_weights"
+            evidence["typescript_static_evidence_path"] = "mid_only_post_scorecard_adjustment"
             item["evidence"] = evidence
 
     report_item = next((item for item in progress if str(item.get("step") or "") == "reports"), None)
@@ -154,7 +158,7 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
-    return output
+    return attach_mid_score_intelligence(output)
 
 
 def install_mid_stage_truth_patch() -> dict[str, Any]:
@@ -162,7 +166,10 @@ def install_mid_stage_truth_patch() -> dict[str, Any]:
 
     current: Callable[[dict[str, Any]], dict[str, Any]] = mid_assessment_api._attach_mid_contract
     if getattr(current, _MARKER, False):
-        return {"status": "already_installed", "version": MID_STAGE_TRUTH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": MID_STAGE_TRUTH_VERSION,
+        }
 
     @wraps(current)
     def attach_with_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
@@ -178,6 +185,9 @@ def install_mid_stage_truth_patch() -> dict[str, Any]:
         "generic_full_presentation_labels_exposed": False,
         "dedicated_mid_planned_labels_exposed": True,
         "mid_scorecard_wording": True,
+        "mid_score_intelligence_attached": True,
+        "mid_only_typescript_score_handler": True,
+        "express_direct_comparison_allowed": False,
         "same_run_identity_required": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
