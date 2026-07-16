@@ -11,6 +11,9 @@ Use this page to find the current authoritative document for an operating questi
 - [`PRODUCTION_RELEASE_GATE.md`](PRODUCTION_RELEASE_GATE.md) — exact-SHA deployment verification and rollback procedure.
 - [`hosted-readiness-runbook.md`](hosted-readiness-runbook.md) — hosted evidence and readiness checks.
 - [`NO_SERVER_ASSESSMENT.md`](NO_SERVER_ASSESSMENT.md) — local-first authorized assessment workflow.
+- [`SELF_HOSTING.md`](SELF_HOSTING.md) — Docker, storage, frontend, runtime verification, and upgrade guidance.
+- [`SCANNERS.md`](SCANNERS.md) — supported scanner matrix, pinned versions, outcomes, and update policy.
+- [`SAMPLES.md`](SAMPLES.md) — synthetic fixtures, workflow-generated samples, and claim boundaries.
 - [`SAFARI_HOSTED_APP.md`](SAFARI_HOSTED_APP.md) — hosted browser deployment setup.
 
 ## Commercial and licensing documents
