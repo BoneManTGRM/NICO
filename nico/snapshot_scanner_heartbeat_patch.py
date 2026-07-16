@@ -8,12 +8,13 @@ from functools import wraps
 from typing import Any, Callable
 
 from nico import scanner_tool_runners, scanner_worker, snapshot_scanner_worker
-from nico.storage import STORE
+from nico.storage import STORE, utc_now
 
-SNAPSHOT_SCANNER_HEARTBEAT_VERSION = "nico.snapshot_scanner_heartbeat.v2"
+SNAPSHOT_SCANNER_HEARTBEAT_VERSION = "nico.snapshot_scanner_heartbeat.v3"
 _WORKER_MARKER = "_nico_snapshot_scanner_heartbeat_worker_v2"
 _TOOL_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 _CONTEXT = threading.local()
+_ACTIVE_STATUSES = {"queued", "running"}
 
 
 def _heartbeat_interval_seconds() -> int:
@@ -25,26 +26,45 @@ def _heartbeat_interval_seconds() -> int:
 
 
 def _write_heartbeat(scan_id: str, tool_name: str, started_monotonic: float) -> None:
-    """Persist bounded liveness evidence while a scanner tool executes."""
+    """Persist bounded liveness without replacing newer scanner state."""
 
     try:
+        patcher = getattr(STORE, "patch_heartbeat", None)
+        if callable(patcher):
+            updated = patcher(
+                "scanner_runs",
+                scan_id,
+                patch={
+                    "heartbeat_at": utc_now(),
+                    "heartbeat_process_id": os.getpid(),
+                    "heartbeat_thread": threading.current_thread().name[:120],
+                    "heartbeat_tool": tool_name[:120],
+                    "tool_elapsed_seconds": round(max(0.0, time.monotonic() - started_monotonic), 1),
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                },
+                active_statuses=_ACTIVE_STATUSES,
+                nested_key=None,
+            )
+            if isinstance(updated, dict):
+                scanner_worker.SCAN_JOBS[scan_id] = deepcopy(updated)
+            return
+
         durable = STORE.get("scanner_runs", scan_id)
         current = deepcopy(durable if isinstance(durable, dict) else scanner_worker.SCAN_JOBS.get(scan_id) or {})
-        if str(current.get("status") or "") not in {"queued", "running"}:
+        if str(current.get("status") or "") not in _ACTIVE_STATUSES:
             return
         now_text = scanner_worker.now_iso()
         sequence = int(current.get("heartbeat_sequence") or 0) + 1
         current.update(
             {
                 "scan_id": scan_id,
-                "status": "running",
-                "current_stage": "scanner_suite",
-                "active_tool": tool_name,
                 "heartbeat_at": now_text,
                 "updated_at": now_text,
                 "heartbeat_sequence": sequence,
                 "heartbeat_process_id": os.getpid(),
                 "heartbeat_thread": threading.current_thread().name[:120],
+                "heartbeat_tool": tool_name[:120],
                 "tool_elapsed_seconds": round(max(0.0, time.monotonic() - started_monotonic), 1),
             }
         )
@@ -118,8 +138,6 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
 
     scanner_tool_runners.run_scanner_tool = tool_with_heartbeat
     # The snapshot worker imports the scanner tool module as ``tool_runners``.
-    # Verify and normalize that exact module alias rather than inventing a
-    # separate function attribute that the worker never calls.
     snapshot_scanner_worker.tool_runners.run_scanner_tool = tool_with_heartbeat
 
     actual_worker_runner = snapshot_scanner_worker.tool_runners.run_scanner_tool
@@ -128,6 +146,8 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
         "version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
         "heartbeat_interval_seconds": _heartbeat_interval_seconds(),
         "durable_heartbeat": True,
+        "atomic_status_guard": callable(getattr(STORE, "patch_heartbeat", None)),
+        "terminal_state_can_be_reopened": False,
         "source_runner_binding_installed": scanner_tool_runners.run_scanner_tool is tool_with_heartbeat,
         "snapshot_worker_binding_installed": actual_worker_runner is tool_with_heartbeat,
         "snapshot_worker_module_alias_verified": snapshot_scanner_worker.tool_runners is scanner_tool_runners,
