@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import os
 import threading
+import time
+from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from fastapi import HTTPException
 
 from nico.storage import STORE
 
-MID_START_GUARD_VERSION = "nico.mid_start_guard.v1"
-_PATCH_MARKER = "_nico_mid_start_guard_v1"
+MID_START_GUARD_VERSION = "nico.mid_start_guard.v2"
+_PATCH_MARKER = "_nico_mid_start_guard_v2"
 _LOCAL_START_LOCK = threading.RLock()
 _ACTIVE_LIFECYCLE_STATUSES = {"queued", "running", "starting", "pending"}
 _TERMINAL_FAILURE_STATUSES = {"failed", "blocked", "error", "rejected", "cancelled"}
@@ -126,10 +129,95 @@ def _guarded_reuse(state: dict[str, Any], other_active_run_ids: list[str]) -> di
         "other_active_run_ids": other_active_run_ids,
         "operator_action": "Continue or recover the existing exact run. Do not start another Mid scanner for the same repository and scope.",
         "read_only_repository": True,
+        "cross_worker_serialization": True,
     }
     output.setdefault("human_review_required", True)
     output.setdefault("client_ready", False)
     return output
+
+
+def _lock_wait_seconds() -> float:
+    try:
+        configured = float(os.getenv("NICO_MID_START_LOCK_WAIT_SECONDS", "15"))
+    except (TypeError, ValueError):
+        configured = 15.0
+    return max(1.0, min(configured, 30.0))
+
+
+def _lock_acquired(row: Any) -> bool:
+    if isinstance(row, dict):
+        return bool(next(iter(row.values()), False))
+    if isinstance(row, (tuple, list)):
+        return bool(row[0]) if row else False
+    return bool(row)
+
+
+def _lock_failure_detail(code: str, message: str, failure_type: str = "") -> dict[str, Any]:
+    return {
+        "status": "temporarily_unavailable",
+        "code": code,
+        "message": message,
+        "failure_type": failure_type[:80],
+        "duplicate_start_allowed": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+@contextmanager
+def _serialized_start(lock_key: str) -> Iterator[None]:
+    """Serialize same-target starts in-process and across Postgres web workers."""
+
+    with _LOCAL_START_LOCK:
+        status = STORE.status() if hasattr(STORE, "status") else {}
+        adapter = getattr(STORE, "adapter", STORE)
+        connect = getattr(adapter, "_connect", None)
+        if str(status.get("adapter") or status.get("mode") or "") != "postgres" or not callable(connect):
+            yield
+            return
+
+        connection = None
+        acquired = False
+        try:
+            connection = connect()
+            deadline = time.monotonic() + _lock_wait_seconds()
+            while time.monotonic() < deadline and not acquired:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_try_advisory_lock(hashtext(%s))", (lock_key,))
+                    acquired = _lock_acquired(cursor.fetchone())
+                if not acquired:
+                    time.sleep(0.1)
+            if not acquired:
+                raise HTTPException(
+                    status_code=503,
+                    detail=_lock_failure_detail(
+                        "mid_start_guard_busy",
+                        "Another request is establishing or reconciling the same Mid assessment. Retry the exact request; NICO will not start a duplicate scanner.",
+                    ),
+                )
+            yield
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=_lock_failure_detail(
+                    "mid_start_guard_unavailable",
+                    "NICO could not verify cross-worker start serialization, so it refused to start a potentially duplicate Mid scanner.",
+                    type(exc).__name__,
+                ),
+            ) from exc
+        finally:
+            if connection is not None:
+                try:
+                    if acquired:
+                        with connection.cursor() as cursor:
+                            cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (lock_key,))
+                finally:
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
 
 
 def install_mid_start_guard() -> dict[str, Any]:
@@ -148,7 +236,8 @@ def install_mid_start_guard() -> dict[str, Any]:
         if not repository:
             return current(req)
 
-        with _LOCAL_START_LOCK:
+        lock_key = f"nico:mid-start:{customer_id}:{project_id}:{repository}"
+        with _serialized_start(lock_key):
             active_states: list[dict[str, Any]] = []
             for record in _candidate_records(customer_id, project_id, repository):
                 state = _live_state(record, customer_id, project_id)
@@ -175,6 +264,8 @@ def install_mid_start_guard() -> dict[str, Any]:
         "version": MID_START_GUARD_VERSION,
         "server_side_duplicate_prevention": True,
         "same_scope_repository_reuse": True,
+        "cross_worker_postgres_advisory_lock": True,
+        "fail_closed_when_serialization_unavailable": True,
         "recovery_required_blocks_new_start": True,
         "completed_or_terminal_failed_run_allows_new_start": True,
         "human_review_required": True,
@@ -182,4 +273,7 @@ def install_mid_start_guard() -> dict[str, Any]:
     }
 
 
-__all__ = ["MID_START_GUARD_VERSION", "install_mid_start_guard"]
+__all__ = [
+    "MID_START_GUARD_VERSION",
+    "install_mid_start_guard",
+]
