@@ -64,6 +64,7 @@ from nico.express_status_liveness_patch import install_express_status_liveness_p
 from nico.storage_serialization_safety import install_storage_serialization_safety
 from nico.assessment_persistence_truth_patch import install_assessment_persistence_truth
 from nico.mid_terminal_truth_patch import install_mid_terminal_truth_patch
+from nico.mid_terminal_truth_compat import install_mid_terminal_truth_compat
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
@@ -129,5 +130,6 @@ install_report_intelligence_final_pdf_binding()
 install_report_quality_gate()
 install_report_quality_gate_compat()
 install_mid_terminal_truth_patch()
+install_mid_terminal_truth_compat()
 
 __version__ = "0.1.0"
