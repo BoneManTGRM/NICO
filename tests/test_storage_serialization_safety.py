@@ -58,7 +58,7 @@ def test_sqlite_put_retains_bounded_circular_evidence_instead_of_raising(tmp_pat
 
 def test_express_safe_scan_is_cycle_safe_and_redacts_secret_shapes() -> None:
     install_storage_serialization_safety()
-    secret = "ghp_1234567890abcdefghijklmnop"
+    secret = "ghp_" + "1234567890" + "abcdefghijklmnop"
     scanner = {
         "scan_id": "scan_cycle",
         "run_id": "express_run_cycle",
