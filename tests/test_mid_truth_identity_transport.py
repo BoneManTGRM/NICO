@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from nico.mid_truth_identity_transport import _scope_matches, project_stale_mid_approval_repair
+from nico.mid_truth_identity_transport import (
+    _scope_matches,
+    _scoped_repairable,
+    project_stale_mid_approval_repair,
+)
 
 
 def _record() -> dict:
@@ -68,6 +72,33 @@ def test_same_run_post_repair_requires_exact_customer_and_project_scope() -> Non
     assert _scope_matches(record, "customer_wrong", "project_transport") is False
     assert _scope_matches(record, "customer_transport", "project_wrong") is False
     assert _scope_matches(record, "default_customer", "default_project") is False
+
+
+def test_scope_is_checked_before_repairability_function_can_run() -> None:
+    record = _record()
+    calls: list[str] = []
+
+    def repairable(candidate, store):
+        calls.append(candidate["run_id"])
+        return True
+
+    assert _scoped_repairable(
+        record,
+        "customer_wrong",
+        "project_transport",
+        object(),
+        repairable,
+    ) is False
+    assert calls == []
+
+    assert _scoped_repairable(
+        record,
+        "customer_transport",
+        "project_transport",
+        object(),
+        repairable,
+    ) is True
+    assert calls == [record["run_id"]]
 
 
 def test_scope_falls_back_to_retained_request_identity_without_cross_tenant_defaults() -> None:
