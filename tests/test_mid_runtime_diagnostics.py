@@ -36,6 +36,18 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_canonical_status_an
     assert status["same_run_duplicate_prevention"] is True
     assert status["canonical_status_not_found_generic_500_possible"] is False
     assert status["pre_reconciliation_score_mismatch_is_terminal"] is False
+    assert status["lossless_truth_normalization"] is True
+    assert status["truth_fields_removed"] is False
+    assert status["optional_evidence_changes_identity"] is True
+    assert status["bounded_stale_approval_retry_count"] == 1
+    assert status["same_run_stale_approval_repair"] is True
+    assert status["live_status_mutates_storage"] is False
+    assert status["live_status_projects_post_continuation"] is True
+    assert status["post_status_performs_same_run_repair"] is True
+    assert status["same_run_repair_recaptures_repository"] is False
+    assert status["same_run_repair_reruns_scanner"] is False
+    assert status["same_run_repair_recomputes_score"] is False
+    assert status["same_run_repair_creates_replacement_run"] is False
     assert status["generic_full_skipped_labels_exposed_for_mid"] is False
     assert status["dedicated_mid_artifact_stages_projected"] is True
     assert status["mid_scorecard_wording"] is True
@@ -44,6 +56,7 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_canonical_status_an
     assert status["verified_empty_section_still_blocked"] is True
     assert status["missing_evidence_converted_to_pass"] is False
     assert status["section_specific_quality_issue_labels"] is True
+    assert status["duplicate_start_allowed"] is False
     assert status["client_delivery_allowed"] is False
 
 
@@ -85,5 +98,7 @@ def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
     assert first["mid_stage_truth_version"].startswith("nico.mid_stage_truth.")
     assert first["mid_report_section_boundary_version"].startswith("nico.mid_report_section_boundary.")
     assert first["mid_quality_issue_display_version"].startswith("nico.mid_quality_issue_display.")
+    assert first["mid_truth_identity_consistency_version"].startswith("nico.mid_truth_identity_consistency.")
+    assert first["mid_truth_identity_transport_version"].startswith("nico.mid_truth_identity_transport.")
     assert len(routes) == 1
     assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool

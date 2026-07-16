@@ -12,12 +12,14 @@ from nico.mid_report_score_integrity import MID_REPORT_SCORE_INTEGRITY_VERSION
 from nico.mid_report_section_boundary_patch import MID_REPORT_SECTION_BOUNDARY_VERSION
 from nico.mid_stage_truth_patch import MID_STAGE_TRUTH_VERSION
 from nico.mid_terminal_truth_patch import MID_STATUS_PATH, MID_TERMINAL_TRUTH_VERSION
+from nico.mid_truth_identity_consistency import MID_TRUTH_IDENTITY_CONSISTENCY_VERSION
+from nico.mid_truth_identity_transport import MID_TRUTH_IDENTITY_TRANSPORT_VERSION
 from nico.report_quality_gate import REPORT_QUALITY_GATE_VERSION
 from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VERSION
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v4"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v6"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 
 
@@ -77,8 +79,26 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "mid_report_score_integrity_version": MID_REPORT_SCORE_INTEGRITY_VERSION,
         "mid_report_section_boundary_version": MID_REPORT_SECTION_BOUNDARY_VERSION,
         "mid_quality_issue_display_version": MID_QUALITY_ISSUE_DISPLAY_VERSION,
+        "mid_truth_identity_consistency_version": MID_TRUTH_IDENTITY_CONSISTENCY_VERSION,
+        "mid_truth_identity_transport_version": MID_TRUTH_IDENTITY_TRANSPORT_VERSION,
         "pre_reconciliation_score_mismatch_is_terminal": False,
         "final_report_score_matches_weighted_calculation": True,
+        "lossless_truth_normalization": True,
+        "truth_fields_removed": False,
+        "optional_evidence_changes_identity": True,
+        "canonical_truth_before_review_packet_identity": True,
+        "canonical_truth_before_report_identity": True,
+        "canonical_truth_before_approval_identity": True,
+        "bounded_stale_approval_retry_count": 1,
+        "same_run_stale_approval_repair": True,
+        "live_status_mutates_storage": False,
+        "live_status_projects_post_continuation": True,
+        "post_status_performs_same_run_repair": True,
+        "same_run_repair_recaptures_repository": False,
+        "same_run_repair_reruns_scanner": False,
+        "same_run_repair_recomputes_score": False,
+        "same_run_repair_creates_replacement_run": False,
+        "approval_truth_hash_diagnostics_bounded": True,
         "terminal_report_gate_status_is_read_only": True,
         "canonical_status_not_found_generic_500_possible": False,
         "stale_scanner_running_after_downstream_completion": False,
@@ -108,6 +128,7 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "durability_warning": storage.get("durability_warning") or "",
         "memory_storage_accepted": not durable_required,
         "same_run_duplicate_prevention": True,
+        "duplicate_start_allowed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
