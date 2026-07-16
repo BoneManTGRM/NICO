@@ -12,13 +12,59 @@ from scripts import install_hosted_scanner_binaries as installer
 
 
 def test_validated_https_url_rejects_untrusted_schemes_and_hosts() -> None:
-    assert installer._validated_https_url("https://api.github.com/repos/google/osv-scanner/releases/latest").startswith("https://")
+    assert installer._validated_https_url("https://api.github.com/repos/google/osv-scanner/releases/tags/v2.4.0").startswith("https://")
     with pytest.raises(RuntimeError):
         installer._validated_https_url("file:///tmp/scanner")
     with pytest.raises(RuntimeError):
         installer._validated_https_url("https://example.com/scanner.tar.gz")
     with pytest.raises(RuntimeError):
         installer._validated_https_url("https://user:password@github.com/tool")
+
+
+def test_default_scanner_release_tags_are_explicit_and_overrideable(monkeypatch) -> None:
+    defaults = {str(tool["name"]): installer._release_tag(tool) for tool in installer.TOOLS}
+
+    assert defaults == {
+        "osv-scanner": "v2.4.0",
+        "gitleaks": "v8.30.1",
+        "trufflehog": "v3.95.9",
+    }
+
+    monkeypatch.setenv("NICO_GITLEAKS_VERSION", "v8.30.0")
+    gitleaks = next(tool for tool in installer.TOOLS if tool["name"] == "gitleaks")
+    assert installer._release_tag(gitleaks) == "v8.30.0"
+
+    monkeypatch.setenv("NICO_GITLEAKS_VERSION", "../../latest")
+    with pytest.raises(RuntimeError):
+        installer._release_tag(gitleaks)
+
+
+def test_release_lookup_uses_exact_tag_and_rejects_mismatch(monkeypatch) -> None:
+    seen: list[str] = []
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        seen.append(request.full_url)
+        return Response(b'{"tag_name":"v2.4.0","assets":[]}')
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", fake_urlopen)
+    release = installer._release("google/osv-scanner", "v2.4.0")
+
+    assert release["tag_name"] == "v2.4.0"
+    assert seen == ["https://api.github.com/repos/google/osv-scanner/releases/tags/v2.4.0"]
+
+    def mismatched_urlopen(request, timeout):
+        return Response(b'{"tag_name":"v2.3.0","assets":[]}')
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", mismatched_urlopen)
+    with pytest.raises(RuntimeError, match="release tag mismatch"):
+        installer._release("google/osv-scanner", "v2.4.0")
 
 
 def test_safe_zip_extraction_blocks_traversal_and_symlinks(tmp_path: Path) -> None:
