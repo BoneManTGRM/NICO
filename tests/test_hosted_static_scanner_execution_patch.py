@@ -60,7 +60,7 @@ def test_eslint_requires_project_commands(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     web = ws.repo_dir / "apps" / "web"
     web.mkdir(parents=True)
-    (web / "package.json").write_text('{"scripts":{"lint":"next lint"}}', encoding="utf-8")
+    (web / "package.json").write_text('{"scripts":{"lint":"eslint . --format json"}}', encoding="utf-8")
     monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "false")
 
     command, cwd, reason, source = _eslint_command(ws)
@@ -75,7 +75,7 @@ def test_eslint_lint_script_uses_existing_contract(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     web = ws.repo_dir / "apps" / "web"
     web.mkdir(parents=True)
-    (web / "package.json").write_text('{"scripts":{"lint":"next lint"}}', encoding="utf-8")
+    (web / "package.json").write_text('{"scripts":{"lint":"eslint . --format json"}}', encoding="utf-8")
     monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
 
     command, cwd, reason, source = _eslint_command(ws)

@@ -50,12 +50,15 @@ def test_osv_scanner_falls_back_to_current_run_osv_api_without_fake_cli(monkeypa
     assert "[standard]" not in str(seen["json"])
 
 
-def test_project_static_tools_run_from_frontend_package_when_enabled(monkeypatch, tmp_path):
+def test_project_eslint_runs_from_frontend_package_when_explicitly_configured(monkeypatch, tmp_path):
     root = tmp_path
     repo = root / "repo"
     web = repo / "apps" / "web"
     web.mkdir(parents=True)
-    (web / "package.json").write_text("{}", encoding="utf-8")
+    (web / "package.json").write_text(
+        '{"scripts":{"lint":"eslint . --format json"}}',
+        encoding="utf-8",
+    )
 
     monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
     monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda executable: "/usr/bin/npx")
@@ -75,4 +78,6 @@ def test_project_static_tools_run_from_frontend_package_when_enabled(monkeypatch
     )
 
     assert result["status"] == "completed"
+    assert result["verified_for_this_report"] is True
+    assert calls[0][0] == ("npm", "run", "lint")
     assert calls[0][1] == web

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=83,<84"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -28,7 +28,6 @@ dev = [
 scanners = [
   "pip-audit>=2.10,<3",
   "bandit>=1.9,<2",
-  "semgrep>=1.168,<2",
 ]
 
 [project.scripts]
