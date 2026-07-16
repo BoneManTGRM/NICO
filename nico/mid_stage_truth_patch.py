@@ -5,10 +5,9 @@ from functools import wraps
 from typing import Any, Callable
 
 from nico.mid_score_intelligence import attach_mid_score_intelligence
-from nico.mid_static_score_accuracy import install_mid_static_score_accuracy
 
-MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v3"
-_MARKER = "_nico_mid_stage_truth_v3"
+MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v4"
+_MARKER = "_nico_mid_stage_truth_v4"
 _ACTIVE = {"queued", "running", "pending", "planned"}
 _TERMINAL = {"complete", "completed", "blocked", "failed", "error", "not_started"}
 _MID_PRESENTATION_REPLACEMENTS = (
@@ -87,6 +86,7 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
             evidence["assessment_type"] = "mid"
             evidence["generic_full_report_generated"] = False
             evidence["score_contract"] = "seven_fixed_technical_weights"
+            evidence["typescript_static_evidence_path"] = "mid_only_post_scorecard_adjustment"
             item["evidence"] = evidence
 
     report_item = next((item for item in progress if str(item.get("step") or "") == "reports"), None)
@@ -164,13 +164,11 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
 def install_mid_stage_truth_patch() -> dict[str, Any]:
     from nico import mid_assessment_api
 
-    static_score_install = install_mid_static_score_accuracy()
     current: Callable[[dict[str, Any]], dict[str, Any]] = mid_assessment_api._attach_mid_contract
     if getattr(current, _MARKER, False):
         return {
             "status": "already_installed",
             "version": MID_STAGE_TRUTH_VERSION,
-            "static_score_accuracy": static_score_install,
         }
 
     @wraps(current)
@@ -188,7 +186,7 @@ def install_mid_stage_truth_patch() -> dict[str, Any]:
         "dedicated_mid_planned_labels_exposed": True,
         "mid_scorecard_wording": True,
         "mid_score_intelligence_attached": True,
-        "static_score_accuracy": static_score_install,
+        "mid_only_typescript_score_handler": True,
         "express_direct_comparison_allowed": False,
         "same_run_identity_required": True,
         "human_review_required": True,
