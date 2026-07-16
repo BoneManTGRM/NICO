@@ -4,13 +4,18 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from nico.storage import POSTGRES_SCHEMA, STORE, _with_default_metadata
+from nico.storage import POSTGRES_SCHEMA, STORE, _with_default_metadata, utc_now
 
-DURABLE_RUNTIME_STORAGE_VERSION = "nico.durable_runtime_storage.v1"
+DURABLE_RUNTIME_STORAGE_VERSION = "nico.durable_runtime_storage.v2"
+SQLITE_RESTART_PROBE_VERSION = "nico.sqlite_restart_probe.v1"
+_PROCESS_INSTANCE_ID = uuid.uuid4().hex
+_RESTART_INSTANCE_KEY = "durability_probe_process_instance"
+_RESTART_VERIFIED_KEY = "durability_probe_restart_verified"
 _SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS nico_records (
     table_name TEXT NOT NULL,
@@ -26,6 +31,11 @@ CREATE INDEX IF NOT EXISTS idx_nico_records_scope
     ON nico_records(table_name, customer_id, project_id);
 CREATE INDEX IF NOT EXISTS idx_nico_records_updated
     ON nico_records(table_name, updated_at);
+CREATE TABLE IF NOT EXISTS nico_runtime_meta (
+    meta_key TEXT PRIMARY KEY,
+    meta_value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -43,11 +53,13 @@ def _json_default(value: Any) -> str:
 
 
 class SQLiteRuntimeAdapter:
-    """Small durable adapter for hosted lifecycle state when Postgres is absent.
+    """SQLite lifecycle adapter with explicit deployment-survival proof.
 
-    The adapter uses WAL mode and short transactions. It implements the same
-    storage facade contract used by MemoryAdapter and PostgresAdapter without
-    changing assessment payloads or inventing evidence.
+    A writable SQLite file proves only that records can be written in the current
+    process. It is considered restart-proven only after the same database observes
+    a different process-instance marker on a later application boot. Runtime
+    storage truth additionally requires the database directory to be a verified
+    persistent mount before it may be called durable.
     """
 
     def __init__(self, database_path: Path) -> None:
@@ -55,6 +67,7 @@ class SQLiteRuntimeAdapter:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._initialize()
+        self._restart_probe = self._initialize_restart_probe()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -75,6 +88,45 @@ class SQLiteRuntimeAdapter:
             connection.executescript(_SQLITE_SCHEMA)
             connection.commit()
 
+    def _meta_value(self, connection: sqlite3.Connection, key: str) -> str:
+        row = connection.execute(
+            "SELECT meta_value FROM nico_runtime_meta WHERE meta_key=?",
+            (key,),
+        ).fetchone()
+        return str(row["meta_value"] or "") if row is not None else ""
+
+    def _put_meta(self, connection: sqlite3.Connection, key: str, value: str) -> None:
+        connection.execute(
+            """
+            INSERT INTO nico_runtime_meta (meta_key, meta_value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(meta_key) DO UPDATE SET
+                meta_value=excluded.meta_value,
+                updated_at=excluded.updated_at
+            """,
+            (key, value, utc_now()),
+        )
+
+    def _initialize_restart_probe(self) -> dict[str, Any]:
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous_instance = self._meta_value(connection, _RESTART_INSTANCE_KEY)
+            previously_verified = self._meta_value(connection, _RESTART_VERIFIED_KEY).lower() == "true"
+            process_instance_changed = bool(
+                previous_instance and previous_instance != _PROCESS_INSTANCE_ID
+            )
+            verified = bool(previously_verified or process_instance_changed)
+            self._put_meta(connection, _RESTART_INSTANCE_KEY, _PROCESS_INSTANCE_ID)
+            self._put_meta(connection, _RESTART_VERIFIED_KEY, "true" if verified else "false")
+            connection.commit()
+        return {
+            "version": SQLITE_RESTART_PROBE_VERSION,
+            "previous_instance_seen": bool(previous_instance),
+            "process_instance_changed": process_instance_changed,
+            "restart_probe_verified": verified,
+            "verification_pending_restart": not verified,
+        }
+
     def status(self) -> dict[str, Any]:
         writable = False
         try:
@@ -83,17 +135,26 @@ class SQLiteRuntimeAdapter:
             writable = os.access(self.database_path.parent, os.W_OK)
         except Exception:
             writable = False
+        probe = dict(self._restart_probe)
         return {
             "mode": "sqlite",
             "adapter": "sqlite",
             "database_url_configured": bool(os.getenv("DATABASE_URL", "").strip()),
             "persistence_available": writable,
-            "persistence_note": "SQLite lifecycle persistence is active on the hosted data path. Assessment runs, scanner heartbeats, reports, approvals, and recovery evidence survive process restarts while the mounted data path remains available.",
+            "recording_ready": writable,
+            "persistence_note": (
+                "SQLite lifecycle recording is active. Deployment survival remains a separate verified property."
+            ),
             "schema_available": True,
             "adapter_contract_available": True,
             "migration_endpoint_available": True,
             "database_path": str(self.database_path),
             "journal_mode": "wal",
+            "restart_probe_version": probe["version"],
+            "restart_probe_previous_instance_seen": probe["previous_instance_seen"],
+            "restart_probe_process_instance_changed": probe["process_instance_changed"],
+            "restart_probe_verified": probe["restart_probe_verified"],
+            "verification_pending_restart": probe["verification_pending_restart"],
         }
 
     def schema(self) -> str:
@@ -188,10 +249,11 @@ def install_durable_runtime_storage() -> dict[str, Any]:
     current = STORE.status()
     if bool(current.get("persistence_available")):
         return {
-            "status": "already_durable",
+            "status": "already_recording",
             "version": DURABLE_RUNTIME_STORAGE_VERSION,
             "adapter": current.get("adapter") or current.get("mode") or "unknown",
             "persistence_available": True,
+            "durability_verified": bool(current.get("durability_verified")),
         }
     if not _enabled():
         return {
@@ -199,6 +261,7 @@ def install_durable_runtime_storage() -> dict[str, Any]:
             "version": DURABLE_RUNTIME_STORAGE_VERSION,
             "adapter": current.get("adapter") or current.get("mode") or "unknown",
             "persistence_available": False,
+            "durability_verified": False,
         }
 
     adapter = SQLiteRuntimeAdapter(_path())
@@ -216,6 +279,7 @@ def install_durable_runtime_storage() -> dict[str, Any]:
 
 __all__ = [
     "DURABLE_RUNTIME_STORAGE_VERSION",
+    "SQLITE_RESTART_PROBE_VERSION",
     "SQLiteRuntimeAdapter",
     "install_durable_runtime_storage",
 ]
