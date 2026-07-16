@@ -56,6 +56,7 @@ from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
 from nico.report_quality_gate import install_report_quality_gate
+from nico.report_quality_gate_compat import install_report_quality_gate_compat
 from nico.snapshot_scanner_resilience_patch import install_snapshot_scanner_resilience
 
 install_metadata_auth_for_hosted_assessment()
@@ -115,5 +116,6 @@ install_hosted_report_intelligence_enrichment()
 install_report_intelligence_accuracy_patch()
 install_report_intelligence_final_pdf_binding()
 install_report_quality_gate()
+install_report_quality_gate_compat()
 
 __version__ = "0.1.0"
