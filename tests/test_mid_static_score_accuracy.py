@@ -52,6 +52,7 @@ def test_typescript_completion_receives_bounded_static_analysis_credit() -> None
     assert breakdown["typescript_score_adjustment"] == 10
     assert breakdown["post_typescript_score"] == 78
     assert breakdown["typescript_execution_treated_as_clean"] is False
+    assert breakdown["typescript_accuracy_applied"] is True
     assert breakdown["version"] == MID_STATIC_SCORE_ACCURACY_VERSION
     assert any("TypeScript compiler static-analysis state=completed" in item for item in section["evidence"])
 
@@ -88,7 +89,9 @@ def test_typescript_unavailable_is_not_treated_as_clean_or_successful() -> None:
     assert breakdown["typescript_state"] == "unavailable"
     assert breakdown["typescript_score_adjustment"] == -5
     assert breakdown["typescript_execution_treated_as_clean"] is False
-    assert any("Review 1 sampled static risk-pattern hit" in item for item in section["findings"])
+    assert section["score"] < 60
+    assert section["findings"]
+    assert not any("clean" in item.lower() for item in section["verified_claims"])
 
 
 def test_installation_is_idempotent() -> None:
