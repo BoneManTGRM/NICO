@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/(?:status|live-status))?$/;
+const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/mid-runtime$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -28,18 +29,20 @@ function configuredBackend(): URL | null {
   }
 }
 
-async function proxyAssessment(
+async function proxyNico(
   request: NextRequest,
   context: {params: Promise<{path: string[]}>},
 ) {
   const segments = (await context.params).path || [];
   if (!segments.length || segments.some((segment) => !segment || segment === "." || segment === "..")) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "The requested assessment route is not available through this proxy.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "The requested NICO route is not available through this proxy.");
   }
 
   const apiPath = `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  if (!ALLOWED_ASSESSMENT_PATH.test(apiPath)) {
-    return jsonError(404, "assessment_proxy_route_not_allowed", "Only canonical Express, Mid, and Full lifecycle routes are available through this proxy.");
+  const assessmentAllowed = ALLOWED_ASSESSMENT_PATH.test(apiPath);
+  const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
+  if (!assessmentAllowed && !diagnosticAllowed) {
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only canonical assessment lifecycle routes and bounded Mid runtime diagnostics are available through this proxy.");
   }
 
   const backend = configuredBackend();
@@ -53,13 +56,14 @@ async function proxyAssessment(
   if (contentType) headers.set("Content-Type", contentType);
 
   try {
+    const shortRead = apiPath.endsWith("/live-status") || ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
     const response = await fetch(upstream, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
       redirect: "manual",
-      signal: apiPath.endsWith("/live-status")
+      signal: shortRead
         ? AbortSignal.timeout(15_000)
         : AbortSignal.timeout(120_000),
     });
@@ -78,5 +82,5 @@ async function proxyAssessment(
   }
 }
 
-export const GET = proxyAssessment;
-export const POST = proxyAssessment;
+export const GET = proxyNico;
+export const POST = proxyNico;
