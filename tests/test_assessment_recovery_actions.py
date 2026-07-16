@@ -18,10 +18,11 @@ def test_live_status_failure_publishes_visible_bounded_diagnostics() -> None:
 
     assert 'MID_RECOVERY_STATE_EVENT = "nico:mid-recovery-state"' in source
     assert 'MID_FORCE_LIVE_RETRY_EVENT = "nico:mid-live-status-retry"' in source
-    assert "LIVE_BACKOFF_BASE_MS = 3_000" in source
-    assert "LIVE_BACKOFF_MAX_MS = 30_000" in source
+    assert "LIVE_BACKOFF_BASE_MS = 2_000" in source
+    assert "LIVE_BACKOFF_MAX_MS = 12_000" in source
     assert "consecutiveFailures" in source
     assert "nextProbeAt" in source
+    assert "highest_confirmed_progress_percent" in source
     assert "backend_contract_mismatch" in source
     assert "duplicate_start_allowed: false" in source
     assert 'window.sessionStorage.setItem("nico.mid.recovery_state"' in source
