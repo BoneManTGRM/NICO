@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI
@@ -28,6 +29,14 @@ EXPRESS_RUNTIME_REQUIRED_ROUTES = {
 }
 
 
+def _durable_required() -> bool:
+    return (
+        bool(os.getenv("DATABASE_URL", "").strip())
+        or os.getenv("NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE", "false").strip().lower() == "true"
+        or os.getenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "false").strip().lower() == "true"
+    )
+
+
 def _route_count(target: FastAPI, method: str, path: str) -> int:
     expected = method.upper()
     return sum(
@@ -48,11 +57,13 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     heartbeat_installed = bool(getattr(worker, "_nico_express_runtime_heartbeat_v1", False))
     redaction = scanner_redaction_safety_status()
     storage = DURABLE_RUNTIME_STORAGE
+    durable_required = _durable_required()
+    durable_ready = bool(storage.get("persistence_available"))
     ready = (
         diagnostics_installed
         and heartbeat_installed
         and redaction["cycle_safe_redaction_installed"]
-        and bool(storage.get("persistence_available"))
+        and (durable_ready or not durable_required)
         and all(count == 1 for count in route_counts.values())
     )
     return {
@@ -66,7 +77,9 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
         "cycle_safe_scanner_redaction_installed": redaction["cycle_safe_redaction_installed"],
         "scanner_redaction_maximum_depth": redaction["maximum_depth"],
         "storage_adapter": storage.get("adapter") or "unknown",
-        "durable_storage_ready": bool(storage.get("persistence_available")),
+        "durable_storage_required": durable_required,
+        "durable_storage_ready": durable_ready,
+        "memory_storage_accepted": not durable_required,
         "request_validation_422_possible": False,
         "single_start_only": True,
         "replacement_run_allowed": False,
@@ -92,10 +105,6 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
     target.openapi_schema = None
 
 
-# Railway imports this module directly. Install durable storage before any
-# background lifecycle begins. Then install late-bound route and worker repairs
-# after the complete application has loaded so import order cannot leave an old
-# endpoint or unwrapped worker active.
 DURABLE_RUNTIME_STORAGE = install_durable_runtime_storage()
 POSTGRES_TIMEOUTS = install_postgres_timeout_patch()
 SCANNER_REDACTION_SAFETY = install_scanner_redaction_safety()
@@ -109,7 +118,7 @@ MID_RUNTIME = register_mid_runtime_diagnostics(app)
 _register_runtime_diagnostics(app)
 EXPRESS_PRODUCTION_RUNTIME = express_runtime_status(app)
 
-if not DURABLE_RUNTIME_STORAGE.get("persistence_available"):
+if _durable_required() and not DURABLE_RUNTIME_STORAGE.get("persistence_available"):
     raise RuntimeError(f"Durable assessment lifecycle storage is unavailable: {DURABLE_RUNTIME_STORAGE}")
 if not SCANNER_REDACTION_SAFETY["cycle_safe_redaction_installed"]:
     raise RuntimeError("Express production bootstrap did not install cycle-safe scanner redaction")
