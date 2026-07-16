@@ -15,6 +15,7 @@ import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
 import MidAssessmentCompanion from "./MidAssessmentCompanion";
 import MidEvidencePacketHelper from "./MidEvidencePacketHelper";
 import MidScoreIntelligencePortal from "./MidScoreIntelligencePortal";
+import MidSectionReviewPortal from "./MidSectionReviewPortal";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
 import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
@@ -38,6 +39,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentStatusOutcomeGuard />
           <AssessmentMidLiveStatusTransport />
           <MidScoreIntelligencePortal />
+          <MidSectionReviewPortal />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
