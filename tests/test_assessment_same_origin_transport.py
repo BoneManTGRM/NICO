@@ -15,7 +15,7 @@ def test_bridge_replaces_one_long_express_connection_with_exact_run_polling() ->
     assert 'LEGACY_EXPRESS_PATH = "/assessment/github"' in source
     assert 'EXPRESS_START_PATH = "/assessment/express-run"' in source
     assert 'EXPRESS_POLL_INTERVAL_MS = 3000' in source
-    assert 'EXPRESS_MAX_POLL_ATTEMPTS = 240' in source
+    assert 'EXPRESS_MAX_POLL_ATTEMPTS = 600' in source
     assert 'requested.origin !== configured.origin' in source
     assert 'ASSESSMENT_PATH.test(apiPath)' in source
     assert 'if (apiPath === LEGACY_EXPRESS_PATH) return startExpressLifecycle' in source
