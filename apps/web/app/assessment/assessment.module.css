@@ -78,10 +78,119 @@
   margin-top: 18px;
 }
 
+.scoreIntelligence {
+  margin: 22px 0;
+  padding: 22px;
+  border: 1px solid #334155;
+  border-radius: 22px;
+  background: #0b1428;
+}
+
+.scoreIntelligenceHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scoreIntelligenceHead h3 {
+  margin: 4px 0 0;
+  font-size: clamp(22px, 4vw, 30px);
+}
+
+.scoreMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.scoreMetrics article {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 15px;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  background: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.scoreMetrics b {
+  color: #7dd3fc;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scoreMetrics span {
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.scoreMetrics small,
+.constraintGrid small {
+  color: #94a3b8;
+}
+
+.constraintGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.constraintGrid article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  background: #111b31;
+  overflow-wrap: anywhere;
+}
+
+.constraintGrid article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.constraintGrid p {
+  margin: 10px 0 5px;
+}
+
+.weightTable {
+  display: grid;
+  gap: 0;
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid #334155;
+  border-radius: 14px;
+}
+
+.weightTable > div {
+  display: grid;
+  min-width: 540px;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(70px, 0.7fr));
+  gap: 10px;
+  padding: 11px 13px;
+  border-bottom: 1px solid #273449;
+}
+
+.weightTable > div:last-child {
+  border-bottom: 0;
+}
+
+.weightHeader {
+  background: #111b31;
+  color: #7dd3fc;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .indeterminate span {
-    animation: none;
     width: 34%;
+    animation: none;
   }
 
   .progressBar span {
@@ -92,17 +201,31 @@
 @media (max-width: 760px) {
   .tierGrid,
   .timeline,
-  .progressMeta {
+  .progressMeta,
+  .scoreMetrics,
+  .constraintGrid {
     grid-template-columns: 1fr;
   }
 
   .progressMeta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .scoreIntelligenceHead {
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 440px) {
   .progressMeta {
     grid-template-columns: 1fr;
+  }
+
+  .scoreIntelligence {
+    padding: 16px;
+  }
+
+  .constraintGrid article > div {
+    flex-direction: column;
   }
 }
