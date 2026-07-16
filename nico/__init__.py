@@ -35,6 +35,7 @@ from nico.full_blocked_state_truth_patch import install_full_blocked_state_truth
 from nico.progressive_mid_report_patch import install_progressive_mid_report_patch
 from nico.mid_report_professional_v3 import install_mid_report_professional_v3
 from nico.mid_report_score_integrity import install_mid_report_score_integrity
+from nico.mid_report_section_boundary_patch import install_mid_report_section_boundary_patch
 from nico.mid_report_truth_disclosure import install_mid_report_truth_disclosure
 from nico.report_flowable_safety import install_report_flowable_safety
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
@@ -55,6 +56,7 @@ from nico.triage_aware_scanner_finding_truth import install_triage_aware_scanner
 from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
+from nico.mid_stage_truth_patch import install_mid_stage_truth_patch
 from nico.report_quality_gate import install_report_quality_gate
 from nico.report_quality_gate_compat import install_report_quality_gate_compat
 from nico.snapshot_scanner_resilience_patch import install_snapshot_scanner_resilience
@@ -107,6 +109,7 @@ install_full_blocked_state_truth()
 install_progressive_mid_report_patch()
 install_mid_report_professional_v3()
 install_mid_report_score_integrity()
+install_mid_report_section_boundary_patch()
 install_mid_report_truth_disclosure()
 install_report_flowable_safety()
 install_progressive_full_report_patch()
@@ -124,6 +127,7 @@ install_express_progress_persistence()
 install_mid_live_progress()
 install_mid_start_guard()
 install_mid_status_read_path()
+install_mid_stage_truth_patch()
 install_hosted_report_intelligence_enrichment()
 install_report_intelligence_accuracy_patch()
 install_report_intelligence_final_pdf_binding()
