@@ -27,14 +27,18 @@ def _route_count(app: FastAPI, method: str, path: str) -> int:
 
 
 def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
-    source_binding = bool(getattr(scanner_tool_runners.run_scanner_tool, _HEARTBEAT_MARKER, False))
-    worker_binding = bool(getattr(snapshot_scanner_worker.run_scanner_tool, _HEARTBEAT_MARKER, False))
-    same_binding = scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.run_scanner_tool
+    source_runner = scanner_tool_runners.run_scanner_tool
+    worker_module = getattr(snapshot_scanner_worker, "tool_runners", None)
+    worker_runner = getattr(worker_module, "run_scanner_tool", None)
+    source_binding = bool(getattr(source_runner, _HEARTBEAT_MARKER, False))
+    worker_binding = bool(getattr(worker_runner, _HEARTBEAT_MARKER, False))
+    same_binding = source_runner is worker_runner
+    module_alias_verified = worker_module is scanner_tool_runners
     live_routes = _route_count(app, "GET", MID_LIVE_STATUS_PATH)
     storage = STORE.status()
     database_required = bool(os.getenv("DATABASE_URL", "").strip())
     durable_ready = bool(storage.get("persistence_available")) if database_required else True
-    status = "ok" if source_binding and worker_binding and same_binding and live_routes == 1 and durable_ready else "blocked"
+    status = "ok" if source_binding and worker_binding and same_binding and module_alias_verified and live_routes == 1 and durable_ready else "blocked"
     return {
         "status": status,
         "version": MID_RUNTIME_DIAGNOSTICS_VERSION,
@@ -44,6 +48,7 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "source_runner_heartbeat_binding": source_binding,
         "snapshot_worker_heartbeat_binding": worker_binding,
         "heartbeat_bindings_identical": same_binding,
+        "snapshot_worker_module_alias_verified": module_alias_verified,
         "report_quality_gate_version": REPORT_QUALITY_GATE_VERSION,
         "storage_adapter": storage.get("adapter") or storage.get("mode") or "unknown",
         "durable_storage_required": database_required,
