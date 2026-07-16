@@ -19,7 +19,7 @@ from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VER
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v8"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v7-watchdog"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v3"
 
 
