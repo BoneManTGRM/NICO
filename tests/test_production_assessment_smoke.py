@@ -167,5 +167,5 @@ def test_workflow_is_manual_secret_bound_and_retains_artifact() -> None:
     assert '--project-id "production_smoke_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"' in source
     assert '--request-timeout-seconds "60"' in source
     assert '--express-timeout-seconds "900"' in source
-    assert "actions/upload-artifact@v4" in source and "retention-days: 90" in source
+    assert "actions/upload-artifact@v7" in source and "retention-days: 90" in source
     assert "admin_token" not in source.split("inputs:", 1)[1].split("permissions:", 1)[0].lower()
