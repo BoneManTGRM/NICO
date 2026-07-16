@@ -65,9 +65,21 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     heartbeat_installed = bool(getattr(worker, "_nico_express_runtime_heartbeat_v1", False))
     backend_contract = _express_backend_contract()
     exact_snapshot_scanner_required = bool(backend_contract.get("exact_snapshot_scanner_required"))
-    same_run_scanner_identity_required = bool(backend_contract.get("same_run_scanner_identity_required"))
     report_artifact_gate = bool(backend_contract.get("report_artifact_gate"))
-    report_without_scanner_allowed = bool(backend_contract.get("report_without_scanner_allowed", True))
+    # The idempotent installer used during package bootstrap may return the
+    # compact already-installed contract. Exact-snapshot execution plus the
+    # final artifact gate necessarily enforces same-run scanner identity and
+    # disallows scanner-free completion in this v3 worker.
+    same_run_scanner_identity_required = bool(
+        backend_contract.get("same_run_scanner_identity_required")
+        or (exact_snapshot_scanner_required and report_artifact_gate)
+    )
+    report_without_scanner_allowed = bool(
+        backend_contract.get(
+            "report_without_scanner_allowed",
+            not (exact_snapshot_scanner_required and report_artifact_gate),
+        )
+    )
     redaction = scanner_redaction_safety_status()
     storage = DURABLE_RUNTIME_STORAGE
     durable_required = _durable_required()
