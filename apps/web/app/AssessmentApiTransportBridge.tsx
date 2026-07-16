@@ -11,7 +11,7 @@ const EXPRESS_MAX_POLL_ATTEMPTS = 240;
 const EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 8;
 const EXPRESS_STATUS_RETRY_BASE_MS = 1500;
 const EXPRESS_STATUS_RETRY_MAX_MS = 12000;
-const RETRYABLE_STATUS_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_HTTP_CODES = new Set([408, 422, 425, 429, 500, 502, 503, 504]);
 const TERMINAL_EXPRESS_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
