@@ -62,10 +62,13 @@ from nico.runtime_heartbeat_atomic_patch import install_runtime_heartbeat_atomic
 from nico.runtime_storage_truth_patch import install_runtime_storage_truth
 from nico.express_status_liveness_patch import install_express_status_liveness_patch
 from nico.storage_serialization_safety import install_storage_serialization_safety
+from nico.assessment_persistence_truth_patch import install_assessment_persistence_truth
+from nico.mid_terminal_truth_patch import install_mid_terminal_truth_patch
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
 install_runtime_storage_truth()
+install_assessment_persistence_truth()
 install_express_status_liveness_patch()
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
@@ -125,5 +128,6 @@ install_report_intelligence_accuracy_patch()
 install_report_intelligence_final_pdf_binding()
 install_report_quality_gate()
 install_report_quality_gate_compat()
+install_mid_terminal_truth_patch()
 
 __version__ = "0.1.0"
