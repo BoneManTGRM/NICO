@@ -1,5 +1,7 @@
 # NICO — Neural Intelligence for Cyber Operations
 
+[![NICO CI](https://github.com/BoneManTGRM/NICO/actions/workflows/nico-ci.yml/badge.svg)](https://github.com/BoneManTGRM/NICO/actions/workflows/nico-ci.yml)
+
 NICO is an authorized, repair-first defensive cybersecurity and technical-assessment platform for repository evidence collection, drift detection, repair planning, verification, reporting, and repair memory.
 
 NICO is not a basic scanner wrapper. Its core workflow binds an authorized target to an exact run, collects available evidence, executes supported defensive scanners, distinguishes unavailable or failed evidence, produces evidence-bound scoring and repair candidates, prepares reports, and stops at required human review before approval or client delivery.
@@ -10,13 +12,30 @@ NICO is not a basic scanner wrapper. Its core workflow binds an authorized targe
 - The canonical hosted assessment start is the unified Express, Mid, and Full page under `/assessment`.
 - Vercel provides the Next.js frontend and Railway provides the FastAPI backend in the current hosted deployment model.
 - A successful deployment does not prove an assessment result. Authorized production smoke runs and evidence review remain required.
+- The completion roadmap remains authoritative; operational code is not automatically production-proven or stable.
 
 See:
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — canonical architecture and truth contracts
 - [`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md) — operating, recovery, review, and delivery procedures
 - [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — stable, operational, experimental, legacy, and planned maturity
+- [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) — Docker, storage, frontend, and upgrade guidance
+- [`docs/SCANNERS.md`](docs/SCANNERS.md) — supported tools, pinned versions, outcomes, and update policy
+- [`docs/SAMPLES.md`](docs/SAMPLES.md) — synthetic fixtures and workflow-generated sample outputs
 - [`docs/README.md`](docs/README.md) — documentation map
+
+## Repository-provider scope
+
+The current hosted remote-repository integration is **GitHub-native**. Hosted evidence collection understands GitHub repositories, commits, pull requests, Actions runs, contents, and GitHub authorization. NICO does not currently claim native GitLab merge-request/pipeline support, Bitbucket pull-request/pipeline support, Azure DevOps repository/build support, Gitea/Forgejo integration, or a generic provider-neutral hosted contract.
+
+Separate local-first inputs are supported:
+
+- authorized local folders;
+- authorized archives;
+- authorized GitHub repositories;
+- passive-only authorized URLs.
+
+Local and archive support must not be described as native GitLab, Bitbucket, Azure DevOps, or other provider integration. Provider expansion remains deferred until the unified Express, Mid, and Full deployed production-proof workstream is complete.
 
 ## Core capabilities
 
@@ -69,18 +88,21 @@ NICO does **not** perform or authorize:
 
 Production-impacting actions such as credential rotation, account disablement, data deletion, infrastructure deletion, DNS changes, broad firewall changes, production deployments, major dependency upgrades, or architecture rewrites require explicit human approval.
 
-## Quick start
+## Package installation and quick start
+
+NICO is a Python package with supported `nico` and `nico-api` console entry points. The repository is package-ready for local installation; publication to a public package index is a separate release and trust decision and is not claimed here.
 
 ```bash
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -e ".[dev,scanners]"
 
-python -m nico scan-test-lab
-python -m nico scan-drift-demo
-python -m nico report latest
-python -m nico verify latest
-python -m nico memory
-python -m nico policy show
+nico --help
+nico scan-test-lab
+nico scan-drift-demo
+nico report latest
+nico verify latest
+nico memory
+nico policy show
 pytest
 python run_local.py
 ```
@@ -132,18 +154,26 @@ http://localhost:3000
 
 The frontend is an active operator application, not merely a placeholder foundation. The unified assessment flow, operations views, recovery, review, approval, delivery, diagnostics, and Retainer surfaces are at different maturity levels; see `docs/PROJECT_STATUS.md`.
 
+## Self-hosted Docker Compose
+
+```bash
+docker compose up --build
+```
+
+The Compose deployment uses the fail-closed production bootstrap and a named `/data` volume. It is intended for a single-host operator deployment, not automatic horizontal scaling. See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) before changing storage, worker count, project-command execution, or frontend exposure.
+
 ## Hosted deployment
 
 Deploy the frontend and backend separately:
 
 - Frontend: Vercel or another compatible Next.js host using `apps/web`
-- Backend: a Python host running the production FastAPI application
+- Backend: a Python host running `nico.api.production_bootstrap:app`
 - Frontend environment: `NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST`
 - Backend environment: `NICO_CORS_ORIGINS=https://YOUR-NICO-FRONTEND-HOST`
 
 The hosted app is optional. Local-first assessment remains a supported operating mode.
 
-See [`docs/SAFARI_HOSTED_APP.md`](docs/SAFARI_HOSTED_APP.md).
+See [`docs/SAFARI_HOSTED_APP.md`](docs/SAFARI_HOSTED_APP.md) and [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md).
 
 ## Hosted readiness and release integrity
 
@@ -171,6 +201,10 @@ Relevant documents:
 - [`docs/hosted-readiness-runbook.md`](docs/hosted-readiness-runbook.md)
 - [`docs/OPERATIONS_READINESS.md`](docs/OPERATIONS_READINESS.md)
 - [`docs/PRODUCTION_RELEASE_GATE.md`](docs/PRODUCTION_RELEASE_GATE.md)
+
+## Samples and fixtures
+
+NICO includes synthetic golden fixtures and workflows that generate evidence-bound sample outputs. They are not live client assessments or certifications. See [`docs/SAMPLES.md`](docs/SAMPLES.md).
 
 ## CLI commands
 
