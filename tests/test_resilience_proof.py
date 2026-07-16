@@ -84,7 +84,7 @@ def test_workflow_runs_real_postgres_and_uploads_bounded_resilience_evidence() -
     assert "NICO_TEST_DATABASE_URL" in source
     assert "scripts/build_resilience_proof.py" in source
     assert "audit-results/resilience-proof.json" in source
-    assert "actions/upload-artifact@v4" in source
+    assert "actions/upload-artifact@v7" in source
     assert "permissions:\n  contents: read" in source
     assert "NICO_ADMIN_TOKEN" not in source
     assert "postgresql://" in source
