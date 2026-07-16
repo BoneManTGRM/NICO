@@ -25,6 +25,20 @@ type RecoveryState = {
   message?: string;
 };
 
+type RuntimeDiagnostics = {
+  status?: string;
+  version?: string;
+  mid_live_status_route_count?: number;
+  source_runner_heartbeat_binding?: boolean;
+  snapshot_worker_heartbeat_binding?: boolean;
+  heartbeat_bindings_identical?: boolean;
+  snapshot_worker_module_alias_verified?: boolean;
+  durable_storage_ready?: boolean;
+  storage_adapter?: string;
+  report_quality_gate_version?: string;
+  error?: string;
+};
+
 function storedState(): RecoveryState | null {
   try {
     const value = window.sessionStorage.getItem("nico.mid.recovery_state");
@@ -46,6 +60,8 @@ function timeLabel(value?: string) {
 export default function AssessmentRecoveryActions() {
   const [state, setState] = useState<RecoveryState | null>(null);
   const [copied, setCopied] = useState(false);
+  const [runtime, setRuntime] = useState<RuntimeDiagnostics | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
 
   useEffect(() => {
     setState(storedState());
@@ -53,6 +69,7 @@ export default function AssessmentRecoveryActions() {
       const detail = (event as CustomEvent<RecoveryState>).detail || {};
       if (detail.status === "healthy") {
         setState(null);
+        setRuntime(null);
         try {
           window.sessionStorage.removeItem("nico.mid.recovery_state");
         } catch {
@@ -96,9 +113,30 @@ export default function AssessmentRecoveryActions() {
     setState((current) => current ? {...current, next_retry_at: new Date().toISOString()} : current);
   }
 
+  async function checkRuntime() {
+    setRuntimeLoading(true);
+    try {
+      const response = await fetch("/api/nico/diagnostics/mid-runtime", {cache: "no-store"});
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = payload?.detail && typeof payload.detail === "object" ? payload.detail : payload;
+        setRuntime({
+          status: "unreachable",
+          error: String(detail?.message || detail?.code || `Runtime diagnostics failed (${response.status}).`),
+        });
+        return;
+      }
+      setRuntime(payload as RuntimeDiagnostics);
+    } catch (error) {
+      setRuntime({status: "unreachable", error: error instanceof Error ? error.message : "Runtime diagnostics request failed."});
+    } finally {
+      setRuntimeLoading(false);
+    }
+  }
+
   async function copyDiagnostics() {
     if (!state) return;
-    await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+    await navigator.clipboard.writeText(JSON.stringify({run_state: state, runtime_diagnostics: runtime}, null, 2));
     setCopied(true);
   }
 
@@ -121,8 +159,17 @@ export default function AssessmentRecoveryActions() {
         <div><dt>Last successful status</dt><dd>{timeLabel(state.last_success_at)}</dd></div>
         <div><dt>Bounded code</dt><dd>{state.code || "transport_unavailable"}{state.http_status ? ` · HTTP ${state.http_status}` : ""}</dd></div>
       </dl>
+      {runtime ? <dl className={styles.details} aria-label="Mid runtime diagnostics">
+        <div><dt>Runtime status</dt><dd>{runtime.status || "Unknown"}</dd></div>
+        <div><dt>Live route count</dt><dd>{runtime.mid_live_status_route_count ?? "Unavailable"}</dd></div>
+        <div><dt>Heartbeat binding</dt><dd>{runtime.source_runner_heartbeat_binding && runtime.snapshot_worker_heartbeat_binding && runtime.heartbeat_bindings_identical ? "Verified" : "Blocked"}</dd></div>
+        <div><dt>Durable storage</dt><dd>{runtime.durable_storage_ready === true ? `Ready · ${runtime.storage_adapter || "durable"}` : "Not verified"}</dd></div>
+        <div><dt>Report quality gate</dt><dd>{runtime.report_quality_gate_version || "Unavailable"}</dd></div>
+        {runtime.error ? <div><dt>Diagnostic error</dt><dd>{runtime.error}</dd></div> : null}
+      </dl> : null}
       <div className={styles.actions}>
-        {!recoveryRequired ? <button type="button" onClick={retry}>Retry live status now</button> : null}
+        {!recoveryRequired ? <button type="button" onClick={retry}>Retry live status</button> : null}
+        <button type="button" onClick={() => void checkRuntime()} disabled={runtimeLoading}>{runtimeLoading ? "Checking runtime..." : "Check runtime diagnostics"}</button>
         <a href={recoveryUrl}>{recoveryRequired ? "Recover exact scanner" : "Inspect Recovery Control"}</a>
         <a href="/operations">Open Operations</a>
         <button type="button" onClick={() => void copyDiagnostics()}>{copied ? "Diagnostics copied" : "Copy diagnostics"}</button>
