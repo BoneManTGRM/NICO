@@ -8,7 +8,7 @@ from nico.mid_runtime_diagnostics import MID_RUNTIME_DIAGNOSTICS_PATH, mid_runti
 from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 
 
-def test_mid_runtime_diagnostics_are_ok_only_when_live_route_and_both_heartbeat_bindings_exist(monkeypatch) -> None:
+def test_mid_runtime_diagnostics_are_ok_only_when_live_route_and_worker_module_alias_are_wrapped(monkeypatch) -> None:
     app = FastAPI()
     register_mid_live_status_routes(app)
     installed = install_snapshot_scanner_heartbeat()
@@ -18,30 +18,35 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_and_both_heartbeat_
 
     assert installed["source_runner_binding_installed"] is True
     assert installed["snapshot_worker_binding_installed"] is True
+    assert installed["snapshot_worker_module_alias_verified"] is True
     assert status["status"] == "ok"
     assert status["mid_live_status_route_count"] == 1
     assert status["source_runner_heartbeat_binding"] is True
     assert status["snapshot_worker_heartbeat_binding"] is True
     assert status["heartbeat_bindings_identical"] is True
+    assert status["snapshot_worker_module_alias_verified"] is True
     assert status["same_run_duplicate_prevention"] is True
 
 
-def test_mid_runtime_diagnostics_fail_closed_when_snapshot_worker_uses_unwrapped_runner(monkeypatch) -> None:
+def test_mid_runtime_diagnostics_fail_closed_when_worker_module_alias_uses_unwrapped_runner(monkeypatch) -> None:
     app = FastAPI()
     register_mid_live_status_routes(app)
     install_snapshot_scanner_heartbeat()
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
-    def unwrapped_runner(*args, **kwargs):
-        return {}
+    class UnwrappedToolModule:
+        @staticmethod
+        def run_scanner_tool(*args, **kwargs):
+            return {}
 
-    monkeypatch.setattr(snapshot_scanner_worker, "run_scanner_tool", unwrapped_runner)
+    monkeypatch.setattr(snapshot_scanner_worker, "tool_runners", UnwrappedToolModule())
     status = mid_runtime_status(app)
 
     assert status["status"] == "blocked"
     assert status["source_runner_heartbeat_binding"] is True
     assert status["snapshot_worker_heartbeat_binding"] is False
     assert status["heartbeat_bindings_identical"] is False
+    assert status["snapshot_worker_module_alias_verified"] is False
 
 
 def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
@@ -61,4 +66,4 @@ def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
     assert first["status"] in {"ok", "blocked"}
     assert second["status"] in {"ok", "blocked"}
     assert len(routes) == 1
-    assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.run_scanner_tool
+    assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
