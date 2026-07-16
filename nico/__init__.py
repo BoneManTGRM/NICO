@@ -18,7 +18,7 @@ from nico.hosted_secret_scanner_execution_patch import install_hosted_secret_sca
 from nico.hosted_static_scanner_execution_patch import install_hosted_static_scanner_execution_patch
 from nico.scanner_output_truth_patch import install_scanner_output_truth_patch
 from nico.scanner_output_truth_compat import install_scanner_output_truth_compat
-from nico.hosted_bandit_triage_workflow_patch import install_bandit_triage_workflow_patch
+from nico.hosted_bandit_triage_workflow_patch import install_hosted_bandit_triage_workflow_patch
 from nico.hosted_complexity_engine_attachment_patch import install_hosted_complexity_engine_attachment_patch
 from nico.report_full_detail_export_patch import install_report_full_detail_export_patch
 from nico.client_final_review_gate_patch import install_client_final_review_gate_patch
@@ -60,6 +60,7 @@ from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
 from nico.mid_stage_truth_patch import install_mid_stage_truth_patch
+from nico.mid_static_score_accuracy import install_mid_static_score_accuracy
 from nico.report_quality_gate import install_report_quality_gate
 from nico.report_quality_gate_compat import install_report_quality_gate_compat
 from nico.snapshot_scanner_resilience_patch import install_snapshot_scanner_resilience
@@ -70,7 +71,7 @@ from nico.storage_serialization_safety import install_storage_serialization_safe
 from nico.assessment_persistence_truth_patch import install_assessment_persistence_truth
 from nico.mid_terminal_truth_patch import install_mid_terminal_truth_patch
 from nico.mid_terminal_truth_compat import install_mid_terminal_truth_compat
-from nico.mid_quality_issue_display_patch import install_mid_quality_issue_display_patch
+from nico.mid_quality_issue_display_patch import install_mid_quality_issue_display
 from nico.mid_truth_identity_consistency import install_mid_truth_identity_consistency
 from nico.mid_truth_identity_transport import install_mid_truth_identity_transport
 from nico.mid_approval_truth_freeze import install_mid_approval_truth_freeze
@@ -145,9 +146,13 @@ install_report_quality_gate()
 install_report_quality_gate_compat()
 install_mid_terminal_truth_patch()
 install_mid_terminal_truth_compat()
-install_mid_quality_issue_display_patch()
+install_mid_quality_issue_display()
 install_mid_truth_identity_consistency()
 install_mid_truth_identity_transport()
 install_mid_approval_truth_freeze()
+# Final re-entry is intentional: later compatibility installers may replace the
+# scorecard function while copying wrapper markers. Function-identity re-entry
+# guarantees the TypeScript evidence boundary remains the active outer layer.
+install_mid_static_score_accuracy()
 
 __version__ = "0.1.0"
