@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "apps" / "web" / "app" / "assessment" / "MidSectionReview.tsx"
 SECTION_PORTAL = ROOT / "apps" / "web" / "app" / "MidSectionReviewPortal.tsx"
 SCORE_PORTAL = ROOT / "apps" / "web" / "app" / "MidScoreIntelligencePortal.tsx"
-LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+LAYOUT = ROOT / "apps" / "web"" / "app" / "layout.tsx"
 STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment.module.css"
 
 
@@ -88,6 +88,7 @@ def test_mid_review_workbench_has_mobile_and_accessible_presentation_contract() 
         ".reviewMetrics",
         ".priorityStrip",
         ".reviewToolbar",
+        ".reviewGroup",
         ".reviewCard",
         ".reviewToggle",
         ".reviewDetailGrid",
