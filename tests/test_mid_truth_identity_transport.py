@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from nico.mid_truth_identity_transport import project_stale_mid_approval_repair
+from nico.mid_truth_identity_transport import _scope_matches, project_stale_mid_approval_repair
 
 
-def test_stale_approval_live_projection_requires_post_without_mutating_source() -> None:
-    record = {
+def _record() -> dict:
+    return {
         "run_id": "midrun_transport_truth",
         "customer_id": "customer_transport",
         "project_id": "project_transport",
@@ -31,6 +31,10 @@ def test_stale_approval_live_projection_requires_post_without_mutating_source() 
             "client_ready": False,
         },
     }
+
+
+def test_stale_approval_live_projection_requires_post_without_mutating_source() -> None:
+    record = _record()
     before = deepcopy(record)
 
     projected = project_stale_mid_approval_repair(record)
@@ -45,6 +49,7 @@ def test_stale_approval_live_projection_requires_post_without_mutating_source() 
     assert projected["continuation_required"] is True
     assert projected["same_run_approval_repair"]["live_status_read_only"] is True
     assert projected["same_run_approval_repair"]["post_continuation_required"] is True
+    assert projected["same_run_approval_repair"]["tenant_scope_required"] is True
     assert projected["same_run_approval_repair"]["repository_recaptured"] is False
     assert projected["same_run_approval_repair"]["scanner_rerun"] is False
     assert projected["same_run_approval_repair"]["score_recomputed"] is False
@@ -54,3 +59,25 @@ def test_stale_approval_live_projection_requires_post_without_mutating_source() 
     assert approval_step["evidence"]["client_delivery_allowed"] is False
     assert projected["human_review_required"] is True
     assert projected["client_ready"] is False
+
+
+def test_same_run_post_repair_requires_exact_customer_and_project_scope() -> None:
+    record = _record()
+
+    assert _scope_matches(record, "customer_transport", "project_transport") is True
+    assert _scope_matches(record, "customer_wrong", "project_transport") is False
+    assert _scope_matches(record, "customer_transport", "project_wrong") is False
+    assert _scope_matches(record, "default_customer", "default_project") is False
+
+
+def test_scope_falls_back_to_retained_request_identity_without_cross_tenant_defaults() -> None:
+    record = _record()
+    record.pop("customer_id")
+    record.pop("project_id")
+    record["request"] = {
+        "customer_id": "customer_from_request",
+        "project_id": "project_from_request",
+    }
+
+    assert _scope_matches(record, "customer_from_request", "project_from_request") is True
+    assert _scope_matches(record, "default_customer", "default_project") is False
