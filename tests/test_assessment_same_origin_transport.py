@@ -34,7 +34,7 @@ def test_express_status_polling_retries_only_read_only_exact_run_continuation() 
     assert 'EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 8' in source
     assert 'EXPRESS_STATUS_RETRY_BASE_MS = 1500' in source
     assert 'EXPRESS_STATUS_RETRY_MAX_MS = 12000' in source
-    assert 'RETRYABLE_STATUS_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504])' in source
+    assert 'RETRYABLE_STATUS_HTTP_CODES = new Set([408, 422, 425, 429, 500, 502, 503, 504])' in source
     assert 'let consecutiveStatusTransportFailures = 0;' in source
     assert 'consecutiveStatusTransportFailures += 1;' in source
     assert 'consecutiveStatusTransportFailures = 0;' in source
