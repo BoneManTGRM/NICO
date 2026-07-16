@@ -4,9 +4,9 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-MID_TRUTH_IDENTITY_TRANSPORT_VERSION = "nico.mid_truth_identity_transport.v2"
-_TERMINAL_MARKER = "_nico_mid_truth_identity_read_only_terminal_v2"
-_STATUS_MARKER = "_nico_mid_truth_identity_post_repair_v2"
+MID_TRUTH_IDENTITY_TRANSPORT_VERSION = "nico.mid_truth_identity_transport.v3"
+_TERMINAL_MARKER = "_nico_mid_truth_identity_read_only_terminal_v3"
+_STATUS_MARKER = "_nico_mid_truth_identity_post_repair_v3"
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -22,6 +22,20 @@ def _scope_matches(record: dict[str, Any], customer_id: str, project_id: str) ->
     stored_customer = str(record.get("customer_id") or request.get("customer_id") or "default_customer")
     stored_project = str(record.get("project_id") or request.get("project_id") or "default_project")
     return stored_customer == customer_id and stored_project == project_id
+
+
+def _scoped_repairable(
+    record: Any,
+    customer_id: str,
+    project_id: str,
+    store: Any,
+    repairable: Callable[[dict[str, Any], Any], bool],
+) -> bool:
+    return (
+        isinstance(record, dict)
+        and _scope_matches(record, customer_id, project_id)
+        and repairable(record, store)
+    )
 
 
 async def _request_scope(request: Any) -> tuple[str, str]:
@@ -130,10 +144,12 @@ def install_mid_truth_identity_transport() -> dict[str, Any]:
         async def post_status_with_same_run_repair(run_id: str, request: Any) -> dict[str, Any]:
             record = STORE.get("assessment_runs", run_id)
             customer_id, project_id = await _request_scope(request)
-            if (
-                isinstance(record, dict)
-                and _scope_matches(record, customer_id, project_id)
-                and _repairable_stale_record(record, STORE)
+            if _scoped_repairable(
+                record,
+                customer_id,
+                project_id,
+                STORE,
+                _repairable_stale_record,
             ):
                 repaired = repair_stale_mid_approval(record, store=STORE)
                 if isinstance(repaired, dict):
@@ -149,9 +165,6 @@ def install_mid_truth_identity_transport() -> dict[str, Any]:
                         "replacement_run_created": False,
                     }
                     return repaired
-            # Delegate missing or wrong-scope requests to the canonical endpoint,
-            # which returns its bounded not-found response without leaking whether
-            # a run exists in another tenant scope.
             return await current_status(run_id, request)
 
         setattr(post_status_with_same_run_repair, _STATUS_MARKER, True)
@@ -166,6 +179,7 @@ def install_mid_truth_identity_transport() -> dict[str, Any]:
         "live_status_projects_continuation": True,
         "post_status_performs_same_run_repair": True,
         "post_repair_requires_exact_tenant_scope": True,
+        "post_repair_scope_validated_before_mutation": True,
         "wrong_scope_repair_possible": False,
         "cross_tenant_run_existence_disclosed": False,
         "repository_recaptured": False,
@@ -181,6 +195,7 @@ def install_mid_truth_identity_transport() -> dict[str, Any]:
 __all__ = [
     "MID_TRUTH_IDENTITY_TRANSPORT_VERSION",
     "_scope_matches",
+    "_scoped_repairable",
     "install_mid_truth_identity_transport",
     "project_stale_mid_approval_repair",
 ]
