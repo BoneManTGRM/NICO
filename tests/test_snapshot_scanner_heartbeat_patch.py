@@ -41,7 +41,7 @@ def test_heartbeat_updates_durable_scanner_record(monkeypatch) -> None:
         scanner_worker.SCAN_JOBS.pop(scan_id, None)
 
 
-def test_heartbeat_installer_wraps_source_and_snapshot_worker_bindings(monkeypatch) -> None:
+def test_heartbeat_installer_wraps_source_and_snapshot_worker_module_alias(monkeypatch) -> None:
     def fake_worker(scan_id: str, payload: dict) -> None:
         return None
 
@@ -50,7 +50,6 @@ def test_heartbeat_installer_wraps_source_and_snapshot_worker_bindings(monkeypat
 
     monkeypatch.setattr(snapshot_scanner_worker, "_run_snapshot_scan", fake_worker)
     monkeypatch.setattr(scanner_tool_runners, "run_scanner_tool", fake_tool)
-    monkeypatch.setattr(snapshot_scanner_worker, "run_scanner_tool", fake_tool)
 
     result = heartbeat.install_snapshot_scanner_heartbeat()
 
@@ -58,8 +57,9 @@ def test_heartbeat_installer_wraps_source_and_snapshot_worker_bindings(monkeypat
     assert result["durable_heartbeat"] is True
     assert result["source_runner_binding_installed"] is True
     assert result["snapshot_worker_binding_installed"] is True
+    assert result["snapshot_worker_module_alias_verified"] is True
     assert getattr(snapshot_scanner_worker._run_snapshot_scan, "_nico_snapshot_scanner_heartbeat_worker_v2") is True
     assert getattr(scanner_tool_runners.run_scanner_tool, "_nico_snapshot_scanner_heartbeat_tool_v2") is True
-    assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.run_scanner_tool
+    assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
     assert snapshot_scanner_worker._run_snapshot_scan.__name__ == "fake_worker"
     assert scanner_tool_runners.run_scanner_tool.__name__ == "fake_tool"
