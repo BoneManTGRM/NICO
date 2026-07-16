@@ -34,12 +34,14 @@ def test_heartbeat_updates_durable_scanner_record(monkeypatch) -> None:
         assert durable["active_tool"] == "trufflehog"
         assert durable["heartbeat_at"]
         assert durable["updated_at"] == durable["heartbeat_at"]
+        assert durable["heartbeat_sequence"] == 1
+        assert durable["heartbeat_process_id"] > 0
         assert durable["tool_elapsed_seconds"] >= 3
     finally:
         scanner_worker.SCAN_JOBS.pop(scan_id, None)
 
 
-def test_heartbeat_installer_wraps_worker_and_tool_without_changing_signatures(monkeypatch) -> None:
+def test_heartbeat_installer_wraps_source_and_snapshot_worker_module_alias(monkeypatch) -> None:
     def fake_worker(scan_id: str, payload: dict) -> None:
         return None
 
@@ -53,7 +55,11 @@ def test_heartbeat_installer_wraps_worker_and_tool_without_changing_signatures(m
 
     assert result["status"] == "installed"
     assert result["durable_heartbeat"] is True
-    assert getattr(snapshot_scanner_worker._run_snapshot_scan, "_nico_snapshot_scanner_heartbeat_worker_v1") is True
-    assert getattr(scanner_tool_runners.run_scanner_tool, "_nico_snapshot_scanner_heartbeat_tool_v1") is True
+    assert result["source_runner_binding_installed"] is True
+    assert result["snapshot_worker_binding_installed"] is True
+    assert result["snapshot_worker_module_alias_verified"] is True
+    assert getattr(snapshot_scanner_worker._run_snapshot_scan, "_nico_snapshot_scanner_heartbeat_worker_v2") is True
+    assert getattr(scanner_tool_runners.run_scanner_tool, "_nico_snapshot_scanner_heartbeat_tool_v2") is True
+    assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
     assert snapshot_scanner_worker._run_snapshot_scan.__name__ == "fake_worker"
     assert scanner_tool_runners.run_scanner_tool.__name__ == "fake_tool"

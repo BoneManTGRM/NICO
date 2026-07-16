@@ -9,6 +9,7 @@ from nico.api.production import app as production_app
 from nico.assessment_block_messages import install_assessment_block_messages
 from nico.express_backend_diagnostics import EXPRESS_BACKEND_DIAGNOSTICS_VERSION
 from nico.mid_live_status_api import MID_LIVE_STATUS_ROUTE, register_mid_live_status_routes
+from nico.mid_runtime_diagnostics import register_mid_runtime_diagnostics
 from nico.postgres_timeout_patch import install_postgres_timeout_patch
 from nico.scanner_redaction_safety import (
     SCANNER_REDACTION_SAFETY_VERSION,
@@ -88,6 +89,7 @@ SNAPSHOT_SCANNER_HEARTBEAT = install_snapshot_scanner_heartbeat()
 EXPRESS_PRODUCTION_BOOTSTRAP = install_assessment_block_messages()
 app = production_app
 MID_LIVE_STATUS = register_mid_live_status_routes(app)
+MID_RUNTIME = register_mid_runtime_diagnostics(app)
 _register_runtime_diagnostics(app)
 EXPRESS_PRODUCTION_RUNTIME = express_runtime_status(app)
 
@@ -101,6 +103,12 @@ if any(count != 1 for count in EXPRESS_PRODUCTION_RUNTIME["route_counts"].values
     )
 if _route_count(app, MID_LIVE_STATUS_ROUTE[0], MID_LIVE_STATUS_ROUTE[1]) != 1:
     raise RuntimeError("Mid live-status route must be registered exactly once")
+if not SNAPSHOT_SCANNER_HEARTBEAT.get("source_runner_binding_installed"):
+    raise RuntimeError("Scanner heartbeat wrapper is not bound to the source tool runner")
+if not SNAPSHOT_SCANNER_HEARTBEAT.get("snapshot_worker_binding_installed"):
+    raise RuntimeError("Scanner heartbeat wrapper is not bound to the snapshot worker's imported tool runner")
+if MID_RUNTIME.get("status") != "ok":
+    raise RuntimeError(f"Mid production runtime diagnostics are blocked: {MID_RUNTIME}")
 
 app.state.nico_postgres_timeouts = POSTGRES_TIMEOUTS
 app.state.nico_scanner_redaction_safety = SCANNER_REDACTION_SAFETY
@@ -108,6 +116,7 @@ app.state.nico_snapshot_scanner_heartbeat = SNAPSHOT_SCANNER_HEARTBEAT
 app.state.nico_express_production_bootstrap = EXPRESS_PRODUCTION_BOOTSTRAP
 app.state.nico_express_production_runtime = EXPRESS_PRODUCTION_RUNTIME
 app.state.nico_mid_live_status = MID_LIVE_STATUS
+app.state.nico_mid_runtime = MID_RUNTIME
 
 __all__ = [
     "app",
@@ -117,6 +126,7 @@ __all__ = [
     "EXPRESS_PRODUCTION_BOOTSTRAP",
     "EXPRESS_PRODUCTION_RUNTIME",
     "MID_LIVE_STATUS",
+    "MID_RUNTIME",
     "EXPRESS_RUNTIME_DIAGNOSTICS_ROUTE",
     "EXPRESS_RUNTIME_REQUIRED_ROUTES",
     "express_runtime_status",

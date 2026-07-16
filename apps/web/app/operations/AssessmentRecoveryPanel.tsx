@@ -45,6 +45,7 @@ type Props = {
   apiUrl: string;
   adminToken: string;
   refreshKey: string;
+  targetRunId?: string;
 };
 
 function tone(status?: string) {
@@ -55,7 +56,7 @@ function tone(status?: string) {
   return styles.bad;
 }
 
-export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}: Props) {
+export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey, targetRunId = ""}: Props) {
   const [inventory, setInventory] = useState<AssessmentRecoveryInventory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -109,7 +110,13 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  useEffect(() => {
+    if (!inventory || !targetRunId) return;
+    window.setTimeout(() => document.getElementById(`assessment-recovery-${targetRunId}`)?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
+  }, [inventory, targetRunId]);
+
   const loaded = inventory !== null;
+  const targetFound = Boolean(targetRunId && inventory?.recovery_required?.some((item) => item.run_id === targetRunId));
 
   return (
     <section className={styles.panel}>
@@ -130,9 +137,17 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
         <button type="button" onClick={() => void loadRecovery(true)} disabled={loading || !adminToken.trim()}>{loading ? "Working..." : "Refresh assessment reconciliation"}</button>
       </div>
       <p className={styles.helper}>All resumes require an authenticated operator claim. Interrupted Express runs remain manual-review-only and cannot silently start a replacement.</p>
+      {targetRunId && loaded && !targetFound ? <div className={styles.nextAction}><b>Target not in assessment recovery inventory</b><p>{targetRunId} may still be active, may be listed under scanner recovery, or may require a fresh reconciliation. Use Refresh assessment reconciliation and inspect the scanner panel below.</p></div> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
-      {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => (
-        <article className={styles.alertCard} key={item.run_id}>
+      {inventory?.recovery_required?.length ? <div className={styles.alertList}>{inventory.recovery_required.map((item) => {
+        const targeted = Boolean(targetRunId && item.run_id === targetRunId);
+        return <article
+          className={styles.alertCard}
+          id={item.run_id ? `assessment-recovery-${item.run_id}` : undefined}
+          key={item.run_id}
+          aria-current={targeted ? "true" : undefined}
+          style={targeted ? {borderColor: "#38bdf8", boxShadow: "0 0 0 2px rgba(56,189,248,.28)"} : undefined}
+        >
           <div className={styles.cardHead}>
             <div><span>{item.workflow || item.service_tier || "assessment"}</span><b>{item.run_id || "unknown run"}</b></div>
             <span className={`${styles.pill} ${tone(item.status)}`}>{item.status || "unknown"}</span>
@@ -144,8 +159,8 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey}
           <div className={styles.statRow}><span>Artifacts</span><b>{item.report_id || "no report"} · {item.approval_id || "no approval"}</b></div>
           <div className={styles.statRow}><span>Attempt</span><b>{item.recovery?.attempt ?? 0}</b></div>
           <button type="button" onClick={() => void resume(item.run_id || "")} disabled={loading || !item.recovery?.resume_allowed}>{item.recovery?.resume_allowed ? "Resume same run ID" : "Manual review required"}</button>
-        </article>
-      ))}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Express, Mid, or Full runs require recovery." : "Enter the admin token and load recovery to inspect Express, Mid, and Full run state."}</div>}
+        </article>;
+      })}</div> : <div className={styles.emptyState}>{inventory ? "No interrupted Express, Mid, or Full runs require recovery." : "Enter the admin token and load recovery to inspect Express, Mid, and Full run state."}</div>}
       {inventory?.operator_action ? <div className={styles.nextAction}><b>Assessment recovery policy</b><p>{inventory.operator_action}</p></div> : null}
     </section>
   );
