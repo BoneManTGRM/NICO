@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import tarfile
@@ -22,23 +23,29 @@ ALLOWED_DOWNLOAD_HOSTS = {
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
 }
-
+SAFE_RELEASE_TAG = re.compile(r"^v?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TOOLS = (
     {
         "name": "osv-scanner",
         "repository": "google/osv-scanner",
+        "version_env": "NICO_OSV_SCANNER_VERSION",
+        "default_tag": "v2.4.0",
         "asset_markers": ("osv-scanner_linux_amd64", "linux_amd64"),
         "binary": "osv-scanner",
     },
     {
         "name": "gitleaks",
         "repository": "gitleaks/gitleaks",
+        "version_env": "NICO_GITLEAKS_VERSION",
+        "default_tag": "v8.30.1",
         "asset_markers": ("linux_x64.tar.gz", "linux_amd64.tar.gz", "linux_x64", "linux_amd64"),
         "binary": "gitleaks",
     },
     {
         "name": "trufflehog",
         "repository": "trufflesecurity/trufflehog",
+        "version_env": "NICO_TRUFFLEHOG_VERSION",
+        "default_tag": "v3.95.9",
         "asset_markers": ("linux_amd64.tar.gz", "linux_amd64"),
         "binary": "trufflehog",
     },
@@ -77,13 +84,28 @@ def _read_bounded(response: BinaryIO, limit: int = MAX_DOWNLOAD_BYTES) -> bytes:
     return b"".join(chunks)
 
 
-def _latest_release(repository: str) -> dict[str, Any]:
+def _release_tag(tool: dict[str, Any]) -> str:
+    environment_name = str(tool.get("version_env") or "").strip()
+    configured = os.getenv(environment_name, "").strip() if environment_name else ""
+    tag = configured or str(tool.get("default_tag") or "").strip()
+    if not SAFE_RELEASE_TAG.fullmatch(tag):
+        raise RuntimeError(f"Invalid pinned release tag for {tool.get('name')}: {tag!r}")
+    return tag
+
+
+def _release(repository: str, tag: str) -> dict[str, Any]:
     if not repository or repository.count("/") != 1:
         raise RuntimeError("Invalid GitHub repository identifier for scanner release lookup.")
-    url = f"https://api.github.com/repos/{repository}/releases/latest"
+    if not SAFE_RELEASE_TAG.fullmatch(tag):
+        raise RuntimeError("Invalid scanner release tag.")
+    url = f"https://api.github.com/repos/{repository}/releases/tags/{tag}"
     # URL validation and host allowlisting happen inside _request before this network call.
     with urllib.request.urlopen(_request(url), timeout=45) as response:  # nosec B310
-        return json.loads(_read_bounded(response, 5 * 1024 * 1024).decode("utf-8"))
+        release = json.loads(_read_bounded(response, 5 * 1024 * 1024).decode("utf-8"))
+    actual_tag = str(release.get("tag_name") or "") if isinstance(release, dict) else ""
+    if actual_tag != tag:
+        raise RuntimeError(f"Scanner release tag mismatch: requested {tag}, received {actual_tag or 'missing'}")
+    return release
 
 
 def _select_asset(release: dict[str, Any], markers: tuple[str, ...]) -> dict[str, Any]:
@@ -183,9 +205,10 @@ def _install_archive(archive: Path, asset_name: str, binary: str) -> None:
         _copy_executable(archive, binary)
 
 
-def install_tool(tool: dict[str, Any]) -> None:
+def install_tool(tool: dict[str, Any]) -> str:
     binary = str(tool["binary"])
-    release = _latest_release(str(tool["repository"]))
+    tag = _release_tag(tool)
+    release = _release(str(tool["repository"]), tag)
     asset = _select_asset(release, tuple(tool["asset_markers"]))
     asset_name = str(asset.get("name") or binary)
     with tempfile.TemporaryDirectory(prefix="nico-scanner-download-") as temp:
@@ -195,7 +218,8 @@ def install_tool(tool: dict[str, Any]) -> None:
     installed = shutil.which(binary)
     if not installed:
         raise RuntimeError(f"{binary} was installed but is not available on PATH")
-    print(f"installed {binary}: {installed}")
+    print(f"installed {binary}@{tag}: {installed}")
+    return tag
 
 
 def main() -> None:
@@ -204,8 +228,8 @@ def main() -> None:
     for tool in TOOLS:
         name = str(tool["name"])
         try:
-            install_tool(tool)
-            installed.append(name)
+            tag = install_tool(tool)
+            installed.append(f"{name}@{tag}")
         except Exception as exc:  # pragma: no cover - exercised during Docker build
             failures.append(f"{name}: {exc}")
             print(f"warning: could not install {name}: {exc}")

@@ -42,9 +42,13 @@ def test_environment_example_uses_the_real_cors_variable() -> None:
 def test_compose_starts_complete_api_and_frontend_without_embedding_secrets() -> None:
     compose = _read("docker-compose.yml")
 
-    assert "nico.api.production:app" in compose
+    assert "nico.api.production_bootstrap:app" in compose
+    assert "nico.api.production:app" not in compose
     assert "NEXT_PUBLIC_NICO_API_URL: http://localhost:8000" in compose
     assert "NICO_CORS_ORIGINS: http://localhost:3000" in compose
+    assert "NICO_SQLITE_PATH: /data/nico-runtime.sqlite3" in compose
+    assert 'NICO_SQLITE_DURABLE_MOUNT_VERIFIED: "true"' in compose
+    assert 'NICO_WEB_WORKERS: "1"' in compose
     assert "nico-data:/data" in compose
     assert "NICO_ADMIN_TOKEN" not in compose
 
