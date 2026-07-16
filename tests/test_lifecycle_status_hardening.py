@@ -6,7 +6,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import nico.lifecycle_status_hardening as hardening
+from nico.express_status_liveness_patch import install_express_status_liveness_patch
 from nico.storage import MemoryAdapter
+
+install_express_status_liveness_patch()
 
 
 def _express_record() -> dict:
@@ -198,28 +201,76 @@ def test_express_completed_status_preserves_report_and_review_payload(monkeypatc
     assert payload["client_ready"] is False
 
 
-def test_express_accepted_run_without_worker_handshake_becomes_recovery_evidence(monkeypatch) -> None:
+def test_express_accepted_run_without_worker_handshake_returns_read_only_recovery_evidence(monkeypatch) -> None:
     store = MemoryAdapter()
     record = _express_record()
     record["created_at"] = "2020-01-01T00:00:00Z"
-    record["updated_at"] = "2099-07-15T19:00:00Z"
+    record["updated_at"] = "2020-01-01T00:00:00Z"
     record["response"]["created_at"] = "2020-01-01T00:00:00Z"
-    record["response"]["updated_at"] = "2099-07-15T19:00:00Z"
+    record["response"]["updated_at"] = "2020-01-01T00:00:00Z"
     store.put("assessment_runs", record["run_id"], record)
     monkeypatch.setattr(hardening, "STORE", store)
-    monkeypatch.setattr(hardening.express_async_api, "STORE", store)
     client = _client(store)
 
     response = client.post("/assessment/express-run/express_run_status_hardening/status")
 
     assert response.status_code == 503
     detail = response.json()["detail"]
-    assert detail["status"] == "interrupted"
-    assert detail["code"] == "express_worker_start_timeout"
-    assert detail["progress_percent"] == 100
-    assert detail["recovery_required"] is True
+    assert detail["status"] == "temporarily_unavailable"
+    assert detail["code"] == "express_worker_start_unconfirmed"
+    assert detail["terminal_state_written"] is False
+    assert detail["status_read_only"] is True
+    assert detail["duplicate_start_allowed"] is False
     retained = store.get("assessment_runs", record["run_id"])
-    assert retained["response"]["code"] == "express_worker_start_timeout"
+    assert retained["status"] == "queued"
+    assert retained["response"]["status"] == "queued"
+    assert "code" not in retained["response"]
+
+
+def test_express_stale_parent_heartbeat_stays_running_when_scanner_is_fresh(monkeypatch) -> None:
+    store = MemoryAdapter()
+    record = _express_record()
+    record["status"] = "running"
+    record["scan_id"] = "scan_fresh_liveness"
+    record["response"].update(
+        {
+            "status": "running",
+            "worker_started": True,
+            "heartbeat_at": "2020-01-01T00:00:00Z",
+            "updated_at": "2020-01-01T00:00:00Z",
+            "scan_id": "scan_fresh_liveness",
+            "scanner": {"scan_id": "scan_fresh_liveness", "status": "running"},
+        }
+    )
+    store.put("assessment_runs", record["run_id"], record)
+    store.put(
+        "scanner_runs",
+        "scan_fresh_liveness",
+        {
+            "scan_id": "scan_fresh_liveness",
+            "run_id": record["run_id"],
+            "customer_id": "default_customer",
+            "project_id": "default_project",
+            "status": "running",
+            "current_stage": "scanner_suite",
+            "active_tool": "semgrep",
+            "progress_percent": 52,
+            "heartbeat_at": "2099-01-01T00:00:00Z",
+            "updated_at": "2099-01-01T00:00:00Z",
+        },
+    )
+    monkeypatch.setattr(hardening, "STORE", store)
+    client = _client(store)
+
+    response = client.post("/assessment/express-run/express_run_status_hardening/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["scanner"]["active_tool"] == "semgrep"
+    assert payload["lifecycle_status"]["scanner_liveness_corroborated"] is True
+    assert payload["lifecycle_status"]["status_read_is_terminal_write"] is False
+    assert store.get("assessment_runs", record["run_id"])["status"] == "running"
 
 
 def test_express_status_wrong_scope_fails_as_not_found_not_validation_error(monkeypatch) -> None:
