@@ -81,15 +81,16 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
 
-def test_server_proxy_allows_only_quick_lifecycle_and_bounded_mid_diagnostic_routes() -> None:
+def test_server_proxy_allows_only_quick_lifecycle_and_bounded_runtime_diagnostic_routes() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL || process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'ALLOWED_ASSESSMENT_PATH.test(apiPath)' in source
     assert 'ALLOWED_DIAGNOSTIC_PATH.test(apiPath)' in source
     assert '(?:express|mid|full)-run' in source
+    assert '(?:express-runtime|mid-runtime)' in source
     assert '/assessment/github' not in source
-    assert 'Only canonical assessment lifecycle routes and bounded Mid runtime diagnostics are available through this proxy.' in source
+    assert 'Only canonical assessment lifecycle routes and bounded runtime diagnostics are available through this proxy.' in source
     assert 'nico_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
     assert 'assessment_backend_unreachable' in source
