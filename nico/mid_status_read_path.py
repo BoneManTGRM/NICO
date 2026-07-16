@@ -262,45 +262,47 @@ def _retained_final_response(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_mid_status_read_path() -> dict[str, Any]:
-    from nico import mid_assessment_api
+    from nico import mid_assessment_api as api
 
-    current: Callable[..., dict[str, Any]] = mid_assessment_api.continue_mid_assessment
+    current: Callable[..., dict[str, Any]] = api.mid_assessment_status_response
     if getattr(current, _PATCH_MARKER, False):
-        return {"status": "already_installed", "version": MID_STATUS_READ_PATH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": MID_STATUS_READ_PATH_VERSION,
+        }
 
     @wraps(current)
-    def continuation_with_status_read(model: Any) -> dict[str, Any]:
-        payload = _payload(model)
-        run_id = str(payload.get("run_id") or "")
-        if not run_id:
-            return current(model)
-        record = mid_assessment_api.STORE.get("assessment_runs", run_id)
-        if not isinstance(record, dict):
-            return current(model)
-        explicit = explicit_model_fields(model)
-        if not _identity_matches(record, payload, explicit):
-            return current(model)
+    def status_with_fast_read(run_id: str, req: Any) -> dict[str, Any]:
+        request_payload = _payload(req)
+        explicit = explicit_model_fields(req)
+        payload, record = build_mid_status_payload(run_id, request_payload, explicit)
+        if not isinstance(record, dict) or not _identity_matches(record, request_payload, explicit):
+            return current(run_id, req)
+
         retained = _retained_response(record)
         if _final_mid_ready(retained):
             return _retained_final_response(record)
-        scan_id = str(record.get("scan_id") or _record(retained.get("scanner")).get("scan_id") or "")
-        if scan_id:
-            scan = get_scan(scan_id)
-            if isinstance(scan, dict) and str(scan.get("status") or "") in _ACTIVE_SCAN_STATUSES:
-                return _active_status_response(record, scan)
-        return current(model)
 
-    setattr(continuation_with_status_read, _PATCH_MARKER, True)
-    setattr(continuation_with_status_read, "_nico_previous", current)
-    mid_assessment_api.continue_mid_assessment = continuation_with_status_read
+        scan_id = str(payload.get("scan_id") or record.get("scan_id") or "")
+        scan = get_scan(scan_id) if scan_id else {"status": "not_started", "scan_id": ""}
+        if str(scan.get("status") or "") in _ACTIVE_SCAN_STATUSES:
+            return _active_status_response(record, scan)
+
+        return current(run_id, req)
+
+    setattr(status_with_fast_read, _PATCH_MARKER, True)
+    setattr(status_with_fast_read, "_nico_previous", current)
+    api.mid_assessment_status_response = status_with_fast_read
     return {
         "status": "installed",
         "version": MID_STATUS_READ_PATH_VERSION,
-        "durable_scanner_read": True,
+        "active_scanner_status_is_read_only": True,
+        "heartbeat_evidence_exposed": True,
         "scanner_watchdog_visible": True,
         "intra_tool_progress_visible": True,
-        "orchestrator_reentered_for_active_scan": False,
-        "repository_recaptured_for_status": False,
+        "repository_recapture_during_polling": False,
+        "orchestrator_reentry_during_polling": False,
+        "terminal_continuation_preserved": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -308,9 +310,5 @@ def install_mid_status_read_path() -> dict[str, Any]:
 
 __all__ = [
     "MID_STATUS_READ_PATH_VERSION",
-    "_active_status_response",
-    "_final_mid_ready",
-    "_retained_final_response",
-    "_retained_response",
     "install_mid_status_read_path",
 ]
