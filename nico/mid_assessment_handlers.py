@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from nico.full_assessment_idempotent_handlers import idempotent_full_assessment_handlers
+from nico.mid_static_score_accuracy import mid_scoring_handler
 from nico.snapshot_assessment_handlers import (
     _snapshot_evidence_attachment_handler,
     _snapshot_repository_handler,
@@ -22,4 +23,5 @@ def mid_assessment_handlers(timeframe_days: int = 180) -> dict[str, Any]:
     handlers["repo_evidence"] = repository_handler
     handlers["scanner_worker"] = _snapshot_scanner_handler
     handlers["evidence_attachment"] = _snapshot_evidence_attachment_handler
+    handlers["scoring"] = mid_scoring_handler
     return handlers
