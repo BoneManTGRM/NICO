@@ -9,13 +9,14 @@ from fastapi import FastAPI, HTTPException, Request
 
 from nico import express_async_api
 from nico.mid_live_status_api import MID_LIVE_STATUS_PATH, mid_live_status_response
-from nico.storage import STORE, utc_now
+from nico.storage import STORE
 
-LIFECYCLE_STATUS_HARDENING_VERSION = "nico.lifecycle_status_hardening.v1"
+LIFECYCLE_STATUS_HARDENING_VERSION = "nico.lifecycle_status_hardening.v2"
 EXPRESS_STATUS_PATH = "/assessment/express-run/{run_id}/status"
 _ACTIVE = {"queued", "running", "starting", "pending"}
 _TERMINAL_FAILURE = {"blocked", "failed", "error", "interrupted", "rejected"}
 _TERMINAL_SUCCESS = {"complete", "completed"}
+_EXPRESS_WORKER_START_GRACE_SECONDS = 60
 
 
 def _record(value: Any) -> dict[str, Any]:
@@ -58,6 +59,7 @@ def _safe_scan(scan: dict[str, Any]) -> dict[str, Any]:
         "current_stage",
         "progress_percent",
         "active_tool",
+        "message",
         "tools_requested",
         "tools_run",
         "unavailable_tools",
@@ -70,6 +72,9 @@ def _safe_scan(scan: dict[str, Any]) -> dict[str, Any]:
         "heartbeat_at",
         "heartbeat_sequence",
         "heartbeat_process_id",
+        "heartbeat_thread",
+        "heartbeat_persistence_status",
+        "heartbeat_failure_type",
         "tool_elapsed_seconds",
         "created_at",
         "updated_at",
@@ -92,10 +97,47 @@ def _safe_scan(scan: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _safe_progress(progress: Any) -> list[dict[str, Any]]:
+    if not isinstance(progress, list):
+        return []
+    output: list[dict[str, Any]] = []
+    for item in progress[:20]:
+        if not isinstance(item, dict):
+            continue
+        evidence = _record(item.get("evidence"))
+        safe_evidence = {
+            str(key)[:80]: value
+            for key, value in list(evidence.items())[:60]
+            if isinstance(value, (str, int, float, bool, type(None)))
+        }
+        output.append(
+            {
+                "step": _bounded(item.get("step"), 80),
+                "status": _bounded(item.get("status"), 40),
+                "message": _bounded(item.get("message"), 500),
+                "evidence": safe_evidence,
+            }
+        )
+    return output
+
+
 def _safe_retained_response(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the exact public lifecycle payload, never the private run record.
+
+    ``response``/``payload`` is already the sanitized client contract written by
+    the lifecycle worker. Retaining it is necessary so completed Express status
+    responses still contain their report artifacts, sections, scores, and review
+    gates. Private request data and internal storage metadata are not copied.
+    """
+
     source = _record(record.get("response")) or _record(record.get("payload"))
-    output: dict[str, Any] = {}
-    scalar_keys = (
+    output = deepcopy(source)
+    output["progress"] = _safe_progress(source.get("progress"))
+    scanner = source.get("scanner")
+    if isinstance(scanner, dict):
+        output["scanner"] = _safe_scan(scanner)
+
+    scalar_fallbacks = (
         "status",
         "run_id",
         "repository",
@@ -112,23 +154,30 @@ def _safe_retained_response(record: dict[str, Any]) -> dict[str, Any]:
         "snapshot_id",
         "snapshot_commit_sha",
         "scan_id",
+        "created_at",
         "updated_at",
+        "heartbeat_at",
+        "heartbeat_sequence",
+        "heartbeat_process_id",
+        "worker_started",
+        "worker_started_at",
+        "worker_process_id",
+        "worker_thread",
+        "backend_stage",
+        "status_truth",
+        "code",
+        "failure_stage",
+        "exception_class",
+        "diagnostic_id",
+        "diagnostic_run_id",
+        "diagnostic_recorded_at",
     )
-    for key in scalar_keys:
-        value = source.get(key, record.get(key))
-        if isinstance(value, (str, int, float, bool, type(None))):
-            output[key] = value
-    progress = source.get("progress")
-    if isinstance(progress, list):
-        output["progress"] = [
-            {
-                "step": _bounded(_record(item).get("step"), 80),
-                "status": _bounded(_record(item).get("status"), 40),
-                "message": _bounded(_record(item).get("message"), 320),
-            }
-            for item in progress[:20]
-            if isinstance(item, dict)
-        ]
+    for key in scalar_fallbacks:
+        if key not in output:
+            value = record.get(key)
+            if isinstance(value, (str, int, float, bool, type(None))):
+                output[key] = value
+
     output.setdefault("run_id", record.get("run_id") or "")
     output.setdefault("repository", record.get("repository") or "")
     output.setdefault("customer_id", record.get("customer_id") or "default_customer")
@@ -143,6 +192,30 @@ def _scope_matches(record: dict[str, Any], customer_id: str, project_id: str) ->
     stored_customer = str(record.get("customer_id") or request_record.get("customer_id") or "default_customer")
     stored_project = str(record.get("project_id") or request_record.get("project_id") or "default_project")
     return compare_digest(customer_id, stored_customer) and compare_digest(project_id, stored_project)
+
+
+def _interrupt_express(
+    run_id: str,
+    request_record: dict[str, Any],
+    *,
+    code: str,
+    message: str,
+    evidence: dict[str, Any],
+) -> None:
+    interrupted = express_async_api._response(
+        run_id,
+        request_record,
+        "interrupted",
+        message,
+        code=code,
+        stage="interrupted",
+        progress_percent=100,
+        evidence={**evidence, "recovery_required": True},
+    )
+    interrupted["recovery_required"] = True
+    interrupted["recovery_path"] = "/operations/recovery"
+    express_async_api._record(run_id, request_record, interrupted)
+    raise HTTPException(status_code=503, detail=interrupted)
 
 
 def _express_status_response(run_id: str, customer_id: str, project_id: str) -> dict[str, Any]:
@@ -164,6 +237,10 @@ def _express_status_response(run_id: str, customer_id: str, project_id: str) -> 
     status = str(response.get("status") or record.get("status") or "unknown").lower()
     heartbeat_at = response.get("heartbeat_at") or record.get("heartbeat_at") or response.get("updated_at") or record.get("updated_at")
     heartbeat_age = _age_seconds(heartbeat_at)
+    created_at = response.get("created_at") or record.get("created_at") or response.get("updated_at") or record.get("updated_at")
+    run_age = _age_seconds(created_at)
+    worker_started = bool(response.get("worker_started"))
+
     if status in _ACTIVE:
         response["status"] = "running" if status != "queued" else "queued"
         response["lifecycle_status"] = {
@@ -171,32 +248,41 @@ def _express_status_response(run_id: str, customer_id: str, project_id: str) -> 
             "mode": "durable_exact_run_read",
             "heartbeat_at": heartbeat_at or "",
             "heartbeat_age_seconds": round(heartbeat_age, 1) if heartbeat_age is not None else None,
+            "worker_started": worker_started,
+            "worker_started_at": response.get("worker_started_at") or "",
+            "worker_process_id": response.get("worker_process_id"),
+            "worker_thread": response.get("worker_thread") or "",
+            "backend_stage": response.get("backend_stage") or "",
+            "scanner_status": _record(response.get("scanner")).get("status") or "not_started",
             "process_local_active_set_required": False,
             "request_validation_422_possible": False,
         }
-        # A fresh durable update is authoritative across Uvicorn workers. Only
-        # classify interruption after the lifecycle record has stopped updating.
+        request_record = _record(record.get("request")) or record
+        if not worker_started and run_age is not None and run_age > _EXPRESS_WORKER_START_GRACE_SECONDS:
+            _interrupt_express(
+                run_id,
+                request_record,
+                code="express_worker_start_timeout",
+                message="The Express run was accepted but the backend worker did not publish its start handshake within the bounded grace period. The exact run remains preserved for authenticated recovery.",
+                evidence={
+                    "worker_started": False,
+                    "run_age_seconds": round(run_age, 1),
+                    "worker_start_grace_seconds": _EXPRESS_WORKER_START_GRACE_SECONDS,
+                },
+            )
         if heartbeat_age is None or heartbeat_age <= 300:
             return response
-        request_record = _record(record.get("request")) or record
-        interrupted = express_async_api._response(
+        _interrupt_express(
             run_id,
             request_record,
-            "interrupted",
-            "The Express lifecycle stopped updating before completion. The exact run remains preserved for authenticated recovery.",
             code="express_worker_heartbeat_stale",
-            stage="interrupted",
-            progress_percent=100,
+            message="The Express lifecycle stopped updating before completion. The exact run remains preserved for authenticated recovery.",
             evidence={
                 "heartbeat_at": heartbeat_at or "",
                 "heartbeat_age_seconds": round(heartbeat_age, 1),
-                "recovery_required": True,
+                "worker_started": worker_started,
             },
         )
-        interrupted["recovery_required"] = True
-        interrupted["recovery_path"] = "/operations/recovery"
-        express_async_api._record(run_id, request_record, interrupted)
-        raise HTTPException(status_code=503, detail=interrupted)
 
     if status in _TERMINAL_FAILURE:
         raise HTTPException(status_code=400 if status in {"blocked", "rejected"} else 503, detail=response)
@@ -381,6 +467,9 @@ def install_lifecycle_status_hardening(app: FastAPI) -> dict[str, Any]:
         "version": LIFECYCLE_STATUS_HARDENING_VERSION,
         "express_request_validation_422_possible": False,
         "express_cross_worker_durable_read": True,
+        "express_worker_start_handshake": True,
+        "express_scanner_projection_preserved": True,
+        "express_final_report_payload_preserved": True,
         "mid_generic_http_500_possible": False,
         "mid_bounded_degraded_projection": True,
         "human_review_required": True,
