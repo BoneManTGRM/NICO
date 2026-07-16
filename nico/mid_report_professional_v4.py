@@ -7,6 +7,7 @@ from typing import Any
 
 MID_REPORT_V4_VERSION = "mid-assessment-draft-v4-full-depth"
 _PATCH_MARKER = "_nico_mid_report_professional_v4"
+_DRAFT_LABEL = "DRAFT — HUMAN REVIEW REQUIRED"
 _WEIGHTS = {
     "code_audit": 20,
     "dependency_health": 15,
@@ -119,6 +120,8 @@ def _score_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _enhance(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add the v4 presentation layer without breaking the v3 report contract."""
+
     output = deepcopy(payload)
     rows = _score_rows(output)
     sensitivity = []
@@ -134,8 +137,8 @@ def _enhance(payload: dict[str, Any]) -> dict[str, Any]:
             "weighted_gap": round((100 - score) * weight / 100, 2),
         })
     output.update({
-        "report_version": MID_REPORT_V4_VERSION,
-        "detail_level": 4,
+        "presentation_version": MID_REPORT_V4_VERSION,
+        "presentation_detail_level": 4,
         "score_sensitivity": sorted(sensitivity, key=lambda item: item["weighted_gap"], reverse=True),
         "report_depth_contract": {
             "minimum_pdf_pages": 11,
@@ -145,6 +148,7 @@ def _enhance(payload: dict[str, Any]) -> dict[str, Any]:
             "context_evidence_requests": True,
             "review_exception_appendix": True,
             "page_count_is_not_a_quality_substitute": True,
+            "legacy_payload_contract_preserved": True,
         },
     })
     return output
@@ -152,15 +156,40 @@ def _enhance(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _markdown(payload: dict[str, Any]) -> str:
     decision = _dict(payload.get("decision_summary"))
+    coverage = _dict(payload.get("evidence_coverage"))
+    context_count = len(_context(payload))
     lines = [
-        "# NICO MID TECHNICAL ASSESSMENT",
+        "# NICO MID ASSESSMENT",
         "",
-        "**DRAFT - SNAPSHOT-BOUND - EVIDENCE-BOUND - HUMAN REVIEW REQUIRED**",
+        "## NICO MID TECHNICAL ASSESSMENT",
+        "",
+        f"**{_DRAFT_LABEL}**",
         "",
         f"- Repository: `{payload.get('repository')}`",
         f"- Run: `{payload.get('run_id')}`",
         f"- Snapshot: `{payload.get('snapshot_commit_sha')}`",
         f"- Technical score: **{decision.get('technical_score')}/100**",
+        f"- Human-context sections unscored: {context_count}",
+        "",
+        "## Decision summary",
+        "",
+        "The score is the weighted result of seven technical sections. Evidence coverage and unscored stakeholder/context modules do not directly raise or lower it.",
+        "",
+        "### Primary score constraints",
+    ]
+    for item in decision.get("primary_score_constraints") or []:
+        lines.append(f"- **{item.get('label')} — {item.get('score')}/100:** {item.get('primary_reason')}")
+    lines.extend(["", "### Verified strengths"])
+    lines.extend(f"- {item}" for item in decision.get("verified_strengths") or ["No verified strength summary was returned."])
+    lines.extend(["", "### Recommended actions"])
+    lines.extend(f"- {item}" for item in decision.get("recommended_actions") or ["Human review of the evidence-bound report."])
+    lines.extend([
+        "",
+        "## Automated evidence coverage",
+        "",
+        f"**{coverage.get('percent', 0)}%** ({coverage.get('numerator', 0)}/{coverage.get('denominator', 0)} explicit evidence units)",
+        "",
+        str(coverage.get("method") or "Coverage was calculated from explicit evidence units."),
         "",
         "## Assessment scope and methodology",
         "",
@@ -172,7 +201,7 @@ def _markdown(payload: dict[str, Any]) -> str:
         "",
         "## Score sensitivity",
         "",
-    ]
+    ])
     for row in payload.get("score_sensitivity") or []:
         lines.append(f"- {row.get('label')}: lift to 80={row.get('lift_to_80')}; lift to 90={row.get('lift_to_90')}; maximum weighted gap={row.get('weighted_gap')}.")
     for index, section in enumerate(_technical(payload), 1):
@@ -181,7 +210,7 @@ def _markdown(payload: dict[str, Any]) -> str:
             "",
             f"## Technical dossier {index}: {section.get('label')} - {section.get('score')}/100",
             "",
-            f"- Truth status: {section.get('truth_status')}",
+            f"- Truth status: **{section.get('truth_status')}**",
             f"- Confidence: {section.get('confidence') or 'evidence-bound'}",
             "",
             str(section.get("summary") or ""),
@@ -195,7 +224,13 @@ def _markdown(payload: dict[str, Any]) -> str:
         lines.extend(f"- {item}" for item in limits + _texts(section.get("scope_disclosures")) or ["The report-wide evidence and human-review boundaries apply."])
         lines.extend(["", "### Reviewer questions"])
         lines.extend(f"- {item}" for item in _REVIEW_QUESTIONS.get(str(section.get("id") or ""), []))
-    lines.extend(["", "## Prioritized repair roadmap", ""])
+    lines.extend([
+        "",
+        "## Prioritized repair intelligence",
+        "",
+        "NICO did not modify the assessed repository. Repairs remain report-only candidates until implemented and verified by an authorized human.",
+        "",
+    ])
     for item in _list(_dict(payload.get("repair_intelligence")).get("candidates"))[:12]:
         if isinstance(item, dict):
             lines.extend([
@@ -226,7 +261,8 @@ def _markdown(payload: dict[str, Any]) -> str:
 
 
 def _html(payload: dict[str, Any]) -> str:
-    return f"<!doctype html><html><head><meta charset='utf-8'><title>NICO Mid Assessment</title></head><body><pre>{html.escape(_markdown(payload))}</pre></body></html>"
+    escaped = html.escape(_markdown(payload))
+    return f"<!doctype html><html><head><meta charset='utf-8'><title>NICO MID ASSESSMENT</title></head><body><h1>NICO MID ASSESSMENT</h1><p><strong>{html.escape(_DRAFT_LABEL)}</strong></p><pre>{escaped}</pre></body></html>"
 
 
 def _pdf(payload: dict[str, Any]) -> bytes:
@@ -255,7 +291,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
     story: list[Any] = [
         hero,
         Spacer(1, 0.10 * inch),
-        p("Powered by Reparodynamics - full-depth - snapshot-bound - human review required", styles["callout"]),
+        p(f"{_DRAFT_LABEL} - Powered by Reparodynamics - full-depth - snapshot-bound", styles["callout"]),
         _table([
             [p("Repository", styles["label"]), p(payload.get("repository"), styles["small"]), p("Run", styles["label"]), p(payload.get("run_id"), styles["small"])],
             [p("Snapshot", styles["label"]), p(payload.get("snapshot_commit_sha"), styles["small"], 350), p("Report", styles["label"]), p(payload.get("report_id"), styles["small"], 350)],
@@ -294,9 +330,9 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         "Analyzer execution coverage is separate from parsed finding severity and disposition.",
         "A clean bounded result does not prove that no vulnerability, defect, or credential exists.",
         "Score changes require completed repair evidence and a new immutable snapshot assessment.",
-        "NICO did not modify the repository, create a branch, commit, pull request, or deployment.",
+        "NICO did not modify the assessed repository, create a branch, commit, pull request, or deployment.",
     ], styles["small"], max_items=10))
-    story.append(p("Evidence coverage", styles["h2"]))
+    story.append(p("Automated evidence coverage", styles["h2"]))
     story.append(_table([
         [p("Measure", styles["label"]), p("Result", styles["label"])],
         [p("Coverage", styles["small"]), p(f"{coverage.get('percent', 0)}% ({coverage.get('numerator', 0)}/{coverage.get('denominator', 0)})", styles["small"])],
@@ -309,8 +345,8 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         "Methodology and evidence interpretation.",
         "Score sensitivity and bounded improvement scenarios.",
         "Seven dedicated technical review dossiers.",
-        "Prioritized repair roadmap and verification requirements.",
-        "Human-context evidence requests, review exceptions, and integrity identity.",
+        "Prioritized repair intelligence and verification requirements.",
+        "Human-context modules, review exceptions, and integrity identity.",
     ], styles["small"], max_items=10))
 
     story.extend([PageBreak(), p("Score Intelligence and Sensitivity", page_title)])
@@ -358,8 +394,8 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         story.extend(_bullets(limitations[:4] or ["Retain the exact source artifact, analyzer output, reviewer disposition, relevant tests, and a new immutable snapshot rescan."], styles["small"], max_items=8))
         story.append(p("A recommendation is not evidence of completion. The reviewer must verify implementation, relevant tests, analyzer output where applicable, and the post-repair snapshot before accepting a score change.", styles["warning"], 1400))
 
-    story.extend([PageBreak(), p("Prioritized Repair Roadmap", page_title)])
-    story.append(p("Repairs are report-only candidates. The responsible owner, implementation method, and acceptance decision remain human responsibilities.", styles["callout"], 1400))
+    story.extend([PageBreak(), p("Prioritized Repair Intelligence and Roadmap", page_title)])
+    story.append(p("Repairs are report-only candidates. The responsible owner, implementation method, and acceptance decision remain human responsibilities. NICO did not modify the assessed repository.", styles["callout"], 1400))
     if repairs:
         repair_rows = [[p("Rank", styles["label"]), p("Finding", styles["label"]), p("Severity", styles["label"]), p("Priority", styles["label"]), p("Effort", styles["label"])]]
         for item in repairs[:12]:
@@ -380,7 +416,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         "Reassess only after the resulting state is captured as a new immutable snapshot.",
     ], styles["small"], max_items=8))
 
-    story.extend([PageBreak(), p("Human-Context Evidence Requests", page_title)])
+    story.extend([PageBreak(), p("Human-Context Modules and Evidence Requests", page_title)])
     story.append(p("These modules require evidence a repository scan cannot prove. They remain unscored until an authorized reviewer validates the submitted material.", styles["callout"], 1400))
     context_rows = [[p("Module", styles["label"]), p("Status", styles["label"]), p("Evidence request", styles["label"])]]
     for section in context:
@@ -413,7 +449,8 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         [p("Source identity SHA-256", styles["small"]), p(payload.get("source_identity_sha256"), styles["small"], 1200)],
         [p("Review packet SHA-256", styles["small"]), p(_dict(payload.get("review_packet")).get("review_packet_sha256"), styles["small"], 1200)],
         [p("Snapshot commit SHA", styles["small"]), p(payload.get("snapshot_commit_sha"), styles["small"], 1200)],
-        [p("Report version", styles["small"]), p(payload.get("report_version"), styles["small"])],
+        [p("Report contract version", styles["small"]), p(payload.get("report_version"), styles["small"])],
+        [p("Presentation version", styles["small"]), p(payload.get("presentation_version"), styles["small"])],
         [p("Unsupported claims permitted", styles["small"]), p("0", styles["small"])],
     ], [1.85 * inch, 5.15 * inch], header_color="#f1f5f9"))
     story.append(p("Final safety boundary", styles["h2"]))
@@ -444,11 +481,11 @@ def install_mid_report_professional_v4() -> dict[str, Any]:
     report_module._markdown = _markdown
     report_module._html = _html
     report_module._pdf = _pdf
-    report_module.MID_REPORT_VERSION = MID_REPORT_V4_VERSION
     setattr(report_module, _PATCH_MARKER, True)
     return {
         "status": "installed",
         "version": MID_REPORT_V4_VERSION,
+        "legacy_report_contract_preserved": True,
         "minimum_pdf_pages": 11,
         "dedicated_technical_dossiers": 7,
         "full_evidence_display": True,
