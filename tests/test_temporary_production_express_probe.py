@@ -35,5 +35,5 @@ def test_read_retained_express_terminal_evidence() -> None:
             results.append({"scope": scope, "http_status": status, "body": body[:20000]})
         except Exception as exc:
             results.append({"scope": scope, "probe_error": type(exc).__name__})
-    print("NICO_PRODUCTION_EXPRESS_PROBE=" + json.dumps(results, sort_keys=True))
-    assert results
+    payload = json.dumps(results, sort_keys=True)
+    raise AssertionError("NICO_PRODUCTION_EXPRESS_PROBE=" + payload)
