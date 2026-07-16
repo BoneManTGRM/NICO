@@ -4,6 +4,7 @@ import {useEffect} from "react";
 
 const ASSESSMENT_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
 const STATUS_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|full-run)\/([^/?#]+)\/status$/;
+const EXPRESS_STATUS_PATH = /^\/(?:api\/nico\/)?assessment\/express-run\/([^/?#]+)\/status$/;
 const TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 
 type JsonRecord = Record<string, unknown>;
@@ -121,9 +122,11 @@ export default function AssessmentStatusOutcomeGuard() {
       const identity = lifecycleIdentity(payload);
       if (identity.runId === runId && TERMINAL_STATUSES.has(identity.status)) return response;
 
-      // An HTTP/proxy/request-validation failure is evidence about the status
-      // request, not evidence that the assessment failed. Preserve the last
-      // accepted exact-run state and keep the operator on the Recovery path.
+      // Express has a dedicated bounded lifecycle transport that retries 422,
+      // 5xx, and network failures against the same exact run. Do not convert
+      // those responses into HTTP 200 before that transport can classify them.
+      if (EXPRESS_STATUS_PATH.test(url.pathname)) return response;
+
       return recoveryResponse(runId, response, payload, lastGoodByRun.get(runId));
     };
 

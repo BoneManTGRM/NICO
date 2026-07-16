@@ -97,10 +97,10 @@ function scannerIdentity(payload: JsonRecord | undefined) {
   const scanner = record(payload?.scanner);
   const evidence = record(payload?.scanner_evidence);
   return {
-    scanId: String(scanner.scan_id || evidence.scan_id || ""),
+    scanId: String(scanner.scan_id || evidence.scan_id || payload?.scan_id || ""),
     scannerStatus: String(scanner.status || evidence.scanner_status || evidence.status || ""),
     activeTool: String(scanner.active_tool || evidence.active_tool || ""),
-    heartbeatAt: String(scanner.heartbeat_at || evidence.heartbeat_at || ""),
+    heartbeatAt: String(scanner.heartbeat_at || evidence.heartbeat_at || payload?.heartbeat_at || ""),
   };
 }
 
@@ -127,7 +127,7 @@ function publishRecoveryState(
     next_retry_at: state.nextProbeAt ? new Date(state.nextProbeAt).toISOString() : "",
     consecutive_failures: state.consecutiveFailures,
     http_status: state.lastFailure?.httpStatus || Number(transport.http_status || 0),
-    code: state.lastFailure?.code || String(transport.code || ""),
+    code: state.lastFailure?.code || String(payload?.code || transport.code || ""),
     message: state.lastFailure?.message || "",
     duplicate_start_allowed: false,
   };
@@ -267,13 +267,26 @@ export default function AssessmentMidLiveStatusTransport() {
           if (liveResponse.ok && livePayload) {
             state.lastGood = livePayload;
             state.lastSuccessAt = new Date().toISOString();
-            state.lastFailure = undefined;
             state.consecutiveFailures = 0;
             state.nextProbeAt = 0;
             if (livePayload.recovery_required === true) {
+              state.lastFailure = undefined;
               publishRecoveryState(runId, "recovery_required", livePayload, state);
               return liveResponse;
             }
+            if (livePayload.live_status_degraded === true) {
+              state.consecutiveFailures = 1;
+              state.nextProbeAt = Date.now() + backoffMs(state.consecutiveFailures);
+              state.lastFailure = {
+                httpStatus: 0,
+                code: String(livePayload.code || "mid_live_status_projection_degraded"),
+                message: "NICO returned a bounded read-only lifecycle projection while the full live-status projection was unavailable.",
+                contractMismatch: false,
+              };
+              publishRecoveryState(runId, "temporarily_unreachable", livePayload, state);
+              return liveResponse;
+            }
+            state.lastFailure = undefined;
             publishRecoveryState(runId, "healthy", livePayload, state);
             if (livePayload.continuation_required === true) {
               const continuation = await previousFetch(input, init);

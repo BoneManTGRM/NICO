@@ -12,7 +12,7 @@ from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VER
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v1"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v2"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 
 
@@ -26,6 +26,14 @@ def _route_count(app: FastAPI, method: str, path: str) -> int:
     )
 
 
+def _durable_required() -> bool:
+    return (
+        bool(os.getenv("DATABASE_URL", "").strip())
+        or os.getenv("NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE", "false").strip().lower() == "true"
+        or os.getenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "false").strip().lower() == "true"
+    )
+
+
 def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
     source_runner = scanner_tool_runners.run_scanner_tool
     worker_module = getattr(snapshot_scanner_worker, "tool_runners", None)
@@ -36,11 +44,18 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
     module_alias_verified = worker_module is scanner_tool_runners
     live_routes = _route_count(app, "GET", MID_LIVE_STATUS_PATH)
     storage = STORE.status()
-    database_required = bool(os.getenv("DATABASE_URL", "").strip())
-    durable_ready = bool(storage.get("persistence_available")) if database_required else True
-    status = "ok" if source_binding and worker_binding and same_binding and module_alias_verified and live_routes == 1 and durable_ready else "blocked"
+    durable_required = _durable_required()
+    durable_ready = bool(storage.get("persistence_available"))
+    ready = (
+        source_binding
+        and worker_binding
+        and same_binding
+        and module_alias_verified
+        and live_routes == 1
+        and (durable_ready or not durable_required)
+    )
     return {
-        "status": status,
+        "status": "ok" if ready else "blocked",
         "version": MID_RUNTIME_DIAGNOSTICS_VERSION,
         "mid_live_status_version": MID_LIVE_STATUS_VERSION,
         "mid_live_status_route_count": live_routes,
@@ -51,8 +66,11 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "snapshot_worker_module_alias_verified": module_alias_verified,
         "report_quality_gate_version": REPORT_QUALITY_GATE_VERSION,
         "storage_adapter": storage.get("adapter") or storage.get("mode") or "unknown",
-        "durable_storage_required": database_required,
+        "storage_mode": storage.get("mode") or storage.get("adapter") or "unknown",
+        "storage_path": storage.get("database_path") or "",
+        "durable_storage_required": durable_required,
         "durable_storage_ready": durable_ready,
+        "memory_storage_accepted": not durable_required,
         "same_run_duplicate_prevention": True,
         "human_review_required": True,
         "client_delivery_allowed": False,

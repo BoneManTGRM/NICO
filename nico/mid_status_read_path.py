@@ -8,8 +8,8 @@ from nico.mid_assessment_runs import build_mid_status_payload, explicit_model_fi
 from nico.mid_live_progress_patch import attach_mid_live_progress
 from nico.scanner_worker import get_scan
 
-MID_STATUS_READ_PATH_VERSION = "nico.mid_status_read_path.v1"
-_PATCH_MARKER = "_nico_mid_status_read_path_v1"
+MID_STATUS_READ_PATH_VERSION = "nico.mid_status_read_path.v2"
+_PATCH_MARKER = "_nico_mid_status_read_path_v2"
 _ACTIVE_SCAN_STATUSES = {"queued", "running"}
 _IDENTITY_FIELDS = {"repository", "customer_id", "project_id", "scan_id"}
 
@@ -92,6 +92,13 @@ def _scan_summary(scan: dict[str, Any]) -> dict[str, Any]:
         "snapshot_commit_sha",
         "actual_commit_sha",
         "snapshot_match",
+        "heartbeat_at",
+        "heartbeat_sequence",
+        "heartbeat_process_id",
+        "heartbeat_thread",
+        "heartbeat_persistence_status",
+        "heartbeat_failure_type",
+        "tool_elapsed_seconds",
         "created_at",
         "updated_at",
         "completed_at",
@@ -154,6 +161,10 @@ def _active_status_response(record: dict[str, Any], scan: dict[str, Any]) -> dic
         "scanner_stage": scan_summary.get("current_stage") or "scanner_suite",
         "scanner_progress_percent": progress_percent,
         "active_tool": scan_summary.get("active_tool") or "",
+        "heartbeat_at": scan_summary.get("heartbeat_at") or "",
+        "heartbeat_sequence": scan_summary.get("heartbeat_sequence") or 0,
+        "heartbeat_persistence_status": scan_summary.get("heartbeat_persistence_status") or "active",
+        "tool_elapsed_seconds": scan_summary.get("tool_elapsed_seconds"),
         "tools_requested": scan_summary.get("tools_requested") or [],
         "tools_run": scan_summary.get("tools_run") or [],
     }
@@ -238,9 +249,6 @@ def install_mid_status_read_path() -> dict[str, Any]:
         if str(scan.get("status") or "") in _ACTIVE_SCAN_STATUSES:
             return _active_status_response(record, scan)
 
-        # Terminal scanners still pass through the canonical continuation path
-        # so scoring, report generation, review creation, and exact-run failure
-        # evidence remain governed by the existing truth and approval gates.
         return current(run_id, req)
 
     setattr(status_with_fast_read, _PATCH_MARKER, True)
@@ -250,6 +258,7 @@ def install_mid_status_read_path() -> dict[str, Any]:
         "status": "installed",
         "version": MID_STATUS_READ_PATH_VERSION,
         "active_scanner_status_is_read_only": True,
+        "heartbeat_evidence_exposed": True,
         "repository_recapture_during_polling": False,
         "orchestrator_reentry_during_polling": False,
         "terminal_continuation_preserved": True,
