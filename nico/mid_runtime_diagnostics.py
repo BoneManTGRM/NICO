@@ -7,14 +7,17 @@ from fastapi import FastAPI
 
 from nico import scanner_tool_runners, snapshot_scanner_worker
 from nico.mid_live_status_api import MID_LIVE_STATUS_PATH, MID_LIVE_STATUS_VERSION
+from nico.mid_quality_issue_display_patch import MID_QUALITY_ISSUE_DISPLAY_VERSION
 from nico.mid_report_score_integrity import MID_REPORT_SCORE_INTEGRITY_VERSION
+from nico.mid_report_section_boundary_patch import MID_REPORT_SECTION_BOUNDARY_VERSION
+from nico.mid_stage_truth_patch import MID_STAGE_TRUTH_VERSION
 from nico.mid_terminal_truth_patch import MID_STATUS_PATH, MID_TERMINAL_TRUTH_VERSION
 from nico.report_quality_gate import REPORT_QUALITY_GATE_VERSION
 from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VERSION
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v3"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v4"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 
 
@@ -70,12 +73,23 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "mid_live_status_route_count": live_routes,
         "mid_canonical_status_route_count": canonical_status_routes,
         "mid_terminal_truth_version": MID_TERMINAL_TRUTH_VERSION,
+        "mid_stage_truth_version": MID_STAGE_TRUTH_VERSION,
         "mid_report_score_integrity_version": MID_REPORT_SCORE_INTEGRITY_VERSION,
+        "mid_report_section_boundary_version": MID_REPORT_SECTION_BOUNDARY_VERSION,
+        "mid_quality_issue_display_version": MID_QUALITY_ISSUE_DISPLAY_VERSION,
         "pre_reconciliation_score_mismatch_is_terminal": False,
         "final_report_score_matches_weighted_calculation": True,
         "terminal_report_gate_status_is_read_only": True,
         "canonical_status_not_found_generic_500_possible": False,
         "stale_scanner_running_after_downstream_completion": False,
+        "generic_full_skipped_labels_exposed_for_mid": False,
+        "dedicated_mid_artifact_stages_projected": True,
+        "mid_scorecard_wording": True,
+        "retained_mid_section_boundaries_reconciled": True,
+        "non_verified_empty_section_uses_explicit_limitation": True,
+        "verified_empty_section_still_blocked": True,
+        "missing_evidence_converted_to_pass": False,
+        "section_specific_quality_issue_labels": True,
         "report_quality_issue_codes_exposed": True,
         "scanner_heartbeat_version": SNAPSHOT_SCANNER_HEARTBEAT_VERSION,
         "source_runner_heartbeat_binding": source_binding,
