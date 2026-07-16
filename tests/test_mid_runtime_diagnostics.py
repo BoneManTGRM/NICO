@@ -44,6 +44,10 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_canonical_status_an
     assert status["live_status_mutates_storage"] is False
     assert status["live_status_projects_post_continuation"] is True
     assert status["post_status_performs_same_run_repair"] is True
+    assert status["post_repair_requires_exact_tenant_scope"] is True
+    assert status["post_repair_scope_validated_before_mutation"] is True
+    assert status["wrong_scope_repair_possible"] is False
+    assert status["cross_tenant_run_existence_disclosed"] is False
     assert status["same_run_repair_recaptures_repository"] is False
     assert status["same_run_repair_reruns_scanner"] is False
     assert status["same_run_repair_recomputes_score"] is False
@@ -95,10 +99,11 @@ def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
 
     assert first["status"] in {"ok", "blocked"}
     assert second["status"] in {"ok", "blocked"}
+    assert first["version"].startswith("nico.mid_runtime_diagnostics.v7")
     assert first["mid_stage_truth_version"].startswith("nico.mid_stage_truth.")
     assert first["mid_report_section_boundary_version"].startswith("nico.mid_report_section_boundary.")
     assert first["mid_quality_issue_display_version"].startswith("nico.mid_quality_issue_display.")
     assert first["mid_truth_identity_consistency_version"].startswith("nico.mid_truth_identity_consistency.")
-    assert first["mid_truth_identity_transport_version"].startswith("nico.mid_truth_identity_transport.")
+    assert first["mid_truth_identity_transport_version"].startswith("nico.mid_truth_identity_transport.v2")
     assert len(routes) == 1
     assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
