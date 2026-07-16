@@ -8,10 +8,22 @@ export const MID_FORCE_LIVE_RETRY_EVENT = "nico:mid-live-status-retry";
 const MID_START_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run$/;
 const MID_STATUS_PATH = /^\/(?:api\/nico\/)?assessment\/mid-run\/([^/]+)\/status$/;
 const LIVE_RETRY_COUNT = 2;
-const LIVE_TIMEOUT_MS = 12_000;
-const LIVE_RETRY_DELAY_MS = 1_000;
-const LIVE_BACKOFF_BASE_MS = 3_000;
-const LIVE_BACKOFF_MAX_MS = 30_000;
+const LIVE_TIMEOUT_MS = 10_000;
+const LIVE_RETRY_DELAY_MS = 750;
+const LIVE_BACKOFF_BASE_MS = 2_000;
+const LIVE_BACKOFF_MAX_MS = 12_000;
+const ACTIVE_LIFECYCLE_STATUSES = new Set(["queued", "running", "pending", "planned", "starting", "temporarily_unavailable"]);
+const STAGE_RANK: Record<string, number> = {
+  authorization: 1,
+  repo_evidence: 2,
+  scanner_worker: 3,
+  scanner_reconciliation: 4,
+  evidence_attachment: 4,
+  scoring: 5,
+  reports: 6,
+  approval_request: 7,
+  complete: 8,
+};
 const PROXY_CONTRACT_CODES = new Set([
   "assessment_proxy_route_not_allowed",
   "assessment_backend_not_configured",
@@ -27,6 +39,10 @@ type FailureEvidence = {
 type RunState = {
   consecutiveFailures: number;
   nextProbeAt: number;
+  highWaterProgress: number;
+  highWaterScannerProgress: number;
+  highWaterStageRank: number;
+  highWaterStage: string;
   lastGood?: JsonRecord;
   lastSuccessAt?: string;
   lastFailure?: FailureEvidence;
@@ -68,11 +84,53 @@ function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+function boundedPercent(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function stageRank(value: unknown) {
+  return STAGE_RANK[String(value || "")] || 0;
+}
+
 function responseFromPayload(payload: JsonRecord, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
   });
+}
+
+function stabilizePayload(payload: JsonRecord, state: RunState): JsonRecord {
+  const output = structuredClone(payload);
+  const status = String(output.status || "").toLowerCase();
+  const active = ACTIVE_LIFECYCLE_STATUSES.has(status);
+  const incomingProgress = boundedPercent(output.progress_percent);
+  const incomingScannerProgress = boundedPercent(output.scanner_progress_percent);
+  const incomingStage = String(output.current_stage || "");
+  const incomingRank = stageRank(incomingStage);
+  const regressed = incomingProgress < state.highWaterProgress;
+
+  state.highWaterProgress = Math.max(state.highWaterProgress, incomingProgress);
+  state.highWaterScannerProgress = Math.max(state.highWaterScannerProgress, incomingScannerProgress);
+  output.progress_percent = state.highWaterProgress;
+  if (state.highWaterScannerProgress > 0 || "scanner_progress_percent" in output) {
+    output.scanner_progress_percent = state.highWaterScannerProgress;
+  }
+
+  if (active && incomingRank < state.highWaterStageRank && state.highWaterStage) {
+    output.current_stage = state.highWaterStage;
+  } else if (incomingRank >= state.highWaterStageRank && incomingStage) {
+    state.highWaterStageRank = incomingRank;
+    state.highWaterStage = incomingStage;
+  }
+
+  if (active && regressed && state.lastGood && Array.isArray(state.lastGood.progress)) {
+    output.progress = structuredClone(state.lastGood.progress);
+  }
+  output.progress_monotonic = true;
+  output.highest_confirmed_progress_percent = state.highWaterProgress;
+  return output;
 }
 
 function failureFromResponse(response: Response, payload: JsonRecord | null): FailureEvidence {
@@ -120,7 +178,8 @@ function publishRecoveryState(
     active_tool: scanner.activeTool,
     heartbeat_at: scanner.heartbeatAt,
     current_stage: String(payload?.current_stage || ""),
-    progress_percent: Number(payload?.progress_percent || 0),
+    progress_percent: Math.max(state.highWaterProgress, boundedPercent(payload?.progress_percent)),
+    highest_confirmed_progress_percent: state.highWaterProgress,
     recovery_required: Boolean(payload?.recovery_required) || status === "recovery_required",
     recovery_path: String(payload?.recovery_path || "/operations/recovery"),
     last_success_at: state.lastSuccessAt || "",
@@ -152,19 +211,22 @@ function preservedResponse(runId: string, state: RunState): Response {
     run_id: runId,
     assessment_type: "mid",
     service_tier: "mid",
-    current_stage: "status_recovery",
-    progress_percent: 18,
+    current_stage: state.highWaterStage || "status_recovery",
+    progress_percent: Math.max(18, state.highWaterProgress),
     progress: [],
     human_review_required: true,
     client_ready: false,
   };
+  output.progress_percent = Math.max(state.highWaterProgress, boundedPercent(output.progress_percent));
+  if (state.highWaterScannerProgress > 0) output.scanner_progress_percent = state.highWaterScannerProgress;
+  if (state.highWaterStage) output.current_stage = state.highWaterStage;
   const progress = Array.isArray(output.progress)
     ? output.progress.filter((item) => item && typeof item === "object") as JsonRecord[]
     : [];
   const mismatch = Boolean(state.lastFailure?.contractMismatch);
   const message = mismatch
     ? `The web deployment cannot reach the required Mid live-status contract for exact run ${runId}. The run remains preserved; verify the Railway backend deployment before retrying or opening Recovery.`
-    : `Live status is temporarily unavailable. Exact run ${runId} remains preserved; NICO will retry with bounded backoff without starting a duplicate assessment.`;
+    : `Live status is temporarily unavailable. Exact run ${runId} remains preserved at its highest confirmed progress; NICO will retry with bounded backoff without starting a duplicate assessment.`;
   const activeIndex = progress.findIndex((item) => ["queued", "running", "pending", "planned"].includes(String(item.status || "").toLowerCase()));
   const replacement = {
     ...(activeIndex >= 0 ? progress[activeIndex] : {}),
@@ -177,6 +239,8 @@ function preservedResponse(runId: string, state: RunState): Response {
   output.status = "running";
   output.run_id = String(output.run_id || runId);
   output.progress = progress;
+  output.progress_monotonic = true;
+  output.highest_confirmed_progress_percent = state.highWaterProgress;
   output.status_transport = {
     status: mismatch ? "backend_contract_mismatch" : "live_status_temporarily_unreachable",
     retry_count: LIVE_RETRY_COUNT,
@@ -187,6 +251,7 @@ function preservedResponse(runId: string, state: RunState): Response {
     code: state.lastFailure?.code || "browser_transport_interrupted",
     duplicate_start_allowed: false,
     recovery_required_if_stale: true,
+    highest_confirmed_progress_percent: state.highWaterProgress,
   };
   publishRecoveryState(
     runId,
@@ -205,7 +270,14 @@ export default function AssessmentMidLiveStatusTransport() {
     const stateFor = (runId: string) => {
       const existing = stateByRun.get(runId);
       if (existing) return existing;
-      const created: RunState = {consecutiveFailures: 0, nextProbeAt: 0};
+      const created: RunState = {
+        consecutiveFailures: 0,
+        nextProbeAt: 0,
+        highWaterProgress: 0,
+        highWaterScannerProgress: 0,
+        highWaterStageRank: 0,
+        highWaterStage: "",
+      };
       stateByRun.set(runId, created);
       return created;
     };
@@ -230,11 +302,13 @@ export default function AssessmentMidLiveStatusTransport() {
         const runId = String(payload?.run_id || "");
         if (response.ok && payload && runId.startsWith("midrun_")) {
           const state = stateFor(runId);
-          state.lastGood = payload;
+          const stable = stabilizePayload(payload, state);
+          state.lastGood = stable;
           state.lastSuccessAt = new Date().toISOString();
           state.consecutiveFailures = 0;
           state.nextProbeAt = 0;
-          publishRecoveryState(runId, "healthy", payload, state);
+          publishRecoveryState(runId, "healthy", stable, state);
+          return responseFromPayload(stable, response.status);
         }
         return response;
       }
@@ -265,39 +339,42 @@ export default function AssessmentMidLiveStatusTransport() {
           });
           const livePayload = await jsonPayload(liveResponse);
           if (liveResponse.ok && livePayload) {
-            state.lastGood = livePayload;
+            const stable = stabilizePayload(livePayload, state);
+            state.lastGood = stable;
             state.lastSuccessAt = new Date().toISOString();
             state.consecutiveFailures = 0;
             state.nextProbeAt = 0;
-            if (livePayload.recovery_required === true) {
+            if (stable.recovery_required === true) {
               state.lastFailure = undefined;
-              publishRecoveryState(runId, "recovery_required", livePayload, state);
-              return liveResponse;
+              publishRecoveryState(runId, "recovery_required", stable, state);
+              return responseFromPayload(stable, liveResponse.status);
             }
-            if (livePayload.live_status_degraded === true) {
+            if (stable.live_status_degraded === true) {
               state.consecutiveFailures = 1;
               state.nextProbeAt = Date.now() + backoffMs(state.consecutiveFailures);
               state.lastFailure = {
                 httpStatus: 0,
-                code: String(livePayload.code || "mid_live_status_projection_degraded"),
+                code: String(stable.code || "mid_live_status_projection_degraded"),
                 message: "NICO returned a bounded read-only lifecycle projection while the full live-status projection was unavailable.",
                 contractMismatch: false,
               };
-              publishRecoveryState(runId, "temporarily_unreachable", livePayload, state);
-              return liveResponse;
+              publishRecoveryState(runId, "temporarily_unreachable", stable, state);
+              return responseFromPayload(stable, liveResponse.status);
             }
             state.lastFailure = undefined;
-            publishRecoveryState(runId, "healthy", livePayload, state);
-            if (livePayload.continuation_required === true) {
+            publishRecoveryState(runId, "healthy", stable, state);
+            if (stable.continuation_required === true) {
               const continuation = await previousFetch(input, init);
               const continuationPayload = await jsonPayload(continuation);
               if (continuation.ok && continuationPayload) {
-                state.lastGood = continuationPayload;
+                const continued = stabilizePayload(continuationPayload, state);
+                state.lastGood = continued;
                 state.lastSuccessAt = new Date().toISOString();
+                return responseFromPayload(continued, continuation.status);
               }
               return continuation;
             }
-            return liveResponse;
+            return responseFromPayload(stable, liveResponse.status);
           }
 
           const failure = failureFromResponse(liveResponse, livePayload);
@@ -318,7 +395,17 @@ export default function AssessmentMidLiveStatusTransport() {
         if (attempt < LIVE_RETRY_COUNT) await sleep(LIVE_RETRY_DELAY_MS);
       }
 
-      if (exactRunNotFound) return previousFetch(input, init);
+      if (exactRunNotFound) {
+        const fallback = await previousFetch(input, init);
+        const fallbackPayload = await jsonPayload(fallback);
+        if (fallback.ok && fallbackPayload) {
+          const stable = stabilizePayload(fallbackPayload, state);
+          state.lastGood = stable;
+          state.lastSuccessAt = new Date().toISOString();
+          return responseFromPayload(stable, fallback.status);
+        }
+        return fallback;
+      }
       state.consecutiveFailures += 1;
       state.nextProbeAt = Date.now() + backoffMs(state.consecutiveFailures);
       return preservedResponse(runId, state);
