@@ -53,7 +53,9 @@ from nico.hosted_report_intelligence_enrichment import install_hosted_report_int
 from nico.report_intelligence_accuracy_patch import install_report_intelligence_accuracy_patch
 from nico.triage_aware_scanner_finding_truth import install_triage_aware_scanner_finding_truth
 from nico.mid_live_progress_patch import install_mid_live_progress
+from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
+from nico.report_quality_gate import install_report_quality_gate
 from nico.snapshot_scanner_resilience_patch import install_snapshot_scanner_resilience
 
 install_metadata_auth_for_hosted_assessment()
@@ -107,9 +109,11 @@ install_express_completion_score_binding()
 install_express_async_contract_metadata()
 install_express_progress_persistence()
 install_mid_live_progress()
+install_mid_start_guard()
 install_mid_status_read_path()
 install_hosted_report_intelligence_enrichment()
 install_report_intelligence_accuracy_patch()
 install_report_intelligence_final_pdf_binding()
+install_report_quality_gate()
 
 __version__ = "0.1.0"
