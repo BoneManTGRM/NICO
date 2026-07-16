@@ -17,6 +17,7 @@ ENV NICO_TOOL_TIMEOUT_SECONDS=120
 ENV NICO_TOTAL_SCAN_TIMEOUT_SECONDS=1500
 ENV NICO_OSV_TIMEOUT_SECONDS=240
 ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=420
+ENV NICO_WEB_WORKERS=1
 
 WORKDIR /app
 
@@ -51,4 +52,4 @@ USER nico
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-}; if [ -z \"$workers\" ]; then if [ -n \"${DATABASE_URL:-}\" ]; then workers=2; else workers=1; fi; fi; exec uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
+CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.production_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
