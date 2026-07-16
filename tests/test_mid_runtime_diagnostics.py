@@ -104,6 +104,6 @@ def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
     assert first["mid_report_section_boundary_version"].startswith("nico.mid_report_section_boundary.")
     assert first["mid_quality_issue_display_version"].startswith("nico.mid_quality_issue_display.")
     assert first["mid_truth_identity_consistency_version"].startswith("nico.mid_truth_identity_consistency.")
-    assert first["mid_truth_identity_transport_version"].startswith("nico.mid_truth_identity_transport.v2")
+    assert first["mid_truth_identity_transport_version"].startswith("nico.mid_truth_identity_transport.v3")
     assert len(routes) == 1
     assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
