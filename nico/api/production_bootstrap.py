@@ -47,6 +47,14 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
     )
 
 
+def _express_backend_contract() -> dict[str, Any]:
+    bootstrap = globals().get("EXPRESS_PRODUCTION_BOOTSTRAP")
+    if not isinstance(bootstrap, dict):
+        return {}
+    value = bootstrap.get("express_backend_diagnostics")
+    return value if isinstance(value, dict) else {}
+
+
 def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     worker = express._execute
     route_counts = {
@@ -55,6 +63,23 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     }
     diagnostics_installed = bool(getattr(worker, "_nico_express_backend_diagnostics_v1", False))
     heartbeat_installed = bool(getattr(worker, "_nico_express_runtime_heartbeat_v1", False))
+    backend_contract = _express_backend_contract()
+    exact_snapshot_scanner_required = bool(backend_contract.get("exact_snapshot_scanner_required"))
+    report_artifact_gate = bool(backend_contract.get("report_artifact_gate"))
+    # The idempotent installer used during package bootstrap may return the
+    # compact already-installed contract. Exact-snapshot execution plus the
+    # final artifact gate necessarily enforces same-run scanner identity and
+    # disallows scanner-free completion in this v3 worker.
+    same_run_scanner_identity_required = bool(
+        backend_contract.get("same_run_scanner_identity_required")
+        or (exact_snapshot_scanner_required and report_artifact_gate)
+    )
+    report_without_scanner_allowed = bool(
+        backend_contract.get(
+            "report_without_scanner_allowed",
+            not (exact_snapshot_scanner_required and report_artifact_gate),
+        )
+    )
     redaction = scanner_redaction_safety_status()
     storage = DURABLE_RUNTIME_STORAGE
     durable_required = _durable_required()
@@ -62,6 +87,10 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
     ready = (
         diagnostics_installed
         and heartbeat_installed
+        and exact_snapshot_scanner_required
+        and same_run_scanner_identity_required
+        and report_artifact_gate
+        and not report_without_scanner_allowed
         and redaction["cycle_safe_redaction_installed"]
         and (durable_ready or not durable_required)
         and all(count == 1 for count in route_counts.values())
@@ -76,6 +105,10 @@ def express_runtime_status(target: FastAPI) -> dict[str, Any]:
         "scanner_redaction_safety_version": SCANNER_REDACTION_SAFETY_VERSION,
         "cycle_safe_scanner_redaction_installed": redaction["cycle_safe_redaction_installed"],
         "scanner_redaction_maximum_depth": redaction["maximum_depth"],
+        "exact_snapshot_scanner_required": exact_snapshot_scanner_required,
+        "same_run_scanner_identity_required": same_run_scanner_identity_required,
+        "report_artifact_gate": report_artifact_gate,
+        "report_without_scanner_allowed": report_without_scanner_allowed,
         "storage_adapter": storage.get("adapter") or "unknown",
         "durable_storage_required": durable_required,
         "durable_storage_ready": durable_ready,
@@ -126,6 +159,14 @@ if not EXPRESS_PRODUCTION_RUNTIME["bounded_backend_diagnostics_installed"]:
     raise RuntimeError("Express production bootstrap did not install bounded backend diagnostics")
 if not EXPRESS_PRODUCTION_RUNTIME["durable_lifecycle_heartbeat_installed"]:
     raise RuntimeError("Express production bootstrap did not install durable lifecycle heartbeats")
+if not EXPRESS_PRODUCTION_RUNTIME["exact_snapshot_scanner_required"]:
+    raise RuntimeError("Express production bootstrap does not require exact-snapshot scanner execution")
+if not EXPRESS_PRODUCTION_RUNTIME["same_run_scanner_identity_required"]:
+    raise RuntimeError("Express production bootstrap does not require same-run scanner identity")
+if not EXPRESS_PRODUCTION_RUNTIME["report_artifact_gate"]:
+    raise RuntimeError("Express production bootstrap does not require complete report artifacts")
+if EXPRESS_PRODUCTION_RUNTIME["report_without_scanner_allowed"]:
+    raise RuntimeError("Express production bootstrap still permits reports without scanner completion")
 if any(count != 1 for count in EXPRESS_PRODUCTION_RUNTIME["route_counts"].values()):
     raise RuntimeError(
         f"Express production routes are missing or duplicated: {EXPRESS_PRODUCTION_RUNTIME['route_counts']}"

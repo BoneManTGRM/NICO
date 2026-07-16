@@ -7,7 +7,7 @@ const ASSESSMENT_PATH = /^\/assessment\/(?:github|mid-run|full-run)(?:\/[^/?#]+\
 const LEGACY_EXPRESS_PATH = "/assessment/github";
 const EXPRESS_START_PATH = "/assessment/express-run";
 const EXPRESS_POLL_INTERVAL_MS = 3000;
-const EXPRESS_MAX_POLL_ATTEMPTS = 240;
+const EXPRESS_MAX_POLL_ATTEMPTS = 600;
 const EXPRESS_STATUS_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 8;
 const EXPRESS_STATUS_RETRY_BASE_MS = 1500;
 const EXPRESS_STATUS_RETRY_MAX_MS = 12000;
@@ -137,7 +137,6 @@ function retryableStatusResponse(
   const lifecycleStatus = boundedText(detail.status || payload.status, 40).toLowerCase();
   const responseRunId = boundedText(detail.run_id || payload.run_id, 120);
 
-  // A terminal response tied to this exact run is evidence, not a transport outage.
   if (responseRunId === exactRunId && TERMINAL_EXPRESS_STATUSES.has(lifecycleStatus)) return false;
 
   const code = boundedText(detail.code || payload.code, 80);
