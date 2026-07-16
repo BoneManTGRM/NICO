@@ -210,7 +210,6 @@ def _active_status_response(record: dict[str, Any], scan: dict[str, Any]) -> dic
     result["status"] = "running"
     result["status_refresh"] = True
     result["current_stage"] = "scanner_worker"
-    result["progress_percent"] = max(int(result.get("progress_percent") or 0), progress_percent)
     result["scanner"] = scan_summary
     result["scanner_evidence"] = {
         "status": "pending",
