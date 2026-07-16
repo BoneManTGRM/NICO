@@ -9,8 +9,9 @@ from typing import Any, Callable
 from nico import express_async_api
 from nico.storage import STORE, utc_now
 
-EXPRESS_RUNTIME_HEARTBEAT_VERSION = "nico.express_runtime_heartbeat.v1"
+EXPRESS_RUNTIME_HEARTBEAT_VERSION = "nico.express_runtime_heartbeat.v2"
 _PATCH_MARKER = "_nico_express_runtime_heartbeat_v1"
+_ACTIVE_STATUSES = {"queued", "running", "starting", "pending"}
 
 
 def _interval_seconds() -> int:
@@ -21,38 +22,58 @@ def _interval_seconds() -> int:
     return max(5, min(value, 60))
 
 
+def _legacy_pulse(run_id: str) -> None:
+    record = STORE.get("assessment_runs", run_id)
+    if not isinstance(record, dict):
+        return
+    response = deepcopy(record.get("response") if isinstance(record.get("response"), dict) else {})
+    status = str(response.get("status") or record.get("status") or "").lower()
+    if status not in _ACTIVE_STATUSES:
+        return
+    now = utc_now()
+    sequence = int(response.get("heartbeat_sequence") or record.get("heartbeat_sequence") or 0) + 1
+    response.update(
+        {
+            "heartbeat_at": now,
+            "heartbeat_sequence": sequence,
+            "heartbeat_process_id": os.getpid(),
+            "updated_at": now,
+            "human_review_required": True,
+            "client_ready": False,
+        }
+    )
+    record.update(
+        {
+            "status": status,
+            "response": response,
+            "payload": deepcopy(response),
+            "heartbeat_at": now,
+            "heartbeat_sequence": sequence,
+            "updated_at": now,
+        }
+    )
+    STORE.put("assessment_runs", run_id, record)
+
+
 def _pulse(run_id: str) -> None:
     try:
-        record = STORE.get("assessment_runs", run_id)
-        if not isinstance(record, dict):
+        patcher = getattr(STORE, "patch_heartbeat", None)
+        if callable(patcher):
+            patcher(
+                "assessment_runs",
+                run_id,
+                patch={
+                    "heartbeat_at": utc_now(),
+                    "heartbeat_process_id": os.getpid(),
+                    "heartbeat_thread": threading.current_thread().name[:120],
+                    "human_review_required": True,
+                    "client_ready": False,
+                },
+                active_statuses=_ACTIVE_STATUSES,
+                nested_key="response",
+            )
             return
-        response = deepcopy(record.get("response") if isinstance(record.get("response"), dict) else {})
-        status = str(response.get("status") or record.get("status") or "").lower()
-        if status not in {"queued", "running", "starting", "pending"}:
-            return
-        now = utc_now()
-        sequence = int(response.get("heartbeat_sequence") or record.get("heartbeat_sequence") or 0) + 1
-        response.update(
-            {
-                "heartbeat_at": now,
-                "heartbeat_sequence": sequence,
-                "heartbeat_process_id": os.getpid(),
-                "updated_at": now,
-                "human_review_required": True,
-                "client_ready": False,
-            }
-        )
-        record.update(
-            {
-                "status": status,
-                "response": response,
-                "payload": deepcopy(response),
-                "heartbeat_at": now,
-                "heartbeat_sequence": sequence,
-                "updated_at": now,
-            }
-        )
-        STORE.put("assessment_runs", run_id, record)
+        _legacy_pulse(run_id)
     except Exception:
         # A heartbeat failure must not terminate the authorized assessment.
         return
@@ -97,6 +118,8 @@ def install_express_runtime_heartbeat() -> dict[str, Any]:
         "version": EXPRESS_RUNTIME_HEARTBEAT_VERSION,
         "interval_seconds": _interval_seconds(),
         "durable_heartbeat": True,
+        "atomic_status_guard": callable(getattr(STORE, "patch_heartbeat", None)),
+        "terminal_state_can_be_reopened": False,
         "cross_worker_status_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,

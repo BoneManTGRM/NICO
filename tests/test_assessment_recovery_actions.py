@@ -69,10 +69,10 @@ def test_recovery_page_accepts_exact_run_and_scanner_query_targets() -> None:
     assert "Resume same scan ID" in scanner
 
 
-def test_same_origin_proxy_allows_only_bounded_mid_runtime_diagnostics() -> None:
+def test_same_origin_proxy_allows_only_bounded_runtime_diagnostics() -> None:
     source = PROXY.read_text(encoding="utf-8")
 
-    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/mid-runtime$/' in source
+    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/(?:express-runtime|mid-runtime)$/' in source
     assert "diagnosticAllowed" in source
     assert "request.method === \"GET\"" in source
     assert "shortRead" in source
