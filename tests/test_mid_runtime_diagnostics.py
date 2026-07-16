@@ -5,12 +5,19 @@ from fastapi import FastAPI
 from nico import scanner_tool_runners, snapshot_scanner_worker
 from nico.mid_live_status_api import register_mid_live_status_routes
 from nico.mid_runtime_diagnostics import MID_RUNTIME_DIAGNOSTICS_PATH, mid_runtime_status, register_mid_runtime_diagnostics
+from nico.mid_terminal_truth_patch import MID_STATUS_PATH, mid_status_endpoint
 from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 
 
-def test_mid_runtime_diagnostics_are_ok_only_when_live_route_and_worker_module_alias_are_wrapped(monkeypatch) -> None:
+def _app_with_mid_status_routes() -> FastAPI:
     app = FastAPI()
     register_mid_live_status_routes(app)
+    app.add_api_route(MID_STATUS_PATH, mid_status_endpoint, methods=["POST"])
+    return app
+
+
+def test_mid_runtime_diagnostics_are_ok_only_when_live_route_canonical_status_and_worker_alias_are_wrapped(monkeypatch) -> None:
+    app = _app_with_mid_status_routes()
     installed = install_snapshot_scanner_heartbeat()
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -21,16 +28,18 @@ def test_mid_runtime_diagnostics_are_ok_only_when_live_route_and_worker_module_a
     assert installed["snapshot_worker_module_alias_verified"] is True
     assert status["status"] == "ok"
     assert status["mid_live_status_route_count"] == 1
+    assert status["mid_canonical_status_route_count"] == 1
     assert status["source_runner_heartbeat_binding"] is True
     assert status["snapshot_worker_heartbeat_binding"] is True
     assert status["heartbeat_bindings_identical"] is True
     assert status["snapshot_worker_module_alias_verified"] is True
     assert status["same_run_duplicate_prevention"] is True
+    assert status["canonical_status_not_found_generic_500_possible"] is False
+    assert status["pre_reconciliation_score_mismatch_is_terminal"] is False
 
 
 def test_mid_runtime_diagnostics_fail_closed_when_worker_module_alias_uses_unwrapped_runner(monkeypatch) -> None:
-    app = FastAPI()
-    register_mid_live_status_routes(app)
+    app = _app_with_mid_status_routes()
     install_snapshot_scanner_heartbeat()
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -50,8 +59,7 @@ def test_mid_runtime_diagnostics_fail_closed_when_worker_module_alias_uses_unwra
 
 
 def test_mid_runtime_diagnostics_route_registers_exactly_once() -> None:
-    app = FastAPI()
-    register_mid_live_status_routes(app)
+    app = _app_with_mid_status_routes()
     install_snapshot_scanner_heartbeat()
 
     first = register_mid_runtime_diagnostics(app)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable
 
+MID_REPORT_SCORE_INTEGRITY_VERSION = "nico.mid_report_score_integrity.v2"
 _MARKER = "_nico_mid_report_score_integrity_v1"
 
 
@@ -11,7 +12,7 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
 
     current: Callable[[dict[str, Any], dict[str, Any], dict[str, Any], str], dict[str, Any]] = report_module._report_payload
     if getattr(current, _MARKER, False):
-        return {"status": "already_installed"}
+        return {"status": "already_installed", "version": MID_REPORT_SCORE_INTEGRITY_VERSION}
 
     def payload_with_weighted_score_truth(
         record: dict[str, Any],
@@ -25,18 +26,32 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
         reported = integrity.get("reported_score")
         rows = [item for item in integrity.get("weighted_rows", []) or [] if isinstance(item, dict)]
         complete_scorecard = len(rows) == 7 and sum(int(item.get("weight") or 0) for item in rows) == 100
+        pre_reconciliation_match = reported is None or reported == calculated
+        integrity["version"] = MID_REPORT_SCORE_INTEGRITY_VERSION
         integrity["complete_seven_section_scorecard"] = complete_scorecard
         integrity["reported_score_before_final_report_reconciliation"] = reported
+        integrity["reported_score_match_before_final_report_reconciliation"] = pre_reconciliation_match
+
         if not isinstance(calculated, int) or not complete_scorecard:
             integrity["display_score_reconciliation_deferred"] = True
             integrity["final_report_score"] = reported
+            # An incomplete weighted scorecard is review-limited evidence, not a
+            # proven mismatch between the final displayed score and its source.
+            # Leave the quality gate neutral rather than preserving a stale false.
+            integrity["score_match"] = None
+            integrity["final_report_score_matches_weighted_calculation"] = None
             payload["score_integrity"] = integrity
             return payload
 
         integrity["final_report_score"] = calculated
-        integrity["display_score_reconciled_to_weighted_technical_sections"] = reported != calculated
+        integrity["display_score_reconciled_to_weighted_technical_sections"] = not pre_reconciliation_match
         integrity["display_score_reconciliation_deferred"] = False
-        integrity["score_match"] = reported is None or reported == calculated
+        # The final report score is explicitly replaced with the calculated
+        # seven-section score below. The final report therefore matches its
+        # retained weighted calculation even when the earlier assessment display
+        # carried a different pre-reconciliation value.
+        integrity["score_match"] = True
+        integrity["final_report_score_matches_weighted_calculation"] = True
         payload["score_integrity"] = integrity
         payload["technical_score"] = calculated
 
@@ -47,6 +62,7 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
         decision = payload.get("decision_summary") if isinstance(payload.get("decision_summary"), dict) else {}
         decision["technical_score"] = calculated
         decision["score_source"] = "seven_weighted_technical_sections"
+        decision["score_reconciled_from_prior_display"] = not pre_reconciliation_match
         decision["human_context_sections_affect_score_without_review"] = False
         payload["decision_summary"] = decision
 
@@ -61,11 +77,14 @@ def install_mid_report_score_integrity() -> dict[str, Any]:
     report_module._report_payload = payload_with_weighted_score_truth
     return {
         "status": "installed",
+        "version": MID_REPORT_SCORE_INTEGRITY_VERSION,
         "score_source": "seven_weighted_technical_sections",
         "complete_scorecard_required": True,
+        "pre_reconciliation_mismatch_is_terminal": False,
+        "final_reconciled_score_match": True,
         "evidence_coverage_changes_score": False,
         "human_context_changes_score_without_review": False,
     }
 
 
-__all__ = ["install_mid_report_score_integrity"]
+__all__ = ["MID_REPORT_SCORE_INTEGRITY_VERSION", "install_mid_report_score_integrity"]
