@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Any, Callable
 
 from nico.mid_score_intelligence import attach_mid_score_intelligence
+from nico.mid_static_score_accuracy import install_mid_static_score_accuracy
 
 MID_STAGE_TRUTH_VERSION = "nico.mid_stage_truth.v3"
 _MARKER = "_nico_mid_stage_truth_v3"
@@ -163,9 +164,14 @@ def normalize_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
 def install_mid_stage_truth_patch() -> dict[str, Any]:
     from nico import mid_assessment_api
 
+    static_score_install = install_mid_static_score_accuracy()
     current: Callable[[dict[str, Any]], dict[str, Any]] = mid_assessment_api._attach_mid_contract
     if getattr(current, _MARKER, False):
-        return {"status": "already_installed", "version": MID_STAGE_TRUTH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": MID_STAGE_TRUTH_VERSION,
+            "static_score_accuracy": static_score_install,
+        }
 
     @wraps(current)
     def attach_with_mid_stage_truth(result: dict[str, Any]) -> dict[str, Any]:
@@ -182,6 +188,7 @@ def install_mid_stage_truth_patch() -> dict[str, Any]:
         "dedicated_mid_planned_labels_exposed": True,
         "mid_scorecard_wording": True,
         "mid_score_intelligence_attached": True,
+        "static_score_accuracy": static_score_install,
         "express_direct_comparison_allowed": False,
         "same_run_identity_required": True,
         "human_review_required": True,
