@@ -81,8 +81,8 @@ def evaluate_report_payload(payload: dict[str, Any], tier: str) -> dict[str, Any
     issues: list[dict[str, Any]] = []
     checks: dict[str, Any] = {}
 
-    run_id = str(payload.get("run_id") or "")
-    repository = str(payload.get("repository") or "")
+    run_id = str(payload.get("run_id") or payload.get("assessment_id") or payload.get("report_run_id") or "")
+    repository = str(payload.get("repository") or payload.get("source_scope") or "")
     snapshot = str(payload.get("snapshot_commit_sha") or payload.get("commit_sha") or "")
     checks["identity"] = {
         "run_id": bool(run_id),
@@ -249,9 +249,28 @@ def evaluate_rendered_formats(formats: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _report_parts(report: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    package = _dict(report.get("report_package"))
+    package_formats = _dict(package.get("formats"))
+    direct_formats = _dict(report.get("formats"))
+    reports = _dict(report.get("reports"))
+    if package_formats:
+        formats = package_formats
+        payload = _dict(package_formats.get("json")) or package
+    elif direct_formats:
+        formats = direct_formats
+        payload = _dict(direct_formats.get("json")) or report
+    elif reports:
+        formats = reports
+        payload = _dict(reports.get("json")) or package or report
+    else:
+        formats = {}
+        payload = package or report
+    return payload, formats
+
+
 def audit_report_record(report: dict[str, Any], tier: str) -> dict[str, Any]:
-    formats = _dict(report.get("formats")) or _dict(report.get("reports"))
-    payload = _dict(formats.get("json")) or _dict(report.get("report_package")) or report
+    payload, formats = _report_parts(report)
     manifest = evaluate_report_payload(payload, tier)
     rendered = evaluate_rendered_formats(formats)
     manifest["rendered_formats"] = rendered
@@ -278,6 +297,7 @@ def _attach_manifest(payload: dict[str, Any], tier: str) -> dict[str, Any]:
 def install_report_quality_gate() -> dict[str, Any]:
     from nico import assessment_quality
     from nico import full_assessment_idempotent_handlers as full_handlers
+    from nico import mid_assessment_api
     from nico import mid_assessment_report
 
     express_current: Callable[..., dict[str, Any]] = assessment_quality.polish_express_result
@@ -320,6 +340,9 @@ def install_report_quality_gate() -> dict[str, Any]:
         setattr(mid_with_quality, _MID_MARKER, True)
         setattr(mid_with_quality, "_nico_previous", mid_current)
         mid_assessment_report.generate_mid_draft_report = mid_with_quality
+        # mid_assessment_api imports the renderer directly, so update the bound
+        # symbol used by automatic same-run report generation as well.
+        mid_assessment_api.generate_mid_draft_report = mid_with_quality
 
     full_current: Callable[..., dict[str, Any]] = full_handlers._reports_handler
     if not getattr(full_current, _FULL_MARKER, False):
@@ -331,8 +354,7 @@ def install_report_quality_gate() -> dict[str, Any]:
             output = deepcopy(result)
             reports = _dict(output.get("reports"))
             package = _dict(output.get("report_package"))
-            audit_record = {"reports": reports, "report_package": package}
-            manifest = audit_report_record(audit_record, "full")
+            manifest = audit_report_record({"reports": reports, "report_package": package}, "full")
             output["report_quality_manifest"] = manifest
             package["report_quality_manifest"] = deepcopy(manifest)
             reports["report_quality_manifest"] = deepcopy(manifest)
@@ -341,6 +363,11 @@ def install_report_quality_gate() -> dict[str, Any]:
             if manifest["status"] == "blocked":
                 output["status"] = "blocked"
                 output["error"] = "Report quality gate blocked the Full draft because required identity, evidence, score integrity, or rendered-format checks failed."
+            report_id = str(package.get("report_id") or "")
+            if report_id:
+                from nico.storage import STORE
+
+                STORE.put("reports", report_id, package)
             return output
 
         setattr(full_with_quality, _FULL_MARKER, True)
@@ -352,6 +379,7 @@ def install_report_quality_gate() -> dict[str, Any]:
         "version": REPORT_QUALITY_GATE_VERSION,
         "express_quality_manifest": True,
         "mid_rendered_format_gate": True,
+        "mid_automatic_report_binding": True,
         "full_rendered_format_gate": True,
         "unsupported_claims_blocked": True,
         "score_integrity_required": True,
