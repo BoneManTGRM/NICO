@@ -60,7 +60,6 @@ from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
 from nico.mid_stage_truth_patch import install_mid_stage_truth_patch
-from nico.mid_static_score_accuracy import install_mid_static_score_accuracy
 from nico.report_quality_gate import install_report_quality_gate
 from nico.report_quality_gate_compat import install_report_quality_gate_compat
 from nico.snapshot_scanner_resilience_patch import install_snapshot_scanner_resilience
@@ -150,9 +149,5 @@ install_mid_quality_issue_display_patch()
 install_mid_truth_identity_consistency()
 install_mid_truth_identity_transport()
 install_mid_approval_truth_freeze()
-# Final re-entry is intentional: later compatibility installers may replace the
-# scorecard function while copying wrapper markers. Function-identity re-entry
-# guarantees the TypeScript evidence boundary remains the active outer layer.
-install_mid_static_score_accuracy()
 
 __version__ = "0.1.0"
