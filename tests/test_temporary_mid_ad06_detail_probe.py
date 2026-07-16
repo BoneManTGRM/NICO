@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -12,7 +13,7 @@ BASE = "https://app.nicoaudit.com/api/nico"
 SCOPE = {"customer_id": "customer_cody_jenkins", "project_id": "project_nico_audit"}
 
 
-def _get_json(url: str) -> dict[str, Any]:
+def _request_json(url: str) -> tuple[int, dict[str, Any]]:
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "NICO-read-only-mid-detail-probe"},
@@ -20,10 +21,15 @@ def _get_json(url: str) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
-            return json.loads(response.read().decode("utf-8", errors="replace"))
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(body)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise AssertionError(f"HTTP {exc.code}: {body[:2000]}") from exc
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = {"raw_body": body[:4000]}
+        return exc.code, payload
 
 
 def _compact(value: Any, *, depth: int = 0, list_limit: int = 20, text_limit: int = 1200) -> Any:
@@ -36,8 +42,10 @@ def _compact(value: Any, *, depth: int = 0, list_limit: int = 20, text_limit: in
             if item not in (None, "", [], {})
         }
     if isinstance(value, list):
-        items = value[:list_limit]
-        result = [_compact(item, depth=depth + 1, list_limit=list_limit, text_limit=text_limit) for item in items]
+        result = [
+            _compact(item, depth=depth + 1, list_limit=list_limit, text_limit=text_limit)
+            for item in value[:list_limit]
+        ]
         if len(value) > list_limit:
             result.append({"_truncated_items": len(value) - list_limit})
         return result
@@ -81,35 +89,43 @@ def _scanner_result(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_capture_exact_mid_detail_evidence() -> None:
+    diagnostics_status, diagnostics = _request_json(f"{BASE}/diagnostics/mid-runtime")
     query = urllib.parse.urlencode(SCOPE)
-    payload = _get_json(f"{BASE}/assessment/mid-run/{RUN_ID}/live-status?{query}")
+    live_url = f"{BASE}/assessment/mid-run/{RUN_ID}/live-status?{query}"
+    attempts: list[dict[str, Any]] = []
+    payload: dict[str, Any] = {}
+    status = 0
+    for attempt in range(1, 7):
+        status, payload = _request_json(live_url)
+        attempts.append({"attempt": attempt, "http_status": status, "payload": _compact(payload, list_limit=8)})
+        if status == 200:
+            break
+        time.sleep(5)
+
+    if status != 200:
+        raise AssertionError(
+            "NICO_MID_AD06_RUNTIME_PROBE="
+            + json.dumps(
+                {
+                    "diagnostics_http_status": diagnostics_status,
+                    "diagnostics": _compact(diagnostics, list_limit=20),
+                    "live_attempts": attempts,
+                },
+                sort_keys=True,
+                default=str,
+            )
+        )
+
     scanner = payload.get("scanner_evidence") if isinstance(payload.get("scanner_evidence"), dict) else {}
     repository = payload.get("repository_evidence") if isinstance(payload.get("repository_evidence"), dict) else {}
     complexity = payload.get("complexity_evidence") if isinstance(payload.get("complexity_evidence"), dict) else {}
     assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
-
     scanner_results = scanner.get("scanner_results") if isinstance(scanner.get("scanner_results"), list) else []
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
-    section_payload = []
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
-        section_payload.append(
-            {
-                "id": section.get("id"),
-                "score": section.get("score"),
-                "truth_status": section.get("truth_status"),
-                "confidence": section.get("confidence"),
-                "evidence": _compact(section.get("evidence") or [], list_limit=40),
-                "findings": _compact(section.get("findings") or [], list_limit=40),
-                "unavailable": _compact(section.get("unavailable") or [], list_limit=30),
-                "missing_evidence_sources": _compact(section.get("missing_evidence_sources") or [], list_limit=30),
-                "failed_evidence_tools": _compact(section.get("failed_evidence_tools") or [], list_limit=30),
-                "score_evidence_breakdown": _compact(section.get("score_evidence_breakdown") or {}),
-            }
-        )
 
     evidence = {
+        "diagnostics_http_status": diagnostics_status,
+        "diagnostics": _compact(diagnostics, list_limit=30),
         "identity": {
             "status": payload.get("status"),
             "run_id": payload.get("run_id"),
@@ -120,6 +136,7 @@ def test_capture_exact_mid_detail_evidence() -> None:
             or (payload.get("repository_snapshot") or {}).get("commit_sha"),
             "report_generation_status": payload.get("report_generation_status"),
             "approval_request_status": payload.get("approval_request_status"),
+            "same_run_approval_repair": _compact(payload.get("same_run_approval_repair") or {}),
         },
         "scanner_summary": {
             key: _compact(scanner.get(key))
@@ -146,11 +163,26 @@ def test_capture_exact_mid_detail_evidence() -> None:
             if scanner.get(key) not in (None, "", [], {})
         },
         "scanner_results": [_scanner_result(item) for item in scanner_results if isinstance(item, dict)],
-        "repository_code_signals": _compact(repository.get("code_signal_evidence") or {}, list_limit=50, text_limit=1800),
+        "repository_code_signals": _compact(repository.get("code_signal_evidence") or {}, list_limit=60, text_limit=1800),
         "repository_evidence_keys": sorted(repository),
-        "complexity_evidence": _compact(complexity, list_limit=35, text_limit=1600),
+        "complexity_evidence": _compact(complexity, list_limit=40, text_limit=1800),
         "complexity_evidence_keys": sorted(complexity),
-        "sections": section_payload,
+        "sections": [
+            {
+                "id": section.get("id"),
+                "score": section.get("score"),
+                "truth_status": section.get("truth_status"),
+                "confidence": section.get("confidence"),
+                "evidence": _compact(section.get("evidence") or [], list_limit=40),
+                "findings": _compact(section.get("findings") or [], list_limit=40),
+                "unavailable": _compact(section.get("unavailable") or [], list_limit=30),
+                "missing_evidence_sources": _compact(section.get("missing_evidence_sources") or [], list_limit=30),
+                "failed_evidence_tools": _compact(section.get("failed_evidence_tools") or [], list_limit=30),
+                "score_evidence_breakdown": _compact(section.get("score_evidence_breakdown") or {}),
+            }
+            for section in sections
+            if isinstance(section, dict)
+        ],
     }
     rendered = json.dumps(evidence, sort_keys=True, default=str)
     raise AssertionError("NICO_MID_AD06_DETAIL_PROBE=" + rendered[:120000])
