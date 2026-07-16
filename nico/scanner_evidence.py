@@ -83,7 +83,7 @@ def scanner_section(payload: dict[str, Any]) -> dict[str, Any] | None:
     diagnostic_status = _status(score, has_unavailable)
     return {
         "id": "scanner_worker_evidence",
-        "label": "Exact-Snapshot Scanner Evidence",
+        "label": "Scanner Worker Evidence",
         "score": score,
         "status": "gray",
         "diagnostic_status": diagnostic_status,
@@ -110,6 +110,8 @@ def enrich_payload_with_scanner_evidence(payload: dict[str, Any]) -> dict[str, A
     sections = [item for item in sections if item.get("id") != section["id"]]
     sections.append(section)
     output["sections"] = sections
-    output.setdefault("evidence_readiness", {})["scanner_worker_attached"] = True
-    output.setdefault("evidence_readiness", {})["scanner_worker_scoring_mode"] = "supplemental_diagnostic_with_core_source_mapping"
+    readiness = output.setdefault("evidence_readiness", {})
+    readiness["scanner_worker_attached"] = True
+    readiness["scanner_worker_scoring_mode"] = "supplemental_diagnostic"
+    readiness["scanner_worker_core_source_mapping"] = True
     return output
