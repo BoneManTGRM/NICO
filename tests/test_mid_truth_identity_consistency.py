@@ -10,8 +10,9 @@ from nico.mid_assessment_report import generate_mid_draft_report
 from nico.mid_assessment_runs import persist_mid_assessment_run
 from nico.mid_truth_identity_consistency import (
     MID_TRUTH_IDENTITY_CONSISTENCY_VERSION,
-    canonicalize_mid_truth,
+    canonical_mid_truth_payload,
     repair_stale_mid_approval,
+    semantic_mid_truth_hash,
 )
 from nico.storage import STORE
 
@@ -63,7 +64,10 @@ def _create_complete_run(run_id: str) -> dict:
             "status": "attached",
             "snapshot_commit_sha": "a" * 40,
             "file_evidence": {"files_profiled": 30},
-            "dependency_evidence": {"manifest_paths": ["requirements.txt", "apps/web/package-lock.json"], "dependency_entries": 20},
+            "dependency_evidence": {
+                "manifest_paths": ["requirements.txt", "apps/web/package-lock.json"],
+                "dependency_entries": 20,
+            },
             "workflow_evidence": {
                 "workflow_file_count": 8,
                 "workflow_configuration_snapshot_sha": "a" * 40,
@@ -106,7 +110,12 @@ def _create_complete_run(run_id: str) -> dict:
             },
         },
         "progress": [
-            {"step": "scanner_reconciliation", "status": "complete", "message": "Scanner reconciled.", "evidence": {"scanner_status": "complete"}},
+            {
+                "step": "scanner_reconciliation",
+                "status": "complete",
+                "message": "Scanner reconciled.",
+                "evidence": {"scanner_status": "complete"},
+            },
             {"step": "evidence_attachment", "status": "complete", "message": "Evidence attached.", "evidence": {}},
             {"step": "scoring", "status": "complete", "message": "Scoring complete.", "evidence": {}},
             {"step": "reports", "status": "planned", "message": "Mid draft planned.", "evidence": {}},
@@ -139,16 +148,27 @@ def admin_token(monkeypatch):
     monkeypatch.setenv("NICO_ADMIN_TOKEN", "truth-identity-admin-token")
 
 
-def test_approval_canonicalizes_stale_stored_truth_before_report_packet_and_request() -> None:
+def test_semantic_truth_identity_ignores_order_but_preserves_substantive_changes() -> None:
     run_id = _run_id()
     _create_complete_run(run_id)
-    record = STORE.get("assessment_runs", run_id)
-    stale_truth = deepcopy(record["response"]["mid_truth_status"])
-    stale_truth["summary"]["scope_disclosures"] = 999
-    stale_truth["rule"] = "Legacy serialized truth representation."
-    stale_hash = canonicalize_mid_truth(run_id, persist=False)["truth_sha256"]
-    record["response"]["mid_truth_status"] = stale_truth
-    STORE.put("assessment_runs", run_id, record)
+    truth = deepcopy(STORE.get("assessment_runs", run_id)["response"]["mid_truth_status"])
+    reordered = deepcopy(truth)
+    reordered["sections"] = list(reversed(reordered["sections"]))
+    reordered["review_item_ids"] = list(reversed(reordered.get("review_item_ids") or []))
+    reordered["evidence_coverage"]["units"] = list(reversed(reordered["evidence_coverage"]["units"]))
+
+    assert semantic_mid_truth_hash(truth) == semantic_mid_truth_hash(reordered)
+    assert canonical_mid_truth_payload(truth) == canonical_mid_truth_payload(reordered)
+
+    changed = deepcopy(truth)
+    changed["unsupported_claims_permitted"] = 1
+    changed["summary"]["unsupported_claims_permitted"] = 1
+    assert semantic_mid_truth_hash(changed) != semantic_mid_truth_hash(truth)
+
+
+def test_report_packet_and_approval_use_one_semantic_truth_identity() -> None:
+    run_id = _run_id()
+    _create_complete_run(run_id)
 
     requested = request_mid_approval(
         run_id,
@@ -158,13 +178,13 @@ def test_approval_canonicalizes_stale_stored_truth_before_report_packet_and_requ
     )
     approval = requested["approval"]
     report = STORE.get("reports", approval["draft_report_id"])
-    canonical = canonicalize_mid_truth(run_id, persist=False)
+    retained_truth = STORE.get("assessment_runs", run_id)["response"]["mid_truth_status"]
 
     assert requested["status"] == "requested"
     assert approval["status"] == "pending"
+    assert report["source_identity"]["truth_identity_version"] == MID_TRUTH_IDENTITY_CONSISTENCY_VERSION
     assert report["source_identity"]["truth_sha256"] == approval["truth_sha256"]
-    assert approval["truth_sha256"] == canonical["truth_sha256"]
-    assert approval["truth_sha256"] == stale_hash
+    assert approval["truth_sha256"] == semantic_mid_truth_hash(retained_truth)
     assert approval["validation"]["ready_for_approval"] is True
     assert approval["client_delivery_allowed"] is False
 
