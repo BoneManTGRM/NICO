@@ -49,20 +49,26 @@ def test_nonterminal_status_http_error_is_not_converted_into_a_failed_run() -> N
     assert "function recoveryResponse" in source
     assert "without exact-run terminal evidence" in source
     assert 'output.status = "running"' in source
-    assert 'status: "request_rejected"' in source
+    assert 'status: "temporarily_unreachable"' in source
     assert "http_status: response.status" in source
     assert "exact_run_terminal_evidence: false" in source
     assert "duplicate_start_allowed: false" in source
     assert "return recoveryResponse(runId, response, payload, lastGoodByRun.get(runId))" in source
 
 
-def test_exact_terminal_status_response_still_passes_through_unchanged() -> None:
+def test_exact_terminal_status_response_is_normalized_before_the_page_consumes_it() -> None:
     source = OUTCOME_GUARD.read_text(encoding="utf-8")
 
     assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
-    terminal_line = "if (identity.runId === runId && TERMINAL_STATUSES.has(identity.status)) return response"
-    assert terminal_line in source
-    assert source.index(terminal_line) < source.index("return recoveryResponse(runId, response, payload, lastGoodByRun.get(runId))")
+    assert "function terminalResponse(" in source
+    terminal_condition = "payload && identity.runId === runId && TERMINAL_STATUSES.has(identity.status)"
+    terminal_return = "return terminalResponse(runId, response, payload, lastGoodByRun.get(runId))"
+    assert terminal_condition in source
+    assert terminal_return in source
+    assert source.index(terminal_condition) < source.index(terminal_return)
+    assert 'status: "exact_run_terminal"' in source
+    assert "exact_run_terminal_evidence: true" in source
+    assert "output.progress_percent = 100" in source
 
 
 def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
