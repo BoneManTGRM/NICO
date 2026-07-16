@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/(?:status|live-status))?$/;
-const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/mid-runtime$/;
+const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|mid-runtime)$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -42,7 +42,7 @@ async function proxyNico(
   const assessmentAllowed = ALLOWED_ASSESSMENT_PATH.test(apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only canonical assessment lifecycle routes and bounded Mid runtime diagnostics are available through this proxy.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only canonical assessment lifecycle routes and bounded runtime diagnostics are available through this proxy.");
   }
 
   const backend = configuredBackend();
