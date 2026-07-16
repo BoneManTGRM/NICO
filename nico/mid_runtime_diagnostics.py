@@ -19,7 +19,7 @@ from nico.snapshot_scanner_heartbeat_patch import SNAPSHOT_SCANNER_HEARTBEAT_VER
 from nico.storage import STORE
 
 MID_RUNTIME_DIAGNOSTICS_PATH = "/diagnostics/mid-runtime"
-MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v6"
+MID_RUNTIME_DIAGNOSTICS_VERSION = "nico.mid_runtime_diagnostics.v7"
 _HEARTBEAT_MARKER = "_nico_snapshot_scanner_heartbeat_tool_v2"
 
 
@@ -94,6 +94,10 @@ def mid_runtime_status(app: FastAPI) -> dict[str, Any]:
         "live_status_mutates_storage": False,
         "live_status_projects_post_continuation": True,
         "post_status_performs_same_run_repair": True,
+        "post_repair_requires_exact_tenant_scope": True,
+        "post_repair_scope_validated_before_mutation": True,
+        "wrong_scope_repair_possible": False,
+        "cross_tenant_run_existence_disclosed": False,
         "same_run_repair_recaptures_repository": False,
         "same_run_repair_reruns_scanner": False,
         "same_run_repair_recomputes_score": False,
