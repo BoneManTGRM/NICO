@@ -32,14 +32,16 @@ def test_live_transport_is_outer_than_old_status_guards_but_inside_api_bridge() 
     assert layout.index("<AssessmentMidLiveStatusTransport />") < layout.index("<AssessmentApiTransportBridge />")
 
 
-def test_same_origin_proxy_allows_live_status_with_short_timeout() -> None:
+def test_same_origin_proxy_allows_live_status_and_mid_diagnostics_with_short_timeout() -> None:
     source = PROXY.read_text(encoding="utf-8")
 
     assert "(?:status|live-status)" in source
     assert 'apiPath.endsWith("/live-status")' in source
+    assert 'ALLOWED_DIAGNOSTIC_PATH.test(apiPath)' in source
     assert "AbortSignal.timeout(15_000)" in source
     assert "AbortSignal.timeout(120_000)" in source
-    assert "export const GET = proxyAssessment" in source
+    assert "export const GET = proxyNico" in source
+    assert "export const POST = proxyNico" in source
 
 
 def test_production_uses_two_web_workers_only_when_durable_database_exists() -> None:
