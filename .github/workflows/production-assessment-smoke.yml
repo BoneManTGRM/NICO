@@ -43,7 +43,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check out exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Enforce exact main and explicit authorization
         env:
@@ -63,7 +63,7 @@ jobs:
           echo "::add-mask::${NICO_PRODUCTION_SMOKE_ADMIN_TOKEN}"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload bounded production proof
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: authorized-production-assessment-smoke-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
