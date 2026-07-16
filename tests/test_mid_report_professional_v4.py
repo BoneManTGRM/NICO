@@ -94,7 +94,8 @@ def _payload() -> dict:
         "snapshot_commit_sha": "a" * 40,
         "source_identity_sha256": "b" * 64,
         "review_packet": {"review_packet_sha256": "c" * 64},
-        "report_version": "prior-version",
+        "report_version": "mid-assessment-draft-v3-decision-ready",
+        "detail_level": 3,
         "sections": technical + context,
         "evidence_coverage": {
             "percent": 100,
@@ -178,8 +179,11 @@ def test_mid_v4_builds_full_depth_report_without_blank_pages() -> None:
     pdf = _pdf(payload)
     reader = PdfReader(io.BytesIO(pdf))
 
-    assert payload["report_version"] == MID_REPORT_V4_VERSION
-    assert payload["detail_level"] == 4
+    assert payload["report_version"] == "mid-assessment-draft-v3-decision-ready"
+    assert payload["detail_level"] == 3
+    assert payload["presentation_version"] == MID_REPORT_V4_VERSION
+    assert payload["presentation_detail_level"] == 4
+    assert payload["report_depth_contract"]["legacy_payload_contract_preserved"] is True
     assert payload["report_depth_contract"]["dedicated_technical_dossiers"] == 7
     assert len(reader.pages) >= 13
     extracted = [" ".join((page.extract_text() or "").split()) for page in reader.pages]
@@ -190,8 +194,8 @@ def test_mid_v4_builds_full_depth_report_without_blank_pages() -> None:
         "Score Intelligence and Sensitivity",
         "Technical Review Dossier 1 of 7",
         "Technical Review Dossier 7 of 7",
-        "Prioritized Repair Roadmap",
-        "Human-Context Evidence Requests",
+        "Prioritized Repair Intelligence and Roadmap",
+        "Human-Context Modules and Evidence Requests",
         "Review by Exception and Integrity",
     ):
         assert heading in joined
@@ -201,11 +205,18 @@ def test_mid_v4_markdown_retains_domain_evidence_and_review_boundaries() -> None
     payload = _enhance(_payload())
     markdown = _markdown(payload)
 
+    assert "# NICO MID ASSESSMENT" in markdown
+    assert "DRAFT — HUMAN REVIEW REQUIRED" in markdown
+    assert "## Decision summary" in markdown
+    assert "The score is the weighted result of seven technical sections" in markdown
+    assert "Human-context sections unscored: 5" in markdown
+    assert "## Automated evidence coverage" in markdown
     assert "Technical dossier 1: Code Audit" in markdown
     assert "Technical dossier 7: Velocity / Complexity" in markdown
     assert "Evidence reviewed" in markdown
     assert "Reviewer questions" in markdown
-    assert "Prioritized repair roadmap" in markdown
+    assert "Prioritized repair intelligence" in markdown
     assert "Human-context evidence requests" in markdown
+    assert "NICO did not modify the assessed repository" in markdown
     assert "Unsupported claims permitted: 0" in markdown
     assert "Score changes require verified remediation and a new immutable snapshot" in markdown
