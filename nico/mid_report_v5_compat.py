@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+from contextvars import ContextVar
 from typing import Any
 
 
@@ -14,6 +15,10 @@ _TECHNICAL_IDS = {
     "architecture_debt",
     "velocity_complexity",
 }
+_PDF_HEADING_REPLACEMENTS: ContextVar[dict[str, str] | None] = ContextVar(
+    "nico_mid_v5_pdf_heading_replacements",
+    default=None,
+)
 
 
 def _sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -76,6 +81,18 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
 
     current_markdown = report_module._markdown
     current_pdf = report_module._pdf
+    original_paragraph = flowable_module._paragraph
+    replacements = {
+        "Priority controls": "Primary score constraints",
+        "Weighted technical scorecard": "Weighted Technical Scorecard",
+        "Repair Plan and Human-Context Requests": "Prioritized Repair Intelligence and Human-Context Modules",
+        "Review Exceptions and Integrity": "Review by Exception and Integrity",
+    }
+
+    def paragraph_dispatch(value: Any, *args: Any, **kwargs: Any):
+        active_replacements = _PDF_HEADING_REPLACEMENTS.get()
+        replacement = active_replacements.get(str(value), value) if active_replacements else value
+        return original_paragraph(replacement, *args, **kwargs)
 
     def markdown_compat(payload: dict[str, Any]) -> str:
         return _markdown_contract(current_markdown, payload)
@@ -89,24 +106,13 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
         )
 
     def pdf_compat(payload: dict[str, Any]) -> bytes:
-        original_paragraph = flowable_module._paragraph
-        replacements = {
-            "Priority controls": "Primary score constraints",
-            "Weighted technical scorecard": "Weighted Technical Scorecard",
-            "Repair Plan and Human-Context Requests": "Prioritized Repair Intelligence and Human-Context Modules",
-            "Review Exceptions and Integrity": "Review by Exception and Integrity",
-        }
-
-        def paragraph_compat(value: Any, *args: Any, **kwargs: Any):
-            replacement = replacements.get(str(value), value)
-            return original_paragraph(replacement, *args, **kwargs)
-
-        flowable_module._paragraph = paragraph_compat
+        token = _PDF_HEADING_REPLACEMENTS.set(replacements)
         try:
             return current_pdf(payload)
         finally:
-            flowable_module._paragraph = original_paragraph
+            _PDF_HEADING_REPLACEMENTS.reset(token)
 
+    flowable_module._paragraph = paragraph_dispatch
     report_module._markdown = markdown_compat
     report_module._html = html_compat
     report_module._pdf = pdf_compat
@@ -116,6 +122,7 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
         "legacy_markdown_contract_preserved": True,
         "legacy_pdf_headings_preserved": True,
         "canonical_v5_presentation_preserved": True,
+        "concurrent_pdf_rendering_isolated": True,
     }
 
 
