@@ -131,19 +131,30 @@ export default function SpanishAssessmentLocalization() {
   useEffect(() => {
     document.documentElement.lang = "es";
     translateTree(document.body);
+
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
-          translateTextNode(mutation.target as Text);
-        }
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.TEXT_NODE) translateTextNode(node as Text);
           if (node instanceof Element) translateTree(node);
         });
       }
     });
-    observer.observe(document.body, {childList: true, subtree: true, characterData: true});
-    return () => observer.disconnect();
+    observer.observe(document.body, {childList: true, subtree: true});
+
+    const characterObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.target.nodeType === Node.TEXT_NODE) {
+          translateTextNode(mutation.target as Text);
+        }
+      }
+    });
+    characterObserver.observe(document.body, {characterData: true, subtree: true});
+
+    return () => {
+      observer.disconnect();
+      characterObserver.disconnect();
+    };
   }, []);
   return null;
 }
