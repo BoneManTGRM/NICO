@@ -40,6 +40,7 @@ from nico.mid_report_score_integrity import install_mid_report_score_integrity
 from nico.mid_report_section_boundary_patch import install_mid_report_section_boundary_patch
 from nico.mid_report_truth_disclosure import install_mid_report_truth_disclosure
 from nico.report_flowable_safety import install_report_flowable_safety
+from nico.report_markup_safety_v2 import install_report_markup_safety_v2
 from nico.mid_report_professional_v4 import install_mid_report_professional_v4
 from nico.mid_report_professional_v5 import install_mid_report_professional_v5
 from nico.mid_report_v5_compat import install_mid_report_v5_compat
@@ -127,6 +128,7 @@ install_mid_report_score_integrity()
 install_mid_report_section_boundary_patch()
 install_mid_report_truth_disclosure()
 install_report_flowable_safety()
+install_report_markup_safety_v2()
 install_progressive_full_report_patch()
 install_repository_input_normalization()
 install_complexity_score_integrity_patch()
