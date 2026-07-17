@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "full_report_download_response_v2"
+VERSION = "full_report_download_response_v3"
 _REQUIRED_HEADERS = (
     "Content-Type",
     "Content-Disposition",
@@ -83,6 +83,7 @@ def build_download_response(
         "format": fmt,
         "issues": issues,
         "headers": headers,
+        "artifact": deepcopy(artifact) if allowed else None,
         "required_headers_present": allowed and all(name in headers for name in _REQUIRED_HEADERS),
         "range_requests_supported": allowed and headers.get("Accept-Ranges") == "bytes",
         "client_delivery_allowed": allowed,
