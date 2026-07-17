@@ -69,13 +69,11 @@ def _markdown_contract(current_markdown, payload: dict[str, Any]) -> str:
 
 def install_mid_report_v5_compat() -> dict[str, Any]:
     from nico import mid_assessment_report as report_module
-    from nico import report_flowable_safety as flowable_module
 
     if getattr(report_module, _PATCH_MARKER, False):
         return {"status": "already_installed"}
 
     current_markdown = report_module._markdown
-    current_pdf = report_module._pdf
 
     def markdown_compat(payload: dict[str, Any]) -> str:
         return _markdown_contract(current_markdown, payload)
@@ -88,33 +86,14 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
             f"<body><pre>{escaped}</pre></body></html>"
         )
 
-    def pdf_compat(payload: dict[str, Any]) -> bytes:
-        original_paragraph = flowable_module._paragraph
-        replacements = {
-            "Priority controls": "Primary score constraints",
-            "Weighted technical scorecard": "Weighted Technical Scorecard",
-            "Repair Plan and Human-Context Requests": "Prioritized Repair Intelligence and Human-Context Modules",
-            "Review Exceptions and Integrity": "Review by Exception and Integrity",
-        }
-
-        def paragraph_compat(value: Any, *args: Any, **kwargs: Any):
-            replacement = replacements.get(str(value), value)
-            return original_paragraph(replacement, *args, **kwargs)
-
-        flowable_module._paragraph = paragraph_compat
-        try:
-            return current_pdf(payload)
-        finally:
-            flowable_module._paragraph = original_paragraph
-
     report_module._markdown = markdown_compat
     report_module._html = html_compat
-    report_module._pdf = pdf_compat
     setattr(report_module, _PATCH_MARKER, True)
     return {
         "status": "installed",
         "legacy_markdown_contract_preserved": True,
-        "legacy_pdf_headings_preserved": True,
+        "legacy_pdf_headings_preserved_by_stable_alias": True,
+        "request_time_global_patch_removed": True,
         "canonical_v5_presentation_preserved": True,
     }
 
