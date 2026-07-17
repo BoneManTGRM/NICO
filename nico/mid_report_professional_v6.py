@@ -241,7 +241,7 @@ def _markdown(payload: dict[str, Any]) -> str:
     score = _canonical_score(payload)
     rows = {str(row.get("section_id") or ""): row for row in _score_rows(payload)}
     lines = [
-        "# NICO MID TECHNICAL ASSESSMENT",
+        "# NICO MID ASSESSMENT",
         "",
         f"**{_DRAFT_LABEL} — Powered by Reparodynamics — immutable snapshot**",
         "",
@@ -250,11 +250,14 @@ def _markdown(payload: dict[str, Any]) -> str:
         f"- Snapshot: `{payload.get('snapshot_commit_sha')}`",
         f"- Technical score: **{score}/100**",
         f"- Evidence-unit coverage: **{coverage.get('percent', 0)}%** ({coverage.get('numerator', 0)}/{coverage.get('denominator', 0)})",
+        f"- Automated evidence coverage (evidence-unit availability): **{coverage.get('percent', 0)}%**",
         "- Human review: **REQUIRED**",
         "",
-        "## Executive technical decision",
+        "## Decision summary",
         "",
-        f"**{decision.get('review_decision')}** — {decision.get('review_decision_reason')}",
+        "The score is the weighted result of seven technical sections. Evidence coverage and human-context modules do not directly change that weighted technical score.",
+        f"Human-context sections unscored: {len(_context(payload))}",
+        f"**Executive technical decision:** {decision.get('review_decision')} — {decision.get('review_decision_reason')}",
         "",
         "Evidence-unit coverage measures availability. It does not mean every analyzer executed, every output parsed, or every finding was dispositioned.",
         "",
@@ -275,6 +278,9 @@ def _markdown(payload: dict[str, Any]) -> str:
     lines.extend(["", "## Evidence assurance matrix", "", "| Control | Execution | Parsing | Accepted for scoring | Disposition |", "|---|---|---|---|---|"])
     for item in payload.get("evidence_assurance_matrix") or []:
         lines.append(f"| {item.get('label')} | {item.get('execution')} | {item.get('parsed')} | {item.get('accepted')} | {item.get('disposition')} |")
+    lines.extend(["", "### Truth-status inventory"])
+    for section in _technical(payload) + _context(payload):
+        lines.append(f"- {section.get('label')}: Truth status: **{section.get('truth_status') or section.get('status') or 'Unknown'}**")
 
     lines.extend(["", "## Weighted score and sensitivity", ""])
     for row in _score_rows(payload):
@@ -317,7 +323,7 @@ def _markdown(payload: dict[str, Any]) -> str:
             lines.extend(["", "### Reviewer questions"])
             lines.extend(f"- {item}" for item in questions)
 
-    lines.extend(["", "## Prioritized remediation roadmap", ""])
+    lines.extend(["", "## Prioritized repair intelligence", "", "Decision-ready remediation roadmap:"])
     for index, item in enumerate(decision.get("action_plan") or [], 1):
         lines.extend([
             f"### P{index} — {item.get('label')}",
@@ -333,7 +339,7 @@ def _markdown(payload: dict[str, Any]) -> str:
         request = _CONTEXT_REQUESTS.get(str(section.get("id") or ""), "Direct reviewable context with source, owner, date, scope, and decision impact.")
         lines.append(f"- **{section.get('label')}**: {request}")
 
-    lines.extend(["", "## Review exceptions and integrity", ""])
+    lines.extend(["", "## Review by exception and integrity", ""])
     for group in payload.get("grouped_review_exceptions") or []:
         lines.append(f"- **{group.get('review_priority')}** — {group.get('category').replace('_', ' ').title()}: {group.get('count')} item(s); examples: {'; '.join(group.get('examples') or [])}.")
     lines.extend([
@@ -419,7 +425,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         ], [0.78 * inch, 2.72 * inch, 1.02 * inch, 2.56 * inch], header_color="#f8fafc"),
         p("Executive technical decision", h2),
         p(f"<b>{decision.get('review_decision')}</b> — {decision.get('review_decision_reason')}", styles["callout"], 1300),
-        p("Primary constraints and accountable actions", h2),
+        p("Primary score constraints and accountable actions", h2),
     ]
     priority_rows = [[p("Control", styles["label"]), p("Constraint", styles["label"]), p("Required action", styles["label"]), p("Owner / effort", styles["label"])]]
     actions = {str(item.get("section_id") or ""): item for item in decision.get("action_plan") or []}
@@ -432,7 +438,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
             p(f"{action.get('owner')}\n{action.get('effort')}", small, 450),
         ])
     story.append(_table(priority_rows, [1.12 * inch, 1.72 * inch, 2.85 * inch, 1.39 * inch], header_color="#ecfeff"))
-    story.append(p("Weighted technical scorecard", h2))
+    story.append(p("Weighted Technical Scorecard", h2))
     score_rows = [[p("Control", styles["label"]), p("Truth", styles["label"]), p("Score", styles["label"]), p("Weight", styles["label"]), p("Points", styles["label"])]]
     for row in _score_rows(payload):
         score_rows.append([p(row.get("label"), small), p(row.get("truth_status"), small), p(str(row.get("score")), small), p(f"{row.get('weight')}%", small), p(str(row.get("weighted_contribution")), small)])
@@ -505,7 +511,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         block.append(Spacer(1, 0.10 * inch))
         story.append(KeepTogether(block))
 
-    story.extend([PageBreak(), p("Prioritized Remediation Roadmap", page_title)])
+    story.extend([PageBreak(), p("Prioritized Repair Intelligence and Roadmap", page_title)])
     story.append(p("The roadmap below is report-only. Implementation ownership, approval, and deployment remain human responsibilities.", styles["callout"], 1200))
     roadmap_rows = [[p("Priority", styles["label"]), p("Control and decision impact", styles["label"]), p("Action", styles["label"]), p("Owner / effort", styles["label"]), p("Verification", styles["label"])]]
     for index, item in enumerate((decision.get("action_plan") or [])[:5], 1):
@@ -527,7 +533,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         [p("Transient infrastructure", small), p("Provider or network evidence, retry outcome, and recurrence assessment.", small)],
         [p("Unresolved", small), p("Assigned owner, target date, blocking impact, and required next diagnostic.", small)],
     ], [1.55 * inch, 5.53 * inch], header_color="#f1f5f9"))
-    story.append(p("Human-context modules — unscored", h2))
+    story.append(p("Human-Context Modules — Unscored", h2))
     context_rows = [[p("Module", styles["label"]), p("Evidence request", styles["label"])]]
     for section in context:
         request = _CONTEXT_REQUESTS.get(str(section.get("id") or ""), "Direct reviewable context with source, owner, date, scope, and decision impact.")
