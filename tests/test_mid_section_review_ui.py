@@ -25,34 +25,33 @@ def test_mid_review_is_one_client_facing_decision_surface() -> None:
     assert "Additional evidence requested" in source
 
 
-def test_mid_review_uses_one_canonical_weighted_score_and_lifecycle_truth() -> None:
+def test_mid_review_uses_one_bounded_canonical_score_and_artifact_truth() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
-    assert "rows.length === TECHNICAL_IDS.length" in source
     assert "weightedTotal === 100" in source
     assert "rows.reduce((total, row) => total + row.score * row.weight / 100" in source
-    assert "finite(scoreContract.final_report_score)" in source
-    assert "explicitTrue(lifecycle.pdf_available) || hasArtifact(reports.pdf_base64)" in source
-    assert "explicitTrue(lifecycle.markdown_available) || hasArtifact(reports.markdown)" in source
-    assert "REPORT_READY_STATUSES.has(normalizedStatus(rawReportStatus))" in source
-    assert "REVIEW_APPROVED_STATUSES.has(normalizedReviewStatus)" in source
+    assert "function bounded" in source
+    assert "completeScorecard" in source
+    assert "reportReady = pdfReady || markdownReady" in source
+    assert 'reportStatusClaimsReady ? "Artifact unavailable"' in source
     assert 'reviewApproved ? "Approved" : reviewBlocked ? "Blocked" : "Required"' in source
     assert "Client delivery blocked" in source
     assert "verified-fix scenario" in source
+    assert "score == null || !completeScorecard" in source
 
 
-def test_mid_review_rejects_null_scores_malformed_arrays_and_duplicate_weight_rows() -> None:
+def test_mid_review_rejects_false_artifacts_and_handles_malformed_payload_values() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
-    assert 'if (value == null || typeof value === "boolean") return null' in source
-    assert 'typeof value === "string" && !value.trim()' in source
-    assert "function textItems(value: unknown)" in source
-    assert "Array.isArray(value) ? value : []" in source
-    assert "suppliedById.has(id)" in source
-    assert "const weight = WEIGHTS[id]" in source
-    assert "boundedScore * weight / 100" in source
-    assert "Math.round(row.score)" in source
-    assert "Canonical scorecard incomplete" in source
+    assert "function hasArtifact" in source
+    assert '["base64", "data", "content", "bytes"]' in source
+    assert "Object.keys(value).length > 0" not in source
+    assert "function cleanText" in source
+    assert "function displayText" in source
+    assert "score?: unknown" in source
+    assert "summary?: unknown" in source
+    assert "evidence?: unknown" in source
+    assert "Artifact unavailable" in source
 
 
 def test_mid_review_preserves_evidence_findings_limitations_and_scope() -> None:
@@ -70,7 +69,7 @@ def test_mid_review_preserves_evidence_findings_limitations_and_scope() -> None:
     assert "Gitleaks did not provide accepted same-run history evidence" in source
 
 
-def test_mid_review_portal_reuses_transport_and_hides_complete_legacy_surface() -> None:
+def test_mid_review_portal_merges_partial_status_monotonically_and_is_tier_safe() -> None:
     score_portal = SCORE_PORTAL.read_text(encoding="utf-8")
     section_portal = SECTION_PORTAL.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
@@ -80,6 +79,16 @@ def test_mid_review_portal_reuses_transport_and_hides_complete_legacy_surface() 
     assert "createPortal" not in score_portal
     assert "return null" in score_portal
     assert "window.addEventListener(MID_PAYLOAD_EVENT, onPayload)" in section_portal
+    assert "if (!midSelectedRef.current) return" in section_portal
+    assert "mergePayloadRecord(previous, incoming)" in section_portal
+    assert "DURABLE_ARRAY_KEYS" in section_portal
+    assert "DURABLE_SCALAR_KEYS" in section_portal
+    assert "MONOTONIC_TRUE_KEYS" in section_portal
+    assert "MONOTONIC_STATUS_KEYS" in section_portal
+    assert "statusRank(previousValue) > statusRank(incomingValue)" in section_portal
+    assert "!DURABLE_ARRAY_KEYS.has(key)" in section_portal
+    assert "isMeaningful(incomingValue)" in section_portal
+    assert 'window.addEventListener("popstate", syncFromLocation)' in section_portal
     assert "hideLegacySurface(panel, mount)" in section_portal
     assert "restoreLegacySurface()" in section_portal
     assert "child.hidden = true" in section_portal
@@ -88,25 +97,16 @@ def test_mid_review_portal_reuses_transport_and_hides_complete_legacy_surface() 
     assert 'import MidSectionReviewPortal from "./MidSectionReviewPortal"' in layout
 
 
-def test_mid_review_portal_ignores_stale_mid_polling_and_preserves_terminal_sections() -> None:
-    source = SECTION_PORTAL.read_text(encoding="utf-8")
-
-    assert "const midSelectedRef = useRef(false)" in source
-    assert "if (!midSelectedRef.current) return" in source
-    assert "setMidSelected(true)" not in source
-    assert "function mergeMidPayload" in source
-    assert "previousRunId !== incomingRunId" in source
-    assert "sections: previousSections" in source
-    assert "setPayload((current) => mergeMidPayload(current, detail))" in source
-
-
-def test_mid_review_retains_report_and_human_review_actions() -> None:
+def test_mid_review_retains_report_and_human_review_actions_with_failure_feedback() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
     assert "Download draft PDF" in source
     assert "Copy Markdown" in source
     assert "Open human review" in source
     assert "clickLegacyAction" in source
+    assert "runLegacyAction" in source
+    assert "actionNotice" in source
+    assert 'role="status"' in source
     assert 'data-nico-mid-legacy-hidden="true"' in source
 
 

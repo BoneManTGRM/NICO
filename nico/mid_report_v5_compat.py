@@ -92,9 +92,9 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
     return {
         "status": "installed",
         "legacy_markdown_contract_preserved": True,
-        "legacy_pdf_headings_preserved_by_stable_alias": True,
-        "request_time_global_patch_removed": True,
+        "legacy_pdf_headings_preserved": True,
         "canonical_v5_presentation_preserved": True,
+        "request_time_global_pdf_patch_used": False,
     }
 
 
