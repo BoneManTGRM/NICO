@@ -56,18 +56,12 @@ def _paragraphs_for_page(payload: dict[str, Any], title: str, focus: str, sectio
     control = _text(section.get("label"), focus)
     control_score = _text(section.get("score"), "Not scored")
 
-    paragraphs = [
+    return [
         f"{title} examines {focus.lower()} for {repository} at immutable snapshot {snapshot}. The canonical weighted technical score is {score}/100. This page distinguishes evidence availability from analyzer execution, structured parsing, scoring acceptance, and final disposition. A collected artifact is not treated as proof merely because it exists. Every conclusion remains bound to the authorized repository scope, exact snapshot identity, retained evidence, and the required human-review boundary.",
         f"Control context: {control} is currently scored {control_score}/100. Execution is {_text(state.get('execution'))}; parsing is {_text(state.get('parsed'))}; scoring acceptance is {_text(state.get('accepted'))}; disposition is {_text(state.get('disposition'))}. Evidence reviewed includes {_text(evidence, 'no direct retained evidence')}. Open findings include {_text(findings, 'no material defect confirmed')}. Evidence limitations include {_text(limits, 'no section-specific limitation retained beyond report-wide human review')}.",
         f"Decision impact: {_text(action.get('impact'), decision.get('review_decision_reason') or 'The current evidence constrains a stronger conclusion.')}. Required action: {_text(action.get('action'), 'Collect exact evidence, classify materiality, and apply the smallest reversible repair.')}. Accountable owner: {_text(action.get('owner'), 'Authorized technical owner')}. Estimated effort: {_text(action.get('effort'), 'Estimate after evidence review')}. Verification: {_text(action.get('verification'), 'Run relevant tests and a new immutable NICO rescan.')}",
         "Interpretation guardrail: conditional score improvement is arithmetic sensitivity, not a promised outcome. Stronger evidence may confirm the present score, improve it after verified repair, or reduce it if new material findings appear. Unsupported claims permitted: 0. Human review is required before approval or client delivery. NICO performed defensive read-only assessment and did not modify the assessed repository, create a branch, commit code, open a pull request, or deploy software.",
     ]
-    if title == "Review Exceptions, Integrity, and Approval Boundary":
-        paragraphs.insert(
-            1,
-            f"Original exception records: {payload.get('review_exception_original_count', 0)}. Decision-ready deduplicated items: {payload.get('review_exception_final_count', 0)}.",
-        )
-    return paragraphs
 
 
 def _premium_pdf(payload: dict[str, Any]) -> bytes:
@@ -106,7 +100,7 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
         ("Architecture and Dependency Analysis", "module boundaries, dependency direction, circularity, coupling, and supply-chain exposure", "architecture_debt"),
         ("Complexity, Churn, Ownership, and Review Latency", "maintainability hotspots, change concentration, ownership resilience, and review effectiveness", "velocity_complexity"),
         ("CI/CD Failure Classification", "non-success run classification, recurrence, required checks, and release readiness", "ci_cd"),
-        ("Prioritized Repair Intelligence", "repair value, accountable ownership, effort, verification, rollback, and residual risk", None),
+        ("Repair Impact Matrix — Prioritized Repair Intelligence", "repair value, accountable ownership, effort, verification, rollback, and residual risk", None),
         ("30 / 60 / 90 Day Roadmap", "sequenced remediation, validation gates, ownership, and measurable outcomes", None),
         ("Code Audit Dossier — Evidence", "exact code-risk evidence, file and rule identity, confidence, and disposition", "code_audit"),
         ("Code Audit Dossier — Repair", "code-risk business impact, smallest safe repair, verification, and rollback", "code_audit"),
@@ -154,6 +148,9 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
             story.append(Spacer(1, 0.12*inch))
         for paragraph in _paragraphs_for_page(payload, title, focus, section_id):
             story.append(Paragraph(paragraph, body))
+        if title == "Review Exceptions, Integrity, and Approval Boundary":
+            story.append(Paragraph(f"Original exception records: {payload.get('review_exception_original_count', 0)}", body))
+            story.append(Paragraph(f"Decision-ready deduplicated items: {payload.get('review_exception_final_count', 0)}", body))
         story.append(Spacer(1, 0.06*inch))
         story.append(Paragraph(f"NICO Mid Technical Assessment · Page {index} of {len(pages)} · immutable snapshot · human review required", small))
         if index < len(pages):
