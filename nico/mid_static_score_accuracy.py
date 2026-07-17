@@ -88,11 +88,7 @@ def _typescript_state(scanner: dict[str, Any]) -> tuple[str, int]:
 
 
 def _maturity_level(score: int) -> str:
-    if score >= 82:
-        return "Senior"
-    if score >= 58:
-        return "Mid"
-    return "Junior"
+    return "Senior" if score >= 82 else "Mid" if score >= 58 else "Junior"
 
 
 def _weighted_score(sections: list[dict[str, Any]]) -> int:
@@ -103,11 +99,7 @@ def _weighted_score(sections: list[dict[str, Any]]) -> int:
         section = by_id.get(section_id)
         if not section or str(section.get("status") or "").lower() == "gray":
             continue
-        try:
-            score = max(0, min(100, int(section.get("score") or 0)))
-        except (TypeError, ValueError):
-            continue
-        weighted += score * weight
+        weighted += max(0, min(100, _int(section.get("score")))) * weight
         total += weight
     return round(weighted / total) if total else 0
 
@@ -121,21 +113,27 @@ def _status(score: int) -> str:
     return "green" if score >= 80 else "yellow" if score >= 55 else "red"
 
 
-def _apply_candidate(section: dict[str, Any], *, candidate: int, evidence_note: str, breakdown: dict[str, Any]) -> tuple[int, int]:
+def _apply_candidate(
+    section: dict[str, Any],
+    *,
+    candidate: int,
+    evidence_note: str,
+    breakdown: dict[str, Any],
+) -> tuple[int, int]:
     previous = max(0, min(100, _int(section.get("score"))))
-    revised = max(previous, max(0, min(88, int(candidate))))
+    bounded_candidate = max(0, min(88, int(candidate)))
+    revised = max(previous, bounded_candidate)
     section["score"] = revised
     section["status"] = _status(revised)
     evidence = [str(item) for item in _list(section.get("evidence"))]
     _append_unique(evidence, evidence_note)
     section["evidence"] = evidence
     section["verified_claims"] = list(evidence)
-    current_breakdown = _dict(section.get("score_evidence_breakdown"))
     section["score_evidence_breakdown"] = {
-        **current_breakdown,
+        **_dict(section.get("score_evidence_breakdown")),
         **breakdown,
         "verified_reconciliation_pre_score": previous,
-        "verified_reconciliation_candidate_score": max(0, min(88, int(candidate))),
+        "verified_reconciliation_candidate_score": bounded_candidate,
         "verified_reconciliation_final_score": revised,
         "score_increased_from_verified_evidence": revised > previous,
         "score_forced_upward": False,
@@ -144,25 +142,49 @@ def _apply_candidate(section: dict[str, Any], *, candidate: int, evidence_note: 
     return previous, revised
 
 
-def apply_typescript_static_evidence(assessment: dict[str, Any], scanner_evidence: dict[str, Any]) -> dict[str, Any]:
-    """Apply TypeScript compiler state to the Mid static section exactly once."""
+def _refresh_scorecard(output: dict[str, Any], sections: list[dict[str, Any]], summary: str) -> None:
+    technical_score = _weighted_score(sections)
+    maturity = deepcopy(_dict(output.get("maturity_signal")))
+    maturity.update({"score": technical_score, "level": _maturity_level(technical_score), "summary": summary})
+    scorecard = deepcopy(_dict(output.get("scorecard")))
+    scorecard["technical_score"] = technical_score
+    output["sections"] = sections
+    output["maturity_signal"] = maturity
+    output["scorecard"] = scorecard
+
+
+def apply_typescript_static_evidence(
+    assessment: dict[str, Any],
+    scanner_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply the Mid-only TypeScript execution state exactly once."""
+
     output = deepcopy(assessment)
     sections = [deepcopy(item) for item in _list(output.get("sections")) if isinstance(item, dict)]
     static = next((item for item in sections if str(item.get("id") or "") == "static_analysis"), None)
     if static is None:
-        output["mid_static_score_accuracy"] = {"status": "unavailable", "reason": "static_analysis_section_missing", "version": MID_STATIC_SCORE_ACCURACY_VERSION}
+        output["mid_static_score_accuracy"] = {
+            "status": "unavailable",
+            "reason": "static_analysis_section_missing",
+            "version": MID_STATIC_SCORE_ACCURACY_VERSION,
+        }
         return output
+
     state, delta = _typescript_state(scanner_evidence)
     breakdown = _dict(static.get("score_evidence_breakdown"))
-    if breakdown.get("typescript_version") == MID_STATIC_SCORE_ACCURACY_VERSION and breakdown.get("typescript_state") == state and breakdown.get("typescript_accuracy_applied") is True:
+    if (
+        breakdown.get("typescript_version") == MID_STATIC_SCORE_ACCURACY_VERSION
+        and breakdown.get("typescript_state") == state
+        and breakdown.get("typescript_accuracy_applied") is True
+    ):
         return output
+
     previous = max(0, min(100, _int(static.get("score"))))
     revised = max(0, min(88, previous + delta))
     static["score"] = revised
     static["status"] = _status(revised)
     evidence = [str(item) for item in _list(static.get("evidence"))]
-    note = f"TypeScript compiler static-analysis state={state}; bounded score adjustment={delta:+d}."
-    _append_unique(evidence, note)
+    _append_unique(evidence, f"TypeScript compiler static-analysis state={state}; bounded score adjustment={delta:+d}.")
     static["evidence"] = evidence
     static["verified_claims"] = list(evidence)
     findings = [str(item) for item in _list(static.get("findings"))]
@@ -178,17 +200,16 @@ def apply_typescript_static_evidence(assessment: dict[str, Any], scanner_evidenc
         "typescript_execution_treated_as_clean": False,
         "typescript_accuracy_applied": True,
         "score_forced_upward": False,
+        "version": MID_STATIC_SCORE_ACCURACY_VERSION,
         "typescript_version": MID_STATIC_SCORE_ACCURACY_VERSION,
     }
-    technical_score = _weighted_score(sections)
-    maturity = deepcopy(_dict(output.get("maturity_signal")))
-    maturity.update({"score": technical_score, "level": _maturity_level(technical_score), "summary": "Weighted technical score derived from attached repository and completed same-run scanner evidence, including bounded TypeScript compiler execution state."})
-    scorecard = deepcopy(_dict(output.get("scorecard")))
-    scorecard["technical_score"] = technical_score
-    scorecard["typescript_static_evidence_included"] = state != "not_requested"
-    output["sections"] = sections
-    output["maturity_signal"] = maturity
-    output["scorecard"] = scorecard
+
+    _refresh_scorecard(
+        output,
+        sections,
+        "Weighted technical score derived from attached repository and completed same-run scanner evidence, including bounded TypeScript compiler execution state.",
+    )
+    output["scorecard"]["typescript_static_evidence_included"] = state != "not_requested"
     output["mid_static_score_accuracy"] = {
         "status": "complete",
         "version": MID_STATIC_SCORE_ACCURACY_VERSION,
@@ -196,7 +217,7 @@ def apply_typescript_static_evidence(assessment: dict[str, Any], scanner_evidenc
         "typescript_score_adjustment": delta,
         "static_score_before": previous,
         "static_score_after": revised,
-        "technical_score_after": technical_score,
+        "technical_score_after": output["maturity_signal"]["score"],
         "execution_treated_as_clean": False,
         "parsed_findings_changed": False,
         "express_score_changed": False,
@@ -206,11 +227,21 @@ def apply_typescript_static_evidence(assessment: dict[str, Any], scanner_evidenc
     return output
 
 
-def apply_verified_control_reconciliation(assessment: dict[str, Any], repository_evidence: dict[str, Any], scanner_evidence: dict[str, Any]) -> dict[str, Any]:
+def apply_verified_control_reconciliation(
+    assessment: dict[str, Any],
+    repository_evidence: dict[str, Any],
+    scanner_evidence: dict[str, Any],
+) -> dict[str, Any]:
     """Correct undercredited Mid controls only from verified exact-snapshot evidence."""
+
     output = deepcopy(assessment)
-    if repository_evidence.get("status") != "attached" or scanner_evidence.get("status") != "attached" or scanner_evidence.get("snapshot_match") is not True:
+    if (
+        repository_evidence.get("status") != "attached"
+        or scanner_evidence.get("status") != "attached"
+        or scanner_evidence.get("snapshot_match") is not True
+    ):
         return output
+
     sections = [deepcopy(item) for item in _list(output.get("sections")) if isinstance(item, dict)]
     by_id = {str(item.get("id") or ""): item for item in sections}
     verified = _verified_tools(scanner_evidence)
@@ -221,6 +252,7 @@ def apply_verified_control_reconciliation(assessment: dict[str, Any], repository
     verified_static = verified & STATIC_TOOLS
     dependency_counts = _category_counts(scanner_evidence, "dependency")
     static_counts = _category_counts(scanner_evidence, "static")
+
     files = _dict(repository_evidence.get("file_evidence"))
     architecture = _dict(repository_evidence.get("architecture_evidence"))
     activity = _dict(repository_evidence.get("activity_evidence"))
@@ -241,35 +273,84 @@ def apply_verified_control_reconciliation(assessment: dict[str, Any], repository
         candidate += min(6, len(verified_static) * 2)
         candidate -= min(6, risks)
         candidate -= min(4, _int(signals.get("todo_fixme_security_notes")))
-        candidate -= len(failed & STATIC_TOOLS) * 6 + len(timed_out & STATIC_TOOLS) * 4 + len(unavailable & STATIC_TOOLS)
-        previous, revised = _apply_candidate(code, candidate=candidate, evidence_note=f"Mid exact-snapshot reconciliation verified {len(verified_static)}/{len(STATIC_TOOLS)} static analyzer(s); material static findings=0. The {risks} sampled risk-pattern signal(s) remain review indicators, not confirmed production defects.", breakdown={"verified_static_tool_count": len(verified_static), "sampled_risk_pattern_count": risks, "material_static_finding_count": 0, "sampled_patterns_treated_as_confirmed_defects": False})
-        changes["code_audit"] = {"before": previous, "after": revised}
+        candidate -= len(failed & STATIC_TOOLS) * 6
+        candidate -= len(timed_out & STATIC_TOOLS) * 4
+        candidate -= len(unavailable & STATIC_TOOLS)
+        before, after = _apply_candidate(
+            code,
+            candidate=candidate,
+            evidence_note=(
+                f"Mid exact-snapshot reconciliation verified {len(verified_static)}/{len(STATIC_TOOLS)} static analyzer(s); "
+                f"material static findings=0. The {risks} sampled risk-pattern signal(s) remain review indicators, not confirmed production defects."
+            ),
+            breakdown={
+                "verified_static_tool_count": len(verified_static),
+                "sampled_risk_pattern_count": risks,
+                "material_static_finding_count": 0,
+                "sampled_patterns_treated_as_confirmed_defects": False,
+            },
+        )
+        changes["code_audit"] = {"before": before, "after": after}
 
     dependency = by_id.get("dependency_health")
     if dependency is not None and dependency_counts["material"] == 0:
-        candidate = 38 + (14 if _list(dependencies.get("manifest_paths")) else 0) + (14 if _list(dependencies.get("lockfile_paths")) else 0) + (10 if _int(dependencies.get("dependency_entries")) else 0)
-        candidate += min(24, len(verified_dependency) * 8) + (6 if len(verified_dependency) >= 2 else 0)
-        candidate -= len(failed & DEPENDENCY_TOOLS) * 8 + len(timed_out & DEPENDENCY_TOOLS) * 5 + len(unavailable & DEPENDENCY_TOOLS) * 2
-        previous, revised = _apply_candidate(dependency, candidate=candidate, evidence_note=f"Mid exact-snapshot dependency reconciliation verified {len(verified_dependency)}/{len(DEPENDENCY_TOOLS)} dependency analyzer(s); material dependency findings=0, review-required={dependency_counts['review_required']}, test-only excluded={dependency_counts['excluded_test_only']}.", breakdown={"verified_dependency_tool_count": len(verified_dependency), "material_dependency_finding_count": 0, "dependency_review_required_count": dependency_counts["review_required"], "dependency_test_only_excluded_count": dependency_counts["excluded_test_only"]})
-        changes["dependency_health"] = {"before": previous, "after": revised}
+        candidate = 38
+        candidate += 14 if _list(dependencies.get("manifest_paths")) else 0
+        candidate += 14 if _list(dependencies.get("lockfile_paths")) else 0
+        candidate += 10 if _int(dependencies.get("dependency_entries")) else 0
+        candidate += min(24, len(verified_dependency) * 8)
+        candidate += 6 if len(verified_dependency) >= 2 else 0
+        candidate -= len(failed & DEPENDENCY_TOOLS) * 8
+        candidate -= len(timed_out & DEPENDENCY_TOOLS) * 5
+        candidate -= len(unavailable & DEPENDENCY_TOOLS) * 2
+        before, after = _apply_candidate(
+            dependency,
+            candidate=candidate,
+            evidence_note=(
+                f"Mid exact-snapshot dependency reconciliation verified {len(verified_dependency)}/{len(DEPENDENCY_TOOLS)} dependency analyzer(s); "
+                f"material dependency findings=0, review-required={dependency_counts['review_required']}, test-only excluded={dependency_counts['excluded_test_only']}."
+            ),
+            breakdown={
+                "verified_dependency_tool_count": len(verified_dependency),
+                "material_dependency_finding_count": 0,
+                "dependency_review_required_count": dependency_counts["review_required"],
+                "dependency_test_only_excluded_count": dependency_counts["excluded_test_only"],
+            },
+        )
+        changes["dependency_health"] = {"before": before, "after": after}
 
     static = by_id.get("static_analysis")
     if static is not None and static_counts["material"] == 0:
         risks = _int(signals.get("risk_pattern_hits"))
-        candidate = 52 + min(32, len(verified_static) * 8) + (6 if len(verified_static) >= 2 else 0) + (4 if risks == 0 else -min(4, risks))
-        candidate -= len(failed & STATIC_TOOLS) * 8 + len(timed_out & STATIC_TOOLS) * 5 + len(unavailable & STATIC_TOOLS)
-        previous, revised = _apply_candidate(static, candidate=candidate, evidence_note=f"Mid exact-snapshot static reconciliation verified {len(verified_static)}/{len(STATIC_TOOLS)} analyzer(s); material findings=0, review-required={static_counts['review_required']}, test-only excluded={static_counts['excluded_test_only']}.", breakdown={"verified_static_tool_count": len(verified_static), "material_static_finding_count": 0, "static_review_required_count": static_counts["review_required"], "static_test_only_excluded_count": static_counts["excluded_test_only"], "execution_coverage_treated_as_clean": False})
-        changes["static_analysis"] = {"before": previous, "after": revised}
+        candidate = 52 + min(32, len(verified_static) * 8)
+        candidate += 6 if len(verified_static) >= 2 else 0
+        candidate += 4 if risks == 0 else -min(4, risks)
+        candidate -= len(failed & STATIC_TOOLS) * 8
+        candidate -= len(timed_out & STATIC_TOOLS) * 5
+        candidate -= len(unavailable & STATIC_TOOLS)
+        before, after = _apply_candidate(
+            static,
+            candidate=candidate,
+            evidence_note=(
+                f"Mid exact-snapshot static reconciliation verified {len(verified_static)}/{len(STATIC_TOOLS)} analyzer(s); "
+                f"material findings=0, review-required={static_counts['review_required']}, test-only excluded={static_counts['excluded_test_only']}."
+            ),
+            breakdown={
+                "verified_static_tool_count": len(verified_static),
+                "material_static_finding_count": 0,
+                "static_review_required_count": static_counts["review_required"],
+                "static_test_only_excluded_count": static_counts["excluded_test_only"],
+                "execution_coverage_treated_as_clean": False,
+            },
+        )
+        changes["static_analysis"] = {"before": before, "after": after}
 
-    technical_score = _weighted_score(sections)
-    maturity = deepcopy(_dict(output.get("maturity_signal")))
-    maturity.update({"score": technical_score, "level": _maturity_level(technical_score), "summary": "Weighted Mid technical score reconciled to verified exact-snapshot repository and analyzer evidence; material findings, failed tools, and missing evidence remain adverse."})
-    scorecard = deepcopy(_dict(output.get("scorecard")))
-    scorecard["technical_score"] = technical_score
-    scorecard["mid_verified_control_reconciliation"] = True
-    output["sections"] = sections
-    output["maturity_signal"] = maturity
-    output["scorecard"] = scorecard
+    _refresh_scorecard(
+        output,
+        sections,
+        "Weighted Mid technical score reconciled to verified exact-snapshot repository and analyzer evidence; material findings, failed tools, and missing evidence remain adverse.",
+    )
+    output["scorecard"]["mid_verified_control_reconciliation"] = True
     output["mid_verified_control_reconciliation"] = {
         "status": "complete",
         "version": MID_VERIFIED_CONTROL_RECONCILIATION_VERSION,
@@ -278,7 +359,7 @@ def apply_verified_control_reconciliation(assessment: dict[str, Any], repository
         "dependency_material_findings": dependency_counts["material"],
         "static_material_findings": static_counts["material"],
         "section_changes": changes,
-        "technical_score_after": technical_score,
+        "technical_score_after": output["maturity_signal"]["score"],
         "findings_removed": False,
         "missing_evidence_treated_as_clean": False,
         "material_findings_can_receive_upward_reconciliation": False,
@@ -293,24 +374,35 @@ def mid_scoring_handler(context: dict[str, Any], outputs: dict[str, Any]) -> dic
     result = full_assessment_scoring_handler(context, outputs)
     if str(result.get("status") or "").lower() != "complete":
         return result
+
     assessment = _dict(result.get("assessment"))
-    repo_output = _dict(outputs.get("repo_evidence"))
-    repository_evidence = _dict(repo_output.get("repository_evidence"))
     attachment = _dict(outputs.get("evidence_attachment"))
     scanner_evidence = _dict(attachment.get("scanner_evidence"))
-    if not assessment or not repository_evidence or not scanner_evidence:
+    if not assessment or not scanner_evidence:
         return result
+
     adjusted = apply_typescript_static_evidence(assessment, scanner_evidence)
-    adjusted = apply_verified_control_reconciliation(adjusted, repository_evidence, scanner_evidence)
+    repo_output = _dict(outputs.get("repo_evidence"))
+    repository_evidence = _dict(repo_output.get("repository_evidence"))
+    if repository_evidence:
+        adjusted = apply_verified_control_reconciliation(adjusted, repository_evidence, scanner_evidence)
+
     result = deepcopy(result)
     result["assessment"] = adjusted
     evidence = deepcopy(_dict(result.get("evidence")))
     evidence["technical_score"] = _dict(adjusted.get("maturity_signal")).get("score", evidence.get("technical_score", 0))
     evidence["mid_static_score_accuracy"] = deepcopy(_dict(adjusted.get("mid_static_score_accuracy")))
-    evidence["mid_verified_control_reconciliation"] = deepcopy(_dict(adjusted.get("mid_verified_control_reconciliation")))
+    if adjusted.get("mid_verified_control_reconciliation"):
+        evidence["mid_verified_control_reconciliation"] = deepcopy(_dict(adjusted.get("mid_verified_control_reconciliation")))
     result["evidence"] = evidence
-    result["message"] = "Mid Assessment scorecard was generated from same-run evidence and reconciled to verified exact-snapshot analyzer results."
+    result["message"] = "Mid Assessment scorecard was generated from same-run evidence with verified exact-snapshot reconciliation where available."
     return result
 
 
-__all__ = ["MID_STATIC_SCORE_ACCURACY_VERSION", "MID_VERIFIED_CONTROL_RECONCILIATION_VERSION", "apply_typescript_static_evidence", "apply_verified_control_reconciliation", "mid_scoring_handler"]
+__all__ = [
+    "MID_STATIC_SCORE_ACCURACY_VERSION",
+    "MID_VERIFIED_CONTROL_RECONCILIATION_VERSION",
+    "apply_typescript_static_evidence",
+    "apply_verified_control_reconciliation",
+    "mid_scoring_handler",
+]
