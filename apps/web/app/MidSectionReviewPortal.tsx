@@ -23,7 +23,32 @@ function assessmentSections(payload: JsonRecord | null): unknown[] {
 function payloadRunId(payload: JsonRecord | null): string {
   if (!payload) return "";
   const assessment = isRecord(payload.assessment) ? payload.assessment : {};
-  return String(payload.run_id || assessment.run_id || "");
+  return String(payload.run_id || assessment.run_id || "").trim();
+}
+
+function isMeaningful(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isRecord(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+function mergePayloadRecord(previous: JsonRecord, incoming: JsonRecord): JsonRecord {
+  const output: JsonRecord = {...previous};
+  for (const [key, incomingValue] of Object.entries(incoming)) {
+    const previousValue = previous[key];
+    if (isRecord(previousValue) && isRecord(incomingValue)) {
+      output[key] = mergePayloadRecord(previousValue, incomingValue);
+      continue;
+    }
+    if (Array.isArray(incomingValue)) {
+      if (incomingValue.length || !Array.isArray(previousValue) || !previousValue.length) output[key] = incomingValue;
+      continue;
+    }
+    if (isMeaningful(incomingValue) || !isMeaningful(previousValue)) output[key] = incomingValue;
+  }
+  return output;
 }
 
 function mergeMidPayload(previous: JsonRecord | null, incoming: JsonRecord): JsonRecord {
@@ -31,22 +56,7 @@ function mergeMidPayload(previous: JsonRecord | null, incoming: JsonRecord): Jso
   const previousRunId = payloadRunId(previous);
   const incomingRunId = payloadRunId(incoming);
   if (previousRunId && incomingRunId && previousRunId !== incomingRunId) return incoming;
-
-  const previousAssessment = isRecord(previous.assessment) ? previous.assessment : {};
-  const incomingAssessment = isRecord(incoming.assessment) ? incoming.assessment : {};
-  const incomingSections = Array.isArray(incomingAssessment.sections) ? incomingAssessment.sections : [];
-  const previousSections = Array.isArray(previousAssessment.sections) ? previousAssessment.sections : [];
-  if (incomingSections.length || !previousSections.length) return incoming;
-
-  return {
-    ...previous,
-    ...incoming,
-    assessment: {
-      ...previousAssessment,
-      ...incomingAssessment,
-      sections: previousSections,
-    },
-  };
+  return mergePayloadRecord(previous, incoming);
 }
 
 function restoreLegacySurface() {
@@ -89,12 +99,7 @@ export default function MidSectionReviewPortal() {
   const midSelectedRef = useRef(false);
 
   useEffect(() => {
-    const selected = new URLSearchParams(window.location.search).get("tier") === "mid";
-    midSelectedRef.current = selected;
-    setMidSelected(selected);
-    const onTier = (event: Event) => {
-      const detail = (event as CustomEvent<{tier?: string}>).detail || {};
-      const isMid = detail.tier === "mid";
+    const applyTier = (isMid: boolean) => {
       midSelectedRef.current = isMid;
       setMidSelected(isMid);
       if (!isMid) {
@@ -104,8 +109,18 @@ export default function MidSectionReviewPortal() {
         restoreLegacySurface();
       }
     };
+    const syncFromLocation = () => applyTier(new URLSearchParams(window.location.search).get("tier") === "mid");
+    syncFromLocation();
+    const onTier = (event: Event) => {
+      const detail = (event as CustomEvent<{tier?: string}>).detail || {};
+      applyTier(detail.tier === "mid");
+    };
     window.addEventListener(TIER_EVENT, onTier);
-    return () => window.removeEventListener(TIER_EVENT, onTier);
+    window.addEventListener("popstate", syncFromLocation);
+    return () => {
+      window.removeEventListener(TIER_EVENT, onTier);
+      window.removeEventListener("popstate", syncFromLocation);
+    };
   }, []);
 
   useEffect(() => {
