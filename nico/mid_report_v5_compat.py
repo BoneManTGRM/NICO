@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-from contextvars import ContextVar
 from typing import Any
 
 
@@ -15,10 +14,6 @@ _TECHNICAL_IDS = {
     "architecture_debt",
     "velocity_complexity",
 }
-_PDF_HEADING_REPLACEMENTS: ContextVar[dict[str, str] | None] = ContextVar(
-    "nico_mid_v5_pdf_heading_replacements",
-    default=None,
-)
 
 
 def _sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -74,25 +69,11 @@ def _markdown_contract(current_markdown, payload: dict[str, Any]) -> str:
 
 def install_mid_report_v5_compat() -> dict[str, Any]:
     from nico import mid_assessment_report as report_module
-    from nico import report_flowable_safety as flowable_module
 
     if getattr(report_module, _PATCH_MARKER, False):
         return {"status": "already_installed"}
 
     current_markdown = report_module._markdown
-    current_pdf = report_module._pdf
-    original_paragraph = flowable_module._paragraph
-    replacements = {
-        "Priority controls": "Primary score constraints",
-        "Weighted technical scorecard": "Weighted Technical Scorecard",
-        "Repair Plan and Human-Context Requests": "Prioritized Repair Intelligence and Human-Context Modules",
-        "Review Exceptions and Integrity": "Review by Exception and Integrity",
-    }
-
-    def paragraph_dispatch(value: Any, *args: Any, **kwargs: Any):
-        active_replacements = _PDF_HEADING_REPLACEMENTS.get()
-        replacement = active_replacements.get(str(value), value) if active_replacements else value
-        return original_paragraph(replacement, *args, **kwargs)
 
     def markdown_compat(payload: dict[str, Any]) -> str:
         return _markdown_contract(current_markdown, payload)
@@ -105,24 +86,15 @@ def install_mid_report_v5_compat() -> dict[str, Any]:
             f"<body><pre>{escaped}</pre></body></html>"
         )
 
-    def pdf_compat(payload: dict[str, Any]) -> bytes:
-        token = _PDF_HEADING_REPLACEMENTS.set(replacements)
-        try:
-            return current_pdf(payload)
-        finally:
-            _PDF_HEADING_REPLACEMENTS.reset(token)
-
-    flowable_module._paragraph = paragraph_dispatch
     report_module._markdown = markdown_compat
     report_module._html = html_compat
-    report_module._pdf = pdf_compat
     setattr(report_module, _PATCH_MARKER, True)
     return {
         "status": "installed",
         "legacy_markdown_contract_preserved": True,
         "legacy_pdf_headings_preserved": True,
         "canonical_v5_presentation_preserved": True,
-        "concurrent_pdf_rendering_isolated": True,
+        "request_time_global_pdf_patch_used": False,
     }
 
 
