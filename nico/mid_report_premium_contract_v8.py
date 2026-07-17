@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from nico.mid_report_decision_records_v9 import reconcile_mid_decision_records
+
 
 VERSION = "mid_report_premium_contract_v8"
 MIN_PAGES = 35
@@ -94,6 +96,7 @@ def reconcile_mid_scores(result: dict[str, Any]) -> tuple[MidScoreRecord, ...]:
 def mid_report_contract(result: dict[str, Any], locale: str = "en") -> dict[str, Any]:
     normalized = "es" if str(locale).lower().replace("_", "-").startswith("es") else "en"
     records = reconcile_mid_scores(result)
+    decision_records = reconcile_mid_decision_records(result)
     labels = {
         "en": {
             "title": "NICO Mid Technical Diligence Assessment",
@@ -130,6 +133,8 @@ def mid_report_contract(result: dict[str, Any], locale: str = "en") -> dict[str,
             labels["review"],
         ],
         "score_record_count": len(records),
+        "decision_record_count": len(decision_records),
+        "decision_records_root_cause_deduplicated": True,
         "minimum_visuals": 10,
         "maximum_visuals": 15,
         "full_finding_dossiers_required": True,
