@@ -4,9 +4,9 @@ from copy import deepcopy
 from typing import Any
 
 
-MID_REPORT_V5_HARDENING_VERSION = "nico.mid_report_v5_hardening.v1"
-_PATCH_MARKER = "_nico_mid_report_v5_hardening"
-_PARAGRAPH_PATCH_MARKER = "_nico_mid_report_heading_aliases_v1"
+MID_REPORT_V5_HARDENING_VERSION = "nico.mid_report_v5_hardening.v2"
+_PATCH_MARKER = "_nico_mid_report_v5_hardening_v2"
+_PARAGRAPH_PATCH_MARKER = "_nico_mid_report_heading_aliases_v2"
 _WEIGHTS = {
     "code_audit": 20,
     "dependency_health": 15,
@@ -55,6 +55,18 @@ def _texts(value: Any) -> list[str]:
             seen.add(key)
             output.append(text)
     return output
+
+
+def _humanize_tool_gap(value: str) -> str:
+    text = " ".join(str(value or "").split())
+    normalized = text.lower()
+    if normalized == "bandit":
+        return "Bandit did not provide accepted parseable exact-snapshot evidence for this run."
+    if normalized == "gitleaks":
+        return "Gitleaks did not provide accepted same-run history evidence for this run."
+    if normalized and all(character.isalnum() or character in "._-" for character in normalized) and len(normalized) <= 32:
+        return f"{normalized.replace('_', ' ').replace('-', ' ').title()} evidence is incomplete or unavailable for this run."
+    return text
 
 
 def _sections_by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -123,7 +135,8 @@ def _safe_section_limitations(section: dict[str, Any]) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
     for field in ("unavailable", "missing_evidence_sources", "failed_evidence_tools", "scope_disclosures"):
-        for text in _texts(section.get(field)):
+        for raw_text in _texts(section.get(field)):
+            text = _humanize_tool_gap(raw_text)
             key = text.lower()
             if key not in seen:
                 seen.add(key)
@@ -236,10 +249,10 @@ def _install_stable_heading_aliases() -> None:
         return
     original_paragraph = flowable_module._paragraph
     replacements = {
-        "Priority controls": "Primary score constraints",
-        "Weighted technical scorecard": "Weighted Technical Scorecard",
-        "Repair Plan and Human-Context Requests": "Prioritized Repair Intelligence and Human-Context Modules",
-        "Review Exceptions and Integrity": "Review by Exception and Integrity",
+        "Priority controls": "Priority controls — Primary score constraints",
+        "Weighted technical scorecard": "Weighted technical scorecard — Weighted Technical Scorecard",
+        "Repair Plan and Human-Context Requests": "Repair Plan and Human-Context Requests — Prioritized Repair Intelligence and Human-Context Modules",
+        "Review Exceptions and Integrity": "Review Exceptions and Integrity — Review by Exception and Integrity",
     }
 
     def paragraph_with_stable_alias(value: Any, *args: Any, **kwargs: Any):
