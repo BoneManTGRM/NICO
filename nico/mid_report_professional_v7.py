@@ -123,7 +123,11 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
 
     story: list[Any] = []
     for index, (title, focus, section_id) in enumerate(pages, 1):
-        story.append(Paragraph(title, title_style))
+        if index == 1:
+            story.append(Paragraph("NICO MID TECHNICAL ASSESSMENT", title_style))
+            story.append(Paragraph(title, h2))
+        else:
+            story.append(Paragraph(title, title_style))
         if index == 1:
             story.append(Table([
                 ["Repository", _text(payload.get("repository")), "Score", f"{v6._canonical_score(payload)}/100"],
