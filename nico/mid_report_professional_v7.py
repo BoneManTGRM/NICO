@@ -118,7 +118,7 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
         ("Velocity and Complexity Dossier — Repair", "maintainability interventions, ownership resilience, and outcome verification", "velocity_complexity", None),
         ("Human-Context Modules — Unscored", "functional QA, platform parity, architecture context, stakeholder alignment, and business roadmap inputs", None, None),
         ("Evidence Appendix", "evidence identities, sources, analyzers, snapshot binding, timestamps, confidence, and scoring acceptance", None, None),
-        ("Review Exceptions, Integrity, and Approval Boundary", "source identity, report identity, exception reconciliation, unsupported-claim prohibition, review state, and delivery controls", None, None),
+        ("Review Exceptions", "source identity, report identity, exception reconciliation, unsupported-claim prohibition, review state, and delivery controls", None, "Integrity and Approval Boundary"),
         ("Final Reviewer Decision Record", "open exceptions, explicit accept-or-repair decisions, sign-off evidence, and reassessment requirements", None, None),
     ]
 
@@ -150,7 +150,7 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
             story.append(Spacer(1, 0.12*inch))
         for paragraph in _paragraphs_for_page(payload, title, focus, section_id):
             story.append(Paragraph(paragraph, body))
-        if title == "Review Exceptions, Integrity, and Approval Boundary":
+        if title == "Review Exceptions":
             story.append(Paragraph(f"Original exception records: {payload.get('review_exception_original_count', 0)}", body))
             story.append(Paragraph(f"Decision-ready deduplicated items: {payload.get('review_exception_final_count', 0)}", body))
         story.append(Spacer(1, 0.06*inch))
