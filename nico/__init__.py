@@ -41,6 +41,7 @@ from nico.mid_report_section_boundary_patch import install_mid_report_section_bo
 from nico.mid_report_truth_disclosure import install_mid_report_truth_disclosure
 from nico.report_flowable_safety import install_report_flowable_safety
 from nico.mid_report_professional_v4 import install_mid_report_professional_v4
+from nico.mid_report_professional_v5 import install_mid_report_professional_v5
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
@@ -52,7 +53,7 @@ from nico.final_score_reconciliation_patch import install_final_score_reconcilia
 from nico.post_polish_score_reconciliation_patch import install_post_polish_score_reconciliation_patch
 from nico.express_completion_score_binding import install_express_completion_score_binding
 from nico.express_async_contract_metadata import install_express_async_contract_metadata
-from nico.express_progress_persistence_patch import install_express_progress_persistence
+from nico.express_progress_persistence import install_express_progress_persistence
 from nico.hosted_report_intelligence_enrichment import install_hosted_report_intelligence_enrichment
 from nico.report_intelligence_accuracy_patch import install_report_intelligence_accuracy_patch
 from nico.triage_aware_scanner_finding_truth import install_triage_aware_scanner_finding_truth
@@ -150,8 +151,9 @@ install_mid_quality_issue_display_patch()
 install_mid_truth_identity_consistency()
 install_mid_truth_identity_transport()
 install_mid_approval_truth_freeze()
-# Install after all compatibility layers so the full-depth Mid renderer and its
-# final payload enrichment remain the active report boundary.
+# Install after all compatibility layers so the full-depth Mid renderer remains active.
 install_mid_report_professional_v4()
+# Install the compact decision-ready v5 presentation after v4 so it owns final export.
+install_mid_report_professional_v5()
 
 __version__ = "0.1.0"
