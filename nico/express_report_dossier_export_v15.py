@@ -9,6 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.express_report_finding_dossiers_v15 import build_finding_dossiers, report_labels
 from nico.express_report_premium_v14 import _premium_pdf
+from nico.express_report_visual_qa_v16 import validate_express_pdf
 
 
 VERSION = "express_dossier_export_v15"
@@ -156,6 +157,7 @@ def build_express_dossier_export(result: dict[str, Any]) -> tuple[str | None, st
             writer.add_page(page)
         output = io.BytesIO()
         writer.write(output)
+        pdf_bytes = output.getvalue()
         dossiers = build_finding_dossiers(result)
         result["express_finding_dossier_export"] = {
             "status": "complete",
@@ -168,7 +170,21 @@ def build_express_dossier_export(result: dict[str, Any]) -> tuple[str | None, st
             "html_bound": True,
             "human_review_required": True,
         }
-        return base64.b64encode(output.getvalue()).decode("ascii"), None
+        qa = validate_express_pdf(pdf_bytes, result)
+        result["express_visual_qa"] = qa
+        reports["pdf_quality_status"] = qa.get("status")
+        reports["pdf_quality_issues"] = list(qa.get("issues") or [])
+        reports["client_delivery_allowed"] = bool(qa.get("client_delivery_allowed"))
+        result["reports"] = reports
+        result["client_delivery_allowed"] = bool(qa.get("client_delivery_allowed"))
+        if qa.get("status") != "pass":
+            result["client_delivery_block_reason"] = "Express visual QA did not pass."
+        elif bool(result.get("human_review_required", True)):
+            result["client_delivery_allowed"] = False
+            result["client_delivery_block_reason"] = "Authorized human review is still required."
+        else:
+            result.pop("client_delivery_block_reason", None)
+        return base64.b64encode(pdf_bytes).decode("ascii"), None
     except Exception as exc:  # pragma: no cover
         return None, f"Express dossier export v15 failed: {type(exc).__name__}: {exc}"
 
