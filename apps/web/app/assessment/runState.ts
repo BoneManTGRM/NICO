@@ -31,8 +31,10 @@ const TERMINAL = new Set(["complete", "completed", "review_required", "failed", 
 
 function activeStep(snapshot: RunSnapshot | null | undefined): string {
   if (!snapshot) return "";
+  const canonical = String(snapshot.current_stage || "");
+  if (canonical) return canonical;
   const active = snapshot.progress?.find((item) => ["queued", "running", "pending", "planned"].includes(String(item.status || "").toLowerCase()));
-  return String(active?.step || snapshot.current_stage || "");
+  return String(active?.step || "");
 }
 
 function timestamp(snapshot: RunSnapshot | null | undefined): number {
@@ -92,5 +94,7 @@ export function truthGateHasStalled(
   thresholdMs = 5 * 60 * 1000,
 ): boolean {
   if (!snapshot || isTerminalRun(snapshot)) return false;
-  return activeStep(snapshot) === "truth_and_review_gates" && nowMs - unchangedSinceMs >= thresholdMs;
+  const canonicalStage = String(snapshot.current_stage || "");
+  const truthGateActive = canonicalStage === "truth_and_review_gates" || activeStep(snapshot) === "truth_and_review_gates";
+  return truthGateActive && nowMs - unchangedSinceMs >= thresholdMs;
 }
