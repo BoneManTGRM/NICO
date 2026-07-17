@@ -46,6 +46,7 @@ from nico.mid_report_professional_v5 import install_mid_report_professional_v5
 from nico.mid_report_v5_compat import install_mid_report_v5_compat
 from nico.mid_report_v5_hardening import install_mid_report_v5_hardening
 from nico.mid_report_professional_v6 import install_mid_report_professional_v6
+from nico.mid_report_professional_v7_runtime_fix import install_mid_report_professional_v7_runtime_fix
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
@@ -156,15 +157,13 @@ install_mid_quality_issue_display_patch()
 install_mid_truth_identity_consistency()
 install_mid_truth_identity_transport()
 install_mid_approval_truth_freeze()
-# Install after all compatibility layers so the full-depth Mid renderer remains active.
 install_mid_report_professional_v4()
-# Install the compact decision-ready v5 presentation after v4 so it owns final export.
 install_mid_report_professional_v5()
-# Preserve legacy report contracts after the v5 renderer is active.
 install_mid_report_v5_compat()
-# Apply deterministic score, evidence, and PDF safety after all Mid presentation layers.
 install_mid_report_v5_hardening()
-# Install the executive-actionable v6 renderer last so it owns final PDF, Markdown, and HTML export.
 install_mid_report_professional_v6()
+# Bind premium v7 only at the production report-module boundary. Calling the
+# legacy v7 installer here mutates v6._enhance and creates recursive payloads.
+install_mid_report_professional_v7_runtime_fix()
 
 __version__ = "0.1.0"

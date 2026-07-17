@@ -91,39 +91,46 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
     small = ParagraphStyle("PremiumSmall", parent=styles["BodyText"], fontSize=7.4, leading=9.2, textColor=colors.HexColor("#475569"))
 
     pages = [
-        ("Executive Decision Brief", "executive decision, approval posture, and the conditions required before client delivery", None),
-        ("Repository and Delivery Profile", "repository scope, immutable identity, delivery model, and operational context", None),
-        ("Evidence Funnel", "evidence availability, analyzer execution, parsing acceptance, scoring acceptance, and finding disposition", None),
-        ("Risk Matrix", "likelihood, technical impact, business exposure, verification confidence, and repair priority", None),
-        ("Weighted Score Contribution", "control weighting, score constraints, verified strengths, and sensitivity boundaries", None),
-        ("Architecture and Dependency Analysis", "module boundaries, dependency direction, circularity, coupling, and supply-chain exposure", "architecture_debt"),
-        ("Complexity, Churn, Ownership, and Review Latency", "maintainability hotspots, change concentration, ownership resilience, and review effectiveness", "velocity_complexity"),
-        ("CI/CD Failure Classification", "non-success run classification, recurrence, required checks, and release readiness", "ci_cd"),
-        ("Repair Impact Matrix", "repair value, accountable ownership, effort, verification, rollback, and residual risk", None),
-        ("30 / 60 / 90 Day Roadmap", "sequenced remediation, validation gates, ownership, and measurable outcomes", None),
-        ("Code Audit Dossier — Evidence", "exact code-risk evidence, file and rule identity, confidence, and disposition", "code_audit"),
-        ("Code Audit Dossier — Repair", "code-risk business impact, smallest safe repair, verification, and rollback", "code_audit"),
-        ("Dependency Health Dossier — Evidence", "dependency manifests, lockfiles, advisory sources, reachability, and accepted evidence", "dependency_health"),
-        ("Dependency Health Dossier — Repair", "dependency remediation sequencing, compatibility risk, tests, and rollback", "dependency_health"),
-        ("Secrets Review Dossier — Evidence", "current-tree and authorized-history credential coverage, fingerprints, and classification", "secrets_review"),
-        ("Secrets Review Dossier — Repair", "credential rotation, revocation, verification, and recurrence prevention", "secrets_review"),
-        ("Static Analysis Dossier — Evidence", "Bandit, Semgrep, ESLint, and TypeScript execution, parsing, and disposition", "static_analysis"),
-        ("Static Analysis Dossier — Repair", "static-analysis remediation, false-positive control, tests, and exact-snapshot rescan", "static_analysis"),
-        ("CI/CD Dossier — Evidence", "workflow history, failing jobs, cancellation classification, and branch context", "ci_cd"),
-        ("CI/CD Dossier — Repair", "pipeline reliability repairs, required checks, reruns, and release evidence", "ci_cd"),
-        ("Architecture Debt Dossier — Evidence", "architecture measurements, coupling, duplication, module size, and hotspots", "architecture_debt"),
-        ("Architecture Debt Dossier — Repair", "architecture decisions, staged refactoring, tests, and rollback", "architecture_debt"),
-        ("Velocity and Complexity Dossier — Evidence", "bounded delivery metrics, churn, ownership, review latency, and recurrence", "velocity_complexity"),
-        ("Velocity and Complexity Dossier — Repair", "maintainability interventions, ownership resilience, and outcome verification", "velocity_complexity"),
-        ("Human-Context Evidence Requests", "functional QA, platform parity, architecture context, stakeholder alignment, and business roadmap inputs", None),
-        ("Evidence Appendix", "evidence identities, sources, analyzers, snapshot binding, timestamps, confidence, and scoring acceptance", None),
-        ("Integrity and Approval Boundary", "source identity, report identity, unsupported-claim prohibition, review state, and delivery controls", None),
-        ("Final Reviewer Decision Record", "open exceptions, explicit accept-or-repair decisions, sign-off evidence, and reassessment requirements", None),
+        ("Executive Decision Brief", "executive decision, approval posture, and the conditions required before client delivery", None, None),
+        ("Repository and Delivery Profile", "repository scope, immutable identity, delivery model, and operational context", None, None),
+        ("Evidence Funnel", "evidence availability, analyzer execution, parsing acceptance, scoring acceptance, and finding disposition", None, None),
+        ("Risk Matrix", "likelihood, technical impact, business exposure, verification confidence, and repair priority", None, None),
+        ("Weighted Technical Scorecard", "control weighting, score constraints, verified strengths, and sensitivity boundaries", None, None),
+        ("Primary score constraints", "the controls currently limiting the weighted technical result and the evidence needed to change it", None, None),
+        ("Architecture and Dependency Analysis", "module boundaries, dependency direction, circularity, coupling, and supply-chain exposure", "architecture_debt", None),
+        ("Complexity, Churn, Ownership, and Review Latency", "maintainability hotspots, change concentration, ownership resilience, and review effectiveness", "velocity_complexity", None),
+        ("CI/CD Failure Classification", "non-success run classification, recurrence, required checks, and release readiness", "ci_cd", None),
+        ("Repair Impact Matrix", "repair value, accountable ownership, effort, verification, rollback, and residual risk", None, "Prioritized Repair Intelligence"),
+        ("30 / 60 / 90 Day Roadmap", "sequenced remediation, validation gates, ownership, and measurable outcomes", None, None),
+        ("Code Audit Dossier — Evidence", "exact code-risk evidence, file and rule identity, confidence, and disposition", "code_audit", None),
+        ("Code Audit Dossier — Repair", "code-risk business impact, smallest safe repair, verification, and rollback", "code_audit", None),
+        ("Dependency Health Dossier — Evidence", "dependency manifests, lockfiles, advisory sources, reachability, and accepted evidence", "dependency_health", None),
+        ("Dependency Health Dossier — Repair", "dependency remediation sequencing, compatibility risk, tests, and rollback", "dependency_health", None),
+        ("Secrets Review Dossier — Evidence", "current-tree and authorized-history credential coverage, fingerprints, and classification", "secrets_review", None),
+        ("Secrets Review Dossier — Repair", "credential rotation, revocation, verification, and recurrence prevention", "secrets_review", None),
+        ("Static Analysis Dossier — Evidence", "Bandit, Semgrep, ESLint, and TypeScript execution, parsing, and disposition", "static_analysis", None),
+        ("Static Analysis Dossier — Repair", "static-analysis remediation, false-positive control, tests, and exact-snapshot rescan", "static_analysis", None),
+        ("CI/CD Dossier — Evidence", "workflow history, failing jobs, cancellation classification, and branch context", "ci_cd", None),
+        ("CI/CD Dossier — Repair", "pipeline reliability repairs, required checks, reruns, and release evidence", "ci_cd", None),
+        ("Architecture Debt Dossier — Evidence", "architecture measurements, coupling, duplication, module size, and hotspots", "architecture_debt", None),
+        ("Architecture Debt Dossier — Repair", "architecture decisions, staged refactoring, tests, and rollback", "architecture_debt", None),
+        ("Velocity and Complexity Dossier — Evidence", "bounded delivery metrics, churn, ownership, review latency, and recurrence", "velocity_complexity", None),
+        ("Velocity and Complexity Dossier — Repair", "maintainability interventions, ownership resilience, and outcome verification", "velocity_complexity", None),
+        ("Human-Context Modules — Unscored", "functional QA, platform parity, architecture context, stakeholder alignment, and business roadmap inputs", None, None),
+        ("Evidence Appendix", "evidence identities, sources, analyzers, snapshot binding, timestamps, confidence, and scoring acceptance", None, None),
+        ("Review Exceptions", "source identity, report identity, exception reconciliation, unsupported-claim prohibition, review state, and delivery controls", None, "Integrity and Approval Boundary"),
+        ("Final Reviewer Decision Record", "open exceptions, explicit accept-or-repair decisions, sign-off evidence, and reassessment requirements", None, None),
     ]
 
     story: list[Any] = []
-    for index, (title, focus, section_id) in enumerate(pages, 1):
-        story.append(Paragraph(title, title_style))
+    for index, (title, focus, section_id, subtitle) in enumerate(pages, 1):
+        if index == 1:
+            story.append(Paragraph("NICO MID TECHNICAL ASSESSMENT", title_style))
+            story.append(Paragraph(title, h2))
+        else:
+            story.append(Paragraph(title, title_style))
+        if subtitle:
+            story.append(Paragraph(subtitle, h2))
         if index == 1:
             story.append(Table([
                 ["Repository", _text(payload.get("repository")), "Score", f"{v6._canonical_score(payload)}/100"],
@@ -143,6 +150,9 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
             story.append(Spacer(1, 0.12*inch))
         for paragraph in _paragraphs_for_page(payload, title, focus, section_id):
             story.append(Paragraph(paragraph, body))
+        if title == "Review Exceptions":
+            story.append(Paragraph(f"Original exception records: {payload.get('review_exception_original_count', 0)}", body))
+            story.append(Paragraph(f"Decision-ready deduplicated items: {payload.get('review_exception_final_count', 0)}", body))
         story.append(Spacer(1, 0.06*inch))
         story.append(Paragraph(f"NICO Mid Technical Assessment · Page {index} of {len(pages)} · immutable snapshot · human review required", small))
         if index < len(pages):
