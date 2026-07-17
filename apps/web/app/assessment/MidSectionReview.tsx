@@ -78,9 +78,7 @@ function titleCase(value: unknown): string {
 function cleanText(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string" || typeof value === "number") return String(value).replace(/\s+/g, " ").trim();
-  if (isRecord(value)) {
-    return cleanText(value.summary ?? value.message ?? value.title ?? value.reason ?? value.name);
-  }
+  if (isRecord(value)) return cleanText(value.summary ?? value.message ?? value.title ?? value.reason ?? value.name);
   return "";
 }
 
@@ -129,6 +127,13 @@ function tone(section: Section): Tone {
   return score != null && score >= 80 ? "healthy" : "warning";
 }
 
+function toneLabel(value: Tone): string {
+  if (value === "critical") return "Priority repair";
+  if (value === "warning") return "Needs review";
+  if (value === "healthy") return "Verified strength";
+  return "Unscored context";
+}
+
 function scoreLabel(section: Section): string {
   const score = finite(section.score);
   return score == null ? "—" : `${Math.round(score)}/100`;
@@ -142,7 +147,6 @@ function weightedRows(payload: JsonRecord, sections: Section[]): WeightedRow[] {
     if (TECHNICAL_IDS.includes(id) && !suppliedById.has(id)) suppliedById.set(id, row);
   }
   const sectionById = new Map(sections.map((section) => [String(section.id || ""), section]));
-
   return TECHNICAL_IDS.flatMap((id) => {
     const supplied = suppliedById.get(id);
     const section = sectionById.get(id);
@@ -200,24 +204,31 @@ function ControlRow({section, expanded, onToggle}: {section: Section; expanded: 
     typeof section.direct_repository_proof === "boolean" ? `Direct repository proof: ${section.direct_repository_proof ? "yes" : "no"}` : undefined,
   ]);
   const nextAction = findings[0] || gaps[0] || "Retain the evidence and reviewer disposition for this exact snapshot.";
+  const score = finite(section.score) ?? 0;
 
   return <article className={`${styles.controlRow} ${styles[sectionTone]}`} data-mid-section={section.id || section.label}>
     <button type="button" className={styles.controlToggle} aria-expanded={expanded} onClick={onToggle}>
       <span className={styles.controlIdentity}>
         <b>{section.label || titleCase(section.id)}</b>
-        <small>{titleCase(section.truth_status || section.status || "Evidence bound")}</small>
+        <small><span className={styles.statusDot} aria-hidden="true" />{toneLabel(sectionTone)}</small>
       </span>
-      <span className={styles.controlCounts}>{findings.length} findings · {gaps.length} gaps</span>
-      <strong>{scoreLabel(section)}</strong>
+      <span className={styles.controlCounts}>{evidence.length} evidence · {findings.length} findings · {gaps.length} gaps</span>
+      <strong className={styles.scorePill}>{scoreLabel(section)}</strong>
       <span className={styles.chevron} aria-hidden="true">{expanded ? "−" : "+"}</span>
     </button>
-    <p className={styles.controlSummary}>{section.summary || "No evidence-bound summary was returned."}</p>
-    {sectionTone !== "healthy" ? <p className={styles.nextAction}><b>Next:</b> {nextAction}</p> : null}
-    {expanded ? <div className={styles.detailGrid}>
-      <section><h4>Evidence <span>{evidence.length}</span></h4><DetailList items={evidence} empty="No direct evidence item was retained." /></section>
-      <section><h4>Findings <span>{findings.length}</span></h4><DetailList items={findings} empty="No specific repair finding was retained." /></section>
-      <section><h4>Limitations <span>{gaps.length}</span></h4><DetailList items={gaps} empty="No section-specific limitation was retained." /></section>
-      <section><h4>Scope <span>{scope.length}</span></h4><DetailList items={scope} empty="Report-wide human-review boundaries apply." /></section>
+    <div className={styles.scoreRail} aria-hidden="true"><span style={{width: `${Math.max(0, Math.min(100, score))}%`}} /></div>
+    {sectionTone !== "healthy" && !expanded ? <p className={styles.actionPreview}><b>Priority:</b> {nextAction}</p> : null}
+    {expanded ? <div className={styles.expandedContent}>
+      <div className={styles.executiveNote}>
+        <div><small>Evidence-bound conclusion</small><p>{section.summary || "No evidence-bound summary was returned."}</p></div>
+        <div><small>Recommended next step</small><p>{nextAction}</p></div>
+      </div>
+      <div className={styles.detailGrid}>
+        <section><h4>Evidence <span>{evidence.length}</span></h4><DetailList items={evidence} empty="No direct evidence item was retained." /></section>
+        <section><h4>Findings <span>{findings.length}</span></h4><DetailList items={findings} empty="No specific repair finding was retained." /></section>
+        <section><h4>Limitations <span>{gaps.length}</span></h4><DetailList items={gaps} empty="No section-specific limitation was retained." /></section>
+        <section><h4>Scope <span>{scope.length}</span></h4><DetailList items={scope} empty="Report-wide human-review boundaries apply." /></section>
+      </div>
     </div> : null}
   </article>;
 }
@@ -301,7 +312,7 @@ export default function MidSectionReview({payload}: Props) {
       <div>
         <p className={styles.eyebrow}>NICO MID ASSESSMENT</p>
         <h2>Mid Assessment Review</h2>
-        <p>One evidence-bound view of the technical score, priority controls, report artifact, and required human decision.</p>
+        <p>Decision-ready technical evidence, prioritized controls, report artifacts, and the required human review gate.</p>
       </div>
       <span className={styles.maturityBadge}>{maturityLabel}</span>
     </header>
@@ -322,9 +333,9 @@ export default function MidSectionReview({payload}: Props) {
     </div>
 
     <section className={styles.priorityPanel} aria-label="Priority controls">
-      <div className={styles.sectionHeading}><div><small>REVIEW FIRST</small><h3>Highest-value controls</h3></div><span>{attentionCount} require review</span></div>
+      <div className={styles.sectionHeading}><div><small>ACTION PLAN</small><h3>Highest-value controls</h3></div><span>{attentionCount} require review</span></div>
       <div className={styles.priorityList}>{priority.map((section, index) => <button type="button" key={section.id || section.label} onClick={() => openPriority(section)}>
-        <span>{index + 1}</span><b>{section.label || titleCase(section.id)}</b><strong>{scoreLabel(section)}</strong>
+        <span>{index + 1}</span><b>{section.label || titleCase(section.id)}</b><small>{textItems(section.findings)[0] || limitations(section)[0] || "Review retained evidence"}</small><strong>{scoreLabel(section)}</strong>
       </button>)}</div>
     </section>
 
