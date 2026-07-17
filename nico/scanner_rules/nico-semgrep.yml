@@ -1,0 +1,48 @@
+rules:
+  - id: nico-python-dangerous-eval
+    languages: [python]
+    severity: ERROR
+    message: Dynamic eval/exec requires explicit review and a safer structured alternative.
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+
+  - id: nico-python-shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess with shell=True can create command-injection exposure.
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: nico-python-unsafe-yaml-load
+    languages: [python]
+    severity: ERROR
+    message: Use yaml.safe_load or an explicit SafeLoader for untrusted YAML.
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+
+  - id: nico-python-pickle-load
+    languages: [python]
+    severity: WARNING
+    message: Pickle deserialization requires trusted-input evidence and boundary controls.
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+
+  - id: nico-javascript-dangerous-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Direct HTML injection requires sanitization and trusted-source evidence.
+    pattern-either:
+      - pattern: $NODE.innerHTML = $VALUE
+      - pattern: <$COMP dangerouslySetInnerHTML={...} ... />
+
+  - id: nico-disabled-tls-verification
+    languages: [python, javascript, typescript]
+    severity: ERROR
+    message: Disabled TLS verification must not be used in production traffic.
+    pattern-either:
+      - pattern: requests.$METHOD(..., verify=False, ...)
+      - pattern: $OBJ.rejectUnauthorized = false
