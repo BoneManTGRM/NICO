@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {createPortal} from "react-dom";
 import MidSectionReview from "./assessment/MidSectionReview";
 
@@ -18,6 +18,35 @@ function isRecord(value: unknown): value is JsonRecord {
 function assessmentSections(payload: JsonRecord | null): unknown[] {
   const assessment = payload && isRecord(payload.assessment) ? payload.assessment : null;
   return assessment && Array.isArray(assessment.sections) ? assessment.sections : [];
+}
+
+function payloadRunId(payload: JsonRecord | null): string {
+  if (!payload) return "";
+  const assessment = isRecord(payload.assessment) ? payload.assessment : {};
+  return String(payload.run_id || assessment.run_id || "");
+}
+
+function mergeMidPayload(previous: JsonRecord | null, incoming: JsonRecord): JsonRecord {
+  if (!previous) return incoming;
+  const previousRunId = payloadRunId(previous);
+  const incomingRunId = payloadRunId(incoming);
+  if (previousRunId && incomingRunId && previousRunId !== incomingRunId) return incoming;
+
+  const previousAssessment = isRecord(previous.assessment) ? previous.assessment : {};
+  const incomingAssessment = isRecord(incoming.assessment) ? incoming.assessment : {};
+  const incomingSections = Array.isArray(incomingAssessment.sections) ? incomingAssessment.sections : [];
+  const previousSections = Array.isArray(previousAssessment.sections) ? previousAssessment.sections : [];
+  if (incomingSections.length || !previousSections.length) return incoming;
+
+  return {
+    ...previous,
+    ...incoming,
+    assessment: {
+      ...previousAssessment,
+      ...incomingAssessment,
+      sections: previousSections,
+    },
+  };
 }
 
 function restoreLegacySurface() {
@@ -57,12 +86,16 @@ export default function MidSectionReviewPortal() {
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [mount, setMount] = useState<HTMLElement | null>(null);
   const [midSelected, setMidSelected] = useState(false);
+  const midSelectedRef = useRef(false);
 
   useEffect(() => {
-    setMidSelected(new URLSearchParams(window.location.search).get("tier") === "mid");
+    const selected = new URLSearchParams(window.location.search).get("tier") === "mid";
+    midSelectedRef.current = selected;
+    setMidSelected(selected);
     const onTier = (event: Event) => {
       const detail = (event as CustomEvent<{tier?: string}>).detail || {};
       const isMid = detail.tier === "mid";
+      midSelectedRef.current = isMid;
       setMidSelected(isMid);
       if (!isMid) {
         setPayload(null);
@@ -78,9 +111,9 @@ export default function MidSectionReviewPortal() {
   useEffect(() => {
     const onPayload = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
+      if (!midSelectedRef.current) return;
       if (isRecord(detail) && String(detail.assessment_type || detail.service_tier || "mid") === "mid") {
-        setPayload(detail);
-        setMidSelected(true);
+        setPayload((current) => mergeMidPayload(current, detail));
       }
     };
     window.addEventListener(MID_PAYLOAD_EVENT, onPayload);
