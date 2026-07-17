@@ -28,13 +28,31 @@ def test_mid_review_is_one_client_facing_decision_surface() -> None:
 def test_mid_review_uses_one_canonical_weighted_score_and_lifecycle_truth() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
+    assert "rows.length === TECHNICAL_IDS.length" in source
     assert "weightedTotal === 100" in source
     assert "rows.reduce((total, row) => total + row.score * row.weight / 100" in source
-    assert "pdfReady || markdownReady" in source
-    assert 'reportReady ? "Ready"' in source
-    assert 'reviewApproved ? "Approved" : "Required"' in source
+    assert "finite(scoreContract.final_report_score)" in source
+    assert "explicitTrue(lifecycle.pdf_available) || hasArtifact(reports.pdf_base64)" in source
+    assert "explicitTrue(lifecycle.markdown_available) || hasArtifact(reports.markdown)" in source
+    assert "REPORT_READY_STATUSES.has(normalizedStatus(rawReportStatus))" in source
+    assert "REVIEW_APPROVED_STATUSES.has(normalizedReviewStatus)" in source
+    assert 'reviewApproved ? "Approved" : reviewBlocked ? "Blocked" : "Required"' in source
     assert "Client delivery blocked" in source
     assert "verified-fix scenario" in source
+
+
+def test_mid_review_rejects_null_scores_malformed_arrays_and_duplicate_weight_rows() -> None:
+    source = COMPONENT.read_text(encoding="utf-8")
+
+    assert 'if (value == null || typeof value === "boolean") return null' in source
+    assert 'typeof value === "string" && !value.trim()' in source
+    assert "function textItems(value: unknown)" in source
+    assert "Array.isArray(value) ? value : []" in source
+    assert "suppliedById.has(id)" in source
+    assert "const weight = WEIGHTS[id]" in source
+    assert "boundedScore * weight / 100" in source
+    assert "Math.round(row.score)" in source
+    assert "Canonical scorecard incomplete" in source
 
 
 def test_mid_review_preserves_evidence_findings_limitations_and_scope() -> None:
@@ -68,6 +86,18 @@ def test_mid_review_portal_reuses_transport_and_hides_complete_legacy_surface() 
     assert "element.hidden = false" in section_portal
     assert "<MidSectionReview payload={payload} />" in section_portal
     assert 'import MidSectionReviewPortal from "./MidSectionReviewPortal"' in layout
+
+
+def test_mid_review_portal_ignores_stale_mid_polling_and_preserves_terminal_sections() -> None:
+    source = SECTION_PORTAL.read_text(encoding="utf-8")
+
+    assert "const midSelectedRef = useRef(false)" in source
+    assert "if (!midSelectedRef.current) return" in source
+    assert "setMidSelected(true)" not in source
+    assert "function mergeMidPayload" in source
+    assert "previousRunId !== incomingRunId" in source
+    assert "sections: previousSections" in source
+    assert "setPayload((current) => mergeMidPayload(current, detail))" in source
 
 
 def test_mid_review_retains_report_and_human_review_actions() -> None:
