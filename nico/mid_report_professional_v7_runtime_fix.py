@@ -6,6 +6,7 @@ from typing import Any
 from nico import mid_report_professional_v6 as v6
 from nico import mid_report_professional_v7 as v7
 from nico.mid_report_premium_contract_v8 import mid_report_contract, reconcile_mid_scores
+from nico.mid_report_v8_acceptance_compat import wrap_mid_pdf
 
 
 _PATCH_MARKER = "_nico_mid_report_professional_v8_runtime_fix_installed"
@@ -45,7 +46,7 @@ def _fixed_premium_enhance(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_mid_report_professional_v7_runtime_fix() -> dict[str, Any]:
-    """Bind v8 Mid output to the production report module while preserving direct contracts."""
+    """Bind v8 Mid output to production while preserving report acceptance continuity."""
     from nico import mid_assessment_report as report_module
 
     if getattr(report_module, _PATCH_MARKER, False):
@@ -56,9 +57,11 @@ def install_mid_report_professional_v7_runtime_fix() -> dict[str, Any]:
     def payload_v8(record: dict[str, Any], packet: dict[str, Any], identity: dict[str, Any], generated_at: str) -> dict[str, Any]:
         return _fixed_premium_enhance(current_payload(record, packet, identity, generated_at))
 
+    compatible_pdf = wrap_mid_pdf(v7._premium_pdf)
     v7._premium_enhance = _fixed_premium_enhance
+    v7._premium_pdf = compatible_pdf
     report_module._report_payload = payload_v8
-    report_module._pdf = v7._premium_pdf
+    report_module._pdf = compatible_pdf
     setattr(report_module, _PATCH_MARKER, True)
     return {
         "status": "installed",
@@ -67,6 +70,7 @@ def install_mid_report_professional_v7_runtime_fix() -> dict[str, Any]:
         "target_pdf_pages": 42,
         "maximum_pdf_pages": 50,
         "transparent_scoring": True,
+        "acceptance_compatibility_index": True,
         "report_only": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
