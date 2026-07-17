@@ -81,8 +81,13 @@ def test_mid_review_portal_merges_partial_status_monotonically_and_is_tier_safe(
     assert "window.addEventListener(MID_PAYLOAD_EVENT, onPayload)" in section_portal
     assert "if (!midSelectedRef.current) return" in section_portal
     assert "mergePayloadRecord(previous, incoming)" in section_portal
+    assert "DURABLE_ARRAY_KEYS" in section_portal
+    assert "DURABLE_SCALAR_KEYS" in section_portal
+    assert "MONOTONIC_TRUE_KEYS" in section_portal
+    assert "MONOTONIC_STATUS_KEYS" in section_portal
+    assert "statusRank(previousValue) > statusRank(incomingValue)" in section_portal
+    assert "!DURABLE_ARRAY_KEYS.has(key)" in section_portal
     assert "isMeaningful(incomingValue)" in section_portal
-    assert "incomingValue.length" in section_portal
     assert 'window.addEventListener("popstate", syncFromLocation)' in section_portal
     assert "hideLegacySurface(panel, mount)" in section_portal
     assert "restoreLegacySurface()" in section_portal
