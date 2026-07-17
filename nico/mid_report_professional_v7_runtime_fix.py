@@ -6,45 +6,15 @@ from typing import Any
 from nico import mid_report_professional_v6 as v6
 from nico import mid_report_professional_v7 as v7
 
-
-def _base_v6_enhance(payload: dict[str, Any]) -> dict[str, Any]:
-    """Rebuild the v6 enhancement without calling the monkey-patched symbol."""
-    output = deepcopy(payload)
-    score = v6._canonical_score(output)
-    status, status_reason = v6._decision_status(score)
-    decision = v6._dict(output.get("decision_summary"))
-    decision.update(
-        {
-            "review_decision": status,
-            "review_decision_reason": status_reason,
-            "action_plan": v6._action_plan(output),
-        }
-    )
-    output["decision_summary"] = decision
-    output["presentation_version"] = v6.MID_REPORT_V6_VERSION
-    output["presentation_detail_level"] = 6
-    output["evidence_assurance_matrix"] = [
-        {"section_id": section.get("id"), "label": section.get("label"), **v6._section_state(section)}
-        for section in v6._technical(output)
-    ]
-    output["grouped_review_exceptions"] = v6._group_exceptions(output)
-    output["report_depth_contract"] = {
-        **v6._dict(output.get("report_depth_contract")),
-        "minimum_pdf_pages": 7,
-        "target_pdf_pages": 8,
-        "maximum_pdf_pages": 10,
-        "paired_technical_dossiers": True,
-        "evidence_assurance_matrix": True,
-        "finding_specific_action_plan": True,
-        "blank_values_normalized": True,
-        "full_integrity_values_retained_in_markdown_and_json": True,
-        "legacy_payload_contract_preserved": True,
-    }
-    return output
+_PATCH_MARKER = "_nico_mid_report_professional_v7_runtime_fix_installed"
 
 
 def _fixed_premium_enhance(payload: dict[str, Any]) -> dict[str, Any]:
-    output = _base_v6_enhance(payload)
+    """Upgrade an already-enriched v6 payload without mutating v6 module APIs."""
+    if str(payload.get("presentation_version") or "") == v6.MID_REPORT_V6_VERSION:
+        output = deepcopy(payload)
+    else:
+        output = v6._enhance(payload)
     output["presentation_version"] = v7.VERSION
     output["presentation_detail_level"] = 7
     output["report_depth_contract"] = {
@@ -61,8 +31,27 @@ def _fixed_premium_enhance(payload: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
-def install_mid_report_professional_v7_runtime_fix() -> None:
-    """Install v7 without recursive calls through v6._enhance."""
+def install_mid_report_professional_v7_runtime_fix() -> dict[str, Any]:
+    """Bind v7 to the production report module while preserving v6 direct contracts."""
+    from nico import mid_assessment_report as report_module
+
+    if getattr(report_module, _PATCH_MARKER, False):
+        return {"status": "already_installed", "version": v7.VERSION}
+
+    current_payload = report_module._report_payload
+
+    def payload_v7(record: dict[str, Any], packet: dict[str, Any], identity: dict[str, Any], generated_at: str) -> dict[str, Any]:
+        return _fixed_premium_enhance(current_payload(record, packet, identity, generated_at))
+
     v7._premium_enhance = _fixed_premium_enhance
-    v6._enhance = _fixed_premium_enhance
-    v6._pdf = v7._premium_pdf
+    report_module._report_payload = payload_v7
+    report_module._pdf = v7._premium_pdf
+    setattr(report_module, _PATCH_MARKER, True)
+    return {
+        "status": "installed",
+        "version": v7.VERSION,
+        "target_pdf_pages": 35,
+        "report_only": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
