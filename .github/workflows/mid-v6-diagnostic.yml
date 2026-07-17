@@ -1,0 +1,49 @@
+name: Mid V6 Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "nico/**"
+      - "tests/test_mid_report_professional_v5.py"
+      - ".github/workflows/mid-v6-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install --no-deps -e .
+      - name: Capture import diagnostics
+        shell: bash
+        run: |
+          set +e
+          python -m py_compile nico/mid_report_professional_v5.py > mid-v6-diagnostic.txt 2>&1
+          echo "py_compile_exit=$?" >> mid-v6-diagnostic.txt
+          python - <<'PY' >> mid-v6-diagnostic.txt 2>&1
+          import traceback
+          try:
+              import nico
+              from nico.api.production import app
+              print("nico_import=success")
+              print(f"production_app={app is not None}")
+          except Exception:
+              print("nico_import=failure")
+              traceback.print_exc()
+          PY
+          cat mid-v6-diagnostic.txt
+          exit 0
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v7
+        with:
+          name: mid-v6-diagnostic
+          path: mid-v6-diagnostic.txt
