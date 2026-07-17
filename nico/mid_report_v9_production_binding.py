@@ -82,6 +82,10 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
     labels = _LABELS[locale]
     visuals = payload["mid_visual_data"]
     dossiers = payload["mid_finding_dossiers"]["records"]
+    exception_summary = (
+        f"Original exception records: {int(payload.get('review_exception_original_count') or 0)} · "
+        f"Decision-ready deduplicated items: {int(payload.get('review_exception_final_count') or 0)}"
+    )
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=.55*inch, rightMargin=.55*inch, topMargin=.55*inch, bottomMargin=.6*inch, invariant=1)
     styles = getSampleStyleSheet()
@@ -115,6 +119,7 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
         p(labels["visuals"], title),
         p(labels["review"], h2),
         p(labels["continuity"]),
+        p(exception_summary),
         p(labels["score"], h2),
         tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]),
         Spacer(1,.12*inch),
