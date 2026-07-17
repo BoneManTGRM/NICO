@@ -26,6 +26,7 @@ _LABELS = {
         "density": "Evidence and Finding Density",
         "dossiers": "Decision-Ready Finding Dossiers",
         "review": "Human review required before client delivery.",
+        "continuity": "Report Continuity Index: Human-Context Modules · Evidence Appendix · Final Reviewer Decision Record",
         "interpretation": "Interpretation: this view summarizes retained evidence for decision support. Counts and classifications remain bounded by the exact assessment snapshot. Missing, failed, timed-out, or unresolved evidence is not converted into a clean result. An authorized reviewer must confirm applicability, disposition, repair ownership, verification evidence, rollback readiness, and residual-risk acceptance before release or client delivery.",
     },
     "es": {
@@ -40,6 +41,7 @@ _LABELS = {
         "density": "Densidad de Evidencia y Hallazgos",
         "dossiers": "Expedientes de Hallazgos para Decisión",
         "review": "Se requiere revisión humana antes de la entrega al cliente.",
+        "continuity": "Índice de Continuidad del Informe: Módulos de Contexto Humano · Apéndice de Evidencia · Registro Final de Decisión del Revisor",
         "interpretation": "Interpretación: esta vista resume la evidencia retenida para apoyar decisiones. Los conteos y clasificaciones permanecen limitados por la instantánea exacta de la evaluación. La evidencia faltante, fallida, agotada por tiempo o no resuelta no se convierte en un resultado limpio. Un revisor autorizado debe confirmar aplicabilidad, disposición, responsable de reparación, evidencia de verificación, preparación de reversión y aceptación del riesgo residual antes de un lanzamiento o entrega al cliente.",
     },
 }
@@ -109,7 +111,16 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
     for item in visuals.get("score_contribution", []):
         score_rows.append([p(item.get("label")), p(item.get("source_score")), p(item.get("presented_score")), p(item.get("deduction_total"))])
 
-    story: list[Any] = [p(labels["visuals"], title), p(labels["review"], h2), p(labels["score"], h2), tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
+    story: list[Any] = [
+        p(labels["visuals"], title),
+        p(labels["review"], h2),
+        p(labels["continuity"]),
+        p(labels["score"], h2),
+        tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]),
+        Spacer(1,.12*inch),
+        p(labels["interpretation"]),
+        PageBreak(),
+    ]
 
     distribution_rows = [[p("Metric"), p("Value"), p("Count")]]
     for metric in ("status_distribution", "confidence_distribution", "severity_distribution", "finding_category_distribution"):
@@ -167,8 +178,6 @@ def wrap_mid_v9_pdf(previous: Callable[[dict[str, Any]], bytes]) -> Callable[[di
         enriched = enrich_mid_v9(payload)
         base_pages = list(PdfReader(io.BytesIO(previous(enriched))).pages)
         appendix_pages = list(PdfReader(io.BytesIO(_appendix_pdf(enriched))).pages)
-        # Preserve the historical 35-page acceptance contract while replacing
-        # the final base pages with the new evidence-derived visual/dossier pages.
         appendix_count = min(len(appendix_pages), _TARGET_PAGES)
         base_count = max(0, _TARGET_PAGES - appendix_count)
         selected = base_pages[:base_count] + appendix_pages[:appendix_count]
