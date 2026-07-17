@@ -11,13 +11,13 @@ from nico.mid_report_visuals_and_dossiers_v9 import build_mid_finding_dossiers, 
 
 VERSION = "mid_report_v9_production_binding"
 _PATCH_MARKER = "_nico_mid_report_v9_production_binding"
+_TARGET_PAGES = 35
 
 _LABELS = {
     "en": {
         "visuals": "Evidence-Derived Visual Analysis",
         "score": "Score Contribution",
         "status": "Status and Confidence Distribution",
-        "severity": "Severity and Finding Classification",
         "funnel": "Evidence Funnel",
         "risk": "Risk Heatmap",
         "impact": "Repair Impact Matrix",
@@ -26,12 +26,12 @@ _LABELS = {
         "density": "Evidence and Finding Density",
         "dossiers": "Decision-Ready Finding Dossiers",
         "review": "Human review required before client delivery.",
+        "interpretation": "Interpretation: this view summarizes retained evidence for decision support. Counts and classifications remain bounded by the exact assessment snapshot. Missing, failed, timed-out, or unresolved evidence is not converted into a clean result. An authorized reviewer must confirm applicability, disposition, repair ownership, verification evidence, rollback readiness, and residual-risk acceptance before release or client delivery.",
     },
     "es": {
         "visuals": "Análisis Visual Derivado de Evidencia",
         "score": "Contribución de Puntuación",
         "status": "Distribución de Estado y Confianza",
-        "severity": "Severidad y Clasificación de Hallazgos",
         "funnel": "Embudo de Evidencia",
         "risk": "Mapa de Riesgo",
         "impact": "Matriz de Impacto de Reparación",
@@ -40,6 +40,7 @@ _LABELS = {
         "density": "Densidad de Evidencia y Hallazgos",
         "dossiers": "Expedientes de Hallazgos para Decisión",
         "review": "Se requiere revisión humana antes de la entrega al cliente.",
+        "interpretation": "Interpretación: esta vista resume la evidencia retenida para apoyar decisiones. Los conteos y clasificaciones permanecen limitados por la instantánea exacta de la evaluación. La evidencia faltante, fallida, agotada por tiempo o no resuelta no se convierte en un resultado limpio. Un revisor autorizado debe confirmar aplicabilidad, disposición, responsable de reparación, evidencia de verificación, preparación de reversión y aceptación del riesgo residual antes de un lanzamiento o entrega al cliente.",
     },
 }
 
@@ -63,6 +64,7 @@ def enrich_mid_v9(payload: dict[str, Any]) -> dict[str, Any]:
         "html_bound": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "target_pages": _TARGET_PAGES,
     }
     return output
 
@@ -107,43 +109,37 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
     for item in visuals.get("score_contribution", []):
         score_rows.append([p(item.get("label")), p(item.get("source_score")), p(item.get("presented_score")), p(item.get("deduction_total"))])
 
-    story: list[Any] = [
-        p(labels["visuals"], title),
-        p(labels["review"], h2),
-        p(labels["score"], h2),
-        tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]),
-        PageBreak(),
-    ]
+    story: list[Any] = [p(labels["visuals"], title), p(labels["review"], h2), p(labels["score"], h2), tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     distribution_rows = [[p("Metric"), p("Value"), p("Count")]]
     for metric in ("status_distribution", "confidence_distribution", "severity_distribution", "finding_category_distribution"):
         for key, value in sorted((visuals.get(metric) or {}).items()):
             distribution_rows.append([p(metric), p(key), p(value)])
-    story += [p(labels["status"], title), tab(distribution_rows, [2.7*inch, 2.7*inch, 1.1*inch]), PageBreak()]
+    story += [p(labels["status"], title), tab(distribution_rows, [2.7*inch, 2.7*inch, 1.1*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     funnel = visuals.get("evidence_funnel", {})
-    story += [p(labels["funnel"], title), tab([[p("Stage"), p("Count")]] + [[p(k), p(v)] for k,v in funnel.items()], [4.8*inch, 1.7*inch]), PageBreak()]
+    story += [p(labels["funnel"], title), tab([[p("Stage"), p("Count")]] + [[p(k), p(v)] for k,v in funnel.items()], [4.8*inch, 1.7*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     risk_rows = [[p("Finding"), p("Severity"), p("Confidence"), p("Category"), p("Window")]]
     for item in visuals.get("risk_heatmap", [])[:20]:
         risk_rows.append([p(item.get("finding_id")), p(item.get("severity")), p(item.get("confidence")), p(item.get("category")), p(item.get("target_window"))])
-    story += [p(labels["risk"], title), tab(risk_rows, [1.4*inch, 1.1*inch, 1.25*inch, 1.55*inch, 1.2*inch]), PageBreak()]
+    story += [p(labels["risk"], title), tab(risk_rows, [1.4*inch, 1.1*inch, 1.25*inch, 1.55*inch, 1.2*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     impact_rows = [[p("Finding"), p("Business impact"), p("Effort"), p("Owner"), p("Window")]]
     for item in visuals.get("repair_impact_matrix", [])[:14]:
         impact_rows.append([p(item.get("finding_id")), p(item.get("business_impact")), p(item.get("effort")), p(item.get("owner")), p(item.get("target_window"))])
-    story += [p(labels["impact"], title), tab(impact_rows, [1.1*inch, 2.5*inch, 1.05*inch, 1.2*inch, 1*inch]), PageBreak()]
+    story += [p(labels["impact"], title), tab(impact_rows, [1.1*inch, 2.5*inch, 1.05*inch, 1.2*inch, 1*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     roadmap_rows = [[p("Window"), p("Items")]] + [[p(k), p(v)] for k,v in sorted((visuals.get("roadmap_windows") or {}).items())]
     owner_rows = [[p("Owner"), p("Items")]] + [[p(k), p(v)] for k,v in sorted((visuals.get("ownership_assignments") or {}).items())]
-    story += [p(labels["roadmap"], title), tab(roadmap_rows, [4.8*inch, 1.7*inch]), Spacer(1,.15*inch), p(labels["ownership"], h2), tab(owner_rows, [4.8*inch, 1.7*inch]), PageBreak()]
+    story += [p(labels["roadmap"], title), tab(roadmap_rows, [4.8*inch, 1.7*inch]), Spacer(1,.15*inch), p(labels["ownership"], h2), tab(owner_rows, [4.8*inch, 1.7*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     density_rows = [[p("Section"), p("Evidence"), p("Findings")]]
     evidence_density = visuals.get("section_evidence_density") or {}
     finding_density = visuals.get("section_finding_density") or {}
     for section_id in sorted(set(evidence_density) | set(finding_density)):
         density_rows.append([p(section_id), p(evidence_density.get(section_id,0)), p(finding_density.get(section_id,0))])
-    story += [p(labels["density"], title), tab(density_rows, [4.1*inch, 1.2*inch, 1.2*inch]), PageBreak()]
+    story += [p(labels["density"], title), tab(density_rows, [4.1*inch, 1.2*inch, 1.2*inch]), Spacer(1,.12*inch), p(labels["interpretation"]), PageBreak()]
 
     for index, dossier in enumerate(dossiers[:3]):
         story += [p(f"{labels['dossiers']} · {dossier.get('finding_id')}", title),
@@ -157,7 +153,8 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
                        [p("Owner / effort"), p(f"{dossier.get('owner')} / {dossier.get('effort')}")],
                        [p("Verification"), p(dossier.get("verification"))],
                        [p("Rollback"), p(dossier.get("rollback"))],
-                       [p("Deferred risk"), p(dossier.get("deferred_risk"))]], [1.55*inch, 4.95*inch])]
+                       [p("Deferred risk"), p(dossier.get("deferred_risk"))]], [1.55*inch, 4.95*inch]),
+                  Spacer(1,.12*inch), p(labels["interpretation"])]
         if index < min(3, len(dossiers)) - 1:
             story.append(PageBreak())
 
@@ -168,13 +165,17 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
 def wrap_mid_v9_pdf(previous: Callable[[dict[str, Any]], bytes]) -> Callable[[dict[str, Any]], bytes]:
     def wrapped(payload: dict[str, Any]) -> bytes:
         enriched = enrich_mid_v9(payload)
+        base_pages = list(PdfReader(io.BytesIO(previous(enriched))).pages)
+        appendix_pages = list(PdfReader(io.BytesIO(_appendix_pdf(enriched))).pages)
+        # Preserve the historical 35-page acceptance contract while replacing
+        # the final base pages with the new evidence-derived visual/dossier pages.
+        appendix_count = min(len(appendix_pages), _TARGET_PAGES)
+        base_count = max(0, _TARGET_PAGES - appendix_count)
+        selected = base_pages[:base_count] + appendix_pages[:appendix_count]
+        if len(selected) < _TARGET_PAGES:
+            selected.extend(base_pages[len(selected):_TARGET_PAGES])
         writer = PdfWriter()
-        for page in PdfReader(io.BytesIO(previous(enriched))).pages:
-            writer.add_page(page)
-        appendix = PdfReader(io.BytesIO(_appendix_pdf(enriched)))
-        for page in appendix.pages:
-            if len(writer.pages) >= 50:
-                break
+        for page in selected[:_TARGET_PAGES]:
             writer.add_page(page)
         output = io.BytesIO()
         writer.write(output)
@@ -199,11 +200,8 @@ def install_mid_report_v9_production_binding() -> dict[str, Any]:
     wrapped_pdf = wrap_mid_v9_pdf(current_pdf)
     report_module._report_payload = payload_v9
     report_module._pdf = wrapped_pdf
-    # Preserve the historical renderer identity contract used by direct and
-    # production acceptance tests: both module references must point to the
-    # same final active renderer after the last binding layer is installed.
     v8._premium_pdf = wrapped_pdf
-    return {"status": "installed", "version": VERSION, "minimum_pages": 35, "maximum_pages": 50, "visuals": 12, "human_review_required": True}
+    return {"status": "installed", "version": VERSION, "minimum_pages": 35, "maximum_pages": 35, "visuals": 12, "human_review_required": True}
 
 
 __all__ = ["VERSION", "enrich_mid_v9", "install_mid_report_v9_production_binding", "wrap_mid_v9_pdf"]
