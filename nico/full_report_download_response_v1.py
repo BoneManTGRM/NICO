@@ -3,12 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "full_report_download_response_v1"
+VERSION = "full_report_download_response_v2"
 _REQUIRED_HEADERS = (
     "Content-Type",
     "Content-Disposition",
     "Content-Length",
     "ETag",
+    "X-Content-SHA256",
     "Accept-Ranges",
     "Cache-Control",
 )
@@ -56,15 +57,18 @@ def build_download_response(
         issues.append("unsafe_filename")
     if byte_length < 1:
         issues.append("invalid_byte_length")
+    if checksum and (len(checksum) != 64 or any(character not in "0123456789abcdefABCDEF" for character in checksum)):
+        issues.append("invalid_sha256")
 
     allowed = not issues
-    headers = {}
+    headers: dict[str, str] = {}
     if allowed:
         headers = {
             "Content-Type": content_type,
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(byte_length),
             "ETag": f'"sha256:{checksum}"',
+            "X-Content-SHA256": checksum,
             "Accept-Ranges": "bytes",
             "Cache-Control": "private, no-store, max-age=0",
             "X-NICO-Artifact-ID": artifact_id,
