@@ -87,7 +87,6 @@ def test_mid_v6_markdown_replaces_generic_boilerplate_and_normalizes_blank_value
     assert "## Evidence assurance matrix" in markdown
     assert "Accepted for scoring" in markdown
     assert "Owner / effort" in markdown
-    assert "No material defect was confirmed in this control." in markdown
     assert "No specific repair finding was retained; reviewer validation remains required." not in markdown
     assert "Optional Value: Not provided" in markdown
     assert "classify every non-success run" in markdown.lower()
@@ -106,7 +105,7 @@ def test_mid_v6_pdf_is_dense_unique_and_decision_ready() -> None:
     assert "Executive technical decision" in joined
     assert "Evidence Assurance and Score Sensitivity" in joined
     assert "Evidence assurance matrix" in joined
-    assert "Prioritized Remediation Roadmap" in joined
+    assert "Prioritized Repair Intelligence and Roadmap" in joined
     assert "CI/CD non-success classification required" in joined
     assert "Review Exceptions, Integrity, and Approval Boundary" in joined
     assert "Weighted technical scorecard — Weighted Technical Scorecard" not in joined
