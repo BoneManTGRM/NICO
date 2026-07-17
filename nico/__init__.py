@@ -7,6 +7,7 @@ from nico.report_final_qa import patch_polish_express_result_for_final_qa
 from nico.report_truth_runtime_patch import patch_final_report_consistency
 from nico.report_pdf_display_patch import apply_pdf_display_patch
 from nico.express_report_base_v13 import install_express_report_base_v13
+from nico.express_report_premium_v14 import install_express_report_premium_v14
 from nico.report_intelligence_professional_pdf import install_professional_report_intelligence_pdf
 from nico.report_intelligence_final_pdf_binding import install_report_intelligence_final_pdf_binding
 from nico.hosted_report_regression_patch import install_hosted_report_regression_patch
@@ -165,5 +166,8 @@ install_mid_report_professional_v6()
 # Bind premium v7 only at the production report-module boundary. Calling the
 # legacy v7 installer here mutates v6._enhance and creates recursive payloads.
 install_mid_report_professional_v7_runtime_fix()
+# Install Express premium v14 after every report-intelligence and quality layer
+# so final Express PDF rebuilds use the production premium renderer.
+install_express_report_premium_v14()
 
 __version__ = "0.1.0"
