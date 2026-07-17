@@ -43,6 +43,7 @@ from nico.report_flowable_safety import install_report_flowable_safety
 from nico.mid_report_professional_v4 import install_mid_report_professional_v4
 from nico.mid_report_professional_v5 import install_mid_report_professional_v5
 from nico.mid_report_v5_compat import install_mid_report_v5_compat
+from nico.mid_report_v5_hardening import install_mid_report_v5_hardening
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
@@ -158,5 +159,7 @@ install_mid_report_professional_v4()
 install_mid_report_professional_v5()
 # Preserve legacy report contracts after the v5 renderer is active.
 install_mid_report_v5_compat()
+# Apply deterministic score, evidence, and PDF safety after all Mid presentation layers.
+install_mid_report_v5_hardening()
 
 __version__ = "0.1.0"
