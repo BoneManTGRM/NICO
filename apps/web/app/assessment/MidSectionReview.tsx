@@ -1,7 +1,11 @@
 "use client";
 
 import {useMemo, useState} from "react";
-import styles from "./assessment.module.css";
+import styles from "./midReview.module.css";
+
+type JsonRecord = Record<string, unknown>;
+type Filter = "all" | "attention" | "verified";
+type Tone = "critical" | "warning" | "healthy" | "neutral";
 
 type Section = {
   id?: string;
@@ -21,27 +25,51 @@ type Section = {
   direct_repository_proof?: boolean;
 };
 
-type Props = {
-  sections?: Section[];
+type WeightedRow = {
+  section_id: string;
+  label: string;
+  score: number;
+  weight: number;
+  weighted_points: number;
+  projected_lift_if_verified: number;
 };
 
-type Filter = "all" | "attention" | "verified" | "unscored";
-type Tone = "critical" | "warning" | "healthy" | "neutral";
+type Props = {payload: JsonRecord};
 
-const TECHNICAL_IDS = new Set([
-  "code_audit",
-  "dependency_health",
-  "secrets_review",
-  "static_analysis",
-  "ci_cd",
-  "architecture_debt",
-  "velocity_complexity",
-]);
+const WEIGHTS: Record<string, number> = {
+  code_audit: 20,
+  dependency_health: 15,
+  secrets_review: 10,
+  static_analysis: 15,
+  ci_cd: 15,
+  architecture_debt: 15,
+  velocity_complexity: 10,
+};
+
+const TECHNICAL_IDS = Object.keys(WEIGHTS);
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function records(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function finite(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function titleCase(value: unknown): string {
+  const text = String(value || "pending").replaceAll("_", " ").trim();
+  return text ? text.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Pending";
+}
 
 function unique(items: Array<string | undefined>): string[] {
   const seen = new Set<string>();
   return items.flatMap((item) => {
-    const value = String(item || "").trim();
+    const value = String(item || "").replace(/\s+/g, " ").trim();
     const key = value.toLowerCase();
     if (!value || seen.has(key)) return [];
     seen.add(key);
@@ -49,222 +77,250 @@ function unique(items: Array<string | undefined>): string[] {
   });
 }
 
-function statusText(section: Section): string {
-  return String(section.truth_status || section.status || "unknown").replaceAll("_", " ");
+function readableToolGap(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "bandit") return "Bandit did not provide accepted exact-snapshot evidence for this run.";
+  if (normalized === "gitleaks") return "Gitleaks did not provide accepted same-run history evidence for this run.";
+  if (/^[a-z0-9_.-]{2,30}$/.test(normalized)) return `${titleCase(normalized)} evidence is incomplete or unavailable for this run.`;
+  return value;
 }
 
-function limitationItems(section: Section): string[] {
+function limitations(section: Section): string[] {
   return unique([
     ...(section.unavailable || []),
     ...(section.missing_evidence_sources || []),
-    ...(section.failed_evidence_tools || []).map((tool) => `Evidence tool unavailable or failed: ${tool}`),
-  ]);
+    ...(section.failed_evidence_tools || []).map((tool) => readableToolGap(String(tool))),
+  ]).map(readableToolGap);
 }
 
 function isUnscored(section: Section): boolean {
-  const status = statusText(section).toLowerCase();
-  return section.score == null || status.includes("gray") || status.includes("unavailable") || status.includes("not scored");
+  const truth = String(section.truth_status || section.status || "").toLowerCase();
+  return section.score == null || truth.includes("gray") || truth.includes("unavailable") || truth.includes("not scored");
 }
 
-function sectionTone(section: Section): Tone {
-  const status = statusText(section).toLowerCase();
-  const score = typeof section.score === "number" ? section.score : null;
-  const limitations = limitationItems(section).length;
-  if (["red", "failed", "error", "blocked"].some((value) => status.includes(value))) return "critical";
+function tone(section: Section): Tone {
   if (isUnscored(section)) return "neutral";
-  if (score != null && score < 60) return "critical";
-  if (["yellow", "limited", "pending", "review"].some((value) => status.includes(value)) || limitations > 0 || (score != null && score < 80)) return "warning";
-  if (["green", "verified", "complete", "passed"].some((value) => status.includes(value)) && score != null && score >= 80) return "healthy";
+  const status = String(section.truth_status || section.status || "").toLowerCase();
+  const score = finite(section.score);
+  if (["red", "failed", "error", "blocked"].some((token) => status.includes(token)) || (score != null && score < 60)) return "critical";
+  if ((score != null && score < 80) || (section.findings || []).length > 0) return "warning";
   return score != null && score >= 80 ? "healthy" : "warning";
 }
 
-function sectionKey(section: Section, index: number): string {
-  return String(section.id || section.label || `section-${index}`);
+function rowFromSection(section: Section): WeightedRow | null {
+  const sectionId = String(section.id || "");
+  const weight = WEIGHTS[sectionId];
+  const score = finite(section.score);
+  if (!weight || score == null) return null;
+  const weighted = score * weight / 100;
+  return {
+    section_id: sectionId,
+    label: section.label || titleCase(sectionId),
+    score: Math.round(score),
+    weight,
+    weighted_points: Math.round(weighted * 100) / 100,
+    projected_lift_if_verified: Math.round(Math.max(0, 80 - score) * weight) / 100,
+  };
 }
 
-function scoreLabel(section: Section): string {
-  return typeof section.score === "number" ? `${Math.round(section.score)}/100` : "Not scored";
+function weightedRows(payload: JsonRecord, sections: Section[]): WeightedRow[] {
+  const intelligence = isRecord(payload.mid_score_intelligence) ? payload.mid_score_intelligence : {};
+  const supplied = records(intelligence.weighted_sections).flatMap((row) => {
+    const id = String(row.section_id || "");
+    const score = finite(row.score);
+    const weight = finite(row.weight) ?? WEIGHTS[id];
+    if (!id || score == null || weight == null) return [];
+    const weighted = finite(row.weighted_points) ?? score * weight / 100;
+    return [{
+      section_id: id,
+      label: String(row.label || titleCase(id)),
+      score: Math.round(score),
+      weight,
+      weighted_points: Math.round(weighted * 100) / 100,
+      projected_lift_if_verified: finite(row.projected_lift_if_verified) ?? Math.max(0, 80 - score) * weight / 100,
+    }];
+  });
+  if (supplied.length) return supplied;
+  return sections.flatMap((section) => {
+    const row = rowFromSection(section);
+    return row ? [row] : [];
+  });
 }
 
-function matchesFilter(section: Section, filter: Filter): boolean {
-  const tone = sectionTone(section);
-  if (filter === "attention") return tone === "critical" || tone === "warning";
-  if (filter === "verified") return tone === "healthy";
-  if (filter === "unscored") return isUnscored(section);
-  return true;
+function clickLegacyAction(labels: string[]) {
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>('[data-nico-mid-legacy-hidden="true"] button, [data-nico-mid-legacy-hidden="true"] a'));
+  const match = candidates.find((candidate) => {
+    const text = String(candidate.textContent || "").toLowerCase();
+    return labels.some((label) => text.includes(label));
+  });
+  match?.click();
 }
 
-function ListBlock({items, empty}: {items: string[]; empty: string}) {
-  if (!items.length) return <p className={styles.emptyReviewState}>{empty}</p>;
-  return <ul className={styles.reviewList}>{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>;
+function DetailList({items, empty}: {items: string[]; empty: string}) {
+  if (!items.length) return <p className={styles.empty}>{empty}</p>;
+  return <ul className={styles.detailList}>{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>;
 }
 
-function ReviewCard({section, itemKey, expanded, onToggle}: {section: Section; itemKey: string; expanded: boolean; onToggle: () => void}) {
-  const tone = sectionTone(section);
+function ControlRow({section, expanded, onToggle}: {section: Section; expanded: boolean; onToggle: () => void}) {
+  const sectionTone = tone(section);
   const evidence = unique(section.evidence || []);
   const findings = unique(section.findings || []);
-  const limitations = limitationItems(section);
+  const gaps = limitations(section);
   const scope = unique([
     ...(section.scope_disclosures || []),
     section.confidence ? `Confidence: ${section.confidence}` : undefined,
     section.source_classification ? `Source classification: ${section.source_classification}` : undefined,
     typeof section.direct_repository_proof === "boolean" ? `Direct repository proof: ${section.direct_repository_proof ? "yes" : "no"}` : undefined,
   ]);
-  const nextAction = findings[0] || limitations[0] || "Validate the retained evidence and record the reviewer disposition.";
-  const score = typeof section.score === "number" ? Math.max(0, Math.min(100, section.score)) : 0;
+  const nextAction = findings[0] || gaps[0] || "Retain the evidence and reviewer disposition for this exact snapshot.";
 
-  return <article className={`${styles.reviewCard} ${styles[tone]}`} data-section-id={itemKey}>
-    <button type="button" className={styles.reviewToggle} aria-expanded={expanded} onClick={onToggle}>
-      <span className={styles.reviewIdentity}>
-        <span className={styles.reviewTitle}>{section.label || section.id || "Assessment section"}</span>
-        <span className={styles.reviewStatus}>{statusText(section)}</span>
+  return <article className={`${styles.controlRow} ${styles[sectionTone]}`} data-mid-section={section.id || section.label}>
+    <button type="button" className={styles.controlToggle} aria-expanded={expanded} onClick={onToggle}>
+      <span className={styles.controlIdentity}>
+        <b>{section.label || titleCase(section.id)}</b>
+        <small>{titleCase(section.truth_status || section.status || "Evidence bound")}</small>
       </span>
-      <span className={styles.reviewCounts} aria-label="Section evidence counts">
-        <span>{evidence.length} evidence</span>
-        <span>{findings.length} findings</span>
-        <span>{limitations.length} gaps</span>
-      </span>
-      <span className={styles.reviewScore}>{scoreLabel(section)}</span>
-      <span className={styles.reviewChevron} aria-hidden="true">{expanded ? "−" : "+"}</span>
+      <span className={styles.controlCounts}>{findings.length} findings · {gaps.length} gaps</span>
+      <strong>{finite(section.score) == null ? "—" : `${Math.round(Number(section.score))}/100`}</strong>
+      <span className={styles.chevron} aria-hidden="true">{expanded ? "−" : "+"}</span>
     </button>
-
-    <div className={styles.scoreTrack} aria-hidden="true"><span style={{width: `${score}%`}} /></div>
-    <p className={styles.reviewSummary}>{section.summary || "No evidence-bound conclusion was returned."}</p>
-    <p className={styles.nextAction}><b>Next review action:</b> {nextAction}</p>
-
-    {expanded ? <div className={styles.reviewDetailGrid}>
-      <section>
-        <h4>Evidence reviewed <span>{evidence.length}</span></h4>
-        <ListBlock items={evidence} empty="No direct evidence item was retained." />
-      </section>
-      <section>
-        <h4>Findings <span>{findings.length}</span></h4>
-        <ListBlock items={findings} empty="No specific finding was retained. Reviewer validation still applies." />
-      </section>
-      <section>
-        <h4>Limitations and gaps <span>{limitations.length}</span></h4>
-        <ListBlock items={limitations} empty="No section-specific limitation was retained." />
-      </section>
-      <section>
-        <h4>Scope and confidence <span>{scope.length}</span></h4>
-        <ListBlock items={scope} empty="The report-wide evidence and human-review boundaries apply." />
-      </section>
+    <p className={styles.controlSummary}>{section.summary || "No evidence-bound summary was returned."}</p>
+    {sectionTone !== "healthy" ? <p className={styles.nextAction}><b>Next:</b> {nextAction}</p> : null}
+    {expanded ? <div className={styles.detailGrid}>
+      <section><h4>Evidence <span>{evidence.length}</span></h4><DetailList items={evidence} empty="No direct evidence item was retained." /></section>
+      <section><h4>Findings <span>{findings.length}</span></h4><DetailList items={findings} empty="No specific repair finding was retained." /></section>
+      <section><h4>Limitations <span>{gaps.length}</span></h4><DetailList items={gaps} empty="No section-specific limitation was retained." /></section>
+      <section><h4>Scope <span>{scope.length}</span></h4><DetailList items={scope} empty="Report-wide human-review boundaries apply." /></section>
     </div> : null}
   </article>;
 }
 
-export default function MidSectionReview({sections = []}: Props) {
+export default function MidSectionReview({payload}: Props) {
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const assessment = isRecord(payload.assessment) ? payload.assessment : {};
+  const sections = records(assessment.sections) as Section[];
+  const technical = TECHNICAL_IDS.flatMap((id) => {
+    const match = sections.find((section) => section.id === id);
+    return match ? [match] : [];
+  });
+  const context = sections.filter((section) => !TECHNICAL_IDS.includes(String(section.id || "")));
+  const rows = useMemo(() => weightedRows(payload, technical), [payload, technical]);
+  const weightedTotal = rows.reduce((total, row) => total + row.weight, 0);
+  const weightedScore = weightedTotal === 100 ? Math.round(rows.reduce((total, row) => total + row.score * row.weight / 100, 0)) : null;
+  const intelligence = isRecord(payload.mid_score_intelligence) ? payload.mid_score_intelligence : {};
+  const scoreContract = isRecord(intelligence.score_contract) ? intelligence.score_contract : {};
+  const maturity = isRecord(assessment.maturity_signal) ? assessment.maturity_signal : {};
+  const score = weightedScore
+    ?? finite(scoreContract.reported_score)
+    ?? finite(scoreContract.calculated_score)
+    ?? finite(maturity.score)
+    ?? finite(payload.technical_score);
+  const projected = score == null ? null : Math.min(100, Math.round(score + rows.reduce((total, row) => total + row.projected_lift_if_verified, 0)));
 
-  const rows = useMemo(() => sections.filter((section) => section && (section.id || section.label)), [sections]);
-  const metrics = useMemo(() => {
-    const tones = rows.map(sectionTone);
-    return {
-      attention: tones.filter((tone) => tone === "critical" || tone === "warning").length,
-      verified: tones.filter((tone) => tone === "healthy").length,
-      unscored: rows.filter(isUnscored).length,
-      evidence: rows.reduce((total, section) => total + unique(section.evidence || []).length, 0),
-      findings: rows.reduce((total, section) => total + unique(section.findings || []).length, 0),
-      gaps: rows.reduce((total, section) => total + limitationItems(section).length, 0),
-    };
-  }, [rows]);
+  const coverage = isRecord(assessment.evidence_coverage) ? assessment.evidence_coverage : isRecord(payload.evidence_coverage) ? payload.evidence_coverage : {};
+  const readiness = finite(payload.evidence_readiness)
+    ?? finite(assessment.evidence_readiness)
+    ?? finite(assessment.evidence_readiness_score)
+    ?? finite(payload.evidence_readiness_score);
+  const evidenceUnits = technical.reduce((total, section) => total + unique(section.evidence || []).length, 0);
 
-  const priorities = useMemo(() => rows
-    .filter((section) => TECHNICAL_IDS.has(String(section.id || "")) && ["critical", "warning"].includes(sectionTone(section)))
-    .sort((left, right) => {
-      const leftScore = typeof left.score === "number" ? left.score : 101;
-      const rightScore = typeof right.score === "number" ? right.score : 101;
-      if (leftScore !== rightScore) return leftScore - rightScore;
-      return limitationItems(right).length - limitationItems(left).length;
-    })
-    .slice(0, 3), [rows]);
+  const lifecycle = isRecord(intelligence.report_lifecycle) ? intelligence.report_lifecycle : {};
+  const reports = isRecord(payload.reports) ? payload.reports : {};
+  const pdfReady = Boolean(lifecycle.pdf_available ?? reports.pdf_base64);
+  const markdownReady = Boolean(lifecycle.markdown_available ?? reports.markdown);
+  const rawReportStatus = String(lifecycle.draft_generation_status || payload.report_generation_status || "pending");
+  const reportReady = pdfReady || markdownReady || /complete|ready|generated/i.test(rawReportStatus);
+  const approval = isRecord(payload.approval_request) ? payload.approval_request : {};
+  const rawReviewStatus = String(lifecycle.human_review_status || approval.status || payload.approval_request_status || "pending");
+  const reviewApproved = /approved|complete/i.test(rawReviewStatus);
+  const reviewLabel = reviewApproved ? "Approved" : "Required";
+  const maturityLabel = String(maturity.level || assessment.maturity || "Mid");
 
-  const visible = rows.filter((section) => matchesFilter(section, filter));
-  const technical = visible.filter((section) => TECHNICAL_IDS.has(String(section.id || "")));
-  const context = visible.filter((section) => !TECHNICAL_IDS.has(String(section.id || "")));
+  const priority = [...technical]
+    .filter((section) => !isUnscored(section) && (finite(section.score) == null || Number(section.score) < 80 || (section.findings || []).length > 0))
+    .sort((left, right) => (finite(left.score) ?? 101) - (finite(right.score) ?? 101))
+    .slice(0, 3);
+  const visible = technical.filter((section) => filter === "all" || (filter === "attention" ? tone(section) !== "healthy" : tone(section) === "healthy"));
+  const attentionCount = technical.filter((section) => tone(section) !== "healthy").length;
+  const repository = String(payload.repository || assessment.repository || "Repository assessment");
+  const runId = String(payload.run_id || assessment.run_id || "");
+  const expressNote = String(scoreContract.express_comparison_note || "Express is a faster baseline. Mid uses an immutable snapshot, scanner evidence, and seven fixed technical weights, so the scores are not directly interchangeable.");
 
-  function toggle(itemKey: string) {
+  function toggle(key: string) {
     setExpanded((current) => {
       const next = new Set(current);
-      if (next.has(itemKey)) next.delete(itemKey);
-      else next.add(itemKey);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
 
-  function expandAttention() {
-    setExpanded(new Set(rows.flatMap((section, index) => {
-      const tone = sectionTone(section);
-      return tone === "critical" || tone === "warning" ? [sectionKey(section, index)] : [];
-    })));
+  function openPriority(section: Section) {
+    const key = String(section.id || section.label || "section");
+    setFilter("all");
+    setExpanded((current) => new Set(current).add(key));
+    window.setTimeout(() => document.querySelector(`[data-mid-section="${CSS.escape(key)}"]`)?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
   }
 
-  if (!rows.length) return null;
-
-  return <section className={styles.sectionReview} aria-label="Mid assessment section review">
-    <div className={styles.sectionReviewHead}>
+  return <section className={styles.unifiedReview} aria-label="Mid assessment review">
+    <header className={styles.header}>
       <div>
-        <p className="eyebrow">MID REVIEW WORKBENCH</p>
-        <h3>Review the result by exception, not by scrolling through twelve oversized cards</h3>
-        <p>Technical controls and human-context modules are separated. Open only the sections that require evidence review or a decision.</p>
+        <p className={styles.eyebrow}>NICO MID ASSESSMENT</p>
+        <h2>Mid Assessment Review</h2>
+        <p>One evidence-bound view of the technical score, priority controls, report artifact, and required human decision.</p>
       </div>
-      <span className={metrics.attention ? "status yellow" : "status green"}>{metrics.attention} need attention</span>
+      <span className={styles.maturityBadge}>{maturityLabel}</span>
+    </header>
+
+    <div className={styles.identity}><b>{repository}</b>{runId ? <span>Run {runId}</span> : null}</div>
+
+    <div className={styles.statusGrid}>
+      <article><small>Technical score</small><strong>{score == null ? "Pending" : `${Math.round(score)}/100`}</strong><span>Seven weighted controls</span></article>
+      <article><small>Evidence readiness</small><strong>{readiness == null ? `${evidenceUnits}` : `${Math.round(readiness)}/100`}</strong><span>{readiness == null ? "Retained evidence units" : "Separate from score"}</span></article>
+      <article><small>Draft report</small><strong>{reportReady ? "Ready" : titleCase(rawReportStatus)}</strong><span>{pdfReady ? "PDF available" : markdownReady ? "Markdown available" : "Artifact pending"}</span></article>
+      <article><small>Human review</small><strong>{reviewLabel}</strong><span>{reviewApproved ? "Review recorded" : "Client delivery blocked"}</span></article>
     </div>
 
-    <div className={styles.reviewMetrics}>
-      <article><b>Needs attention</b><span>{metrics.attention}</span><small>Scored controls with risk or limitations</small></article>
-      <article><b>Verified strength</b><span>{metrics.verified}</span><small>Evidence-supported controls</small></article>
-      <article><b>Unscored context</b><span>{metrics.unscored}</span><small>Requires human evidence</small></article>
-      <article><b>Evidence units</b><span>{metrics.evidence}</span><small>{metrics.findings} findings · {metrics.gaps} gaps</small></article>
+    <div className={styles.actionBar} aria-label="Mid report actions">
+      <button type="button" disabled={!pdfReady} onClick={() => clickLegacyAction(["download draft pdf", "download pdf"])}>Download draft PDF</button>
+      <button type="button" disabled={!markdownReady} onClick={() => clickLegacyAction(["copy markdown"])}>Copy Markdown</button>
+      <button type="button" onClick={() => clickLegacyAction(["open human review", "human review"])}>Open human review</button>
     </div>
 
-    {priorities.length ? <div className={styles.priorityStrip}>
-      <b>Review first</b>
-      {priorities.map((section, index) => <button type="button" key={sectionKey(section, index)} onClick={() => {
-        const key = sectionKey(section, rows.indexOf(section));
-        setFilter("all");
-        setExpanded((current) => new Set(current).add(key));
-        window.setTimeout(() => document.querySelector(`[data-section-id="${CSS.escape(key)}"]`)?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
-      }}>
-        <span>{index + 1}</span>{section.label || section.id}<strong>{scoreLabel(section)}</strong>
-      </button>)}
-    </div> : null}
+    <section className={styles.priorityPanel} aria-label="Priority controls">
+      <div className={styles.sectionHeading}><div><small>REVIEW FIRST</small><h3>Highest-value controls</h3></div><span>{attentionCount} require review</span></div>
+      <div className={styles.priorityList}>{priority.map((section, index) => <button type="button" key={section.id || section.label} onClick={() => openPriority(section)}>
+        <span>{index + 1}</span><b>{section.label || titleCase(section.id)}</b><strong>{Math.round(Number(section.score))}/100</strong>
+      </button>)}</div>
+    </section>
 
-    <div className={styles.reviewToolbar}>
-      <div className={styles.filterGroup} role="group" aria-label="Filter assessment sections">
-        {(["all", "attention", "verified", "unscored"] as Filter[]).map((value) => <button
-          type="button"
-          key={value}
-          className={filter === value ? styles.activeFilter : ""}
-          aria-pressed={filter === value}
-          onClick={() => setFilter(value)}
-        >{value === "all" ? "All sections" : value === "attention" ? "Needs attention" : value === "verified" ? "Verified" : "Unscored context"}</button>)}
+    <details className={styles.scoreDetails}>
+      <summary><span><b>Score explanation</b><small>Current {score == null ? "pending" : `${Math.round(score)}/100`} · verified-fix scenario {projected == null ? "pending" : `${projected}/100`}</small></span><span aria-hidden="true">+</span></summary>
+      <p>{expressNote}</p>
+      <div className={styles.weightTable} role="table" aria-label="Weighted technical score">
+        <div className={styles.weightHead} role="row"><b>Control</b><b>Score</b><b>Weight</b><b>Points</b></div>
+        {rows.map((row) => <div role="row" key={row.section_id}><span>{row.label}</span><span>{row.score}</span><span>{row.weight}%</span><span>{row.weighted_points.toFixed(2)}</span></div>)}
       </div>
-      <div className={styles.expandActions}>
-        <button type="button" onClick={expandAttention}>Open attention areas</button>
-        <button type="button" onClick={() => setExpanded(new Set())}>Collapse all</button>
+      <p className={styles.disclosure}>Evidence-unit coverage{finite(coverage.percent) == null ? "" : ` is ${Math.round(Number(coverage.percent))}% and`} does not directly change the technical score. Projections require verified repair evidence and a new immutable snapshot assessment.</p>
+    </details>
+
+    <div className={styles.toolbar}>
+      <div className={styles.filterChips} role="group" aria-label="Filter technical controls">
+        {(["all", "attention", "verified"] as Filter[]).map((value) => <button type="button" key={value} aria-pressed={filter === value} className={filter === value ? styles.activeFilter : ""} onClick={() => setFilter(value)}>{value === "all" ? "All controls" : value === "attention" ? "Needs review" : "Verified strength"}</button>)}
       </div>
+      <button type="button" className={styles.collapseButton} onClick={() => setExpanded(new Set())}>Collapse all</button>
     </div>
 
-    {technical.length ? <div className={styles.reviewGroup}>
-      <div className={styles.reviewGroupHead}><h4>Scored technical controls</h4><span>{technical.length} shown</span></div>
-      <div className={styles.reviewCardList}>{technical.map((section) => {
-        const index = rows.indexOf(section);
-        const key = sectionKey(section, index);
-        return <ReviewCard key={key} section={section} itemKey={key} expanded={expanded.has(key)} onToggle={() => toggle(key)} />;
-      })}</div>
-    </div> : null}
+    <div className={styles.controlList}>{visible.map((section) => {
+      const key = String(section.id || section.label || "section");
+      return <ControlRow key={key} section={section} expanded={expanded.has(key)} onToggle={() => toggle(key)} />;
+    })}</div>
 
-    {context.length ? <div className={styles.reviewGroup}>
-      <div className={styles.reviewGroupHead}><h4>Human-context modules</h4><span>{context.length} shown · excluded from technical score</span></div>
-      <div className={styles.reviewCardList}>{context.map((section) => {
-        const index = rows.indexOf(section);
-        const key = sectionKey(section, index);
-        return <ReviewCard key={key} section={section} itemKey={key} expanded={expanded.has(key)} onToggle={() => toggle(key)} />;
-      })}</div>
-    </div> : null}
+    {context.length ? <details className={styles.contextPanel}>
+      <summary><span><b>Additional evidence requested</b><small>{context.length} human-context modules · excluded from technical score</small></span><span aria-hidden="true">+</span></summary>
+      <div className={styles.contextList}>{context.map((section) => <article key={section.id || section.label}><b>{section.label || titleCase(section.id)}</b><p>{section.summary || limitations(section)[0] || "Validated external context is required."}</p></article>)}</div>
+    </details> : null}
 
-    {!technical.length && !context.length ? <p className={styles.emptyReviewState}>No sections match the selected filter.</p> : null}
+    <p className={styles.safety}>Human review is required before approval or client delivery. NICO did not modify the assessed repository, and recommendations do not prove repairs were completed.</p>
   </section>;
 }

@@ -8,93 +8,99 @@ COMPONENT = ROOT / "apps" / "web" / "app" / "assessment" / "MidSectionReview.tsx
 SECTION_PORTAL = ROOT / "apps" / "web" / "app" / "MidSectionReviewPortal.tsx"
 SCORE_PORTAL = ROOT / "apps" / "web" / "app" / "MidScoreIntelligencePortal.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
-STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment.module.css"
+STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "midReview.module.css"
 
 
-def test_mid_review_workbench_replaces_oversized_section_cards_with_decision_controls() -> None:
+def test_mid_review_is_one_client_facing_decision_surface() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
-    assert "MID REVIEW WORKBENCH" in source
-    assert "Review the result by exception" in source
-    assert "Scored technical controls" in source
-    assert "Human-context modules" in source
-    assert "excluded from technical score" in source
-    assert "Needs attention" in source
-    assert "Verified strength" in source
-    assert "Unscored context" in source
-    assert "Open attention areas" in source
-    assert "Collapse all" in source
+    assert "NICO MID ASSESSMENT" in source
+    assert "Mid Assessment Review" in source
+    assert "Review the result by exception, not by scrolling" not in source
+    assert "Technical score" in source
+    assert "Evidence readiness" in source
+    assert "Draft report" in source
+    assert "Human review" in source
+    assert "Highest-value controls" in source
+    assert "Additional evidence requested" in source
 
 
-def test_mid_review_workbench_preserves_all_review_evidence_categories() -> None:
+def test_mid_review_uses_one_canonical_weighted_score_and_lifecycle_truth() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
-    assert "Evidence reviewed" in source
+    assert "weightedTotal === 100" in source
+    assert "rows.reduce((total, row) => total + row.score * row.weight / 100" in source
+    assert "pdfReady || markdownReady" in source
+    assert 'reportReady ? "Ready"' in source
+    assert 'reviewApproved ? "Approved" : "Required"' in source
+    assert "Client delivery blocked" in source
+    assert "verified-fix scenario" in source
+
+
+def test_mid_review_preserves_evidence_findings_limitations_and_scope() -> None:
+    source = COMPONENT.read_text(encoding="utf-8")
+
+    assert "Evidence" in source
     assert "Findings" in source
-    assert "Limitations and gaps" in source
-    assert "Scope and confidence" in source
-    assert "Next review action" in source
+    assert "Limitations" in source
+    assert "Scope" in source
     assert "direct_repository_proof" in source
     assert "missing_evidence_sources" in source
     assert "failed_evidence_tools" in source
     assert "scope_disclosures" in source
+    assert "Bandit did not provide accepted exact-snapshot evidence" in source
+    assert "Gitleaks did not provide accepted same-run history evidence" in source
 
 
-def test_mid_review_workbench_classifies_unscored_context_before_attention() -> None:
-    source = COMPONENT.read_text(encoding="utf-8")
-
-    unscored_position = source.index("if (isUnscored(section)) return \"neutral\"")
-    score_position = source.index("if (score != null && score < 60) return \"critical\"")
-    assert unscored_position < score_position
-    assert 'filter === "unscored"' in source
-    assert "rows.filter(isUnscored).length" in source
-    assert 'TECHNICAL_IDS.has(String(section.id || ""))' in source
-
-
-def test_mid_review_portal_reuses_single_shared_status_transport() -> None:
+def test_mid_review_portal_reuses_transport_and_hides_complete_legacy_surface() -> None:
     score_portal = SCORE_PORTAL.read_text(encoding="utf-8")
     section_portal = SECTION_PORTAL.read_text(encoding="utf-8")
+    layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'const MID_PAYLOAD_EVENT = "nico:mid-status-payload"' in score_portal
     assert "publishMidPayload(parsed)" in score_portal
-    assert 'const MID_PAYLOAD_EVENT = "nico:mid-status-payload"' in section_portal
+    assert "createPortal" not in score_portal
+    assert "return null" in score_portal
     assert "window.addEventListener(MID_PAYLOAD_EVENT, onPayload)" in section_portal
-    assert "window.fetch =" not in section_portal
-    assert "MID_RESPONSE_PATH" not in section_portal
-
-
-def test_mid_review_portal_hides_only_mid_grid_and_restores_fail_safe() -> None:
-    portal = SECTION_PORTAL.read_text(encoding="utf-8")
-    layout = LAYOUT.read_text(encoding="utf-8")
-
-    assert 'querySelector<HTMLElement>(".results-grid")' in portal
-    assert "originalGrid.hidden = true" in portal
-    assert "restoreOriginalGrids()" in portal
-    assert "grid.hidden = false" in portal
+    assert "hideLegacySurface(panel, mount)" in section_portal
+    assert "restoreLegacySurface()" in section_portal
+    assert "child.hidden = true" in section_portal
+    assert "element.hidden = false" in section_portal
+    assert "<MidSectionReview payload={payload} />" in section_portal
     assert 'import MidSectionReviewPortal from "./MidSectionReviewPortal"' in layout
-    assert "<MidSectionReviewPortal />" in layout
 
 
-def test_mid_review_workbench_has_mobile_and_accessible_presentation_contract() -> None:
+def test_mid_review_retains_report_and_human_review_actions() -> None:
+    source = COMPONENT.read_text(encoding="utf-8")
+
+    assert "Download draft PDF" in source
+    assert "Copy Markdown" in source
+    assert "Open human review" in source
+    assert "clickLegacyAction" in source
+    assert 'data-nico-mid-legacy-hidden="true"' in source
+
+
+def test_mid_review_is_compact_mobile_safe_and_accessible() -> None:
     component = COMPONENT.read_text(encoding="utf-8")
     css = STYLES.read_text(encoding="utf-8")
 
+    assert 'aria-label="Mid assessment review"' in component
     assert "aria-expanded={expanded}" in component
     assert 'role="group"' in component
     assert "aria-pressed={filter === value}" in component
-    assert 'aria-label="Mid assessment section review"' in component
     for class_name in (
-        ".sectionReview",
-        ".reviewMetrics",
-        ".priorityStrip",
-        ".reviewToolbar",
-        ".reviewGroup",
-        ".reviewCard",
-        ".reviewToggle",
-        ".reviewDetailGrid",
-        ".reviewList",
+        ".unifiedReview",
+        ".statusGrid",
+        ".actionBar",
+        ".priorityList",
+        ".filterChips",
+        ".controlRow",
+        ".detailGrid",
+        ".contextPanel",
     ):
         assert class_name in css
+    assert "env(safe-area-inset-bottom)" in css
+    assert "overflow-x: auto" in css
     assert "@media (max-width: 760px)" in css
     assert "@media (max-width: 520px)" in css
     assert "@media (prefers-reduced-motion: reduce)" in css
