@@ -8,6 +8,53 @@ const TIER_EVENT = "nico:assessment-tier-selected";
 const MID_PAYLOAD_EVENT = "nico:mid-status-payload";
 const MOUNT_ID = "nico-mid-unified-review-mount";
 const LEGACY_ATTRIBUTE = "data-nico-mid-legacy-hidden";
+const DURABLE_ARRAY_KEYS = new Set([
+  "sections",
+  "weighted_sections",
+  "evidence",
+  "findings",
+  "unavailable",
+  "missing_evidence_sources",
+  "failed_evidence_tools",
+  "scope_disclosures",
+]);
+const DURABLE_SCALAR_KEYS = new Set([
+  "pdf_base64",
+  "pdf",
+  "markdown",
+  "html",
+  "pdf_filename",
+  "pdf_sha256",
+  "report_id",
+  "run_id",
+  "repository",
+  "technical_score",
+  "evidence_readiness",
+  "evidence_readiness_score",
+  "final_report_score",
+  "reported_score",
+  "calculated_score",
+  "score",
+]);
+const MONOTONIC_TRUE_KEYS = new Set([
+  "pdf_available",
+  "markdown_available",
+  "html_available",
+  "pdf_integrity_verified",
+  "report_artifact_rehydrated",
+  "score_match",
+]);
+const MONOTONIC_STATUS_KEYS = new Set([
+  "report_generation_status",
+  "draft_generation_status",
+  "human_review_status",
+  "approval_request_status",
+]);
+const MONOTONIC_STATUS_PARENTS = new Set([
+  "approval_request",
+  "report_artifact_status",
+  "mid_report",
+]);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -34,19 +81,56 @@ function isMeaningful(value: unknown): boolean {
   return true;
 }
 
-function mergePayloadRecord(previous: JsonRecord, incoming: JsonRecord): JsonRecord {
+function normalizedStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function statusRank(value: unknown): number {
+  const status = normalizedStatus(value);
+  if (!status) return 0;
+  if (["queued", "pending", "not_started", "requested", "waiting"].includes(status)) return 1;
+  if (["running", "in_progress", "generating", "processing"].includes(status)) return 2;
+  if (["blocked", "cancelled", "declined", "error", "failed", "rejected"].includes(status)) return 3;
+  if (["available", "complete", "completed", "generated", "ready", "success", "succeeded"].includes(status)) return 4;
+  if (["accepted", "approved"].includes(status)) return 5;
+  return 0;
+}
+
+function isMonotonicStatusPath(path: string[]): boolean {
+  const key = path[path.length - 1] || "";
+  if (MONOTONIC_STATUS_KEYS.has(key)) return true;
+  const parent = path[path.length - 2] || "";
+  return key === "status" && MONOTONIC_STATUS_PARENTS.has(parent);
+}
+
+function mergePayloadRecord(previous: JsonRecord, incoming: JsonRecord, path: string[] = []): JsonRecord {
   const output: JsonRecord = {...previous};
   for (const [key, incomingValue] of Object.entries(incoming)) {
     const previousValue = previous[key];
+    const nextPath = [...path, key];
     if (isRecord(previousValue) && isRecord(incomingValue)) {
-      output[key] = mergePayloadRecord(previousValue, incomingValue);
+      output[key] = mergePayloadRecord(previousValue, incomingValue, nextPath);
       continue;
     }
     if (Array.isArray(incomingValue)) {
-      if (incomingValue.length || !Array.isArray(previousValue) || !previousValue.length) output[key] = incomingValue;
+      output[key] = incomingValue.length || !DURABLE_ARRAY_KEYS.has(key) || !Array.isArray(previousValue)
+        ? incomingValue
+        : previousValue;
       continue;
     }
-    if (isMeaningful(incomingValue) || !isMeaningful(previousValue)) output[key] = incomingValue;
+    if (MONOTONIC_TRUE_KEYS.has(key) && previousValue === true && incomingValue !== true) {
+      output[key] = previousValue;
+      continue;
+    }
+    if (isMonotonicStatusPath(nextPath) && statusRank(previousValue) > statusRank(incomingValue)) {
+      output[key] = previousValue;
+      continue;
+    }
+    if (DURABLE_SCALAR_KEYS.has(key) && !isMeaningful(incomingValue) && isMeaningful(previousValue)) {
+      output[key] = previousValue;
+      continue;
+    }
+    output[key] = incomingValue;
   }
   return output;
 }
