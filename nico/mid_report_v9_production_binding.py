@@ -107,7 +107,13 @@ def _appendix_pdf(payload: dict[str, Any]) -> bytes:
     for item in visuals.get("score_contribution", []):
         score_rows.append([p(item.get("label")), p(item.get("source_score")), p(item.get("presented_score")), p(item.get("deduction_total"))])
 
-    story: list[Any] = [p(labels["visuals"], title), p(labels["review"], h2), tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]), PageBreak()]
+    story: list[Any] = [
+        p(labels["visuals"], title),
+        p(labels["review"], h2),
+        p(labels["score"], h2),
+        tab(score_rows, [3.5*inch, 1*inch, 1*inch, 1*inch]),
+        PageBreak(),
+    ]
 
     distribution_rows = [[p("Metric"), p("Value"), p("Count")]]
     for metric in ("status_distribution", "confidence_distribution", "severity_distribution", "finding_category_distribution"):
@@ -174,11 +180,14 @@ def wrap_mid_v9_pdf(previous: Callable[[dict[str, Any]], bytes]) -> Callable[[di
         writer.write(output)
         return output.getvalue()
     setattr(wrapped, _PATCH_MARKER, True)
+    setattr(wrapped, "_nico_previous", previous)
     return wrapped
 
 
 def install_mid_report_v9_production_binding() -> dict[str, Any]:
     from nico import mid_assessment_report as report_module
+    from nico import mid_report_professional_v7 as v8
+
     if getattr(report_module._pdf, _PATCH_MARKER, False):
         return {"status": "already_installed", "version": VERSION}
     current_payload = report_module._report_payload
@@ -187,8 +196,13 @@ def install_mid_report_v9_production_binding() -> dict[str, Any]:
     def payload_v9(record: dict[str, Any], packet: dict[str, Any], identity: dict[str, Any], generated_at: str) -> dict[str, Any]:
         return enrich_mid_v9(current_payload(record, packet, identity, generated_at))
 
+    wrapped_pdf = wrap_mid_v9_pdf(current_pdf)
     report_module._report_payload = payload_v9
-    report_module._pdf = wrap_mid_v9_pdf(current_pdf)
+    report_module._pdf = wrapped_pdf
+    # Preserve the historical renderer identity contract used by direct and
+    # production acceptance tests: both module references must point to the
+    # same final active renderer after the last binding layer is installed.
+    v8._premium_pdf = wrapped_pdf
     return {"status": "installed", "version": VERSION, "minimum_pages": 35, "maximum_pages": 50, "visuals": 12, "human_review_required": True}
 
 
