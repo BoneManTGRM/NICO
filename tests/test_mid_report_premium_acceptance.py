@@ -6,7 +6,8 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from nico.mid_report_professional_v6 import _enhance, _pdf
+from nico.mid_report_professional_v7 import _premium_enhance as _enhance
+from nico.mid_report_professional_v7 import _premium_pdf as _pdf
 
 
 V4_TEST = Path(__file__).with_name("test_mid_report_professional_v4.py")
@@ -46,8 +47,6 @@ def test_mid_premium_report_has_substantive_depth_when_fixture_evidence_supports
     result = _enhance(_fixture())
     reader = PdfReader(io.BytesIO(_pdf(result)))
 
-    # This is intentionally a release-blocking acceptance test. The previous
-    # compact eight-page renderer must not satisfy the premium Mid contract.
     assert 28 <= len(reader.pages) <= 50
     assert all(len(" ".join((page.extract_text() or "").split())) >= 180 for page in reader.pages)
 
