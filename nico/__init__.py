@@ -47,6 +47,7 @@ from nico.mid_report_v5_compat import install_mid_report_v5_compat
 from nico.mid_report_v5_hardening import install_mid_report_v5_hardening
 from nico.mid_report_professional_v6 import install_mid_report_professional_v6
 from nico.mid_report_professional_v7 import install_mid_report_professional_v7
+from nico.mid_report_professional_v7_runtime_fix import install_mid_report_professional_v7_runtime_fix
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
 from nico.complexity_score_integrity_patch import install_complexity_score_integrity_patch
@@ -162,7 +163,7 @@ install_mid_report_professional_v5()
 install_mid_report_v5_compat()
 install_mid_report_v5_hardening()
 install_mid_report_professional_v6()
-# Keep v7 last so the premium Mid PDF implementation owns the final export path.
 install_mid_report_professional_v7()
+install_mid_report_professional_v7_runtime_fix()
 
 __version__ = "0.1.0"
