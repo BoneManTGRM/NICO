@@ -122,7 +122,7 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
         ("Evidence Funnel", "evidence availability, analyzer execution, parsing acceptance, scoring acceptance, and finding disposition", None, None),
         ("Risk Matrix", "likelihood, technical impact, business exposure, verification confidence, and repair priority", None, None),
         ("Transparent Weighted Technical Scorecard", "control weighting, explicit deductions, score constraints, verified strengths, and sensitivity boundaries", None, None),
-        ("Primary Score Constraints", "the controls currently limiting the weighted technical result and the evidence needed to change it", None, None),
+        ("Primary score constraints", "the controls currently limiting the weighted technical result and the evidence needed to change it", None, None),
         ("Architecture and System Design", "module boundaries, dependency direction, circularity, coupling, service boundaries, and design resilience", "architecture_debt", None),
         ("Architecture Boundary and Trust Map", "runtime boundaries, trust transitions, external systems, privileged paths, and evidence limitations", "architecture_debt", None),
         ("Dependency and Supply-Chain Topology", "dependency manifests, lockfiles, transitive exposure, update constraints, and advisory reachability", "dependency_health", None),
