@@ -5,6 +5,7 @@ import {useEffect} from "react";
 // Match only an actually empty score denominator. Numeric values such as 85/100
 // must never be rewritten as NOT SCORED.
 const EMPTY_SCORE = /(?:^|\s*·\s*)(?:null|undefined|nan)?\s*\/100\s*$/i;
+const RAW_RUN_ID = /^(express_run_|midrun_|mid_run_|full_run_)[a-z0-9_-]+$/i;
 
 function textKey(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase().replace(/[.;:]+$/, "");
@@ -17,6 +18,28 @@ function normalizeScoreLabels(root: ParentNode) {
     const status = current.replace(EMPTY_SCORE, "").replace(/·\s*$/, "").trim();
     const replacement = status ? `${status} · NOT SCORED` : "NOT SCORED";
     if (current !== replacement) element.textContent = replacement;
+  });
+}
+
+function friendlyTierLabel(runId: string) {
+  if (runId.toLowerCase().startsWith("express_run_")) return "Express Assessment";
+  if (runId.toLowerCase().startsWith("full_run_")) return "Full Assessment";
+  return "Mid Assessment";
+}
+
+function normalizeRunIdentity(root: ParentNode) {
+  root.querySelectorAll<HTMLElement>("h1, h2, h3, p, span").forEach((element) => {
+    const current = element.textContent?.trim() || "";
+    if (!RAW_RUN_ID.test(current)) return;
+
+    element.style.overflowWrap = "anywhere";
+    element.style.wordBreak = "break-word";
+
+    if (element.matches("h1, h2, h3")) {
+      element.dataset.technicalRunId = current;
+      element.title = `Technical run ID: ${current}`;
+      element.textContent = `${friendlyTierLabel(current)} · Active authorized repository`;
+    }
   });
 }
 
@@ -53,6 +76,7 @@ function collapseMobileDetail(root: ParentNode) {
 
 function normalizePresentation() {
   normalizeScoreLabels(document);
+  normalizeRunIdentity(document);
   removeDuplicateDetail(document);
   collapseMobileDetail(document);
 }
