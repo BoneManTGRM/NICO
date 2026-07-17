@@ -46,7 +46,6 @@ from nico.mid_report_professional_v5 import install_mid_report_professional_v5
 from nico.mid_report_v5_compat import install_mid_report_v5_compat
 from nico.mid_report_v5_hardening import install_mid_report_v5_hardening
 from nico.mid_report_professional_v6 import install_mid_report_professional_v6
-from nico.mid_report_professional_v7 import install_mid_report_professional_v7
 from nico.mid_report_professional_v7_runtime_fix import install_mid_report_professional_v7_runtime_fix
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.repository_input_normalization_compat import install_repository_input_normalization
@@ -163,7 +162,8 @@ install_mid_report_professional_v5()
 install_mid_report_v5_compat()
 install_mid_report_v5_hardening()
 install_mid_report_professional_v6()
-install_mid_report_professional_v7()
+# Bind premium v7 only at the production report-module boundary. Calling the
+# legacy v7 installer here mutates v6._enhance and creates recursive payloads.
 install_mid_report_professional_v7_runtime_fix()
 
 __version__ = "0.1.0"
