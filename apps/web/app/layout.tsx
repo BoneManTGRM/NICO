@@ -7,6 +7,7 @@ import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
+import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
 import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
@@ -34,6 +35,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en">
       <body>
         <MidWorkspaceProvider>
+          <AssessmentRunStateGuard />
           <AssessmentStatusResilience />
           <AssessmentSavedMidRunGuard />
           <AssessmentStatusOutcomeGuard />
