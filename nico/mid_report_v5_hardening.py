@@ -153,16 +153,8 @@ def _safe_primary_constraints(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _dedupe_section_lists(section: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(section)
-    seen: set[str] = set()
     for field in _LIST_FIELDS:
-        retained: list[str] = []
-        for text in _texts(output.get(field)):
-            key = text.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            retained.append(text)
-        output[field] = retained
+        output[field] = _texts(output.get(field))
     return output
 
 
