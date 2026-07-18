@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_MARKER = "_nico_express_async_contract_metadata_v4"
+_MARKER = "_nico_express_async_contract_metadata_v5"
 
 
 def install_express_async_contract_metadata() -> dict[str, Any]:
@@ -10,9 +10,11 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
     from nico.express_report_generation_recovery import install_express_report_generation_recovery
     from nico.express_final_gate_checkpoint_patch import install_express_final_gate_checkpoint_patch
     from nico.express_backend_final_gate_truth import install_express_backend_final_gate_truth
+    from nico.express_evidence_bundle_fast_path import install_express_evidence_bundle_fast_path
 
     report_recovery = install_express_report_generation_recovery()
     final_gate_checkpoint = install_express_final_gate_checkpoint_patch()
+    evidence_bundle_fast_path = install_express_evidence_bundle_fast_path()
     backend_final_gate = install_express_backend_final_gate_truth()
     current = express_async_api.register_express_async_routes
     if getattr(current, _MARKER, False):
@@ -20,6 +22,7 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
             "status": "already_installed",
             "report_generation_recovery": report_recovery,
             "final_gate_checkpoint": final_gate_checkpoint,
+            "evidence_bundle_fast_path": evidence_bundle_fast_path,
             "backend_final_gate": backend_final_gate,
         }
 
@@ -35,6 +38,7 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
                 "progress_source": "backend_stage_records",
                 "report_generation_recovery": report_recovery,
                 "final_gate_checkpoint": final_gate_checkpoint,
+                "evidence_bundle_fast_path": evidence_bundle_fast_path,
                 "backend_final_gate": backend_final_gate,
             }
         )
@@ -48,6 +52,7 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
         "staged_progress_available": True,
         "report_generation_recovery": report_recovery,
         "final_gate_checkpoint": final_gate_checkpoint,
+        "evidence_bundle_fast_path": evidence_bundle_fast_path,
         "backend_final_gate": backend_final_gate,
     }
 
