@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from nico.express_final_gate_completion_patch import normalize_express_completion
+import pytest
+
+from nico.express_final_gate_completion_patch import (
+    normalize_assessment_completion,
+    normalize_express_completion,
+)
 
 
-def _complete_payload() -> dict:
+def _complete_payload(tier: str = "express") -> dict:
     return {
         "status": "complete",
-        "assessment_type": "express",
+        "assessment_type": tier,
         "repository": "owner/repo",
         "sections": [{"id": "architecture", "score": 80}],
         "maturity_signal": {"score": 80},
@@ -20,19 +25,17 @@ def _complete_payload() -> dict:
     }
 
 
-def test_delivery_block_does_not_convert_completed_assessment_to_failed_run() -> None:
-    before = _complete_payload()
+@pytest.mark.parametrize("tier", ["express", "mid", "full"])
+def test_delivery_block_does_not_convert_completed_assessment_to_failed_run(tier: str) -> None:
+    before = _complete_payload(tier)
     after = {
         **before,
         "status": "blocked",
-        "client_acceptance": {
-            "status": "blocked_missing_evidence",
-            "client_delivery_allowed": False,
-        },
+        "client_acceptance": {"status": "blocked_missing_evidence", "client_delivery_allowed": False},
         "report_quality_guards": {"status": "review_required"},
     }
 
-    result = normalize_express_completion(before, after)
+    result = normalize_assessment_completion(before, after)
 
     assert result["status"] == "complete"
     assert result["current_stage"] == "complete"
@@ -41,27 +44,32 @@ def test_delivery_block_does_not_convert_completed_assessment_to_failed_run() ->
     assert result["delivery_status"] == "blocked_pending_human_review"
     assert result["client_delivery_allowed"] is False
     assert result["human_review_required"] is True
-    assert result["client_acceptance"]["status"] == "blocked_missing_evidence"
-    assert result["express_completion"]["status"] == "complete_pending_human_review"
+    assert result["assessment_completion"]["tier"] == tier
+    assert result["assessment_completion"]["status"] == "complete_pending_human_review"
+    assert ("express_completion" in result) is (tier == "express")
 
 
-def test_missing_report_formats_remains_blocked() -> None:
+def test_backward_compatible_express_alias_uses_canonical_contract() -> None:
     before = _complete_payload()
+    result = normalize_express_completion(before, {**before, "status": "blocked"})
+    assert result["assessment_completion"] == result["express_completion"]
+
+
+@pytest.mark.parametrize("tier", ["express", "mid", "full"])
+def test_missing_report_formats_remains_blocked_for_every_tier(tier: str) -> None:
+    before = _complete_payload(tier)
     before["reports"] = {"markdown": "# Report", "html": "<h1>Report</h1>"}
-    after = {**before, "status": "blocked"}
-
-    result = normalize_express_completion(before, after)
-
+    result = normalize_assessment_completion(before, {**before, "status": "blocked"})
     assert result["status"] == "blocked"
-    assert result["express_completion"]["status"] == "blocked_missing_completion_evidence"
-    assert result["express_completion"]["report_formats_ready"] is False
+    assert result["assessment_completion"]["status"] == "blocked_missing_completion_evidence"
+    assert result["assessment_completion"]["report_formats_ready"] is False
 
 
 def test_hashed_artifact_bundle_can_prove_formats_after_safe_payload_reduction() -> None:
-    before = _complete_payload()
+    before = _complete_payload("mid")
     after = {
         "status": "blocked",
-        "assessment_type": "express",
+        "assessment_type": "mid",
         "sections": before["sections"],
         "maturity_signal": before["maturity_signal"],
         "evidence_artifact_bundle": {
@@ -74,22 +82,23 @@ def test_hashed_artifact_bundle_can_prove_formats_after_safe_payload_reduction()
         },
         "client_acceptance": {"status": "ready_for_human_signoff"},
     }
-
-    result = normalize_express_completion(before, after)
-
+    result = normalize_assessment_completion(before, after)
     assert result["status"] == "complete"
-    assert result["express_completion"]["report_formats_ready"] is True
-    assert result["client_ready"] is False
+    assert result["assessment_completion"]["report_formats_ready"] is True
+    assert "express_completion" not in result
 
 
 def test_missing_score_or_sections_cannot_be_inferred_as_completion() -> None:
-    before = _complete_payload()
+    before = _complete_payload("full")
     before.pop("maturity_signal")
     before["sections"] = []
-    after = {**before, "status": "blocked"}
-
-    result = normalize_express_completion(before, after)
-
+    result = normalize_assessment_completion(before, {**before, "status": "blocked"})
     assert result["status"] == "blocked"
-    assert result["express_completion"]["score_ready"] is False
-    assert result["express_completion"]["sections_ready"] is False
+    assert result["assessment_completion"]["score_ready"] is False
+    assert result["assessment_completion"]["sections_ready"] is False
+
+
+def test_unknown_tier_is_not_reclassified() -> None:
+    before = _complete_payload("custom")
+    after = {**before, "status": "blocked"}
+    assert normalize_assessment_completion(before, after) == after
