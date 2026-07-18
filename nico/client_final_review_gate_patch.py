@@ -163,3 +163,6 @@ def _patch_client_acceptance_status() -> None:
 def install_client_final_review_gate_patch() -> None:
     _patch_client_acceptance_attachment()
     _patch_client_acceptance_status()
+    from nico.hosted_truth_delivery_gate import patch_client_acceptance_gate_for_report_truth
+
+    patch_client_acceptance_gate_for_report_truth()

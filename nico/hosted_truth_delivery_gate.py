@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-_PATCH_MARKER = "_nico_hosted_truth_completion_bound_v2"
+_PATCH_MARKER = "_nico_hosted_truth_completion_bound_v3"
 _STORAGE_PATCH_MARKER = "_nico_assessment_storage_truth_bound_v1"
 
 
@@ -126,13 +126,12 @@ def _patch_assessment_storage_truth(api_main: Any) -> None:
 
 
 def patch_client_acceptance_gate_for_report_truth() -> None:
-    """Bind the final completion wrapper to every hosted function reference.
+    """Bind the final completion wrapper to the current production gate.
 
-    ``nico.api.main`` imports ``attach_client_acceptance_gate`` directly. Updating
-    only ``nico.client_acceptance.attach_client_acceptance_gate`` leaves that
-    already-imported reference stale, which is the path used by the async Express
-    runner. Bind both references to the same wrapper so completed report, score,
-    and section evidence cannot be converted back to a blocked 96% run.
+    This function is intentionally safe to call again after all other installers.
+    Later runtime patches mutate ``nico.client_acceptance`` first, while the API
+    module can retain an older directly imported reference. Re-entry therefore
+    wraps the current module function and then synchronizes the API reference.
     """
 
     from nico import client_acceptance
@@ -141,22 +140,20 @@ def patch_client_acceptance_gate_for_report_truth() -> None:
 
     _patch_assessment_storage_truth(api_main)
 
-    current = api_main.attach_client_acceptance_gate
+    current = client_acceptance.attach_client_acceptance_gate
     if getattr(current, _PATCH_MARKER, False):
-        client_acceptance.attach_client_acceptance_gate = current
+        api_main.attach_client_acceptance_gate = current
         return
 
-    original = getattr(client_acceptance, "_nico_original_attach_client_acceptance_gate", None)
-    if original is None:
-        original = current
-        client_acceptance._nico_original_attach_client_acceptance_gate = original
+    if not hasattr(client_acceptance, "_nico_original_attach_client_acceptance_gate"):
+        client_acceptance._nico_original_attach_client_acceptance_gate = current
 
     def attach_client_acceptance_gate_with_report_truth(result: dict[str, Any]) -> dict[str, Any]:
-        accepted = original(result)
+        accepted = current(result)
         gated = apply_final_hosted_truth_gate(accepted)
         return normalize_assessment_completion(accepted, gated)
 
     setattr(attach_client_acceptance_gate_with_report_truth, _PATCH_MARKER, True)
-    setattr(attach_client_acceptance_gate_with_report_truth, "_nico_previous", original)
+    setattr(attach_client_acceptance_gate_with_report_truth, "_nico_previous", current)
     client_acceptance.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth
     api_main.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth
