@@ -21,19 +21,19 @@ def test_patch_rebinds_both_module_and_api_main_references() -> None:
     source = GATE.read_text(encoding="utf-8")
 
     assert "from nico.api import main as api_main" in source
-    assert "current = api_main.attach_client_acceptance_gate" in source
+    assert "current = client_acceptance.attach_client_acceptance_gate" in source
     assert "client_acceptance.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth" in source
     assert "api_main.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth" in source
     assert "normalize_assessment_completion(accepted, gated)" in source
 
 
-def test_binding_is_idempotent_and_preserves_original_gate() -> None:
+def test_binding_is_idempotent_and_preserves_current_gate() -> None:
     source = GATE.read_text(encoding="utf-8")
 
-    assert '_PATCH_MARKER = "_nico_hosted_truth_completion_bound_v2"' in source
+    assert '_PATCH_MARKER = "_nico_hosted_truth_completion_bound_v3"' in source
     assert "if getattr(current, _PATCH_MARKER, False)" in source
-    assert 'client_acceptance._nico_original_attach_client_acceptance_gate = original' in source
-    assert 'setattr(attach_client_acceptance_gate_with_report_truth, "_nico_previous", original)' in source
+    assert 'client_acceptance._nico_original_attach_client_acceptance_gate = current' in source
+    assert 'setattr(attach_client_acceptance_gate_with_report_truth, "_nico_previous", current)' in source
 
 
 def test_assessment_storage_uses_actual_terminal_status_and_run_identity() -> None:
