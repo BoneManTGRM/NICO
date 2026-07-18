@@ -2,22 +2,25 @@ from __future__ import annotations
 
 from typing import Any
 
-_MARKER = "_nico_express_async_contract_metadata_v3"
+_MARKER = "_nico_express_async_contract_metadata_v4"
 
 
 def install_express_async_contract_metadata() -> dict[str, Any]:
     from nico import express_async_api
     from nico.express_report_generation_recovery import install_express_report_generation_recovery
     from nico.express_final_gate_checkpoint_patch import install_express_final_gate_checkpoint_patch
+    from nico.express_backend_final_gate_truth import install_express_backend_final_gate_truth
 
     report_recovery = install_express_report_generation_recovery()
     final_gate_checkpoint = install_express_final_gate_checkpoint_patch()
+    backend_final_gate = install_express_backend_final_gate_truth()
     current = express_async_api.register_express_async_routes
     if getattr(current, _MARKER, False):
         return {
             "status": "already_installed",
             "report_generation_recovery": report_recovery,
             "final_gate_checkpoint": final_gate_checkpoint,
+            "backend_final_gate": backend_final_gate,
         }
 
     def register_with_contract_metadata(app):
@@ -32,6 +35,7 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
                 "progress_source": "backend_stage_records",
                 "report_generation_recovery": report_recovery,
                 "final_gate_checkpoint": final_gate_checkpoint,
+                "backend_final_gate": backend_final_gate,
             }
         )
         return result
@@ -44,6 +48,7 @@ def install_express_async_contract_metadata() -> dict[str, Any]:
         "staged_progress_available": True,
         "report_generation_recovery": report_recovery,
         "final_gate_checkpoint": final_gate_checkpoint,
+        "backend_final_gate": backend_final_gate,
     }
 
 
