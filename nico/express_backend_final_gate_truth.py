@@ -70,13 +70,20 @@ def _completion_evidence(result: dict[str, Any]) -> dict[str, Any]:
 def reconcile_express_backend_completion(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(after if isinstance(after, dict) else {})
     source = before if isinstance(before, dict) else {}
+
+    tier = str(
+        output.get("assessment_type")
+        or output.get("service_tier")
+        or source.get("assessment_type")
+        or source.get("service_tier")
+        or "express"
+    ).lower()
+    if tier != "express":
+        return output
+
     for field in _PRESERVE_FIELDS:
         if not _nonempty(output.get(field)) and _nonempty(source.get(field)):
             output[field] = deepcopy(source[field])
-
-    tier = str(output.get("assessment_type") or output.get("service_tier") or source.get("assessment_type") or "express").lower()
-    if tier != "express":
-        return output
 
     evidence = _completion_evidence(output)
     complete = evidence["report_formats_ready"] and evidence["sections_ready"] and evidence["score_ready"]
