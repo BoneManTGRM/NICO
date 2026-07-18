@@ -5,6 +5,7 @@ import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
+import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
@@ -45,6 +46,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentExpressRecoveryGuard />
           <AssessmentMidLiveStatusTransport />
           <AssessmentProgressIntegrityGuard />
+          <AssessmentFinalGateAuthoritativeGuard />
           <MidScoreIntelligencePortal />
           <MidSectionReviewPortal />
           <AssessmentApiTransportBridge />
