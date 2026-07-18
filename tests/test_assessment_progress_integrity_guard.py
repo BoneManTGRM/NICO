@@ -43,7 +43,7 @@ def test_backend_completion_contract_overrides_stale_browser_block() -> None:
     assert "stale browser-side" in source
 
 
-def test_completed_projection_removes_false_stall_and_marks_single_complete_step() -> None:
+def test_completed_projection_removes_legacy_false_stall_and_marks_single_complete_step() -> None:
     source = GUARD.read_text(encoding="utf-8")
 
     assert 'code === "assessment_final_gate_stalled"' in source
@@ -53,18 +53,29 @@ def test_completed_projection_removes_false_stall_and_marks_single_complete_step
     assert 'output.delivery_status = "blocked_pending_human_review"' in source
 
 
-def test_final_gate_without_required_evidence_is_bounded_not_infinite() -> None:
+def test_browser_poll_threshold_is_diagnostic_and_never_terminalizes_run() -> None:
     source = GUARD.read_text(encoding="utf-8")
 
     assert "FINAL_GATE_MAX_POLLS = 20" in source
     assert "state.finalGatePolls += 1" in source
-    assert 'output.status = "blocked"' in source
-    assert 'output.current_stage = "recovery_required"' in source
-    assert 'code: "assessment_final_gate_stalled"' in source
-    assert 'duplicate_start_allowed: false' in source
+    assert "return waitingProjection(payload, state, tier)" in source
+    assert 'code: "assessment_final_gate_waiting"' in source
+    assert 'status: "running"' in source
+    assert 'browser_terminalization_forbidden: true' in source
+    assert 'recovery_required: false' in source
+    assert 'output.status = "blocked"' not in source
+    assert 'output.current_stage = "recovery_required"' not in source
+    assert 'output.recovery_path = "/operations/recovery"' not in source
+
+
+def test_waiting_projection_preserves_backend_truth_and_exact_run_identity() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+
+    assert "const output = structuredClone(payload)" in source
+    assert 'output.duplicate_start_allowed = false' in source
+    assert 'exact_run_terminal_evidence: false' in source
     assert 'terminal_state_written: false' in source
-    assert 'output.recovery_path = "/operations/recovery"' in source
-    assert "if (existingIndex >= 0) progress[existingIndex] = blocked" in source
+    assert "Only a\n  // backend response with durable exact-run terminal evidence" in source
 
 
 def test_progress_guard_is_outer_to_existing_status_normalizers() -> None:
