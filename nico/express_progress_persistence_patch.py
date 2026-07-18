@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable
 
-EXPRESS_PROGRESS_PERSISTENCE_VERSION = "nico.express_progress_persistence.v2"
+EXPRESS_PROGRESS_PERSISTENCE_VERSION = "nico.express_progress_persistence.v3"
 _RECORD_MARKER = "_nico_express_progress_record_v1"
 _STATUS_MARKER = "_nico_express_progress_status_v1"
 _PROGRESS_COLLECTION = "express_run_progress"
@@ -109,6 +109,9 @@ def install_express_progress_persistence() -> dict[str, Any]:
         setattr(status_with_independent_progress, "_nico_previous", current_status)
         api.express_assessment_status = status_with_independent_progress
 
+    from nico.express_repository_stage_watchdog import install_express_repository_stage_watchdog
+
+    watchdog = install_express_repository_stage_watchdog()
     return {
         "status": "installed",
         "version": EXPRESS_PROGRESS_PERSISTENCE_VERSION,
@@ -116,6 +119,7 @@ def install_express_progress_persistence() -> dict[str, Any]:
         "report_record_overwrite_can_reset_progress": False,
         "terminal_success_forces_100_percent": True,
         "tenant_scope_failures_are_never_overlaid": True,
+        "repository_stage_watchdog": watchdog,
         "human_review_required": True,
         "client_ready": False,
     }
