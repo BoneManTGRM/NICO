@@ -66,14 +66,15 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def patch_client_acceptance_gate_for_report_truth() -> None:
-    """Patch the last function used by POST /assessment/github.
+    """Patch the final hosted gate without conflating run completion and delivery.
 
-    This avoids relying only on final_report_consistency monkey patching. The API
-    route calls attach_client_acceptance_gate after finalization, so this is the
-    final stable hook before the result is stored and returned to the frontend.
+    Express can finish automated evidence collection, scoring, and artifact
+    generation while remaining blocked from client delivery pending human review.
+    Missing report formats, score, or sections still fail closed.
     """
 
     from nico import client_acceptance
+    from nico.express_final_gate_completion_patch import normalize_express_completion
 
     original = getattr(client_acceptance, "_nico_original_attach_client_acceptance_gate", None)
     if original is None:
@@ -81,6 +82,8 @@ def patch_client_acceptance_gate_for_report_truth() -> None:
         client_acceptance._nico_original_attach_client_acceptance_gate = original
 
     def attach_client_acceptance_gate_with_report_truth(result: dict[str, Any]) -> dict[str, Any]:
-        return apply_final_hosted_truth_gate(original(result))
+        accepted = original(result)
+        gated = apply_final_hosted_truth_gate(accepted)
+        return normalize_express_completion(accepted, gated)
 
     client_acceptance.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth
