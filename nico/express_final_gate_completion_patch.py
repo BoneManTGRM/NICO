@@ -5,12 +5,18 @@ from typing import Any, Callable
 
 import nico.client_acceptance as client_acceptance
 
-PATCH_VERSION = "nico.express_final_gate_completion.v1"
-_PATCH_MARKER = "_nico_express_final_gate_completion_v1"
+PATCH_VERSION = "nico.cross_tier_final_gate_completion.v2"
+_PATCH_MARKER = "_nico_cross_tier_final_gate_completion_v2"
+SUPPORTED_TIERS = {"express", "mid", "full"}
 
 
 def _record(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _tier(result: dict[str, Any]) -> str:
+    raw = result.get("assessment_type") or result.get("service_tier") or "express"
+    return str(raw).strip().lower()
 
 
 def _artifact_available(bundle: dict[str, Any], name: str) -> bool:
@@ -21,13 +27,9 @@ def _artifact_available(bundle: dict[str, Any], name: str) -> bool:
 
 def _report_formats_ready(result: dict[str, Any]) -> bool:
     reports = _record(result.get("reports"))
-    direct = all(
-        bool(str(reports.get(name) or "").strip())
-        for name in ("markdown", "html", "pdf_base64")
-    )
+    direct = all(bool(str(reports.get(name) or "").strip()) for name in ("markdown", "html", "pdf_base64"))
     if direct:
         return True
-
     bundle = _record(result.get("evidence_artifact_bundle"))
     return all(_artifact_available(bundle, name) for name in ("markdown", "html", "pdf"))
 
@@ -47,27 +49,20 @@ def _sections_ready(result: dict[str, Any]) -> bool:
     return isinstance(sections, list) and any(isinstance(item, dict) for item in sections)
 
 
-def normalize_express_completion(
-    before_gate: dict[str, Any],
-    after_gate: dict[str, Any],
-) -> dict[str, Any]:
-    """Keep automated completion distinct from approval and delivery readiness.
-
-    A report-quality or client-acceptance gate may block delivery, but it must not
-    convert a successfully generated, scored Express assessment into a failed run.
-    Missing artifacts, score, or sections still fail closed.
-    """
+def normalize_assessment_completion(before_gate: dict[str, Any], after_gate: dict[str, Any]) -> dict[str, Any]:
+    """Separate automated completion from approval and delivery for every paid tier."""
 
     output = deepcopy(after_gate)
-    if str(before_gate.get("assessment_type") or before_gate.get("service_tier") or "express").lower() != "express":
+    tier = _tier(before_gate) if _tier(before_gate) in SUPPORTED_TIERS else _tier(output)
+    if tier not in SUPPORTED_TIERS:
         return output
 
     formats_ready = _report_formats_ready(output) or _report_formats_ready(before_gate)
     score_ready = _score_ready(output) or _score_ready(before_gate)
     sections_ready = _sections_ready(output) or _sections_ready(before_gate)
-
     completion = {
         "version": PATCH_VERSION,
+        "tier": tier,
         "report_formats_ready": formats_ready,
         "score_ready": score_ready,
         "sections_ready": sections_ready,
@@ -77,7 +72,11 @@ def normalize_express_completion(
 
     if not (formats_ready and score_ready and sections_ready):
         completion["status"] = "blocked_missing_completion_evidence"
-        output["express_completion"] = completion
+        output["assessment_completion"] = completion
+        if tier == "express":
+            output["express_completion"] = completion
+        else:
+            output.pop("express_completion", None)
         output["human_review_required"] = True
         output["client_ready"] = False
         return output
@@ -85,6 +84,13 @@ def normalize_express_completion(
     gate = _record(output.get("client_acceptance"))
     quality = _record(output.get("report_quality_guards"))
     original_status = str(output.get("status") or before_gate.get("status") or "").lower()
+    completion.update({
+        "status": "complete_pending_human_review",
+        "source_status": original_status or "unknown",
+        "client_acceptance_status": str(gate.get("status") or "pending"),
+        "report_quality_status": str(quality.get("status") or quality.get("overall_status") or "review_required"),
+        "rule": "Automated assessment completion is separate from human approval and client delivery.",
+    })
 
     output["status"] = "complete"
     output["current_stage"] = "complete"
@@ -94,15 +100,17 @@ def normalize_express_completion(
     output["client_ready"] = False
     output["client_delivery_allowed"] = False
     output["delivery_status"] = "blocked_pending_human_review"
-    output["express_completion"] = {
-        **completion,
-        "status": "complete_pending_human_review",
-        "source_status": original_status or "unknown",
-        "client_acceptance_status": str(gate.get("status") or "pending"),
-        "report_quality_status": str(quality.get("status") or quality.get("overall_status") or "review_required"),
-        "rule": "Automated assessment completion is separate from human approval and client delivery.",
-    }
+    output["assessment_completion"] = completion
+    if tier == "express":
+        output["express_completion"] = completion
+    else:
+        output.pop("express_completion", None)
     return output
+
+
+def normalize_express_completion(before_gate: dict[str, Any], after_gate: dict[str, Any]) -> dict[str, Any]:
+    """Backward-compatible alias for callers introduced by v1."""
+    return normalize_assessment_completion(before_gate, after_gate)
 
 
 def install_express_final_gate_completion_patch() -> dict[str, Any]:
@@ -113,7 +121,7 @@ def install_express_final_gate_completion_patch() -> dict[str, Any]:
     def wrapped(result: dict[str, Any]) -> dict[str, Any]:
         before = deepcopy(result)
         after = current(result)
-        return normalize_express_completion(before, after)
+        return normalize_assessment_completion(before, after)
 
     setattr(wrapped, _PATCH_MARKER, True)
     setattr(wrapped, "_nico_previous", current)
@@ -121,6 +129,7 @@ def install_express_final_gate_completion_patch() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": PATCH_VERSION,
+        "tiers": sorted(SUPPORTED_TIERS),
         "completion_separate_from_delivery": True,
         "requires_report_formats": ["markdown", "html", "pdf"],
         "requires_score": True,
@@ -130,6 +139,8 @@ def install_express_final_gate_completion_patch() -> dict[str, Any]:
 
 __all__ = [
     "PATCH_VERSION",
+    "SUPPORTED_TIERS",
     "install_express_final_gate_completion_patch",
+    "normalize_assessment_completion",
     "normalize_express_completion",
 ]
