@@ -142,6 +142,49 @@ function completedProjection(payload: JsonRecord, tier: string, sourceStatus: st
   return output;
 }
 
+function waitingProjection(payload: JsonRecord, state: RunState, tier: string): JsonRecord {
+  const output = structuredClone(payload);
+  output.recovery_required = false;
+  output.duplicate_start_allowed = false;
+  output.human_review_required = true;
+  output.client_ready = false;
+  output.status_transport = {
+    ...record(output.status_transport),
+    status: "final_gate_waiting_for_backend",
+    code: "assessment_final_gate_waiting",
+    final_gate_polls: state.finalGatePolls,
+    report_ready: reportReady(payload, tier as "express" | "mid" | "full"),
+    review_ready: reviewReady(payload, tier as "express" | "mid" | "full"),
+    exact_run_terminal_evidence: false,
+    terminal_state_written: false,
+    duplicate_start_allowed: false,
+    recovery_required: false,
+    browser_terminalization_forbidden: true,
+  };
+  const progress = Array.isArray(output.progress)
+    ? output.progress.filter((item) => item && typeof item === "object") as JsonRecord[]
+    : [];
+  const waiting = {
+    step: "truth_and_review_gates",
+    status: "running",
+    message: "Report generation is complete. Waiting for the backend to persist score, completion, and review evidence for this exact run.",
+    evidence: {
+      code: "assessment_final_gate_waiting",
+      final_gate_polls: state.finalGatePolls,
+      report_ready: reportReady(payload, tier as "express" | "mid" | "full"),
+      review_ready: reviewReady(payload, tier as "express" | "mid" | "full"),
+      exact_run_terminal_evidence: false,
+      terminal_state_written: false,
+      browser_terminalization_forbidden: true,
+    },
+  };
+  const existingIndex = progress.findIndex((item) => String(item.step || "").toLowerCase() === "truth_and_review_gates");
+  if (existingIndex >= 0) progress[existingIndex] = waiting;
+  else progress.push(waiting);
+  output.progress = progress;
+  return output;
+}
+
 function normalizeFinalGate(payload: JsonRecord, runId: string, state: RunState): JsonRecord {
   const status = String(payload.status || "").toLowerCase();
   const tier = tierOf(payload, runId);
@@ -180,49 +223,10 @@ function normalizeFinalGate(payload: JsonRecord, runId: string, state: RunState)
   state.finalGatePolls += 1;
   if (state.finalGatePolls < FINAL_GATE_MAX_POLLS) return payload;
 
-  const output = structuredClone(payload);
-  output.status = "blocked";
-  output.current_stage = "recovery_required";
-  output.recovery_required = true;
-  output.recovery_path = "/operations/recovery";
-  output.duplicate_start_allowed = false;
-  output.human_review_required = true;
-  output.client_ready = false;
-  output.status_transport = {
-    ...record(output.status_transport),
-    status: "final_gate_stalled",
-    code: "assessment_final_gate_stalled",
-    final_gate_polls: state.finalGatePolls,
-    report_ready: reportReady(payload, tier),
-    review_ready: reviewReady(payload, tier),
-    exact_run_terminal_evidence: false,
-    terminal_state_written: false,
-    duplicate_start_allowed: false,
-    recovery_required: true,
-  };
-  const progress = Array.isArray(output.progress)
-    ? output.progress.filter((item) => item && typeof item === "object") as JsonRecord[]
-    : [];
-  const blocked = {
-    step: "truth_and_review_gates",
-    status: "blocked",
-    message: `The exact run remained at the final gate for ${state.finalGatePolls} consecutive checks without complete report and review evidence. NICO stopped automatic continuation and preserved the run for Recovery.`,
-    evidence: {
-      code: "assessment_final_gate_stalled",
-      report_ready: reportReady(payload, tier),
-      review_ready: reviewReady(payload, tier),
-      exact_run_terminal_evidence: false,
-      terminal_state_written: false,
-    },
-  };
-  const existingIndex = progress.findIndex((item) => String(item.step || "").toLowerCase() === "truth_and_review_gates");
-  if (existingIndex >= 0) progress[existingIndex] = blocked;
-  else progress.push(blocked);
-  output.progress = progress.filter((item, index) => {
-    if (String(item.step || "").toLowerCase() !== "complete") return true;
-    return index === progress.findIndex((candidate) => String(candidate.step || "").toLowerCase() === "complete");
-  });
-  return output;
+  // A browser polling threshold is diagnostic only. It must never invent a
+  // terminal blocked/failed state or send a valid run to recovery. Only a
+  // backend response with durable exact-run terminal evidence can do that.
+  return waitingProjection(payload, state, tier);
 }
 
 export default function AssessmentProgressIntegrityGuard() {
@@ -258,4 +262,5 @@ export {
   reconcileProgress,
   reportReady,
   reviewReady,
+  waitingProjection,
 };
