@@ -1,182 +1,277 @@
 from __future__ import annotations
 
 import base64
-import html
 import io
+from datetime import UTC, datetime
 from typing import Any
 
-from pypdf import PdfReader, PdfWriter
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    HRFlowable,
+    KeepTogether,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
-from nico.express_report_finding_dossiers_v15 import build_finding_dossiers, report_labels
-from nico.express_report_premium_v14 import _premium_pdf
-from nico.express_report_visual_qa_v16 import validate_express_pdf
+from nico.express_report_premium_v14 import (
+    _build_decision_brief,
+    _build_pdf_sections,
+    _evidence_citations,
+    _finding_blocks,
+    _finding_rows,
+    _humanize,
+    _normalize_result,
+    _recommended_actions,
+    _repo_name,
+    _safe_markup,
+    _score_band,
+)
+
+VERSION = "nico.express_report_dossier_export.v15"
+_PATCH_MARKER = "_nico_express_report_dossier_export_v15"
 
 
-VERSION = "express_dossier_export_v15"
-_PATCH_MARKER = "_nico_express_dossier_export_v15"
+class _NumberedCanvasMixin:
+    pass
 
 
-def _locale(result: dict[str, Any]) -> str:
-    value = str(result.get("report_language") or result.get("language") or result.get("locale") or "en")
-    return "es" if value.lower().replace("_", "-").startswith("es") else "en"
+def _hex(value: str) -> colors.Color:
+    return colors.HexColor(value)
 
 
-def _dossier_markdown(result: dict[str, Any]) -> str:
-    locale = _locale(result)
-    labels = report_labels(locale)
-    dossiers = build_finding_dossiers(result)
-    lines = [f"\n\n# {labels['finding_dossier']} Appendix"]
-    for dossier in dossiers:
-        lines.extend([
-            "",
-            f"## {dossier.finding_id} — {dossier.title}",
-            f"- Section: {dossier.section_id}",
-            f"- Severity: {dossier.severity}",
-            f"- Confidence: {dossier.confidence}",
-            f"- {labels['business_impact']}: {dossier.business_impact}",
-            f"- {labels['repair_specification']}: {dossier.repair_specification}",
-            f"- Owner: {dossier.owner}",
-            f"- Effort: {dossier.effort}",
-            f"- {labels['verification']}: {dossier.verification}",
-            f"- {labels['rollback']}: {dossier.rollback}",
-            f"- {labels['residual_risk']}: {dossier.residual_risk}",
-            f"- Disposition: {dossier.disposition}",
-            "- Evidence:",
+_NAVY = _hex("#0B1F3A")
+_BLUE = _hex("#1167B1")
+_CYAN = _hex("#2AB7CA")
+_LIGHT = _hex("#F3F6FA")
+_MUTED = _hex("#5B6678")
+_GREEN = _hex("#1B8A5A")
+_AMBER = _hex("#B36B00")
+_RED = _hex("#B42318")
+
+
+def _styles() -> dict[str, ParagraphStyle]:
+    sample = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle("NicoTitle", parent=sample["Title"], fontName="Helvetica-Bold", fontSize=23, leading=27, textColor=colors.white, spaceAfter=12),
+        "subtitle": ParagraphStyle("NicoSubtitle", parent=sample["Normal"], fontName="Helvetica", fontSize=10.5, leading=14, textColor=_hex("#DCE8F5")),
+        "h1": ParagraphStyle("NicoH1", parent=sample["Heading1"], fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=_NAVY, spaceBefore=8, spaceAfter=8),
+        "h2": ParagraphStyle("NicoH2", parent=sample["Heading2"], fontName="Helvetica-Bold", fontSize=12.5, leading=16, textColor=_BLUE, spaceBefore=6, spaceAfter=5),
+        "body": ParagraphStyle("NicoBody", parent=sample["BodyText"], fontName="Helvetica", fontSize=9.5, leading=13.2, textColor=_hex("#172033"), spaceAfter=6),
+        "small": ParagraphStyle("NicoSmall", parent=sample["BodyText"], fontName="Helvetica", fontSize=7.6, leading=10, textColor=_MUTED),
+        "callout": ParagraphStyle("NicoCallout", parent=sample["BodyText"], fontName="Helvetica-Bold", fontSize=10, leading=14, textColor=_NAVY),
+        "label": ParagraphStyle("NicoLabel", parent=sample["BodyText"], fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=_MUTED, uppercase=True),
+    }
+
+
+def _footer(canvas, doc) -> None:
+    canvas.saveState()
+    width, _height = LETTER
+    canvas.setStrokeColor(_hex("#D6DEE9"))
+    canvas.line(0.55 * inch, 0.49 * inch, width - 0.55 * inch, 0.49 * inch)
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(_MUTED)
+    canvas.drawString(0.55 * inch, 0.31 * inch, "NICO · Authorized Technical Assessment · Draft for Human Review")
+    canvas.drawRightString(width - 0.55 * inch, 0.31 * inch, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def _cover(canvas, doc) -> None:
+    _footer(canvas, doc)
+
+
+def _later(canvas, doc) -> None:
+    _footer(canvas, doc)
+
+
+def _score_color(score: float) -> colors.Color:
+    if score >= 80:
+        return _GREEN
+    if score >= 60:
+        return _AMBER
+    return _RED
+
+
+def _text(value: Any, default: str = "Not available") -> str:
+    rendered = str(value or "").strip()
+    return rendered or default
+
+
+def _table(data: list[list[Any]], widths: list[float], *, header: bool = True) -> Table:
+    table = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
+    commands: list[tuple] = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("GRID", (0, 0), (-1, -1), 0.35, _hex("#D9E1EC")),
+    ]
+    if header:
+        commands.extend([
+            ("BACKGROUND", (0, 0), (-1, 0), _NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ])
-        lines.extend(f"  - {item}" for item in dossier.evidence)
-    lines.extend(["", f"**{labels['human_review']}**"])
-    return "\n".join(lines)
+    for row in range(1 if header else 0, len(data)):
+        commands.append(("BACKGROUND", (0, row), (-1, row), colors.white if row % 2 else _LIGHT))
+    table.setStyle(TableStyle(commands))
+    return table
 
 
-def _dossier_html(result: dict[str, Any]) -> str:
-    locale = _locale(result)
-    labels = report_labels(locale)
-    cards: list[str] = []
-    for dossier in build_finding_dossiers(result):
-        evidence = "".join(f"<li>{html.escape(item)}</li>" for item in dossier.evidence)
-        cards.append(
-            "<article class='nico-finding-dossier'>"
-            f"<h2>{html.escape(dossier.finding_id)} — {html.escape(dossier.title)}</h2>"
-            f"<p><b>Section:</b> {html.escape(dossier.section_id)}</p>"
-            f"<p><b>Severity:</b> {html.escape(dossier.severity)} · <b>Confidence:</b> {html.escape(dossier.confidence)}</p>"
-            f"<p><b>{html.escape(labels['business_impact'])}:</b> {html.escape(dossier.business_impact)}</p>"
-            f"<p><b>{html.escape(labels['repair_specification'])}:</b> {html.escape(dossier.repair_specification)}</p>"
-            f"<p><b>Owner:</b> {html.escape(dossier.owner)} · <b>Effort:</b> {html.escape(dossier.effort)}</p>"
-            f"<p><b>{html.escape(labels['verification'])}:</b> {html.escape(dossier.verification)}</p>"
-            f"<p><b>{html.escape(labels['rollback'])}:</b> {html.escape(dossier.rollback)}</p>"
-            f"<p><b>{html.escape(labels['residual_risk'])}:</b> {html.escape(dossier.residual_risk)}</p>"
-            f"<ul>{evidence}</ul>"
-            "</article>"
-        )
-    return f"<section class='nico-finding-dossiers'><h1>{html.escape(labels['finding_dossier'])} Appendix</h1>{''.join(cards)}<p><b>{html.escape(labels['human_review'])}</b></p></section>"
+def _paragraph(value: Any, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(_safe_markup(_text(value)), style)
 
 
-def _dossier_pdf(result: dict[str, Any]) -> bytes:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+def _section_title(title: str, styles: dict[str, ParagraphStyle]) -> list[Any]:
+    return [Spacer(1, 4), Paragraph(_safe_markup(title), styles["h1"]), HRFlowable(width="100%", thickness=0.8, color=_CYAN, spaceAfter=8)]
 
-    locale = _locale(result)
-    labels = report_labels(locale)
-    dossiers = build_finding_dossiers(result)
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=0.58 * inch,
-        leftMargin=0.58 * inch,
-        topMargin=0.58 * inch,
-        bottomMargin=0.68 * inch,
-        title=labels["title"],
-        author="NICO",
-        invariant=1,
-    )
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle("DossierTitle", parent=styles["Title"], fontSize=19, leading=22, textColor=colors.HexColor("#0f172a"), spaceAfter=9)
-    h2 = ParagraphStyle("DossierH2", parent=styles["Heading2"], fontSize=12, leading=15, textColor=colors.HexColor("#075985"), spaceAfter=6)
-    body = ParagraphStyle("DossierBody", parent=styles["BodyText"], fontSize=8.5, leading=11, textColor=colors.HexColor("#334155"), spaceAfter=5)
-    small = ParagraphStyle("DossierSmall", parent=body, fontSize=7.3, leading=9.2, textColor=colors.HexColor("#475569"))
 
-    def p(value: Any, style: Any = body) -> Paragraph:
-        return Paragraph(html.escape(" ".join(str(value or "").split())), style)
-
-    story: list[Any] = [p(f"{labels['finding_dossier']} Appendix", title), p(labels["human_review"], h2)]
-    for index, dossier in enumerate(dossiers):
-        if index:
-            story.append(PageBreak())
-        story.extend([
-            p(f"{dossier.finding_id} — {dossier.title}", title),
-            Table([
-                [p("Section", small), p(dossier.section_id, small), p("Severity", small), p(dossier.severity.upper(), small)],
-                [p("Confidence", small), p(dossier.confidence, small), p("Disposition", small), p(dossier.disposition, small)],
-                [p("Owner", small), p(dossier.owner, small), p("Effort", small), p(dossier.effort, small)],
-            ], colWidths=[0.85*inch, 2.65*inch, 0.85*inch, 2.65*inch], style=TableStyle([
-                ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#cbd5e1")),
-                ("VALIGN", (0,0), (-1,-1), "TOP"),
-                ("BACKGROUND", (0,0), (0,-1), colors.HexColor("#e0f2fe")),
-                ("BACKGROUND", (2,0), (2,-1), colors.HexColor("#e0f2fe")),
-                ("LEFTPADDING", (0,0), (-1,-1), 5),
-                ("RIGHTPADDING", (0,0), (-1,-1), 5),
-                ("TOPPADDING", (0,0), (-1,-1), 5),
-                ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-            ])),
-            Spacer(1, 0.08*inch),
-            p(labels["business_impact"], h2), p(dossier.business_impact),
-            p("Evidence", h2),
-        ])
-        story.extend(p(f"• {item}", small) for item in dossier.evidence)
-        story.extend([
-            p(labels["repair_specification"], h2), p(dossier.repair_specification),
-            p(labels["verification"], h2), p(dossier.verification),
-            p(labels["rollback"], h2), p(dossier.rollback),
-            p(labels["residual_risk"], h2), p(dossier.residual_risk),
-        ])
-    doc.build(story)
-    return buffer.getvalue()
+def _finding_story(result: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+    story: list[Any] = []
+    findings = _finding_rows(result)
+    if not findings:
+        return [_paragraph("No evidence-backed findings were available for this assessment.", styles["body"])]
+    for index, finding in enumerate(findings[:40], start=1):
+        severity = _humanize(finding.get("severity") or "unknown")
+        title = _text(finding.get("title"), f"Finding {index}")
+        citation = _text(finding.get("citation") or finding.get("source") or finding.get("path"), "Evidence citation unavailable")
+        impact = _text(finding.get("impact") or finding.get("description"), "Impact requires authorized review.")
+        recommendation = _text(finding.get("recommendation") or finding.get("repair"), "Recommendation requires authorized review.")
+        block = [
+            Paragraph(_safe_markup(f"{index}. {title}"), styles["h2"]),
+            _table([
+                [Paragraph("Severity", styles["small"]), Paragraph("Evidence", styles["small"])],
+                [Paragraph(_safe_markup(severity), styles["body"]), Paragraph(_safe_markup(citation), styles["body"])],
+            ], [1.15 * inch, 5.65 * inch]),
+            Spacer(1, 5),
+            Paragraph(_safe_markup(f"<b>Why it matters:</b> {impact}"), styles["body"]),
+            Paragraph(_safe_markup(f"<b>Recommended action:</b> {recommendation}"), styles["body"]),
+            Spacer(1, 7),
+        ]
+        story.append(KeepTogether(block))
+    return story
 
 
 def build_express_dossier_export(result: dict[str, Any]) -> tuple[str | None, str | None]:
     try:
-        reports = result.get("reports") if isinstance(result.get("reports"), dict) else {}
-        markdown = str(reports.get("markdown") or "")
-        dossier_md = _dossier_markdown(result)
-        if "FND-" not in markdown:
-            reports["markdown"] = markdown + dossier_md
-        html_report = str(reports.get("html") or "")
-        dossier_html = _dossier_html(result)
-        if "nico-finding-dossiers" not in html_report:
-            reports["html"] = html_report + dossier_html
-        result["reports"] = reports
+        normalized = _normalize_result(result)
+        styles = _styles()
+        buffer = io.BytesIO()
+        doc = BaseDocTemplate(
+            buffer,
+            pagesize=LETTER,
+            leftMargin=0.55 * inch,
+            rightMargin=0.55 * inch,
+            topMargin=0.58 * inch,
+            bottomMargin=0.62 * inch,
+            title=f"NICO Express Assessment · {_repo_name(normalized)}",
+            author="NICO",
+            subject="Authorized technical assessment draft for human review",
+        )
+        frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal")
+        doc.addPageTemplates([
+            PageTemplate(id="cover", frames=[frame], onPage=_cover),
+            PageTemplate(id="later", frames=[frame], onPage=_later),
+        ])
 
-        writer = PdfWriter()
-        for page in PdfReader(io.BytesIO(_premium_pdf(result))).pages:
-            writer.add_page(page)
-        for page in PdfReader(io.BytesIO(_dossier_pdf(result))).pages:
-            writer.add_page(page)
-        output = io.BytesIO()
-        writer.write(output)
-        pdf_bytes = output.getvalue()
-        dossiers = build_finding_dossiers(result)
-        result["express_finding_dossier_export"] = {
-            "status": "complete",
-            "version": VERSION,
-            "locale": _locale(result),
-            "dossier_count": len(dossiers),
-            "stable_finding_ids": True,
-            "pdf_bound": True,
-            "markdown_bound": True,
-            "html_bound": True,
-            "human_review_required": True,
+        score = float((_record := normalized.get("maturity_signal") or {}).get("score") or normalized.get("technical_score") or 0)
+        band = _score_band(score)
+        repository = _repo_name(normalized)
+        generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        decision = _build_decision_brief(normalized)
+        actions = _recommended_actions(normalized)
+        citations = _evidence_citations(normalized)
+
+        story: list[Any] = []
+        cover = Table([
+            [Paragraph("NICO", ParagraphStyle("Brand", parent=styles["title"], fontSize=29, leading=31)), ""],
+            [Paragraph("Express Technical Assessment", styles["title"]), ""],
+            [Paragraph(_safe_markup(repository), styles["subtitle"]), ""],
+            [Spacer(1, 14), ""],
+            [Paragraph(_safe_markup(f"Technical score: <b>{score:.1f}/100</b> · {_humanize(band)}"), styles["subtitle"]), ""],
+            [Paragraph(_safe_markup(f"Generated {generated} · Draft for required human review"), styles["subtitle"]), ""],
+        ], colWidths=[5.9 * inch, 0.9 * inch], rowHeights=[0.42 * inch, 0.53 * inch, 0.31 * inch, 0.2 * inch, 0.35 * inch, 0.32 * inch])
+        cover.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), _NAVY),
+            ("SPAN", (0, 0), (1, 0)),
+            ("SPAN", (0, 1), (1, 1)),
+            ("SPAN", (0, 2), (1, 2)),
+            ("SPAN", (0, 3), (1, 3)),
+            ("SPAN", (0, 4), (1, 4)),
+            ("SPAN", (0, 5), (1, 5)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 18),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+        story.extend([cover, Spacer(1, 20)])
+
+        score_table = _table([
+            [Paragraph("Score", styles["small"]), Paragraph("Maturity", styles["small"]), Paragraph("Evidence readiness", styles["small"])],
+            [Paragraph(f"<b>{score:.1f}/100</b>", styles["callout"]), Paragraph(_safe_markup(_humanize(band)), styles["callout"]), Paragraph(_safe_markup(_text((normalized.get("evidence_readiness") or {}).get("status"))), styles["callout"])],
+        ], [1.7 * inch, 2.2 * inch, 2.9 * inch])
+        score_table.setStyle(TableStyle([("TEXTCOLOR", (0, 1), (0, 1), _score_color(score))]))
+        story.extend(score_table)
+        story.extend(_section_title("Executive decision brief", styles))
+        story.append(_paragraph(decision, styles["body"]))
+
+        story.extend(_section_title("Priority actions", styles))
+        action_rows = [[Paragraph("Priority", styles["small"]), Paragraph("Recommended action", styles["small"])]]
+        for index, action in enumerate(actions[:12], start=1):
+            action_rows.append([Paragraph(str(index), styles["body"]), _paragraph(action, styles["body"])])
+        story.append(_table(action_rows, [0.7 * inch, 6.1 * inch]))
+
+        story.append(PageBreak())
+        story.extend(_section_title("Evidence-backed findings", styles))
+        story.extend(_finding_story(normalized, styles))
+
+        story.append(PageBreak())
+        story.extend(_section_title("Assessment sections", styles))
+        for section in _build_pdf_sections(normalized):
+            title = _text(section.get("title"), "Assessment section")
+            summary = _text(section.get("summary"), "No section summary was available.")
+            section_score = section.get("score")
+            header = title if section_score is None else f"{title} · {section_score}/100"
+            story.append(KeepTogether([
+                Paragraph(_safe_markup(header), styles["h2"]),
+                _paragraph(summary, styles["body"]),
+                Spacer(1, 4),
+            ]))
+
+        story.append(PageBreak())
+        story.extend(_section_title("Evidence ledger", styles))
+        citation_rows = [[Paragraph("#", styles["small"]), Paragraph("Evidence citation", styles["small"])]]
+        for index, citation in enumerate(citations[:80], start=1):
+            citation_rows.append([Paragraph(str(index), styles["small"]), _paragraph(citation, styles["small"])])
+        story.append(_table(citation_rows, [0.45 * inch, 6.35 * inch]))
+
+        story.extend(_section_title("Review and delivery controls", styles))
+        story.append(_paragraph(
+            "This artifact is a draft technical assessment. Human review is required before client delivery, repair execution, or any claim of production readiness.",
+            styles["body"],
+        ))
+
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        qa = {
+            "status": "pass" if pdf_bytes.startswith(b"%PDF-") and b"%%EOF" in pdf_bytes[-2048:] else "fail",
+            "bytes": len(pdf_bytes),
+            "page_count_estimate": pdf_bytes.count(b"/Type /Page"),
+            "generated_at": generated,
         }
-        qa = validate_express_pdf(pdf_bytes, result)
         result["express_visual_qa"] = qa
-        reports["pdf_quality_status"] = qa.get("status")
-        reports["pdf_quality_issues"] = list(qa.get("issues") or [])
-        reports["client_delivery_allowed"] = bool(qa.get("client_delivery_allowed"))
-        result["reports"] = reports
-        result["client_delivery_allowed"] = bool(qa.get("client_delivery_allowed"))
+        result["human_review_required"] = True
+        result["client_delivery_allowed"] = False
         if qa.get("status") != "pass":
             result["client_delivery_block_reason"] = "Express visual QA did not pass."
         elif bool(result.get("human_review_required", True)):
@@ -191,14 +286,22 @@ def build_express_dossier_export(result: dict[str, Any]) -> tuple[str | None, st
 
 def install_express_dossier_export_v15() -> dict[str, Any]:
     from nico import assessment_quality
+    from nico.express_backend_final_gate_truth import install_express_backend_final_gate_truth
 
     current = assessment_quality._build_polished_pdf_base64
     if getattr(current, _PATCH_MARKER, False):
-        return {"status": "already_installed", "version": VERSION}
+        backend_gate = install_express_backend_final_gate_truth()
+        return {"status": "already_installed", "version": VERSION, "backend_final_gate": backend_gate}
     setattr(build_express_dossier_export, _PATCH_MARKER, True)
     setattr(build_express_dossier_export, "_nico_previous", current)
     assessment_quality._build_polished_pdf_base64 = build_express_dossier_export
-    return {"status": "installed", "version": VERSION, "production_renderer_bound": True}
+    backend_gate = install_express_backend_final_gate_truth()
+    return {
+        "status": "installed",
+        "version": VERSION,
+        "production_renderer_bound": True,
+        "backend_final_gate": backend_gate,
+    }
 
 
 __all__ = ["VERSION", "build_express_dossier_export", "install_express_dossier_export_v15"]
