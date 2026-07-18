@@ -15,6 +15,9 @@ def qualify_cross_tier_artifact_identity(
     packages: Mapping[str, Mapping[str, Any]], *, prior_release_allowed: bool = True
 ) -> dict[str, Any]:
     failures: list[str] = []
+    assessment_owners: dict[str, str] = {}
+    run_owners: dict[str, str] = {}
+    digest_owners: dict[str, tuple[str, str]] = {}
     if not prior_release_allowed:
         failures.append("prior_release_block")
 
@@ -29,8 +32,16 @@ def qualify_cross_tier_artifact_identity(
         snapshot_sha = str(package.get("snapshot_sha") or "").lower().strip()
         if not assessment_id:
             failures.append(f"{tier}:missing_assessment_id")
+        else:
+            owner = assessment_owners.setdefault(assessment_id, tier)
+            if owner != tier:
+                failures.append(f"{tier}:assessment_id_reused_from_{owner}")
         if not run_id:
             failures.append(f"{tier}:missing_run_id")
+        else:
+            owner = run_owners.setdefault(run_id, tier)
+            if owner != tier:
+                failures.append(f"{tier}:run_id_reused_from_{owner}")
         if not _COMMIT.fullmatch(snapshot_sha):
             failures.append(f"{tier}:invalid_snapshot_sha")
 
@@ -40,6 +51,7 @@ def qualify_cross_tier_artifact_identity(
             continue
 
         identities: set[tuple[str, str, str]] = set()
+        tier_digests: set[str] = set()
         for format_name in FORMATS:
             artifact = artifacts.get(format_name)
             if not isinstance(artifact, Mapping):
@@ -51,6 +63,15 @@ def qualify_cross_tier_artifact_identity(
             artifact_snapshot = str(artifact.get("snapshot_sha") or "").lower().strip()
             if not _SHA256.fullmatch(digest):
                 failures.append(f"{tier}:{format_name}:invalid_sha256")
+            else:
+                if digest in tier_digests:
+                    failures.append(f"{tier}:{format_name}:duplicate_cross_format_sha256")
+                tier_digests.add(digest)
+                owner = digest_owners.setdefault(digest, (tier, format_name))
+                if owner[0] != tier:
+                    failures.append(
+                        f"{tier}:{format_name}:sha256_reused_from_{owner[0]}_{owner[1]}"
+                    )
             if artifact.get("available") is not True:
                 failures.append(f"{tier}:{format_name}:unavailable")
             if artifact.get("manual_inspection_passed") is not True:
