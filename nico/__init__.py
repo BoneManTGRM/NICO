@@ -9,6 +9,8 @@ from nico.report_pdf_display_patch import apply_pdf_display_patch
 from nico.express_report_base_v13 import install_express_report_base_v13
 from nico.express_report_premium_v14 import install_express_report_premium_v14
 from nico.express_report_dossier_export_v15 import install_express_dossier_export_v15
+from nico.express_report_generation_recovery import install_express_report_generation_recovery
+from nico.express_final_gate_checkpoint_patch import install_express_final_gate_checkpoint_patch
 from nico.express_backend_completion_transport import install_express_backend_completion_transport
 from nico.report_intelligence_professional_pdf import install_professional_report_intelligence_pdf
 from nico.report_intelligence_final_pdf_binding import install_report_intelligence_final_pdf_binding
@@ -21,7 +23,7 @@ from nico.hosted_secret_scanner_execution_patch import install_hosted_secret_sca
 from nico.hosted_static_scanner_execution_patch import install_hosted_static_scanner_execution_patch
 from nico.scanner_output_truth_patch import install_scanner_output_truth_patch
 from nico.scanner_output_truth_compat import install_scanner_output_truth_compat
-from nico.hosted_bandit_triage_workflow_patch import install_bandit_triage_workflow_patch
+from nico.hosted_bandit_triage_workflow_patch import install_hosted_bandit_triage_workflow_patch
 from nico.hosted_complexity_engine_attachment_patch import install_hosted_complexity_engine_attachment_patch
 from nico.report_full_detail_export_patch import install_report_full_detail_export_patch
 from nico.client_final_review_gate_patch import install_client_final_review_gate_patch
@@ -110,7 +112,7 @@ install_hosted_secret_scanner_execution_patch()
 install_hosted_static_scanner_execution_patch()
 install_scanner_output_truth_patch()
 install_scanner_output_truth_compat()
-install_bandit_triage_workflow_patch()
+install_hosted_bandit_triage_workflow_patch()
 install_hosted_complexity_engine_attachment_patch()
 install_report_full_detail_export_patch()
 install_client_final_review_gate_patch()
@@ -179,8 +181,12 @@ install_mid_report_v9_production_binding()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
-# Bind the canonical Express completion and safe-response transport after every
-# installer that can mutate report, score, acceptance, or response functions.
+# Rebind report recovery and the rich exact-run checkpoint after every renderer
+# and report-consistency installer. Earlier bindings can otherwise be replaced,
+# leaving the live async path without recovery or usable report artifacts.
+install_express_report_generation_recovery()
+install_express_final_gate_checkpoint_patch()
+# Bind the canonical Express completion and safe-response transport last.
 install_express_backend_completion_transport()
 
 __version__ = "0.1.0"
