@@ -40,15 +40,16 @@ function progressItems(payload: JsonRecord): JsonRecord[] {
     : [];
 }
 
-function reportGenerationComplete(payload: JsonRecord): boolean {
+function usableReportArtifacts(payload: JsonRecord): boolean {
   const reports = record(payload.reports);
-  const directArtifact = Boolean(reports.markdown || reports.html || reports.pdf_base64 || reports.report_id);
-  const explicitStatus = String(payload.report_generation_status || "").toLowerCase() === "complete";
-  const completedStep = progressItems(payload).some((item) =>
-    String(item.step || "").toLowerCase() === "report_generation"
-      && String(item.status || "").toLowerCase() === "complete"
-  );
-  return directArtifact || explicitStatus || completedStep;
+  const markdown = String(reports.markdown || "").trim();
+  const html = String(reports.html || "").trim();
+  const pdf = String(reports.pdf_base64 || "").trim();
+  return Boolean(markdown && html && pdf);
+}
+
+function reportGenerationComplete(payload: JsonRecord): boolean {
+  return usableReportArtifacts(payload);
 }
 
 function browserGeneratedStall(payload: JsonRecord): boolean {
@@ -61,7 +62,7 @@ function browserGeneratedStall(payload: JsonRecord): boolean {
 
 function repairFalseFinalGateBlock(payload: JsonRecord): JsonRecord {
   if (!browserGeneratedStall(payload)) return payload;
-  if (!reportGenerationComplete(payload) || payload.human_review_required !== true) return payload;
+  if (!usableReportArtifacts(payload) || payload.human_review_required !== true) return payload;
 
   const output = structuredClone(payload);
   output.status = "complete";
@@ -75,7 +76,7 @@ function repairFalseFinalGateBlock(payload: JsonRecord): JsonRecord {
   output.delivery_status = "blocked_pending_human_review";
   output.status_transport = {
     ...record(output.status_transport),
-    status: "completed_from_report_artifacts",
+    status: "completed_from_usable_report_artifacts",
     code: "browser_final_gate_false_block_repaired",
     report_ready: true,
     review_ready: true,
@@ -92,10 +93,12 @@ function repairFalseFinalGateBlock(payload: JsonRecord): JsonRecord {
     ...(completeIndex >= 0 ? cleaned[completeIndex] : {}),
     step: "complete",
     status: "complete",
-    message: "Automated report generation completed. Draft artifacts are ready for required human review.",
+    message: "Automated report generation completed. Markdown, HTML, and PDF artifacts are ready for required human review.",
     evidence: {
       ...record(completeIndex >= 0 ? cleaned[completeIndex].evidence : {}),
       report_generation_complete: true,
+      usable_report_artifacts: true,
+      required_formats: ["markdown", "html", "pdf"],
       human_review_required: true,
       client_delivery_allowed: false,
     },
@@ -124,4 +127,4 @@ export default function AssessmentFinalGateAuthoritativeGuard() {
   return null;
 }
 
-export {browserGeneratedStall, reportGenerationComplete, repairFalseFinalGateBlock};
+export {browserGeneratedStall, reportGenerationComplete, repairFalseFinalGateBlock, usableReportArtifacts};
