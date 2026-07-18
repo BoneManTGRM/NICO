@@ -2,6 +2,8 @@ import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
+import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
+import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport";
@@ -39,6 +41,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentStatusResilience />
           <AssessmentSavedMidRunGuard />
           <AssessmentStatusOutcomeGuard />
+          <AssessmentExpressRecoveryGuard />
           <AssessmentMidLiveStatusTransport />
           <MidScoreIntelligencePortal />
           <MidSectionReviewPortal />
@@ -58,6 +61,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           </WorkflowCallout>
           <GenericRepositoryExample />
           <AssessmentFailureEvidencePanel />
+          <AssessmentExpressRecoveryActions />
           <AssessmentRecoveryActions />
           {children}
           <MidAssessmentCompanion />
