@@ -69,6 +69,7 @@ from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heart
 from nico.mid_live_progress_patch import install_mid_live_progress
 from nico.mid_start_guard import install_mid_start_guard
 from nico.mid_status_read_path import install_mid_status_read_path
+from nico.mid_terminal_format_integrity_patch import install_mid_terminal_format_integrity
 from nico.mid_stage_truth_patch import install_mid_stage_truth_patch
 from nico.report_quality_gate import install_report_quality_gate
 from nico.report_quality_gate_compat import install_report_quality_gate_compat
@@ -148,6 +149,7 @@ install_express_progress_persistence()
 install_mid_live_progress()
 install_mid_start_guard()
 install_mid_status_read_path()
+install_mid_terminal_format_integrity()
 install_mid_stage_truth_patch()
 install_hosted_report_intelligence_enrichment()
 install_report_intelligence_accuracy_patch()
