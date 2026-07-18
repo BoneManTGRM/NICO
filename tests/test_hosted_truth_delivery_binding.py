@@ -45,9 +45,20 @@ def test_assessment_storage_uses_actual_terminal_status_and_run_identity() -> No
     assert 'result.get("assessment_id")' in source
     assert 'result.get("report_id")' in source
     assert 'result.get("scan_id")' in source
+    assert 'run_id = _assessment_run_id(result)' in source
     assert 'record_id = f"{workflow}_{customer_id}_{project_id}_{run_id}"' in source
     assert '"status": status' in source
     assert '"run_id": run_id' in source
+
+
+def test_missing_upstream_identity_is_stable_across_storage_retries() -> None:
+    source = GATE.read_text(encoding="utf-8")
+
+    assert '_STORAGE_RUN_ID_KEY = "_nico_storage_run_id"' in source
+    assert "fallback_id = result.get(_STORAGE_RUN_ID_KEY)" in source
+    assert "fallback_id = uuid4().hex" in source
+    assert "result[_STORAGE_RUN_ID_KEY] = fallback_id" in source
+    assert "return str(fallback_id)" in source
 
 
 def test_assessment_storage_covers_all_product_tiers_without_cross_tier_lookup() -> None:
@@ -64,7 +75,7 @@ def test_assessment_storage_covers_all_product_tiers_without_cross_tier_lookup()
 def test_assessment_storage_patch_is_idempotent_and_preserves_previous_helper() -> None:
     source = GATE.read_text(encoding="utf-8")
 
-    assert '_STORAGE_PATCH_MARKER = "_nico_assessment_storage_truth_bound_v1"' in source
+    assert '_STORAGE_PATCH_MARKER = "_nico_assessment_storage_truth_bound_v2"' in source
     assert "if getattr(current, _STORAGE_PATCH_MARKER, False)" in source
     assert 'setattr(truthful_assessment_storage_record, "_nico_previous", current)' in source
     assert "api_main.assessment_storage_record = truthful_assessment_storage_record" in source
