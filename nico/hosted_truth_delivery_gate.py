@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+_PATCH_MARKER = "_nico_hosted_truth_completion_bound_v2"
+
 
 def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
     """Apply report truth guards at the last hosted delivery step.
@@ -66,19 +68,27 @@ def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def patch_client_acceptance_gate_for_report_truth() -> None:
-    """Patch the final hosted gate without conflating run completion and delivery.
+    """Bind the final completion wrapper to every hosted function reference.
 
-    Express, Mid, and Full can finish automated evidence collection, scoring, and
-    artifact generation while remaining blocked from client delivery pending
-    human review. Missing report formats, score, or sections still fail closed.
+    ``nico.api.main`` imports ``attach_client_acceptance_gate`` directly. Updating
+    only ``nico.client_acceptance.attach_client_acceptance_gate`` leaves that
+    already-imported reference stale, which is the path used by the async Express
+    runner. Bind both references to the same wrapper so completed report, score,
+    and section evidence cannot be converted back to a blocked 96% run.
     """
 
     from nico import client_acceptance
+    from nico.api import main as api_main
     from nico.express_final_gate_completion_patch import normalize_assessment_completion
+
+    current = api_main.attach_client_acceptance_gate
+    if getattr(current, _PATCH_MARKER, False):
+        client_acceptance.attach_client_acceptance_gate = current
+        return
 
     original = getattr(client_acceptance, "_nico_original_attach_client_acceptance_gate", None)
     if original is None:
-        original = client_acceptance.attach_client_acceptance_gate
+        original = current
         client_acceptance._nico_original_attach_client_acceptance_gate = original
 
     def attach_client_acceptance_gate_with_report_truth(result: dict[str, Any]) -> dict[str, Any]:
@@ -86,4 +96,7 @@ def patch_client_acceptance_gate_for_report_truth() -> None:
         gated = apply_final_hosted_truth_gate(accepted)
         return normalize_assessment_completion(accepted, gated)
 
+    setattr(attach_client_acceptance_gate_with_report_truth, _PATCH_MARKER, True)
+    setattr(attach_client_acceptance_gate_with_report_truth, "_nico_previous", original)
     client_acceptance.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth
+    api_main.attach_client_acceptance_gate = attach_client_acceptance_gate_with_report_truth
