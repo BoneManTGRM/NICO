@@ -4,7 +4,8 @@ from typing import Any
 from uuid import uuid4
 
 _PATCH_MARKER = "_nico_hosted_truth_completion_bound_v3"
-_STORAGE_PATCH_MARKER = "_nico_assessment_storage_truth_bound_v1"
+_STORAGE_PATCH_MARKER = "_nico_assessment_storage_truth_bound_v2"
+_STORAGE_RUN_ID_KEY = "_nico_storage_run_id"
 
 
 def apply_final_hosted_truth_gate(result: dict[str, Any]) -> dict[str, Any]:
@@ -81,6 +82,32 @@ def _latest_assessment_result(api_main: Any, workflow: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _assessment_run_id(result: dict[str, Any]) -> str:
+    """Return one stable storage identity for the lifetime of a result object.
+
+    Some legacy and failure-path results do not expose an upstream run identity.
+    Persisting a fresh UUID on every storage call creates duplicate records for
+    the same run. Store the generated fallback on the retained result so retries
+    and repeated persistence are idempotent while a genuinely new result object
+    still receives a new identity.
+    """
+
+    upstream_id = (
+        result.get("run_id")
+        or result.get("assessment_id")
+        or result.get("report_id")
+        or result.get("scan_id")
+    )
+    if upstream_id:
+        return str(upstream_id)
+
+    fallback_id = result.get(_STORAGE_RUN_ID_KEY)
+    if not fallback_id:
+        fallback_id = uuid4().hex
+        result[_STORAGE_RUN_ID_KEY] = fallback_id
+    return str(fallback_id)
+
+
 def _patch_assessment_storage_truth(api_main: Any) -> None:
     """Preserve run history and persist the actual terminal state for every tier."""
 
@@ -94,13 +121,7 @@ def _patch_assessment_storage_truth(api_main: Any) -> None:
         repository = str(getattr(req, "repository", "") or "")
         result = _latest_assessment_result(api_main, workflow)
         status = str(result.get("status") or "unknown")
-        run_id = str(
-            result.get("run_id")
-            or result.get("assessment_id")
-            or result.get("report_id")
-            or result.get("scan_id")
-            or uuid4().hex
-        )
+        run_id = _assessment_run_id(result)
         record_id = f"{workflow}_{customer_id}_{project_id}_{run_id}"
         payload = {
             "status": status,
