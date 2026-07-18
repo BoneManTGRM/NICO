@@ -7,10 +7,11 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_report_generation_recovery.v3"
-_PATCH_MARKER = "_nico_express_report_generation_recovery_v3"
+PATCH_VERSION = "nico.express_report_generation_recovery.v4"
+_PATCH_MARKER = "_nico_express_report_generation_recovery_v4"
 _MAX_ATTEMPTS = 3
 _REQUIRED_FORMATS = ("markdown", "html", "pdf_base64")
+_PDF_EOF_SCAN_BYTES = 1024
 
 
 def _reports(result: dict[str, Any]) -> dict[str, Any]:
@@ -26,18 +27,30 @@ def _pdf_integrity(result: dict[str, Any]) -> dict[str, Any]:
         decoded = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError):
         return {"valid": False, "reason": "invalid_base64", "size_bytes": 0, "sha256": ""}
+
+    digest = hashlib.sha256(decoded).hexdigest()
     if not decoded.startswith(b"%PDF-"):
         return {
             "valid": False,
             "reason": "invalid_pdf_signature",
             "size_bytes": len(decoded),
-            "sha256": hashlib.sha256(decoded).hexdigest(),
+            "sha256": digest,
         }
+
+    trailer_window = decoded[-_PDF_EOF_SCAN_BYTES:].rstrip(b"\x00\t\n\r\x0c ")
+    if b"%%EOF" not in trailer_window:
+        return {
+            "valid": False,
+            "reason": "missing_pdf_eof",
+            "size_bytes": len(decoded),
+            "sha256": digest,
+        }
+
     return {
         "valid": True,
         "reason": "verified",
         "size_bytes": len(decoded),
-        "sha256": hashlib.sha256(decoded).hexdigest(),
+        "sha256": digest,
     }
 
 
@@ -131,7 +144,7 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
         output["report_generation_status"] = "blocked_missing_usable_artifacts"
         output["report_format_error"] = (
             "Express report generation exhausted bounded recovery without usable "
-            "Markdown, HTML, and integrity-verified PDF artifacts."
+            "Markdown, HTML, and structurally complete PDF artifacts."
         )
         output["recovery_required"] = True
         output["recovery_code"] = "express_report_generation_exhausted"
@@ -151,6 +164,7 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
         "duplicate_assessment_started": False,
         "required_formats": list(_REQUIRED_FORMATS),
         "pdf_integrity_required": True,
+        "pdf_eof_required": True,
         "blocked_status_bypass_for_render_only": True,
         "renderer_errors_recorded": True,
         "fail_closed": True,
