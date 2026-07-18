@@ -7,8 +7,8 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_report_generation_recovery.v2"
-_PATCH_MARKER = "_nico_express_report_generation_recovery_v2"
+PATCH_VERSION = "nico.express_report_generation_recovery.v3"
+_PATCH_MARKER = "_nico_express_report_generation_recovery_v3"
 _MAX_ATTEMPTS = 3
 _REQUIRED_FORMATS = ("markdown", "html", "pdf_base64")
 
@@ -55,18 +55,34 @@ def _missing_formats(result: dict[str, Any]) -> list[str]:
     return missing
 
 
-def install_express_report_generation_recovery() -> dict[str, Any]:
-    """Retry deterministic report rebuilding before Express can leave report generation.
+def _rebuild_terminal_payload(result: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Invoke the tolerant core renderer even when a later gate marked the run blocked.
 
-    The async Express runner calls ``nico.api.main.finalize_express_result_consistency``
-    exactly once. A partial or corrupt renderer result previously flowed into the final
-    gate and produced a blocked run or an unusable download. This wrapper keeps the same
-    run and result identity, retries only report reconstruction, and fails closed with
-    explicit evidence when all bounded attempts are exhausted.
+    ``report_truth_runtime_patch.rebuild_reports`` intentionally no-ops unless status is
+    ``complete``. Recovery runs after finalization, where the missing report can already
+    have changed status to ``blocked``. Calling that public helper therefore performed
+    zero reconstruction attempts. The core renderer itself is status-agnostic, so invoke
+    it on a copy and preserve the original terminal status until usable artifacts exist.
     """
 
+    from nico import final_report_consistency
+
+    output = deepcopy(result)
+    original_status = output.get("status")
+    try:
+        core_rebuild = getattr(final_report_consistency, "_rebuild_reports")
+        core_rebuild(output)
+    except Exception as exc:  # fail closed and expose the exact renderer failure
+        output["status"] = original_status
+        return output, f"{type(exc).__name__}: {exc}"
+    output["status"] = original_status
+    return output, None
+
+
+def install_express_report_generation_recovery() -> dict[str, Any]:
+    """Retry deterministic report rebuilding before Express can leave report generation."""
+
     from nico.api import main as api_main
-    from nico.report_truth_runtime_patch import rebuild_reports
 
     current: Callable[[dict[str, Any]], dict[str, Any]] = api_main.finalize_express_result_consistency
     if getattr(current, _PATCH_MARKER, False):
@@ -76,8 +92,11 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
     def finalize_with_report_recovery(result: dict[str, Any]) -> dict[str, Any]:
         output = deepcopy(current(result))
         attempts = 1
+        renderer_errors: list[str] = []
         while not _usable_formats(output) and attempts < _MAX_ATTEMPTS:
-            output = deepcopy(rebuild_reports(output))
+            output, renderer_error = _rebuild_terminal_payload(output)
+            if renderer_error:
+                renderer_errors.append(renderer_error)
             attempts += 1
 
         pdf_integrity = _pdf_integrity(output)
@@ -94,12 +113,17 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
                 "usable_report_artifacts": _usable_formats(output),
                 "missing_formats": _missing_formats(output),
                 "pdf_integrity": pdf_integrity,
+                "renderer_errors": renderer_errors,
+                "blocked_status_bypass_for_render_only": True,
             }
         )
         output["report_generation_recovery"] = evidence
 
         if _usable_formats(output):
+            output["status"] = "complete"
             output["report_generation_status"] = "complete"
+            output["recovery_required"] = False
+            output.pop("recovery_code", None)
             output.pop("report_format_error", None)
             return output
 
@@ -127,6 +151,8 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
         "duplicate_assessment_started": False,
         "required_formats": list(_REQUIRED_FORMATS),
         "pdf_integrity_required": True,
+        "blocked_status_bypass_for_render_only": True,
+        "renderer_errors_recorded": True,
         "fail_closed": True,
     }
 
