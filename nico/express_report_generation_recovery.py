@@ -7,8 +7,8 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_report_generation_recovery.v3"
-_PATCH_MARKER = "_nico_express_report_generation_recovery_v3"
+PATCH_VERSION = "nico.express_report_generation_recovery.v4"
+_PATCH_MARKER = "_nico_express_report_generation_recovery_v4"
 _MAX_ATTEMPTS = 3
 _REQUIRED_FORMATS = ("markdown", "html", "pdf_base64")
 
@@ -56,15 +56,6 @@ def _missing_formats(result: dict[str, Any]) -> list[str]:
 
 
 def _rebuild_terminal_payload(result: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-    """Invoke the tolerant core renderer even when a later gate marked the run blocked.
-
-    ``report_truth_runtime_patch.rebuild_reports`` intentionally no-ops unless status is
-    ``complete``. Recovery runs after finalization, where the missing report can already
-    have changed status to ``blocked``. Calling that public helper therefore performed
-    zero reconstruction attempts. The core renderer itself is status-agnostic, so invoke
-    it on a copy and preserve the original terminal status until usable artifacts exist.
-    """
-
     from nico import final_report_consistency
 
     output = deepcopy(result)
@@ -72,7 +63,7 @@ def _rebuild_terminal_payload(result: dict[str, Any]) -> tuple[dict[str, Any], s
     try:
         core_rebuild = getattr(final_report_consistency, "_rebuild_reports")
         core_rebuild(output)
-    except Exception as exc:  # fail closed and expose the exact renderer failure
+    except Exception as exc:
         output["status"] = original_status
         return output, f"{type(exc).__name__}: {exc}"
     output["status"] = original_status
@@ -80,13 +71,17 @@ def _rebuild_terminal_payload(result: dict[str, Any]) -> tuple[dict[str, Any], s
 
 
 def install_express_report_generation_recovery() -> dict[str, Any]:
-    """Retry deterministic report rebuilding before Express can leave report generation."""
-
     from nico.api import main as api_main
+    from nico.scanner_redaction_type_safety import install_scanner_redaction_type_safety
 
+    scanner_normalization = install_scanner_redaction_type_safety()
     current: Callable[[dict[str, Any]], dict[str, Any]] = api_main.finalize_express_result_consistency
     if getattr(current, _PATCH_MARKER, False):
-        return {"status": "already_installed", "version": PATCH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": PATCH_VERSION,
+            "scanner_output_normalization": scanner_normalization,
+        }
 
     @wraps(current)
     def finalize_with_report_recovery(result: dict[str, Any]) -> dict[str, Any]:
@@ -115,6 +110,7 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
                 "pdf_integrity": pdf_integrity,
                 "renderer_errors": renderer_errors,
                 "blocked_status_bypass_for_render_only": True,
+                "scanner_output_normalization": scanner_normalization,
             }
         )
         output["report_generation_recovery"] = evidence
@@ -153,11 +149,9 @@ def install_express_report_generation_recovery() -> dict[str, Any]:
         "pdf_integrity_required": True,
         "blocked_status_bypass_for_render_only": True,
         "renderer_errors_recorded": True,
+        "scanner_output_normalization": scanner_normalization,
         "fail_closed": True,
     }
 
 
-__all__ = [
-    "PATCH_VERSION",
-    "install_express_report_generation_recovery",
-]
+__all__ = ["PATCH_VERSION", "install_express_report_generation_recovery"]
