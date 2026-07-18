@@ -1,0 +1,253 @@
+name: Temporary Express Final-Gate Production Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-express-final-gate-production-934cb17
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PDF verifier
+        run: python -m pip install --disable-pip-version-check pypdf==6.14.2
+
+      - name: Verify deployed exact-run Express completion truth
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          NICO_REPOSITORY: BoneManTGRM/NICO
+          EXPECTED_MAIN_SHA: 934cb17cc24e94c87b9a08af5d9b16d9de1e028d
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+          from pypdf import PdfReader
+
+          proxy = os.environ['NICO_PROXY'].rstrip('/')
+          repository = os.environ['NICO_REPOSITORY']
+          expected_sha = os.environ['EXPECTED_MAIN_SHA']
+          scope = os.environ['GITHUB_RUN_ID']
+          out = Path('verification')
+
+          def post(path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+              request = urllib.request.Request(
+                  proxy + path,
+                  data=json.dumps(body).encode(),
+                  method='POST',
+                  headers={'Content-Type': 'application/json', 'User-Agent': 'NICO-express-final-gate-verifier'},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode(errors='replace')
+                  try:
+                      return exc.code, json.loads(raw)
+                  except ValueError:
+                      return exc.code, {'status': 'error', 'message': raw[:1000]}
+
+          def detail(value: dict[str, Any]) -> dict[str, Any]:
+              return value.get('detail') if isinstance(value.get('detail'), dict) else value
+
+          customer = f'express_final_gate_{scope}'
+          project = f'express_final_gate_{scope}'
+          request_body = {
+              'repository': repository,
+              'authorized': True,
+              'authorization_confirmed': True,
+              'authorized_by': 'repository_owner_production_verification',
+              'authorization_scope': 'read-only exact-run production assessment verification',
+              'client_name': 'NICO Express final-gate production verification',
+              'project_name': 'NICO',
+              'assessment_mode': 'express',
+              'timeframe_days': 180,
+              'customer_id': customer,
+              'project_id': project,
+              'refresh_full_evidence': True,
+          }
+
+          evidence: dict[str, Any] = {
+              'repository': repository,
+              'expected_main_sha': expected_sha,
+              'customer_id': customer,
+              'project_id': project,
+          }
+          try:
+              start_http, started = post('/assessment/express-run', request_body)
+              started = detail(started)
+              run_id = str(started.get('run_id') or '')
+              if start_http >= 400 or not run_id.startswith('express_run_'):
+                  raise AssertionError(f'Express did not start: {start_http} {started}')
+
+              evidence['run_id'] = run_id
+              snapshots = []
+              current = started
+              deadline = time.monotonic() + 2100
+              while time.monotonic() < deadline:
+                  current = detail(current)
+                  snapshots.append({
+                      'status': current.get('status'),
+                      'stage': current.get('current_stage'),
+                      'percent': current.get('progress_percent'),
+                      'updated_at': current.get('updated_at'),
+                      'report_generation_status': current.get('report_generation_status'),
+                  })
+                  status = str(current.get('status') or '').lower()
+                  if status in {'complete', 'completed', 'failed', 'blocked', 'error', 'interrupted'}:
+                      break
+                  time.sleep(2)
+                  status_http, current = post(
+                      f'/assessment/express-run/{run_id}/status',
+                      {'customer_id': customer, 'project_id': project},
+                  )
+                  if status_http >= 500:
+                      raise AssertionError(f'Express status endpoint failed: {status_http}')
+
+              current = detail(current)
+              evidence['snapshots'] = snapshots
+              evidence['terminal'] = current
+
+              status = str(current.get('status') or '').lower()
+              if status not in {'complete', 'completed'}:
+                  raise AssertionError(
+                      f'Express did not complete: status={current.get("status")} '
+                      f'stage={current.get("current_stage")} percent={current.get("progress_percent")} '
+                      f'recovery={current.get("recovery_code")}'
+                  )
+              if current.get('current_stage') != 'complete' or int(current.get('progress_percent') or 0) != 100:
+                  raise AssertionError('Terminal Express state is not complete/100')
+              if current.get('report_generation_status') != 'complete':
+                  raise AssertionError('Report generation is not complete')
+
+              reports = current.get('reports') if isinstance(current.get('reports'), dict) else {}
+              markdown = str(reports.get('markdown') or '')
+              html = str(reports.get('html') or '')
+              pdf_encoded = str(reports.get('pdf_base64') or '')
+              if not markdown.strip() or not html.strip() or not pdf_encoded.strip():
+                  raise AssertionError('One or more required report formats are empty')
+
+              pdf = base64.b64decode(pdf_encoded, validate=True)
+              if not pdf.startswith(b'%PDF-') or b'%%EOF' not in pdf[-2048:]:
+                  raise AssertionError('PDF failed structural header/EOF validation')
+              reader = PdfReader(io.BytesIO(pdf))
+              if len(reader.pages) < 1:
+                  raise AssertionError('PDF has no readable pages')
+              extracted = '\n'.join(page.extract_text() or '' for page in reader.pages)
+              if len(' '.join(extracted.split())) < 1000:
+                  raise AssertionError('PDF extracted content is unexpectedly sparse')
+
+              sections = current.get('sections')
+              if not isinstance(sections, list) or not sections:
+                  raise AssertionError('Completed run has no populated sections')
+              maturity = current.get('maturity_signal') if isinstance(current.get('maturity_signal'), dict) else {}
+              score = maturity.get('score', current.get('technical_score'))
+              try:
+                  score_value = float(score)
+              except (TypeError, ValueError) as exc:
+                  raise AssertionError(f'Completed run has no numeric score: {score!r}') from exc
+              if not 0 <= score_value <= 100:
+                  raise AssertionError(f'Score outside canonical bounds: {score_value}')
+
+              if current.get('human_review_required') is not True:
+                  raise AssertionError('Human review requirement was lost')
+              if current.get('client_ready') is not False:
+                  raise AssertionError('Client-ready became true before approval')
+              if current.get('client_delivery_allowed') is not False:
+                  raise AssertionError('Client delivery became allowed before approval')
+              if current.get('delivery_status') != 'blocked_pending_human_review':
+                  raise AssertionError(f'Unexpected delivery status: {current.get("delivery_status")}')
+
+              completion = current.get('assessment_completion') if isinstance(current.get('assessment_completion'), dict) else {}
+              if completion.get('status') != 'complete_pending_human_review':
+                  raise AssertionError(f'Completion contract missing: {completion}')
+              for field in ('markdown_ready', 'html_ready', 'pdf_ready', 'report_formats_ready', 'sections_ready', 'score_ready'):
+                  if completion.get(field) is not True:
+                      raise AssertionError(f'Completion evidence {field} is not true')
+
+              persistence = current.get('persistence') if isinstance(current.get('persistence'), dict) else {}
+              if persistence.get('recorded') is not True or persistence.get('durable') is not True:
+                  raise AssertionError(f'Durable persistence not proven: {persistence}')
+
+              second_http, second = post(
+                  f'/assessment/express-run/{run_id}/status',
+                  {'customer_id': customer, 'project_id': project},
+              )
+              second = detail(second)
+              if second_http >= 400:
+                  raise AssertionError(f'Post-terminal persistence read failed: {second_http} {second}')
+              if second.get('run_id') != run_id or str(second.get('status') or '').lower() not in {'complete', 'completed'}:
+                  raise AssertionError('Post-terminal status read regressed or changed run identity')
+              if int(second.get('progress_percent') or 0) != 100 or second.get('current_stage') != 'complete':
+                  raise AssertionError('Post-terminal persisted status regressed from complete/100')
+
+              duplicate_http, duplicate = post('/assessment/express-run', request_body)
+              duplicate = detail(duplicate)
+              if duplicate_http >= 500:
+                  raise AssertionError(f'Duplicate-start probe failed: {duplicate_http} {duplicate}')
+              if duplicate.get('run_id') == run_id and str(duplicate.get('status') or '').lower() in {'queued', 'running'}:
+                  raise AssertionError('Terminal run was incorrectly revived as active')
+
+              (out / 'express-final-gate-production.pdf').write_bytes(pdf)
+              (out / 'express-final-gate-production.txt').write_text(extracted, encoding='utf-8')
+              evidence['result'] = {
+                  'status': 'passed',
+                  'run_id': run_id,
+                  'terminal_status': current.get('status'),
+                  'stage': current.get('current_stage'),
+                  'progress_percent': current.get('progress_percent'),
+                  'report_generation_status': current.get('report_generation_status'),
+                  'score': score_value,
+                  'maturity': maturity.get('label') or maturity.get('maturity') or maturity.get('level'),
+                  'section_count': len(sections),
+                  'markdown_bytes': len(markdown.encode()),
+                  'html_bytes': len(html.encode()),
+                  'pdf_bytes': len(pdf),
+                  'pdf_pages': len(reader.pages),
+                  'pdf_sha256': hashlib.sha256(pdf).hexdigest(),
+                  'persistence': persistence,
+                  'human_review_required': current.get('human_review_required'),
+                  'client_ready': current.get('client_ready'),
+                  'client_delivery_allowed': current.get('client_delivery_allowed'),
+                  'delivery_status': current.get('delivery_status'),
+                  'assessment_completion': completion,
+                  'post_terminal_read_status': second.get('status'),
+                  'post_terminal_read_stage': second.get('current_stage'),
+                  'post_terminal_read_percent': second.get('progress_percent'),
+                  'duplicate_probe_run_id': duplicate.get('run_id'),
+                  'duplicate_probe_status': duplicate.get('status'),
+              }
+          except Exception as exc:
+              evidence['result'] = {'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
+              raise
+          finally:
+              (out / 'production-verification.json').write_text(json.dumps(evidence, indent=2), encoding='utf-8')
+          PY
+
+      - name: Upload production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-final-gate-production-934cb17
+          path: verification/
+          if-no-files-found: error
+          retention-days: 14
