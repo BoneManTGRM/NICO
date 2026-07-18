@@ -1,3 +1,5 @@
+import hashlib
+
 from nico.cross_tier_artifact_identity_v1 import qualify_cross_tier_artifact_identity
 
 
@@ -6,10 +8,10 @@ def package(tier: str) -> dict:
     run_id = tier + "-run"
     snapshot_sha = "b" * 40
     artifacts = {}
-    for index, format_name in enumerate(("markdown", "html", "pdf")):
+    for format_name in ("markdown", "html", "pdf"):
         artifacts[format_name] = {
             "available": True,
-            "sha256": chr(97 + index) * 64,
+            "sha256": hashlib.sha256(f"{tier}:{format_name}".encode()).hexdigest(),
             "assessment_id": assessment_id,
             "run_id": run_id,
             "snapshot_sha": snapshot_sha,
@@ -65,3 +67,29 @@ def test_prior_block_is_preserved() -> None:
     result = qualify_cross_tier_artifact_identity(packages(), prior_release_allowed=False)
     assert result["delivery_allowed"] is False
     assert "prior_release_block" in result["failures"]
+
+
+def test_cross_tier_assessment_and_run_reuse_block() -> None:
+    values = packages()
+    values["mid"]["assessment_id"] = values["express"]["assessment_id"]
+    values["mid"]["run_id"] = values["express"]["run_id"]
+    for artifact in values["mid"]["artifacts"].values():
+        artifact["assessment_id"] = values["mid"]["assessment_id"]
+        artifact["run_id"] = values["mid"]["run_id"]
+    result = qualify_cross_tier_artifact_identity(values)
+    assert "mid:assessment_id_reused_from_express" in result["failures"]
+    assert "mid:run_id_reused_from_express" in result["failures"]
+
+
+def test_cross_tier_artifact_digest_reuse_blocks() -> None:
+    values = packages()
+    values["full"]["artifacts"]["pdf"]["sha256"] = values["express"]["artifacts"]["pdf"]["sha256"]
+    result = qualify_cross_tier_artifact_identity(values)
+    assert "full:pdf:sha256_reused_from_express_pdf" in result["failures"]
+
+
+def test_cross_format_digest_reuse_blocks() -> None:
+    values = packages()
+    values["mid"]["artifacts"]["html"]["sha256"] = values["mid"]["artifacts"]["markdown"]["sha256"]
+    result = qualify_cross_tier_artifact_identity(values)
+    assert "mid:html:duplicate_cross_format_sha256" in result["failures"]
