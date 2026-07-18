@@ -9,6 +9,7 @@ from nico.report_pdf_display_patch import apply_pdf_display_patch
 from nico.express_report_base_v13 import install_express_report_base_v13
 from nico.express_report_premium_v14 import install_express_report_premium_v14
 from nico.express_report_dossier_export_v15 import install_express_dossier_export_v15
+from nico.express_backend_completion_transport import install_express_backend_completion_transport
 from nico.report_intelligence_professional_pdf import install_professional_report_intelligence_pdf
 from nico.report_intelligence_final_pdf_binding import install_report_intelligence_final_pdf_binding
 from nico.hosted_report_regression_patch import install_hosted_report_regression_patch
@@ -178,5 +179,8 @@ install_mid_report_v9_production_binding()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
+# Bind the canonical Express completion and safe-response transport after every
+# installer that can mutate report, score, acceptance, or response functions.
+install_express_backend_completion_transport()
 
 __version__ = "0.1.0"
