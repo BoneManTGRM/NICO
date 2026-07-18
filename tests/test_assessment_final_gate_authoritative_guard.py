@@ -9,7 +9,8 @@ def test_report_generation_completion_is_authoritative_over_browser_stall() -> N
     source = GUARD.read_text(encoding="utf-8")
     assert 'String(item.step || "").toLowerCase() === "report_generation"' in source
     assert 'String(item.status || "").toLowerCase() === "complete"' in source
-    assert 'code === "assessment_final_gate_stalled"' in source
+    assert 'String(transport.code || "").toLowerCase() === "assessment_final_gate_stalled"' in source
+    assert 'String(record(item.evidence).code || "").toLowerCase() === "assessment_final_gate_stalled"' in source
     assert "if (!reportGenerationComplete(payload) || payload.human_review_required !== true) return payload" in source
     assert 'output.status = "complete"' in source
     assert 'output.progress_percent = 100' in source
