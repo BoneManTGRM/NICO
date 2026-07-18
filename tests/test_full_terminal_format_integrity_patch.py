@@ -37,6 +37,21 @@ def test_full_report_requires_pdf_without_pdf_error(monkeypatch) -> None:
     assert result["format_integrity"]["missing_formats"] == ["pdf"]
 
 
+def test_full_report_rejects_non_pdf_base64(monkeypatch) -> None:
+    _install_with(monkeypatch, {"formats": {"markdown": "# Full", "html": "<h1>Full</h1>", "pdf": "bm90IGEgcGRm"}, "pdf_error": ""})
+    result = handlers._reports_handler(_context(), {})
+    assert result["status"] == "limited"
+    assert result["format_integrity"]["missing_formats"] == ["pdf"]
+    assert result["evidence"]["pdf_signature_valid"] is False
+
+
+def test_full_report_rejects_malformed_base64(monkeypatch) -> None:
+    _install_with(monkeypatch, {"formats": {"markdown": "# Full", "html": "<h1>Full</h1>", "pdf": "%%%"}, "pdf_error": ""})
+    result = handlers._reports_handler(_context(), {})
+    assert result["status"] == "limited"
+    assert result["evidence"]["pdf_size_bytes"] == 0
+
+
 def test_full_report_is_complete_with_all_required_formats(monkeypatch) -> None:
     _install_with(monkeypatch, {"formats": {"markdown": "# Full", "html": "<h1>Full</h1>", "pdf": "JVBERi0="}, "pdf_error": ""})
     result = handlers._reports_handler(_context(), {})
@@ -44,3 +59,6 @@ def test_full_report_is_complete_with_all_required_formats(monkeypatch) -> None:
     assert result["format_integrity"]["missing_formats"] == []
     assert result["evidence"]["available_formats"] == ["markdown", "html", "pdf"]
     assert result["evidence"]["format_equivalence_ready"] is True
+    assert result["evidence"]["pdf_signature_valid"] is True
+    assert result["evidence"]["pdf_sha256"]
+    assert result["evidence"]["pdf_size_bytes"] == 5
