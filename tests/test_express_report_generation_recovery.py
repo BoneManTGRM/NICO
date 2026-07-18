@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RECOVERY = ROOT / "nico" / "express_report_generation_recovery.py"
 ASYNC_METADATA = ROOT / "nico" / "express_async_contract_metadata.py"
+RUNTIME_PATCH = ROOT / "nico" / "report_truth_runtime_patch.py"
 
 
 def test_report_recovery_requires_all_direct_formats_and_verified_pdf() -> None:
@@ -32,13 +33,34 @@ def test_verified_pdf_records_hash_and_decoded_size() -> None:
     assert '"sha256": hashlib.sha256(decoded).hexdigest()' in source
 
 
-def test_report_recovery_is_bounded_and_same_run_only() -> None:
+def test_recovery_bypasses_only_the_public_complete_status_guard_for_rendering() -> None:
+    recovery = RECOVERY.read_text(encoding="utf-8")
+    runtime = RUNTIME_PATCH.read_text(encoding="utf-8")
+    assert 'if result.get("status") != "complete":' in runtime
+    assert 'core_rebuild = getattr(final_report_consistency, "_rebuild_reports")' in recovery
+    assert "core_rebuild(output)" in recovery
+    assert 'original_status = output.get("status")' in recovery
+    assert 'output["status"] = original_status' in recovery
+    assert '"blocked_status_bypass_for_render_only": True' in recovery
+
+
+def test_report_recovery_is_bounded_same_run_and_records_renderer_errors() -> None:
     source = RECOVERY.read_text(encoding="utf-8")
     assert "_MAX_ATTEMPTS = 3" in source
     assert "while not _usable_formats(output) and attempts < _MAX_ATTEMPTS" in source
-    assert "output = deepcopy(rebuild_reports(output))" in source
+    assert "output, renderer_error = _rebuild_terminal_payload(output)" in source
     assert '"same_run_continuation": True' in source
     assert '"duplicate_assessment_started": False' in source
+    assert '"renderer_errors": renderer_errors' in source
+    assert 'return output, f"{type(exc).__name__}: {exc}"' in source
+
+
+def test_successful_recovery_restores_complete_terminal_state() -> None:
+    source = RECOVERY.read_text(encoding="utf-8")
+    assert 'output["status"] = "complete"' in source
+    assert 'output["report_generation_status"] = "complete"' in source
+    assert 'output["recovery_required"] = False' in source
+    assert 'output.pop("recovery_code", None)' in source
 
 
 def test_exhausted_recovery_fails_closed_with_explicit_evidence() -> None:
