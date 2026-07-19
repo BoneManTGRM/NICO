@@ -59,7 +59,8 @@ def test_proportional_width_exact_geometry() -> None:
 
 def test_renderer_replaces_glyph_page_and_splits_architecture_velocity() -> None:
     result = _result()
-    replaced = replace_renderer_pages(_premium_pdf(result), result)
+    source_renderer = getattr(_premium_pdf, "_nico_previous", _premium_pdf)
+    replaced = replace_renderer_pages(source_renderer(result), result)
     text = [_norm(page.extract_text() or "") for page in PdfReader(io.BytesIO(replaced)).pages]
 
     assert sum("score contribution and constraints" in page for page in text) == 1
