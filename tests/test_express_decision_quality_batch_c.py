@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 from nico.express_decision_quality_v17 import (
@@ -48,7 +49,7 @@ def test_ci_categories_are_each_rendered_once_and_reconcile_to_total() -> None:
         "action_required=1; stale=0; startup_failure=0; other/unknown=3; other/unknown=3."
     )
     output = _reconcile_ci_statement(raw)
-    for label in (
+    labels = (
         "success",
         "failure",
         "cancelled",
@@ -58,11 +59,12 @@ def test_ci_categories_are_each_rendered_once_and_reconcile_to_total() -> None:
         "action_required",
         "stale",
         "startup_failure",
-        "unknown",
-    ):
-        assert output.count(f"{label}=") == 1
-    pairs = {label: int(value) for label, value in __import__("re").findall(r"([a-z_]+)=(\d+)", output)}
-    assert sum(pairs.values()) == 100
+        "other/unknown",
+    )
+    for label in labels:
+        assert len(re.findall(rf"(?:^|;\s){re.escape(label)}=\d+", output)) == 1
+    values = [int(value) for _, value in re.findall(r"(?:^|;\s)([a-z_/]+)=(\d+)", output)]
+    assert sum(values) == 100
 
 
 def test_ci_parser_does_not_rewrite_unrelated_score_text() -> None:
@@ -85,7 +87,7 @@ def test_architecture_and_velocity_receive_separate_page_contract() -> None:
     assert velocity["decision_record_boundary"] == "new_page"
 
 
-def test_dossier_quality_removes_generic_boilerplate_and_root_only_evidence(monkeypatch) -> None:
+def test_dossier_quality_removes_generic_boilerplate_and_root_only_evidence() -> None:
     import nico.express_decision_quality_v17 as module
 
     dossier = SimpleNamespace(
