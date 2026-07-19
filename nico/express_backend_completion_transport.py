@@ -7,9 +7,10 @@ from typing import Any, Callable
 import nico.client_acceptance as client_acceptance
 from nico.express_final_gate_completion_patch import normalize_assessment_completion
 
-PATCH_VERSION = "nico.express_backend_completion_transport.v1"
+PATCH_VERSION = "nico.express_backend_completion_transport.v2"
 _GATE_MARKER = "_nico_express_backend_completion_gate_v1"
 _SAFE_MARKER = "_nico_express_backend_completion_safe_payload_v1"
+_BUNDLE_MARKER = "_nico_express_backend_completion_bundle_v1"
 _COMPLETION_FIELDS = (
     "status",
     "current_stage",
@@ -37,17 +38,40 @@ def _copy_completion_fields(source: dict[str, Any], target: dict[str, Any]) -> d
 
 
 def install_express_backend_completion_transport() -> dict[str, Any]:
-    """Make Express completion authoritative before persistence and status transport.
+    """Bind the final Express bundle, completion, and safe-response transport.
 
-    The async runner reached report generation successfully, but the final response
-    could remain ``running`` because the last gate binding and safe-response reducer
-    did not preserve the canonical completion contract. This installer normalizes
-    the final gate on the live API reference, then carries the resulting completion,
-    score, section, and report evidence through the safe response boundary so the
-    same run can be persisted as complete pending human review.
+    This installer runs after every renderer, quality gate, and compatibility
+    installer. Exact Express runs must therefore be rebound here so a later
+    installer cannot replace the bounded evidence-bundle path and send the
+    backend back into the recursive shared bundle at 94-96 percent.
     """
 
     from nico.api import main as api_main
+    from nico.express_evidence_bundle_fast_path import attach_express_evidence_bundle
+
+    current_bundle: Callable[[dict[str, Any]], dict[str, Any]] = api_main.attach_evidence_artifact_bundle
+    bundle_status = "already_installed"
+    if not getattr(current_bundle, _BUNDLE_MARKER, False):
+        @wraps(current_bundle)
+        def final_exact_run_bundle(result: dict[str, Any]) -> dict[str, Any]:
+            run_id = str(result.get("run_id") or "").strip().lower()
+            tier = str(
+                result.get("assessment_type")
+                or result.get("service_tier")
+                or result.get("assessment_mode")
+                or ""
+            ).strip().lower()
+            if tier == "express" or run_id.startswith("express_run_"):
+                output = dict(result)
+                output.setdefault("assessment_type", "express")
+                output.setdefault("service_tier", "express")
+                return attach_express_evidence_bundle(output)
+            return current_bundle(result)
+
+        setattr(final_exact_run_bundle, _BUNDLE_MARKER, True)
+        setattr(final_exact_run_bundle, "_nico_previous", current_bundle)
+        api_main.attach_evidence_artifact_bundle = final_exact_run_bundle
+        bundle_status = "installed"
 
     current_gate: Callable[[dict[str, Any]], dict[str, Any]] = api_main.attach_client_acceptance_gate
     gate_status = "already_installed"
@@ -90,10 +114,12 @@ def install_express_backend_completion_transport() -> dict[str, Any]:
         safe_status = "installed"
 
     return {
-        "status": "installed" if "installed" in {gate_status, safe_status} else "already_installed",
+        "status": "installed" if "installed" in {bundle_status, gate_status, safe_status} else "already_installed",
         "version": PATCH_VERSION,
+        "bundle_binding": bundle_status,
         "gate_binding": gate_status,
         "safe_payload_binding": safe_status,
+        "exact_run_identity_bound_last": True,
         "same_run_completion_persisted": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
