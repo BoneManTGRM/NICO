@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 from nico.express_final_gate_completion_patch import (
     normalize_assessment_completion,
     normalize_express_completion,
 )
+
+
+def _pdf() -> str:
+    return base64.b64encode(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n").decode("ascii")
 
 
 def _complete_payload(tier: str = "express") -> dict:
@@ -18,7 +24,7 @@ def _complete_payload(tier: str = "express") -> dict:
         "reports": {
             "markdown": "# Report",
             "html": "<h1>Report</h1>",
-            "pdf_base64": "JVBERi0xLjQ=",
+            "pdf_base64": _pdf(),
         },
         "human_review_required": True,
         "client_ready": False,
