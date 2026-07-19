@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from nico import durable_runtime_storage, express_async_api, storage
 
-RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v2"
+RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v3_renderer_truth"
 _STATUS_MARKER = "_nico_runtime_storage_truth_v1"
 _PERSISTENCE_MARKER = "_nico_express_persistence_truth_v1"
 
@@ -115,21 +115,25 @@ def install_runtime_storage_truth() -> dict[str, Any]:
     )
     persistence_patched = _install_express_persistence_truth()
 
-    # Bind terminal-state reconciliation before the later liveness wrapper is
-    # installed. The liveness patch then wraps this function and preserves the
-    # invariant for both active and terminal reads.
     from nico.express_terminal_truth_patch import install_express_terminal_truth_patch
+    from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_truth_v21
 
     terminal_truth = install_express_terminal_truth_patch()
+    renderer_truth = install_express_pdf_renderer_truth_v21()
     return {
-        "status": "installed" if patched or persistence_patched or terminal_truth.get("status") == "installed" else "already_installed",
+        "status": "installed"
+        if patched or persistence_patched or terminal_truth.get("status") == "installed" or renderer_truth.get("status") == "installed"
+        else "already_installed",
         "version": RUNTIME_STORAGE_TRUTH_VERSION,
         "status_methods_patched": patched,
         "express_persistence_patched": persistence_patched,
         "terminal_truth": terminal_truth,
+        "renderer_truth": renderer_truth,
         "terminal_completion_requires_durable_record": True,
         "terminal_completion_requires_terminal_gates": True,
         "scanner_worker_evidence_mapped_to_controls": True,
+        "pdf_vector_geometry_bound": True,
+        "architecture_velocity_split_bound": True,
         "sqlite_writable_equals_durable": False,
         "postgres_durability_verified": True,
         "human_review_required": True,
