@@ -22,10 +22,10 @@ def test_post_render_result_is_cached_by_exact_run_id() -> None:
     assert '"preserves_exact_run": True' in source
 
 
-def test_truth_gate_stage_records_rich_report_checkpoint_not_bare_stage_payload() -> None:
+def test_truth_gate_stage_consumes_rich_report_checkpoint_not_bare_stage_payload() -> None:
     source = PATCH.read_text(encoding="utf-8")
     assert 'if stage != "truth_and_review_gates"' in source
-    assert "checkpoint = deepcopy(_CHECKPOINTS.get(run_id) or {})" in source
+    assert "checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})" in source
     assert 'checkpoint["status"] = "running"' in source
     assert 'checkpoint["current_stage"] = "truth_and_review_gates"' in source
     assert 'checkpoint["progress_percent"] = max(94, int(progress_percent or 94))' in source
@@ -36,13 +36,22 @@ def test_truth_gate_stage_records_rich_report_checkpoint_not_bare_stage_payload(
 
 def test_checkpoint_keeps_reports_score_sections_and_review_truth() -> None:
     source = PATCH.read_text(encoding="utf-8")
-    assert "checkpoint = deepcopy(_CHECKPOINTS.get(run_id) or {})" in source
+    assert "checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})" in source
     assert 'checkpoint["human_review_required"] = True' in source
     assert 'checkpoint["client_ready"] = False' in source
     assert 'checkpoint["persistence"] = express_async_api._persistence()' in source
     assert "checkpoint.pop(\"reports\", None)" not in source
     assert "checkpoint.pop(\"sections\", None)" not in source
     assert "checkpoint.pop(\"maturity_signal\", None)" not in source
+
+
+def test_checkpoint_is_cleared_at_terminal_release() -> None:
+    source = PATCH.read_text(encoding="utf-8")
+    assert "def _discard_checkpoint(run_id: str)" in source
+    assert "def release_with_checkpoint_cleanup" in source
+    assert "_discard_checkpoint(run_id)" in source
+    assert '"checkpoint_consumed_once": True' in source
+    assert '"terminal_checkpoint_cleanup": True' in source
 
 
 def test_checkpoint_patch_installs_with_async_runtime() -> None:
