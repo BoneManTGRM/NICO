@@ -92,6 +92,7 @@ from nico.mid_truth_identity_consistency import install_mid_truth_identity_consi
 from nico.mid_truth_identity_transport import install_mid_truth_identity_transport
 from nico.mid_approval_truth_freeze import install_mid_approval_truth_freeze
 from nico.language_aware_pattern_reconciliation import install_language_aware_pattern_reconciliation
+from nico.express_decision_quality_v17 import install_express_decision_quality_v17
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
@@ -186,6 +187,7 @@ install_mid_report_v9_production_binding()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
+install_express_decision_quality_v17()
 # Rebind report recovery and the rich exact-run checkpoint after every renderer
 # and report-consistency installer. Earlier bindings can otherwise be replaced,
 # leaving the live async path without recovery or usable report artifacts.
