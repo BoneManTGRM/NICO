@@ -7,10 +7,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: temporary-production-verification-b8dd91b
+  cancel-in-progress: true
+
 jobs:
   verify-express:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -30,16 +34,18 @@ jobs:
           from pypdf import PdfReader
 
           proxy = os.environ['NICO_PROXY'].rstrip('/')
-          expected_sha = os.environ['EXPECTED_MAIN_SHA']
+          expected_sha = os.environ['EXPECTED_MAIN_SHA'].lower()
           repository = os.environ['NICO_REPOSITORY']
           scope = os.environ['GITHUB_RUN_ID']
           out = Path('verification')
           transport_events = []
+          terminal_statuses = {'complete','completed','failed','blocked','error','interrupted','rejected'}
+          retryable_codes = {'express_capacity_reached','proxy_unavailable','service_unavailable','upstream_timeout'}
 
           def post(path, body):
               req = urllib.request.Request(proxy + path, data=json.dumps(body).encode(), method='POST', headers={'Content-Type':'application/json','User-Agent':'NICO-production-verifier'})
               try:
-                  with urllib.request.urlopen(req, timeout=180) as response:
+                  with urllib.request.urlopen(req, timeout=120) as response:
                       return response.status, json.load(response)
               except urllib.error.HTTPError as exc:
                   raw = exc.read().decode(errors='replace')
@@ -49,26 +55,24 @@ jobs:
           def detail(value):
               return value.get('detail') if isinstance(value, dict) and isinstance(value.get('detail'), dict) else value
 
+          def terminal_payload(value):
+              return isinstance(value, dict) and str(value.get('status') or '').lower() in terminal_statuses
+
           def retryable_post(path, body, *, deadline, operation):
               attempt = 0
               while True:
                   attempt += 1
                   http, payload = post(path, body)
                   current = detail(payload)
-                  if http != 503:
+                  code = str(current.get('code') or '') if isinstance(current, dict) else ''
+                  status = str(current.get('status') or '').lower() if isinstance(current, dict) else ''
+                  retryable = http == 503 and not terminal_payload(current) and (not code or code in retryable_codes)
+                  transport_events.append({'operation':operation,'attempt':attempt,'http':http,'code':code or None,'status':status or None,'at':time.time(),'retryable':retryable})
+                  if not retryable:
                       return http, current
-                  event = {
-                      'operation': operation,
-                      'attempt': attempt,
-                      'http': http,
-                      'code': current.get('code') if isinstance(current, dict) else None,
-                      'message': current.get('message') if isinstance(current, dict) else str(current),
-                      'at': time.time(),
-                  }
-                  transport_events.append(event)
                   if time.monotonic() >= deadline:
-                      raise AssertionError(f'{operation} remained unavailable after {attempt} attempts: {current}')
-                  time.sleep(min(15, 2 + attempt))
+                      raise AssertionError(f'{operation} remained transiently unavailable after {attempt} attempts: {current}')
+                  time.sleep(min(10, 1 + attempt))
 
           customer = f'production_main_{scope}'
           request_body = {
@@ -87,35 +91,41 @@ jobs:
           }
           evidence = {'expected_main_sha': expected_sha, 'repository': repository, 'customer_id': customer}
           try:
-              start_deadline = time.monotonic() + 600
-              http, current = retryable_post('/assessment/express-run', request_body, deadline=start_deadline, operation='start')
-              run_id = str(current.get('run_id') or '')
+              http, current = retryable_post('/assessment/express-run', request_body, deadline=time.monotonic()+300, operation='start')
+              run_id = str(current.get('run_id') or '') if isinstance(current, dict) else ''
               if http >= 400 or not run_id.startswith('express_run_'):
                   raise AssertionError(f'start failed: {http} {current}')
               evidence['run_id'] = run_id
               snapshots = []
-              deadline = time.monotonic() + 2400
+              deadline = time.monotonic() + 1200
               while time.monotonic() < deadline:
                   current = detail(current)
-                  snapshots.append({k: current.get(k) for k in ('status','current_stage','progress_percent','report_generation_status','recovery_code','updated_at')})
-                  if str(current.get('status') or '').lower() in {'complete','completed','failed','blocked','error','interrupted'}:
+                  snapshots.append({k: current.get(k) for k in ('status','current_stage','progress_percent','report_generation_status','recovery_code','code','updated_at')})
+                  if terminal_payload(current):
                       break
                   time.sleep(2)
-                  http, next_current = retryable_post(
+                  http, current = retryable_post(
                       f'/assessment/express-run/{run_id}/status',
                       {'customer_id':customer,'project_id':customer},
                       deadline=deadline,
                       operation='status',
                   )
-                  if http >= 400:
-                      raise AssertionError(f'status failed: {http} {next_current}')
-                  current = next_current
+                  if http >= 400 and not terminal_payload(current):
+                      raise AssertionError(f'status transport failed: {http} {current}')
               current = detail(current)
               evidence['snapshots'] = snapshots
               evidence['terminal'] = current
               status = str(current.get('status') or '').lower()
               if status not in {'complete','completed'}:
-                  raise AssertionError(f'run blocked: {status}/{current.get("current_stage")}/{current.get("progress_percent")}')
+                  raise AssertionError(f'run terminal failure: {status}/{current.get("current_stage")}/{current.get("progress_percent")} code={current.get("code")} scanner={current.get("scanner")}')
+              if current.get('current_stage') != 'complete' or int(current.get('progress_percent') or 0) != 100:
+                  raise AssertionError('terminal state is not complete/100')
+
+              snapshot = current.get('repository_snapshot') if isinstance(current.get('repository_snapshot'), dict) else {}
+              snapshot_sha = str(snapshot.get('commit_sha') or current.get('snapshot_commit_sha') or '').lower()
+              if snapshot_sha != expected_sha:
+                  raise AssertionError(f'deployment/snapshot SHA mismatch: expected={expected_sha} actual={snapshot_sha}')
+
               reports = current.get('reports') if isinstance(current.get('reports'), dict) else {}
               markdown, html, pdf64 = str(reports.get('markdown') or ''), str(reports.get('html') or ''), str(reports.get('pdf_base64') or '')
               if not markdown.strip() or not html.strip() or not pdf64.strip(): raise AssertionError('required report format empty')
@@ -126,17 +136,25 @@ jobs:
               extracted = '\n'.join(page_text)
               if len(reader.pages) < 1 or len(' '.join(extracted.split())) < 1000: raise AssertionError('PDF sparse or unreadable')
               total = len(reader.pages)
-              bad = re.findall(r'Page\s+(\d+)\s+of\s+(\d+)', extracted, re.I)
-              mismatched = [(int(page), int(claimed)) for page, claimed in bad if int(claimed) != total or int(page) > total]
+              page_tokens = re.findall(r'(?:Page|Página)\s+(\d+)\s+of\s+(\d+)', extracted, re.I)
+              mismatched = [(int(page), int(claimed)) for page, claimed in page_tokens if int(claimed) != total or int(page) > total]
               if mismatched: raise AssertionError(f'global pagination mismatch total={total} samples={mismatched[:10]}')
-              if total > 15 and re.search(r'Page\s+\d+\s+of\s+15\b', extracted, re.I): raise AssertionError('stale hard-coded Page X of 15 footer remains')
+
               completion = current.get('assessment_completion') if isinstance(current.get('assessment_completion'), dict) else {}
               for field in ('markdown_ready','html_ready','pdf_ready','report_formats_ready','sections_ready','score_ready'):
                   if completion.get(field) is not True: raise AssertionError(f'{field} false')
+              sections = current.get('sections') if isinstance(current.get('sections'), list) else []
+              maturity = current.get('maturity_signal') if isinstance(current.get('maturity_signal'), dict) else {}
+              score = maturity.get('score', current.get('technical_score'))
+              if not sections or score is None or not (maturity.get('level') or maturity.get('label')):
+                  raise AssertionError('score, maturity, or sections missing')
               if current.get('human_review_required') is not True or current.get('client_delivery_allowed') is not False or current.get('delivery_status') != 'blocked_pending_human_review':
                   raise AssertionError('review/delivery contract invalid')
               persistence = current.get('persistence') if isinstance(current.get('persistence'), dict) else {}
-              evidence['result'] = {'status':'passed','run_id':run_id,'score':(current.get('maturity_signal') or {}).get('score', current.get('technical_score')),'maturity':(current.get('maturity_signal') or {}).get('level') or (current.get('maturity_signal') or {}).get('label'),'section_count':len(current.get('sections') or []),'markdown_bytes':len(markdown.encode()),'html_bytes':len(html.encode()),'pdf_bytes':len(pdf),'pdf_pages':total,'pdf_sha256':hashlib.sha256(pdf).hexdigest(),'pagination_samples':bad[-10:],'persistence':persistence}
+              if persistence.get('recorded') is not True or persistence.get('durable') is not True:
+                  raise AssertionError(f'durable persistence not proven: {persistence}')
+
+              evidence['result'] = {'status':'passed','run_id':run_id,'score':score,'maturity':maturity.get('level') or maturity.get('label'),'section_count':len(sections),'markdown_bytes':len(markdown.encode()),'html_bytes':len(html.encode()),'pdf_bytes':len(pdf),'pdf_pages':total,'pdf_sha256':hashlib.sha256(pdf).hexdigest(),'pagination_samples':page_tokens[-10:],'persistence':persistence,'snapshot_sha':snapshot_sha}
               (out/'report.pdf').write_bytes(pdf)
               (out/'report.txt').write_text(extracted, encoding='utf-8')
           except Exception as exc:
