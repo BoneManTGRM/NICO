@@ -65,6 +65,19 @@ def _bounded_get_json(self: Any, url: str, params: dict[str, Any] | None = None)
         return None, "GitHub returned a non-JSON response."
 
 
+def _serial_fetch(
+    ordered: list[str],
+    fetcher: Callable[[str], tuple[str | None, str | None]],
+) -> dict[str, tuple[str | None, str | None]]:
+    results: dict[str, tuple[str | None, str | None]] = {}
+    for path in ordered:
+        try:
+            results[path] = fetcher(path)
+        except Exception:
+            results[path] = (None, f"{path} could not be read within the bounded collection window.")
+    return results
+
+
 def _parallel_fetch(
     paths: list[str],
     fetcher: Callable[[str], tuple[str | None, str | None]],
@@ -74,14 +87,20 @@ def _parallel_fetch(
         return {}
     workers = max(1, min(GITHUB_FILE_FETCH_WORKERS, len(ordered)))
     results: dict[str, tuple[str | None, str | None]] = {}
-    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="nico-github-file") as executor:
-        future_paths = {executor.submit(fetcher, path): path for path in ordered}
-        for future in as_completed(future_paths):
-            path = future_paths[future]
-            try:
-                results[path] = future.result()
-            except Exception:
-                results[path] = (None, f"{path} could not be read within the bounded collection window.")
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="nico-github-file") as executor:
+            future_paths = {executor.submit(fetcher, path): path for path in ordered}
+            for future in as_completed(future_paths):
+                path = future_paths[future]
+                try:
+                    results[path] = future.result()
+                except Exception:
+                    results[path] = (None, f"{path} could not be read within the bounded collection window.")
+    except RuntimeError:
+        # Hosted workers can temporarily refuse new native threads under memory or
+        # process pressure. Evidence collection must degrade to bounded serial I/O
+        # instead of failing the entire assessment before scanner/report stages.
+        return _serial_fetch(ordered, fetcher)
     return results
 
 
@@ -100,10 +119,7 @@ def _bounded_repository_profile(client: Any, repo: str, repo_meta: dict[str, Any
     tree_paths = [str(item.get("path") or "") for item in blobs if item.get("path")]
     sizes = {str(item.get("path") or ""): int(item.get("size") or 0) for item in blobs if item.get("path")}
     candidates = [path for path in hosted.KNOWN_FILE_PATHS if path in tree_paths]
-    candidates.extend(
-        path for path in tree_paths
-        if path not in candidates and hosted.should_fetch_path(path, sizes.get(path, 0))
-    )
+    candidates.extend(path for path in tree_paths if path not in candidates and hosted.should_fetch_path(path, sizes.get(path, 0)))
     selected = candidates[: hosted.MAX_TEXT_FILES]
     fetched = _parallel_fetch(selected, lambda path: client.get_text_file(repo, path))
     files: dict[str, str] = {}
@@ -239,7 +255,6 @@ def _bounded_query_osv(dependencies: list[dict[str, str]]) -> tuple[list[str], l
 
 def _rebind_collectors() -> None:
     """Restore bounded module-level collectors if another compatibility patch replaced them."""
-
     hosted.fetch_repository_profile = _bounded_repository_profile
     hosted.fetch_workflows = _bounded_workflows
     hosted.query_osv = _bounded_query_osv
@@ -248,7 +263,6 @@ def _rebind_collectors() -> None:
 
 def install_assessment_network_budget() -> dict[str, Any]:
     """Install one bounded network policy for hosted Express and Mid collection."""
-
     block_messages = install_assessment_block_messages()
     client_cls = hosted.GitHubAssessmentClient
     already_installed = bool(getattr(client_cls, "_nico_budget_installed", False))
@@ -279,6 +293,7 @@ def collection_policy() -> dict[str, Any]:
         "github_collection_budget_seconds": GITHUB_COLLECTION_BUDGET_SECONDS,
         "github_file_fetch_workers": GITHUB_FILE_FETCH_WORKERS,
         "osv_request_timeout_seconds": OSV_REQUEST_TIMEOUT_SECONDS,
+        "thread_creation_fallback": "bounded_serial",
         "rule": "When the bounded collection window is exhausted, remaining evidence is marked unavailable and the assessment returns instead of waiting indefinitely.",
     }
 
