@@ -1,0 +1,121 @@
+name: Temporary Production Verification 4d644f7
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install verifier
+        run: python -m pip install --disable-pip-version-check pypdf==6.14.2
+      - name: Verify deployed Express exact-run truth
+        env:
+          NICO_PROXY: https://app.nicoaudit.com/api/nico
+          EXPECTED_MAIN_SHA: 4d644f756e1548965058adaaeca8930400277cdf
+          NICO_REPOSITORY: BoneManTGRM/NICO
+        run: |
+          mkdir -p verification
+          python - <<'PY'
+          import base64, hashlib, io, json, os, time, urllib.error, urllib.request
+          from pathlib import Path
+          from pypdf import PdfReader
+
+          proxy = os.environ['NICO_PROXY'].rstrip('/')
+          expected_sha = os.environ['EXPECTED_MAIN_SHA']
+          repository = os.environ['NICO_REPOSITORY']
+          scope = os.environ['GITHUB_RUN_ID']
+          out = Path('verification')
+
+          def post(path, body):
+              req = urllib.request.Request(proxy + path, data=json.dumps(body).encode(), method='POST', headers={'Content-Type':'application/json','User-Agent':'NICO-production-verifier'})
+              try:
+                  with urllib.request.urlopen(req, timeout=180) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode(errors='replace')
+                  try: return exc.code, json.loads(raw)
+                  except ValueError: return exc.code, {'status':'error','message':raw[:1000]}
+
+          def detail(value):
+              return value.get('detail') if isinstance(value, dict) and isinstance(value.get('detail'), dict) else value
+
+          customer = f'production_main_{scope}'
+          request_body = {
+              'repository': repository,
+              'authorized': True,
+              'authorization_confirmed': True,
+              'authorized_by': 'repository_owner_production_verification',
+              'authorization_scope': 'read-only production verification',
+              'client_name': 'NICO production verification',
+              'project_name': 'NICO',
+              'assessment_mode': 'express',
+              'timeframe_days': 180,
+              'customer_id': customer,
+              'project_id': customer,
+              'refresh_full_evidence': True,
+          }
+          evidence = {'expected_main_sha': expected_sha, 'repository': repository, 'customer_id': customer}
+          try:
+              http, current = post('/assessment/express-run', request_body)
+              current = detail(current)
+              run_id = str(current.get('run_id') or '')
+              if http >= 400 or not run_id.startswith('express_run_'):
+                  raise AssertionError(f'start failed: {http} {current}')
+              evidence['run_id'] = run_id
+              snapshots = []
+              deadline = time.monotonic() + 2100
+              while time.monotonic() < deadline:
+                  current = detail(current)
+                  snapshots.append({k: current.get(k) for k in ('status','current_stage','progress_percent','report_generation_status','recovery_code','updated_at')})
+                  if str(current.get('status') or '').lower() in {'complete','completed','failed','blocked','error','interrupted'}:
+                      break
+                  time.sleep(2)
+                  http, current = post(f'/assessment/express-run/{run_id}/status', {'customer_id':customer,'project_id':customer})
+                  if http >= 500: raise AssertionError(f'status failed: {http}')
+              current = detail(current)
+              evidence['snapshots'] = snapshots
+              evidence['terminal'] = current
+              status = str(current.get('status') or '').lower()
+              if status not in {'complete','completed'}:
+                  raise AssertionError(f'run blocked: {status}/{current.get("current_stage")}/{current.get("progress_percent")} missing={((current.get("assessment_completion") or {}).get("missing"))}')
+              reports = current.get('reports') if isinstance(current.get('reports'), dict) else {}
+              markdown, html, pdf64 = str(reports.get('markdown') or ''), str(reports.get('html') or ''), str(reports.get('pdf_base64') or '')
+              if not markdown.strip() or not html.strip() or not pdf64.strip(): raise AssertionError('required report format empty')
+              pdf = base64.b64decode(pdf64, validate=True)
+              if not pdf.startswith(b'%PDF-') or b'%%EOF' not in pdf[-2048:]: raise AssertionError('invalid PDF structure')
+              reader = PdfReader(io.BytesIO(pdf))
+              extracted = '\n'.join(page.extract_text() or '' for page in reader.pages)
+              if len(reader.pages) < 1 or len(' '.join(extracted.split())) < 1000: raise AssertionError('PDF sparse or unreadable')
+              completion = current.get('assessment_completion') if isinstance(current.get('assessment_completion'), dict) else {}
+              for field in ('markdown_ready','html_ready','pdf_ready','report_formats_ready','sections_ready','score_ready'):
+                  if completion.get(field) is not True: raise AssertionError(f'{field} false')
+              persistence = current.get('persistence') if isinstance(current.get('persistence'), dict) else {}
+              if persistence.get('recorded') is not True or persistence.get('durable') is not True: raise AssertionError(f'durable persistence not proven: {persistence}')
+              if current.get('human_review_required') is not True or current.get('client_delivery_allowed') is not False or current.get('delivery_status') != 'blocked_pending_human_review':
+                  raise AssertionError('review/delivery contract invalid')
+              evidence['result'] = {'status':'passed','run_id':run_id,'score':(current.get('maturity_signal') or {}).get('score', current.get('technical_score')),'maturity':(current.get('maturity_signal') or {}).get('level') or (current.get('maturity_signal') or {}).get('label'),'section_count':len(current.get('sections') or []),'markdown_bytes':len(markdown.encode()),'html_bytes':len(html.encode()),'pdf_bytes':len(pdf),'pdf_pages':len(reader.pages),'pdf_sha256':hashlib.sha256(pdf).hexdigest(),'persistence':persistence}
+              (out/'report.pdf').write_bytes(pdf)
+              (out/'report.txt').write_text(extracted, encoding='utf-8')
+          except Exception as exc:
+              evidence['result'] = {'status':'failed','error':f'{type(exc).__name__}: {exc}'}
+              raise
+          finally:
+              (out/'production-verification.json').write_text(json.dumps(evidence, indent=2), encoding='utf-8')
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-main-4d644f7
+          path: verification/
+          if-no-files-found: error
+          retention-days: 14
