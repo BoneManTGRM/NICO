@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
@@ -14,12 +15,19 @@ def proportional_width(score: Any, maximum_width: float = 96.0) -> float:
         value = max(0.0, min(100.0, float(score)))
     except (TypeError, ValueError):
         value = 0.0
-    return maximum_width * (value / 100.0)
+    width = (Decimal(str(maximum_width)) * Decimal(str(value)) / Decimal("100")).quantize(
+        Decimal("0.000001"), rounding=ROUND_HALF_UP
+    )
+    return float(width)
 
 
 def _text(value: Any, limit: int = 800) -> str:
     text = " ".join(str(value or "").split())
     return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
+
+
+def _normalized_pdf_text(value: str) -> str:
+    return " ".join(str(value or "").replace("\u00ad", "").split()).casefold()
 
 
 def _section(result: dict[str, Any], section_id: str) -> dict[str, Any]:
@@ -158,13 +166,20 @@ def replace_renderer_pages(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
     score_replaced = False
     architecture_replaced = False
     for page in reader.pages:
-        text = page.extract_text() or ""
-        if "Score Contribution and Constraints" in text:
+        raw_text = page.extract_text() or ""
+        text = _normalized_pdf_text(raw_text)
+        if "score contribution and constraints" in text:
             for replacement in PdfReader(io.BytesIO(_replacement_score_page(result))).pages:
                 writer.add_page(replacement)
             score_replaced = True
             continue
-        if "Architecture, Complexity, and Ownership Decision Record" in text:
+        is_combined_architecture_page = (
+            "architecture" in text
+            and "complexity" in text
+            and "ownership decision record" in text
+            and "velocity" in text
+        )
+        if is_combined_architecture_page:
             for replacement in PdfReader(io.BytesIO(_replacement_decision_page(result, "architecture_debt", "Architecture Decision Record"))).pages:
                 writer.add_page(replacement)
             for replacement in PdfReader(io.BytesIO(_replacement_decision_page(result, "velocity_complexity", "Velocity, Complexity, and Ownership Decision Record"))).pages:
