@@ -9,11 +9,11 @@ from typing import Any, Callable
 import nico.client_acceptance as client_acceptance
 from nico.express_final_gate_completion_patch import normalize_assessment_completion
 
-PATCH_VERSION = "nico.express_backend_completion_transport.v4"
+PATCH_VERSION = "nico.express_backend_completion_transport.v5"
 _GATE_MARKER = "_nico_express_backend_completion_gate_v1"
 _SAFE_MARKER = "_nico_express_backend_completion_safe_payload_v1"
 _BUNDLE_MARKER = "_nico_express_backend_completion_bundle_v1"
-_PDF_MARKER = "_nico_express_global_pdf_pagination_v2"
+_PDF_MARKER = "_nico_express_global_pdf_pagination_v3"
 _COMPLETION_FIELDS = (
     "status",
     "current_stage",
@@ -52,7 +52,10 @@ def _is_express(result: dict[str, Any]) -> bool:
 
 
 def _paginate_express_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
+    import re
+
     from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ContentStream
     from reportlab.lib import colors
     from reportlab.lib.units import inch
     from reportlab.pdfgen import canvas
@@ -64,27 +67,49 @@ def _paginate_express_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
 
     locale = str(result.get("report_language") or result.get("language") or result.get("locale") or "en")
     page_label = "Página" if locale.lower().replace("_", "-").startswith("es") else "Page"
+    footer_pattern = re.compile(r"(?:Page|Página)\s+\d+\s+of\s+\d+", re.IGNORECASE)
     writer = PdfWriter()
+
+    def operation_text(operands: list[Any], operator: bytes) -> str:
+        if operator == b"TJ" and operands:
+            values = operands[0] if isinstance(operands[0], (list, tuple)) else []
+            return "".join(str(value) for value in values if not isinstance(value, (int, float)))
+        if operator in {b"Tj", b"'"} and operands:
+            return str(operands[-1])
+        if operator == b'"' and len(operands) >= 3:
+            return str(operands[-1])
+        return ""
 
     for index, page in enumerate(reader.pages, start=1):
         width = float(page.mediabox.width)
         height = float(page.mediabox.height)
-        footer_box = (
-            width - 2.25 * inch,
-            0.12 * inch,
-            width - 0.42 * inch,
-            0.48 * inch,
-        )
 
-        # Remove the previous footer from the PDF content stream, rather than
-        # merely painting over it. This prevents stale totals such as
-        # "Page 16 of 15" from remaining searchable/extractable in the final
-        # client artifact.
-        page.add_redact_annotation(footer_box, fill=(1, 1, 1))
-        page.apply_redactions()
+        # Remove prior pagination text from the page content stream itself. The
+        # pypdf version used by NICO does not expose redaction annotations on
+        # PageObject, so filtering text-show operators is the portable path.
+        # This eliminates stale totals from search/extraction rather than only
+        # painting over them visually.
+        contents = page.get_contents()
+        if contents is not None:
+            content_stream = ContentStream(contents, reader)
+            content_stream.operations = [
+                (operands, operator)
+                for operands, operator in content_stream.operations
+                if not footer_pattern.fullmatch(operation_text(operands, operator).strip())
+            ]
+            page.replace_contents(content_stream)
 
         overlay_buffer = io.BytesIO()
         overlay = canvas.Canvas(overlay_buffer, pagesize=(width, height), invariant=1)
+        overlay.setFillColor(colors.white)
+        overlay.rect(
+            width - 2.35 * inch,
+            0.08 * inch,
+            2.0 * inch,
+            0.46 * inch,
+            stroke=0,
+            fill=1,
+        )
         overlay.setFillColor(colors.HexColor("#64748b"))
         overlay.setFont("Helvetica", 7.1)
         overlay.drawRightString(width - 0.55 * inch, 0.3 * inch, f"{page_label} {index} of {total_pages}")
@@ -108,7 +133,7 @@ def _paginate_express_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
         expected = f"{page_label} {index} of {total_pages}"
         if expected not in text:
             raise ValueError(f"Missing final pagination footer on page {index}")
-        stale_footer = __import__("re").search(r"(?:Page|Página)\s+\d+\s+of\s+(?!%d\b)\d+" % total_pages, text)
+        stale_footer = re.search(r"(?:Page|Página)\s+\d+\s+of\s+(?!%d\b)\d+" % total_pages, text)
         if stale_footer:
             raise ValueError(f"Stale pagination footer remains on page {index}: {stale_footer.group(0)}")
     return corrected
