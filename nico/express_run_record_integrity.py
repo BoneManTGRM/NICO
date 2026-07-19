@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_run_record_integrity.v1"
+PATCH_VERSION = "nico.express_run_record_integrity.v2"
 _PATCH_MARKER = "_nico_express_run_record_integrity_v1"
 _TERMINAL_SUCCESS = {"complete", "completed"}
 _TERMINAL_FAILURE = {"blocked", "failed", "error", "interrupted", "rejected"}
@@ -91,24 +91,29 @@ def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict
 
 def install_express_run_record_integrity() -> dict[str, Any]:
     from nico import express_async_api
+    from nico.express_final_gate_heartbeat import install_express_final_gate_heartbeat
     from nico.storage import STORE
 
     current: Callable[[str, dict[str, Any], dict[str, Any]], dict[str, Any]] = express_async_api._record
-    if getattr(current, _PATCH_MARKER, False):
-        return {"status": "already_installed", "version": PATCH_VERSION}
+    record_status = "already_installed"
+    if not getattr(current, _PATCH_MARKER, False):
+        @wraps(current)
+        def integrity_record(run_id: str, request_payload: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+            existing = STORE.get("assessment_runs", run_id) or {}
+            reconciled = reconcile_record(existing if isinstance(existing, dict) else {}, response)
+            return current(run_id, request_payload, reconciled)
 
-    @wraps(current)
-    def integrity_record(run_id: str, request_payload: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
-        existing = STORE.get("assessment_runs", run_id) or {}
-        reconciled = reconcile_record(existing if isinstance(existing, dict) else {}, response)
-        return current(run_id, request_payload, reconciled)
+        setattr(integrity_record, _PATCH_MARKER, True)
+        setattr(integrity_record, "_nico_previous", current)
+        express_async_api._record = integrity_record
+        record_status = "installed"
 
-    setattr(integrity_record, _PATCH_MARKER, True)
-    setattr(integrity_record, "_nico_previous", current)
-    express_async_api._record = integrity_record
+    final_gate_heartbeat = install_express_final_gate_heartbeat()
     return {
-        "status": "installed",
+        "status": "installed" if record_status == "installed" or final_gate_heartbeat.get("status") == "installed" else "already_installed",
         "version": PATCH_VERSION,
+        "record_integrity": record_status,
+        "final_gate_heartbeat": final_gate_heartbeat,
         "terminal_status_regression_prevented": True,
         "rich_completion_fields_preserved": True,
         "failed_complete_stage_contradictions_repaired": True,
