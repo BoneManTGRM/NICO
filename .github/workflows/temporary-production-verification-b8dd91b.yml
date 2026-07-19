@@ -34,6 +34,7 @@ jobs:
           repository = os.environ['NICO_REPOSITORY']
           scope = os.environ['GITHUB_RUN_ID']
           out = Path('verification')
+          transport_events = []
 
           def post(path, body):
               req = urllib.request.Request(proxy + path, data=json.dumps(body).encode(), method='POST', headers={'Content-Type':'application/json','User-Agent':'NICO-production-verifier'})
@@ -47,6 +48,27 @@ jobs:
 
           def detail(value):
               return value.get('detail') if isinstance(value, dict) and isinstance(value.get('detail'), dict) else value
+
+          def retryable_post(path, body, *, deadline, operation):
+              attempt = 0
+              while True:
+                  attempt += 1
+                  http, payload = post(path, body)
+                  current = detail(payload)
+                  if http != 503:
+                      return http, current
+                  event = {
+                      'operation': operation,
+                      'attempt': attempt,
+                      'http': http,
+                      'code': current.get('code') if isinstance(current, dict) else None,
+                      'message': current.get('message') if isinstance(current, dict) else str(current),
+                      'at': time.time(),
+                  }
+                  transport_events.append(event)
+                  if time.monotonic() >= deadline:
+                      raise AssertionError(f'{operation} remained unavailable after {attempt} attempts: {current}')
+                  time.sleep(min(15, 2 + attempt))
 
           customer = f'production_main_{scope}'
           request_body = {
@@ -65,8 +87,8 @@ jobs:
           }
           evidence = {'expected_main_sha': expected_sha, 'repository': repository, 'customer_id': customer}
           try:
-              http, current = post('/assessment/express-run', request_body)
-              current = detail(current)
+              start_deadline = time.monotonic() + 600
+              http, current = retryable_post('/assessment/express-run', request_body, deadline=start_deadline, operation='start')
               run_id = str(current.get('run_id') or '')
               if http >= 400 or not run_id.startswith('express_run_'):
                   raise AssertionError(f'start failed: {http} {current}')
@@ -79,8 +101,15 @@ jobs:
                   if str(current.get('status') or '').lower() in {'complete','completed','failed','blocked','error','interrupted'}:
                       break
                   time.sleep(2)
-                  http, current = post(f'/assessment/express-run/{run_id}/status', {'customer_id':customer,'project_id':customer})
-                  if http >= 500: raise AssertionError(f'status failed: {http}')
+                  http, next_current = retryable_post(
+                      f'/assessment/express-run/{run_id}/status',
+                      {'customer_id':customer,'project_id':customer},
+                      deadline=deadline,
+                      operation='status',
+                  )
+                  if http >= 400:
+                      raise AssertionError(f'status failed: {http} {next_current}')
+                  current = next_current
               current = detail(current)
               evidence['snapshots'] = snapshots
               evidence['terminal'] = current
@@ -114,6 +143,7 @@ jobs:
               evidence['result'] = {'status':'failed','error':f'{type(exc).__name__}: {exc}'}
               raise
           finally:
+              evidence['transport_events'] = transport_events
               (out/'production-verification.json').write_text(json.dumps(evidence, indent=2), encoding='utf-8')
           PY
       - name: Upload evidence
