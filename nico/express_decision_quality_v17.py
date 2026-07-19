@@ -6,8 +6,8 @@ from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_decision_quality.v17"
-_PATCH_MARKER = "_nico_express_decision_quality_v17"
+VERSION = "nico.express_decision_quality.v18_batch_a"
+_PATCH_MARKER = "_nico_express_decision_quality_v18_batch_a"
 _SCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 _SIZE_ADVISORY_TERMS = (
     "source-file footprint is large",
@@ -29,12 +29,13 @@ def _key(value: Any) -> str:
 
 def _is_language_false_positive(value: Any) -> bool:
     text = _text(value).casefold()
-    return "python_eval_exec" in text and any(ext in text for ext in _SCRIPT_EXTENSIONS)
+    rule_match = "python_eval_exec" in text or "python eval exec" in text
+    return rule_match and any(ext in text for ext in _SCRIPT_EXTENSIONS)
 
 
 def _reconcile_ci_statement(value: str) -> str:
     match = re.search(
-        r"(?P<total>\d+)\s*;\s*success=(?P<success>\d+)\s*;\s*non-success=(?P<non>\d+)",
+        r"(?P<total>\d+)\s*;\s*success=(?P<success>\d+)\s*;\s*non-success=(?P<non>\d+)(?:\s*;\s*other/unknown=\d+)*",
         value,
         re.I,
     )
@@ -84,13 +85,24 @@ def _normalize_sections(result: dict[str, Any]) -> None:
     result["sections"] = normalized
 
 
-def _group_unverified_secret_candidates(result: dict[str, Any]) -> None:
+def _candidate_is_verified(item: dict[str, Any]) -> bool:
+    status = _text(item.get("status")).casefold()
+    disposition = _text(item.get("disposition")).casefold()
+    return bool(item.get("verified_fix") or item.get("verified_finding")) or status in {
+        "verified",
+        "confirmed",
+        "validated",
+    } or disposition in {"verified", "confirmed", "validated"}
+
+
+def _normalize_repair_candidates(result: dict[str, Any]) -> None:
     intelligence = result.get("repair_intelligence")
     if not isinstance(intelligence, dict):
         return
     candidates = intelligence.get("candidates")
     if not isinstance(candidates, list):
         return
+
     retained: list[dict[str, Any]] = []
     secret_candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -99,16 +111,24 @@ def _group_unverified_secret_candidates(result: dict[str, Any]) -> None:
             continue
         item = deepcopy(raw)
         title = _text(item.get("title") or item.get("finding"))
-        status = _text(item.get("status")).casefold()
         category = _text(item.get("category")).casefold()
-        verified = bool(item.get("verified_fix")) or status in {"verified", "confirmed", "validated"}
+        if _is_language_false_positive(title) or any(
+            _is_language_false_positive(value) for value in item.get("evidence") or []
+        ):
+            continue
+        verified = _candidate_is_verified(item)
         if category == "secret_exposure" and not verified:
             secret_candidates.append(item)
             continue
+        if not verified and _text(item.get("severity")).casefold() in {"critical", "high"}:
+            item["severity"] = "review"
+            item["priority"] = "review"
+            item["confidence"] = "review-limited"
         semantic = _key(title)
         if semantic and semantic not in seen:
             seen.add(semantic)
             retained.append(item)
+
     if secret_candidates:
         files: list[str] = []
         evidence: list[str] = []
@@ -160,7 +180,7 @@ def _canonicalize_summary(result: dict[str, Any]) -> None:
 def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
     _normalize_sections(output)
-    _group_unverified_secret_candidates(output)
+    _normalize_repair_candidates(output)
     _canonicalize_summary(output)
     output["express_decision_quality"] = {
         "status": "normalized",
@@ -169,13 +189,13 @@ def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]
         "cross_section_findings_deduplicated": True,
         "ci_counts_reconciled": True,
         "unverified_secret_candidates_grouped": True,
+        "unverified_executive_severity_gated": True,
         "canonical_summary_bound": True,
     }
     return output
 
 
 def _apply_normalized_result_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
-    """Apply report normalization without replacing nested containers held by outer renderers."""
     existing_reports = result.get("reports")
     for key, value in normalized.items():
         if key == "reports" and isinstance(existing_reports, dict) and isinstance(value, dict):
@@ -189,12 +209,14 @@ def _apply_normalized_result_in_place(result: dict[str, Any], normalized: dict[s
 def _classify_dossier(dossier: Any) -> Any:
     title = _text(getattr(dossier, "title", "")).casefold()
     severity = "review"
-    if any(term in title for term in ("failed", "timeout", "vulnerability", "exposure")):
+    if any(term in title for term in ("verified vulnerability", "verified exposure", "confirmed vulnerability", "confirmed exposure")):
         severity = "high"
     elif any(term in title for term in ("complexity", "hotspot", "high churn", "ownership concentration")):
         severity = "medium"
     if any(term in title for term in _SIZE_ADVISORY_TERMS):
         severity = "informational"
+    if any(term in title for term in ("failed", "timeout", "timed out", "requires human review")):
+        severity = "review"
     try:
         return replace(dossier, severity=severity)
     except Exception:
@@ -228,7 +250,7 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
             seen: set[str] = set()
             for dossier in original_builder(result):
                 semantic = _key(getattr(dossier, "title", ""))
-                if not semantic or semantic in seen:
+                if not semantic or semantic in seen or _is_language_false_positive(getattr(dossier, "title", "")):
                     continue
                 seen.add(semantic)
                 output.append(_classify_dossier(dossier))
@@ -247,4 +269,10 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
     }
 
 
-__all__ = ["VERSION", "install_express_decision_quality_v17", "normalize_express_decision_quality"]
+__all__ = [
+    "VERSION",
+    "_is_language_false_positive",
+    "_reconcile_ci_statement",
+    "install_express_decision_quality_v17",
+    "normalize_express_decision_quality",
+]
