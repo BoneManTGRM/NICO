@@ -17,32 +17,45 @@ def test_async_runner_enters_final_gate_after_report_generation() -> None:
 
 def test_post_render_result_is_cached_by_exact_run_id() -> None:
     source = PATCH.read_text(encoding="utf-8")
-    assert "run_id = str(output.get(\"run_id\") or result.get(\"run_id\") or \"\").strip()" in source
+    assert 'run_id = str(output.get("run_id") or result.get("run_id") or "").strip()' in source
     assert "_CHECKPOINTS[run_id] = deepcopy(output)" in source
+    assert "_persist_post_render_checkpoint(express_async_api, run_id, output)" in source
     assert '"preserves_exact_run": True' in source
+
+
+def test_post_render_checkpoint_is_persisted_before_final_gate() -> None:
+    source = PATCH.read_text(encoding="utf-8")
+    assert "def _persist_post_render_checkpoint" in source
+    assert 'checkpoint["current_stage"] = "report_generation"' in source
+    assert '"durably_written_before_final_gate": True' in source
+    assert "express_async_api._record(run_id, request_payload, checkpoint)" in source
+    assert '"post_render_checkpoint_persisted_before_final_gate": True' in source
 
 
 def test_truth_gate_stage_consumes_rich_report_checkpoint_not_bare_stage_payload() -> None:
     source = PATCH.read_text(encoding="utf-8")
     assert 'if stage != "truth_and_review_gates"' in source
     assert "checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})" in source
+    assert "checkpoint = _stored_response(express_async_api, run_id)" in source
     assert 'checkpoint["status"] = "running"' in source
     assert 'checkpoint["current_stage"] = "truth_and_review_gates"' in source
     assert 'checkpoint["progress_percent"] = max(94, int(progress_percent or 94))' in source
     assert '"rich_report_checkpoint_persisted": True' in source
+    assert '"durable_checkpoint_recovered": bool(checkpoint.get("post_render_checkpoint"))' in source
     assert '"usable_report_artifacts": _usable_reports(checkpoint)' in source
-    assert "express_async_api._record(run_id, request_payload, checkpoint)" in source
 
 
 def test_checkpoint_keeps_reports_score_sections_and_review_truth() -> None:
     source = PATCH.read_text(encoding="utf-8")
-    assert "checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})" in source
     assert 'checkpoint["human_review_required"] = True' in source
     assert 'checkpoint["client_ready"] = False' in source
+    assert 'checkpoint["client_delivery_allowed"] = False' in source
     assert 'checkpoint["persistence"] = express_async_api._persistence()' in source
-    assert "checkpoint.pop(\"reports\", None)" not in source
-    assert "checkpoint.pop(\"sections\", None)" not in source
-    assert "checkpoint.pop(\"maturity_signal\", None)" not in source
+    assert '"score_present": checkpoint.get("technical_score") is not None' in source
+    assert '"sections_present": bool(checkpoint.get("sections"))' in source
+    assert 'checkpoint.pop("reports", None)' not in source
+    assert 'checkpoint.pop("sections", None)' not in source
+    assert 'checkpoint.pop("maturity_signal", None)' not in source
 
 
 def test_checkpoint_is_cleared_at_terminal_release() -> None:
