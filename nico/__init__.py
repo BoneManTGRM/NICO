@@ -12,6 +12,8 @@ from nico.express_report_dossier_export_v15 import install_express_dossier_expor
 from nico.express_report_generation_recovery import install_express_report_generation_recovery
 from nico.express_final_gate_checkpoint_patch import install_express_final_gate_checkpoint_patch
 from nico.express_backend_completion_transport import install_express_backend_completion_transport
+from nico.express_run_record_integrity import install_express_run_record_integrity
+from nico.snapshot_checkout_reliability_patch import install_snapshot_checkout_reliability
 from nico.report_intelligence_professional_pdf import install_professional_report_intelligence_pdf
 from nico.report_intelligence_final_pdf_binding import install_report_intelligence_final_pdf_binding
 from nico.hosted_report_regression_patch import install_hosted_report_regression_patch
@@ -128,6 +130,7 @@ install_backup_restore_readiness_patch()
 install_scanner_history_truth()
 install_triage_aware_scanner_finding_truth()
 install_snapshot_scanner_heartbeat()
+install_snapshot_checkout_reliability()
 install_snapshot_scanner_resilience()
 install_full_scanner_recovery()
 install_full_blocked_state_truth()
@@ -186,7 +189,9 @@ install_express_dossier_export_v15()
 # leaving the live async path without recovery or usable report artifacts.
 install_express_report_generation_recovery()
 install_express_final_gate_checkpoint_patch()
-# Bind the canonical Express completion and safe-response transport last.
+# Bind the canonical Express completion and safe-response transport last, then
+# protect persisted exact-run truth from late heartbeat or compatibility writes.
 install_express_backend_completion_transport()
+install_express_run_record_integrity()
 
 __version__ = "0.1.0"
