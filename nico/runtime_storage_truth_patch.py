@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from nico import durable_runtime_storage, express_async_api, storage
 
-RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v1"
+RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v2"
 _STATUS_MARKER = "_nico_runtime_storage_truth_v1"
 _PERSISTENCE_MARKER = "_nico_express_persistence_truth_v1"
 
@@ -114,11 +114,22 @@ def install_runtime_storage_truth() -> dict[str, Any]:
         )
     )
     persistence_patched = _install_express_persistence_truth()
+
+    # Bind terminal-state reconciliation before the later liveness wrapper is
+    # installed. The liveness patch then wraps this function and preserves the
+    # invariant for both active and terminal reads.
+    from nico.express_terminal_truth_patch import install_express_terminal_truth_patch
+
+    terminal_truth = install_express_terminal_truth_patch()
     return {
-        "status": "installed" if patched or persistence_patched else "already_installed",
+        "status": "installed" if patched or persistence_patched or terminal_truth.get("status") == "installed" else "already_installed",
         "version": RUNTIME_STORAGE_TRUTH_VERSION,
         "status_methods_patched": patched,
         "express_persistence_patched": persistence_patched,
+        "terminal_truth": terminal_truth,
+        "terminal_completion_requires_durable_record": True,
+        "terminal_completion_requires_terminal_gates": True,
+        "scanner_worker_evidence_mapped_to_controls": True,
         "sqlite_writable_equals_durable": False,
         "postgres_durability_verified": True,
         "human_review_required": True,
