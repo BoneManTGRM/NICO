@@ -4,9 +4,10 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_final_gate_checkpoint.v1"
+PATCH_VERSION = "nico.express_final_gate_checkpoint.v2"
 _FINALIZE_MARKER = "_nico_express_checkpoint_finalize_v1"
-_STAGE_MARKER = "_nico_express_checkpoint_stage_v1"
+_STAGE_MARKER = "_nico_express_checkpoint_stage_v2"
+_RELEASE_MARKER = "_nico_express_checkpoint_release_v1"
 _CHECKPOINTS: dict[str, dict[str, Any]] = {}
 
 
@@ -19,6 +20,10 @@ def _usable_reports(result: dict[str, Any]) -> bool:
     return all(bool(str(reports.get(name) or "").strip()) for name in ("markdown", "html", "pdf_base64"))
 
 
+def _discard_checkpoint(run_id: str) -> None:
+    _CHECKPOINTS.pop(str(run_id or "").strip(), None)
+
+
 def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
     """Persist generated reports and scores before slower final review gates.
 
@@ -27,6 +32,10 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
     therefore saw ``report_ready=false`` and no score even though rendering had
     completed. This patch caches the exact-run post-render result and records it
     as the final-gate checkpoint without changing the backend terminal state.
+
+    The checkpoint may contain PDF and HTML artifacts, so it is consumed exactly
+    once and is also cleared at run release. This prevents completed, failed, or
+    interrupted runs from accumulating large process-local payloads indefinitely.
     """
 
     from nico.api import main as api_main
@@ -69,7 +78,7 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
                     evidence=evidence,
                 )
 
-            checkpoint = deepcopy(_CHECKPOINTS.get(run_id) or {})
+            checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})
             if not checkpoint:
                 return current_stage(
                     run_id,
@@ -111,12 +120,27 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
         setattr(record_stage_with_checkpoint, "_nico_previous", current_stage)
         express_async_api._record_stage = record_stage_with_checkpoint
 
+    current_release = express_async_api._release_active
+    if not getattr(current_release, _RELEASE_MARKER, False):
+        @wraps(current_release)
+        def release_with_checkpoint_cleanup(run_id: str, request_payload: dict[str, Any]) -> None:
+            try:
+                current_release(run_id, request_payload)
+            finally:
+                _discard_checkpoint(run_id)
+
+        setattr(release_with_checkpoint_cleanup, _RELEASE_MARKER, True)
+        setattr(release_with_checkpoint_cleanup, "_nico_previous", current_release)
+        express_async_api._release_active = release_with_checkpoint_cleanup
+
     return {
         "status": "installed",
         "version": PATCH_VERSION,
         "rich_report_checkpoint": True,
         "preserves_exact_run": True,
         "browser_terminalization_required": False,
+        "checkpoint_consumed_once": True,
+        "terminal_checkpoint_cleanup": True,
     }
 
 
