@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_durable_duplicate_start_guard.v1"
-_PATCH_MARKER = "_nico_express_durable_duplicate_start_guard_v1"
+from nico.express_atomic_start_lock import atomic_express_start_lock
+
+PATCH_VERSION = "nico.express_durable_duplicate_start_guard.v2"
+_PATCH_MARKER = "_nico_express_durable_duplicate_start_guard_v2"
 _ACTIVE_STATUSES = {"queued", "running", "starting", "pending", "temporarily_unavailable"}
 _FRESH_SECONDS = 1200
 
@@ -47,10 +49,7 @@ def _scope(record: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def find_fresh_durable_run(store: Any, scope: tuple[str, str, str]) -> dict[str, Any] | None:
-    try:
-        records = store.list("assessment_runs", customer_id=scope[1], project_id=scope[2])
-    except Exception:
-        return None
+    records = store.list("assessment_runs", customer_id=scope[1], project_id=scope[2])
     candidates: list[tuple[float, dict[str, Any]]] = []
     for record in records:
         if not isinstance(record, dict) or str(record.get("workflow") or "") != "express":
@@ -83,6 +82,7 @@ def find_fresh_durable_run(store: Any, scope: tuple[str, str, str]) -> dict[str,
         "source": "durable_assessment_run_scan",
         "freshness_seconds": _FRESH_SECONDS,
         "cross_worker": True,
+        "atomic_scope_lock": True,
     }
     output.setdefault("human_review_required", True)
     output["client_ready"] = False
@@ -100,21 +100,31 @@ def install_express_durable_duplicate_start_guard() -> dict[str, Any]:
     @wraps(current)
     def guarded_start(req: Any) -> dict[str, Any]:
         payload = api._model_payload(req)
-        if bool(payload.get("authorized")) and bool(payload.get("authorization_confirmed")):
-            try:
-                repository = hosted.normalize_repository(str(payload.get("repository") or ""))
-            except ValueError:
-                repository = ""
-            if repository:
-                scope = (
-                    repository,
-                    str(payload.get("customer_id") or "default_customer"),
-                    str(payload.get("project_id") or "default_project"),
-                )
-                existing = find_fresh_durable_run(api.STORE, scope)
-                if existing is not None:
-                    return existing
-        return current(req)
+        if not (bool(payload.get("authorized")) and bool(payload.get("authorization_confirmed"))):
+            return current(req)
+        try:
+            repository = hosted.normalize_repository(str(payload.get("repository") or ""))
+        except ValueError:
+            return current(req)
+        scope = (
+            repository,
+            str(payload.get("customer_id") or "default_customer"),
+            str(payload.get("project_id") or "default_project"),
+        )
+        # The lock must cover both the durable duplicate lookup and the queued
+        # run write performed by current(req). Without this atomic boundary, two
+        # worker processes can both observe no active record and schedule
+        # competing exact runs for the same scope.
+        with atomic_express_start_lock(api.STORE, scope) as lock_evidence:
+            existing = find_fresh_durable_run(api.STORE, scope)
+            if existing is not None:
+                existing["duplicate_start_guard"]["lock"] = lock_evidence
+                return existing
+            started = current(req)
+            if isinstance(started, dict):
+                started = deepcopy(started)
+                started["atomic_start_guard"] = lock_evidence
+            return started
 
     setattr(guarded_start, _PATCH_MARKER, True)
     setattr(guarded_start, "_nico_previous", current)
@@ -124,8 +134,10 @@ def install_express_durable_duplicate_start_guard() -> dict[str, Any]:
         "version": PATCH_VERSION,
         "durable_scope_scan": True,
         "cross_worker_duplicate_start_prevented": True,
+        "atomic_scope_lock": True,
         "freshness_seconds": _FRESH_SECONDS,
         "stale_records_block_new_runs": False,
+        "storage_scan_fail_open": False,
     }
 
 
