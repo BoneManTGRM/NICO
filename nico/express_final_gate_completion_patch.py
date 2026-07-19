@@ -109,7 +109,8 @@ def normalize_assessment_completion(before_gate: dict[str, Any], after_gate: dic
             output["express_completion"] = completion
             output["report_generation_status"] = "blocked_missing_usable_artifacts"
             output["report_format_error"] = (
-                "Express report generation did not return usable Markdown, HTML, and structurally valid PDF artifacts."
+                "Express report generation did not return usable Markdown, HTML, and PDF artifacts "
+                "with structurally valid PDF content."
             )
         else:
             output.pop("express_completion", None)
