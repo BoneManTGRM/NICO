@@ -91,6 +91,7 @@ from nico.mid_quality_issue_display_patch import install_mid_quality_issue_displ
 from nico.mid_truth_identity_consistency import install_mid_truth_identity_consistency
 from nico.mid_truth_identity_transport import install_mid_truth_identity_transport
 from nico.mid_approval_truth_freeze import install_mid_approval_truth_freeze
+from nico.language_aware_pattern_reconciliation import install_language_aware_pattern_reconciliation
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
@@ -99,6 +100,7 @@ install_assessment_persistence_truth()
 install_express_status_liveness_patch()
 install_metadata_auth_for_hosted_assessment()
 patch_hosted_assessment_dependency_parsing()
+install_language_aware_pattern_reconciliation()
 patch_polish_express_result_for_final_qa()
 patch_final_report_consistency()
 patch_client_acceptance_gate_for_report_truth()
