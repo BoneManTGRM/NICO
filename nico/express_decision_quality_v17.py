@@ -6,14 +6,26 @@ from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_decision_quality.v18_batch_a"
-_PATCH_MARKER = "_nico_express_decision_quality_v18_batch_a"
+VERSION = "nico.express_decision_quality.v19_batch_b"
+_PATCH_MARKER = "_nico_express_decision_quality_v19_batch_b"
 _SCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 _SIZE_ADVISORY_TERMS = (
     "source-file footprint is large",
     "total source loc is high",
     "repository size",
     "increases review scope",
+)
+_CLEAN_EVIDENCE_PATTERNS = (
+    r"\bno vulnerabilit(?:y|ies) (?:record|records|found|detected|reported)\b",
+    r"\breturned no vulnerabilit(?:y|ies)\b",
+    r"\b0 vulnerabilit(?:y|ies)\b",
+    r"\bno secrets? (?:found|detected|reported)\b",
+    r"\b0 secrets?\b",
+    r"\bno credential(?:s)? (?:found|detected|reported)\b",
+    r"\bclean (?:credential|secret|dependency|scanner|scan|artifact)\b",
+    r"\bblocking=0\b",
+    r"\bfindings?=0\b",
+    r"\bpassed with no findings\b",
 )
 
 
@@ -31,6 +43,13 @@ def _is_language_false_positive(value: Any) -> bool:
     text = _text(value).casefold()
     rule_match = "python_eval_exec" in text or "python eval exec" in text
     return rule_match and any(ext in text for ext in _SCRIPT_EXTENSIONS)
+
+
+def _is_clean_evidence(value: Any) -> bool:
+    text = _text(value).casefold()
+    if not text:
+        return False
+    return any(re.search(pattern, text, re.I) for pattern in _CLEAN_EVIDENCE_PATTERNS)
 
 
 def _reconcile_ci_statement(value: str) -> str:
@@ -71,6 +90,8 @@ def _normalize_sections(result: dict[str, Any]) -> None:
                 text = _reconcile_ci_statement(_text(raw))
                 if not text or _is_language_false_positive(text):
                     continue
+                if field == "findings" and _is_clean_evidence(text):
+                    continue
                 semantic = _key(text)
                 if semantic in local_seen:
                     continue
@@ -95,6 +116,17 @@ def _candidate_is_verified(item: dict[str, Any]) -> bool:
     } or disposition in {"verified", "confirmed", "validated"}
 
 
+def _candidate_contains_clean_evidence(item: dict[str, Any]) -> bool:
+    values: list[Any] = [
+        item.get("title"),
+        item.get("finding"),
+        item.get("business_impact"),
+        item.get("recommended_action"),
+    ]
+    values.extend(item.get("evidence") or [])
+    return any(_is_clean_evidence(value) for value in values)
+
+
 def _normalize_repair_candidates(result: dict[str, Any]) -> None:
     intelligence = result.get("repair_intelligence")
     if not isinstance(intelligence, dict):
@@ -115,6 +147,8 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
         if _is_language_false_positive(title) or any(
             _is_language_false_positive(value) for value in item.get("evidence") or []
         ):
+            continue
+        if _candidate_contains_clean_evidence(item):
             continue
         verified = _candidate_is_verified(item)
         if category == "secret_exposure" and not verified:
@@ -186,6 +220,8 @@ def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]
         "status": "normalized",
         "version": VERSION,
         "language_false_positives_removed": True,
+        "clean_evidence_excluded_from_findings": True,
+        "clean_evidence_excluded_from_repair_priority": True,
         "cross_section_findings_deduplicated": True,
         "ci_counts_reconciled": True,
         "unverified_secret_candidates_grouped": True,
@@ -249,8 +285,14 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
             output: list[Any] = []
             seen: set[str] = set()
             for dossier in original_builder(result):
-                semantic = _key(getattr(dossier, "title", ""))
-                if not semantic or semantic in seen or _is_language_false_positive(getattr(dossier, "title", "")):
+                title = getattr(dossier, "title", "")
+                semantic = _key(title)
+                if (
+                    not semantic
+                    or semantic in seen
+                    or _is_language_false_positive(title)
+                    or _is_clean_evidence(title)
+                ):
                     continue
                 seen.add(semantic)
                 output.append(_classify_dossier(dossier))
@@ -271,6 +313,7 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "_is_clean_evidence",
     "_is_language_false_positive",
     "_reconcile_ci_statement",
     "install_express_decision_quality_v17",
