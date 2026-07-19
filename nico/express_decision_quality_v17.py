@@ -7,7 +7,7 @@ from dataclasses import is_dataclass, replace
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_decision_quality.v20_batch_c_fix1"
+VERSION = "nico.express_decision_quality.v20_batch_c_fix2"
 _PATCH_MARKER = "_nico_express_decision_quality_v20_batch_c"
 _SCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 _SIZE_ADVISORY_TERMS = (
@@ -65,13 +65,7 @@ _CI_DETAIL_ORDER = (
     "startup_failure",
     "unknown",
 )
-_INTERNAL_SCORE_KEYS = {
-    "bar",
-    "glyph_bar",
-    "contribution_bar",
-    "bar_geometry",
-    "bar_render_mode",
-}
+_INTERNAL_SCORE_KEYS = {"bar", "glyph_bar", "contribution_bar", "bar_geometry", "bar_render_mode"}
 
 
 def _text(value: Any) -> str:
@@ -86,9 +80,7 @@ def _key(value: Any) -> str:
 
 def _is_language_false_positive(value: Any) -> bool:
     text = _text(value).casefold()
-    return ("python_eval_exec" in text or "python eval exec" in text) and any(
-        ext in text for ext in _SCRIPT_EXTENSIONS
-    )
+    return ("python_eval_exec" in text or "python eval exec" in text) and any(ext in text for ext in _SCRIPT_EXTENSIONS)
 
 
 def _is_clean_evidence(value: Any) -> bool:
@@ -101,8 +93,7 @@ def _canonical_ci_categories(total: int, pairs: list[tuple[str, int]]) -> dict[s
     aggregate_non_success = 0
     explicit_unknown = 0
     for raw_label, raw_count in pairs:
-        normalized = raw_label.casefold().strip().replace(" ", "-")
-        label = _CI_ALIASES.get(normalized)
+        label = _CI_ALIASES.get(raw_label.casefold().strip().replace(" ", "-"))
         if not label:
             continue
         count = max(0, int(raw_count))
@@ -112,12 +103,10 @@ def _canonical_ci_categories(total: int, pairs: list[tuple[str, int]]) -> dict[s
             explicit_unknown = max(explicit_unknown, count)
         else:
             categories[label] = categories.get(label, 0) + count
-    detailed_non_success = sum(
-        categories.get(label, 0) for label in _CI_DETAIL_ORDER if label != "success"
-    )
+    detailed_non_success = sum(categories.get(label, 0) for label in _CI_DETAIL_ORDER if label != "success")
     categories["unknown"] = explicit_unknown
     if aggregate_non_success and not detailed_non_success and not explicit_unknown:
-        categories["unknown"] = aggregate_non_success
+        categories["unknown"] = max(0, total - categories.get("success", 0) - aggregate_non_success)
     accounted = sum(categories.values())
     categories["unknown"] += max(0, total - accounted)
     overflow = sum(categories.values()) - total
@@ -129,36 +118,25 @@ def _canonical_ci_categories(total: int, pairs: list[tuple[str, int]]) -> dict[s
 def _reconcile_ci_statement(value: str) -> str:
     if "workflow runs" not in value.casefold():
         return value
-    match = re.search(
-        r"(?P<total>\d+)\s*;(?P<body>(?:\s*[A-Za-z][A-Za-z _/-]*=\d+\s*;?)*)",
-        value,
-        re.I,
-    )
+    match = re.search(r"(?P<total>\d+)\s*;(?P<body>(?:\s*[A-Za-z][A-Za-z _/-]*=\d+\s*;?)*)", value, re.I)
     if not match:
         return value
     total = int(match.group("total"))
-    pairs = [
-        (label.strip(), int(count))
-        for label, count in re.findall(r"([A-Za-z][A-Za-z _/-]*)=(\d+)", match.group("body"))
-    ]
+    pairs = [(label.strip(), int(count)) for label, count in re.findall(r"([A-Za-z][A-Za-z _/-]*)=(\d+)", match.group("body"))]
     if not pairs:
         return value
-    categories = _canonical_ci_categories(total, pairs)
-    supplied = {_CI_ALIASES.get(label.casefold().strip().replace(" ", "-")) for label, _ in pairs}
-    supplied.discard(None)
+    normalized_pairs = [(_CI_ALIASES.get(label.casefold().strip().replace(" ", "-")), count) for label, count in pairs]
+    supplied = {label for label, _ in normalized_pairs if label}
     if supplied.issubset({"success", "non_success", "unknown"}):
-        success = categories.get("success", 0)
-        other = categories.get("unknown", 0)
-        non_success = max(0, total - success - other)
-        replacement = (
-            f"{total}; success={success}; non-success={non_success}; other/unknown={other}"
-        )
+        success = max((count for label, count in normalized_pairs if label == "success"), default=0)
+        non_success = max((count for label, count in normalized_pairs if label == "non_success"), default=0)
+        explicit_unknown = max((count for label, count in normalized_pairs if label == "unknown"), default=0)
+        inferred_unknown = max(0, total - success - non_success)
+        other = max(explicit_unknown, inferred_unknown)
+        replacement = f"{total}; success={success}; non-success={non_success}; other/unknown={other}"
     else:
-        rendered = [
-            f"{label}={categories.get(label, 0)}"
-            for label in _CI_DETAIL_ORDER
-            if label != "unknown"
-        ]
+        categories = _canonical_ci_categories(total, pairs)
+        rendered = [f"{label}={categories.get(label, 0)}" for label in _CI_DETAIL_ORDER if label != "unknown"]
         rendered.append(f"other/unknown={categories.get('unknown', 0)}")
         replacement = f"{total}; " + "; ".join(rendered)
     return value[: match.start()] + replacement + value[match.end() :]
@@ -206,29 +184,10 @@ def _normalize_score_objects(value: Any, seen: set[int] | None = None) -> None:
         value["bar"] = _proportional_bar(score)
         value["glyph_bar"] = value["bar"]
         value["contribution_bar"] = value["bar"]
-        value["bar_geometry"] = {
-            "value": score,
-            "maximum": 100.0,
-            "ratio": max(0.0, min(1.0, score / 100.0)),
-            "width": max(0.0, min(120.0, score * 1.2)),
-        }
+        value["bar_geometry"] = {"value": score, "maximum": 100.0, "ratio": max(0.0, min(1.0, score / 100.0)), "width": max(0.0, min(120.0, score * 1.2))}
         value["bar_render_mode"] = "proportional_geometry"
     if label.casefold() == "scanner worker evidence":
-        value.update(
-            {
-                "directly_scored": False,
-                "mapped_to_scored_controls": True,
-                "score_treatment": "supplemental_mapped_to_scored_controls",
-                "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS",
-                "status": "SUPPLEMENTAL",
-                "presented_score": None,
-                "presented": None,
-                "bar": _proportional_bar(0),
-                "glyph_bar": _proportional_bar(0),
-                "contribution_bar": _proportional_bar(0),
-                "bar_geometry": {"value": 0.0, "maximum": 100.0, "ratio": 0.0, "width": 0.0},
-            }
-        )
+        value.update({"directly_scored": False, "mapped_to_scored_controls": True, "score_treatment": "supplemental_mapped_to_scored_controls", "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS", "status": "SUPPLEMENTAL", "presented_score": None, "presented": None, "bar": _proportional_bar(0), "glyph_bar": _proportional_bar(0), "contribution_bar": _proportional_bar(0), "bar_geometry": {"value": 0.0, "maximum": 100.0, "ratio": 0.0, "width": 0.0}})
     for _, child in original_children:
         _normalize_score_objects(child, seen)
 
@@ -245,22 +204,9 @@ def _normalize_sections(result: dict[str, Any]) -> None:
         section = deepcopy(raw_section)
         section_id = str(section.get("id") or "")
         if section_id == "velocity_complexity":
-            section.update(
-                {
-                    "page_break_before": True,
-                    "pdf_page_break_before": True,
-                    "decision_record_boundary": "new_page",
-                }
-            )
+            section.update({"page_break_before": True, "pdf_page_break_before": True, "decision_record_boundary": "new_page"})
         if section_id == "scanner_worker_evidence":
-            section.update(
-                {
-                    "directly_scored": False,
-                    "mapped_to_scored_controls": True,
-                    "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS",
-                    "status": "SUPPLEMENTAL",
-                }
-            )
+            section.update({"directly_scored": False, "mapped_to_scored_controls": True, "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS", "status": "SUPPLEMENTAL"})
         for field in ("evidence", "findings", "unavailable"):
             values = section.get(field)
             if not isinstance(values, list):
@@ -288,21 +234,11 @@ def _normalize_sections(result: dict[str, Any]) -> None:
 def _candidate_is_verified(item: dict[str, Any]) -> bool:
     status = _text(item.get("status")).casefold()
     disposition = _text(item.get("disposition")).casefold()
-    return bool(item.get("verified_fix") or item.get("verified_finding")) or status in {
-        "verified",
-        "confirmed",
-        "validated",
-    } or disposition in {"verified", "confirmed", "validated"}
+    return bool(item.get("verified_fix") or item.get("verified_finding")) or status in {"verified", "confirmed", "validated"} or disposition in {"verified", "confirmed", "validated"}
 
 
 def _candidate_contains_clean_evidence(item: dict[str, Any]) -> bool:
-    values = [
-        item.get("title"),
-        item.get("finding"),
-        item.get("business_impact"),
-        item.get("recommended_action"),
-        *(item.get("evidence") or []),
-    ]
+    values = [item.get("title"), item.get("finding"), item.get("business_impact"), item.get("recommended_action"), *(item.get("evidence") or [])]
     return any(_is_clean_evidence(value) for value in values)
 
 
@@ -319,9 +255,7 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
         item = deepcopy(raw)
         title = _text(item.get("title") or item.get("finding"))
         category = _text(item.get("category")).casefold()
-        if _is_language_false_positive(title) or any(
-            _is_language_false_positive(value) for value in item.get("evidence") or []
-        ):
+        if _is_language_false_positive(title) or any(_is_language_false_positive(value) for value in item.get("evidence") or []):
             continue
         if _candidate_contains_clean_evidence(item):
             continue
@@ -330,14 +264,7 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
             secret_candidates.append(item)
             continue
         if not verified and _text(item.get("severity")).casefold() in {"critical", "high"}:
-            item.update(
-                {
-                    "severity": "review",
-                    "priority": "review",
-                    "confidence": "review-limited",
-                    "classification": "review_limited",
-                }
-            )
+            item.update({"severity": "review", "priority": "review", "confidence": "review-limited", "classification": "review_limited"})
         semantic = _key(title)
         if semantic and semantic not in seen:
             seen.add(semantic)
@@ -346,35 +273,17 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
         files: list[str] = []
         evidence: list[str] = []
         for item in secret_candidates:
-            files.extend(path for path in item.get("affected_files") or [] if path not in files)
-            evidence.extend(
-                text
-                for value in item.get("evidence") or []
-                if (text := _text(value)) and text not in evidence
-            )
-        retained.append(
-            {
-                "candidate_id": "express_secret_candidate_triage_group",
-                "category": "secret_candidate_triage",
-                "title": f"Triage {len(secret_candidates)} unverified secret-scan candidate(s) as one parallel workstream",
-                "severity": "review",
-                "classification": "review_limited",
-                "confidence": "review-limited",
-                "status": "candidate_pending_human_triage",
-                "priority": "review",
-                "effort": "small",
-                "affected_files": files,
-                "evidence": evidence[:8],
-                "business_impact": "No credential exposure is established until exact values, rules, locations, and scanner dispositions are reviewed.",
-                "recommended_action": "Triage all related candidates in parallel, suppress synthetic or generic token-name matches, and escalate only confirmed credentials.",
-                "verification": "Record a disposition for every candidate, rerun current-tree and history scanners, and confirm that only verified findings enter executive priority sections.",
-                "human_review_required": True,
-                "automatic_application_allowed": False,
-                "verified_fix": False,
-            }
-        )
+            for path in item.get("affected_files") or []:
+                if path not in files:
+                    files.append(path)
+            for value in item.get("evidence") or []:
+                text = _text(value)
+                if text and text not in evidence:
+                    evidence.append(text)
+        retained.append({"candidate_id": "express_secret_candidate_triage_group", "category": "secret_candidate_triage", "title": f"Triage {len(secret_candidates)} unverified secret-scan candidate(s) as one parallel workstream", "severity": "review", "classification": "review_limited", "confidence": "review-limited", "status": "candidate_pending_human_triage", "priority": "review", "effort": "small", "affected_files": files, "evidence": evidence[:8], "business_impact": "No credential exposure is established until exact values, rules, locations, and scanner dispositions are reviewed.", "recommended_action": "Triage all related candidates in parallel, suppress synthetic or generic token-name matches, and escalate only confirmed credentials.", "verification": "Record a disposition for every candidate, rerun current-tree and history scanners, and confirm that only verified findings enter executive priority sections.", "human_review_required": True, "automatic_application_allowed": False, "verified_fix": False})
     intelligence["candidates"] = retained
     intelligence["candidate_count"] = len(retained)
+    result["repair_intelligence"] = intelligence
 
 
 def _canonicalize_summary(result: dict[str, Any]) -> None:
@@ -382,11 +291,7 @@ def _canonicalize_summary(result: dict[str, Any]) -> None:
     score = maturity.get("score", result.get("technical_score"))
     level = maturity.get("level") or maturity.get("label") or "Unclassified"
     repository = result.get("repository") or "the authorized repository"
-    result["executive_summary"] = (
-        f"NICO completed an authorized hosted Express Technical Health Assessment for {repository}. "
-        f"The canonical source maturity signal is {level} ({score}/100). The evidence-adjusted score is reported separately, "
-        "and client delivery remains blocked pending exact-snapshot human review."
-    )
+    result["executive_summary"] = f"NICO completed an authorized hosted Express Technical Health Assessment for {repository}. The canonical source maturity signal is {level} ({score}/100). The evidence-adjusted score is reported separately, and client delivery remains blocked pending exact-snapshot human review."
 
 
 def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]:
@@ -395,22 +300,7 @@ def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]
     _normalize_score_objects(output)
     _normalize_repair_candidates(output)
     _canonicalize_summary(output)
-    output["express_decision_quality"] = {
-        "status": "normalized",
-        "version": VERSION,
-        "language_false_positives_removed": True,
-        "clean_evidence_excluded_from_findings": True,
-        "clean_evidence_excluded_from_repair_priority": True,
-        "cross_section_findings_deduplicated": True,
-        "ci_counts_reconciled": True,
-        "ci_categories_exactly_once": True,
-        "score_bars_use_proportional_geometry": True,
-        "scanner_worker_is_supplemental": True,
-        "architecture_velocity_page_boundary": True,
-        "unverified_secret_candidates_grouped": True,
-        "unverified_executive_severity_gated": True,
-        "canonical_summary_bound": True,
-    }
+    output["express_decision_quality"] = {"status": "normalized", "version": VERSION, "language_false_positives_removed": True, "clean_evidence_excluded_from_findings": True, "clean_evidence_excluded_from_repair_priority": True, "cross_section_findings_deduplicated": True, "ci_counts_reconciled": True, "ci_categories_exactly_once": True, "score_bars_use_proportional_geometry": True, "scanner_worker_is_supplemental": True, "architecture_velocity_page_boundary": True, "unverified_secret_candidates_grouped": True, "unverified_executive_severity_gated": True, "canonical_summary_bound": True}
     return output
 
 
@@ -429,39 +319,15 @@ def _dossier_context(title: str) -> tuple[str, str, str, list[str]]:
     lower = title.casefold()
     file_match = re.search(r"([A-Za-z0-9_./-]+\.py)", title)
     file_path = file_match.group(1) if file_match else "the exact affected source files listed in the evidence ledger"
-    metric_match = re.search(
-        r"(?:score|loc|churn)=?[0-9.]+(?:,?\s*(?:score|loc|churn)=?[0-9.]+)*",
-        title,
-        re.I,
-    )
+    metric_match = re.search(r"(?:score|loc|churn)=?[0-9.]+(?:,?\s*(?:score|loc|churn)=?[0-9.]+)*", title, re.I)
     metric = metric_match.group(0) if metric_match else "the retained complexity, churn, and ownership metrics"
     if "complexity" in lower or "hotspot" in lower or "high churn" in lower:
-        return (
-            f"Concentrated complexity and change activity in {file_path} increases regression probability, review time, and the cost of safely modifying the affected delivery path.",
-            f"Assign an authorized owner to {file_path}; identify the highest-complexity functions and their callers; add characterization tests; then split one responsibility at a time while preserving public behavior and import compatibility.",
-            f"Retain before/after {metric}; run focused tests for the affected module, the full suite, production build, import-order checks, and an immutable same-SHA rescan.",
-            [f"Exact affected location: {file_path}.", f"Retained metric context: {metric}."],
-        )
+        return (f"Concentrated complexity and change activity in {file_path} increases regression probability, review time, and the cost of safely modifying the affected delivery path.", f"Assign an authorized owner to {file_path}; identify the highest-complexity functions and their callers; add characterization tests; then split one responsibility at a time while preserving public behavior and import compatibility.", f"Retain before/after {metric}; run focused tests for the affected module, the full suite, production build, import-order checks, and an immutable same-SHA rescan.", [f"Exact affected location: {file_path}.", f"Retained metric context: {metric}."])
     if "ownership concentration" in lower:
-        return (
-            "Concentrated ownership creates review bottlenecks and continuity risk when the primary maintainer is unavailable.",
-            "Map the exact files and commit shares to responsible owners, add secondary reviewers for the highest-concentration paths, and document operational handoff for critical modules.",
-            "Recompute ownership concentration from the same repository snapshot and confirm that critical paths have an accountable primary and secondary reviewer.",
-            ["Use file-level ownership and commit-share evidence from the immutable evidence ledger."],
-        )
+        return ("Concentrated ownership creates review bottlenecks and continuity risk when the primary maintainer is unavailable.", "Map the exact files and commit shares to responsible owners, add secondary reviewers for the highest-concentration paths, and document operational handoff for critical modules.", "Recompute ownership concentration from the same repository snapshot and confirm that critical paths have an accountable primary and secondary reviewer.", ["Use file-level ownership and commit-share evidence from the immutable evidence ledger."])
     if "failed" in lower or "timeout" in lower or "unavailable" in lower:
-        return (
-            "The analyzer result is incomplete, so release confidence is reduced; it does not independently establish a product defect.",
-            "Restore the named analyzer with a bounded timeout and exact-snapshot command, retain stdout/stderr and exit disposition, and map any verified result to the relevant scored control.",
-            "Rerun the exact analyzer on the immutable commit and require a terminal completed, inapplicable, or explicitly accepted review-limited disposition.",
-            ["Analyzer lifecycle evidence must include command, status, exit result, snapshot SHA, and disposition."],
-        )
-    return (
-        "This review-limited record may affect engineering effort or release confidence, but material impact is not established until the exact location and evidence are confirmed.",
-        "Confirm the exact location, rule or analyzer, immutable snapshot, and disposition before assigning repair work; do not fabricate a code change from generic evidence.",
-        "Retain finding-specific evidence, run the focused verification appropriate to the confirmed location, and regenerate the assessment from the same immutable SHA.",
-        ["Finding remains review-limited pending exact location and analyzer provenance."],
-    )
+        return ("The analyzer result is incomplete, so release confidence is reduced; it does not independently establish a product defect.", "Restore the named analyzer with a bounded timeout and exact-snapshot command, retain stdout/stderr and exit disposition, and map any verified result to the relevant scored control.", "Rerun the exact analyzer on the immutable commit and require a terminal completed, inapplicable, or explicitly accepted review-limited disposition.", ["Analyzer lifecycle evidence must include command, status, exit result, snapshot SHA, and disposition."])
+    return ("This review-limited record may affect engineering effort or release confidence, but material impact is not established until the exact location and evidence are confirmed.", "Confirm the exact location, rule or analyzer, immutable snapshot, and disposition before assigning repair work; do not fabricate a code change from generic evidence.", "Retain finding-specific evidence, run the focused verification appropriate to the confirmed location, and regenerate the assessment from the same immutable SHA.", ["Finding remains review-limited pending exact location and analyzer provenance."])
 
 
 def _classify_dossier(dossier: Any) -> Any:
@@ -477,31 +343,25 @@ def _classify_dossier(dossier: Any) -> Any:
     if any(term in lower for term in ("failed", "timeout", "timed out", "requires human review")):
         severity = "review"
     impact, repair_specification, verification, evidence = _dossier_context(title)
-    original_evidence = list(getattr(dossier, "evidence", ()) or ())
-    useful = [item for item in original_evidence if "repository root contains" not in _text(item).casefold()]
-    updates = {
-        "severity": severity,
-        "confidence": "review-limited" if severity == "review" else getattr(dossier, "confidence", "review-limited"),
-        "business_impact": impact,
-        "repair_specification": repair_specification,
-        "verification": verification,
-        "owner": "Authorized engineering owner",
-        "effort": getattr(dossier, "effort", "medium") or "medium",
-        "disposition": "review_limited" if severity == "review" else getattr(dossier, "disposition", "open"),
-        "evidence": tuple((useful + evidence)[:6]),
-    }
+    useful = [item for item in list(getattr(dossier, "evidence", ()) or ()) if "repository root contains" not in _text(item).casefold()]
+    updates = {"severity": severity, "confidence": "review-limited" if severity == "review" else getattr(dossier, "confidence", "review-limited"), "business_impact": impact, "repair_specification": repair_specification, "verification": verification, "owner": "Authorized engineering owner", "effort": getattr(dossier, "effort", "medium") or "medium", "disposition": "review_limited" if severity == "review" else getattr(dossier, "disposition", "open"), "evidence": tuple((useful + evidence)[:6])}
     if is_dataclass(dossier):
-        return replace(dossier, **updates)
+        try:
+            return replace(dossier, **updates)
+        except Exception:
+            pass
     enriched = copy.copy(dossier)
     for key, value in updates.items():
-        setattr(enriched, key, value)
+        try:
+            setattr(enriched, key, value)
+        except Exception:
+            return dossier
     return enriched
 
 
 def install_express_decision_quality_v17() -> dict[str, Any]:
     from nico import assessment_quality
     from nico import express_report_dossier_export_v15 as dossier_export
-
     current: Callable[[dict[str, Any]], tuple[str | None, str | None]] = assessment_quality._build_polished_pdf_base64
     render_status = "already_installed"
     if not getattr(current, _PATCH_MARKER, False):
@@ -510,12 +370,10 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
             normalized = normalize_express_decision_quality(result)
             _apply_normalized_result_in_place(result, normalized)
             return current(result)
-
         setattr(render, _PATCH_MARKER, True)
         setattr(render, "_nico_previous", current)
         assessment_quality._build_polished_pdf_base64 = render
         render_status = "installed"
-
     original_builder = dossier_export.build_finding_dossiers
     dossier_status = "already_installed"
     if not getattr(original_builder, _PATCH_MARKER, False):
@@ -531,28 +389,11 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
                 seen.add(semantic)
                 output.append(_classify_dossier(dossier))
             return output
-
         setattr(classified_dossiers, _PATCH_MARKER, True)
         setattr(classified_dossiers, "_nico_previous", original_builder)
         dossier_export.build_finding_dossiers = classified_dossiers
         dossier_status = "installed"
-
-    return {
-        "status": "installed" if "installed" in {render_status, dossier_status} else "already_installed",
-        "version": VERSION,
-        "render_binding": render_status,
-        "dossier_binding": dossier_status,
-    }
+    return {"status": "installed" if "installed" in {render_status, dossier_status} else "already_installed", "version": VERSION, "render_binding": render_status, "dossier_binding": dossier_status}
 
 
-__all__ = [
-    "VERSION",
-    "_canonical_ci_categories",
-    "_classify_dossier",
-    "_is_clean_evidence",
-    "_is_language_false_positive",
-    "_proportional_bar",
-    "_reconcile_ci_statement",
-    "install_express_decision_quality_v17",
-    "normalize_express_decision_quality",
-]
+__all__ = ["VERSION", "_canonical_ci_categories", "_is_clean_evidence", "_is_language_false_positive", "_proportional_bar", "_reconcile_ci_statement", "install_express_decision_quality_v17", "normalize_express_decision_quality"]
