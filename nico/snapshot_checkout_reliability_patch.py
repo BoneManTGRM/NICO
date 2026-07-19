@@ -23,7 +23,6 @@ def _archive_checkout(repository: str, commit_sha: str, workspace: Path) -> tupl
     git history, so history-only scanners remain unavailable while dependency and
     static-analysis scanners can still run against the correct source snapshot.
     """
-
     repository = str(repository or "").strip()
     commit_sha = str(commit_sha or "").strip().lower()
     if not _REPOSITORY_RE.fullmatch(repository) or not _COMMIT_RE.fullmatch(commit_sha):
@@ -87,15 +86,20 @@ def install_snapshot_checkout_reliability() -> dict[str, Any]:
     @wraps(current)
     def reliable_checkout(repository: str, commit_sha: str, workspace: Path, env: dict[str, str]):
         notes: list[str] = []
+        last_actual_sha = ""
         for attempt in range(1, 3):
             shutil.rmtree(workspace / "repo", ignore_errors=True)
             repo_path, actual_sha, attempt_notes = current(repository, commit_sha, workspace, env)
+            if actual_sha:
+                last_actual_sha = str(actual_sha).strip().lower()
             notes.extend(f"git attempt {attempt}: {note}" for note in attempt_notes)
-            if repo_path is not None and str(actual_sha or "").lower() == str(commit_sha or "").lower():
-                return repo_path, actual_sha, notes
+            if repo_path is not None and last_actual_sha == str(commit_sha or "").lower():
+                return repo_path, last_actual_sha, notes
         archive_path, archive_sha, archive_notes = _archive_checkout(repository, commit_sha, workspace)
         notes.extend(archive_notes)
-        return archive_path, archive_sha, notes
+        if archive_path is not None:
+            return archive_path, archive_sha, notes
+        return None, last_actual_sha, notes
 
     setattr(reliable_checkout, _PATCH_MARKER, True)
     setattr(reliable_checkout, "_nico_previous", current)
@@ -107,6 +111,7 @@ def install_snapshot_checkout_reliability() -> dict[str, Any]:
         "exact_commit_archive_fallback": True,
         "archive_path_validation": True,
         "history_scanners_fail_closed_without_git": True,
+        "mismatch_evidence_preserved": True,
     }
 
 
