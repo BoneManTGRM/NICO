@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from typing import Any, Callable, Iterable
 
+from nico import express_decision_quality_v17 as decision_quality
 from nico import lifecycle_status_hardening as hardening
 from nico.storage import STORE
 
-VERSION = "nico.express_terminal_truth.v1"
+VERSION = "nico.express_terminal_truth.v2"
 _PATCH_MARKER = "_nico_express_terminal_truth_v1"
+_CLEAN_PATCH_MARKER = "_nico_clean_evidence_order_v1"
 _TERMINAL = {"complete", "completed", "succeeded", "success", "failed", "error", "cancelled", "canceled", "blocked", "skipped", "not_applicable"}
 _ACTIVE = {"queued", "pending", "starting", "running", "finalizing", "reviewing", "in_progress"}
 _GATE_NAMES = {"truth and review gates", "truth_review_gates", "truth-and-review-gates"}
@@ -88,6 +91,31 @@ def _normalize_scanner_sections(value: Any) -> None:
             _normalize_scanner_sections(child)
 
 
+def _install_clean_evidence_order_patch() -> bool:
+    current = decision_quality._is_clean_evidence
+    if getattr(current, _CLEAN_PATCH_MARKER, False):
+        return False
+
+    def polarity_aware_clean_evidence(value: Any) -> bool:
+        if current(value):
+            return True
+        text = " ".join(str(value or "").split()).casefold()
+        if not text:
+            return False
+        return bool(
+            re.search(
+                r"\b(?:found|returned|reported|detected)\s+no\s+(?:secrets?|credentials?|vulnerabilit(?:y|ies)|findings?)\b",
+                text,
+                re.I,
+            )
+        )
+
+    setattr(polarity_aware_clean_evidence, _CLEAN_PATCH_MARKER, True)
+    setattr(polarity_aware_clean_evidence, "_nico_previous", current)
+    decision_quality._is_clean_evidence = polarity_aware_clean_evidence
+    return True
+
+
 def reconcile_terminal_truth(payload: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(payload)
     persistence = _storage_truth()
@@ -124,9 +152,14 @@ def reconcile_terminal_truth(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_express_terminal_truth_patch() -> dict[str, Any]:
+    clean_evidence_patched = _install_clean_evidence_order_patch()
     current: Callable[[str, str, str], dict[str, Any]] = hardening._express_status_response
     if getattr(current, _PATCH_MARKER, False):
-        return {"status": "already_installed", "version": VERSION}
+        return {
+            "status": "installed" if clean_evidence_patched else "already_installed",
+            "version": VERSION,
+            "clean_evidence_order_patch_installed": True,
+        }
 
     def terminal_truth_response(run_id: str, customer_id: str, project_id: str) -> dict[str, Any]:
         response = current(run_id, customer_id, project_id)
@@ -141,6 +174,7 @@ def install_express_terminal_truth_patch() -> dict[str, Any]:
         "terminal_completion_requires_terminal_gates": True,
         "terminal_completion_requires_durable_record": True,
         "scanner_worker_evidence_mapped_to_controls": True,
+        "clean_evidence_order_patch_installed": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
