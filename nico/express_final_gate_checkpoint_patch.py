@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_final_gate_checkpoint.v2"
+PATCH_VERSION = "nico.express_final_gate_checkpoint.v3"
 _FINALIZE_MARKER = "_nico_express_checkpoint_finalize_v1"
 _STAGE_MARKER = "_nico_express_checkpoint_stage_v2"
 _RELEASE_MARKER = "_nico_express_checkpoint_release_v1"
@@ -24,19 +24,64 @@ def _discard_checkpoint(run_id: str) -> None:
     _CHECKPOINTS.pop(str(run_id or "").strip(), None)
 
 
-def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
-    """Persist generated reports and scores before slower final review gates.
+def _stored_response(express_async_api: Any, run_id: str) -> dict[str, Any]:
+    record = express_async_api.STORE.get("assessment_runs", run_id)
+    if not isinstance(record, dict):
+        return {}
+    value = record.get("response") if isinstance(record.get("response"), dict) else record.get("payload")
+    return deepcopy(value) if isinstance(value, dict) else {}
 
-    The async runner previously replaced the rich post-render result with a bare
-    stage-only payload when entering ``truth_and_review_gates``. Status polling
-    therefore saw ``report_ready=false`` and no score even though rendering had
-    completed. This patch caches the exact-run post-render result and records it
-    as the final-gate checkpoint without changing the backend terminal state.
 
-    The checkpoint may contain PDF and HTML artifacts, so it is consumed exactly
-    once and is also cleared at run release. This prevents completed, failed, or
-    interrupted runs from accumulating large process-local payloads indefinitely.
+def _stored_request(express_async_api: Any, run_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    record = express_async_api.STORE.get("assessment_runs", run_id)
+    if isinstance(record, dict) and isinstance(record.get("request"), dict):
+        return deepcopy(record["request"])
+    return {
+        "repository": str(result.get("repository") or ""),
+        "customer_id": str(result.get("customer_id") or "default_customer"),
+        "project_id": str(result.get("project_id") or "default_project"),
+        "authorized": True,
+        "authorization_confirmed": True,
+    }
+
+
+def _persist_post_render_checkpoint(express_async_api: Any, run_id: str, output: dict[str, Any]) -> None:
+    """Write rich report truth before entering any slower final-gate operation.
+
+    The final gate may be interrupted by a worker restart, deployment, or storage
+    adapter failure. Persisting the post-render result immediately prevents the
+    authoritative exact-run record from remaining a bare 96% stage projection
+    with report_ready=false after Markdown, HTML, and PDF were already generated.
     """
+
+    request_payload = _stored_request(express_async_api, run_id, output)
+    checkpoint = deepcopy(output)
+    checkpoint["status"] = "running"
+    checkpoint["run_id"] = run_id
+    checkpoint["assessment_type"] = "express"
+    checkpoint["service_tier"] = "express"
+    checkpoint["repository"] = str(request_payload.get("repository") or checkpoint.get("repository") or "")
+    checkpoint["customer_id"] = str(request_payload.get("customer_id") or "default_customer")
+    checkpoint["project_id"] = str(request_payload.get("project_id") or "default_project")
+    checkpoint["current_stage"] = "report_generation"
+    checkpoint["progress_percent"] = max(94, int(checkpoint.get("progress_percent") or 94))
+    checkpoint["human_review_required"] = True
+    checkpoint["client_ready"] = False
+    checkpoint["client_delivery_allowed"] = False
+    checkpoint["persistence"] = express_async_api._persistence()
+    checkpoint["post_render_checkpoint"] = {
+        "version": PATCH_VERSION,
+        "durably_written_before_final_gate": True,
+        "usable_report_artifacts": _usable_reports(checkpoint),
+        "score_present": checkpoint.get("technical_score") is not None or bool(_record(checkpoint.get("maturity_signal"))),
+        "sections_present": bool(checkpoint.get("sections")),
+    }
+    checkpoint["updated_at"] = express_async_api.utc_now()
+    express_async_api._record(run_id, request_payload, checkpoint)
+
+
+def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
+    """Persist generated reports and scores before slower final review gates."""
 
     from nico.api import main as api_main
     from nico import express_async_api
@@ -50,6 +95,7 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
                 run_id = str(output.get("run_id") or result.get("run_id") or "").strip()
                 if run_id:
                     _CHECKPOINTS[run_id] = deepcopy(output)
+                    _persist_post_render_checkpoint(express_async_api, run_id, output)
             return output
 
         setattr(finalize_with_checkpoint, _FINALIZE_MARKER, True)
@@ -80,6 +126,8 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
 
             checkpoint = deepcopy(_CHECKPOINTS.pop(run_id, None) or {})
             if not checkpoint:
+                checkpoint = _stored_response(express_async_api, run_id)
+            if not checkpoint:
                 return current_stage(
                     run_id,
                     request_payload,
@@ -100,6 +148,7 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
             checkpoint["progress_percent"] = max(94, int(progress_percent or 94))
             checkpoint["human_review_required"] = True
             checkpoint["client_ready"] = False
+            checkpoint["client_delivery_allowed"] = False
             checkpoint["persistence"] = express_async_api._persistence()
             checkpoint["progress"] = express_async_api._stage_progress(
                 "truth_and_review_gates",
@@ -108,6 +157,7 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
                 evidence={
                     **deepcopy(evidence or {}),
                     "rich_report_checkpoint_persisted": True,
+                    "durable_checkpoint_recovered": bool(checkpoint.get("post_render_checkpoint")),
                     "usable_report_artifacts": _usable_reports(checkpoint),
                     "same_run_continuation": True,
                 },
@@ -141,6 +191,8 @@ def install_express_final_gate_checkpoint_patch() -> dict[str, Any]:
         "browser_terminalization_required": False,
         "checkpoint_consumed_once": True,
         "terminal_checkpoint_cleanup": True,
+        "post_render_checkpoint_persisted_before_final_gate": True,
+        "durable_checkpoint_recovery": True,
     }
 
 
