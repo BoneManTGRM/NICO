@@ -174,6 +174,18 @@ def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]
     return output
 
 
+def _apply_normalized_result_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
+    """Apply report normalization without replacing nested containers held by outer renderers."""
+    existing_reports = result.get("reports")
+    for key, value in normalized.items():
+        if key == "reports" and isinstance(existing_reports, dict) and isinstance(value, dict):
+            existing_reports.clear()
+            existing_reports.update(value)
+            result["reports"] = existing_reports
+        else:
+            result[key] = value
+
+
 def _classify_dossier(dossier: Any) -> Any:
     title = _text(getattr(dossier, "title", "")).casefold()
     severity = "review"
@@ -199,8 +211,7 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
         @wraps(current)
         def render(result: dict[str, Any]) -> tuple[str | None, str | None]:
             normalized = normalize_express_decision_quality(result)
-            result.clear()
-            result.update(normalized)
+            _apply_normalized_result_in_place(result, normalized)
             return current(result)
 
         setattr(render, _PATCH_MARKER, True)
