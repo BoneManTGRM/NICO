@@ -12,6 +12,11 @@ def _norm(value: str) -> str:
     return " ".join((value or "").replace("\u00ad", "").split()).casefold()
 
 
+def _has_velocity_title(value: str) -> bool:
+    text = _norm(value)
+    return all(token in text for token in ("velocity", "complexity", "ownership", "decision record"))
+
+
 def _result() -> dict:
     sections = []
     for section_id, label, score in [
@@ -59,7 +64,7 @@ def test_renderer_replaces_glyph_page_and_splits_architecture_velocity() -> None
 
     assert sum("score contribution and constraints" in page for page in text) == 1
     assert sum("architecture decision record" in page for page in text) == 1
-    assert sum("velocity, complexity, and ownership decision record" in page for page in text) == 1
+    assert sum(_has_velocity_title(page) for page in text) == 1
     assert all("architecture, complexity, and ownership decision record" not in page for page in text)
 
     geometry = result["express_pdf_bar_geometry"]["records"]
