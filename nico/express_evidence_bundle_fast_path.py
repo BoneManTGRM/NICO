@@ -7,8 +7,8 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_evidence_bundle_fast_path.v1"
-_PATCH_MARKER = "_nico_express_evidence_bundle_fast_path_v1"
+PATCH_VERSION = "nico.express_evidence_bundle_fast_path.v2"
+_PATCH_MARKER = "_nico_express_evidence_bundle_fast_path_v2"
 _MAX_LEDGER_ITEMS = 250
 _MAX_TEXT_BYTES = 2_000_000
 
@@ -196,7 +196,6 @@ def attach_express_evidence_bundle(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_express_evidence_bundle_fast_path() -> dict[str, Any]:
-    from nico import evidence_artifact_bundle
     from nico.api import main as api_main
 
     current: Callable[[dict[str, Any]], dict[str, Any]] = api_main.attach_evidence_artifact_bundle
@@ -213,13 +212,13 @@ def install_express_evidence_bundle_fast_path() -> dict[str, Any]:
     setattr(bounded_attach, _PATCH_MARKER, True)
     setattr(bounded_attach, "_nico_previous", current)
     api_main.attach_evidence_artifact_bundle = bounded_attach
-    evidence_artifact_bundle.attach_evidence_artifact_bundle = bounded_attach
     return {
         "status": "installed",
         "version": PATCH_VERSION,
         "express_only": True,
         "bounded_serialization": True,
         "recursive_scanner_embedding_removed": True,
+        "module_global_preserved": True,
     }
 
 
