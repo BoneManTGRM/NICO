@@ -1,0 +1,1 @@
+Batch D renderer production truth anchor.
