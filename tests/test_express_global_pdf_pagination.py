@@ -28,6 +28,7 @@ def test_global_pagination_uses_final_artifact_page_count() -> None:
     for page_number, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
         assert f"Page {page_number} of 4" in text
+        assert f"Page {page_number} of 15" not in text
 
 
 def test_global_pagination_supports_spanish_page_label() -> None:
@@ -37,6 +38,8 @@ def test_global_pagination_supports_spanish_page_label() -> None:
     assert len(reader.pages) == 2
     assert "Página 1 of 2" in (reader.pages[0].extract_text() or "")
     assert "Página 2 of 2" in (reader.pages[1].extract_text() or "")
+    assert "Page 1 of 15" not in (reader.pages[0].extract_text() or "")
+    assert "Page 2 of 15" not in (reader.pages[1].extract_text() or "")
 
 
 def test_global_pagination_preserves_pdf_structure() -> None:
