@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import base64
 from copy import deepcopy
 from typing import Any, Callable
 
 import nico.client_acceptance as client_acceptance
 
-PATCH_VERSION = "nico.cross_tier_final_gate_completion.v3"
-_PATCH_MARKER = "_nico_cross_tier_final_gate_completion_v3"
+PATCH_VERSION = "nico.cross_tier_final_gate_completion.v4"
+_PATCH_MARKER = "_nico_cross_tier_final_gate_completion_v4"
 SUPPORTED_TIERS = {"express", "mid", "full"}
 
 
@@ -25,20 +26,33 @@ def _artifact_available(bundle: dict[str, Any], name: str) -> bool:
     return bool(artifact.get("available") is True and str(artifact.get("sha256") or "").strip())
 
 
-def _direct_report_formats_ready(result: dict[str, Any]) -> bool:
-    reports = _record(result.get("reports"))
-    return all(bool(str(reports.get(name) or "").strip()) for name in ("markdown", "html", "pdf_base64"))
-
-
-def _report_formats_ready(result: dict[str, Any], tier: str) -> bool:
-    if _direct_report_formats_ready(result):
-        return True
-    if tier == "express":
-        # Express completes in the same browser workflow that exposes Copy Markdown
-        # and Download PDF. Hash-only evidence cannot satisfy usable delivery.
+def _valid_direct_pdf(value: Any) -> bool:
+    encoded = str(value or "").strip()
+    if not encoded:
         return False
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except Exception:
+        return False
+    return raw.startswith(b"%PDF-") and b"%%EOF" in raw[-2048:]
+
+
+def _format_readiness(result: dict[str, Any], tier: str) -> dict[str, bool]:
+    reports = _record(result.get("reports"))
     bundle = _record(result.get("evidence_artifact_bundle"))
-    return all(_artifact_available(bundle, name) for name in ("markdown", "html", "pdf"))
+    markdown_ready = bool(str(reports.get("markdown") or "").strip())
+    html_ready = bool(str(reports.get("html") or "").strip())
+    pdf_ready = _valid_direct_pdf(reports.get("pdf_base64"))
+    if tier != "express":
+        markdown_ready = markdown_ready or _artifact_available(bundle, "markdown")
+        html_ready = html_ready or _artifact_available(bundle, "html")
+        pdf_ready = pdf_ready or _artifact_available(bundle, "pdf")
+    return {
+        "markdown_ready": markdown_ready,
+        "html_ready": html_ready,
+        "pdf_ready": pdf_ready,
+        "report_formats_ready": markdown_ready and html_ready and pdf_ready,
+    }
 
 
 def _score_ready(result: dict[str, Any]) -> bool:
@@ -64,32 +78,44 @@ def normalize_assessment_completion(before_gate: dict[str, Any], after_gate: dic
     if tier not in SUPPORTED_TIERS:
         return output
 
-    formats_ready = _report_formats_ready(output, tier) or _report_formats_ready(before_gate, tier)
+    before_formats = _format_readiness(before_gate, tier)
+    after_formats = _format_readiness(output, tier)
+    formats = {
+        name: bool(before_formats[name] or after_formats[name])
+        for name in ("markdown_ready", "html_ready", "pdf_ready")
+    }
+    formats["report_formats_ready"] = all(formats.values())
     score_ready = _score_ready(output) or _score_ready(before_gate)
     sections_ready = _sections_ready(output) or _sections_ready(before_gate)
     completion = {
         "version": PATCH_VERSION,
         "tier": tier,
-        "report_formats_ready": formats_ready,
+        **formats,
         "score_ready": score_ready,
         "sections_ready": sections_ready,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
 
-    if not (formats_ready and score_ready and sections_ready):
+    if not (formats["report_formats_ready"] and score_ready and sections_ready):
         completion["status"] = "blocked_missing_completion_evidence"
+        completion["missing"] = [
+            name.removesuffix("_ready")
+            for name in ("markdown_ready", "html_ready", "pdf_ready", "sections_ready", "score_ready")
+            if completion.get(name) is not True
+        ]
         output["assessment_completion"] = completion
         if tier == "express":
             output["express_completion"] = completion
             output["report_generation_status"] = "blocked_missing_usable_artifacts"
             output["report_format_error"] = (
-                "Express report generation did not return usable Markdown, HTML, and PDF artifacts."
+                "Express report generation did not return usable Markdown, HTML, and structurally valid PDF artifacts."
             )
         else:
             output.pop("express_completion", None)
         output["human_review_required"] = True
         output["client_ready"] = False
+        output["client_delivery_allowed"] = False
         return output
 
     gate = _record(output.get("client_acceptance"))
@@ -145,6 +171,7 @@ def install_express_final_gate_completion_patch() -> dict[str, Any]:
         "completion_separate_from_delivery": True,
         "requires_report_formats": ["markdown", "html", "pdf"],
         "express_requires_direct_usable_artifacts": True,
+        "requires_structurally_valid_pdf": True,
         "requires_score": True,
         "requires_sections": True,
     }
