@@ -6,14 +6,49 @@ from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_decision_quality.v18_batch_a"
-_PATCH_MARKER = "_nico_express_decision_quality_v18_batch_a"
+VERSION = "nico.express_decision_quality.v19_batch_b"
+_PATCH_MARKER = "_nico_express_decision_quality_v19_batch_b"
 _SCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 _SIZE_ADVISORY_TERMS = (
     "source-file footprint is large",
     "total source loc is high",
     "repository size",
     "increases review scope",
+)
+_CI_LABEL_ALIASES = {
+    "success": "success",
+    "succeeded": "success",
+    "failure": "failure",
+    "failed": "failure",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+    "skipped": "skipped",
+    "neutral": "neutral",
+    "timed-out": "timed-out",
+    "timed_out": "timed-out",
+    "timeout": "timed-out",
+    "action-required": "action-required",
+    "action_required": "action-required",
+    "stale": "stale",
+    "startup-failure": "startup-failure",
+    "startup_failure": "startup-failure",
+    "non-success": "non-success",
+    "other/unknown": "other/unknown",
+    "other": "other/unknown",
+    "unknown": "other/unknown",
+}
+_CI_CATEGORY_ORDER = (
+    "success",
+    "failure",
+    "cancelled",
+    "skipped",
+    "neutral",
+    "timed-out",
+    "action-required",
+    "stale",
+    "startup-failure",
+    "non-success",
+    "other/unknown",
 )
 
 
@@ -33,20 +68,100 @@ def _is_language_false_positive(value: Any) -> bool:
     return rule_match and any(ext in text for ext in _SCRIPT_EXTENSIONS)
 
 
+def _canonical_ci_categories(total: int, pairs: list[tuple[str, int]]) -> dict[str, int]:
+    categories: dict[str, int] = {}
+    for raw_label, raw_count in pairs:
+        label = _CI_LABEL_ALIASES.get(raw_label.casefold().replace(" ", "-"))
+        if not label:
+            continue
+        categories[label] = categories.get(label, 0) + max(0, int(raw_count))
+
+    detailed_non_success = sum(
+        categories.get(label, 0)
+        for label in (
+            "failure",
+            "cancelled",
+            "skipped",
+            "neutral",
+            "timed-out",
+            "action-required",
+            "stale",
+            "startup-failure",
+        )
+    )
+    if detailed_non_success:
+        categories.pop("non-success", None)
+
+    categories.pop("other/unknown", None)
+    accounted = sum(categories.values())
+    categories["other/unknown"] = max(0, total - accounted)
+    return categories
+
+
 def _reconcile_ci_statement(value: str) -> str:
     match = re.search(
-        r"(?P<total>\d+)\s*;\s*success=(?P<success>\d+)\s*;\s*non-success=(?P<non>\d+)(?:\s*;\s*other/unknown=\d+)*",
+        r"(?P<total>\d+)\s*;(?P<body>(?:\s*[A-Za-z][A-Za-z _/-]*=\d+\s*;?)*)",
         value,
         re.I,
     )
     if not match:
         return value
+
     total = int(match.group("total"))
-    success = int(match.group("success"))
-    non_success = int(match.group("non"))
-    other = max(0, total - success - non_success)
-    replacement = f"{total}; success={success}; non-success={non_success}; other/unknown={other}"
+    pairs = [
+        (label.strip(), int(count))
+        for label, count in re.findall(r"([A-Za-z][A-Za-z _/-]*)=(\d+)", match.group("body"))
+    ]
+    if not pairs:
+        return value
+
+    categories = _canonical_ci_categories(total, pairs)
+    ordered = [f"{label}={categories[label]}" for label in _CI_CATEGORY_ORDER if label in categories]
+    replacement = f"{total}; " + "; ".join(ordered)
     return value[: match.start()] + replacement + value[match.end() :]
+
+
+def _score_contribution_geometry(value: Any, *, maximum: float = 6.0, max_width: float = 120.0) -> dict[str, float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 0.0
+    bounded = min(max(numeric, 0.0), maximum)
+    ratio = 0.0 if maximum <= 0 else bounded / maximum
+    return {
+        "value": bounded,
+        "maximum": maximum,
+        "ratio": ratio,
+        "width": ratio * max_width,
+    }
+
+
+def _normalize_score_contributions(result: dict[str, Any]) -> None:
+    containers: list[Any] = []
+    for key in ("score_contributions", "contributions", "score_components"):
+        if key in result:
+            containers.append(result.get(key))
+    scoring = result.get("scoring")
+    if isinstance(scoring, dict):
+        for key in ("score_contributions", "contributions", "components"):
+            if key in scoring:
+                containers.append(scoring.get(key))
+
+    for container in containers:
+        items = container.values() if isinstance(container, dict) else container
+        if not isinstance(items, (list, tuple, dict_values := type({}.values()))):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw_value = item.get("contribution", item.get("points", item.get("value", 0)))
+            maximum = item.get("maximum", item.get("max", 6))
+            geometry = _score_contribution_geometry(raw_value, maximum=float(maximum or 6))
+            item["bar_geometry"] = geometry
+            item["bar_render_mode"] = "proportional_geometry"
+            for glyph_field in ("bar", "glyph_bar", "contribution_bar"):
+                if glyph_field in item:
+                    item[glyph_field] = None
 
 
 def _normalize_sections(result: dict[str, Any]) -> None:
@@ -180,6 +295,7 @@ def _canonicalize_summary(result: dict[str, Any]) -> None:
 def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(result)
     _normalize_sections(output)
+    _normalize_score_contributions(output)
     _normalize_repair_candidates(output)
     _canonicalize_summary(output)
     output["express_decision_quality"] = {
@@ -188,6 +304,8 @@ def normalize_express_decision_quality(result: dict[str, Any]) -> dict[str, Any]
         "language_false_positives_removed": True,
         "cross_section_findings_deduplicated": True,
         "ci_counts_reconciled": True,
+        "ci_categories_exactly_once": True,
+        "score_bars_use_proportional_geometry": True,
         "unverified_secret_candidates_grouped": True,
         "unverified_executive_severity_gated": True,
         "canonical_summary_bound": True,
@@ -271,8 +389,10 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "_canonical_ci_categories",
     "_is_language_false_positive",
     "_reconcile_ci_statement",
+    "_score_contribution_geometry",
     "install_express_decision_quality_v17",
     "normalize_express_decision_quality",
 ]
