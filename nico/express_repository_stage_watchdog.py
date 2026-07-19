@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
 from copy import deepcopy
-from threading import local
+from threading import Event, Thread, local
 from time import monotonic
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_repository_stage_watchdog.v1"
-_PATCH_MARKER = "_nico_express_repository_stage_watchdog_v1"
+PATCH_VERSION = "nico.express_repository_stage_watchdog.v2"
+_PATCH_MARKER = "_nico_express_repository_stage_watchdog_v2"
 _HEARTBEAT_SECONDS = 15
-_MAX_STAGE_SECONDS = 900
+_EXPECTED_STAGE_SECONDS = 900
 _CONTEXT = local()
-_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="nico-express-evidence")
 
 
 def _context() -> tuple[str, dict[str, Any]] | None:
@@ -33,11 +31,33 @@ def _heartbeat(api: Any, run_id: str, payload: dict[str, Any], count: int, elaps
             "watchdog_version": PATCH_VERSION,
             "heartbeat_count": count,
             "stage_elapsed_seconds": elapsed,
-            "stage_timeout_seconds": _MAX_STAGE_SECONDS,
+            "expected_stage_seconds": _EXPECTED_STAGE_SECONDS,
+            "stage_overdue": elapsed >= _EXPECTED_STAGE_SECONDS,
             "same_run_continuation": True,
             "backend_task_active": True,
+            "background_assessment_task": False,
         },
     )
+
+
+def _heartbeat_loop(
+    api: Any,
+    run_id: str,
+    request_payload: dict[str, Any],
+    stop: Event,
+    *,
+    heartbeat_seconds: float = _HEARTBEAT_SECONDS,
+) -> None:
+    started = monotonic()
+    count = 0
+    while not stop.wait(heartbeat_seconds):
+        count += 1
+        try:
+            _heartbeat(api, run_id, request_payload, count, int(monotonic() - started))
+        except Exception:
+            # Heartbeat publication is observability only. The authoritative
+            # assessment must continue even if one progress write is unavailable.
+            continue
 
 
 def _run_with_watchdog(
@@ -50,21 +70,25 @@ def _run_with_watchdog(
         return function(payload)
 
     run_id, request_payload = context
-    future: Future[dict[str, Any]] = _EXECUTOR.submit(function, payload)
-    started = monotonic()
-    heartbeat = 0
-    while True:
-        try:
-            return future.result(timeout=_HEARTBEAT_SECONDS)
-        except FutureTimeout:
-            heartbeat += 1
-            elapsed = int(monotonic() - started)
-            _heartbeat(api, run_id, request_payload, heartbeat, elapsed)
-            if elapsed >= _MAX_STAGE_SECONDS:
-                future.cancel()
-                raise TimeoutError(
-                    f"Express repository evidence exceeded {_MAX_STAGE_SECONDS} seconds for exact run {run_id}."
-                )
+    stop = Event()
+    heartbeat_thread = Thread(
+        target=_heartbeat_loop,
+        args=(api, run_id, deepcopy(request_payload), stop),
+        daemon=True,
+        name=f"nico-express-evidence-heartbeat-{run_id[-8:]}",
+    )
+    heartbeat_thread.start()
+    try:
+        # Run the authoritative assessment in the exact worker thread. The old
+        # implementation moved it into a shared executor and attempted to cancel
+        # an already-running Future after 15 minutes. Python cannot cancel a
+        # running thread, so the worker recorded failure and released capacity
+        # while a zombie assessment continued mutating process state. Keeping the
+        # task inline preserves one exact lifecycle and prevents queued/zombie work.
+        return function(payload)
+    finally:
+        stop.set()
+        heartbeat_thread.join(timeout=2)
 
 
 def install_express_repository_stage_watchdog() -> dict[str, Any]:
@@ -107,8 +131,11 @@ def install_express_repository_stage_watchdog() -> dict[str, Any]:
         "status": "installed",
         "version": PATCH_VERSION,
         "heartbeat_seconds": _HEARTBEAT_SECONDS,
-        "maximum_stage_seconds": _MAX_STAGE_SECONDS,
+        "expected_stage_seconds": _EXPECTED_STAGE_SECONDS,
         "wrapped_functions": wrapped_names,
+        "authoritative_task_runs_inline": True,
+        "running_future_cancellation_used": False,
+        "zombie_assessment_possible": False,
         "duplicate_start_allowed": False,
         "synthetic_progress_allowed": False,
     }
@@ -116,5 +143,7 @@ def install_express_repository_stage_watchdog() -> dict[str, Any]:
 
 __all__ = [
     "PATCH_VERSION",
+    "_heartbeat_loop",
+    "_run_with_watchdog",
     "install_express_repository_stage_watchdog",
 ]
