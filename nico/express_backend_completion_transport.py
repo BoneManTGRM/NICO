@@ -9,11 +9,11 @@ from typing import Any, Callable
 import nico.client_acceptance as client_acceptance
 from nico.express_final_gate_completion_patch import normalize_assessment_completion
 
-PATCH_VERSION = "nico.express_backend_completion_transport.v3"
+PATCH_VERSION = "nico.express_backend_completion_transport.v4"
 _GATE_MARKER = "_nico_express_backend_completion_gate_v1"
 _SAFE_MARKER = "_nico_express_backend_completion_safe_payload_v1"
 _BUNDLE_MARKER = "_nico_express_backend_completion_bundle_v1"
-_PDF_MARKER = "_nico_express_global_pdf_pagination_v1"
+_PDF_MARKER = "_nico_express_global_pdf_pagination_v2"
 _COMPLETION_FIELDS = (
     "status",
     "current_stage",
@@ -69,10 +69,22 @@ def _paginate_express_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
     for index, page in enumerate(reader.pages, start=1):
         width = float(page.mediabox.width)
         height = float(page.mediabox.height)
+        footer_box = (
+            width - 2.25 * inch,
+            0.12 * inch,
+            width - 0.42 * inch,
+            0.48 * inch,
+        )
+
+        # Remove the previous footer from the PDF content stream, rather than
+        # merely painting over it. This prevents stale totals such as
+        # "Page 16 of 15" from remaining searchable/extractable in the final
+        # client artifact.
+        page.add_redact_annotation(footer_box, fill=(1, 1, 1))
+        page.apply_redactions()
+
         overlay_buffer = io.BytesIO()
         overlay = canvas.Canvas(overlay_buffer, pagesize=(width, height), invariant=1)
-        overlay.setFillColor(colors.white)
-        overlay.rect(width - 2.15 * inch, 0.16 * inch, 1.65 * inch, 0.27 * inch, stroke=0, fill=1)
         overlay.setFillColor(colors.HexColor("#64748b"))
         overlay.setFont("Helvetica", 7.1)
         overlay.drawRightString(width - 0.55 * inch, 0.3 * inch, f"{page_label} {index} of {total_pages}")
@@ -87,6 +99,18 @@ def _paginate_express_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
     corrected = output.getvalue()
     if not corrected.startswith(b"%PDF-") or b"%%EOF" not in corrected[-2048:]:
         raise ValueError("Paginated Express PDF failed structural validation")
+
+    verified = PdfReader(io.BytesIO(corrected))
+    if len(verified.pages) != total_pages:
+        raise ValueError("Paginated Express PDF page count changed unexpectedly")
+    for index, page in enumerate(verified.pages, start=1):
+        text = page.extract_text() or ""
+        expected = f"{page_label} {index} of {total_pages}"
+        if expected not in text:
+            raise ValueError(f"Missing final pagination footer on page {index}")
+        stale_footer = __import__("re").search(r"(?:Page|Página)\s+\d+\s+of\s+(?!%d\b)\d+" % total_pages, text)
+        if stale_footer:
+            raise ValueError(f"Stale pagination footer remains on page {index}: {stale_footer.group(0)}")
     return corrected
 
 
@@ -113,6 +137,7 @@ def _install_express_pdf_pagination() -> str:
                 "page_count": total_pages,
                 "global_page_numbers": True,
                 "footer_total_matches_artifact": True,
+                "stale_footer_content_removed": True,
             }
             qa = validate_express_pdf(corrected, result)
             result["express_visual_qa"] = qa
