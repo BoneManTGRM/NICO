@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import copy
 import re
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import is_dataclass, replace
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_decision_quality.v20_batch_c"
+VERSION = "nico.express_decision_quality.v20_batch_c_fix1"
 _PATCH_MARKER = "_nico_express_decision_quality_v20_batch_c"
 _SCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 _SIZE_ADVISORY_TERMS = (
@@ -52,7 +53,7 @@ _CI_ALIASES = {
     "other": "unknown",
     "unknown": "unknown",
 }
-_CI_ORDER = (
+_CI_DETAIL_ORDER = (
     "success",
     "failure",
     "cancelled",
@@ -64,6 +65,13 @@ _CI_ORDER = (
     "startup_failure",
     "unknown",
 )
+_INTERNAL_SCORE_KEYS = {
+    "bar",
+    "glyph_bar",
+    "contribution_bar",
+    "bar_geometry",
+    "bar_render_mode",
+}
 
 
 def _text(value: Any) -> str:
@@ -78,8 +86,9 @@ def _key(value: Any) -> str:
 
 def _is_language_false_positive(value: Any) -> bool:
     text = _text(value).casefold()
-    rule_match = "python_eval_exec" in text or "python eval exec" in text
-    return rule_match and any(ext in text for ext in _SCRIPT_EXTENSIONS)
+    return ("python_eval_exec" in text or "python eval exec" in text) and any(
+        ext in text for ext in _SCRIPT_EXTENSIONS
+    )
 
 
 def _is_clean_evidence(value: Any) -> bool:
@@ -90,43 +99,73 @@ def _is_clean_evidence(value: Any) -> bool:
 def _canonical_ci_categories(total: int, pairs: list[tuple[str, int]]) -> dict[str, int]:
     categories: dict[str, int] = {}
     aggregate_non_success = 0
+    explicit_unknown = 0
     for raw_label, raw_count in pairs:
-        label = _CI_ALIASES.get(raw_label.casefold().strip().replace(" ", "-"))
+        normalized = raw_label.casefold().strip().replace(" ", "-")
+        label = _CI_ALIASES.get(normalized)
         if not label:
             continue
         count = max(0, int(raw_count))
         if label == "non_success":
-            aggregate_non_success += count
-        elif label != "unknown":
+            aggregate_non_success = max(aggregate_non_success, count)
+        elif label == "unknown":
+            explicit_unknown = max(explicit_unknown, count)
+        else:
             categories[label] = categories.get(label, 0) + count
-    detailed_non_success = sum(categories.get(label, 0) for label in _CI_ORDER if label != "success")
-    if aggregate_non_success and not detailed_non_success:
+    detailed_non_success = sum(
+        categories.get(label, 0) for label in _CI_DETAIL_ORDER if label != "success"
+    )
+    categories["unknown"] = explicit_unknown
+    if aggregate_non_success and not detailed_non_success and not explicit_unknown:
         categories["unknown"] = aggregate_non_success
     accounted = sum(categories.values())
-    categories["unknown"] = categories.get("unknown", 0) + max(0, total - accounted)
-    if sum(categories.values()) > total:
-        categories["unknown"] = max(0, categories["unknown"] - (sum(categories.values()) - total))
+    categories["unknown"] += max(0, total - accounted)
+    overflow = sum(categories.values()) - total
+    if overflow > 0:
+        categories["unknown"] = max(0, categories["unknown"] - overflow)
     return categories
 
 
 def _reconcile_ci_statement(value: str) -> str:
     if "workflow runs" not in value.casefold():
         return value
-    match = re.search(r"(?P<total>\d+)\s*;(?P<body>(?:\s*[A-Za-z][A-Za-z _/-]*=\d+\s*;?)*)", value, re.I)
+    match = re.search(
+        r"(?P<total>\d+)\s*;(?P<body>(?:\s*[A-Za-z][A-Za-z _/-]*=\d+\s*;?)*)",
+        value,
+        re.I,
+    )
     if not match:
         return value
     total = int(match.group("total"))
-    pairs = [(label.strip(), int(count)) for label, count in re.findall(r"([A-Za-z][A-Za-z _/-]*)=(\d+)", match.group("body"))]
+    pairs = [
+        (label.strip(), int(count))
+        for label, count in re.findall(r"([A-Za-z][A-Za-z _/-]*)=(\d+)", match.group("body"))
+    ]
     if not pairs:
         return value
     categories = _canonical_ci_categories(total, pairs)
-    rendered = [f"{label}={categories.get(label, 0)}" for label in _CI_ORDER]
-    replacement = f"{total}; " + "; ".join(rendered)
+    supplied = {_CI_ALIASES.get(label.casefold().strip().replace(" ", "-")) for label, _ in pairs}
+    supplied.discard(None)
+    if supplied.issubset({"success", "non_success", "unknown"}):
+        success = categories.get("success", 0)
+        other = categories.get("unknown", 0)
+        non_success = max(0, total - success - other)
+        replacement = (
+            f"{total}; success={success}; non-success={non_success}; other/unknown={other}"
+        )
+    else:
+        rendered = [
+            f"{label}={categories.get(label, 0)}"
+            for label in _CI_DETAIL_ORDER
+            if label != "unknown"
+        ]
+        rendered.append(f"other/unknown={categories.get('unknown', 0)}")
+        replacement = f"{total}; " + "; ".join(rendered)
     return value[: match.start()] + replacement + value[match.end() :]
 
 
 def _score_value(item: dict[str, Any]) -> float | None:
-    for key in ("presented_score", "presented", "score", "value", "points", "contribution"):
+    for key in ("presented_score", "presented", "score", "points", "contribution"):
         raw = item.get(key)
         if isinstance(raw, str):
             raw = raw.split("/", 1)[0]
@@ -134,7 +173,7 @@ def _score_value(item: dict[str, Any]) -> float | None:
             if raw is not None and str(raw).strip() != "":
                 return float(raw)
         except (TypeError, ValueError):
-            continue
+            pass
     return None
 
 
@@ -147,38 +186,51 @@ def _proportional_bar(score: Any, slots: int = 20) -> str:
     return "■" * filled + "□" * (slots - filled)
 
 
-def _normalize_score_objects(value: Any) -> None:
-    if isinstance(value, dict):
-        label = _text(value.get("control") or value.get("title") or value.get("name") or value.get("label"))
-        score = _score_value(value)
-        if score is not None:
-            value["bar"] = _proportional_bar(score)
-            value["glyph_bar"] = value["bar"]
-            value["contribution_bar"] = value["bar"]
-            value["bar_geometry"] = {
-                "value": score,
-                "maximum": 100.0,
-                "ratio": max(0.0, min(1.0, score / 100.0)),
-                "width": max(0.0, min(120.0, score * 1.2)),
+def _normalize_score_objects(value: Any, seen: set[int] | None = None) -> None:
+    if seen is None:
+        seen = set()
+    if not isinstance(value, (dict, list)):
+        return
+    identity = id(value)
+    if identity in seen:
+        return
+    seen.add(identity)
+    if isinstance(value, list):
+        for child in list(value):
+            _normalize_score_objects(child, seen)
+        return
+    original_children = [(key, child) for key, child in list(value.items()) if key not in _INTERNAL_SCORE_KEYS]
+    label = _text(value.get("control") or value.get("title") or value.get("name") or value.get("label"))
+    score = _score_value(value)
+    if score is not None:
+        value["bar"] = _proportional_bar(score)
+        value["glyph_bar"] = value["bar"]
+        value["contribution_bar"] = value["bar"]
+        value["bar_geometry"] = {
+            "value": score,
+            "maximum": 100.0,
+            "ratio": max(0.0, min(1.0, score / 100.0)),
+            "width": max(0.0, min(120.0, score * 1.2)),
+        }
+        value["bar_render_mode"] = "proportional_geometry"
+    if label.casefold() == "scanner worker evidence":
+        value.update(
+            {
+                "directly_scored": False,
+                "mapped_to_scored_controls": True,
+                "score_treatment": "supplemental_mapped_to_scored_controls",
+                "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS",
+                "status": "SUPPLEMENTAL",
+                "presented_score": None,
+                "presented": None,
+                "bar": _proportional_bar(0),
+                "glyph_bar": _proportional_bar(0),
+                "contribution_bar": _proportional_bar(0),
+                "bar_geometry": {"value": 0.0, "maximum": 100.0, "ratio": 0.0, "width": 0.0},
             }
-            value["bar_render_mode"] = "proportional_geometry"
-        if label.casefold() == "scanner worker evidence":
-            value["directly_scored"] = False
-            value["mapped_to_scored_controls"] = True
-            value["score_treatment"] = "supplemental_mapped_to_scored_controls"
-            value["display_status"] = "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS"
-            value["status"] = "SUPPLEMENTAL"
-            value["presented_score"] = None
-            value["presented"] = None
-            value["bar"] = _proportional_bar(0)
-            value["glyph_bar"] = value["bar"]
-            value["contribution_bar"] = value["bar"]
-            value["bar_geometry"] = {"value": 0.0, "maximum": 100.0, "ratio": 0.0, "width": 0.0}
-        for child in value.values():
-            _normalize_score_objects(child)
-    elif isinstance(value, list):
-        for child in value:
-            _normalize_score_objects(child)
+        )
+    for _, child in original_children:
+        _normalize_score_objects(child, seen)
 
 
 def _normalize_sections(result: dict[str, Any]) -> None:
@@ -193,14 +245,22 @@ def _normalize_sections(result: dict[str, Any]) -> None:
         section = deepcopy(raw_section)
         section_id = str(section.get("id") or "")
         if section_id == "velocity_complexity":
-            section["page_break_before"] = True
-            section["pdf_page_break_before"] = True
-            section["decision_record_boundary"] = "new_page"
+            section.update(
+                {
+                    "page_break_before": True,
+                    "pdf_page_break_before": True,
+                    "decision_record_boundary": "new_page",
+                }
+            )
         if section_id == "scanner_worker_evidence":
-            section["directly_scored"] = False
-            section["mapped_to_scored_controls"] = True
-            section["display_status"] = "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS"
-            section["status"] = "SUPPLEMENTAL"
+            section.update(
+                {
+                    "directly_scored": False,
+                    "mapped_to_scored_controls": True,
+                    "display_status": "SUPPLEMENTAL · MAPPED TO SCORED CONTROLS",
+                    "status": "SUPPLEMENTAL",
+                }
+            )
         for field in ("evidence", "findings", "unavailable"):
             values = section.get(field)
             if not isinstance(values, list):
@@ -228,32 +288,40 @@ def _normalize_sections(result: dict[str, Any]) -> None:
 def _candidate_is_verified(item: dict[str, Any]) -> bool:
     status = _text(item.get("status")).casefold()
     disposition = _text(item.get("disposition")).casefold()
-    return bool(item.get("verified_fix") or item.get("verified_finding")) or status in {"verified", "confirmed", "validated"} or disposition in {"verified", "confirmed", "validated"}
+    return bool(item.get("verified_fix") or item.get("verified_finding")) or status in {
+        "verified",
+        "confirmed",
+        "validated",
+    } or disposition in {"verified", "confirmed", "validated"}
 
 
 def _candidate_contains_clean_evidence(item: dict[str, Any]) -> bool:
-    values: list[Any] = [item.get("title"), item.get("finding"), item.get("business_impact"), item.get("recommended_action")]
-    values.extend(item.get("evidence") or [])
+    values = [
+        item.get("title"),
+        item.get("finding"),
+        item.get("business_impact"),
+        item.get("recommended_action"),
+        *(item.get("evidence") or []),
+    ]
     return any(_is_clean_evidence(value) for value in values)
 
 
 def _normalize_repair_candidates(result: dict[str, Any]) -> None:
     intelligence = result.get("repair_intelligence")
-    if not isinstance(intelligence, dict):
-        return
-    candidates = intelligence.get("candidates")
-    if not isinstance(candidates, list):
+    if not isinstance(intelligence, dict) or not isinstance(intelligence.get("candidates"), list):
         return
     retained: list[dict[str, Any]] = []
     secret_candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for raw in candidates:
+    for raw in intelligence["candidates"]:
         if not isinstance(raw, dict):
             continue
         item = deepcopy(raw)
         title = _text(item.get("title") or item.get("finding"))
         category = _text(item.get("category")).casefold()
-        if _is_language_false_positive(title) or any(_is_language_false_positive(value) for value in item.get("evidence") or []):
+        if _is_language_false_positive(title) or any(
+            _is_language_false_positive(value) for value in item.get("evidence") or []
+        ):
             continue
         if _candidate_contains_clean_evidence(item):
             continue
@@ -262,10 +330,14 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
             secret_candidates.append(item)
             continue
         if not verified and _text(item.get("severity")).casefold() in {"critical", "high"}:
-            item["severity"] = "review"
-            item["priority"] = "review"
-            item["confidence"] = "review-limited"
-            item["classification"] = "review_limited"
+            item.update(
+                {
+                    "severity": "review",
+                    "priority": "review",
+                    "confidence": "review-limited",
+                    "classification": "review_limited",
+                }
+            )
         semantic = _key(title)
         if semantic and semantic not in seen:
             seen.add(semantic)
@@ -274,35 +346,35 @@ def _normalize_repair_candidates(result: dict[str, Any]) -> None:
         files: list[str] = []
         evidence: list[str] = []
         for item in secret_candidates:
-            for path in item.get("affected_files") or []:
-                if path not in files:
-                    files.append(path)
-            for value in item.get("evidence") or []:
-                text = _text(value)
-                if text and text not in evidence:
-                    evidence.append(text)
-        retained.append({
-            "candidate_id": "express_secret_candidate_triage_group",
-            "category": "secret_candidate_triage",
-            "title": f"Triage {len(secret_candidates)} unverified secret-scan candidate(s) as one parallel workstream",
-            "severity": "review",
-            "classification": "review_limited",
-            "confidence": "review-limited",
-            "status": "candidate_pending_human_triage",
-            "priority": "review",
-            "effort": "small",
-            "affected_files": files,
-            "evidence": evidence[:8],
-            "business_impact": "No credential exposure is established until exact values, rules, locations, and scanner dispositions are reviewed.",
-            "recommended_action": "Triage all related candidates in parallel, suppress synthetic or generic token-name matches, and escalate only confirmed credentials.",
-            "verification": "Record a disposition for every candidate, rerun current-tree and history scanners, and confirm that only verified findings enter executive priority sections.",
-            "human_review_required": True,
-            "automatic_application_allowed": False,
-            "verified_fix": False,
-        })
+            files.extend(path for path in item.get("affected_files") or [] if path not in files)
+            evidence.extend(
+                text
+                for value in item.get("evidence") or []
+                if (text := _text(value)) and text not in evidence
+            )
+        retained.append(
+            {
+                "candidate_id": "express_secret_candidate_triage_group",
+                "category": "secret_candidate_triage",
+                "title": f"Triage {len(secret_candidates)} unverified secret-scan candidate(s) as one parallel workstream",
+                "severity": "review",
+                "classification": "review_limited",
+                "confidence": "review-limited",
+                "status": "candidate_pending_human_triage",
+                "priority": "review",
+                "effort": "small",
+                "affected_files": files,
+                "evidence": evidence[:8],
+                "business_impact": "No credential exposure is established until exact values, rules, locations, and scanner dispositions are reviewed.",
+                "recommended_action": "Triage all related candidates in parallel, suppress synthetic or generic token-name matches, and escalate only confirmed credentials.",
+                "verification": "Record a disposition for every candidate, rerun current-tree and history scanners, and confirm that only verified findings enter executive priority sections.",
+                "human_review_required": True,
+                "automatic_application_allowed": False,
+                "verified_fix": False,
+            }
+        )
     intelligence["candidates"] = retained
     intelligence["candidate_count"] = len(retained)
-    result["repair_intelligence"] = intelligence
 
 
 def _canonicalize_summary(result: dict[str, Any]) -> None:
@@ -357,24 +429,33 @@ def _dossier_context(title: str) -> tuple[str, str, str, list[str]]:
     lower = title.casefold()
     file_match = re.search(r"([A-Za-z0-9_./-]+\.py)", title)
     file_path = file_match.group(1) if file_match else "the exact affected source files listed in the evidence ledger"
-    metric_match = re.search(r"(?:score|loc|churn)=?[0-9.]+(?:,?\s*(?:score|loc|churn)=?[0-9.]+)*", title, re.I)
+    metric_match = re.search(
+        r"(?:score|loc|churn)=?[0-9.]+(?:,?\s*(?:score|loc|churn)=?[0-9.]+)*",
+        title,
+        re.I,
+    )
     metric = metric_match.group(0) if metric_match else "the retained complexity, churn, and ownership metrics"
     if "complexity" in lower or "hotspot" in lower or "high churn" in lower:
-        impact = f"Concentrated complexity and change activity in {file_path} increases regression probability, review time, and the cost of safely modifying the affected delivery path."
-        repair = f"Assign an authorized owner to {file_path}; identify the highest-complexity functions and their callers; add characterization tests; then split one responsibility at a time while preserving public behavior and import compatibility."
-        verification = f"Retain before/after {metric}; run focused tests for the affected module, the full suite, production build, import-order checks, and an immutable same-SHA rescan."
-        evidence = [f"Exact affected location: {file_path}.", f"Retained metric context: {metric}."]
-        return impact, repair, verification, evidence
+        return (
+            f"Concentrated complexity and change activity in {file_path} increases regression probability, review time, and the cost of safely modifying the affected delivery path.",
+            f"Assign an authorized owner to {file_path}; identify the highest-complexity functions and their callers; add characterization tests; then split one responsibility at a time while preserving public behavior and import compatibility.",
+            f"Retain before/after {metric}; run focused tests for the affected module, the full suite, production build, import-order checks, and an immutable same-SHA rescan.",
+            [f"Exact affected location: {file_path}.", f"Retained metric context: {metric}."],
+        )
     if "ownership concentration" in lower:
-        impact = "Concentrated ownership creates review bottlenecks and continuity risk when the primary maintainer is unavailable."
-        repair = "Map the exact files and commit shares to responsible owners, add secondary reviewers for the highest-concentration paths, and document operational handoff for critical modules."
-        verification = "Recompute ownership concentration from the same repository snapshot and confirm that critical paths have an accountable primary and secondary reviewer."
-        return impact, repair, verification, ["Use file-level ownership and commit-share evidence from the immutable evidence ledger."]
+        return (
+            "Concentrated ownership creates review bottlenecks and continuity risk when the primary maintainer is unavailable.",
+            "Map the exact files and commit shares to responsible owners, add secondary reviewers for the highest-concentration paths, and document operational handoff for critical modules.",
+            "Recompute ownership concentration from the same repository snapshot and confirm that critical paths have an accountable primary and secondary reviewer.",
+            ["Use file-level ownership and commit-share evidence from the immutable evidence ledger."],
+        )
     if "failed" in lower or "timeout" in lower or "unavailable" in lower:
-        impact = "The analyzer result is incomplete, so release confidence is reduced; it does not independently establish a product defect."
-        repair = "Restore the named analyzer with a bounded timeout and exact-snapshot command, retain stdout/stderr and exit disposition, and map any verified result to the relevant scored control."
-        verification = "Rerun the exact analyzer on the immutable commit and require a terminal completed, inapplicable, or explicitly accepted review-limited disposition."
-        return impact, repair, verification, ["Analyzer lifecycle evidence must include command, status, exit result, snapshot SHA, and disposition."]
+        return (
+            "The analyzer result is incomplete, so release confidence is reduced; it does not independently establish a product defect.",
+            "Restore the named analyzer with a bounded timeout and exact-snapshot command, retain stdout/stderr and exit disposition, and map any verified result to the relevant scored control.",
+            "Rerun the exact analyzer on the immutable commit and require a terminal completed, inapplicable, or explicitly accepted review-limited disposition.",
+            ["Analyzer lifecycle evidence must include command, status, exit result, snapshot SHA, and disposition."],
+        )
     return (
         "This review-limited record may affect engineering effort or release confidence, but material impact is not established until the exact location and evidence are confirmed.",
         "Confirm the exact location, rule or analyzer, immutable snapshot, and disposition before assigning repair work; do not fabricate a code change from generic evidence.",
@@ -398,22 +479,23 @@ def _classify_dossier(dossier: Any) -> Any:
     impact, repair_specification, verification, evidence = _dossier_context(title)
     original_evidence = list(getattr(dossier, "evidence", ()) or ())
     useful = [item for item in original_evidence if "repository root contains" not in _text(item).casefold()]
-    merged_evidence = tuple((useful + evidence)[:6])
-    try:
-        return replace(
-            dossier,
-            severity=severity,
-            confidence="review-limited" if severity == "review" else getattr(dossier, "confidence", "review-limited"),
-            business_impact=impact,
-            repair_specification=repair_specification,
-            verification=verification,
-            owner="Authorized engineering owner",
-            effort=getattr(dossier, "effort", "medium") or "medium",
-            disposition="review_limited" if severity == "review" else getattr(dossier, "disposition", "open"),
-            evidence=merged_evidence,
-        )
-    except Exception:
-        return dossier
+    updates = {
+        "severity": severity,
+        "confidence": "review-limited" if severity == "review" else getattr(dossier, "confidence", "review-limited"),
+        "business_impact": impact,
+        "repair_specification": repair_specification,
+        "verification": verification,
+        "owner": "Authorized engineering owner",
+        "effort": getattr(dossier, "effort", "medium") or "medium",
+        "disposition": "review_limited" if severity == "review" else getattr(dossier, "disposition", "open"),
+        "evidence": tuple((useful + evidence)[:6]),
+    }
+    if is_dataclass(dossier):
+        return replace(dossier, **updates)
+    enriched = copy.copy(dossier)
+    for key, value in updates.items():
+        setattr(enriched, key, value)
+    return enriched
 
 
 def install_express_decision_quality_v17() -> dict[str, Any]:
@@ -466,6 +548,7 @@ def install_express_decision_quality_v17() -> dict[str, Any]:
 __all__ = [
     "VERSION",
     "_canonical_ci_categories",
+    "_classify_dossier",
     "_is_clean_evidence",
     "_is_language_false_positive",
     "_proportional_bar",
