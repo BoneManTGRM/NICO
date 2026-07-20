@@ -6,10 +6,11 @@ from fastapi import FastAPI
 
 from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
+from nico.comprehensive_native_providers import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v2"
+VERSION = "nico.api.comprehensive_production_bootstrap.v3"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -25,12 +26,14 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the native Comprehensive boundary on the deployed application.
 
-    The complete capability executor map is always bound. Individual production
-    providers resolve dynamically from application state and fail closed at their
-    exact stage when evidence is unavailable. Durable storage remains mandatory
-    before the controller is exposed.
+    Native providers are installed before the executor map is built. This ordering is
+    required: building executors first would create a complete-looking capability map
+    whose dynamic providers all fail closed as missing at runtime. Individual providers
+    still fail closed at their exact stage when required evidence is unavailable, and
+    durable storage remains mandatory before the controller is exposed.
     """
 
+    native_providers = install_native_comprehensive_providers(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(
         target,
@@ -44,12 +47,18 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     provider_status = dict(
         getattr(target.state, "nico_comprehensive_capability_provider_status", {}) or {}
     )
+    native_status = dict(
+        getattr(target.state, "nico_native_comprehensive_provider_status", {}) or {}
+    )
+    missing_capabilities = list(provider_status.get("missing_capabilities") or [])
     ready = (
         controller is not None
         and runtime.get("configured") is True
         and runtime.get("status") == "ready"
         and runtime.get("client_delivery_allowed") is False
         and runtime.get("human_review_required") is True
+        and len(native_providers) > 0
+        and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
     )
     status = {
@@ -57,10 +66,14 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "service_id": "comprehensive",
         "status": "ready" if ready else "blocked",
         "configured": bool(runtime.get("configured")),
-        "reason": str(runtime.get("reason") or ""),
+        "reason": str(runtime.get("reason") or ("comprehensive_native_providers_missing" if missing_capabilities else "")),
         "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
         "route_counts": route_counts,
+        "native_provider_status": native_status,
         "capability_provider_status": provider_status,
+        "native_provider_count": len(native_providers),
+        "missing_capabilities": missing_capabilities,
+        "provider_install_before_executor_build": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -75,6 +88,13 @@ if any(count != 1 for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].
     raise RuntimeError(
         "Comprehensive production routes are missing or duplicated: "
         f"{COMPREHENSIVE_PRODUCTION_RUNTIME['route_counts']}"
+    )
+if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
+    raise RuntimeError("Comprehensive production runtime did not install native providers")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
+    raise RuntimeError(
+        "Comprehensive production runtime has missing capabilities: "
+        f"{COMPREHENSIVE_PRODUCTION_RUNTIME['missing_capabilities']}"
     )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["human_review_required"] is not True:
     raise RuntimeError("Comprehensive production runtime must require human review")
