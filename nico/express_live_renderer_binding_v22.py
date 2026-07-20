@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from typing import Any
+
+from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_truth_v21
+
+VERSION = "nico.express_live_renderer_binding.v22"
+
+
+def install_express_live_renderer_binding_v22() -> dict[str, Any]:
+    from nico import express_report_dossier_export_v15 as dossier
+    from nico import express_report_premium_v14 as premium
+
+    renderer = install_express_pdf_renderer_truth_v21()
+    live_renderer = premium._premium_pdf
+    previous = dossier._premium_pdf
+    dossier._premium_pdf = live_renderer
+
+    return {
+        "status": "installed" if previous is not live_renderer else "already_installed",
+        "version": VERSION,
+        "renderer_install": renderer,
+        "premium_renderer_bound": bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False)),
+        "dossier_renderer_bound": bool(getattr(dossier._premium_pdf, "_nico_express_pdf_renderer_truth_v21", False)),
+        "static_import_rebound": previous is not live_renderer,
+        "human_review_required": True,
+    }
+
+
+__all__ = ["VERSION", "install_express_live_renderer_binding_v22"]

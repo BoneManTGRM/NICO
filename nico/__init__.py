@@ -94,6 +94,7 @@ from nico.mid_approval_truth_freeze import install_mid_approval_truth_freeze
 from nico.language_aware_pattern_reconciliation import install_language_aware_pattern_reconciliation
 from nico.express_decision_quality_v17 import install_express_decision_quality_v17
 from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_truth_v21
+from nico.express_live_renderer_binding_v22 import install_express_live_renderer_binding_v22
 
 install_storage_serialization_safety()
 install_runtime_heartbeat_atomic_patch()
@@ -189,18 +190,16 @@ install_mid_report_v9_production_binding()
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
 install_express_decision_quality_v17()
-# Rebind the final vector renderer after every late Express installer. The
-# storage-truth bootstrap runs earlier and can otherwise be replaced by the
-# premium and dossier installers, leaving production on glyph bars and the
-# combined Architecture/Velocity page.
+# Rebind the final vector renderer after every late Express installer.
 install_express_pdf_renderer_truth_v21()
+# The dossier exporter imported the premium renderer by value. Rebind that
+# static reference explicitly so the live PDF path consumes the final renderer.
+install_express_live_renderer_binding_v22()
 # Rebind report recovery and the rich exact-run checkpoint after every renderer
-# and report-consistency installer. Earlier bindings can otherwise be replaced,
-# leaving the live async path without recovery or usable report artifacts.
+# and report-consistency installer.
 install_express_report_generation_recovery()
 install_express_final_gate_checkpoint_patch()
-# Bind the canonical Express completion and safe-response transport last, then
-# protect persisted exact-run truth from late heartbeat or compatibility writes.
+# Bind the canonical Express completion and safe-response transport last.
 install_express_backend_completion_transport()
 install_express_run_record_integrity()
 
