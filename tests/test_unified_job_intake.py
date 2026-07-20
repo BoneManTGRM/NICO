@@ -38,6 +38,8 @@ def test_guide_points_to_single_intake_and_single_authorization_confirmation() -
     assert "Use the unified assessment page instead of completing a separate setup wizard." in source
     assert "Use the single authorization checkbox" in source
     assert "Enter each fact once" in source
+    assert "Express or Comprehensive" in source
+    assert "Mid or Full" not in source
 
 
 def test_unified_assessment_retains_minimal_authorized_input_contract() -> None:
@@ -49,7 +51,7 @@ def test_unified_assessment_retains_minimal_authorized_input_contract() -> None:
         "Project name, optional",
         "I confirm I own this target or have explicit permission to assess it.",
         'type Service = "express" | "comprehensive"',
-        '`${text.run} ${copy.label}`',
+        '`${copy.run} ${serviceCopy.label}`',
     ):
         assert required in source
     assert "Authorized by" not in source
