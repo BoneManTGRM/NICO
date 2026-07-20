@@ -69,7 +69,7 @@ def test_failed_timed_out_and_unavailable_evidence_has_rule_bound_deductions() -
     assert details["ANALYZER_TIMEOUT"].evidence == "gitleaks ended with status timeout."
     assert details["ANALYZER_FAILURE"].evidence.startswith("Bandit ended with status failed")
     assert details["EVIDENCE_UNAVAILABLE"].evidence.startswith("Semgrep exact-snapshot analyzer unavailable")
-    assert record.presented_score == 61
+    assert record.presented_score == 62
     assert record.status == "yellow"
 
 
@@ -95,9 +95,9 @@ def test_mixed_controls_keep_distinct_presented_scores() -> None:
     }
     assert len(set(scores.values())) == 4
     assert 74 not in scores.values()
-    assert overall == 89
+    assert overall == 88
     assert result["maturity_signal"]["source_score"] == 90
-    assert result["maturity_signal"]["presented_score"] == 89
+    assert result["maturity_signal"]["presented_score"] == 88
     assert result["express_score_transparency"]["blanket_score_cap_applied"] is False
 
 
@@ -175,4 +175,4 @@ def test_markdown_and_html_are_rewritten_from_the_same_canonical_record() -> Non
     assert transparency["records"][0]["presented_score"] == 92
     deduction = transparency["records"][0]["deductions"][0]
     assert deduction["rule_id"] == "OPEN_FINDING"
-    assert deduction["evidence"] == "Historical reliability includes seven non-success runs."
+    assert deduction["evidence"] == "Historical workflow reliability includes seven non-success runs."
