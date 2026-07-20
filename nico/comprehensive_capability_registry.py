@@ -5,34 +5,32 @@ from typing import Any
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES, EXPRESS_STAGES
 
-VERSION = "nico.comprehensive_capability_registry.v1"
+VERSION = "nico.comprehensive_capability_registry.v2"
 
-# Customer-facing Comprehensive has one contract, while existing internal modules are
-# migrated behind stable stage identifiers. Strings avoid eager imports and allow
-# deployment-specific adapters to resolve capabilities safely.
 CAPABILITY_REGISTRY: dict[str, dict[str, Any]] = {
     "authorization_and_scope": {"capability": "authorization", "required": True, "sources": ["hosted_assessment"]},
-    "immutable_repository_snapshot": {"capability": "snapshot", "required": True, "sources": ["hosted_assessment", "assessment_recovery"]},
-    "repository_and_delivery_evidence": {"capability": "repository_evidence", "required": True, "sources": ["hosted_assessment"]},
-    "dependency_security_static_analysis": {"capability": "scanner_suite", "required": True, "sources": ["scanner_worker"]},
-    "ci_cd_architecture_complexity_velocity": {"capability": "technical_analysis", "required": True, "sources": ["assessment_quality"]},
+    "immutable_repository_snapshot": {"capability": "snapshot", "required": True, "sources": ["repository_snapshot"]},
+    "repository_and_delivery_evidence": {"capability": "repository_evidence", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "dependency_security_static_analysis": {"capability": "scanner_suite", "required": True, "sources": ["snapshot_scanner_worker"]},
+    "ci_cd_architecture_complexity_velocity": {"capability": "technical_analysis", "required": True, "sources": ["snapshot_repository_evidence", "full_assessment_complexity_evidence"]},
     "evidence_reconciliation_and_scoring": {"capability": "canonical_scoring", "required": True, "sources": ["assessment_quality"]},
-    "decision_report_generation": {"capability": "report_generation", "required": True, "sources": ["assessment_quality"]},
-    "deep_scanner_triage": {"capability": "scanner_triage", "required": True, "sources": ["mid_review_enforcement"]},
-    "functional_qa": {"capability": "functional_qa", "required": True, "sources": ["mid_review_enforcement"]},
-    "platform_parity": {"capability": "platform_parity", "required": True, "sources": ["mid_review_enforcement"]},
-    "deployment_and_infrastructure": {"capability": "deployment_review", "required": True, "sources": ["mid_delivery_access"]},
-    "architecture_and_data_flow": {"capability": "architecture_data_flow", "required": True, "sources": ["assessment_quality"]},
-    "developer_delivery_process": {"capability": "delivery_process", "required": True, "sources": ["hosted_assessment"]},
-    "stakeholder_and_business_alignment": {"capability": "stakeholder_alignment", "required": True, "sources": ["mid_review_enforcement"]},
-    "requirements_traceability": {"capability": "requirements_traceability", "required": True, "sources": ["mid_review_enforcement"]},
-    "historical_trends_and_change_failure": {"capability": "historical_trends", "required": True, "sources": ["assessment_recovery"]},
-    "six_month_roadmap": {"capability": "roadmap", "required": True, "sources": ["mid_review_enforcement"]},
-    "staffing_sequencing_and_cost": {"capability": "resourcing", "required": True, "sources": ["mid_review_enforcement"]},
-    "risk_reduction_and_executive_briefing": {"capability": "executive_briefing", "required": True, "sources": ["assessment_quality"]},
-    "cross_format_truth_verification": {"capability": "cross_format_verification", "required": True, "sources": ["assessment_quality"]},
-    "human_review_request": {"capability": "human_review", "required": True, "sources": ["mid_review_enforcement"]},
-    "client_acceptance_pending": {"capability": "acceptance_gate", "required": True, "sources": ["mid_delivery_access"]},
+    "decision_report_generation": {"capability": "report_generation", "required": True, "sources": ["comprehensive_report_package"]},
+    "deep_scanner_triage": {"capability": "scanner_triage", "required": True, "sources": ["snapshot_scanner_worker"]},
+    "functional_qa": {"capability": "functional_qa", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "platform_parity": {"capability": "platform_parity", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "deployment_and_infrastructure": {"capability": "deployment_review", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "architecture_and_data_flow": {"capability": "architecture_data_flow", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "developer_delivery_process": {"capability": "delivery_process", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "stakeholder_and_business_alignment": {"capability": "stakeholder_alignment", "required": True, "sources": ["human_context_boundary"]},
+    "requirements_traceability": {"capability": "requirements_traceability", "required": True, "sources": ["snapshot_repository_evidence", "human_context_boundary"]},
+    "historical_trends_and_change_failure": {"capability": "historical_trends", "required": True, "sources": ["snapshot_repository_evidence"]},
+    "six_month_roadmap": {"capability": "roadmap", "required": True, "sources": ["comprehensive_repair_intelligence"]},
+    "staffing_sequencing_and_cost": {"capability": "resourcing", "required": True, "sources": ["comprehensive_repair_intelligence"]},
+    "risk_reduction_and_executive_briefing": {"capability": "executive_briefing", "required": True, "sources": ["comprehensive_repair_intelligence"]},
+    "final_comprehensive_report_generation": {"capability": "final_report_generation", "required": True, "sources": ["comprehensive_report_package"]},
+    "cross_format_truth_verification": {"capability": "cross_format_verification", "required": True, "sources": ["comprehensive_report_package"]},
+    "human_review_request": {"capability": "human_review", "required": True, "sources": ["comprehensive_review_request"]},
+    "client_acceptance_pending": {"capability": "acceptance_gate", "required": True, "sources": ["comprehensive_review_request"]},
 }
 
 
