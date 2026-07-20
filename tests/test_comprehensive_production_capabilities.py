@@ -59,12 +59,13 @@ def test_provider_map_is_complete_but_missing_evidence_fails_closed(tmp_path: Pa
     record = body["record"]
     assert body["status"] == "blocked"
     assert body["current_stage"] == "immutable_repository_snapshot"
-    assert any(
-        item.startswith("stage_failed:immutable_repository_snapshot:blocked")
-        for item in record["blockers"]
-    )
+    assert record["status"] == "blocked"
+    assert record["terminal"] is True
+    assert record["completed_stages"] == ["authorization_and_scope"]
     result = record["stage_results"]["immutable_repository_snapshot"]
+    assert result["status"] == "blocked"
     assert result["reason"] == "comprehensive_provider_missing:snapshot"
+    assert result["evidence_available"] is False
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
 
