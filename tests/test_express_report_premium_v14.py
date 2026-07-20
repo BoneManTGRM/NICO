@@ -81,18 +81,25 @@ def _pdf_text(result: dict) -> tuple[PdfReader, str]:
     return reader, text
 
 
-def test_v14_reconciles_green_scores_when_evidence_is_unresolved() -> None:
+def test_v14_uses_evidence_specific_deductions_without_blanket_cap() -> None:
     result = _fixture()
     records, overall = reconcile_express_scores(result)
     secrets = next(item for item in records if item.section_id == "secrets_review")
     dependency = next(item for item in records if item.section_id == "dependency_health")
+    ci_cd = next(item for item in records if item.section_id == "ci_cd")
 
     assert secrets.source_score == 92
-    assert secrets.presented_score <= 74
-    assert secrets.status != "green"
-    assert dependency.presented_score <= 74
-    assert overall < result["maturity_signal"]["score"]
+    assert secrets.presented_score == 79
+    assert dependency.presented_score == 85
+    assert ci_cd.presented_score == 92
+    assert len({secrets.presented_score, dependency.presented_score, ci_cd.presented_score}) == 3
+    assert secrets.status == "yellow"
+    assert dependency.status == "yellow"
+    assert ci_cd.status == "yellow"
+    assert all(item.presented_score != 74 for item in (secrets, dependency, ci_cd))
+    assert overall < result["maturity_signal"]["source_score"]
     assert result["express_score_transparency"]["version"] == VERSION
+    assert result["express_score_transparency"]["blanket_score_cap_applied"] is False
 
 
 def test_v14_pdf_meets_express_depth_and_decision_contract() -> None:
@@ -130,6 +137,9 @@ def test_v14_is_bound_after_final_report_layers() -> None:
 
     root = Path(__file__).resolve().parents[1]
     init_source = (root / "nico" / "__init__.py").read_text(encoding="utf-8")
+    live_binding_source = (root / "nico" / "express_live_renderer_binding_v22.py").read_text(encoding="utf-8")
     assert "install_express_report_premium_v14" in init_source
     assert init_source.rindex("install_express_report_premium_v14()") > init_source.index("install_report_intelligence_final_pdf_binding()")
     assert init_source.rindex("install_express_report_premium_v14()") > init_source.index("install_report_quality_gate_compat()")
+    assert "install_express_evidence_specific_scoring_v33" in live_binding_source
+    assert live_binding_source.index("install_express_evidence_specific_scoring_v33()") > live_binding_source.index("install_express_section_status_truth_v26()")
