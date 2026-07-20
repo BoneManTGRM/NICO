@@ -24,9 +24,10 @@ def test_old_query_names_normalize_to_comprehensive() -> None:
 
 def test_layout_installs_two_service_guard() -> None:
     source = LAYOUT.read_text(encoding="utf-8")
+    rendered = source.split("export default function RootLayout", 1)[1]
     assert 'import TwoServiceAssessmentGuard from "./TwoServiceAssessmentGuard";' in source
-    assert "<TwoServiceAssessmentGuard />" in source
-    assert source.index("<TwoServiceAssessmentGuard />") < source.index("{children}")
+    assert "<TwoServiceAssessmentGuard />" in rendered
+    assert rendered.index("<TwoServiceAssessmentGuard />") < rendered.index("{children}")
 
 
 def test_old_full_route_enters_comprehensive() -> None:
