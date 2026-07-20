@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nico.express_glyph_score_leakage_patch import normalize_express_glyph_score_truth
+from nico.express_glyph_score_leakage_patch import _apply_in_place, normalize_express_glyph_score_truth
 
 
 def test_text_glyph_score_bars_are_removed_but_numeric_geometry_is_retained() -> None:
@@ -61,3 +61,19 @@ def test_nested_glyph_fields_are_removed_without_mutating_input() -> None:
     result = normalize_express_glyph_score_truth(source)
     assert "glyph_bar" in source["express_score_transparency"]["records"][0]
     assert "glyph_bar" not in result["express_score_transparency"]["records"][0]
+
+
+def test_in_place_application_preserves_report_dictionary_identity() -> None:
+    result = {
+        "reports": {"markdown": "# Express", "html": "<h1>Express</h1>"},
+        "sections": [{"id": "code_audit", "bar": "■■■", "score": 86}],
+    }
+    reports_reference = result["reports"]
+    normalized = normalize_express_glyph_score_truth(result)
+
+    _apply_in_place(result, normalized)
+    reports_reference["pdf_style"] = "professional_report_v12_decision_ready"
+
+    assert result["reports"] is reports_reference
+    assert result["reports"]["pdf_style"] == "professional_report_v12_decision_ready"
+    assert "bar" not in result["sections"][0]
