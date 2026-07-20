@@ -4,7 +4,9 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_client_report_postprocessor.v28"
+from nico.service_catalog_v1 import apply_customer_service_identity
+
+VERSION = "nico.express_client_report_postprocessor.v29"
 _MARKER = "_nico_express_client_report_postprocessor_v27"
 
 
@@ -168,6 +170,8 @@ def _rewrite_not_scored(markdown: str, result: dict[str, Any]) -> str:
 
 
 def prepare_express_client_report(result: dict[str, Any]) -> dict[str, Any]:
+    result.setdefault("assessment_type", "express")
+    apply_customer_service_identity(result)
     priorities = _priority_items(result)
     result["priority_actions"] = priorities or [
         "No material scored finding was identified; verify evidence completeness and obtain exact-snapshot human approval before delivery."
@@ -238,6 +242,7 @@ def postprocess_express_client_reports(result: dict[str, Any]) -> dict[str, Any]
         "resourcing_evidence_derived": True,
         "risk_register_evidence_derived": True,
         "verification_checklist_replaced": True,
+        "canonical_service_identity_applied": True,
         "human_review_required": True,
     }
     return result
