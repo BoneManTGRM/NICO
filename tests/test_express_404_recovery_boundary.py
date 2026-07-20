@@ -48,13 +48,14 @@ def test_visible_express_recovery_control_preserves_exact_run_identity() -> None
     assert 'Copy diagnostics' in source
 
 
-def test_express_recovery_guard_wraps_outcome_guard_before_api_bridge() -> None:
+def test_express_recovery_guard_wraps_outcome_before_progress_and_api_bridge() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard"' in layout
     assert 'import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions"' in layout
     assert '<AssessmentExpressRecoveryGuard />' in layout
     assert '<AssessmentExpressRecoveryActions />' in layout
+    assert "AssessmentMidLiveStatusTransport" not in layout
     assert layout.index('<AssessmentStatusOutcomeGuard />') < layout.index('<AssessmentExpressRecoveryGuard />')
-    assert layout.index('<AssessmentExpressRecoveryGuard />') < layout.index('<AssessmentMidLiveStatusTransport />')
+    assert layout.index('<AssessmentExpressRecoveryGuard />') < layout.index('<AssessmentProgressIntegrityGuard />')
     assert layout.index('<AssessmentExpressRecoveryGuard />') < layout.index('<AssessmentApiTransportBridge />')
