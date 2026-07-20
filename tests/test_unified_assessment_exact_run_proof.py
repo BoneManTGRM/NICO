@@ -42,7 +42,7 @@ def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> 
     body = _continuation_body(_source())
 
     assert 'const runId = String(current.run_id || "")' in body
-    assert 'if (!runId) throw new Error("The assessment response did not include a run ID.")' in body
+    assert 'if (!runId) throw new Error(copy.runIdMissing)' in body
     assert "current = await json(await fetch" in body
     assert "sequence.current" in body
     assert body.count("if (token !== sequence.current) return") >= 1
@@ -51,7 +51,7 @@ def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> 
 def test_timeout_preserves_identity_instead_of_starting_a_replacement_run() -> None:
     body = _continuation_body(_source())
 
-    assert "for (let count = 1; count <= 360; count += 1)" in body
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in body
     assert 'setPhase("timed_out")' in body
     assert 'setResult(current)' in body
     assert '"/assessment/express-run"' not in body
