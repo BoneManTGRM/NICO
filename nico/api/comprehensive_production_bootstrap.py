@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
+from nico.comprehensive_production_capabilities import build_production_capability_executors
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v1"
+VERSION = "nico.api.comprehensive_production_bootstrap.v2"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -24,17 +25,25 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the native Comprehensive boundary on the deployed application.
 
-    The bootstrap intentionally fails closed when durable storage or capability
-    providers are not available. The routes still exist exactly once so readiness
-    can be inspected without creating false service availability.
+    The complete capability executor map is always bound. Individual production
+    providers resolve dynamically from application state and fail closed at their
+    exact stage when evidence is unavailable. Durable storage remains mandatory
+    before the controller is exposed.
     """
 
-    controller = install_comprehensive_production_bootstrap(target)
+    executors = build_production_capability_executors(target)
+    controller = install_comprehensive_production_bootstrap(
+        target,
+        capability_executors=executors,
+    )
     route_counts = {
         f"{method} {path}": _route_count(target, method, path)
         for method, path in sorted(COMPREHENSIVE_API_ROUTES)
     }
     runtime = dict(getattr(target.state, "comprehensive_runtime", {}) or {})
+    provider_status = dict(
+        getattr(target.state, "nico_comprehensive_capability_provider_status", {}) or {}
+    )
     ready = (
         controller is not None
         and runtime.get("configured") is True
@@ -51,6 +60,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "reason": str(runtime.get("reason") or ""),
         "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
         "route_counts": route_counts,
+        "capability_provider_status": provider_status,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
