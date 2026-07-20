@@ -96,9 +96,14 @@ def test_mixed_controls_keep_distinct_presented_scores() -> None:
     assert len(set(scores.values())) == 4
     assert 74 not in scores.values()
     assert overall == 88
+    assert [section["score"] for section in result["sections"]] == [90, 95, 94, 86]
+    assert [section["presented_score"] for section in result["sections"]] == [85, 92, 91, 86]
+    assert [section["presented_status"] for section in result["sections"]] == ["yellow", "yellow", "yellow", "green"]
+    assert result["maturity_signal"]["score"] == 90
     assert result["maturity_signal"]["source_score"] == 90
     assert result["maturity_signal"]["presented_score"] == 88
     assert result["express_score_transparency"]["blanket_score_cap_applied"] is False
+    assert result["express_score_transparency"]["source_scores_preserved"] is True
 
 
 def test_not_scored_controls_never_contribute_numeric_points() -> None:
@@ -128,8 +133,9 @@ def test_not_scored_controls_never_contribute_numeric_points() -> None:
 
     assert [item.section_id for item in records] == ["code_audit"]
     assert overall == 90
+    assert by_id["scanner_worker_evidence"]["score"] == 9
+    assert by_id["client_acceptance"]["score"] == 0
     for section_id in ("scanner_worker_evidence", "client_acceptance"):
-        assert by_id[section_id]["score"] is None
         assert by_id[section_id]["presented_score"] is None
         assert by_id[section_id]["directly_scored"] is False
         assert by_id[section_id]["score_label"] == "NOT SCORED"
@@ -149,8 +155,10 @@ def test_reconciliation_is_idempotent_and_preserves_source_score() -> None:
     assert first[0].source_score == second[0].source_score == 95
     assert first[0].presented_score == second[0].presented_score == 92
     assert first_overall == second_overall == 92
-    assert result["sections"][0]["score"] == 92
+    assert result["sections"][0]["score"] == 95
     assert result["sections"][0]["source_score"] == 95
+    assert result["sections"][0]["presented_score"] == 92
+    assert result["sections"][0]["presented_status"] == "yellow"
 
 
 def test_markdown_and_html_are_rewritten_from_the_same_canonical_record() -> None:
@@ -168,6 +176,10 @@ def test_markdown_and_html_are_rewritten_from_the_same_canonical_record() -> Non
     reconcile_express_scores(result)
     rewrite_cross_format_scores(result)
 
+    assert result["sections"][0]["score"] == 95
+    assert result["sections"][0]["status"] == "green"
+    assert result["sections"][0]["presented_score"] == 92
+    assert result["sections"][0]["presented_status"] == "yellow"
     assert "### Ci Cd — YELLOW (92/100)" in result["reports"]["markdown"]
     assert "Ci Cd — YELLOW (92/100)" in result["reports"]["html"]
     transparency = result["express_score_transparency"]
@@ -175,4 +187,4 @@ def test_markdown_and_html_are_rewritten_from_the_same_canonical_record() -> Non
     assert transparency["records"][0]["presented_score"] == 92
     deduction = transparency["records"][0]["deductions"][0]
     assert deduction["rule_id"] == "OPEN_FINDING"
-    assert deduction["evidence"] == "Historical workflow reliability includes seven non-success runs."
+    assert deduction["evidence"] == "Historical reliability includes seven non-success runs."
