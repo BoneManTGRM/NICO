@@ -1,70 +1,99 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
+
+CATALOG_VERSION = "nico.service_catalog.v2"
+
+SERVICE_ALIASES = {
+    "express": "express",
+    "rapid": "express",
+    "baseline": "express",
+    "mid": "comprehensive",
+    "full": "comprehensive",
+    "deep": "comprehensive",
+    "comprehensive": "comprehensive",
+    "retainer": "monitor_execute",
+    "monitor": "monitor_execute",
+    "execute": "monitor_execute",
+    "monitor_execute": "monitor_execute",
+    "monitor+execute": "monitor_execute",
+}
 
 SERVICE_CATALOG: dict[str, dict[str, Any]] = {
     "express": {
-        "label": "Express Technical Health Assessment",
+        "id": "express",
+        "label": "NICO Express Technical Assessment",
+        "category": "assessment",
+        "customer_selectable": True,
         "target_coverage": "90-95%",
-        "best_for": "Fast evidence-bound repo audit, maturity signal, and client-ready technical report after human review.",
+        "best_for": "Fast evidence-bound repository diagnosis, prioritized risks, and a human-review-bound decision report.",
         "required_evidence": [
             "authorized repository owner/name",
             "explicit authorization statement",
             "scanner worker evidence or hosted scanner access",
-            "dependency and static-analysis evidence",
+            "dependency, security, static-analysis, CI/CD, architecture, and complexity evidence",
             "final human review and client acceptance signoff",
         ],
         "deliverables": [
-            "maturity semaphore",
-            "scanner evidence summary",
-            "dependency and security summary",
-            "architecture and complexity evidence",
-            "evidence bundle",
-            "client acceptance gate",
+            "executive decision and canonical maturity signal",
+            "ranked priority actions and evidence-backed quick wins",
+            "dependency, security, static-analysis, CI/CD, architecture, complexity, ownership, churn, and velocity evidence",
+            "30/60/90-day repair plan, resourcing, risk register, and verification checklist",
+            "exact-snapshot evidence bundle and client acceptance gate",
+            "equivalent PDF, Markdown, HTML, JSON, and dashboard truth",
         ],
         "workflow_endpoint": "POST /assessment/github",
+        "internal_execution_profiles": ["express"],
     },
-    "mid": {
-        "label": "Mid Product and QA Assessment",
-        "target_coverage": "75-85%",
-        "best_for": "Product QA, platform parity, stakeholder discovery, and six-month roadmap planning.",
+    "comprehensive": {
+        "id": "comprehensive",
+        "label": "NICO Comprehensive Technical Assessment",
+        "category": "assessment",
+        "customer_selectable": True,
+        "target_coverage": "75-85% initially; increases with connected QA, stakeholder, platform, and production evidence",
+        "best_for": "Complete technical diligence, QA, operating-model analysis, roadmap, staffing, sequencing, and executive decision support.",
         "required_evidence": [
-            "QA evidence or test cases",
-            "platform parity notes",
-            "stakeholder discovery notes",
-            "roadmap notes or milestones",
-            "known risks and constraints",
+            "authorized repository and immutable snapshot",
+            "deep scanner and evidence-triage access",
+            "functional QA or representative user-flow evidence",
+            "platform parity evidence where applicable",
+            "deployment and infrastructure evidence",
+            "stakeholder, requirements, roadmap, cost, and known-risk context",
+            "final human review and client acceptance signoff",
         ],
         "deliverables": [
-            "QA and parity intake artifact",
-            "stakeholder discovery artifact",
-            "six-month roadmap artifact",
-            "mid assessment report",
-            "human review checklist",
+            "everything included in Express",
+            "deep technical dossiers and scanner dispositions",
+            "functional QA, platform parity, deployment, infrastructure, and operational-readiness review",
+            "developer workflow, ownership, PR latency, historical trend, and change-failure analysis",
+            "stakeholder alignment, requirements traceability, and work-vs-expected analysis",
+            "six-month roadmap, staffing, sequencing, cost, risk-reduction, and executive briefing",
+            "one snapshot, one run ID, one evidence ledger, one canonical score, and one final report package",
         ],
-        "workflow_endpoint": "POST /assessment/mid",
+        "workflow_endpoint": "POST /assessment/mid-run",
+        "internal_execution_profiles": ["mid", "full", "deep"],
     },
-    "retainer": {
-        "label": "Ongoing Product Engineering Retainer",
-        "target_coverage": "55-70%",
-        "best_for": "Weekly delivery tracking, monthly strategy, release readiness, blocker escalation, and renewal evidence.",
+    "monitor_execute": {
+        "id": "monitor_execute",
+        "label": "NICO Monitor + Execute",
+        "category": "recurring_operations",
+        "customer_selectable": False,
+        "target_coverage": "Measured from connected operating evidence",
+        "best_for": "Ongoing oversight, approved remediation, release verification, roadmap execution, and auditable operating evidence.",
         "required_evidence": [
-            "commit summary",
-            "pull request summary",
-            "issue or backlog summary",
-            "release notes if release work exists",
-            "roadmap notes, client update notes, or retainer metrics",
-            "blocker and approval needs",
+            "explicit operating authorization",
+            "commit, pull request, issue, release, blocker, roadmap, and approval evidence",
+            "defined execution scope and rollback authority",
         ],
         "deliverables": [
-            "weekly health module",
-            "monthly strategy module",
-            "release readiness module",
-            "blocker escalation module",
-            "renewal signal module",
-            "approval gates",
+            "continuous monitoring and weekly operating status",
+            "approved repair execution and retesting",
+            "release readiness and verification",
+            "roadmap delivery evidence and approval history",
         ],
         "workflow_endpoint": "POST /retainer/ops",
+        "internal_execution_profiles": ["retainer", "monitor", "execute"],
     },
 }
 
@@ -76,14 +105,19 @@ INTAKE_FIELDS: dict[str, tuple[str, ...]] = {
         "authorization_scope",
         "scanner_worker_artifact",
     ),
-    "mid": (
+    "comprehensive": (
+        "repository",
+        "authorized",
+        "authorized_by",
+        "authorization_scope",
         "qa_evidence",
         "parity_notes",
         "stakeholder_notes",
         "roadmap_notes",
         "known_risks",
     ),
-    "retainer": (
+    "monitor_execute": (
+        "authorized",
         "commit_summary",
         "pr_summary",
         "issue_summary",
@@ -96,43 +130,68 @@ INTAKE_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def normalize_service_id(value: Any, *, default: str = "express") -> str:
+    key = str(value or "").strip().casefold().replace(" ", "_").replace("-", "_")
+    return SERVICE_ALIASES.get(key, default)
+
+
 def _has_value(payload: dict[str, Any], key: str) -> bool:
     value = payload.get(key)
     if isinstance(value, bool):
         return value
-    if isinstance(value, dict) or isinstance(value, list):
+    if isinstance(value, (dict, list)):
         return bool(value)
     return bool(str(value or "").strip())
 
 
 def list_service_catalog() -> dict[str, Any]:
+    assessments = {
+        service_id: deepcopy(item)
+        for service_id, item in SERVICE_CATALOG.items()
+        if item.get("category") == "assessment" and item.get("customer_selectable") is True
+    }
+    recurring = {
+        service_id: deepcopy(item)
+        for service_id, item in SERVICE_CATALOG.items()
+        if item.get("category") == "recurring_operations"
+    }
     return {
         "status": "ok",
-        "artifact_schema": "nico.service_catalog.v1",
-        "services": SERVICE_CATALOG,
+        "artifact_schema": CATALOG_VERSION,
+        "services": assessments,
+        "assessment_services": assessments,
+        "recurring_services": recurring,
+        "customer_assessment_count": len(assessments),
+        "legacy_aliases": {key: value for key, value in SERVICE_ALIASES.items() if key != value},
         "safety_boundary": "All services require authorization, evidence-bound outputs, human review, and approval for client-facing or production-impacting decisions.",
     }
 
 
 def get_service_catalog_item(workflow: str) -> dict[str, Any]:
-    key = str(workflow or "").strip().lower()
-    item = SERVICE_CATALOG.get(key)
+    requested = str(workflow or "").strip().casefold()
+    canonical = normalize_service_id(requested, default="")
+    item = SERVICE_CATALOG.get(canonical)
     if not item:
         return {
             "status": "not_found",
-            "workflow": key,
+            "workflow": requested,
             "available_workflows": sorted(SERVICE_CATALOG),
+            "available_customer_assessments": ["express", "comprehensive"],
         }
     return {
         "status": "ok",
-        "workflow": key,
-        "service": item,
-        "required_fields": list(INTAKE_FIELDS.get(key, ())),
+        "workflow": canonical,
+        "requested_workflow": requested,
+        "legacy_alias_used": bool(requested and requested != canonical),
+        "internal_execution_profile": requested if requested in {"mid", "full", "deep", "retainer", "monitor", "execute"} else canonical,
+        "service": deepcopy(item),
+        "required_fields": list(INTAKE_FIELDS.get(canonical, ())),
     }
 
 
 def build_service_intake_readiness(payload: dict[str, Any]) -> dict[str, Any]:
-    workflow = str(payload.get("workflow") or payload.get("assessment_mode") or "").strip().lower()
+    requested = str(payload.get("workflow") or payload.get("assessment_mode") or payload.get("service_tier") or "").strip().casefold()
+    workflow = normalize_service_id(requested, default="")
     if workflow not in SERVICE_CATALOG:
         workflow = _recommend_workflow(payload)
 
@@ -142,10 +201,8 @@ def build_service_intake_readiness(payload: dict[str, Any]) -> dict[str, Any]:
     readiness_score = round((len(present) / max(1, len(required))) * 100)
 
     blockers: list[str] = []
-    if workflow == "express" and not _has_value(payload, "authorized"):
-        blockers.append("Express assessment requires explicit authorization before running.")
-    if workflow in {"mid", "retainer"} and payload.get("authorized") is False:
-        blockers.append("Workflow requires explicit authorization before running.")
+    if workflow in {"express", "comprehensive", "monitor_execute"} and not _has_value(payload, "authorized"):
+        blockers.append(f"{SERVICE_CATALOG[workflow]['label']} requires explicit authorization before running.")
 
     if blockers:
         status = "blocked_missing_authorization"
@@ -156,9 +213,12 @@ def build_service_intake_readiness(payload: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "status": status,
-        "artifact_schema": "nico.service_intake_readiness.v1",
+        "artifact_schema": "nico.service_intake_readiness.v2",
         "recommended_workflow": workflow,
-        "service": SERVICE_CATALOG[workflow],
+        "requested_workflow": requested,
+        "legacy_alias_used": bool(requested and requested != workflow),
+        "internal_execution_profile": requested if requested in {"mid", "full", "deep", "retainer", "monitor", "execute"} else workflow,
+        "service": deepcopy(SERVICE_CATALOG[workflow]),
         "readiness_score": readiness_score,
         "required_fields": required,
         "present_fields": present,
@@ -170,17 +230,31 @@ def build_service_intake_readiness(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _recommend_workflow(payload: dict[str, Any]) -> str:
-    express_hits = sum(1 for key in INTAKE_FIELDS["express"] if _has_value(payload, key))
-    mid_hits = sum(1 for key in INTAKE_FIELDS["mid"] if _has_value(payload, key))
-    retainer_hits = sum(1 for key in INTAKE_FIELDS["retainer"] if _has_value(payload, key))
-    scores = {"express": express_hits, "mid": mid_hits, "retainer": retainer_hits}
-    return max(scores, key=lambda key: scores[key]) if any(scores.values()) else "express"
+    scores = {
+        service_id: sum(1 for key in INTAKE_FIELDS[service_id] if _has_value(payload, key))
+        for service_id in INTAKE_FIELDS
+    }
+    if any(scores.values()):
+        return max(scores, key=lambda key: scores[key])
+    return "express"
 
 
 def _next_action(workflow: str, missing: list[str], blockers: list[str]) -> str:
     if blockers:
-        return "Collect authorization before running the workflow."
+        return "Collect explicit authorization before running the workflow."
     if missing:
-        return f"Collect missing intake fields for {workflow}: {', '.join(missing[:6])}."
+        return f"Collect missing intake fields for {workflow}: {', '.join(missing[:8])}."
     endpoint = SERVICE_CATALOG[workflow]["workflow_endpoint"]
     return f"Submit the evidence to {endpoint}."
+
+
+__all__ = [
+    "CATALOG_VERSION",
+    "INTAKE_FIELDS",
+    "SERVICE_ALIASES",
+    "SERVICE_CATALOG",
+    "build_service_intake_readiness",
+    "get_service_catalog_item",
+    "list_service_catalog",
+    "normalize_service_id",
+]
