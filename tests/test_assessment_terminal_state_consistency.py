@@ -53,7 +53,7 @@ def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_r
     guard = GUARD.read_text(encoding="utf-8")
 
     assert 'current = await json(await fetch' in workspace
-    assert '["failed", "blocked", "error", "rejected"].includes(value)' in workspace
+    assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in workspace
     assert 'return jsonResponse(output);' in guard
     assert 'output.run_id = runId' in guard
     assert 'output.progress = normalizedProgress' in guard
