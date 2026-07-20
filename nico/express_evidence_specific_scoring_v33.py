@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_evidence_specific_scoring.v33"
+VERSION = "nico.express_evidence_specific_scoring.v33.1"
 _PATCH_MARKER = "_nico_express_evidence_specific_scoring_v33"
 _NOT_SCORED_IDS = {
     "scanner_worker",
@@ -73,7 +73,7 @@ def _not_scored(section: dict[str, Any]) -> bool:
         return True
     if section_id in {"client_acceptance", "client_human_acceptance"}:
         return not _client_acceptance_approved(section)
-    return section.get("directly_scored") is False and section.get("score") is None
+    return section.get("directly_scored") is False and section.get("presented_score", section.get("score")) is None
 
 
 def _first_matching(values: list[str], terms: tuple[str, ...]) -> str:
@@ -237,33 +237,33 @@ def _deduction_payload(record: EvidenceScoreRecord) -> list[dict[str, Any]]:
 
 
 def _apply_record(section: dict[str, Any], record: EvidenceScoreRecord) -> None:
+    # Source scoring remains untouched so existing evidence and finalization logic
+    # keep their original contract. Client-facing formats consume only the
+    # explicit presented_* fields below.
     section["source_score"] = record.source_score
     section["presented_score"] = record.presented_score
-    section["score"] = record.presented_score
-    section["status"] = record.status
+    section["presented_status"] = record.status
+    section["presented_confidence"] = record.confidence
     section["display_status"] = f"{record.status.upper()} · {record.presented_score}/100"
-    section["confidence"] = record.confidence
     section["directly_scored"] = True
     section["score_deductions"] = _deduction_payload(record)
     section["score_rationale"] = record.rationale
-    section["score_treatment"] = "evidence_specific_deductions"
+    section["score_treatment"] = "source_preserved_evidence_specific_presentation"
 
 
 def _normalize_not_scored(section: dict[str, Any]) -> None:
-    section["source_score"] = None
+    raw_score = section.get("source_score", section.get("score"))
+    if isinstance(raw_score, (int, float)):
+        section.setdefault("diagnostic_source_score", raw_score)
     section["presented_score"] = None
-    section["score"] = None
+    section["presented_status"] = "supplemental" if _section_id(section) in {"scanner_worker", "scanner_worker_evidence"} else "gray"
+    section["presented_confidence"] = "review-limited"
     section["directly_scored"] = False
     section["exclude_from_maturity"] = True
     section["score_label"] = "NOT SCORED"
     section["score_deductions"] = []
     section["score_rationale"] = "This control is excluded from automated maturity scoring."
-    if _section_id(section) in {"scanner_worker", "scanner_worker_evidence"}:
-        section["status"] = "supplemental"
-        section["display_status"] = "SUPPLEMENTAL · NOT SCORED"
-    else:
-        section["status"] = "gray"
-        section["display_status"] = "GRAY · NOT SCORED"
+    section["display_status"] = f"{section['presented_status'].upper()} · NOT SCORED"
 
 
 def reconcile_express_scores(result: dict[str, Any]) -> tuple[list[EvidenceScoreRecord], int]:
@@ -291,7 +291,7 @@ def reconcile_express_scores(result: dict[str, Any]) -> tuple[list[EvidenceScore
         "version": VERSION,
         "overall_presented_score": overall,
         "source_maturity_score": source_maturity,
-        "method": "Each section preserves its source score and subtracts only listed evidence-specific deductions. Unresolved evidence constrains status without an undisclosed blanket score cap.",
+        "method": "Each section preserves its source score and subtracts only listed evidence-specific deductions. Unresolved evidence constrains presented status without mutating source scoring.",
         "blanket_score_cap_applied": False,
         "records": [
             {
@@ -306,6 +306,7 @@ def reconcile_express_scores(result: dict[str, Any]) -> tuple[list[EvidenceScore
             }
             for item in records
         ],
+        "source_scores_preserved": True,
         "not_scored_controls_excluded": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -321,8 +322,8 @@ def _rewrite_markdown(markdown: str, result: dict[str, Any]) -> str:
         label = _text(section.get("label") or section.get("title"))
         if not label:
             continue
-        status = _text(section.get("status") or "unknown").upper()
-        score = section.get("presented_score", section.get("score"))
+        status = _text(section.get("presented_status") or section.get("status") or "unknown").upper()
+        score = section.get("presented_score")
         value = f"{status} (NOT SCORED)" if score is None else f"{status} ({int(score)}/100)"
         output = re.sub(
             rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+\s*\((?:None|0|\d+|NOT SCORED)(?:/100)?\)",
@@ -341,8 +342,8 @@ def _rewrite_html(html: str, result: dict[str, Any]) -> str:
         label = _text(section.get("label") or section.get("title"))
         if not label:
             continue
-        status = _text(section.get("status") or "unknown").upper()
-        score = section.get("presented_score", section.get("score"))
+        status = _text(section.get("presented_status") or section.get("status") or "unknown").upper()
+        score = section.get("presented_score")
         value = f"{status} (NOT SCORED)" if score is None else f"{status} ({int(score)}/100)"
         output = re.sub(
             rf"({re.escape(label)}\s*[—-]\s*)[A-Z]+\s*\((?:None|0|\d+|NOT SCORED)(?:/100)?\)",
@@ -386,7 +387,8 @@ def install_express_evidence_specific_scoring_v33() -> dict[str, Any]:
             "version": VERSION,
             "blanket_score_cap_removed": True,
             "deductions_include_rule_and_evidence": True,
-            "section_payload_scores_canonical": True,
+            "source_scores_preserved": True,
+            "presented_score_fields_canonical": True,
             "markdown_score_parity": True,
             "html_score_parity": True,
             "pdf_score_parity": True,
@@ -403,6 +405,7 @@ def install_express_evidence_specific_scoring_v33() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "blanket_score_cap_removed": True,
+        "source_scores_preserved": True,
         "cross_format_parity_bound": True,
         "human_review_required": True,
     }
