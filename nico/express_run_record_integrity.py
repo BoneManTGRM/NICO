@@ -4,7 +4,9 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_run_record_integrity.v4"
+from nico.express_production_certification_v25 import build_express_production_certification
+
+PATCH_VERSION = "nico.express_run_record_integrity.v5"
 _PATCH_MARKER = "_nico_express_run_record_integrity_v1"
 _TERMINAL_SUCCESS = {"complete", "completed"}
 _TERMINAL_FAILURE = {"blocked", "failed", "error", "interrupted", "rejected"}
@@ -21,6 +23,14 @@ _RICH_FIELDS = (
     "express_pdf_page_layout",
     "express_visual_qa",
     "express_pdf_pagination",
+    "express_artifact_manifest",
+    "express_production_certification",
+    "same_sha_verification_runs",
+    "express_locale_parity",
+    "restart_retrieval_proof",
+    "production_restart_proof",
+    "production_deployment",
+    "production_release_provider_evidence",
     "evidence_artifact_bundle",
     "evidence_ledger",
     "client_acceptance",
@@ -93,13 +103,6 @@ def _terminal_contract(output: dict[str, Any]) -> dict[str, Any]:
 
 
 def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Preserve exact-run terminal truth and fail closed on incomplete proof.
-
-    Heartbeats, stage projections, and late compatibility wrappers may add
-    evidence, but cannot revive a terminal run, erase generated artifacts, or
-    silently satisfy a missing production-proof contract.
-    """
-
     output = deepcopy(incoming)
     prior = _response(existing)
     prior_status = str(prior.get("status") or existing.get("status") or "").lower()
@@ -121,6 +124,7 @@ def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict
             "delivery_status",
             "client_delivery_block_reason",
             "express_terminal_contract",
+            "express_production_certification",
         ):
             if field in prior:
                 output[field] = deepcopy(prior[field])
@@ -136,10 +140,11 @@ def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict
         output["client_delivery_allowed"] = False
         output["delivery_status"] = "blocked_pending_human_review"
         output["express_terminal_contract"] = _terminal_contract(output)
-        if output["express_terminal_contract"]["status"] != "complete":
+        certification = build_express_production_certification(output)
+        if output["express_terminal_contract"]["status"] != "complete" or certification["status"] != "complete":
             output["client_delivery_block_reason"] = (
-                "Express terminal proof is incomplete; required artifacts, renderer/layout contracts, "
-                "visual QA, pagination, deployment identity, or durable restart evidence remain unverified."
+                "Express production proof is incomplete; terminal artifacts, deployment identity, durable restart retrieval, "
+                "same-SHA repeatability, English/Spanish parity, or artifact-manifest integrity remain unverified."
             )
     elif status in _TERMINAL_FAILURE:
         if str(output.get("current_stage") or "").lower() == "complete":
@@ -182,6 +187,8 @@ def install_express_run_record_integrity() -> dict[str, Any]:
         "rich_completion_fields_preserved": True,
         "failed_complete_stage_contradictions_repaired": True,
         "terminal_artifact_contract_recorded": True,
+        "production_certification_recorded": True,
+        "five_production_gates_required": True,
         "missing_terminal_proof_fails_closed": True,
         "restart_retrieval_required": True,
         "production_deployment_sha_required": True,
