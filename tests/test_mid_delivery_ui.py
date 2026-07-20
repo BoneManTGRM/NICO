@@ -11,7 +11,7 @@ LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
-def test_workspace_places_delivery_after_approval():
+def test_legacy_mid_delivery_route_is_preserved_after_approval_but_not_global() -> None:
     context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
@@ -20,10 +20,11 @@ def test_workspace_places_delivery_after_approval():
     assert context.index('path: "/mid-approval"') < context.index('path: "/mid-delivery-admin"')
     assert 'href="/assessment?tier=express#assessment"' in layout
     assert "NICO never approves findings or creates client delivery automatically" in layout
-    assert "Client downloads require acknowledgement" in layout
+    assert "UnifiedMidTokenCapture" not in layout
+    assert "MidAssessmentCompanion" not in layout
 
 
-def test_admin_page_uses_shared_exact_scope_and_admin_identity():
+def test_admin_page_uses_shared_exact_scope_and_admin_identity() -> None:
     source = ADMIN.read_text(encoding="utf-8")
     context = CONTEXT.read_text(encoding="utf-8")
 
@@ -39,7 +40,7 @@ def test_admin_page_uses_shared_exact_scope_and_admin_identity():
     assert '"X-NICO-Admin-Token": adminToken' in source
 
 
-def test_admin_page_creates_lists_revokes_and_displays_receipts():
+def test_admin_page_creates_lists_revokes_and_displays_receipts() -> None:
     source = ADMIN.read_text(encoding="utf-8")
 
     assert "/delivery/access" in source
@@ -52,7 +53,7 @@ def test_admin_page_creates_lists_revokes_and_displays_receipts():
     assert "Acknowledgement SHA-256" in source
 
 
-def test_raw_token_is_shown_only_in_one_time_admin_output_not_access_cards():
+def test_raw_token_is_shown_only_in_one_time_admin_output_not_access_cards() -> None:
     source = ADMIN.read_text(encoding="utf-8")
     one_time = source.split("One-time token output", 1)[1].split("Access grants", 1)[0]
     grants = source.split("Access grants", 1)[1]
@@ -64,7 +65,7 @@ def test_raw_token_is_shown_only_in_one_time_admin_output_not_access_cards():
     assert "token_fingerprint" in grants
 
 
-def test_client_page_reads_fragment_token_and_never_places_it_in_url_query():
+def test_client_page_reads_fragment_token_and_never_places_it_in_url_query() -> None:
     source = CLIENT.read_text(encoding="utf-8")
 
     assert "window.location.hash" in source
@@ -75,7 +76,7 @@ def test_client_page_reads_fragment_token_and_never_places_it_in_url_query():
     assert "Authorization" not in source
 
 
-def test_client_page_requires_acknowledgement_and_named_recipient():
+def test_client_page_requires_acknowledgement_and_named_recipient() -> None:
     source = CLIENT.read_text(encoding="utf-8")
 
     assert "Recipient name" in source
@@ -86,7 +87,7 @@ def test_client_page_requires_acknowledgement_and_named_recipient():
     assert "Download receipt recorded" in source
 
 
-def test_client_verifies_all_approved_artifact_headers_before_saving():
+def test_client_verifies_all_approved_artifact_headers_before_saving() -> None:
     source = CLIENT.read_text(encoding="utf-8")
 
     assert 'response.headers.get("X-NICO-Report-ID")' in source
@@ -100,7 +101,7 @@ def test_client_verifies_all_approved_artifact_headers_before_saving():
     assert 'blob.type !== "application/pdf"' in source
 
 
-def test_client_identity_display_does_not_render_raw_token():
+def test_client_identity_display_does_not_render_raw_token() -> None:
     source = CLIENT.read_text(encoding="utf-8")
     identity = source.split("Integrity identity", 1)[1].split("</details>", 1)[0]
 
@@ -111,7 +112,7 @@ def test_client_identity_display_does_not_render_raw_token():
     assert "snapshot_commit_sha" in identity
 
 
-def test_production_registers_complete_mid_delivery_route_group():
+def test_production_registers_complete_mid_delivery_route_group() -> None:
     source = PRODUCTION.read_text(encoding="utf-8")
 
     assert "register_mid_delivery_routes" in source
