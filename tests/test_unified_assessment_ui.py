@@ -71,14 +71,14 @@ def test_each_service_continues_the_exact_same_run_automatically() -> None:
     source = _workspace()
     continuation = source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
-    assert "for (let count = 1; count <= 360; count += 1)" in continuation
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in continuation
     assert 'const runId = String(current.run_id || "")' in continuation
     assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in continuation
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in continuation
     assert 'JSON.stringify({max_stages: 1})' in continuation
     assert '"/assessment/express-run"' not in continuation
     assert '"/assessment/comprehensive-intake"' not in continuation
-    assert "await wait(3000)" in continuation
+    assert "await wait(POLL_INTERVAL_MS)" in continuation
 
 
 def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_buttons() -> None:
@@ -100,7 +100,7 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
     source = _workspace()
 
     assert 'value === "review_required"' in source
-    assert "stopped at human review" in source
+    assert "stopped at the required human-review gate" in source
     assert "did not approve findings or authorize client delivery" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
@@ -131,7 +131,7 @@ def test_result_distinguishes_pending_unavailable_and_review_required() -> None:
         assert state in source
     assert "Not scored" in source
     assert "Unavailable or limited evidence" in source
-    assert "Discloses missing evidence" in source
+    assert "Discloses missing or failed evidence" in source
 
 
 def test_primary_navigation_uses_one_assessment_entry_and_normalizes_legacy_tiers() -> None:
