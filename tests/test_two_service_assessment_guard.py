@@ -14,7 +14,7 @@ def test_public_workspace_has_native_express_and_comprehensive_only() -> None:
     assert 'type Service = "express" | "comprehensive"' in source
     assert 'data-assessment-service-count="2"' in rendered
     assert '(["express", "comprehensive"] as Service[])' in rendered
-    assert 'text.services[value].label' in rendered
+    assert 'copy.services[value].label' in rendered
 
 
 def test_old_query_names_normalize_to_comprehensive_inside_react_state() -> None:
