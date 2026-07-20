@@ -26,6 +26,7 @@ import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
+import TwoServiceAssessmentGuard from "./TwoServiceAssessmentGuard";
 import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture";
 import WorkflowCallout from "./WorkflowCallout";
 
@@ -52,6 +53,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
+          <TwoServiceAssessmentGuard />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
           <OperationsPreloadGuard />
