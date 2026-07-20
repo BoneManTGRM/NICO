@@ -55,13 +55,15 @@ def test_provider_map_is_complete_but_missing_evidence_fails_closed(tmp_path: Pa
         json={"max_stages": 1},
     )
     assert blocked.status_code == 200
-    assert blocked.json()["status"] == "blocked"
-    assert blocked.json()["current_stage"] == "immutable_repository_snapshot"
+    body = blocked.json()
+    record = body["record"]
+    assert body["status"] == "blocked"
+    assert body["current_stage"] == "immutable_repository_snapshot"
     assert any(
         item.startswith("stage_failed:immutable_repository_snapshot:blocked")
-        for item in blocked.json()["blockers"]
+        for item in record["blockers"]
     )
-    result = blocked.json()["stage_results"]["immutable_repository_snapshot"]
+    result = record["stage_results"]["immutable_repository_snapshot"]
     assert result["reason"] == "comprehensive_provider_missing:snapshot"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
@@ -94,11 +96,12 @@ def test_dynamic_provider_is_used_without_remounting_routes(tmp_path: Path) -> N
         json={"max_stages": 2},
     )
     assert continued.status_code == 200
-    assert continued.json()["completed_stages"] == [
+    body = continued.json()
+    assert body["completed_stages"] == [
         "authorization_and_scope",
         "immutable_repository_snapshot",
     ]
-    snapshot = continued.json()["stage_results"]["immutable_repository_snapshot"]
+    snapshot = body["record"]["stage_results"]["immutable_repository_snapshot"]
     assert snapshot["snapshot_verified"] is True
     assert snapshot["observed_commit_sha"] == "immutable-provider"
 
