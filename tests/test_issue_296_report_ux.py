@@ -18,9 +18,6 @@ def test_report_guard_replaces_only_empty_score_denominators_with_not_scored():
     assert "normalizeScoreLabels" in source
     assert "Numeric values such as 85/100" in source
     assert "if (!EMPTY_SCORE.test(current)) return;" in source
-    # The empty-score matcher must require the start of the label or a separator
-    # immediately before /100. The previous optional prefix matched the /100 suffix
-    # inside every valid numeric score and produced `GREEN · 85 · NOT SCORED`.
     assert r"(?:^|\s*·\s*)" in source
     assert r"(?:\s*·\s*)?" not in source
 
@@ -86,10 +83,11 @@ def test_mid_completion_actions_link_to_review_and_bound_report_workflow():
     assert "Start a fresh Mid run" in source
 
 
-def test_layout_installs_presentation_and_evidence_helpers():
+def test_layout_installs_report_presentation_without_legacy_mid_evidence_overlay():
     source = LAYOUT.read_text(encoding="utf-8")
 
-    assert 'import MidEvidencePacketHelper from "./MidEvidencePacketHelper"' in source
     assert 'import ReportPresentationGuard from "./ReportPresentationGuard"' in source
     assert "<ReportPresentationGuard />" in source
-    assert "<MidEvidencePacketHelper />" in source
+    assert "MidEvidencePacketHelper" not in source
+    assert 'href="/assessment?tier=express#assessment"' in source
+    assert "Start Express or Comprehensive" in source
