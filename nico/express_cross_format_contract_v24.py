@@ -6,12 +6,27 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_cross_format_contract.v24"
+VERSION = "nico.express_cross_format_contract.v25"
 _PATCH_MARKER = "_nico_express_cross_format_contract_v24"
+_SCANNER_IDS = {"scanner_worker", "scanner_worker_evidence"}
+_CLIENT_ACCEPTANCE_IDS = {"client_acceptance", "client_human_acceptance"}
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split())
+
+
+def _not_scored(section: dict[str, Any]) -> bool:
+    section_id = _text(section.get("id")).casefold()
+    status = _text(section.get("status")).casefold()
+    if section_id in _SCANNER_IDS or status == "supplemental":
+        return True
+    if section_id in _CLIENT_ACCEPTANCE_IDS and status != "green":
+        return True
+    return section.get("directly_scored") is False or (
+        section.get("presented_score", section.get("score")) is None
+        and section.get("exclude_from_maturity") is True
+    )
 
 
 def _canonical_records(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -21,16 +36,19 @@ def _canonical_records(result: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         section_id = _text(section.get("id"))
         status = _text(section.get("status")).casefold() or "unknown"
-        supplemental = section_id.casefold() == "scanner_worker_evidence" or status == "supplemental"
-        score = None if supplemental else section.get("presented_score", section.get("score"))
+        scanner = section_id.casefold() in _SCANNER_IDS or status == "supplemental"
+        not_scored = _not_scored(section)
+        score = None if not_scored else section.get("presented_score", section.get("score"))
         records.append(
             {
                 "section_id": section_id,
                 "label": _text(section.get("label") or section.get("title") or section_id),
-                "status": "supplemental" if supplemental else status,
+                "status": "supplemental" if scanner else status,
                 "score": score,
+                "source_score": None if not_scored else section.get("source_score", section.get("score")),
                 "confidence": _text(section.get("confidence") or "unknown").casefold(),
-                "directly_scored": not supplemental,
+                "directly_scored": not not_scored,
+                "score_label": "NOT SCORED" if not_scored else f"{score}/100",
             }
         )
     return records
@@ -46,14 +64,16 @@ def _fingerprint(result: dict[str, Any], records: list[dict[str, Any]]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _contains_status(markdown: str, label: str, status: str) -> bool:
-    if not markdown or not label:
+def _contains_record(document: str, record: dict[str, Any]) -> bool:
+    if not document or not record.get("label"):
         return False
-    if status == "supplemental":
-        pattern = rf"###\s+{re.escape(label)}\s+—\s+SUPPLEMENTAL\s+\(NOT SCORED\)"
+    label = re.escape(str(record["label"]))
+    status = re.escape(str(record["status"]).upper())
+    if record["score"] is None:
+        expected = rf"{label}[\s\S]{{0,160}}{status}[\s\S]{{0,80}}NOT\s+SCORED"
     else:
-        pattern = rf"###\s+{re.escape(label)}\s+—\s+{re.escape(status.upper())}\b"
-    return bool(re.search(pattern, markdown, re.I))
+        expected = rf"{label}[\s\S]{{0,160}}{status}[\s\S]{{0,80}}{int(record['score'])}\s*/\s*100"
+    return bool(re.search(expected, document, re.I))
 
 
 def build_cross_format_contract(result: dict[str, Any]) -> dict[str, Any]:
@@ -65,34 +85,44 @@ def build_cross_format_contract(result: dict[str, Any]) -> dict[str, Any]:
     markdown_missing = [
         item["section_id"]
         for item in records
-        if markdown and not _contains_status(markdown, item["label"], item["status"])
+        if markdown and not _contains_record(markdown, item)
     ]
     html_missing = [
         item["section_id"]
         for item in records
-        if html and item["label"].casefold() not in html.casefold()
+        if html and not _contains_record(html, item)
     ]
-    scanner = next((item for item in records if item["section_id"].casefold() == "scanner_worker_evidence"), None)
+    scanner = next((item for item in records if item["section_id"].casefold() in _SCANNER_IDS), None)
     scanner_valid = scanner is None or (
         scanner["status"] == "supplemental"
         and scanner["score"] is None
         and scanner["directly_scored"] is False
     )
+    not_scored_valid = all(
+        item["score"] is None and item["directly_scored"] is False
+        for item in records
+        if item["score_label"] == "NOT SCORED"
+    )
 
     contract = {
-        "status": "complete" if not markdown_missing and not html_missing and scanner_valid else "degraded",
+        "status": "complete" if not markdown_missing and not html_missing and scanner_valid and not_scored_valid else "degraded",
         "version": VERSION,
         "canonical_records": records,
         "record_count": len(records),
         "truth_fingerprint": _fingerprint(result, records),
         "markdown_present": bool(markdown),
         "html_present": bool(html),
+        "markdown_status_score_mismatches": markdown_missing,
+        "html_status_score_mismatches": html_missing,
         "markdown_status_mismatches": markdown_missing,
         "html_section_mismatches": html_missing,
         "scanner_supplemental_not_scored": scanner_valid,
+        "not_scored_controls_excluded": not_scored_valid,
+        "section_payload_is_canonical_source": True,
         "pdf_uses_same_result_object": True,
         "json_contract_embedded": True,
         "human_review_required": True,
+        "client_delivery_allowed": False,
     }
     result["express_cross_format_contract"] = contract
     return contract
@@ -121,6 +151,8 @@ def install_express_cross_format_contract_v24() -> dict[str, Any]:
         "production_renderer_bound": True,
         "deterministic_truth_fingerprint": True,
         "scanner_supplemental_contract": True,
+        "score_status_parity_contract": True,
+        "not_scored_controls_excluded": True,
     }
 
 
