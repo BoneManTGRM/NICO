@@ -66,8 +66,8 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     markdown = result["reports"]["markdown"]
     html = result["reports"]["html"]
 
-    assert "None/100" not in markdown
-    assert "0/100" not in markdown
+    assert "Scanner Worker Evidence — SUPPLEMENTAL (None/100)" not in markdown
+    assert "Client / Human Acceptance — GRAY (0/100)" not in markdown
     assert "SUPPLEMENTAL (NOT SCORED)" in markdown
     assert "GRAY (NOT SCORED)" in markdown
     assert "Generic summary" not in markdown
@@ -79,11 +79,13 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     assert "## Priority Actions" in markdown
     assert "gitleaks ended with status timeout" in markdown
     assert "0-30 days" in markdown
+    assert "Maintain verified scanner-worker artifacts" in markdown
     assert "Product quality engineer" in markdown
     assert "Cross-format drift" in markdown
     assert "Two consecutive same-SHA runs" in markdown
-    assert "None/100" not in html
-    assert "0/100" not in html
+    assert "- [ ] [ ]" not in markdown
+    assert "Scanner Worker Evidence — SUPPLEMENTAL (None/100)" not in html
+    assert "Client / Human Acceptance — GRAY (0/100)" not in html
     assert result["express_client_report_postprocessor"]["status"] == "complete"
     assert result["service_id"] == "express"
     assert result["customer_service_name"] == "NICO Express Technical Assessment"
@@ -104,8 +106,16 @@ def test_pre_generation_fields_are_ready_for_pdf_renderer() -> None:
     assert result["executive_summary"].startswith("NICO assessed the exact authorized repository snapshot")
     assert result["priority_actions"]
     assert result["quick_wins"]
-    assert len(result["medium_term_plan"]) == 3
+    assert len(result["medium_term_plan"]) >= 4
+    assert any("Maintain verified scanner-worker artifacts" in item for item in result["medium_term_plan"])
     assert result["resourcing_recommendation"]
     assert result["risk_register"]
     assert result["verification_checklist"]
     assert result["service_tier"] == "express"
+
+
+def test_existing_evidence_ledger_plan_item_is_preserved() -> None:
+    result = _result()
+    result["medium_term_plan"] = ["Evidence ledger attached before report rebuild; retain the verified ledger artifact."]
+    prepared = prepare_express_client_report(result)
+    assert any("Evidence ledger attached" in item for item in prepared["medium_term_plan"])
