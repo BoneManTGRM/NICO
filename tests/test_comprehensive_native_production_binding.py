@@ -40,7 +40,19 @@ def test_production_entrypoint_installs_providers_before_building_executors() ->
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:' in source
 
 
-def test_dynamic_executor_uses_installed_native_provider_instead_of_missing_placeholder() -> None:
+def test_production_entrypoint_registers_bounded_runtime_diagnostics() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert 'COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"' in source
+    assert "def _register_runtime_diagnostics(target: FastAPI)" in source
+    assert 'target.add_api_route(' in source
+    assert 'methods=["GET"]' in source
+    assert 'status["human_review_required"] = True' in source
+    assert 'status["client_delivery_allowed"] = False' in source
+    assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:' in source
+
+
+def test_dynamic_executor_uses_installed_authorization_provider() -> None:
     app = FastAPI()
     install_native_comprehensive_providers(app)
     executor = build_production_capability_executors(app)["authorization"]
@@ -58,5 +70,6 @@ def test_dynamic_executor_uses_installed_native_provider_instead_of_missing_plac
 
     assert result["status"] == "complete"
     assert result["capability"] == "authorization"
-    assert result["human_review_required"] is not False if "human_review_required" in result else True
-    assert result.get("client_delivery_allowed", False) is False
+    assert result["authorization_confirmed"] is True
+    assert result["run_id"] == "comprun_binding_001"
+    assert result["commit_sha"] == "a" * 40
