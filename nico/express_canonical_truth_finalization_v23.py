@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_canonical_truth_finalization.v23"
+VERSION = "nico.express_canonical_truth_finalization.v24"
 _PATCH_MARKER = "_nico_express_canonical_truth_finalization_v23"
 
 _CLEAN_PATTERNS = (
@@ -172,6 +172,15 @@ def _canonicalize_sections(result: dict[str, Any]) -> None:
         section["confidence"] = confidence
 
 
+def _is_not_scored(section: dict[str, Any]) -> bool:
+    section_id = _text(section.get("id")).casefold()
+    if section_id == "scanner_worker_evidence":
+        return True
+    if section_id in {"client_acceptance", "client_human_acceptance"}:
+        return _text(section.get("status")).casefold() != "green"
+    return section.get("directly_scored") is False and section.get("score") is None
+
+
 def _rewrite_markdown_statuses(markdown: str, result: dict[str, Any]) -> str:
     output = markdown
     for section in result.get("sections") or []:
@@ -181,12 +190,47 @@ def _rewrite_markdown_statuses(markdown: str, result: dict[str, Any]) -> str:
         if not label:
             continue
         status = _text(section.get("status")).upper()
-        if _text(section.get("id")).casefold() == "scanner_worker_evidence":
-            output = re.sub(rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+\s*\([^\n]+\)", rf"\1SUPPLEMENTAL (NOT SCORED)", output)
-            output = re.sub(rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+", rf"\1supplemental", output, flags=re.I)
+        if _is_not_scored(section):
+            output = re.sub(
+                rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+\s*\([^\n]+\)",
+                rf"\1{status} (NOT SCORED)",
+                output,
+            )
+            output = re.sub(
+                rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)[^\n]+",
+                rf"\1{status.casefold()} · not scored",
+                output,
+                flags=re.I,
+            )
             continue
         output = re.sub(rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+(\s*\([^\n]+\))", rf"\1{status}\2", output)
         output = re.sub(rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+", rf"\1{status.casefold()}", output, flags=re.I)
+    return output
+
+
+def _rewrite_html_statuses(html: str, result: dict[str, Any]) -> str:
+    output = html
+    for section in result.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        label = _text(section.get("label") or section.get("title"))
+        if not label:
+            continue
+        status = _text(section.get("status")).upper()
+        if _is_not_scored(section):
+            output = re.sub(
+                rf"({re.escape(label)}\s*[—-]\s*)[A-Z]+\s*\([^<]+\)",
+                rf"\1{status} (NOT SCORED)",
+                output,
+                flags=re.I,
+            )
+        else:
+            output = re.sub(
+                rf"({re.escape(label)}\s*[—-]\s*)[A-Z]+(\s*\([^<]+\))",
+                rf"\1{status}\2",
+                output,
+                flags=re.I,
+            )
     return output
 
 
@@ -195,13 +239,18 @@ def finalize_express_truth(result: dict[str, Any]) -> dict[str, Any]:
     _normalize_repair_intelligence(result)
     _remove_readme_only_dossier_evidence(result)
     reports = result.get("reports")
-    if isinstance(reports, dict) and isinstance(reports.get("markdown"), str):
-        reports["markdown"] = _rewrite_markdown_statuses(reports["markdown"], result)
+    if isinstance(reports, dict):
+        if isinstance(reports.get("markdown"), str):
+            reports["markdown"] = _rewrite_markdown_statuses(reports["markdown"], result)
+        if isinstance(reports.get("html"), str):
+            reports["html"] = _rewrite_html_statuses(reports["html"], result)
     result["express_canonical_truth_finalization"] = {
         "status": "complete",
         "version": VERSION,
         "scanner_supplemental_not_scored": True,
+        "client_acceptance_not_scored_until_approved": True,
         "markdown_statuses_canonical": True,
+        "html_statuses_canonical": True,
         "failed_analyzer_green_contradiction_blocked": True,
         "clean_evidence_promotion_blocked": True,
         "dependency_contradiction_reconciled": True,
