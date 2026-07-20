@@ -17,10 +17,11 @@ _TOOL_NAMES = (
     "trufflehog",
 )
 _STATUS_ORDER = {
-    "failed": 6,
-    "timeout": 5,
-    "unavailable": 4,
-    "completed_findings": 3,
+    "failed": 7,
+    "timeout": 6,
+    "unavailable": 5,
+    "completed_findings": 4,
+    "completed_triaged": 3,
     "completed_clean": 2,
     "completed": 1,
     "unknown": 0,
@@ -109,6 +110,8 @@ def _status_line(item: dict[str, Any]) -> str:
     findings = item.get("findings")
     if status == "completed_clean":
         return f"Canonical scanner disposition: {tool}=completed_clean; verified findings=0."
+    if status == "completed_triaged":
+        return f"Canonical scanner disposition: {tool}=completed_with_candidates; candidates={findings}; signed triage resolved all candidates with no unresolved blocker."
     if status == "completed_findings":
         return f"Canonical scanner disposition: {tool}=completed_with_candidates; candidates={findings}; human triage required."
     if status == "failed":
@@ -118,6 +121,15 @@ def _status_line(item: dict[str, Any]) -> str:
     if status == "unavailable":
         return f"Canonical scanner disposition: {tool}=unavailable; the missing analyzer is disclosed and not substituted by another tool."
     return f"Canonical scanner disposition: {tool}={status}; no stronger conclusion is inferred."
+
+
+def _static_summary(dispositions: dict[str, dict[str, Any]]) -> str:
+    statuses = {str(item.get("status") or "unknown") for item in dispositions.values()}
+    if statuses & {"failed", "timeout", "unavailable", "completed_findings"}:
+        return "Static analysis reports each analyzer independently; unresolved failures, timeouts, unavailable analyzers, and candidate findings remain explicitly separated from completed evidence."
+    if statuses:
+        return "Static analysis reports each completed analyzer independently and preserves its canonical disposition without overstating the evidence."
+    return "Static analysis preserves the existing evidence state; no scanner disposition is inferred without a named analyzer statement."
 
 
 def _replace_scope_conflicts(section: dict[str, Any], dispositions: dict[str, dict[str, Any]]) -> None:
@@ -145,7 +157,7 @@ def _replace_scope_conflicts(section: dict[str, Any], dispositions: dict[str, di
             section["summary"] = "Secrets review reports scanner candidates, failures, and timeouts as review-limited evidence; it does not establish credential exposure until exact locations and values are triaged."
 
     if section_id == "static_analysis":
-        section["summary"] = "Static analysis combines independent analyzer dispositions. Completed tools, failed tools, and unavailable tools are reported separately and are never relabeled as equivalent evidence."
+        section["summary"] = _static_summary(dispositions)
         if dispositions.get("bandit", {}).get("status") == "failed":
             evidence = [
                 item.replace(
@@ -161,6 +173,20 @@ def _replace_scope_conflicts(section: dict[str, Any], dispositions: dict[str, di
     section["findings"] = findings
 
 
+def _apply_resolved_triage(result: dict[str, Any], section_id: str, dispositions: dict[str, dict[str, Any]]) -> None:
+    if section_id != "static_analysis":
+        return
+    triage = result.get("bandit_triage")
+    if not isinstance(triage, dict):
+        return
+    if triage.get("status") != "approved_no_blockers" or int(triage.get("review_required_count") or 0) != 0:
+        return
+    bandit = dispositions.get("bandit")
+    if bandit and bandit.get("status") == "completed_findings":
+        bandit["status"] = "completed_triaged"
+        bandit["triage_status"] = "approved_no_blockers"
+
+
 def reconcile_express_scanner_dispositions(result: dict[str, Any]) -> dict[str, Any]:
     all_dispositions: dict[str, dict[str, Any]] = {}
     for section in result.get("sections") or []:
@@ -170,12 +196,15 @@ def reconcile_express_scanner_dispositions(result: dict[str, Any]) -> dict[str, 
         if section_id not in {"dependency_health", "secrets_review", "static_analysis", "scanner_worker_evidence"}:
             continue
         dispositions = _dispositions(section)
+        _apply_resolved_triage(result, section_id, dispositions)
         section["scanner_dispositions"] = dispositions
         _replace_scope_conflicts(section, dispositions)
         for name, item in dispositions.items():
             all_dispositions[name] = _merge_disposition(all_dispositions.get(name), item)
 
     result["scanner_dispositions"] = all_dispositions
+    unresolved_statuses = {"failed", "timeout", "unavailable", "completed_findings", "unknown"}
+    unresolved = any(str(item.get("status")) in unresolved_statuses for item in all_dispositions.values())
     result["express_scanner_disposition_truth"] = {
         "status": "complete",
         "version": VERSION,
@@ -183,7 +212,7 @@ def reconcile_express_scanner_dispositions(result: dict[str, Any]) -> dict[str, 
         "one_canonical_disposition_per_tool": True,
         "scope_conflicts_disclosed": True,
         "failed_or_timed_out_not_clean": True,
-        "human_review_required": True,
+        "human_review_required": unresolved,
         "client_delivery_allowed": False,
     }
     return result
