@@ -21,72 +21,77 @@ The current release ends after the following work packages. These are work packa
 
 ### WP-1 — Scanner disposition truth
 
+Status: complete.
+Evidence: merged PR #671 at exact head `d5d2c57b2d7bab3f77ba967727c6efe7ff9ad808`; merge commit `57c3ff1409602f591c618cb9d7d611a3f0787f58`; all eight required exact-head workflows passed.
+
 Purpose: complete the work currently represented by PR #671.
 
 Acceptance criteria:
-- one canonical disposition exists for each scanner;
-- failed, timed-out, unavailable, and unknown scanners cannot be summarized as clean;
-- raw candidates are not presented as verified exposures;
-- exact-snapshot evidence outranks narrower evidence only when scope is explicitly recorded;
-- focused tests and all required exact-head workflows pass.
+- [x] one canonical disposition exists for each scanner;
+- [x] failed, timed-out, unavailable, and unknown scanners cannot be summarized as clean;
+- [x] raw candidates are not presented as verified exposures;
+- [x] exact-snapshot evidence outranks narrower evidence only when scope is explicitly recorded;
+- [x] focused tests and all required exact-head workflows pass.
 
 ### WP-2 — Evidence-specific scoring and cross-format parity
+
+Status: in progress.
 
 Purpose: replace blanket score caps with explainable deductions grounded in evidence.
 
 Acceptance criteria:
-- every deduction identifies the triggering evidence and rule;
-- no blanket 74-point cap remains unless explicitly required and documented;
-- canonical score, dashboard, Markdown, HTML, and PDF agree exactly;
-- not-scored controls never contribute numeric points;
-- regression tests cover clean, partial, failed, unavailable, and mixed-evidence cases.
+- [ ] every deduction identifies the triggering evidence and rule;
+- [ ] no blanket 74-point cap remains unless explicitly required and documented;
+- [ ] canonical score, dashboard, Markdown, HTML, and PDF agree exactly;
+- [ ] not-scored controls never contribute numeric points;
+- [ ] regression tests cover clean, partial, failed, unavailable, and mixed-evidence cases.
 
 ### WP-3 — Client-report compression and professional composition
 
 Purpose: remove repetitive report content without removing immutable evidence.
 
 Acceptance criteria:
-- executive sections are decision-oriented and non-duplicative;
-- findings, actions, roadmap, risks, and resourcing do not repeat the same paragraph under different headings;
-- immutable evidence remains available in the evidence appendix;
-- generated Express and Comprehensive reports contain no placeholders, `None/100`, contradictory status text, or empty decorative sections;
-- visual and content checks pass for Markdown, HTML, and PDF.
+- [ ] executive sections are decision-oriented and non-duplicative;
+- [ ] findings, actions, roadmap, risks, and resourcing do not repeat the same paragraph under different headings;
+- [ ] immutable evidence remains available in the evidence appendix;
+- [ ] generated Express and Comprehensive reports contain no placeholders, `None/100`, contradictory status text, or empty decorative sections;
+- [ ] visual and content checks pass for Markdown, HTML, and PDF.
 
 ### WP-4 — Production Comprehensive provider completion
 
 Purpose: bind every required production capability to exact-SHA evidence without fabricated availability.
 
 Acceptance criteria:
-- each required capability is callable or returns a truthful blocked state;
-- repository snapshot and repository-evidence providers bind to the authorized immutable commit SHA;
-- identity remains stable across run, repository, commit, evidence ledger, customer, and project;
-- missing durable storage or providers fail closed;
-- no client delivery is enabled before required human review.
+- [ ] each required capability is callable or returns a truthful blocked state;
+- [ ] repository snapshot and repository-evidence providers bind to the authorized immutable commit SHA;
+- [ ] identity remains stable across run, repository, commit, evidence ledger, customer, and project;
+- [ ] missing durable storage or providers fail closed;
+- [ ] no client delivery is enabled before required human review.
 
 ### WP-5 — Deployment, restart, and end-to-end proof
 
 Purpose: prove the release on the deployed production path.
 
 Acceptance criteria:
-- one authorized Express run and one authorized Comprehensive run complete against exact immutable SHAs;
-- workflow evidence records the exact deployed commit;
-- restart recovery returns the same run identity, revision, and integrity hash;
-- mobile assessment entry is responsive and shows only Express and Comprehensive;
-- generated artifacts pass score parity, scanner truth, content quality, and delivery-gate checks;
-- rollback procedure is documented and tested or dry-run verified.
+- [ ] one authorized Express run and one authorized Comprehensive run complete against exact immutable SHAs;
+- [ ] workflow evidence records the exact deployed commit;
+- [ ] restart recovery returns the same run identity, revision, and integrity hash;
+- [ ] mobile assessment entry is responsive and shows only Express and Comprehensive;
+- [ ] generated artifacts pass score parity, scanner truth, content quality, and delivery-gate checks;
+- [ ] rollback procedure is documented and tested or dry-run verified.
 
 ### WP-6 — Release acceptance and closure
 
 Purpose: establish a clear stopping condition.
 
 Acceptance criteria:
-- all WP-1 through WP-5 criteria are checked with evidence links;
-- all required CI workflows pass on the exact `nico-next` head SHA;
-- no unresolved release-blocking review thread remains;
-- no known P0 or P1 defect remains;
-- P2 defects are either fixed or explicitly deferred with owner and rationale;
-- human reviewer approves the release;
-- one release PR from `nico-next` to `main` is merged using the expected exact head SHA.
+- [ ] all WP-1 through WP-5 criteria are checked with evidence links;
+- [ ] all required CI workflows pass on the exact `nico-next` head SHA;
+- [ ] no unresolved release-blocking review thread remains;
+- [ ] no known P0 or P1 defect remains;
+- [ ] P2 defects are either fixed or explicitly deferred with owner and rationale;
+- [ ] human reviewer approves the release;
+- [ ] one release PR from `nico-next` to `main` is merged using the expected exact head SHA.
 
 ## Change-control rule
 
