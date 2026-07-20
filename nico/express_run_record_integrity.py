@@ -6,11 +6,18 @@ from typing import Any, Callable
 
 from nico.express_production_certification_v25 import build_express_production_certification
 
-PATCH_VERSION = "nico.express_run_record_integrity.v5"
+PATCH_VERSION = "nico.express_run_record_integrity.v6"
 _PATCH_MARKER = "_nico_express_run_record_integrity_v1"
 _TERMINAL_SUCCESS = {"complete", "completed"}
 _TERMINAL_FAILURE = {"blocked", "failed", "error", "interrupted", "rejected"}
 _RICH_FIELDS = (
+    "repository",
+    "repository_full_name",
+    "commit_sha",
+    "snapshot_sha",
+    "assessed_commit_sha",
+    "run_id",
+    "assessment_run_id",
     "reports",
     "sections",
     "maturity_signal",
@@ -185,6 +192,7 @@ def install_express_run_record_integrity() -> dict[str, Any]:
         "final_gate_heartbeat": final_gate_heartbeat,
         "terminal_status_regression_prevented": True,
         "rich_completion_fields_preserved": True,
+        "immutable_run_identity_preserved": True,
         "failed_complete_stage_contradictions_repaired": True,
         "terminal_artifact_contract_recorded": True,
         "production_certification_recorded": True,
