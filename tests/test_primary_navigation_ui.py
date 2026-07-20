@@ -75,7 +75,8 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
 def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
-    assert 'const spanishActive = pathname.startsWith("/es-mx")' in source
+    assert 'const spanishActive = pathname.startsWith("/es")' in source
+    assert 'const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment"' in source
     assert "SPANISH_PRIMARY_LABELS" in source
     assert '"run-job": "Ejecutar evaluación"' in source
     assert 'operations: "Operaciones"' in source
@@ -102,16 +103,17 @@ def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
     assert 'lang={spanishActive ? "es-MX" : undefined}' in source
 
 
-def test_run_a_job_uses_one_query_selected_intake() -> None:
+def test_run_a_job_uses_one_query_selected_native_intake() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     for required in [
-        'type AssessmentMode = "express" | "mid" | "full"',
+        'type AssessmentMode = "express" | "comprehensive"',
         'new URLSearchParams(window.location.search).get("tier")',
-        'value === "mid" || value === "full"',
+        '["comprehensive", "mid", "full", "deep"].includes',
         "window.addEventListener(ASSESSMENT_TIER_EVENT",
         'window.addEventListener("popstate"',
         'pathname.startsWith("/assessment")',
+        'pathname.startsWith("/es/assessment")',
     ]:
         assert required in source
 
@@ -128,7 +130,7 @@ def test_run_a_job_uses_one_query_selected_intake() -> None:
     assert 'aria-current={active ? "page" : undefined}' in source
 
 
-def test_layout_uses_unified_assessment_and_preserves_safety_disclosures() -> None:
+def test_layout_uses_native_assessment_and_preserves_safety_disclosures() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import "../styles/navigation.css";' in layout
@@ -142,16 +144,24 @@ def test_layout_uses_unified_assessment_and_preserves_safety_disclosures() -> No
     assert '<div className="global-links">' not in layout
     for disclosure in [
         "Assessment workflow:",
-        "unified assessment page",
-        "One Run action completes every automated stage",
-        "stop at required human review",
-        "never approves findings",
-        "does not create a client delivery link",
-        "Client downloads require acknowledgement",
+        "Start Express or Comprehensive",
+        "captures one immutable commit",
+        "required human review",
+        "never approves findings or creates client delivery automatically",
         "review interrupted scanner work",
         "Retainer workflow:",
     ]:
         assert disclosure in layout
+    for legacy_global in (
+        "AssessmentMidLiveStatusTransport",
+        "AssessmentSavedMidRunGuard",
+        "MidScoreIntelligencePortal",
+        "MidSectionReviewPortal",
+        "UnifiedMidTokenCapture",
+        "MidAssessmentCompanion",
+        "MidEvidencePacketHelper",
+    ):
+        assert legacy_global not in layout
 
 
 def test_navigation_and_advanced_stages_stay_compact_and_mobile_scrollable() -> None:
