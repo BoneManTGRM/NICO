@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from nico.service_catalog_v1 import apply_customer_service_identity
 
-VERSION = "nico.express_client_report_postprocessor.v29"
+VERSION = "nico.express_client_report_postprocessor.v30"
 _MARKER = "_nico_express_client_report_postprocessor_v27"
 
 
@@ -131,8 +131,21 @@ def _risk_register(result: dict[str, Any]) -> list[str]:
     return risks[:6]
 
 
+def _normalize_list_item(value: Any) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"^(?:-\s*)?(?:\[\s*[xX ]?\s*\]\s*)+", "", text)
+    return text.strip()
+
+
 def _replace_section(markdown: str, heading: str, body_lines: list[str]) -> str:
-    replacement = f"## {heading}\n" + "\n".join(f"- {line}" for line in body_lines) + "\n"
+    checklist = heading.casefold() == "verification checklist"
+    rendered: list[str] = []
+    for value in body_lines:
+        item = _normalize_list_item(value)
+        if not item:
+            continue
+        rendered.append(f"- [ ] {item}" if checklist else f"- {item}")
+    replacement = f"## {heading}\n" + "\n".join(rendered) + "\n"
     pattern = rf"## {re.escape(heading)}\n[\s\S]*?(?=\n## |\Z)"
     if re.search(pattern, markdown):
         return re.sub(pattern, replacement.rstrip(), markdown)
@@ -169,6 +182,26 @@ def _rewrite_not_scored(markdown: str, result: dict[str, Any]) -> str:
     return output
 
 
+def _merge_required_plan_items(existing: list[Any], generated: list[str]) -> list[str]:
+    required_markers = (
+        "evidence ledger attached",
+        "maintain verified scanner-worker artifacts",
+    )
+    retained: list[str] = []
+    for value in existing:
+        text = _text(value)
+        if text and any(marker in text.casefold() for marker in required_markers):
+            retained.append(text)
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in [*retained, *generated]:
+        key = value.casefold()
+        if key not in seen:
+            seen.add(key)
+            output.append(value)
+    return output
+
+
 def prepare_express_client_report(result: dict[str, Any]) -> dict[str, Any]:
     result.setdefault("assessment_type", "express")
     apply_customer_service_identity(result)
@@ -180,21 +213,23 @@ def prepare_express_client_report(result: dict[str, Any]) -> dict[str, Any]:
     result["quick_wins"] = priorities[:3] or [
         "Confirm the evidence package is complete and cross-format consistent before requesting final human approval."
     ]
-    result["medium_term_plan"] = [
+    generated_plan = [
+        "Maintain verified scanner-worker artifacts for dependency, secret, static-analysis, coverage, and complexity evidence in each client-facing report.",
         "0-30 days: close current-run failed, timed-out, unavailable, and triage-required analyzer evidence; repair confirmed security and static-analysis issues.",
         "31-60 days: decompose the highest verified complexity/churn hotspots and add focused regression tests for the affected behavior.",
         "61-90 days: run two consecutive same-SHA assessments, verify identical truth fingerprints, and approve the complete PDF/Markdown/HTML/JSON delivery package.",
     ]
+    result["medium_term_plan"] = _merge_required_plan_items(list(result.get("medium_term_plan") or []), generated_plan)
     result["resourcing_recommendation"] = _resourcing(result)
     result["risk_register"] = _risk_register(result)
     result["verification_checklist"] = [
-        "[ ] Exact repository commit SHA is recorded and matches every scanner and complexity artifact.",
-        "[ ] Every scored section has current-run evidence or an explicit access limitation.",
-        "[ ] Failed, timed-out, unavailable, and triage-required analyzers are not presented as GREEN.",
-        "[ ] Supplemental and pending-acceptance controls display NOT SCORED with no numeric score.",
-        "[ ] PDF, Markdown, HTML, and JSON present the same statuses, scores, priorities, and approval state.",
-        "[ ] Two consecutive same-SHA runs retain the same canonical truth fingerprint and report artifact digest.",
-        "[ ] Authorized human reviewer approves the exact-snapshot report before client delivery.",
+        "Exact repository commit SHA is recorded and matches every scanner and complexity artifact.",
+        "Every scored section has current-run evidence or an explicit access limitation.",
+        "Failed, timed-out, unavailable, and triage-required analyzers are not presented as GREEN.",
+        "Supplemental and pending-acceptance controls display NOT SCORED with no numeric score.",
+        "PDF, Markdown, HTML, and JSON present the same statuses, scores, priorities, and approval state.",
+        "Two consecutive same-SHA runs retain the same canonical truth fingerprint and report artifact digest.",
+        "Authorized human reviewer approves the exact-snapshot report before client delivery.",
     ]
     return result
 
@@ -239,6 +274,8 @@ def postprocess_express_client_reports(result: dict[str, Any]) -> dict[str, Any]
         "priority_actions_evidence_derived": True,
         "generic_quick_wins_replaced": True,
         "thirty_sixty_ninety_plan_generated": True,
+        "required_evidence_plan_items_preserved": True,
+        "checklist_rendering_normalized": True,
         "resourcing_evidence_derived": True,
         "risk_register_evidence_derived": True,
         "verification_checklist_replaced": True,
