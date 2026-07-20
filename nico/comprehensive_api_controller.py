@@ -21,12 +21,12 @@ class ComprehensiveApiController:
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = self._object(payload)
-        repository = self._required(body, "repository")
-        commit_sha = self._required(body, "commit_sha")
-        run_id = self._required(body, "run_id")
-        evidence_ledger_id = self._required(body, "evidence_ledger_id")
-        customer_id = self._required(body, "customer_id")
-        project_id = self._required(body, "project_id")
+        repository = self._required(body.get("repository"), "repository")
+        commit_sha = self._required(body.get("commit_sha"), "commit_sha")
+        run_id = self._required(body.get("run_id"), "run_id")
+        evidence_ledger_id = self._required(body.get("evidence_ledger_id"), "evidence_ledger_id")
+        customer_id = self._required(body.get("customer_id"), "customer_id")
+        project_id = self._required(body.get("project_id"), "project_id")
         if body.get("authorization_confirmed") is not True or body.get("authorized") is not True:
             raise ValueError("explicit_authorization_required")
 
