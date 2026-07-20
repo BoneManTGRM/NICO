@@ -1,15 +1,15 @@
 const goals = [
   ["Check a repo", "Run Express", "Use this for a fast authorized technical health check.", "/assessment?tier=express#assessment"],
-  ["Run a deeper assessment", "Run Mid or Full", "Use this when you need durable run identity, scanner stages, and formal review.", "/assessment?tier=mid#assessment"],
+  ["Run a complete assessment", "Run Comprehensive", "Use this for one immutable snapshot, deeper technical and business-context modules, and formal review.", "/assessment?tier=comprehensive#assessment"],
   ["Understand the process", "Guided Workflow", "Use this when you are not sure what happens after the assessment starts.", "/guided-workflow"],
   ["Operate NICO", "Operations", "Use this for authenticated deployment, recovery, reliability, and alert evidence.", "/operations"],
 ];
 
 const simpleSteps = [
-  ["1", "Choose Express, Mid, or Full", "Use the tier selector on the single Run a Job page."],
+  ["1", "Choose Express or Comprehensive", "Use the two-service selector on the single Run a Job page."],
   ["2", "Enter the repository once", "Client and project names are optional report labels."],
   ["3", "Confirm authorization", "Use the checkbox only for a repository you own or have explicit permission to assess."],
-  ["4", "Run and wait for the exact result", "Do not start a duplicate Mid or Full run while the same run is active or recoverable."],
+  ["4", "Run and wait for the exact result", "Do not start a duplicate run while the same run is active or recoverable."],
   ["5", "Review before export", "Read findings and unavailable evidence, then complete required human review."],
 ];
 
@@ -19,7 +19,7 @@ export default function EasyModePage() {
       <section className="hero">
         <p className="eyebrow">NICO Easy Mode</p>
         <h1>What do you want to do?</h1>
-        <p className="lead">Use one assessment intake for Express, Mid, and Full. Advanced tools remain separate for operators and recovery.</p>
+        <p className="lead">Use one assessment intake for Express or Comprehensive. Advanced tools remain separate for operators and recovery.</p>
         <div className="hero-actions">
           <a className="primary-link" href="/assessment?tier=express#assessment">Run a Job</a>
           <a className="secondary-link" href="/guided-workflow">See guide</a>
