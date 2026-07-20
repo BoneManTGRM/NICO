@@ -1,6 +1,6 @@
 const steps = [
   ["1", "Open Run a Job", "Use the unified assessment page instead of completing a separate setup wizard."],
-  ["2", "Choose Express, Mid, or Full", "Select the assessment depth that matches the evidence and review you need."],
+  ["2", "Choose Express or Comprehensive", "Select the service that matches the evidence depth and review you need."],
   ["3", "Enter the authorized repository", "Use owner/repo or a GitHub URL. Client and project names are optional."],
   ["4", "Confirm authorization and run", "Use the single authorization checkbox, then start the selected assessment once."],
   ["5", "Review evidence and findings", "Read unavailable evidence, confidence, findings, and human-review warnings before trusting the score."],
@@ -8,8 +8,8 @@ const steps = [
 ];
 
 const jobs = [
-  ["Quick repo health check", "Run Express", "Best for a first look or internal check."],
-  ["Deeper technical assessment", "Run Mid or Full", "Best when scanner evidence, durable run identity, and review stages are needed."],
+  ["Quick repo health check", "Run Express", "Best for a first look or internal technical baseline."],
+  ["Complete technical diligence", "Run Comprehensive", "Best for one immutable snapshot, deeper technical and business-context modules, and formal review."],
   ["Repair failed check", "Use exact failure evidence", "Best when CI, scanner, or report issues need a bounded repair PR."],
   ["Retainer project", "Use Retainer Ops", "Best for ongoing weekly evidence and commercial support."],
 ];
@@ -18,8 +18,8 @@ const cards = [
   ["Repository", "Required", "owner/repo or GitHub URL for the authorized target."],
   ["Client and project", "Optional", "Useful report labels that do not change authorization or evidence."],
   ["Authorization checkbox", "Required", "Confirms ownership or explicit permission for the selected target."],
-  ["Assessment tier", "Required", "Express, Mid, or Full selected on the same intake page."],
-  ["Run identity", "Retained when available", "Use the exact Mid or Full run for status, recovery, report, and review."],
+  ["Assessment service", "Required", "Express or Comprehensive selected on the same intake page."],
+  ["Run identity", "Retained", "Use the exact returned run ID for continuation, recovery, report, and review."],
   ["Draft report", "Human review", "Scores and exports remain review-required and are not automatically client-ready."],
 ];
 
@@ -29,7 +29,7 @@ export default function GuidedWorkflowPage() {
       <section className="hero">
         <p className="eyebrow">NICO Guided Workflow</p>
         <h1>One assessment intake</h1>
-        <p className="lead">Start Express, Mid, or Full from one page without duplicating repository details or authorization fields.</p>
+        <p className="lead">Start Express or Comprehensive from one page without duplicating repository details or authorization fields.</p>
         <div className="hero-actions">
           <a className="primary-link" href="/assessment?tier=express#assessment">Run a Job</a>
           <a className="secondary-link" href="/scanner-workflow">Scanner tools</a>
@@ -72,7 +72,7 @@ export default function GuidedWorkflowPage() {
         <div className="section-head"><div><p className="eyebrow">Client-ready rule</p><h2>Scores are not the final answer</h2></div><span className="status yellow">human review</span></div>
         <p className="warning-box">A higher score means the available evidence looks stronger. It does not remove unavailable-evidence review, exact-run verification, or final wording approval before client delivery.</p>
         <div className="two-col inset-grid">
-          <div className="mini-panel"><p className="eyebrow">Normal path</p><p>Use Run a Job, select the tier, enter the repository once, confirm authorization, and review the returned evidence-bound draft.</p></div>
+          <div className="mini-panel"><p className="eyebrow">Normal path</p><p>Use Run a Job, select Express or Comprehensive, enter the repository once, confirm authorization, and review the returned evidence-bound draft.</p></div>
           <div className="mini-panel"><p className="eyebrow">Advanced tools</p><p>Use Operations, Recovery, Scanner tools, and Retainer only when the assessment or operator workflow specifically requires them.</p></div>
         </div>
       </section>
