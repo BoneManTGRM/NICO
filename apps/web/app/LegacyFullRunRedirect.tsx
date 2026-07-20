@@ -12,7 +12,7 @@ export default function LegacyFullRunRedirect() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("legacy") === "1" || params.get("review") === "1") return;
 
-    window.location.replace("/assessment?tier=full#assessment");
+    window.location.replace("/assessment?tier=comprehensive#assessment");
   }, [pathname]);
 
   return null;

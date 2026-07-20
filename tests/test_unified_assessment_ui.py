@@ -153,14 +153,14 @@ def test_primary_navigation_has_one_run_job_entry_for_all_tiers() -> None:
     assert 'if (pathname.startsWith("/assessment")) return "run-job"' in navigation
 
 
-def test_legacy_full_run_route_defaults_to_unified_full_intake() -> None:
+def test_legacy_full_run_route_defaults_to_comprehensive_intake() -> None:
     redirect = FULL_RUN_REDIRECT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'pathname !== "/full-run"' in redirect
     assert 'params.get("legacy") === "1"' in redirect
     assert 'params.get("review") === "1"' in redirect
-    assert 'window.location.replace("/assessment?tier=full#assessment")' in redirect
+    assert 'window.location.replace("/assessment?tier=comprehensive#assessment")' in redirect
     assert "<LegacyFullRunRedirect />" in layout
 
 
