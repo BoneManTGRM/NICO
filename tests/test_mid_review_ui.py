@@ -10,18 +10,18 @@ LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 PRODUCTION = ROOT / "nico" / "api" / "production.py"
 
 
-def test_workspace_exposes_dedicated_mid_review_stage():
+def test_legacy_mid_review_route_is_preserved_but_not_mounted_in_public_assessment() -> None:
     context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'path: "/mid-review"' in context
-    assert 'path: "/assessment?tier=mid#assessment"' in context
     assert 'href="/assessment?tier=express#assessment"' in layout
-    assert "Mid and Full continue through repository evidence" in layout
-    assert "stop at required human review" in layout
+    assert "Start Express or Comprehensive" in layout
+    assert "AssessmentMidLiveStatusTransport" not in layout
+    assert "MidSectionReviewPortal" not in layout
 
 
-def test_review_screen_uses_shared_exact_run_scope_and_admin_token():
+def test_review_screen_uses_shared_exact_run_scope_and_admin_token() -> None:
     source = PAGE.read_text(encoding="utf-8")
     context = CONTEXT.read_text(encoding="utf-8")
 
@@ -36,7 +36,7 @@ def test_review_screen_uses_shared_exact_run_scope_and_admin_token():
     assert "project_id: projectId.trim()" in source
 
 
-def test_review_screen_calls_only_review_exception_endpoint():
+def test_review_screen_calls_only_review_exception_endpoint() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
     assert "/assessment/mid-run/${encodeURIComponent(runId.trim())}/review-exceptions" in source
@@ -46,7 +46,7 @@ def test_review_screen_calls_only_review_exception_endpoint():
     assert "approval_controls_note" in source
 
 
-def test_review_screen_surfaces_required_summary_counts():
+def test_review_screen_surfaces_required_summary_counts() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
     assert "Verified sections" in source
@@ -59,7 +59,7 @@ def test_review_screen_surfaces_required_summary_counts():
     assert "Inference items" in source
 
 
-def test_exceptions_are_expanded_and_verified_sections_are_collapsed():
+def test_exceptions_are_expanded_and_verified_sections_are_collapsed() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
     assert '<details className="result-card" open' in source
@@ -69,7 +69,7 @@ def test_exceptions_are_expanded_and_verified_sections_are_collapsed():
     assert "packet.exceptions?.map" in source
 
 
-def test_review_packet_identity_is_visible_without_admin_token_echo():
+def test_review_packet_identity_is_visible_without_admin_token_echo() -> None:
     source = PAGE.read_text(encoding="utf-8")
     identity_block = source.split("JSON.stringify({", 1)[1].split("}, null, 2)", 1)[0]
 
@@ -80,7 +80,7 @@ def test_review_packet_identity_is_visible_without_admin_token_echo():
     assert "admin_token" not in identity_block
 
 
-def test_production_api_registers_review_route():
+def test_production_api_registers_review_route() -> None:
     source = PRODUCTION.read_text(encoding="utf-8")
 
     assert "register_mid_review_routes" in source
