@@ -4,6 +4,8 @@ import {useEffect} from "react";
 import {usePathname} from "next/navigation";
 
 const LEGACY_LABELS = new Set(["mid", "full", "deep"]);
+const ASSESSMENT_PATHS = new Set(["/", "/assessment"]);
+const DEFAULT_REPOSITORY = "BoneManTGRM/NICO";
 
 function normalizeAssessmentQuery() {
   const url = new URL(window.location.href);
@@ -13,12 +15,26 @@ function normalizeAssessmentQuery() {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
-function rewriteWorkspace() {
+function setNativeInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", {bubbles: true}));
+  input.dispatchEvent(new Event("change", {bubbles: true}));
+}
+
+function clearLegacyRepositoryDefault() {
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="owner/repo"]');
+  if (!input || input.dataset.nicoDefaultCleared === "true") return;
+  input.dataset.nicoDefaultCleared = "true";
+  if (input.value === DEFAULT_REPOSITORY) setNativeInputValue(input, "");
+}
+
+function rewriteWorkspace(): HTMLElement | null {
   const selector = document.querySelector<HTMLElement>('[aria-label="Assessment type"]');
-  if (!selector) return;
+  if (!selector) return null;
 
   const buttons = Array.from(selector.querySelectorAll<HTMLButtonElement>("button"));
-  if (buttons.length < 2) return;
+  if (buttons.length < 2) return selector;
 
   const express = buttons.find((button) => button.textContent?.trim().toLowerCase() === "express") || buttons[0];
   const comprehensive = buttons.find((button) => {
@@ -27,58 +43,58 @@ function rewriteWorkspace() {
   }) || buttons[1];
 
   express.textContent = "Express";
+  express.hidden = false;
+  express.disabled = false;
+  express.removeAttribute("aria-hidden");
   express.dataset.nicoPublicService = "express";
 
   comprehensive.textContent = "Comprehensive";
+  comprehensive.hidden = false;
+  comprehensive.disabled = false;
+  comprehensive.removeAttribute("aria-hidden");
   comprehensive.dataset.nicoPublicService = "comprehensive";
   comprehensive.setAttribute("aria-label", "Comprehensive technical assessment");
 
   for (const button of buttons) {
     if (button === express || button === comprehensive) continue;
     button.hidden = true;
+    button.style.display = "none";
+    button.disabled = true;
     button.setAttribute("aria-hidden", "true");
     button.tabIndex = -1;
     button.dataset.nicoLegacyServiceHidden = "true";
   }
 
   selector.dataset.nicoCustomerAssessmentCount = "2";
-
-  const replacements: Array<[RegExp, string]> = [
-    [/\bMid Assessment\b/g, "Comprehensive Assessment"],
-    [/\bFull Assessment\b/g, "Comprehensive Assessment"],
-    [/\bMID ASSESSMENT\b/g, "COMPREHENSIVE ASSESSMENT"],
-    [/\bFULL ASSESSMENT\b/g, "COMPREHENSIVE ASSESSMENT"],
-    [/\bMid run\b/g, "Comprehensive run"],
-    [/\bUnified Mid run\b/g, "Unified Comprehensive run"],
-    [/\bCheck Mid status\b/g, "Check Comprehensive status"],
-    [/\bRun fresh Mid assessment\b/g, "Run Comprehensive assessment"],
-    [/\bRun fresh Full assessment\b/g, "Run Comprehensive assessment"],
-  ];
-
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let node = walker.nextNode();
-  while (node) {
-    const parent = node.parentElement;
-    if (parent && !["SCRIPT", "STYLE", "TEXTAREA", "OPTION"].includes(parent.tagName)) {
-      let value = node.textContent || "";
-      for (const [pattern, replacement] of replacements) value = value.replace(pattern, replacement);
-      if (value !== node.textContent) node.textContent = value;
-    }
-    node = walker.nextNode();
-  }
+  clearLegacyRepositoryDefault();
+  return selector;
 }
 
 export default function TwoServiceAssessmentGuard() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (pathname !== "/assessment") return;
-    normalizeAssessmentQuery();
-    rewriteWorkspace();
+    if (!ASSESSMENT_PATHS.has(pathname)) return;
 
-    const observer = new MutationObserver(() => rewriteWorkspace());
-    observer.observe(document.body, {childList: true, subtree: true});
-    return () => observer.disconnect();
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+    window.scrollTo({top: 0, left: 0, behavior: "instant" as ScrollBehavior});
+    normalizeAssessmentQuery();
+
+    let attempts = 0;
+    let selectorObserver: MutationObserver | null = null;
+    const install = () => {
+      attempts += 1;
+      const selector = rewriteWorkspace();
+      if (selector) {
+        selectorObserver = new MutationObserver(() => rewriteWorkspace());
+        selectorObserver.observe(selector, {childList: true, subtree: true});
+        return;
+      }
+      if (attempts < 40) window.setTimeout(install, 100);
+    };
+    install();
+
+    return () => selectorObserver?.disconnect();
   }, [pathname]);
 
   return null;
