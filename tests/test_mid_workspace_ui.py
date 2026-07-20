@@ -16,7 +16,7 @@ STAGE_PAGES = {
 }
 
 
-def test_mid_primary_navigation_opens_unified_assessment_intake() -> None:
+def test_primary_navigation_opens_native_two_service_assessment_intake() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
@@ -25,7 +25,8 @@ def test_mid_primary_navigation_opens_unified_assessment_intake() -> None:
     assert 'label: "Mid Assessment"' not in primary
     assert 'href: "/assessment?tier=mid#assessment"' not in primary
     assert 'href: "/mid-assessment"' not in primary
-    assert 'type AssessmentMode = "express" | "mid" | "full"' in navigation
+    assert 'type AssessmentMode = "express" | "comprehensive"' in navigation
+    assert '["comprehensive", "mid", "full", "deep"]' in navigation
     for legacy in (
         '{label: "Mid Review", href: "/mid-review"}',
         '{label: "Mid Report", href: "/mid-report"}',
@@ -53,7 +54,7 @@ def test_advanced_workspace_stage_sequence_and_existing_routes_are_preserved() -
     assert positions == sorted(positions)
     assert "Start → Review → Report → Approval → Delivery" in context
     assert "Start → Review → Report → Approval → Delivery" in workspace
-    assert 'href="/?assessment=mid#assessment"' in workspace or 'href="/assessment?tier=mid#assessment"' in workspace
+    assert 'href="/assessment?tier=mid#assessment"' in workspace
 
 
 def test_workspace_admin_token_and_reviewer_are_memory_only() -> None:
@@ -63,13 +64,13 @@ def test_workspace_admin_token_and_reviewer_are_memory_only() -> None:
     assert 'const [reviewer, setReviewer] = useState("")' in context
     assert "localStorage" not in context
     assert "sessionStorage.setItem(ACTIVE_RUN_KEY" in context
-    assert "sessionStorage.setItem(\"admin" not in context
-    assert "sessionStorage.setItem(\"reviewer" not in context
-    assert "params.set(\"run_id\"" in context
-    assert "params.set(\"customer_id\"" in context
-    assert "params.set(\"project_id\"" in context
-    assert "params.set(\"admin" not in context
-    assert "params.set(\"reviewer" not in context
+    assert 'sessionStorage.setItem("admin' not in context
+    assert 'sessionStorage.setItem("reviewer' not in context
+    assert 'params.set("run_id"' in context
+    assert 'params.set("customer_id"' in context
+    assert 'params.set("project_id"' in context
+    assert 'params.set("admin' not in context
+    assert 'params.set("reviewer' not in context
     assert "never written to the URL or browser storage" in context
 
 
@@ -97,7 +98,7 @@ def test_direct_mid_stage_pages_consume_shared_workspace_identity() -> None:
         assert "const [adminToken, setAdminToken]" not in source, stage
 
 
-def test_root_layout_keeps_provider_alive_for_advanced_mid_routes() -> None:
+def test_root_layout_keeps_provider_for_legacy_routes_without_mounting_legacy_public_overlays() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import {MidWorkspaceProvider} from "./MidWorkspaceContext";' in layout
@@ -106,5 +107,14 @@ def test_root_layout_keeps_provider_alive_for_advanced_mid_routes() -> None:
     provider_end = layout.index("</MidWorkspaceProvider>", children_index)
     assert provider_start < children_index < provider_end
     assert 'href="/assessment?tier=express#assessment"' in layout
-    assert "does not create a client delivery link" in layout
-    assert "Client downloads require acknowledgement" in layout
+    assert "NICO never approves findings or creates client delivery automatically" in layout
+    for legacy_global in (
+        "AssessmentMidLiveStatusTransport",
+        "AssessmentSavedMidRunGuard",
+        "MidScoreIntelligencePortal",
+        "MidSectionReviewPortal",
+        "UnifiedMidTokenCapture",
+        "MidAssessmentCompanion",
+        "MidEvidencePacketHelper",
+    ):
+        assert legacy_global not in layout
