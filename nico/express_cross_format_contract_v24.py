@@ -6,7 +6,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_cross_format_contract.v25"
+VERSION = "nico.express_cross_format_contract.v25.1"
 _PATCH_MARKER = "_nico_express_cross_format_contract_v24"
 _SCANNER_IDS = {"scanner_worker", "scanner_worker_evidence"}
 _CLIENT_ACCEPTANCE_IDS = {"client_acceptance", "client_human_acceptance"}
@@ -18,13 +18,13 @@ def _text(value: Any) -> str:
 
 def _not_scored(section: dict[str, Any]) -> bool:
     section_id = _text(section.get("id")).casefold()
-    status = _text(section.get("status")).casefold()
-    if section_id in _SCANNER_IDS or status == "supplemental":
+    presented_status = _text(section.get("presented_status") or section.get("status")).casefold()
+    if section_id in _SCANNER_IDS or presented_status == "supplemental":
         return True
-    if section_id in _CLIENT_ACCEPTANCE_IDS and status != "green":
+    if section_id in _CLIENT_ACCEPTANCE_IDS and presented_status != "green":
         return True
     return section.get("directly_scored") is False or (
-        section.get("presented_score", section.get("score")) is None
+        section.get("presented_score") is None
         and section.get("exclude_from_maturity") is True
     )
 
@@ -35,7 +35,7 @@ def _canonical_records(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(section, dict):
             continue
         section_id = _text(section.get("id"))
-        status = _text(section.get("status")).casefold() or "unknown"
+        status = _text(section.get("presented_status") or section.get("status")).casefold() or "unknown"
         scanner = section_id.casefold() in _SCANNER_IDS or status == "supplemental"
         not_scored = _not_scored(section)
         score = None if not_scored else section.get("presented_score", section.get("score"))
@@ -46,7 +46,7 @@ def _canonical_records(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "status": "supplemental" if scanner else status,
                 "score": score,
                 "source_score": None if not_scored else section.get("source_score", section.get("score")),
-                "confidence": _text(section.get("confidence") or "unknown").casefold(),
+                "confidence": _text(section.get("presented_confidence") or section.get("confidence") or "unknown").casefold(),
                 "directly_scored": not not_scored,
                 "score_label": "NOT SCORED" if not_scored else f"{score}/100",
             }
@@ -118,7 +118,8 @@ def build_cross_format_contract(result: dict[str, Any]) -> dict[str, Any]:
         "html_section_mismatches": html_missing,
         "scanner_supplemental_not_scored": scanner_valid,
         "not_scored_controls_excluded": not_scored_valid,
-        "section_payload_is_canonical_source": True,
+        "source_scores_preserved": True,
+        "presented_fields_are_canonical": True,
         "pdf_uses_same_result_object": True,
         "json_contract_embedded": True,
         "human_review_required": True,
@@ -152,6 +153,7 @@ def install_express_cross_format_contract_v24() -> dict[str, Any]:
         "deterministic_truth_fingerprint": True,
         "scanner_supplemental_contract": True,
         "score_status_parity_contract": True,
+        "source_scores_preserved": True,
         "not_scored_controls_excluded": True,
     }
 
