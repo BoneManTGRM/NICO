@@ -9,7 +9,7 @@ SAVED_RUN_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentSavedMidRunGuard.ts
 OUTCOME_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
 LIVE_TRANSPORT = ROOT / "apps" / "web" / "app" / "AssessmentMidLiveStatusTransport.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
-PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
+WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
 
 
 def test_status_resilience_retries_only_exact_run_status_requests() -> None:
@@ -71,7 +71,7 @@ def test_exact_terminal_status_response_is_normalized_before_the_page_consumes_i
     assert "output.progress_percent = 100" in source
 
 
-def test_saved_mid_run_is_checked_before_any_new_start_request() -> None:
+def test_saved_mid_run_is_checked_before_any_new_legacy_start_request() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
 
     assert 'MID_ACTIVE_RUN_KEY = "nico.mid.active_run"' in source
@@ -127,9 +127,9 @@ def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
     assert "if (matchingTerminalEvidence(payload, runId)) return response" in source
 
 
-def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_at_42() -> None:
+def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_static() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
-    page = PAGE.read_text(encoding="utf-8")
+    workspace = WORKSPACE.read_text(encoding="utf-8")
 
     assert "scannerProgress(payload" in source
     assert "scanner.progress_percent" in source
@@ -137,18 +137,14 @@ def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_at_4
     assert "18 + (scanPercent * 0.43)" in source
     assert "Math.min(61" in source
     assert "scanner_progress_percent" in source
-    assert "scanner_worker: 42" in page
+    assert 'scanner_worker: "Scanner suite"' in workspace
 
 
-def test_live_transport_is_installed_outside_old_guards_and_inside_api_bridge() -> None:
+def test_legacy_live_transport_is_retained_for_operator_recovery_but_not_globally_mounted() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
     live = LIVE_TRANSPORT.read_text(encoding="utf-8")
 
-    assert 'import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport"' in layout
-    assert "<AssessmentMidLiveStatusTransport />" in layout
-    assert layout.index("<AssessmentStatusResilience />") < layout.index("<AssessmentSavedMidRunGuard />")
-    assert layout.index("<AssessmentSavedMidRunGuard />") < layout.index("<AssessmentStatusOutcomeGuard />")
-    assert layout.index("<AssessmentStatusOutcomeGuard />") < layout.index("<AssessmentMidLiveStatusTransport />")
-    assert layout.index("<AssessmentMidLiveStatusTransport />") < layout.index("<AssessmentApiTransportBridge />")
+    assert "AssessmentMidLiveStatusTransport" not in layout
+    assert "AssessmentSavedMidRunGuard" not in layout
     assert "LIVE_RETRY_COUNT = 2" in live
     assert "/live-status" in live
