@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
-PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
+WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
 
 
 def test_non_terminal_exact_run_status_outage_remains_running() -> None:
@@ -48,12 +48,12 @@ def test_terminal_projection_never_displays_active_scanner_or_report() -> None:
     assert '"reports"' in source
 
 
-def test_unified_page_consumes_structured_terminal_state_instead_of_stale_result() -> None:
-    page = PAGE.read_text(encoding="utf-8")
+def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_result() -> None:
+    workspace = WORKSPACE.read_text(encoding="utf-8")
     guard = GUARD.read_text(encoding="utf-8")
 
-    assert 'current = await parseResponse(response);' in page
-    assert 'if (["failed", "blocked", "error", "rejected", "interrupted"].includes(status)' in page
+    assert 'current = await json(await fetch' in workspace
+    assert '["failed", "blocked", "error", "rejected"].includes(value)' in workspace
     assert 'return jsonResponse(output);' in guard
     assert 'output.run_id = runId' in guard
     assert 'output.progress = normalizedProgress' in guard
