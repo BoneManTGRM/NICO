@@ -11,6 +11,7 @@ from nico.comprehensive_production_bootstrap import install_comprehensive_produc
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 
 VERSION = "nico.api.comprehensive_production_bootstrap.v3"
+COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -21,6 +22,27 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
         if str(getattr(route, "path", "")) == path
         and expected in {str(item).upper() for item in (getattr(route, "methods", set()) or set())}
     )
+
+
+def _register_runtime_diagnostics(target: FastAPI) -> None:
+    if _route_count(target, "GET", COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE):
+        return
+
+    def runtime_diagnostics() -> dict[str, Any]:
+        status = dict(getattr(target.state, "nico_comprehensive_production_runtime", {}) or {})
+        status.setdefault("artifact_schema", VERSION)
+        status.setdefault("service_id", "comprehensive")
+        status["human_review_required"] = True
+        status["client_delivery_allowed"] = False
+        return status
+
+    target.add_api_route(
+        COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
+        runtime_diagnostics,
+        methods=["GET"],
+        tags=["diagnostics"],
+    )
+    target.openapi_schema = None
 
 
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
@@ -74,9 +96,17 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "provider_install_before_executor_build": True,
+        "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    target.state.nico_comprehensive_production_runtime = status
+    _register_runtime_diagnostics(target)
+    status["diagnostics_route_count"] = _route_count(
+        target,
+        "GET",
+        COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
+    )
     target.state.nico_comprehensive_production_runtime = status
     return status
 
@@ -89,6 +119,8 @@ if any(count != 1 for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].
         "Comprehensive production routes are missing or duplicated: "
         f"{COMPREHENSIVE_PRODUCTION_RUNTIME['route_counts']}"
     )
+if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:
+    raise RuntimeError("Comprehensive runtime diagnostics route must be registered exactly once")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
     raise RuntimeError("Comprehensive production runtime did not install native providers")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
@@ -105,6 +137,7 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["client_delivery_allowed"] is not False:
 __all__ = [
     "app",
     "COMPREHENSIVE_PRODUCTION_RUNTIME",
+    "COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE",
     "VERSION",
     "install_comprehensive_on_production_app",
 ]
