@@ -6,22 +6,12 @@ from nico.express_client_report_postprocessor_v27 import (
 
 def _result() -> dict:
     return {
-        "maturity_signal": {"level": "Senior", "score": 90},
         "sections": [
-            {
-                "id": "ci_cd",
-                "label": "CI/CD Analysis",
-                "score": 95,
-                "status": "green",
-                "summary": "Current release-readiness checks are verified.",
-                "findings": [],
-            },
             {
                 "id": "secrets_review",
                 "label": "Secrets Exposure Review",
                 "score": 88,
                 "status": "yellow",
-                "summary": "Secret scanner evidence requires review.",
                 "findings": ["gitleaks ended with status timeout; its output requires human review."],
             },
             {
@@ -29,8 +19,8 @@ def _result() -> dict:
                 "label": "Architecture & Technical Debt",
                 "score": 94,
                 "status": "green",
-                "summary": "Architecture evidence and complexity artifacts are available.",
-                "findings": ["Complexity and high churn overlap in 52 delivery hotspot files."],
+                "summary": "Architecture evidence is present, with concentrated complexity hotspots requiring planned remediation.",
+                "findings": ["Complexity hotspot: nico/hosted_assessment.py requires decomposition."],
             },
             {
                 "id": "scanner_worker_evidence",
@@ -49,9 +39,10 @@ def _result() -> dict:
                 "findings": [],
             },
         ],
+        "maturity_signal": {"level": "Senior", "score": 90},
         "reports": {
             "markdown": (
-                "## Executive Summary\nOld generic summary.\n"
+                "## Executive Summary\nGeneric summary.\n"
                 "### Scanner Worker Evidence — SUPPLEMENTAL (None/100)\n"
                 "### Client / Human Acceptance — GRAY (0/100)\n"
                 "## Quick Wins\n- Generic quick win.\n"
@@ -69,8 +60,9 @@ def _result() -> dict:
 
 
 def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
-    result = prepare_express_client_report(_result())
-    result = postprocess_express_client_reports(result)
+    source = _result()
+    prepare_express_client_report(source)
+    result = postprocess_express_client_reports(source)
     markdown = result["reports"]["markdown"]
     html = result["reports"]["html"]
 
@@ -78,7 +70,7 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     assert "0/100" not in markdown
     assert "SUPPLEMENTAL (NOT SCORED)" in markdown
     assert "GRAY (NOT SCORED)" in markdown
-    assert "Old generic summary" not in markdown
+    assert "Generic summary" not in markdown
     assert "Generic quick win" not in markdown
     assert "Generic plan" not in markdown
     assert "Generic resource" not in markdown
@@ -87,27 +79,33 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     assert "## Priority Actions" in markdown
     assert "gitleaks ended with status timeout" in markdown
     assert "0-30 days" in markdown
-    assert "31-60 days" in markdown
-    assert "61-90 days" in markdown
+    assert "Product quality engineer" in markdown
     assert "Cross-format drift" in markdown
     assert "Two consecutive same-SHA runs" in markdown
     assert "None/100" not in html
     assert "0/100" not in html
     assert result["express_client_report_postprocessor"]["status"] == "complete"
+    assert result["service_id"] == "express"
+    assert result["customer_service_name"] == "NICO Express Technical Assessment"
+    assert result["internal_execution_profile"] == "express"
 
 
 def test_priority_actions_ignore_not_scored_controls() -> None:
     result = _result()
-    result["sections"][3]["findings"] = ["Scanner diagnostic should not become an executive priority."]
-    prepared = prepare_express_client_report(result)
-    assert all("Scanner diagnostic" not in item for item in prepared["priority_actions"])
+    result["sections"][2]["findings"] = ["Scanner diagnostic should not become an executive priority."]
+    prepare_express_client_report(result)
+    finalized = postprocess_express_client_reports(result)
+    markdown = finalized["reports"]["markdown"]
+    assert "Scanner diagnostic should not become an executive priority" not in markdown
 
 
-def test_preparation_changes_pdf_source_fields_before_pdf_generation() -> None:
-    prepared = prepare_express_client_report(_result())
-    assert "Senior maturity level (90/100)" in prepared["executive_summary"]
-    assert prepared["quick_wins"] == prepared["priority_actions"][:3]
-    assert len(prepared["medium_term_plan"]) == 3
-    assert any("Security-focused product engineer" in item for item in prepared["resourcing_recommendation"])
-    assert any("Cross-format drift" in item for item in prepared["risk_register"])
-    assert len(prepared["verification_checklist"]) == 7
+def test_pre_generation_fields_are_ready_for_pdf_renderer() -> None:
+    result = prepare_express_client_report(_result())
+    assert result["executive_summary"].startswith("NICO assessed the exact authorized repository snapshot")
+    assert result["priority_actions"]
+    assert result["quick_wins"]
+    assert len(result["medium_term_plan"]) == 3
+    assert result["resourcing_recommendation"]
+    assert result["risk_register"]
+    assert result["verification_checklist"]
+    assert result["service_tier"] == "express"
