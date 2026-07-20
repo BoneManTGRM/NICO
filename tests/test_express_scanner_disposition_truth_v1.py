@@ -72,7 +72,7 @@ def test_failed_timeout_and_unavailable_tools_never_become_clean() -> None:
     assert static["scanner_dispositions"]["bandit"]["status"] == "failed"
     assert static["scanner_dispositions"]["eslint"]["status"] == "unavailable"
     assert static["scanner_dispositions"]["semgrep"]["status"] == "completed_findings"
-    assert "never relabeled as equivalent evidence" in static["summary"]
+    assert "remain explicitly separated from completed evidence" in static["summary"]
     assert any("failed Bandit execution prevents a clean Bandit conclusion" in item for item in static["evidence"])
 
     assert secrets["scanner_dispositions"]["gitleaks"]["status"] == "timeout"
