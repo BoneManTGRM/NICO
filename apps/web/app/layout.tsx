@@ -7,26 +7,19 @@ import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
-import AssessmentMidLiveStatusTransport from "./AssessmentMidLiveStatusTransport";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
-import AssessmentSavedMidRunGuard from "./AssessmentSavedMidRunGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
-import MidAssessmentCompanion from "./MidAssessmentCompanion";
-import MidEvidencePacketHelper from "./MidEvidencePacketHelper";
-import MidScoreIntelligencePortal from "./MidScoreIntelligencePortal";
-import MidSectionReviewPortal from "./MidSectionReviewPortal";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
 import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
-import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture";
 import WorkflowCallout from "./WorkflowCallout";
 
 export const metadata = {
@@ -41,21 +34,16 @@ export default function RootLayout({children}: {children: ReactNode}) {
         <MidWorkspaceProvider>
           <AssessmentRunStateGuard />
           <AssessmentStatusResilience />
-          <AssessmentSavedMidRunGuard />
           <AssessmentStatusOutcomeGuard />
           <AssessmentExpressRecoveryGuard />
-          <AssessmentMidLiveStatusTransport />
           <AssessmentProgressIntegrityGuard />
           <AssessmentFinalGateAuthoritativeGuard />
-          <MidScoreIntelligencePortal />
-          <MidSectionReviewPortal />
           <AssessmentApiTransportBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
           <OperationsPreloadGuard />
-          <UnifiedMidTokenCapture />
           <RetainerAutoEvidenceLauncher />
           <PrimaryNavigation />
           <WorkflowCallout>
@@ -68,8 +56,6 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentExpressRecoveryActions />
           <AssessmentRecoveryActions />
           {children}
-          <MidAssessmentCompanion />
-          <MidEvidencePacketHelper />
         </MidWorkspaceProvider>
       </body>
     </html>
