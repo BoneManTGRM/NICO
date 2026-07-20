@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "apps" / "web" / "app" / "TwoServiceAssessmentGuard.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
-REDIRECT = ROOT / "apps" / "web"" / "app" / "LegacyFullRunRedirect.tsx"
+REDIRECT = ROOT / "apps" / "web" / "app" / "LegacyFullRunRedirect.tsx"
 
 
 def test_public_workspace_has_express_and_comprehensive_only() -> None:
