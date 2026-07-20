@@ -21,20 +21,24 @@ def test_service_catalog_api_registers_routes():
     assert "/service-catalog/intake-readiness" in paths
 
 
-def test_service_catalog_api_returns_catalog():
+def test_service_catalog_api_returns_only_express_and_comprehensive_assessments():
     result = service_catalog_response()
 
     assert result["status"] == "ok"
-    assert result["artifact_schema"] == "nico.service_catalog.v1"
-    assert "express" in result["services"]
-    assert "mid" in result["services"]
-    assert "retainer" in result["services"]
+    assert result["artifact_schema"] == "nico.service_catalog.v2"
+    assert set(result["services"]) == {"express", "comprehensive"}
+    assert result["customer_assessment_count"] == 2
+    assert "monitor_execute" in result["recurring_services"]
 
 
 def test_service_catalog_api_returns_item_or_404():
     result = service_catalog_item_response("express")
     assert result["status"] == "ok"
     assert result["workflow"] == "express"
+
+    alias = service_catalog_item_response("full")
+    assert alias["workflow"] == "comprehensive"
+    assert alias["internal_execution_profile"] == "full"
 
     try:
         service_catalog_item_response("unknown")
@@ -45,10 +49,15 @@ def test_service_catalog_api_returns_item_or_404():
         raise AssertionError("Expected HTTPException for unknown workflow")
 
 
-def test_service_catalog_api_returns_intake_readiness():
+def test_service_catalog_api_returns_comprehensive_intake_readiness():
     result = service_intake_readiness_response(
         ServiceIntakeRequest(
             payload={
+                "workflow": "comprehensive",
+                "repository": "BoneManTGRM/NICO",
+                "authorized": True,
+                "authorized_by": "reviewer",
+                "authorization_scope": "repository assessment only",
                 "qa_evidence": "PASS login works",
                 "parity_notes": "iOS and Android copy matches",
                 "stakeholder_notes": "Goal is launch faster",
@@ -58,6 +67,6 @@ def test_service_catalog_api_returns_intake_readiness():
         )
     )
 
-    assert result["artifact_schema"] == "nico.service_intake_readiness.v1"
-    assert result["recommended_workflow"] == "mid"
+    assert result["artifact_schema"] == "nico.service_intake_readiness.v2"
+    assert result["recommended_workflow"] == "comprehensive"
     assert result["status"] == "ready_for_workflow_request"
