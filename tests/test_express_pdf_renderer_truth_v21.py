@@ -49,6 +49,7 @@ def _result() -> dict:
             "status": item["status"],
             "confidence": "high",
             "rationale": "Exact test rationale.",
+            "directly_scored": item["directly_scored"],
         }
         for item in sections
     ]
@@ -90,12 +91,15 @@ def test_renderer_replaces_glyph_page_splits_layout_and_excludes_scanner() -> No
     assert probes == {0: 0.0, 6: 5.76, 74: 71.04, 86: 82.56, 90: 86.4}
     assert widths[0] == 0
     assert widths[6] < widths[74] < widths[86] < widths[90]
+    assert geometry_contract["canonical_status_coloring"] is True
+    assert {item["status"] for item in geometry} == {"yellow"}
     assert geometry_contract["scanner_worker_excluded"] is True
     assert all(item["section_id"] != "scanner_worker_evidence" for item in geometry)
 
     truth = result["express_pdf_renderer_truth"]
     assert truth["status"] == "complete"
     assert truth["actual_vector_geometry"] is True
+    assert truth["canonical_status_coloring"] is True
     assert truth["architecture_velocity_split"] is True
     assert truth["architecture_page_present"] is True
     assert truth["velocity_page_present"] is True
