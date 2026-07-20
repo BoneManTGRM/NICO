@@ -4,18 +4,20 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_section_status_truth.v26"
+VERSION = "nico.express_section_status_truth.v26.1"
 _PATCH_MARKER = "_nico_express_section_status_truth_v26"
 _REVIEW_TERMS = (
-    " failed",
     "status=failed",
-    " timeout",
-    "timed out",
     "status=timeout",
-    " unavailable",
-    "requires human triage",
-    "requires human review",
-    "finding(s)",
+    "status=timed_out",
+    " ended with status failed",
+    " ended with status timeout",
+    " returned failed",
+    " returned timeout",
+    " requires human triage",
+    " requiring human triage",
+    " exact-snapshot scanner unavailable",
+    " analyzer unavailable for this run",
 )
 
 
@@ -24,12 +26,31 @@ def _text(value: Any) -> str:
 
 
 def _has_unresolved(section: dict[str, Any]) -> bool:
+    """Detect unresolved current-run analyzer evidence without overriding superseding truth.
+
+    Generic historical notes such as "human review required", an inherited
+    "unavailable" sentence, or the mere word "findings" are not sufficient to
+    downgrade a section that a later evidence reconciliation legitimately
+    promoted to green.
+    """
+
     values = [*(section.get("findings") or []), *(section.get("unavailable") or [])]
-    for value in values:
-        text = f" {_text(value)}"
-        if any(term in text for term in _REVIEW_TERMS):
-            return True
-    return False
+    return any(any(term in _text(value) for term in _REVIEW_TERMS) for value in values)
+
+
+def _client_acceptance_is_approved(section: dict[str, Any], result: dict[str, Any]) -> bool:
+    top_level = result.get("client_acceptance") if isinstance(result.get("client_acceptance"), dict) else {}
+    statuses = {
+        _text(section.get("status")),
+        _text(section.get("acceptance_status")),
+        _text(top_level.get("status")),
+    }
+    score = section.get("score")
+    try:
+        score_is_positive = float(score or 0) > 0
+    except (TypeError, ValueError):
+        score_is_positive = False
+    return bool(statuses & {"approved", "accepted", "green", "verified"}) and score_is_positive
 
 
 def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
@@ -45,6 +66,9 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
         section_id = str(section.get("id") or "")
         label = str(section.get("label") or "")
         if section_id == "scanner_worker_evidence" or label.casefold() == "scanner worker evidence":
+            prior_score = section.get("score")
+            if prior_score is not None and "diagnostic_finding_count" not in section:
+                section["diagnostic_finding_count"] = prior_score
             section.update(
                 {
                     "status": "SUPPLEMENTAL",
@@ -59,23 +83,33 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             changed.append(section_id or "scanner_worker_evidence")
             continue
         if section_id == "client_acceptance" or label.casefold() == "client / human acceptance":
-            section.update(
-                {
-                    "status": "gray",
-                    "display_status": "GRAY · NOT SCORED",
-                    "directly_scored": False,
-                    "score_treatment": "not_scored_pending_approval",
-                    "presented_score": None,
-                    "presented": None,
-                    "score": None,
-                }
-            )
+            if _client_acceptance_is_approved(section, output):
+                section.update(
+                    {
+                        "status": "green",
+                        "display_status": "GREEN · HUMAN APPROVED",
+                        "directly_scored": True,
+                        "score_treatment": "human_approved_scored_control",
+                    }
+                )
+            else:
+                section.update(
+                    {
+                        "status": "gray",
+                        "display_status": "GRAY · NOT SCORED",
+                        "directly_scored": False,
+                        "score_treatment": "not_scored_pending_approval",
+                        "presented_score": 0,
+                        "presented": 0,
+                        "score": 0,
+                    }
+                )
             changed.append(section_id or "client_acceptance")
             continue
         if str(section.get("status") or "").casefold() == "green" and _has_unresolved(section):
             section["status"] = "yellow"
             section["display_status"] = "YELLOW · REVIEW LIMITED"
-            section["status_reason"] = "Unresolved failed, timed-out, unavailable, or human-triage evidence prevents a GREEN presentation state."
+            section["status_reason"] = "Unresolved current-run failed, timed-out, unavailable, or human-triage analyzer evidence prevents a GREEN presentation state."
             changed.append(section_id or label)
 
     output["sections"] = sections
@@ -83,9 +117,11 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
         "status": "complete",
         "version": VERSION,
         "changed_sections": changed,
-        "green_requires_no_unresolved_analyzer_evidence": True,
+        "green_requires_no_unresolved_current_run_analyzer_evidence": True,
+        "superseding_clean_evidence_preserved": True,
         "scanner_worker_not_scored": True,
-        "client_acceptance_not_scored": True,
+        "unapproved_client_acceptance_not_scored": True,
+        "approved_client_acceptance_preserved": True,
     }
     return output
 
