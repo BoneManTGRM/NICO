@@ -3,6 +3,7 @@
 Status: active for the current Express + Comprehensive release.
 Integration branch: `nico-next`.
 Production branch: `main`.
+Release PR state: ready for review; exact-head checks must be green on the current `nico-next` commit before any merge.
 
 ## Non-destructive rules
 
