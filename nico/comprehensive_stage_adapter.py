@@ -4,11 +4,13 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from nico.comprehensive_capability_registry import execution_plan, validate_capability_registry
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES, build_comprehensive_contract
 
-VERSION = "nico.comprehensive_stage_adapter.v1"
+VERSION = "nico.comprehensive_stage_adapter.v2"
 TERMINAL_FAILURE_STATES = {"blocked", "failed", "error", "timed_out", "unavailable"}
 StageExecutor = Callable[[dict[str, Any]], dict[str, Any]]
+CapabilityExecutor = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -53,19 +55,55 @@ def build_comprehensive_run_state(
         authorized=authorized,
         commit_sha=identity.commit_sha,
     )
+    registry_validation = validate_capability_registry()
+    blockers = list(contract["blockers"])
+    if registry_validation["status"] != "valid":
+        blockers.append("comprehensive_capability_registry_invalid")
     return {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
-        "status": "blocked" if contract["blockers"] else "ready",
+        "status": "blocked" if blockers else "ready",
         "identity": identity.as_dict(),
         "contract": contract,
+        "capability_registry_validation": registry_validation,
+        "execution_plan": execution_plan(),
         "current_stage": None,
         "completed_stages": [],
         "stage_results": {},
-        "blockers": list(contract["blockers"]),
+        "blockers": blockers,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+
+
+def bind_capability_executors(
+    capability_executors: Mapping[str, CapabilityExecutor],
+) -> dict[str, StageExecutor]:
+    """Translate stable capability implementations into the canonical stage map.
+
+    The returned mapping has exactly one executor per Comprehensive stage. Missing
+    capabilities are intentionally omitted so the adapter blocks rather than
+    silently skipping or fabricating evidence.
+    """
+
+    bound: dict[str, StageExecutor] = {}
+    for item in execution_plan():
+        stage_id = str(item["stage_id"])
+        capability = str(item["capability"])
+        executor = capability_executors.get(capability)
+        if executor is None:
+            continue
+
+        def stage_executor(context: dict[str, Any], *, _executor: CapabilityExecutor = executor, _capability: str = capability) -> dict[str, Any]:
+            payload = deepcopy(context)
+            payload["capability"] = _capability
+            result = _executor(payload)
+            if not isinstance(result, dict):
+                raise TypeError(f"capability_executor_must_return_dict:{_capability}")
+            return result
+
+        bound[stage_id] = stage_executor
+    return bound
 
 
 def _assert_identity(expected: Mapping[str, str], result: Mapping[str, Any], stage_id: str) -> None:
@@ -108,6 +146,11 @@ def run_comprehensive_stages(
         raise ValueError("client_delivery_must_remain_blocked")
     if updated.get("human_review_required") is not True:
         raise ValueError("human_review_required")
+    registry_validation = validate_capability_registry()
+    if registry_validation["status"] != "valid":
+        updated["status"] = "blocked"
+        updated.setdefault("blockers", []).append("comprehensive_capability_registry_invalid")
+        return updated
     if updated.get("blockers"):
         updated["status"] = "blocked"
         return updated
@@ -163,10 +206,12 @@ def run_comprehensive_stages(
 
 
 __all__ = [
+    "CapabilityExecutor",
     "ComprehensiveIdentity",
     "StageExecutor",
     "TERMINAL_FAILURE_STATES",
     "VERSION",
+    "bind_capability_executors",
     "build_comprehensive_run_state",
     "run_comprehensive_stages",
 ]
