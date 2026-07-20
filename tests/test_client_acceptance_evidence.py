@@ -99,7 +99,9 @@ def test_missing_acceptance_is_gray_and_does_not_change_score(monkeypatch):
 
     assert finalized["client_acceptance"]["status"] == "missing"
     assert acceptance["status"] == "gray"
-    assert acceptance["score"] == 0
+    assert acceptance["score"] is None
+    assert acceptance["directly_scored"] is False
+    assert acceptance["score_label"] == "NOT SCORED"
     assert velocity["score"] == 94
     assert finalized["maturity_signal"]["score"] == 91
 
@@ -128,3 +130,6 @@ def test_pending_acceptance_does_not_score(monkeypatch):
     assert finalized["client_acceptance"]["status"] == "missing"
     assert finalized["client_acceptance"]["pending_count"] == 1
     assert acceptance["status"] == "gray"
+    assert acceptance["score"] is None
+    assert acceptance["directly_scored"] is False
+    assert acceptance["score_label"] == "NOT SCORED"
