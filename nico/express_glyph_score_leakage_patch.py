@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_glyph_score_leakage.v1"
+VERSION = "nico.express_glyph_score_leakage.v2"
 _PATCH_MARKER = "_nico_express_glyph_score_leakage_v1"
 _GLYPH_FIELDS = {"bar", "glyph_bar", "contribution_bar"}
 
@@ -47,7 +47,7 @@ def strip_glyph_score_fields(value: Any, seen: set[int] | None = None) -> Any:
                 "presented": None,
             }
         )
-        if "score" in value:
+        if "score" in value and value.get("score") is not None:
             value["diagnostic_finding_count"] = value.get("score")
             value["score"] = None
         geometry = value.get("bar_geometry")
@@ -73,8 +73,25 @@ def normalize_express_glyph_score_truth(result: dict[str, Any]) -> dict[str, Any
 
 
 def _apply_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
-    result.clear()
-    result.update(normalized)
+    """Apply normalization without invalidating report artifact references.
+
+    Downstream PDF builders keep a direct reference to ``result['reports']`` and
+    attach ``pdf_style``, renderer metadata, and the generated PDF after this
+    wrapper returns. Replacing the entire result dictionary would orphan that
+    reference and silently discard those fields.
+    """
+    existing_reports = result.get("reports")
+    for key, value in normalized.items():
+        if key == "reports" and isinstance(existing_reports, dict) and isinstance(value, dict):
+            existing_reports.clear()
+            existing_reports.update(value)
+            result["reports"] = existing_reports
+        else:
+            result[key] = value
+
+    for key in tuple(result):
+        if key not in normalized:
+            result.pop(key, None)
 
 
 def install_express_glyph_score_leakage_patch() -> dict[str, Any]:
@@ -98,6 +115,7 @@ def install_express_glyph_score_leakage_patch() -> dict[str, Any]:
         "version": VERSION,
         "glyph_score_fields_removed": True,
         "scanner_worker_not_scored": True,
+        "report_artifact_identity_preserved": True,
     }
 
 
