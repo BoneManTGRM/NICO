@@ -81,16 +81,20 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
 
-def test_server_proxy_allows_only_quick_lifecycle_and_bounded_runtime_diagnostic_routes() -> None:
+def test_server_proxy_allows_only_native_lifecycle_and_bounded_diagnostic_routes() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL || process.env.NEXT_PUBLIC_NICO_API_URL' in source
-    assert 'ALLOWED_ASSESSMENT_PATH.test(apiPath)' in source
+    assert 'assessmentRouteAllowed(request.method, apiPath)' in source
     assert 'ALLOWED_DIAGNOSTIC_PATH.test(apiPath)' in source
-    assert '(?:express|mid|full)-run' in source
-    assert '(?:express-runtime|mid-runtime)' in source
+    assert 'const EXPRESS_START = "/assessment/express-run"' in source
+    assert 'const EXPRESS_STATUS = /^\\/assessment\\/express-run\\/[^/?#]+\\/status$/' in source
+    assert 'const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake"' in source
+    assert 'const COMPREHENSIVE_STATUS = /^\\/assessment\\/comprehensive-run\\/[^/?#]+$/' in source
+    assert 'const COMPREHENSIVE_CONTINUE = /^\\/assessment\\/comprehensive-run\\/[^/?#]+\\/continue$/' in source
+    assert '(?:express-runtime|comprehensive-runtime)' in source
     assert '/assessment/github' not in source
-    assert 'Only canonical assessment lifecycle routes and bounded runtime diagnostics are available through this proxy.' in source
+    assert 'Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy.' in source
     assert 'nico_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
     assert 'assessment_backend_unreachable' in source
@@ -100,8 +104,10 @@ def test_server_proxy_allows_only_quick_lifecycle_and_bounded_runtime_diagnostic
     assert 'request.headers.get("authorization")' not in source
     assert 'request.headers.get("cookie")' not in source
     assert 'Cache-Control": "no-store"' in source
-    assert 'AbortSignal.timeout(120_000)' in source
+    assert 'AbortSignal.timeout(180_000)' in source
     assert 'AbortSignal.timeout(15_000)' in source
+    assert '"/assessment/mid-run"' not in source
+    assert '"/assessment/full-run"' not in source
 
 
 def test_failure_panel_displays_only_current_page_failure_without_hydration() -> None:
