@@ -42,9 +42,28 @@ def test_clean_green_section_remains_green() -> None:
     assert result["sections"][0]["status"] == "green"
 
 
-def test_scanner_worker_and_client_acceptance_are_not_scored() -> None:
+def test_generic_superseded_unavailable_note_does_not_override_green() -> None:
     result = reconcile_section_status_truth(
         {
+            "sections": [
+                {
+                    "id": "static_analysis",
+                    "label": "Static Analysis",
+                    "score": 90,
+                    "status": "green",
+                    "findings": [],
+                    "unavailable": ["External analyzer execution is unavailable."],
+                }
+            ]
+        }
+    )
+    assert result["sections"][0]["status"] == "green"
+
+
+def test_scanner_worker_and_unapproved_client_acceptance_are_not_scored() -> None:
+    result = reconcile_section_status_truth(
+        {
+            "client_acceptance": {"status": "missing"},
             "sections": [
                 {
                     "id": "scanner_worker_evidence",
@@ -62,16 +81,40 @@ def test_scanner_worker_and_client_acceptance_are_not_scored() -> None:
                     "findings": [],
                     "unavailable": ["No approval record was found."],
                 },
-            ]
+            ],
         }
     )
     scanner, acceptance = result["sections"]
     assert scanner["status"] == "SUPPLEMENTAL"
     assert scanner["display_status"] == "SUPPLEMENTAL · NOT SCORED"
     assert scanner["score"] is None
+    assert scanner["diagnostic_finding_count"] == 27
     assert acceptance["status"] == "gray"
     assert acceptance["display_status"] == "GRAY · NOT SCORED"
-    assert acceptance["score"] is None
+    assert acceptance["score"] == 0
+
+
+def test_approved_client_acceptance_remains_green_and_scored() -> None:
+    result = reconcile_section_status_truth(
+        {
+            "client_acceptance": {"status": "accepted"},
+            "sections": [
+                {
+                    "id": "client_acceptance",
+                    "label": "Client / Human Acceptance",
+                    "score": 96,
+                    "status": "green",
+                    "findings": [],
+                    "unavailable": [],
+                }
+            ],
+        }
+    )
+    acceptance = result["sections"][0]
+    assert acceptance["status"] == "green"
+    assert acceptance["display_status"] == "GREEN · HUMAN APPROVED"
+    assert acceptance["score"] == 96
+    assert acceptance["directly_scored"] is True
 
 
 def test_input_is_not_mutated() -> None:
@@ -82,7 +125,7 @@ def test_input_is_not_mutated() -> None:
                 "label": "Static Analysis",
                 "score": 90,
                 "status": "green",
-                "findings": ["bandit failed and requires human review."],
+                "findings": ["bandit ended with status failed and requires human review."],
                 "unavailable": [],
             }
         ]
