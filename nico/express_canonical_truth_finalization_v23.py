@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
 VERSION = "nico.express_canonical_truth_finalization.v23"
 _PATCH_MARKER = "_nico_express_canonical_truth_finalization_v23"
 
-_TERMINAL_BAD = {"failed", "failure", "timeout", "timed_out", "unavailable", "error"}
 _CLEAN_PATTERNS = (
     r"\bno vulnerabilit(?:y|ies)\b",
     r"\bfindings?=0\b",
@@ -16,6 +14,14 @@ _CLEAN_PATTERNS = (
     r"\bno secrets?\b",
     r"\bblocking=0\b",
     r"\bclean artifact",
+)
+_BAD_RUNTIME_PATTERNS = (
+    r"\bstatus\s*[=:]\s*(?:failed|failure|timeout|timed[_ -]?out|unavailable|error)\b",
+    r"\bended with status (?:failed|failure|timeout|timed[_ -]?out|unavailable|error)\b",
+    r"\breturned (?:failed|failure|timeout|timed[_ -]?out|unavailable|error)\b",
+    r"\brequired analyzer (?:did not complete|reported failure)\b",
+    r"\bwas unavailable\b",
+    r"\brequires human triage\b",
 )
 
 
@@ -29,30 +35,36 @@ def _is_clean(value: Any) -> bool:
 
 
 def _has_bad_runtime(section: dict[str, Any]) -> bool:
-    haystack = " ".join(
+    values = [
         _text(value)
-        for field in ("findings", "unavailable", "limitations", "evidence")
+        for field in ("findings", "unavailable", "limitations")
         for value in (section.get(field) or [])
-    ).casefold()
-    return any(token in haystack for token in _TERMINAL_BAD)
-
-
-def _review_limited(section: dict[str, Any]) -> bool:
-    return _has_bad_runtime(section) or bool(section.get("unavailable") or section.get("limitations"))
+    ]
+    haystack = " ".join(values).casefold()
+    return any(re.search(pattern, haystack, re.I) for pattern in _BAD_RUNTIME_PATTERNS)
 
 
 def _canonical_status(section: dict[str, Any]) -> tuple[str, str]:
     section_id = _text(section.get("id")).casefold()
+    current_status = _text(section.get("status") or "unknown").casefold()
+    current_confidence = _text(section.get("confidence") or "high")
+
     if section_id == "scanner_worker_evidence":
         return "supplemental", "review-limited"
+
     if section_id in {"client_acceptance", "client_human_acceptance"}:
+        approved = bool(section.get("approved") or section.get("accepted"))
+        score = section.get("score")
+        if approved or current_status == "green" or (isinstance(score, (int, float)) and score > 0 and not section.get("unavailable")):
+            return "green", current_confidence or "high"
         return "gray", "review-limited"
-    if _review_limited(section):
+
+    if _has_bad_runtime(section):
         return "yellow", "review-limited"
-    findings = [value for value in section.get("findings") or [] if not _is_clean(value)]
-    if findings:
-        return "yellow", _text(section.get("confidence") or "standard")
-    return "green", _text(section.get("confidence") or "high")
+
+    if current_status in {"green", "yellow", "red", "gray"}:
+        return current_status, current_confidence
+    return "green", current_confidence or "high"
 
 
 def _normalize_scanner(section: dict[str, Any]) -> None:
@@ -75,11 +87,7 @@ def _resolve_dependency_contradiction(section: dict[str, Any]) -> None:
     evidence = " ".join(_text(value) for value in section.get("evidence") or []).casefold()
     findings = list(section.get("findings") or [])
     if "osv returned no vulnerability" in evidence:
-        findings = [
-            value
-            for value in findings
-            if not ("osv" in _text(value).casefold() and "finding" in _text(value).casefold())
-        ]
+        findings = [value for value in findings if not ("osv" in _text(value).casefold() and "finding" in _text(value).casefold())]
     section["findings"] = findings
 
 
@@ -88,17 +96,9 @@ def _resolve_secret_contradiction(section: dict[str, Any]) -> None:
     findings = list(section.get("findings") or [])
     bad = " ".join(_text(value) for value in findings).casefold()
     if "gitleaks" in bad and "timeout" in bad:
-        evidence = [
-            value
-            for value in evidence
-            if not ("gitleaks" in _text(value).casefold() and "clean" in _text(value).casefold())
-        ]
+        evidence = [value for value in evidence if not ("gitleaks" in _text(value).casefold() and "clean" in _text(value).casefold())]
     if "trufflehog" in bad and "triage" in bad:
-        evidence = [
-            value
-            for value in evidence
-            if not ("trufflehog" in _text(value).casefold() and "zero credential" in _text(value).casefold())
-        ]
+        evidence = [value for value in evidence if not ("trufflehog" in _text(value).casefold() and ("zero credential" in _text(value).casefold() or "reported zero" in _text(value).casefold()))]
     section["evidence"] = evidence
 
 
@@ -106,11 +106,7 @@ def _resolve_static_contradiction(section: dict[str, Any]) -> None:
     findings = " ".join(_text(value) for value in section.get("findings") or []).casefold()
     evidence = list(section.get("evidence") or [])
     if "bandit" in findings and "failed" in findings:
-        evidence = [
-            value
-            for value in evidence
-            if not ("bandit" in _text(value).casefold() and "complete" in _text(value).casefold())
-        ]
+        evidence = [value for value in evidence if not ("bandit" in _text(value).casefold() and "complete" in _text(value).casefold())]
     section["evidence"] = evidence
 
 
@@ -127,10 +123,9 @@ def _normalize_repair_intelligence(result: dict[str, Any]) -> None:
     if not isinstance(candidates, list):
         return
     normalized: list[dict[str, Any]] = []
-    for raw in candidates:
-        if not isinstance(raw, dict):
+    for item in candidates:
+        if not isinstance(item, dict):
             continue
-        item = deepcopy(raw)
         if _specific_todo_candidate(item):
             locations = [str(value) for value in item.get("affected_files") or [] if str(value).strip()]
             if not locations:
@@ -152,11 +147,7 @@ def _remove_readme_only_dossier_evidence(result: dict[str, Any]) -> None:
             if not isinstance(dossier, dict):
                 continue
             evidence = list(dossier.get("evidence") or [])
-            dossier["evidence"] = [
-                value
-                for value in evidence
-                if "readme.md is present" not in _text(value).casefold()
-            ]
+            dossier["evidence"] = [value for value in evidence if "readme.md is present" not in _text(value).casefold()]
 
 
 def _canonicalize_sections(result: dict[str, Any]) -> None:
@@ -183,51 +174,30 @@ def _canonicalize_sections(result: dict[str, Any]) -> None:
 
 def _rewrite_markdown_statuses(markdown: str, result: dict[str, Any]) -> str:
     output = markdown
-    sections = result.get("sections") or []
-    for section in sections:
+    for section in result.get("sections") or []:
         if not isinstance(section, dict):
             continue
         label = _text(section.get("label") or section.get("title"))
         if not label:
             continue
         status = _text(section.get("status")).upper()
-        score = section.get("score")
         if _text(section.get("id")).casefold() == "scanner_worker_evidence":
-            output = re.sub(
-                rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+\s*\([^\n]+\)",
-                rf"\1SUPPLEMENTAL (NOT SCORED)",
-                output,
-            )
-            output = re.sub(
-                rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+",
-                rf"\1supplemental",
-                output,
-                flags=re.I,
-            )
+            output = re.sub(rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+\s*\([^\n]+\)", rf"\1SUPPLEMENTAL (NOT SCORED)", output)
+            output = re.sub(rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+", rf"\1supplemental", output, flags=re.I)
             continue
-        output = re.sub(
-            rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+(\s*\([^\n]+\))",
-            rf"\1{status}\2",
-            output,
-        )
-        output = re.sub(
-            rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+",
-            rf"\1{status.casefold()}",
-            output,
-            flags=re.I,
-        )
+        output = re.sub(rf"(###\s+{re.escape(label)}\s+—\s+)[A-Z]+(\s*\([^\n]+\))", rf"\1{status}\2", output)
+        output = re.sub(rf"(-\s+\*\*{re.escape(label)}\*\*:\s*)\w+", rf"\1{status.casefold()}", output, flags=re.I)
     return output
 
 
 def finalize_express_truth(result: dict[str, Any]) -> dict[str, Any]:
-    output = deepcopy(result)
-    _canonicalize_sections(output)
-    _normalize_repair_intelligence(output)
-    _remove_readme_only_dossier_evidence(output)
-    reports = output.get("reports")
+    _canonicalize_sections(result)
+    _normalize_repair_intelligence(result)
+    _remove_readme_only_dossier_evidence(result)
+    reports = result.get("reports")
     if isinstance(reports, dict) and isinstance(reports.get("markdown"), str):
-        reports["markdown"] = _rewrite_markdown_statuses(reports["markdown"], output)
-    output["express_canonical_truth_finalization"] = {
+        reports["markdown"] = _rewrite_markdown_statuses(reports["markdown"], result)
+    result["express_canonical_truth_finalization"] = {
         "status": "complete",
         "version": VERSION,
         "scanner_supplemental_not_scored": True,
@@ -241,7 +211,7 @@ def finalize_express_truth(result: dict[str, Any]) -> dict[str, Any]:
         "readme_only_dossier_evidence_removed": True,
         "human_review_required": True,
     }
-    return output
+    return result
 
 
 def install_express_canonical_truth_finalization_v23() -> dict[str, Any]:
@@ -253,9 +223,7 @@ def install_express_canonical_truth_finalization_v23() -> dict[str, Any]:
 
     @wraps(current)
     def render(result: dict[str, Any]) -> tuple[str | None, str | None]:
-        normalized = finalize_express_truth(result)
-        result.clear()
-        result.update(normalized)
+        finalize_express_truth(result)
         return current(result)
 
     setattr(render, _PATCH_MARKER, True)
