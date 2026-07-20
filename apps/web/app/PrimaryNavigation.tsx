@@ -4,7 +4,7 @@ import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
 
 type ServiceKey = "run-job" | "operations" | "retainer";
-type AssessmentMode = "express" | "mid" | "full";
+type AssessmentMode = "express" | "comprehensive";
 
 const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 
@@ -74,12 +74,12 @@ const SPANISH_ADVANCED_GROUPS = [
 ] as const;
 
 function normalizeAssessmentMode(value: string | null | undefined): AssessmentMode {
-  return value === "mid" || value === "full" ? value : "express";
+  return ["comprehensive", "mid", "full", "deep"].includes(String(value || "")) ? "comprehensive" : "express";
 }
 
 function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKey | "" {
   void assessment;
-  if (pathname.startsWith("/assessment")) return "run-job";
+  if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job";
   if (pathname.startsWith("/full-run")) return "run-job";
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
@@ -100,7 +100,7 @@ export default function PrimaryNavigation() {
   const [assessment, setAssessment] = useState<AssessmentMode>("express");
 
   useEffect(() => {
-    if (!pathname.startsWith("/assessment")) return;
+    if (!pathname.startsWith("/assessment") && !pathname.startsWith("/es/assessment")) return;
 
     const synchronizeFromUrl = () => {
       setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
@@ -120,8 +120,8 @@ export default function PrimaryNavigation() {
   }, [pathname]);
 
   const activeService = serviceForPath(pathname, assessment);
-  const spanishActive = pathname.startsWith("/es-mx");
-  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es-mx";
+  const spanishActive = pathname.startsWith("/es");
+  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
   const languageLabel = spanishActive ? "English" : "Español";
   const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS;
 
