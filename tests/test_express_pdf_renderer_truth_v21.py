@@ -27,22 +27,37 @@ def _result() -> dict:
         ("ci_cd", "CI/CD", 90),
         ("architecture_debt", "Architecture", 74),
         ("velocity_complexity", "Velocity and Complexity", 86),
+        ("scanner_worker_evidence", "Scanner Worker Evidence", None),
     ]:
         sections.append({
             "id": section_id,
             "label": label,
             "score": score,
-            "status": "yellow",
+            "presented_score": score,
+            "status": "supplemental" if section_id == "scanner_worker_evidence" else "yellow",
+            "directly_scored": section_id != "scanner_worker_evidence",
             "summary": f"{label} summary",
             "evidence": [f"{label} exact evidence"],
             "findings": [],
             "unavailable": [],
         })
+    records = [
+        {
+            "section_id": item["id"],
+            "label": item["label"],
+            "presented_score": item["presented_score"],
+            "status": item["status"],
+            "confidence": "high",
+            "rationale": "Exact test rationale.",
+        }
+        for item in sections
+    ]
     return {
         "repository": "BoneManTGRM/NICO",
         "generated_at": "2026-07-19T00:00:00Z",
         "maturity_signal": {"score": 90, "level": "Senior"},
         "sections": sections,
+        "express_score_transparency": {"records": records},
         "repair_intelligence": {"candidates": []},
         "executive_summary": "Test assessment.",
     }
@@ -57,7 +72,7 @@ def test_proportional_width_exact_geometry() -> None:
     assert proportional_width(6) < proportional_width(74) < proportional_width(86) < proportional_width(90)
 
 
-def test_renderer_replaces_glyph_page_and_splits_architecture_velocity() -> None:
+def test_renderer_replaces_glyph_page_splits_layout_and_excludes_scanner() -> None:
     result = _result()
     source_renderer = getattr(_premium_pdf, "_nico_previous", _premium_pdf)
     replaced = replace_renderer_pages(source_renderer(result), result)
@@ -68,12 +83,21 @@ def test_renderer_replaces_glyph_page_and_splits_architecture_velocity() -> None
     assert sum(_has_velocity_title(page) for page in text) == 1
     assert all("architecture, complexity, and ownership decision record" not in page for page in text)
 
-    geometry = result["express_pdf_bar_geometry"]["records"]
+    geometry_contract = result["express_pdf_bar_geometry"]
+    geometry = geometry_contract["records"]
     widths = {item["score"]: item["rendered_width"] for item in geometry}
+    probes = {item["score"]: item["rendered_width"] for item in geometry_contract["verification_samples"]}
+    assert probes == {0: 0.0, 6: 5.76, 74: 71.04, 86: 82.56, 90: 86.4}
     assert widths[0] == 0
     assert widths[6] < widths[74] < widths[86] < widths[90]
+    assert geometry_contract["scanner_worker_excluded"] is True
+    assert all(item["section_id"] != "scanner_worker_evidence" for item in geometry)
 
     truth = result["express_pdf_renderer_truth"]
     assert truth["status"] == "complete"
     assert truth["actual_vector_geometry"] is True
     assert truth["architecture_velocity_split"] is True
+    assert truth["architecture_page_present"] is True
+    assert truth["velocity_page_present"] is True
+    assert truth["required_vector_probes"] == [0, 6, 74, 86, 90]
+    assert truth["scanner_worker_excluded"] is True
