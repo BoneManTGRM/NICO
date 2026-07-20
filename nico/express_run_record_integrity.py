@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-PATCH_VERSION = "nico.express_run_record_integrity.v3"
+PATCH_VERSION = "nico.express_run_record_integrity.v4"
 _PATCH_MARKER = "_nico_express_run_record_integrity_v1"
 _TERMINAL_SUCCESS = {"complete", "completed"}
 _TERMINAL_FAILURE = {"blocked", "failed", "error", "interrupted", "rejected"}
@@ -17,10 +17,15 @@ _RICH_FIELDS = (
     "express_completion",
     "express_cross_format_contract",
     "express_pdf_renderer_truth",
+    "express_pdf_bar_geometry",
+    "express_pdf_page_layout",
     "express_visual_qa",
+    "express_pdf_pagination",
     "evidence_artifact_bundle",
     "evidence_ledger",
     "client_acceptance",
+    "persistence_truth",
+    "storage_truth",
 )
 
 
@@ -39,21 +44,38 @@ def _nonempty(value: Any) -> bool:
     return value is not None
 
 
+def _status_is(value: Any, allowed: set[str]) -> bool:
+    return str(value or "").strip().casefold() in allowed
+
+
 def _terminal_contract(output: dict[str, Any]) -> dict[str, Any]:
     reports = output.get("reports") if isinstance(output.get("reports"), dict) else {}
     cross_format = output.get("express_cross_format_contract") if isinstance(output.get("express_cross_format_contract"), dict) else {}
     renderer = output.get("express_pdf_renderer_truth") if isinstance(output.get("express_pdf_renderer_truth"), dict) else {}
+    geometry = output.get("express_pdf_bar_geometry") if isinstance(output.get("express_pdf_bar_geometry"), dict) else {}
+    layout = output.get("express_pdf_page_layout") if isinstance(output.get("express_pdf_page_layout"), dict) else {}
     visual_qa = output.get("express_visual_qa") if isinstance(output.get("express_visual_qa"), dict) else {}
+    pagination = output.get("express_pdf_pagination") if isinstance(output.get("express_pdf_pagination"), dict) else {}
+
     required = {
         "progress_100": int(output.get("progress_percent") or 0) == 100,
-        "stage_complete": str(output.get("current_stage") or "").lower() == "complete",
-        "report_generation_complete": str(output.get("report_generation_status") or "complete").lower() == "complete",
+        "stage_complete": _status_is(output.get("current_stage"), {"complete"}),
+        "report_generation_complete": _status_is(output.get("report_generation_status"), {"complete"}),
         "pdf_present": _nonempty(reports.get("pdf_base64")),
         "markdown_present": _nonempty(reports.get("markdown")),
         "html_present": _nonempty(reports.get("html")),
-        "cross_format_not_degraded": not cross_format or cross_format.get("status") == "complete",
-        "renderer_not_degraded": not renderer or renderer.get("status") == "complete",
-        "visual_qa_not_failed": not visual_qa or visual_qa.get("status") in {"pass", "complete"},
+        "cross_format_contract_present": bool(cross_format),
+        "cross_format_complete": _status_is(cross_format.get("status"), {"complete"}),
+        "renderer_contract_present": bool(renderer),
+        "renderer_complete": _status_is(renderer.get("status"), {"complete"}),
+        "vector_geometry_present": bool(geometry),
+        "vector_geometry_verified": geometry.get("render_mode") == "reportlab_vector_geometry" and bool(geometry.get("verification_samples")),
+        "page_layout_present": bool(layout),
+        "page_layout_complete": _status_is(layout.get("status"), {"complete"}),
+        "visual_qa_present": bool(visual_qa),
+        "visual_qa_passed": _status_is(visual_qa.get("status"), {"pass", "complete"}),
+        "pagination_present": bool(pagination),
+        "pagination_complete": _status_is(pagination.get("status"), {"complete"}),
     }
     missing = [name for name, passed in required.items() if not passed]
     return {
@@ -61,19 +83,21 @@ def _terminal_contract(output: dict[str, Any]) -> dict[str, Any]:
         "version": PATCH_VERSION,
         "checks": required,
         "missing_requirements": missing,
+        "fail_closed": True,
         "durable_terminal_record_required": True,
         "restart_retrieval_required": True,
+        "production_deployment_sha_required": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
 
 
 def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Preserve exact-run terminal truth and rich completion evidence.
+    """Preserve exact-run terminal truth and fail closed on incomplete proof.
 
-    Heartbeats, stage projections, and late compatibility wrappers may arrive
-    after a richer record. They may add evidence, but cannot revive a terminal
-    run, erase generated artifacts, or claim a complete stage for a failed run.
+    Heartbeats, stage projections, and late compatibility wrappers may add
+    evidence, but cannot revive a terminal run, erase generated artifacts, or
+    silently satisfy a missing production-proof contract.
     """
 
     output = deepcopy(incoming)
@@ -95,6 +119,8 @@ def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict
             "client_ready",
             "client_delivery_allowed",
             "delivery_status",
+            "client_delivery_block_reason",
+            "express_terminal_contract",
         ):
             if field in prior:
                 output[field] = deepcopy(prior[field])
@@ -105,14 +131,16 @@ def reconcile_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict
         output["status"] = "complete"
         output["current_stage"] = "complete"
         output["progress_percent"] = 100
-        output["report_generation_status"] = "complete"
         output["human_review_required"] = True
         output["client_ready"] = False
         output["client_delivery_allowed"] = False
         output["delivery_status"] = "blocked_pending_human_review"
         output["express_terminal_contract"] = _terminal_contract(output)
         if output["express_terminal_contract"]["status"] != "complete":
-            output["client_delivery_block_reason"] = "Express terminal evidence contract is incomplete; exact-run artifacts or cross-format validation are missing."
+            output["client_delivery_block_reason"] = (
+                "Express terminal proof is incomplete; required artifacts, renderer/layout contracts, "
+                "visual QA, pagination, deployment identity, or durable restart evidence remain unverified."
+            )
     elif status in _TERMINAL_FAILURE:
         if str(output.get("current_stage") or "").lower() == "complete":
             output["current_stage"] = status if status in {"blocked", "failed", "interrupted"} else "failed"
@@ -154,7 +182,9 @@ def install_express_run_record_integrity() -> dict[str, Any]:
         "rich_completion_fields_preserved": True,
         "failed_complete_stage_contradictions_repaired": True,
         "terminal_artifact_contract_recorded": True,
+        "missing_terminal_proof_fails_closed": True,
         "restart_retrieval_required": True,
+        "production_deployment_sha_required": True,
         "human_review_boundary_preserved": True,
     }
 
