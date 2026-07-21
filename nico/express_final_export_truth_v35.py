@@ -5,7 +5,7 @@ import sys
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_final_export_truth.v35"
+VERSION = "nico.express_final_export_truth.v35.1"
 _PATCH_MARKER = "_nico_express_final_export_truth_v35"
 _NOT_SCORED_IDS = {
     "scanner_worker",
@@ -95,6 +95,12 @@ def _rewrite_not_scored_document(document: str, result: dict[str, Any], *, html:
     return output
 
 
+def _spanish_report(result: dict[str, Any]) -> bool:
+    from nico.i18n_es_mx import wants_es_mx
+
+    return any(wants_es_mx(result.get(key)) for key in ("report_language", "language", "assessment_mode"))
+
+
 def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     """Make Markdown and HTML consume the same final score/status truth."""
 
@@ -112,7 +118,14 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     markdown = _rewrite_not_scored_document(str(reports.get("markdown") or ""), result)
     if markdown:
         reports["markdown"] = markdown
-        reports["html"] = build_html(markdown)
+        if _spanish_report(result):
+            # Keep the localized renderer's lang="es-MX", title, and translated
+            # structure; only normalize the score tokens in the existing HTML.
+            reports["html"] = _rewrite_not_scored_document(
+                str(reports.get("html") or ""), result, html=True
+            )
+        else:
+            reports["html"] = build_html(markdown)
     else:
         reports["html"] = _rewrite_not_scored_document(
             str(reports.get("html") or ""), result, html=True
@@ -125,6 +138,7 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
         "status": "blocked" if leakage else "complete",
         "version": VERSION,
         "markdown_html_share_final_truth": not leakage,
+        "localized_html_preserved": _spanish_report(result),
         "not_scored_numeric_leakage": leakage,
         "null_score_tokens_allowed": False,
         "human_review_required": True,
@@ -149,8 +163,6 @@ def finalize_after_consistency(
     reconcile_final_express_scores(finalized)
     _normalize_section_payloads(finalized)
     finalizer.attach_score_details(finalized)
-    # Rebuild every output only after the final canonical and presented scores
-    # are settled. This second render is deliberate and bounded.
     finalizer._rebuild_reports(finalized)
     normalize_final_express_exports(finalized)
     build_cross_format_contract(finalized)
@@ -183,6 +195,7 @@ def install_express_final_export_truth_v35() -> dict[str, Any]:
         "backend_finalizer_bound": True,
         "api_alias_rebound": api_main is not None,
         "second_render_after_final_scores": True,
+        "localized_html_preserved": True,
         "null_score_tokens_allowed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
