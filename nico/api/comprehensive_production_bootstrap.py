@@ -9,8 +9,9 @@ from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_native_providers import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
+from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v3"
+VERSION = "nico.api.comprehensive_production_bootstrap.v4"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -48,13 +49,15 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the native Comprehensive boundary on the deployed application.
 
-    Native providers are installed before the executor map is built. This ordering is
-    required: building executors first would create a complete-looking capability map
-    whose dynamic providers all fail closed as missing at runtime. Individual providers
-    still fail closed at their exact stage when required evidence is unavailable, and
-    durable storage remains mandatory before the controller is exposed.
+    The cross-format report binding is installed before native providers and before
+    the executor map is built. This ensures the final provider emits one canonical
+    Markdown/HTML/PDF/JSON package with a real Evidence Appendix in every readable
+    report format. Native providers still fail closed at their exact stage when
+    required evidence is unavailable, durable storage remains mandatory, human review
+    remains required, and client delivery remains blocked.
     """
 
+    report_binding = install_native_provider_binding()
     native_providers = install_native_comprehensive_providers(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(
@@ -79,6 +82,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and runtime.get("status") == "ready"
         and runtime.get("client_delivery_allowed") is False
         and runtime.get("human_review_required") is True
+        and report_binding.get("bound") is True
         and len(native_providers) > 0
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
@@ -91,10 +95,12 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "reason": str(runtime.get("reason") or ("comprehensive_native_providers_missing" if missing_capabilities else "")),
         "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
         "route_counts": route_counts,
+        "report_binding": report_binding,
         "native_provider_status": native_status,
         "capability_provider_status": provider_status,
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
+        "report_binding_before_provider_install": True,
         "provider_install_before_executor_build": True,
         "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
         "human_review_required": True,
@@ -121,6 +127,8 @@ if any(count != 1 for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].
     )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:
     raise RuntimeError("Comprehensive runtime diagnostics route must be registered exactly once")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
+    raise RuntimeError("Comprehensive report appendix binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
     raise RuntimeError("Comprehensive production runtime did not install native providers")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
