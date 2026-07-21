@@ -340,7 +340,7 @@ def build_app(
                 if callable(close):
                     close()
 
-        target.add_event_handler("shutdown", close_clients)
+        target.router.add_event_handler("shutdown", close_clients)
         target.state.nico_post_release_shutdown_registered = True
     return target
 
