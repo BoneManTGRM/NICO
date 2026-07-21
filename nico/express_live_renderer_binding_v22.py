@@ -44,6 +44,12 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
 
+    renderer_bound = (
+        bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
+        or score_assurance_renderer.get("status") in {"installed", "already_installed"}
+    )
+    score_assurance_bound = bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False))
+
     return {
         "status": "installed" if previous is not live_renderer else "already_installed",
         "version": VERSION,
@@ -62,9 +68,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_install": final_export_truth,
         "score_assurance_export_install": score_assurance_export,
         "pdf_section_index_install": pdf_section_index,
-        "premium_renderer_bound": bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False)),
-        "score_assurance_renderer_bound": bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False)),
-        "dossier_renderer_bound": bool(getattr(dossier._premium_pdf, "_nico_express_pdf_score_assurance_v1", False)),
+        "premium_renderer_bound": renderer_bound,
+        "score_assurance_renderer_bound": score_assurance_bound,
+        "dossier_renderer_bound": renderer_bound and dossier._premium_pdf is live_renderer,
+        "dossier_score_assurance_renderer_bound": score_assurance_bound and dossier._premium_pdf is live_renderer,
         "scanner_dispositions_bound": scanner_dispositions.get("status") in {"installed", "already_installed"},
         "canonical_truth_bound": canonical_truth.get("status") in {"installed", "already_installed"},
         "cross_format_contract_bound": cross_format.get("status") in {"installed", "already_installed"},
