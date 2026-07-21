@@ -1,0 +1,18 @@
+{
+  "run_id": "express_run_3e11f7aa79144b5b9005e2b9e3bd2092",
+  "commit_sha": "b18a07fbe207625a278d154803aa39280209745f",
+  "observed_regressions": [
+    "truth_and_review_gates remained running beside a complete terminal step",
+    "source maturity and section source scores were generated from different scoring moments",
+    "ordinary architecture and historical CI context was deducted twice",
+    "business-context limitations reduced technical-health scoring"
+  ],
+  "required_invariants": {
+    "terminal_steps_all_complete": true,
+    "canonical_overall_score_is_evidence_adjusted": true,
+    "source_scores_finalized_before_presentation": true,
+    "ordinary_findings_not_double_charged": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
