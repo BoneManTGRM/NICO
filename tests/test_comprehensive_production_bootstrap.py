@@ -53,7 +53,11 @@ def test_missing_capabilities_mount_complete_routes_but_fail_closed() -> None:
 
     response = TestClient(app).post("/assessment/comprehensive-run", json=_payload())
     assert response.status_code == 503
-    assert response.json()["detail"] == "comprehensive_service_not_configured"
+    detail = response.json()["detail"]
+    assert detail["code"] == "comprehensive_service_not_configured"
+    assert detail["retryable"] is True
+    assert detail["human_review_required"] is True
+    assert detail["client_delivery_allowed"] is False
 
 
 def test_missing_durable_storage_fails_closed_without_leaking_credentials(monkeypatch) -> None:
