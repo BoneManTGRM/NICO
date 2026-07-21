@@ -161,9 +161,9 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
     source = maturity.get("source_score", maturity.get("score"))
     presented = maturity.get("presented_score", result.get("evidence_adjusted_score"))
     story = [
-        paragraph("Canonical Section, Score, and Assurance Index", title),
+        paragraph("Canonical Section and Score Index", title),
         paragraph(
-            "Technical score, technical band, and evidence assurance are separate fields. A STRONG or EXCEPTIONAL technical score can remain REVIEW LIMITED when evidence requires disposition. Supplemental scanner evidence and pending human acceptance remain NOT SCORED.",
+            "This canonical index now separates technical score, technical band, and evidence assurance. A STRONG or EXCEPTIONAL technical score can remain REVIEW LIMITED when evidence requires disposition. Supplemental scanner evidence and pending human acceptance remain NOT SCORED.",
             body,
         ),
         Spacer(1, 0.08 * inch),
