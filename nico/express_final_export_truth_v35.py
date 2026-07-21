@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import html as html_lib
 import re
 import sys
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_final_export_truth.v35.1"
+VERSION = "nico.express_final_export_truth.v35.2"
 _PATCH_MARKER = "_nico_express_final_export_truth_v35"
 _NOT_SCORED_IDS = {
     "scanner_worker",
@@ -101,6 +102,67 @@ def _spanish_report(result: dict[str, Any]) -> bool:
     return any(wants_es_mx(result.get(key)) for key in ("report_language", "language", "assessment_mode"))
 
 
+def _score_values(result: dict[str, Any]) -> tuple[int | None, int | None]:
+    maturity = result.get("maturity_signal") if isinstance(result.get("maturity_signal"), dict) else {}
+    source = maturity.get("source_score", maturity.get("score"))
+    presented = maturity.get("presented_score", result.get("evidence_adjusted_score"))
+    source_score = int(source) if isinstance(source, (int, float)) and not isinstance(source, bool) else None
+    presented_score = int(presented) if isinstance(presented, (int, float)) and not isinstance(presented, bool) else None
+    return source_score, presented_score
+
+
+def _ensure_overall_score_markdown(markdown: str, result: dict[str, Any]) -> str:
+    source, presented = _score_values(result)
+    if presented is None:
+        return markdown
+    spanish = _spanish_report(result)
+    heading = "Conciliación del puntaje técnico" if spanish else "Technical Score Reconciliation"
+    source_label = "Puntaje de madurez de origen" if spanish else "Source maturity score"
+    presented_label = "Puntaje ajustado por evidencia" if spanish else "Evidence-adjusted score"
+    posture_label = "Postura de decisión" if spanish else "Decision posture"
+    posture = "Revisión humana requerida" if spanish else "Human review required"
+    source_text = f"{source}/100" if source is not None else "NOT SCORED"
+    block = (
+        f"## {heading}\n"
+        f"- {source_label}: **{source_text}**\n"
+        f"- {presented_label}: **{presented}/100**\n"
+        f"- {posture_label}: **{posture}**\n"
+    )
+    pattern = rf"## {re.escape(heading)}\n[\s\S]*?(?=\n## |\Z)"
+    if re.search(pattern, markdown, flags=re.I):
+        return re.sub(pattern, block.rstrip(), markdown, flags=re.I)
+    anchor = "## Resumen ejecutivo" if spanish else "## Executive Summary"
+    if anchor in markdown:
+        return markdown.replace(anchor, block + "\n" + anchor, 1)
+    return block + "\n" + markdown.lstrip()
+
+
+def _ensure_overall_score_html(document: str, result: dict[str, Any]) -> str:
+    source, presented = _score_values(result)
+    if presented is None:
+        return document
+    spanish = _spanish_report(result)
+    marker = "nico-overall-score-reconciliation"
+    heading = "Conciliación del puntaje técnico" if spanish else "Technical Score Reconciliation"
+    source_label = "Puntaje de madurez de origen" if spanish else "Source maturity score"
+    presented_label = "Puntaje ajustado por evidencia" if spanish else "Evidence-adjusted score"
+    posture_label = "Postura de decisión" if spanish else "Decision posture"
+    posture = "Revisión humana requerida" if spanish else "Human review required"
+    source_text = f"{source}/100" if source is not None else "NOT SCORED"
+    block = (
+        f'<section id="{marker}"><h2>{html_lib.escape(heading)}</h2>'
+        f'<p><strong>{html_lib.escape(source_label)}:</strong> {source_text}</p>'
+        f'<p><strong>{html_lib.escape(presented_label)}:</strong> {presented}/100</p>'
+        f'<p><strong>{html_lib.escape(posture_label)}:</strong> {html_lib.escape(posture)}</p></section>'
+    )
+    pattern = rf'<section id="{marker}">[\s\S]*?</section>'
+    if re.search(pattern, document, flags=re.I):
+        return re.sub(pattern, block, document, flags=re.I)
+    if "</body>" in document.lower():
+        return re.sub(r"</body>", block + "</body>", document, count=1, flags=re.I)
+    return document + block
+
+
 def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     """Make Markdown and HTML consume the same final score/status truth."""
 
@@ -116,28 +178,34 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
         result["reports"] = reports
 
     markdown = _rewrite_not_scored_document(str(reports.get("markdown") or ""), result)
+    markdown = _ensure_overall_score_markdown(markdown, result)
     if markdown:
         reports["markdown"] = markdown
         if _spanish_report(result):
-            # Keep the localized renderer's lang="es-MX", title, and translated
-            # structure; only normalize the score tokens in the existing HTML.
             reports["html"] = _rewrite_not_scored_document(
                 str(reports.get("html") or ""), result, html=True
             )
+            reports["html"] = _ensure_overall_score_html(reports["html"], result)
         else:
             reports["html"] = build_html(markdown)
     else:
         reports["html"] = _rewrite_not_scored_document(
             str(reports.get("html") or ""), result, html=True
         )
+        reports["html"] = _ensure_overall_score_html(reports["html"], result)
 
     markdown_upper = str(reports.get("markdown") or "").upper()
     html_upper = str(reports.get("html") or "").upper()
     leakage = any(token in markdown_upper or token in html_upper for token in ("NONE/100", "NULL/100"))
+    _source, presented = _score_values(result)
+    score_label = f"{presented}/100" if presented is not None else ""
+    overall_score_parity = bool(score_label and score_label in reports.get("markdown", "") and score_label in reports.get("html", ""))
     result["express_final_export_truth"] = {
-        "status": "blocked" if leakage else "complete",
+        "status": "complete" if not leakage and overall_score_parity else "blocked",
         "version": VERSION,
-        "markdown_html_share_final_truth": not leakage,
+        "markdown_html_share_final_truth": not leakage and overall_score_parity,
+        "overall_presented_score": presented,
+        "overall_score_parity": overall_score_parity,
         "localized_html_preserved": _spanish_report(result),
         "not_scored_numeric_leakage": leakage,
         "null_score_tokens_allowed": False,
@@ -146,6 +214,8 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     }
     if leakage:
         raise RuntimeError("Express final export retained a null numeric score token")
+    if not overall_score_parity:
+        raise RuntimeError("Express final export omitted the evidence-adjusted overall score")
     return result
 
 
@@ -195,6 +265,7 @@ def install_express_final_export_truth_v35() -> dict[str, Any]:
         "backend_finalizer_bound": True,
         "api_alias_rebound": api_main is not None,
         "second_render_after_final_scores": True,
+        "overall_score_parity_enforced": True,
         "localized_html_preserved": True,
         "null_score_tokens_allowed": False,
         "human_review_required": True,
