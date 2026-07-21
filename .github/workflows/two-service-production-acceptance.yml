@@ -32,11 +32,12 @@ jobs:
       - name: Compile acceptance runner and verify bounded contract
         run: |
           set -euo pipefail
-          python -m py_compile scripts/two_service_live_acceptance.py
+          python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_v2.py
           python - <<'PY'
           from pathlib import Path
 
           source = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
+          reconnect = Path("scripts/two_service_live_acceptance_v2.py").read_text(encoding="utf-8")
           assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in source
           assert 'data-assessment-service-count="2"' in source
           assert 'passes=args.passes' in source
@@ -46,6 +47,10 @@ jobs:
           assert '"markdown_html_pdf_json_parity": True' in source
           assert '"comprehensive_depth_verified": True' in source
           assert '"post_run_reconnect_identity_preserved": True' in source
+          assert 'urlparse(str(page.url or ""))' in reconnect
+          assert 'f"{origin}/api/nico/assessment/express-run/{rid}/status"' in reconnect
+          assert 'f"{origin}/api/nico/assessment/comprehensive-run/{rid}"' in reconnect
+          assert '"absolute_url_used": True' in reconnect
           PY
 
   live-production:
@@ -155,7 +160,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          python scripts/two_service_live_acceptance.py \
+          python scripts/two_service_live_acceptance_v2.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -196,6 +201,7 @@ jobs:
           assert all(item["commit_sha"] == payload["expected_deployed_sha"] for item in payload["runs"])
           assert all(item["human_review_required"] is True for item in payload["runs"])
           assert all(item["client_delivery_allowed"] is False for item in payload["runs"])
+          assert all(item["reconnect"]["absolute_url_used"] is True for item in payload["runs"])
           comprehensive = [item for item in payload["runs"] if item["service"] == "comprehensive"]
           assert len(comprehensive) == 2
           assert all(item["report"]["pdf"]["page_count"] >= 30 for item in comprehensive)
