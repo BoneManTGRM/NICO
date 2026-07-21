@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Any
+from functools import wraps
+from typing import Any, Callable
 
 from nico import comprehensive_native_providers as providers
 from nico import snapshot_repository_evidence as snapshot_evidence
@@ -15,26 +16,33 @@ from nico.comprehensive_decision_grade_roadmap_v5 import (
 )
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
-_ORIGINAL_SCAN_FILES = snapshot_evidence.scan_files
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
+_WRAPPER_MARKER = "__nico_decision_grade_safe_samples__"
 
 
-def _scan_files_with_safe_samples(files: dict[str, str]) -> dict[str, Any]:
-    result = _ORIGINAL_SCAN_FILES(files)
-    _SCAN_DETAILS.set({
-        "risk_pattern_samples": list(result.get("risks") or [])[:20],
-        "potential_secret_pattern_samples": list(result.get("secrets") or [])[:20],
-        "todo_fixme_security_samples": list(result.get("todos") or [])[:20],
-    })
-    return result
+def _safe_sample_wrapper(delegate: Callable[[dict[str, str]], dict[str, Any]]) -> Callable[[dict[str, str]], dict[str, Any]]:
+    """Decorate the scanner currently installed by earlier calibration layers.
 
+    The installer must compose with later attachment/calibration wrappers rather than
+    restoring the function that happened to exist when this module was imported.
+    ``wraps`` deliberately preserves the delegate name and identity metadata expected
+    by the score-integrity and idempotency contracts.
+    """
+    if getattr(delegate, _WRAPPER_MARKER, False):
+        return delegate
 
-# Preserve the canonical calibrated scanner identity used by the score-integrity
-# installer and its idempotency contract. The wrapper only retains already-safe
-# bounded samples; it does not replace or bypass calibrated scanning behavior.
-_scan_files_with_safe_samples.__name__ = getattr(_ORIGINAL_SCAN_FILES, "__name__", "scan_files")
-_scan_files_with_safe_samples.__qualname__ = getattr(_ORIGINAL_SCAN_FILES, "__qualname__", _scan_files_with_safe_samples.__name__)
-_scan_files_with_safe_samples.__doc__ = getattr(_ORIGINAL_SCAN_FILES, "__doc__", None)
+    @wraps(delegate)
+    def wrapped(files: dict[str, str]) -> dict[str, Any]:
+        result = delegate(files)
+        _SCAN_DETAILS.set({
+            "risk_pattern_samples": list(result.get("risks") or [])[:20],
+            "potential_secret_pattern_samples": list(result.get("secrets") or [])[:20],
+            "todo_fixme_security_samples": list(result.get("todos") or [])[:20],
+        })
+        return result
+
+    setattr(wrapped, _WRAPPER_MARKER, True)
+    return wrapped
 
 
 def _collect_with_safe_samples(*args: Any, **kwargs: Any):
@@ -51,7 +59,9 @@ def _collect_with_safe_samples(*args: Any, **kwargs: Any):
 
 
 def install_decision_grade_binding() -> dict[str, Any]:
-    snapshot_evidence.scan_files = _scan_files_with_safe_samples
+    current_scanner = snapshot_evidence.scan_files
+    scanner_with_samples = _safe_sample_wrapper(current_scanner)
+    snapshot_evidence.scan_files = scanner_with_samples
     snapshot_evidence.collect_snapshot_repository_evidence = _collect_with_safe_samples
     providers.collect_snapshot_repository_evidence = _collect_with_safe_samples
     providers.canonical_scoring_provider = canonical_scoring_provider
@@ -64,6 +74,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "bound": providers.build_comprehensive_report_package is build_comprehensive_report_package,
         "canonical_scoring_bound": providers.canonical_scoring_provider is canonical_scoring_provider,
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
+        "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
+        "scanner_wrapper_composed": True,
         "score_band_separated_from_assurance": True,
         "secret_category_isolated": True,
         "structured_findings_register": True,
