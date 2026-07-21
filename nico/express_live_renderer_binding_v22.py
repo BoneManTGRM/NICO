@@ -18,7 +18,7 @@ from nico.express_final_export_truth_v35 import install_express_final_export_tru
 from nico.express_score_assurance_export_v1 import install_express_score_assurance_export_v1
 from nico.express_pdf_section_index_binding_v1 import install_express_pdf_section_index_binding_v1
 
-VERSION = "nico.express_live_renderer_binding.v28"
+VERSION = "nico.express_live_renderer_binding.v28.1"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -28,6 +28,8 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     renderer = install_express_pdf_renderer_truth_v21()
     score_assurance_renderer = install_express_pdf_score_assurance_v1()
     live_renderer = premium._premium_pdf
+    if score_assurance_renderer.get("status") in {"installed", "already_installed"}:
+        setattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", True)
     previous = dossier._premium_pdf
     dossier._premium_pdf = live_renderer
     scanner_dispositions = install_express_scanner_disposition_truth_v1()
@@ -44,10 +46,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
 
-    renderer_bound = (
-        bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
-        or score_assurance_renderer.get("status") in {"installed", "already_installed"}
-    )
+    renderer_bound = bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
     score_assurance_bound = bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False))
 
     return {
