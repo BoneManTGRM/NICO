@@ -14,7 +14,7 @@ def _page() -> str:
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_workspace_exposes_mid_approval_after_review_and_report():
+def test_legacy_mid_approval_route_is_preserved_but_not_global() -> None:
     context = CONTEXT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
@@ -23,11 +23,12 @@ def test_workspace_exposes_mid_approval_after_review_and_report():
     assert 'path: "/mid-approval"' in context
     assert context.index('path: "/mid-review"') < context.index('path: "/mid-report"') < context.index('path: "/mid-approval"')
     assert 'href="/assessment?tier=express#assessment"' in layout
-    assert "Approval creates a separate approved artifact but does not create a client delivery link" in layout
-    assert "stop at required human review" in layout
+    assert "Start Express or Comprehensive" in layout
+    assert "NICO never approves findings or creates client delivery automatically" in layout
+    assert "MidSectionReviewPortal" not in layout
 
 
-def test_page_uses_shared_exact_scope_admin_reviewer_and_notes():
+def test_page_uses_shared_exact_scope_admin_reviewer_and_notes() -> None:
     source = _page()
     context = CONTEXT.read_text(encoding="utf-8")
 
@@ -43,7 +44,7 @@ def test_page_uses_shared_exact_scope_admin_reviewer_and_notes():
     assert '"X-NICO-Admin-Token": adminToken' in source
 
 
-def test_page_uses_dedicated_request_status_disposition_and_decision_endpoints():
+def test_page_uses_dedicated_request_status_disposition_and_decision_endpoints() -> None:
     source = _page()
 
     assert "/assessment/mid-run/${encodeURIComponent(runId.trim())}/approval/request" in source
@@ -57,7 +58,7 @@ def test_page_uses_dedicated_request_status_disposition_and_decision_endpoints()
     assert "Reject item" in source
 
 
-def test_approval_ui_requires_a_structured_decision_for_every_current_exception():
+def test_approval_ui_requires_a_structured_decision_for_every_current_exception() -> None:
     source = _page()
 
     assert "Decide each current item" in source
@@ -71,7 +72,7 @@ def test_approval_ui_requires_a_structured_decision_for_every_current_exception(
     assert "Acknowledge all current exception items" not in source
 
 
-def test_inference_only_button_cannot_accept_score_changing_inference():
+def test_inference_only_button_cannot_accept_score_changing_inference() -> None:
     source = _page()
 
     assert "!item.inference_based || item.score_change_material" in source
@@ -79,7 +80,7 @@ def test_inference_only_button_cannot_accept_score_changing_inference():
     assert "Inference-based:" in source
 
 
-def test_page_displays_exact_identity_and_delivery_boundary():
+def test_page_displays_exact_identity_and_delivery_boundary() -> None:
     source = _page()
 
     assert "snapshot_commit_sha: approval.snapshot_commit_sha" in source
@@ -92,7 +93,7 @@ def test_page_displays_exact_identity_and_delivery_boundary():
     assert "secure delivery remains disabled" in source
 
 
-def test_approved_pdf_download_verifies_approval_and_report_headers():
+def test_approved_pdf_download_verifies_approval_and_report_headers() -> None:
     source = _page()
 
     assert "/report/approved/pdf?${params.toString()}" in source
@@ -104,7 +105,7 @@ def test_approved_pdf_download_verifies_approval_and_report_headers():
     assert 'blob.type !== "application/pdf"' in source
 
 
-def test_admin_token_is_not_rendered_in_identity_json():
+def test_admin_token_is_not_rendered_in_identity_json() -> None:
     source = _page()
     identity = source.split('<summary>Exact identity</summary>', 1)[1].split("</details>", 1)[0]
 
@@ -115,7 +116,7 @@ def test_admin_token_is_not_rendered_in_identity_json():
     assert "disposition_set_sha256" in identity
 
 
-def test_production_registers_complete_mid_approval_route_group():
+def test_production_registers_complete_mid_approval_route_group() -> None:
     source = PRODUCTION.read_text(encoding="utf-8")
 
     assert "register_mid_approval_routes" in source

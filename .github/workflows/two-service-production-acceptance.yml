@@ -1,0 +1,247 @@
+name: Two-Service Production Acceptance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: two-service-production-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Validate two-service acceptance contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Compile acceptance runner and verify bounded contract
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/two_service_live_acceptance.py
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
+          assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in source
+          assert 'data-assessment-service-count="2"' in source
+          assert 'passes=args.passes' in source
+          assert '"two_consecutive_passes": config.passes >= 2' in source
+          assert '"human_review_required": True' in source
+          assert '"client_delivery_blocked": True' in source
+          assert '"markdown_html_pdf_json_parity": True' in source
+          assert '"comprehensive_depth_verified": True' in source
+          assert '"post_run_reconnect_identity_preserved": True' in source
+          assert '"mid"' not in source.split("SERVICE_LABELS", 1)[1].split("START_PATHS", 1)[0].lower()
+          PY
+
+  live-production:
+    name: Run two consecutive deployed acceptance passes
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production-smoke
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL }}
+      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY }}
+      NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT }}
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.sha }}
+      STATUS_CONTEXT: NICO Two-Service Production Acceptance
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Mark production acceptance pending
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/status.json
+          import json, os
+          print(json.dumps({
+              "state": "pending",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Waiting for deployed two-service acceptance proof",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/status.json
+
+      - name: Validate configured production scope
+        run: |
+          set -euo pipefail
+          test -n "${NICO_PRODUCTION_FRONTEND_URL}"
+          test -n "${NICO_PRODUCTION_SMOKE_REPOSITORY}"
+          test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
+          test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+
+      - name: Wait for exact frontend and backend deployments
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          backend_context = os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]
+          required = {"Vercel", backend_context}
+          deadline = time.time() + 30 * 60
+          last = {}
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-two-service-acceptance",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last = {}
+              for item in payload.get("statuses") or []:
+                  context = str(item.get("context") or "")
+                  last.setdefault(context, str(item.get("state") or "unknown"))
+              observed = {context: last.get(context, "missing") for context in required}
+              print(f"Deployment statuses: {observed}", flush=True)
+              if all(observed[context] == "success" for context in required):
+                  break
+              if any(observed[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(f"Deployment failed for exact SHA {sha}: {observed}")
+              time.sleep(20)
+          else:
+              raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned browser proof dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0" "pypdf>=5,<7"
+          python -m playwright install --with-deps chromium
+
+      - name: Run two consecutive Express and Comprehensive production passes
+        id: acceptance
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python scripts/two_service_live_acceptance.py \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --passes 2 \
+            --output audit-results/two-service-live-acceptance.json \
+            --screenshot-dir audit-results/two-service-live-screenshots \
+            --artifact-dir audit-results/two-service-live-artifacts
+
+      - name: Upload immutable production acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: two-service-production-acceptance-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            audit-results/two-service-live-acceptance.json
+            audit-results/two-service-live-screenshots/
+            audit-results/two-service-live-artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Require passing live evidence contract
+        if: always()
+        run: |
+          set -euo pipefail
+          test "${{ steps.acceptance.outcome }}" = "success"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("audit-results/two-service-live-acceptance.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "passed"
+          assert payload["live_production_claim"] is True
+          assert payload["passes_required"] == 2
+          assert payload["passes_completed"] == 2
+          assert payload["services"] == ["express", "comprehensive"]
+          assert len(payload["runs"]) == 4
+          assert all(payload["proof"].values())
+          assert all(item["commit_sha"] == payload["expected_deployed_sha"] for item in payload["runs"])
+          assert all(item["human_review_required"] is True for item in payload["runs"])
+          assert all(item["client_delivery_allowed"] is False for item in payload["runs"])
+          assert all(item["report"]["pdf"]["page_count"] > 0 for item in payload["runs"])
+          comprehensive = [item for item in payload["runs"] if item["service"] == "comprehensive"]
+          assert len(comprehensive) == 2
+          assert all(item["report"]["pdf"]["page_count"] >= 30 for item in comprehensive)
+          PY
+
+      - name: Publish successful production acceptance status
+        if: success()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/status.json
+          import json, os
+          print(json.dumps({
+              "state": "success",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Two Express + Comprehensive production passes succeeded",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/status.json
+
+      - name: Publish failed production acceptance status
+        if: failure()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/status.json
+          import json, os
+          print(json.dumps({
+              "state": "failure",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Two-service production acceptance failed; release requires repair",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/status.json

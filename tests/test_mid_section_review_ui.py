@@ -69,7 +69,7 @@ def test_mid_review_preserves_evidence_findings_limitations_and_scope() -> None:
     assert "Gitleaks did not provide accepted same-run history evidence" in source
 
 
-def test_mid_review_portal_merges_partial_status_monotonically_and_is_tier_safe() -> None:
+def test_legacy_mid_review_portal_retains_monotonic_merge_but_is_not_publicly_mounted() -> None:
     score_portal = SCORE_PORTAL.read_text(encoding="utf-8")
     section_portal = SECTION_PORTAL.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
@@ -94,7 +94,9 @@ def test_mid_review_portal_merges_partial_status_monotonically_and_is_tier_safe(
     assert "child.hidden = true" in section_portal
     assert "element.hidden = false" in section_portal
     assert "<MidSectionReview payload={payload} />" in section_portal
-    assert 'import MidSectionReviewPortal from "./MidSectionReviewPortal"' in layout
+    assert "MidSectionReviewPortal" not in layout
+    assert "MidScoreIntelligencePortal" not in layout
+    assert "Start Express or Comprehensive" in layout
 
 
 def test_mid_review_retains_report_and_human_review_actions_with_failure_feedback() -> None:

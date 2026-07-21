@@ -4,66 +4,64 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
+WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
 
 
 def _source() -> str:
-    return PAGE.read_text(encoding="utf-8")
+    return WORKSPACE.read_text(encoding="utf-8")
 
 
 def _run_body(source: str) -> str:
-    return source.split("async function runAssessment()", 1)[1].split("async function copyMarkdown()", 1)[0]
+    return source.split("async function run()", 1)[1].split("async function copyMarkdown()", 1)[0]
 
 
 def _continuation_body(source: str) -> str:
-    return source.split("async function continueAssessment(", 1)[1].split("async function runAssessment()", 1)[0]
+    return source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
 
-def test_each_tier_has_one_canonical_start_request() -> None:
+def test_each_public_service_has_one_canonical_start_request() -> None:
     body = _run_body(_source())
 
     assert body.count('"/assessment/express-run"') == 1
-    assert body.count('"/assessment/mid-run"') == 1
-    assert body.count('"/assessment/full-run"') == 1
+    assert body.count('"/assessment/comprehensive-intake"') == 1
     assert 'assessment_mode: "express"' in body
-    assert 'mode: "full"' in body
+    assert '"/assessment/mid-run"' not in body
+    assert '"/assessment/full-run"' not in body
 
 
-def test_all_three_tiers_continue_the_exact_run_without_restarting() -> None:
+def test_both_services_continue_the_exact_run_without_restarting() -> None:
     body = _continuation_body(_source())
 
     assert '"/assessment/express-run"' not in body
-    assert '"/assessment/mid-run"' not in body
-    assert '"/assessment/full-run"' not in body
+    assert '"/assessment/comprehensive-intake"' not in body
     assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in body
-    assert "/assessment/mid-run/${encodeURIComponent(runId)}/status" in body
-    assert "/assessment/full-run/${encodeURIComponent(runId)}/status" in body
+    assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in body
 
 
-def test_every_status_poll_uses_the_run_id_returned_by_the_prior_response() -> None:
+def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> None:
     body = _continuation_body(_source())
 
     assert 'const runId = String(current.run_id || "")' in body
-    assert 'if (!runId) throw new Error("The assessment response did not include a run ID for autonomous continuation.")' in body
-    assert "current = await parseResponse(response)" in body
-    assert "runSequence.current" in body
-    assert body.count("if (sequence !== runSequence.current) return") >= 2
+    assert 'if (!runId) throw new Error(copy.runIdMissing)' in body
+    assert "current = await json(await fetch" in body
+    assert "sequence.current" in body
+    assert body.count("if (token !== sequence.current) return") >= 1
 
 
 def test_timeout_preserves_identity_instead_of_starting_a_replacement_run() -> None:
     body = _continuation_body(_source())
 
-    assert "for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1)" in body
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in body
     assert 'setPhase("timed_out")' in body
-    assert "The exact run ID is preserved" in body
-    assert "without starting a duplicate run" in body
+    assert 'setResult(current)' in body
+    assert '"/assessment/express-run"' not in body
+    assert '"/assessment/comprehensive-intake"' not in body
 
 
-def test_full_continuation_retains_full_contract_on_every_status_refresh() -> None:
+def test_comprehensive_continuation_advances_one_stage_on_the_same_run() -> None:
     body = _continuation_body(_source())
 
-    assert 'if (selectedTier === "full")' in body
-    assert 'body.mode = "full"' in body
-    assert "body.build_reports = true" in body
-    assert "body.create_final_review_request = true" in body
-    assert "body.tools = FULL_TOOLS" in body
+    assert 'if (selected === "comprehensive")' in body
+    assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in body
+    assert 'body: JSON.stringify({max_stages: 1})' in body
+    assert 'method: "POST"' in body

@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-VERSION = "nico.comprehensive_orchestration_contract.v1"
+VERSION = "nico.comprehensive_orchestration_contract.v2"
 
 EXPRESS_STAGES = (
     "authorization_and_scope",
@@ -28,6 +28,7 @@ COMPREHENSIVE_ONLY_STAGES = (
     "six_month_roadmap",
     "staffing_sequencing_and_cost",
     "risk_reduction_and_executive_briefing",
+    "final_comprehensive_report_generation",
 )
 
 TERMINAL_STAGES = (
@@ -107,7 +108,7 @@ def validate_comprehensive_contract(contract: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "status": "valid" if not violations else "invalid",
-        "artifact_schema": "nico.comprehensive_orchestration_validation.v1",
+        "artifact_schema": "nico.comprehensive_orchestration_validation.v2",
         "violations": violations,
         "missing_express_stages": missing_express,
         "missing_comprehensive_stages": missing_comprehensive,

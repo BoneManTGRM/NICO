@@ -12,7 +12,7 @@ from nico.assessment_block_messages import (
 
 ROOT = Path(__file__).resolve().parents[1]
 NETWORK_BUDGET = ROOT / "nico" / "assessment_network_budget.py"
-ASSESSMENT_PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
+ASSESSMENT_WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
 
 
 def test_repository_404_is_actionable_without_exposing_provider_detail() -> None:
@@ -113,9 +113,10 @@ def test_production_installer_activates_block_message_patch() -> None:
     assert '"block_messages": block_messages' in source
 
 
-def test_frontend_prioritizes_safe_backend_message_and_defaults_to_real_repository() -> None:
-    source = ASSESSMENT_PAGE.read_text(encoding="utf-8")
+def test_frontend_prioritizes_safe_backend_message_and_starts_with_empty_repository() -> None:
+    source = ASSESSMENT_WORKSPACE.read_text(encoding="utf-8")
 
-    assert 'data?.detail?.message || data?.detail?.code' in source
-    assert 'useState("BoneManTGRM/NICO")' in source
+    assert 'typeof data.detail === "string" ? data.detail : data.detail?.message' in source
+    assert 'const [repository, setRepository] = useState("")' in source
+    assert 'useState("BoneManTGRM/NICO")' not in source
     assert 'useState("BoneManTGRM/NICI")' not in source

@@ -4,8 +4,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const ALLOWED_ASSESSMENT_PATH = /^\/assessment\/(?:express|mid|full)-run(?:\/[^/?#]+\/(?:status|live-status))?$/;
-const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|mid-runtime)$/;
+const EXPRESS_START = "/assessment/express-run";
+const EXPRESS_STATUS = /^\/assessment\/express-run\/[^/?#]+\/status$/;
+const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake";
+const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
+const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
+const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|comprehensive-runtime)$/;
 
 function jsonError(status: number, code: string, message: string) {
   return Response.json(
@@ -29,6 +33,14 @@ function configuredBackend(): URL | null {
   }
 }
 
+function assessmentRouteAllowed(method: string, path: string): boolean {
+  if (method === "POST" && (path === EXPRESS_START || EXPRESS_STATUS.test(path))) return true;
+  if (method === "POST" && path === COMPREHENSIVE_INTAKE) return true;
+  if (method === "GET" && COMPREHENSIVE_STATUS.test(path)) return true;
+  if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
+  return false;
+}
+
 async function proxyNico(
   request: NextRequest,
   context: {params: Promise<{path: string[]}>},
@@ -39,10 +51,10 @@ async function proxyNico(
   }
 
   const apiPath = `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  const assessmentAllowed = ALLOWED_ASSESSMENT_PATH.test(apiPath);
+  const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only canonical assessment lifecycle routes and bounded runtime diagnostics are available through this proxy.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy.");
   }
 
   const backend = configuredBackend();
@@ -56,16 +68,14 @@ async function proxyNico(
   if (contentType) headers.set("Content-Type", contentType);
 
   try {
-    const shortRead = apiPath.endsWith("/live-status") || ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
+    const shortRead = request.method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
     const response = await fetch(upstream, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
       redirect: "manual",
-      signal: shortRead
-        ? AbortSignal.timeout(15_000)
-        : AbortSignal.timeout(120_000),
+      signal: shortRead ? AbortSignal.timeout(15_000) : AbortSignal.timeout(180_000),
     });
 
     const responseHeaders = new Headers({"Cache-Control": "no-store"});

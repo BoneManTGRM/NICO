@@ -8,8 +8,10 @@ from typing import Any
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 
-VERSION = "nico.comprehensive_run_record.v1"
+VERSION = "nico.comprehensive_run_record.v2"
 TERMINAL_STATUSES = {"review_required", "approved", "rejected", "failed", "blocked"}
+ACTIVE_STAGE_STATUSES = {"queued", "running", "pending", "planned", "in_progress"}
+SUCCESS_STAGE_STATUSES = {"complete", "completed", "passed", "review_required"}
 
 
 def _required(value: Any, field: str) -> str:
@@ -20,7 +22,7 @@ def _required(value: Any, field: str) -> str:
 
 
 def _canonical_hash(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -124,14 +126,20 @@ def apply_comprehensive_stage_result(
     normalized = {**deepcopy(result), "stage_id": stage_id, "status": status}
     for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
         normalized[field] = identity[field]
+    normalized["human_review_required"] = True
+    normalized["client_delivery_allowed"] = False
     updated["stage_results"][stage_id] = normalized
     updated["current_stage"] = stage_id
-    if status in {"complete", "completed", "passed", "review_required"}:
+
+    if status in SUCCESS_STAGE_STATUSES:
         completed.append(stage_id)
         updated["completed_stages"] = completed
         updated["status"] = "review_required" if len(completed) == len(COMPREHENSIVE_STAGES) else "running"
+    elif status in ACTIVE_STAGE_STATUSES:
+        updated["status"] = "running"
     else:
         updated["status"] = "blocked"
+
     updated["progress_percent"] = round((len(completed) / len(COMPREHENSIVE_STAGES)) * 100, 2)
     updated["updated_at"] = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
     updated["revision"] = int(updated.get("revision") or 0) + 1
@@ -151,6 +159,8 @@ def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "ACTIVE_STAGE_STATUSES",
+    "SUCCESS_STAGE_STATUSES",
     "TERMINAL_STATUSES",
     "VERSION",
     "apply_comprehensive_stage_result",

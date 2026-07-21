@@ -78,11 +78,13 @@ def test_waiting_projection_preserves_backend_truth_and_exact_run_identity() -> 
     assert "Only a\n  // backend response with durable exact-run terminal evidence" in source
 
 
-def test_progress_guard_is_outer_to_existing_status_normalizers() -> None:
+def test_progress_guard_wraps_native_status_and_recovery_normalizers_before_api_bridge() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard"' in layout
     assert '<AssessmentProgressIntegrityGuard />' in layout
-    assert layout.index('<AssessmentStatusOutcomeGuard />') < layout.index('<AssessmentProgressIntegrityGuard />')
-    assert layout.index('<AssessmentMidLiveStatusTransport />') < layout.index('<AssessmentProgressIntegrityGuard />')
+    assert "AssessmentMidLiveStatusTransport" not in layout
+    assert "AssessmentSavedMidRunGuard" not in layout
+    assert layout.index('<AssessmentStatusOutcomeGuard />') < layout.index('<AssessmentExpressRecoveryGuard />')
+    assert layout.index('<AssessmentExpressRecoveryGuard />') < layout.index('<AssessmentProgressIntegrityGuard />')
     assert layout.index('<AssessmentProgressIntegrityGuard />') < layout.index('<AssessmentApiTransportBridge />')

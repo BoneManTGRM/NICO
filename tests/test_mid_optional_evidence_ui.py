@@ -14,20 +14,20 @@ def _companion() -> str:
     return COMPANION.read_text(encoding="utf-8")
 
 
-def test_mid_evidence_components_are_mounted_through_root_layout():
+def test_legacy_mid_evidence_components_are_retained_but_not_globally_mounted() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
-    assert 'import MidAssessmentCompanion from "./MidAssessmentCompanion"' in layout
-    assert 'import MidEvidencePacketHelper from "./MidEvidencePacketHelper"' in layout
-    assert 'import UnifiedMidTokenCapture from "./UnifiedMidTokenCapture"' in layout
-    assert "<MidAssessmentCompanion />" in layout
-    assert "<MidEvidencePacketHelper />" in layout
-    assert "<UnifiedMidTokenCapture />" in layout
+    assert COMPANION.exists()
+    assert HELPER.exists()
+    assert TOKEN_CAPTURE.exists()
+    assert "MidAssessmentCompanion" not in layout
+    assert "MidEvidencePacketHelper" not in layout
+    assert "UnifiedMidTokenCapture" not in layout
     assert 'href="/assessment?tier=express#assessment"' in layout
-    assert "One Run action completes every automated stage" in layout
+    assert "Start Express or Comprehensive" in layout
 
 
-def test_companion_remains_a_legacy_command_center_console():
+def test_companion_remains_a_legacy_command_center_console() -> None:
     source = _companion()
 
     assert 'window.location.pathname === "/"' in source
@@ -37,7 +37,7 @@ def test_companion_remains_a_legacy_command_center_console():
     assert 'resolvedRunId.startsWith("midrun_")' in source
 
 
-def test_unified_intake_captures_mid_capability_without_rendering_it():
+def test_legacy_token_capture_still_recognizes_mid_capability_without_rendering_it() -> None:
     source = TOKEN_CAPTURE.read_text(encoding="utf-8")
 
     assert 'pathname !== "/assessment"' in source
@@ -50,94 +50,12 @@ def test_unified_intake_captures_mid_capability_without_rendering_it():
     assert "{token}" not in source
 
 
-def test_evidence_packet_helper_runs_silently_on_unified_intake():
+def test_legacy_evidence_packet_helper_is_not_part_of_native_public_intake() -> None:
     source = HELPER.read_text(encoding="utf-8")
+    layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'const supported = pathname === "/" || pathname === "/assessment"' in source
     assert 'setVisible(pathname === "/")' in source
     assert "if (!active || !visible || !runId) return null" in source
     assert "void attachPacket(true)" in source
-    assert 'href="/assessment?tier=mid#assessment"' in source
-
-
-def test_successful_mid_responses_are_observed_without_intercepting_unrelated_requests():
-    source = _companion()
-
-    assert 'path === "/assessment/mid-run"' in source
-    assert "isMidStatusPath(path)" in source
-    assert "isMidEvidencePath(path)" in source
-    assert "if (!targeted || !response.ok) return response" in source
-    assert "response.clone().json()" in source
-    assert "window.fetch = wrappedFetch" in source
-    assert "if (window.fetch === wrappedFetch) window.fetch = originalFetch" in source
-
-
-def test_one_time_capability_is_removed_from_safe_result_and_kept_in_session_only():
-    source = _companion()
-
-    assert "delete safe.optional_evidence_submission" in source
-    assert 'const TOKEN_PREFIX = "nico.mid.evidence_token."' in source
-    assert "sessionStorage.setItem(TOKEN_PREFIX + resolvedRunId, token)" in source
-    assert "sessionStorage.getItem(TOKEN_PREFIX + runId)" in source
-    assert "sessionStorage.removeItem(TOKEN_PREFIX + runId)" in source
-    assert "optional_evidence_submission" not in source.split("return <div", 1)[1]
-    assert "The one-time submission capability is not available" in source
-
-
-def test_optional_evidence_form_contains_all_supported_fields_and_guardrails():
-    source = _companion()
-    fields = [
-        "application_url",
-        "ios_build_access",
-        "android_build_access",
-        "architecture_documents",
-        "product_requirements",
-        "stakeholder_questionnaire",
-        "meeting_transcripts",
-        "existing_roadmap",
-        "business_priorities",
-    ]
-    for field in fields:
-        assert f'"{field}"' in source
-
-    assert "Additional evidence, optional" in source
-    assert "Attach optional evidence" in source
-    assert "It is not repository proof" in source
-    assert "cannot change a score automatically" in source
-    assert "requires human validation" in source
-    assert 'referrerPolicy: "no-referrer"' in source
-
-
-def test_truth_status_ui_collapses_verified_sections_and_expands_exceptions():
-    source = _companion()
-
-    assert 'item.truth_status === "Verified"' in source
-    assert 'item.truth_status !== "Verified"' in source
-    assert "Sections not automatically verified" in source
-    assert "Verified automatically — evidence available" in source
-    assert '<details className="result-card" open' in source
-    assert "Unsupported claims permitted" in source
-
-
-def test_calculated_coverage_is_displayed_with_method_and_units():
-    source = _companion()
-
-    assert "coverage?.calculated" in source
-    assert "coverage.percent" in source
-    assert "Coverage is based on explicit evidence units, not the maturity score" in source
-    assert "Coverage units" in source
-    assert "coverage.method" in source
-    assert "coverage.numerator" in source
-    assert "coverage.denominator" in source
-
-
-def test_optional_evidence_submission_updates_safe_state_without_rendering_token():
-    source = _companion()
-
-    assert "/assessment/mid-run/${encodeURIComponent(runId)}/evidence" in source
-    assert "JSON.stringify({token, ...fields})" in source
-    assert 'data.status !== "submitted"' in source
-    assert "optional_evidence: data.optional_evidence" in source
-    rendered = source.split("return <div", 1)[1]
-    assert "{token}" not in rendered
-    assert "submission?.token" not in rendered
+    assert "MidEvidencePacketHelper" not in layout

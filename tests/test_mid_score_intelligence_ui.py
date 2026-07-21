@@ -22,7 +22,7 @@ def test_mid_score_transport_captures_exact_status_responses_once() -> None:
     assert "return null" in source
 
 
-def test_unified_mid_surface_contains_score_contract_without_second_panel() -> None:
+def test_legacy_mid_review_surface_retains_score_contract_without_public_mount() -> None:
     source = UNIFIED.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
@@ -32,6 +32,6 @@ def test_unified_mid_surface_contains_score_contract_without_second_panel() -> N
     assert "Evidence-unit coverage" in source
     assert "new immutable snapshot assessment" in source
     assert "weightTable" in source
-    assert 'import MidScoreIntelligencePortal from "./MidScoreIntelligencePortal"' in layout
-    assert "<MidScoreIntelligencePortal />" in layout
-    assert "<MidSectionReviewPortal />" in layout
+    assert "MidScoreIntelligencePortal" not in layout
+    assert "MidSectionReviewPortal" not in layout
+    assert "Start Express or Comprehensive" in layout

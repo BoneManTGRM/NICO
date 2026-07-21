@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
+WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
 STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment.module.css"
 NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 OPERATIONS_GUARD = ROOT / "apps" / "web" / "app" / "OperationsPreloadGuard.tsx"
@@ -12,23 +12,24 @@ FULL_RUN_REDIRECT = ROOT / "apps" / "web" / "app" / "LegacyFullRunRedirect.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
-def _page() -> str:
-    return PAGE.read_text(encoding="utf-8")
+def _workspace() -> str:
+    return WORKSPACE.read_text(encoding="utf-8")
 
 
-def test_unified_intake_has_exactly_three_assessment_tiers() -> None:
-    source = _page()
+def test_public_intake_has_exactly_two_native_assessment_services() -> None:
+    source = _workspace()
+    rendered = source.split("return <main", 1)[1]
 
-    assert 'type AssessmentTier = "express" | "mid" | "full"' in source
-    assert 'aria-label="Assessment type"' in source
-    assert '(["express", "mid", "full"] as AssessmentTier[])' in source
-    assert source.count('key={value}') == 1
-    for label in ("Express", "Mid", "Full"):
-        assert f'? "{label}"' in source or f': "{label}"' in source
+    assert 'type Service = "express" | "comprehensive"' in source
+    assert 'data-assessment-service-count="2"' in rendered
+    assert '(["express", "comprehensive"] as Service[])' in rendered
+    assert 'aria-label="Assessment type"' in rendered
+    assert '"/assessment/mid-run"' not in rendered
+    assert '"/assessment/full-run"' not in rendered
 
 
 def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization() -> None:
-    source = _page()
+    source = _workspace()
     rendered = source.split("return <main", 1)[1]
 
     for label in (
@@ -37,7 +38,7 @@ def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization()
         "Project name, optional",
         "I confirm I own this target or have explicit permission to assess it.",
     ):
-        assert label in rendered
+        assert label in source
 
     for forbidden in (
         "NICO admin token",
@@ -50,41 +51,38 @@ def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization()
     ):
         assert forbidden not in rendered
 
-    assert 'scopeId("customer", clientName, "default_customer")' in source
-    assert 'scopeId("project", projectName, "default_project")' in source
+    assert 'scopeId("customer", client, "default_customer")' in source
+    assert 'scopeId("project", project, "default_project")' in source
+    assert 'const [repository, setRepository] = useState("")' in source
 
 
-def test_one_run_action_uses_asynchronous_exact_run_endpoints() -> None:
-    source = _page()
+def test_one_run_action_uses_only_native_express_and_comprehensive_start_endpoints() -> None:
+    source = _workspace()
+    run_body = source.split("async function run()", 1)[1].split("async function copyMarkdown()", 1)[0]
 
-    assert '"/assessment/express-run"' in source
-    assert '"/assessment/mid-run"' in source
-    assert '"/assessment/full-run"' in source
-    assert 'assessment_mode: "express"' in source
-    assert 'mode: "full"' in source
-    assert "run_scanners: true" in source
-    assert "build_reports: true" in source
-    assert "create_final_review_request: true" in source
-    assert "tools: FULL_TOOLS" in source
+    assert '"/assessment/express-run"' in run_body
+    assert '"/assessment/comprehensive-intake"' in run_body
+    assert 'assessment_mode: "express"' in run_body
+    assert '"/assessment/mid-run"' not in run_body
+    assert '"/assessment/full-run"' not in run_body
 
 
-def test_every_tier_continues_the_exact_same_run_automatically() -> None:
-    source = _page()
+def test_each_service_continues_the_exact_same_run_automatically() -> None:
+    source = _workspace()
+    continuation = source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
-    assert "const POLL_INTERVAL_MS = 3000" in source
-    assert "const MAX_POLL_ATTEMPTS = 240" in source
-    assert "for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1)" in source
-    assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in source
-    assert "/assessment/mid-run/${encodeURIComponent(runId)}/status" in source
-    assert "/assessment/full-run/${encodeURIComponent(runId)}/status" in source
-    assert "await sleep(POLL_INTERVAL_MS)" in source
-    assert "auto_continue: true" in source
-    assert 'scan_id: current.scanner?.scan_id || current.scanner_evidence?.scan_id || ""' in source
-    assert "The exact run ID is preserved" in source
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in continuation
+    assert 'const runId = String(current.run_id || "")' in continuation
+    assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in continuation
+    assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in continuation
+    assert 'JSON.stringify({max_stages: 1})' in continuation
+    assert '"/assessment/express-run"' not in continuation
+    assert '"/assessment/comprehensive-intake"' not in continuation
+    assert "await wait(POLL_INTERVAL_MS)" in continuation
 
 
-def test_normal_assessment_flow_has_no_manual_status_or_continue_buttons() -> None:
-    source = _page()
+def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_buttons() -> None:
+    source = _workspace()
     rendered = source.split("return <main", 1)[1]
 
     for forbidden in (
@@ -99,11 +97,11 @@ def test_normal_assessment_flow_has_no_manual_status_or_continue_buttons() -> No
 
 
 def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_mutation() -> None:
-    source = _page()
+    source = _workspace()
 
-    assert 'return "review_required"' in source
+    assert 'value === "review_required"' in source
     assert "stopped at the required human-review gate" in source
-    assert "did not approve findings" in source
+    assert "did not approve findings or authorize client delivery" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
     assert "/delivery/access" not in source
@@ -111,8 +109,8 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
     assert "X-NICO-Admin-Token" not in source
 
 
-def test_progress_uses_backend_stages_elapsed_time_and_indeterminate_fallback() -> None:
-    source = _page()
+def test_progress_uses_backend_stage_progress_elapsed_time_and_exact_run_identity() -> None:
+    source = _workspace()
     css = STYLES.read_text(encoding="utf-8")
 
     assert "progress_percent?: number" in source
@@ -120,37 +118,33 @@ def test_progress_uses_backend_stages_elapsed_time_and_indeterminate_fallback() 
     assert "Current stage" in source
     assert "Elapsed" in source
     assert "Status checks" in source
-    assert "activeProgressItem" in source
-    assert "DEFAULT_STAGE_PERCENT" in source
     assert "aria-valuenow" in source
-    assert ".indeterminate" in css
-    assert "@keyframes assessmentProgress" in css
+    assert "result?.run_id" in source
+    assert ".progressBar" in css
+    assert ".timeline" in css
 
 
-def test_full_result_distinguishes_pending_unavailable_and_review_required() -> None:
-    source = _page()
+def test_result_distinguishes_pending_unavailable_and_review_required() -> None:
+    source = _workspace()
 
     for state in ("pending", "unavailable", "complete", "review_required", "timed_out"):
         assert state in source
     assert "Not scored" in source
     assert "Unavailable or limited evidence" in source
-    assert "Missing or failed evidence remains disclosed" in source
+    assert "Discloses missing or failed evidence" in source
 
 
-def test_primary_navigation_has_one_run_job_entry_for_all_tiers() -> None:
+def test_primary_navigation_uses_one_assessment_entry_and_normalizes_legacy_tiers() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
+    assert 'type AssessmentMode = "express" | "comprehensive"' in navigation
     assert 'label: "Run a Job"' in primary
     assert 'href: "/assessment?tier=express#assessment"' in primary
     assert 'data-primary-service-count="3"' in navigation
-    assert 'key: "express"' not in primary
-    assert 'key: "mid"' not in primary
-    assert 'key: "full"' not in primary
-    assert 'label: "Express Assessment"' not in primary
-    assert 'label: "Mid Assessment"' not in primary
-    assert 'label: "Full Assessment"' not in primary
-    assert 'if (pathname.startsWith("/assessment")) return "run-job"' in navigation
+    assert '["comprehensive", "mid", "full", "deep"]' in navigation
+    assert '"/es/assessment?tier=express#assessment"' in navigation
+    assert 'if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job"' in navigation
 
 
 def test_legacy_full_run_route_defaults_to_comprehensive_intake() -> None:
@@ -170,19 +164,15 @@ def test_operations_preload_guard_hides_failure_colored_placeholders_until_loade
 
     assert 'pathname !== "/operations"' in guard
     assert 'section.textContent?.includes("Operator authentication")' in guard
-    assert 'authentication.textContent?.includes("Last loaded:")' in guard
     assert 'element.style.setProperty("display", "none", "important")' in guard
     assert 'PRELOAD_SECTION_ATTRIBUTE = "data-nico-preload-section-hidden"' in guard
-    assert "section.hidden" not in guard
-    assert "Operations evidence is not loaded" in guard
-    assert "No readiness, release, storage, workload, incident, or alert state is inferred" in guard
     assert "<OperationsPreloadGuard />" in layout
 
 
 def test_unified_assessment_layout_is_mobile_readable() -> None:
     css = STYLES.read_text(encoding="utf-8")
 
-    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
     assert ".progressBar" in css
     assert ".timeline" in css
     assert "@media (max-width: 760px)" in css

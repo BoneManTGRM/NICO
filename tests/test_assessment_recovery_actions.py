@@ -13,7 +13,7 @@ SCANNER_PANEL = ROOT / "apps" / "web" / "app" / "operations" / "ScannerRecoveryP
 PROXY = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts"
 
 
-def test_live_status_failure_publishes_visible_bounded_diagnostics() -> None:
+def test_legacy_mid_live_status_failure_keeps_bounded_diagnostics() -> None:
     source = TRANSPORT.read_text(encoding="utf-8")
 
     assert 'MID_RECOVERY_STATE_EVENT = "nico:mid-recovery-state"' in source
@@ -28,7 +28,7 @@ def test_live_status_failure_publishes_visible_bounded_diagnostics() -> None:
     assert 'window.sessionStorage.setItem("nico.mid.recovery_state"' in source
 
 
-def test_recovery_actions_include_manual_retry_exact_recovery_operations_and_diagnostics() -> None:
+def test_recovery_actions_include_manual_exact_recovery_operations_and_diagnostics() -> None:
     source = ACTIONS.read_text(encoding="utf-8")
 
     assert "Retry live status" in source
@@ -46,12 +46,13 @@ def test_recovery_actions_include_manual_retry_exact_recovery_operations_and_dia
     assert "report_quality_gate_version" in source
 
 
-def test_recovery_actions_are_mounted_globally_after_transport() -> None:
+def test_recovery_actions_remain_available_but_legacy_mid_transport_is_not_global() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
 
     assert 'import AssessmentRecoveryActions from "./AssessmentRecoveryActions"' in layout
     assert "<AssessmentRecoveryActions />" in layout
-    assert layout.index("<AssessmentMidLiveStatusTransport />") < layout.index("<AssessmentRecoveryActions />")
+    assert "AssessmentMidLiveStatusTransport" not in layout
+    assert "AssessmentSavedMidRunGuard" not in layout
 
 
 def test_recovery_page_accepts_exact_run_and_scanner_query_targets() -> None:
@@ -70,11 +71,12 @@ def test_recovery_page_accepts_exact_run_and_scanner_query_targets() -> None:
     assert "Resume same scan ID" in scanner
 
 
-def test_same_origin_proxy_allows_only_bounded_runtime_diagnostics() -> None:
+def test_same_origin_proxy_allows_only_native_runtime_diagnostics() -> None:
     source = PROXY.read_text(encoding="utf-8")
 
-    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/(?:express-runtime|mid-runtime)$/' in source
+    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/(?:express-runtime|comprehensive-runtime)$/' in source
     assert "diagnosticAllowed" in source
-    assert "request.method === \"GET\"" in source
+    assert 'request.method === "GET"' in source
     assert "shortRead" in source
     assert "AbortSignal.timeout(15_000)" in source
+    assert "mid-runtime" not in source
