@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_stage_adapter import CapabilityExecutor
 
-VERSION = "nico.comprehensive_production_capabilities.v1"
+VERSION = "nico.comprehensive_production_capabilities.v2"
 PROVIDER_STATE_KEY = "comprehensive_capability_providers"
 
 
@@ -39,6 +39,16 @@ def _authorization_provider(context: dict[str, Any]) -> dict[str, Any]:
         "capability": "authorization",
         "authorization_confirmed": True,
         "scope": "authorized_read_only_assessment",
+        "summary": (
+            "Ownership or explicit authorization and the defensive read-only scope "
+            "were confirmed for this exact Comprehensive run."
+        ),
+        "evidence": {
+            "authorization_confirmed": True,
+            "scope": "authorized_read_only_assessment",
+            "repository": identity["repository"],
+            "commit_sha": identity["commit_sha"],
+        },
         **identity,
     }
 
