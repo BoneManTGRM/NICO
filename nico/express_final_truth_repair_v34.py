@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_final_truth_repair.v34.1"
+VERSION = "nico.express_final_truth_repair.v34.2"
 _MARKER = "_nico_express_final_truth_repair_v34"
+_FINAL_PRESENTATION_ACTIVE: ContextVar[bool] = ContextVar(
+    "nico_express_final_presentation_active",
+    default=False,
+)
+_FINAL_CANONICAL_SCORE: ContextVar[int | None] = ContextVar(
+    "nico_express_final_canonical_score",
+    default=None,
+)
 
 
 def _text(value: Any) -> str:
@@ -13,13 +22,13 @@ def _text(value: Any) -> str:
 
 
 def _technical_evidence_projection(section: dict[str, Any]) -> dict[str, Any]:
-    """Build the final-report deduction view without changing source evidence.
+    """Build the terminal-report deduction view without changing source evidence.
 
-    The normal evidence-specific scorer remains untouched. During the terminal
-    production presentation pass only, ordinary context that has already affected
-    the canonical source score is removed from the second-layer deduction view.
-    Failed, timed-out, unavailable required analyzers and unresolved scanner
-    candidates remain eligible for explicit section-level deductions.
+    The normal evidence-specific scorer remains unchanged outside the terminal
+    presentation context. Ordinary context already reflected in source scoring is
+    removed only from the final report-confidence pass. Failed, timed-out,
+    unavailable required analyzers and unresolved scanner candidates remain
+    eligible for explicit section-level deductions.
     """
 
     projected = deepcopy(section)
@@ -141,7 +150,7 @@ def _level(score: int) -> str:
 
 
 def _bind_single_terminal_overall(result: dict[str, Any], canonical_score: int) -> None:
-    """Keep one overall score while retaining section-level evidence constraints."""
+    """Publish one overall score while retaining section-level constraints."""
 
     maturity = (
         result.get("maturity_signal")
@@ -188,6 +197,38 @@ def install_express_final_truth_repair_v34() -> dict[str, Any]:
     from nico import express_report_premium_v14 as premium
     from nico import final_report_consistency as consistency
 
+    if not getattr(scoring._deductions, _MARKER, False):
+        previous_deductions = scoring._deductions
+
+        @wraps(previous_deductions)
+        def deductions(section: dict[str, Any]):
+            if _FINAL_PRESENTATION_ACTIVE.get():
+                return previous_deductions(_technical_evidence_projection(section))
+            return previous_deductions(section)
+
+        setattr(deductions, _MARKER, True)
+        setattr(deductions, "_nico_previous", previous_deductions)
+        scoring._deductions = deductions
+
+    if not getattr(scoring.reconcile_express_scores, _MARKER, False):
+        previous_reconcile = scoring.reconcile_express_scores
+
+        @wraps(previous_reconcile)
+        def reconcile(target: dict[str, Any]):
+            records, overall = previous_reconcile(target)
+            canonical_score = _FINAL_CANONICAL_SCORE.get()
+            if canonical_score is None:
+                return records, overall
+            _bind_single_terminal_overall(target, canonical_score)
+            return records, canonical_score
+
+        setattr(reconcile, _MARKER, True)
+        setattr(reconcile, "_nico_previous", previous_reconcile)
+        scoring.reconcile_express_scores = reconcile
+        premium.reconcile_express_scores = reconcile
+    elif getattr(premium, "reconcile_express_scores", None) is not scoring.reconcile_express_scores:
+        premium.reconcile_express_scores = scoring.reconcile_express_scores
+
     if not getattr(consistency.finalize_express_result_consistency, _MARKER, False):
         previous_finalize: Callable[[dict[str, Any]], dict[str, Any]] = (
             consistency.finalize_express_result_consistency
@@ -205,38 +246,17 @@ def install_express_final_truth_repair_v34() -> dict[str, Any]:
                 else {}
             )
             canonical_score = int(maturity.get("score") or 0)
-
-            original_deductions = scoring._deductions
-            original_reconcile = scoring.reconcile_express_scores
-            original_premium_reconcile = getattr(
-                premium,
-                "reconcile_express_scores",
-                None,
-            )
-
-            @wraps(original_deductions)
-            def terminal_deductions(section: dict[str, Any]):
-                return original_deductions(_technical_evidence_projection(section))
-
-            @wraps(original_reconcile)
-            def terminal_reconcile(target: dict[str, Any]):
-                records, _section_average = original_reconcile(target)
-                _bind_single_terminal_overall(target, canonical_score)
-                return records, canonical_score
-
-            scoring._deductions = terminal_deductions
-            scoring.reconcile_express_scores = terminal_reconcile
-            premium.reconcile_express_scores = terminal_reconcile
+            active_token = _FINAL_PRESENTATION_ACTIVE.set(True)
+            score_token = _FINAL_CANONICAL_SCORE.set(canonical_score)
+            records: list[Any] = []
             try:
-                records, _ = terminal_reconcile(finalized)
+                records, _ = scoring.reconcile_express_scores(finalized)
                 consistency._rebuild_reports(finalized)
                 scoring.rewrite_cross_format_scores(finalized)
                 _bind_single_terminal_overall(finalized, canonical_score)
             finally:
-                scoring._deductions = original_deductions
-                scoring.reconcile_express_scores = original_reconcile
-                if original_premium_reconcile is not None:
-                    premium.reconcile_express_scores = original_premium_reconcile
+                _FINAL_CANONICAL_SCORE.reset(score_token)
+                _FINAL_PRESENTATION_ACTIVE.reset(active_token)
 
             _normalize_terminal_progress(finalized)
             finalized["express_final_truth_repair"] = {
@@ -247,6 +267,7 @@ def install_express_final_truth_repair_v34() -> dict[str, Any]:
                 "section_analyzer_deductions_preserved": True,
                 "single_terminal_overall_score": canonical_score,
                 "terminal_progress_reconciled": True,
+                "context_local_reconciliation": True,
                 "human_review_required": True,
                 "client_delivery_allowed": False,
                 "scored_section_count": len(records),
@@ -281,6 +302,7 @@ def install_express_final_truth_repair_v34() -> dict[str, Any]:
         "section_analyzer_deductions_preserved": True,
         "single_terminal_overall_score": True,
         "terminal_progress_reconciled": True,
+        "context_local_reconciliation": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
