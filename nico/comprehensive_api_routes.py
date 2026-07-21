@@ -9,9 +9,8 @@ from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
-from nico.storage import STORE
 
-VERSION = "nico.comprehensive_api_routes.v2"
+VERSION = "nico.comprehensive_api_routes.v3"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -20,11 +19,41 @@ COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-run/{run_id}/continue"),
 }
 
+_SAFE_RUNTIME_REASONS = {
+    "comprehensive_durable_storage_required": (
+        "Comprehensive is temporarily unavailable because durable assessment storage is not configured."
+    ),
+    "comprehensive_sqlite_storage_unavailable": (
+        "Comprehensive is temporarily unavailable because its configured durable storage could not be opened."
+    ),
+    "comprehensive_database_url_required": (
+        "Comprehensive is temporarily unavailable because its production database is not configured."
+    ),
+    "comprehensive_database_url_must_be_postgres": (
+        "Comprehensive is temporarily unavailable because its production database configuration is invalid."
+    ),
+}
+
 
 def _controller(request: Request) -> ComprehensiveApiController:
     controller = getattr(request.app.state, "comprehensive_api_controller", None)
     if not isinstance(controller, ComprehensiveApiController):
-        raise HTTPException(status_code=503, detail="comprehensive_service_not_configured")
+        runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
+        reason = str(runtime.get("reason") or "").strip()
+        message = _SAFE_RUNTIME_REASONS.get(
+            reason,
+            "Comprehensive is temporarily unavailable because its production runtime is not ready.",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "comprehensive_service_not_configured",
+                "message": message,
+                "retryable": True,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     return controller
 
 
@@ -43,6 +72,21 @@ def _required(value: Any, field: str) -> str:
     if not normalized:
         raise ValueError(f"{field}_required")
     return normalized
+
+
+def _runtime_persistence(request: Request) -> dict[str, Any]:
+    runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
+    adapter = str(runtime.get("persistence_adapter") or "unavailable")
+    configured = runtime.get("configured") is True
+    durable = configured and bool(
+        runtime.get("durability_verified", adapter in {"postgres", "sqlite"})
+    )
+    return {
+        "recorded": configured,
+        "durable": durable,
+        "adapter": adapter,
+        "storage_source": str(runtime.get("storage_source") or adapter),
+    }
 
 
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -87,18 +131,13 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             "authorization_confirmed": True,
         }
     )
-    storage = STORE.status()
     return {
         **response,
         "operation": "intake_started",
         "repository_snapshot": snapshot,
         "client_name": str(payload.get("client_name") or ""),
         "project_name": str(payload.get("project_name") or ""),
-        "persistence": {
-            "recorded": bool(storage.get("persistence_available")),
-            "durable": bool(storage.get("durability_verified", storage.get("adapter") == "postgres")),
-            "adapter": str(storage.get("adapter") or "unknown"),
-        },
+        "persistence": _runtime_persistence(request),
         "human_review_required": True,
         "client_delivery_allowed": False,
     }

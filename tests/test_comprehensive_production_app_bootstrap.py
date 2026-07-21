@@ -31,7 +31,11 @@ def test_production_mount_exposes_complete_fail_closed_routes() -> None:
 
     response = TestClient(app).post("/assessment/comprehensive-run", json=_payload())
     assert response.status_code == 503
-    assert response.json()["detail"] == "comprehensive_service_not_configured"
+    detail = response.json()["detail"]
+    assert detail["code"] == "comprehensive_service_not_configured"
+    assert detail["retryable"] is True
+    assert detail["human_review_required"] is True
+    assert detail["client_delivery_allowed"] is False
 
 
 def test_production_mount_is_idempotent_and_preserves_route_identity() -> None:

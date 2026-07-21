@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -13,7 +15,7 @@ from nico.comprehensive_run_store import ConnectionFactory
 from nico.comprehensive_runtime import configure_comprehensive_runtime
 from nico.comprehensive_stage_adapter import CapabilityExecutor
 
-VERSION = "nico.comprehensive_production_bootstrap.v1"
+VERSION = "nico.comprehensive_production_bootstrap.v2"
 
 
 def _required_capabilities() -> tuple[str, ...]:
@@ -30,6 +32,45 @@ def _resolve_executors(
     if not isinstance(source, Mapping):
         return {}
     return {str(key): value for key, value in source.items() if callable(value)}
+
+
+def _env_true(name: str, default: bool = False) -> bool:
+    value = str(os.getenv(name, "true" if default else "false") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _sqlite_path() -> Path:
+    configured = str(
+        os.getenv("NICO_COMPREHENSIVE_SQLITE_PATH")
+        or os.getenv("NICO_SQLITE_PATH")
+        or "/data/nico-runtime.sqlite3"
+    ).strip()
+    if not configured:
+        raise RuntimeError("comprehensive_sqlite_path_required")
+    return Path(configured).expanduser()
+
+
+def _sqlite_connection_factory(path: Path) -> ConnectionFactory:
+    target = path.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def connect():
+        connection = sqlite3.connect(
+            str(target),
+            timeout=30.0,
+            check_same_thread=False,
+        )
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute("PRAGMA busy_timeout=30000")
+        return connection
+
+    # Prove the configured location is writable before the routes claim readiness.
+    probe = connect()
+    probe.execute("CREATE TABLE IF NOT EXISTS nico_runtime_storage_probe (id INTEGER PRIMARY KEY)")
+    probe.commit()
+    probe.close()
+    return connect
 
 
 def _blocked_state(*, reason: str, supplied: int) -> dict[str, Any]:
@@ -57,10 +98,15 @@ def install_comprehensive_production_bootstrap(
 ) -> ComprehensiveApiController | None:
     """Install or safely defer the native Comprehensive production runtime.
 
-    The bootstrap may run before deployment secrets or capability providers are
-    available. In that state it still mounts the complete native route group, but
-    every request fails closed with 503. A later call can atomically attach the
-    durable controller without replacing the routes.
+    Postgres remains the preferred production adapter. When ``DATABASE_URL`` is
+    absent, deployments may opt into the repository's durable SQLite contract by
+    setting ``NICO_ENABLE_SQLITE_DURABLE_STORAGE=true`` and mounting the configured
+    ``NICO_SQLITE_PATH`` on persistent storage. The Docker image already uses this
+    explicit contract with one web worker and ``/data`` as the durable location.
+
+    If neither durable adapter is available, all native routes remain mounted but
+    fail closed with HTTP 503. Missing executors are never treated as passing
+    evidence, and client delivery remains blocked for every adapter.
     """
 
     existing = getattr(app.state, "comprehensive_api_controller", None)
@@ -80,21 +126,37 @@ def install_comprehensive_production_bootstrap(
         return None
 
     resolved_url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
-    if connection_factory is None and not resolved_url:
-        register_comprehensive_api_routes(app)
-        app.state.comprehensive_runtime = _blocked_state(
-            reason="comprehensive_database_url_required",
-            supplied=len(executors),
-        )
-        return None
+    resolved_factory = connection_factory
+    resolved_dialect = dialect
+    storage_source = "explicit_connection_factory" if connection_factory is not None else "postgres"
+
+    if resolved_factory is None and not resolved_url:
+        if not _env_true("NICO_ENABLE_SQLITE_DURABLE_STORAGE"):
+            register_comprehensive_api_routes(app)
+            app.state.comprehensive_runtime = _blocked_state(
+                reason="comprehensive_durable_storage_required",
+                supplied=len(executors),
+            )
+            return None
+        try:
+            resolved_factory = _sqlite_connection_factory(_sqlite_path())
+            resolved_dialect = "sqlite"
+            storage_source = "configured_durable_sqlite"
+        except Exception:
+            register_comprehensive_api_routes(app)
+            app.state.comprehensive_runtime = _blocked_state(
+                reason="comprehensive_sqlite_storage_unavailable",
+                supplied=len(executors),
+            )
+            return None
 
     try:
         controller = configure_comprehensive_runtime(
             app,
             capability_executors=executors,
             database_url=resolved_url or None,
-            connection_factory=connection_factory,
-            dialect=dialect,
+            connection_factory=resolved_factory,
+            dialect=resolved_dialect,
         )
     except RuntimeError as exc:
         register_comprehensive_api_routes(app)
@@ -108,6 +170,8 @@ def install_comprehensive_production_bootstrap(
             "bootstrap_schema": VERSION,
             "status": "ready",
             "configured": True,
+            "storage_source": storage_source,
+            "durability_verified": state.get("persistence_adapter") in {"postgres", "sqlite"},
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
