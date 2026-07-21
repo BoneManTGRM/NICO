@@ -1,6 +1,7 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
+import "../styles/score-assurance.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
