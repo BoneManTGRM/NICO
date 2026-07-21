@@ -13,8 +13,12 @@ from nico.express_source_score_refresh_v34 import install_express_source_score_r
 from nico.express_terminal_projection_truth_v1 import install_express_terminal_projection_truth_v1
 from nico.express_client_report_postprocessor_v27 import install_express_client_report_postprocessor_v27
 from nico.express_client_report_postprocessor_v31_compat import install_express_client_report_postprocessor_v31_compat
+from nico.express_terminal_report_truth_v34 import install_express_terminal_report_truth_v34
+from nico.express_not_scored_pdf_append_v35 import install_express_not_scored_pdf_append_v35
+from nico.express_terminal_report_compat_v36 import install_express_terminal_report_compat_v36
+from nico.express_terminal_runtime_boundary_v37 import install_express_terminal_runtime_boundary_v37
 
-VERSION = "nico.express_live_renderer_binding.v25"
+VERSION = "nico.express_live_renderer_binding.v29"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -35,6 +39,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     terminal_projection = install_express_terminal_projection_truth_v1()
     postprocessor_compat = install_express_client_report_postprocessor_v31_compat()
     client_report_postprocessor = install_express_client_report_postprocessor_v27()
+    terminal_report_truth = install_express_terminal_report_truth_v34()
+    not_scored_pdf_append = install_express_not_scored_pdf_append_v35()
+    terminal_report_compat = install_express_terminal_report_compat_v36()
+    terminal_runtime_boundary = install_express_terminal_runtime_boundary_v37()
 
     return {
         "status": "installed" if previous is not live_renderer else "already_installed",
@@ -50,6 +58,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "terminal_projection_install": terminal_projection,
         "client_report_postprocessor_compat_install": postprocessor_compat,
         "client_report_postprocessor_install": client_report_postprocessor,
+        "terminal_report_truth_install": terminal_report_truth,
+        "not_scored_pdf_append_install": not_scored_pdf_append,
+        "terminal_report_compat_install": terminal_report_compat,
+        "terminal_runtime_boundary_install": terminal_runtime_boundary,
         "premium_renderer_bound": bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False)),
         "dossier_renderer_bound": bool(getattr(dossier._premium_pdf, "_nico_express_pdf_renderer_truth_v21", False)),
         "scanner_dispositions_bound": scanner_dispositions.get("status") in {"installed", "already_installed"},
@@ -62,6 +74,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "terminal_projection_bound": terminal_projection.get("status") in {"installed", "already_installed"},
         "client_report_postprocessor_bound": client_report_postprocessor.get("status") in {"installed", "already_installed"},
         "client_report_postprocessor_compat_bound": postprocessor_compat.get("status") in {"installed", "already_installed"},
+        "terminal_report_truth_bound": terminal_report_truth.get("status") in {"installed", "already_installed"},
+        "not_scored_pdf_append_bound": not_scored_pdf_append.get("status") in {"installed", "already_installed"},
+        "terminal_report_compat_bound": terminal_report_compat.get("status") in {"installed", "already_installed"},
+        "terminal_runtime_boundary_bound": terminal_runtime_boundary.get("status") in {"installed", "already_installed"},
         "static_import_rebound": previous is not live_renderer,
         "human_review_required": True,
     }

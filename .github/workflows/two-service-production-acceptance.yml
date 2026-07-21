@@ -32,11 +32,12 @@ jobs:
       - name: Compile acceptance runner and verify bounded contract
         run: |
           set -euo pipefail
-          python -m py_compile scripts/two_service_live_acceptance.py
+          python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_diagnostic.py
           python - <<'PY'
           from pathlib import Path
 
           source = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
+          diagnostic = Path("scripts/two_service_live_acceptance_diagnostic.py").read_text(encoding="utf-8")
           assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in source
           assert 'data-assessment-service-count="2"' in source
           assert 'passes=args.passes' in source
@@ -46,6 +47,7 @@ jobs:
           assert '"markdown_html_pdf_json_parity": True' in source
           assert '"comprehensive_depth_verified": True' in source
           assert '"post_run_reconnect_identity_preserved": True' in source
+          assert 'traceback.format_exc(limit=20)' in diagnostic
           PY
 
   live-production:
@@ -155,7 +157,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          python scripts/two_service_live_acceptance.py \
+          python scripts/two_service_live_acceptance_diagnostic.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
