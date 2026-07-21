@@ -29,6 +29,14 @@ def _scan_files_with_safe_samples(files: dict[str, str]) -> dict[str, Any]:
     return result
 
 
+# Preserve the canonical calibrated scanner identity used by the score-integrity
+# installer and its idempotency contract. The wrapper only retains already-safe
+# bounded samples; it does not replace or bypass calibrated scanning behavior.
+_scan_files_with_safe_samples.__name__ = getattr(_ORIGINAL_SCAN_FILES, "__name__", "scan_files")
+_scan_files_with_safe_samples.__qualname__ = getattr(_ORIGINAL_SCAN_FILES, "__qualname__", _scan_files_with_safe_samples.__name__)
+_scan_files_with_safe_samples.__doc__ = getattr(_ORIGINAL_SCAN_FILES, "__doc__", None)
+
+
 def _collect_with_safe_samples(*args: Any, **kwargs: Any):
     token = _SCAN_DETAILS.set(None)
     try:
