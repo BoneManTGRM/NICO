@@ -67,6 +67,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     quality = {
         "version": VERSION,
         "decision_grade_body": True,
+        "appendix_contract_schema": VERSION,
+        "full_evidence_appendix": True,
         "score_band_separated_from_assurance": all(bool(item.get("score_band_label")) and bool(item.get("assurance_label")) for item in assessment.get("sections") or [] if isinstance(item, dict)),
         "secret_category_isolated": True,
         "named_architecture_hotspots": any(item.get("category") == "architecture" and item.get("location") for item in findings),
