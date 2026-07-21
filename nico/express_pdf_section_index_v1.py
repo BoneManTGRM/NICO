@@ -6,7 +6,9 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-VERSION = "nico.express_pdf_section_index.v1"
+from nico.express_section_status_truth_v26 import assurance_presentation, technical_score_band
+
+VERSION = "nico.express_pdf_section_index.v2"
 _NOT_SCORED_IDS = {
     "scanner_worker",
     "scanner_worker_evidence",
@@ -42,15 +44,24 @@ def _records(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not label:
             continue
         not_scored = _not_scored(section)
-        score = None if not_scored else section.get("presented_score", section.get("score"))
+        score = None if not_scored else section.get("score_value")
+        if score is None and not not_scored:
+            score = section.get("presented_score", section.get("score"))
         status = _text(section.get("presented_status") or section.get("status") or "unknown", 40).upper()
         if section_id.casefold() in {"scanner_worker", "scanner_worker_evidence"}:
             status = "SUPPLEMENTAL"
+        band = technical_score_band(score, scored=not not_scored)
+        assurance = assurance_presentation(status, scored=not not_scored)
+        band_label = _text(section.get("score_band_label") or band["score_band_label"], 60)
+        assurance_label = _text(section.get("assurance_label") or assurance["assurance_label"], 80)
         records.append(
             {
                 "section_id": section_id,
                 "label": label,
-                "status": status,
+                "canonical_status": status,
+                "technical_band": band_label,
+                "assurance": assurance_label,
+                "assurance_display": f"{assurance_label} ({status})",
                 "score": None if score is None else int(score),
                 "score_label": "NOT SCORED" if score is None else f"{int(score)}/100",
                 "directly_scored": not not_scored,
@@ -70,10 +81,10 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        rightMargin=0.55 * inch,
-        leftMargin=0.55 * inch,
-        topMargin=0.55 * inch,
-        bottomMargin=0.66 * inch,
+        rightMargin=0.42 * inch,
+        leftMargin=0.42 * inch,
+        topMargin=0.5 * inch,
+        bottomMargin=0.62 * inch,
         title="NICO Express Canonical Section Index",
         author="NICO",
         invariant=1,
@@ -92,8 +103,8 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
         "CanonicalIndexBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=8.2,
-        leading=10.2,
+        fontSize=7.8,
+        leading=9.8,
         textColor=colors.HexColor("#334155"),
         spaceAfter=4,
     )
@@ -101,8 +112,8 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
         "CanonicalIndexLabel",
         parent=body,
         fontName="Helvetica-Bold",
-        fontSize=7.4,
-        leading=9.2,
+        fontSize=7.1,
+        leading=8.8,
         textColor=colors.HexColor("#64748b"),
     )
 
@@ -114,8 +125,9 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
     rows = [
         [
             paragraph("Canonical section", label_style),
-            paragraph("Status", label_style),
-            paragraph("Presented score", label_style),
+            paragraph("Technical score", label_style),
+            paragraph("Technical band", label_style),
+            paragraph("Evidence assurance", label_style),
             paragraph("Treatment", label_style),
         ]
     ]
@@ -123,13 +135,14 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
         rows.append(
             [
                 paragraph(item["label"]),
-                paragraph(item["status"]),
                 paragraph(item["score_label"]),
+                paragraph(item["technical_band"]),
+                paragraph(item["assurance_display"]),
                 paragraph("Scored" if item["directly_scored"] else "Supplemental / review control"),
             ]
         )
 
-    table = Table(rows, colWidths=[2.75 * inch, 1.1 * inch, 1.15 * inch, 2.05 * inch], repeatRows=1)
+    table = Table(rows, colWidths=[2.35 * inch, 0.95 * inch, 1.05 * inch, 1.65 * inch, 1.45 * inch], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
@@ -137,10 +150,10 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#075985")),
                 ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
         )
     )
@@ -150,7 +163,7 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
     story = [
         paragraph("Canonical Section and Score Index", title),
         paragraph(
-            "This appendix preserves the exact customer-facing section labels and presented score treatment used by Markdown, HTML, JSON, and the premium PDF. Supplemental scanner evidence and pending human acceptance remain NOT SCORED.",
+            "This canonical index now separates technical score, technical band, and evidence assurance. A STRONG or EXCEPTIONAL technical score can remain REVIEW LIMITED when evidence requires disposition. Supplemental scanner evidence and pending human acceptance remain NOT SCORED.",
             body,
         ),
         Spacer(1, 0.08 * inch),
@@ -162,7 +175,7 @@ def _index_pdf(result: dict[str, Any], records: list[dict[str, Any]]) -> bytes:
             if presented is not None
             else "Evidence-adjusted score: NOT SCORED"
         ),
-        paragraph("Decision posture: Human review required. Client delivery is not approved."),
+        paragraph("Delivery status: Human review required. Client delivery is not approved."),
     ]
     doc.build(story)
     return buffer.getvalue()
@@ -210,6 +223,7 @@ def append_canonical_section_index(result: dict[str, Any]) -> dict[str, Any]:
         "status": "complete",
         "version": VERSION,
         "record_count": len(records),
+        "records": records,
         "page_count_before": len(reader.pages),
         "page_count_after": len(final_reader.pages),
         "index_appended": bool(missing_before),
@@ -218,6 +232,8 @@ def append_canonical_section_index(result: dict[str, Any]) -> dict[str, Any]:
         "missing_score_labels_after": missing_scores,
         "canonical_labels_present": not missing_after,
         "canonical_scores_present": not missing_scores,
+        "score_band_separated_from_assurance": True,
+        "canonical_status_retained": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }

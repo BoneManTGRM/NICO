@@ -46,6 +46,7 @@ def test_dossier_export_calls_final_live_vector_renderer() -> None:
     from nico import express_report_premium_v14 as premium
 
     assert getattr(premium._premium_pdf, "_nico_express_pdf_renderer_truth_v21", False) is True
+    assert getattr(premium._premium_pdf, "_nico_express_pdf_score_assurance_v1", False) is True
     assert dossier._premium_pdf is premium._premium_pdf
 
     result = _result()
@@ -54,8 +55,10 @@ def test_dossier_export_calls_final_live_vector_renderer() -> None:
     pdf = base64.b64decode(payload or "")
     text = [" ".join((page.extract_text() or "").split()).casefold() for page in PdfReader(io.BytesIO(pdf)).pages]
 
-    assert sum("score contribution and constraints" in page for page in text) == 1
+    assert sum("score contribution and assurance constraints" in page for page in text) == 1
     assert sum("architecture decision record" in page for page in text) == 1
     assert sum(all(token in page for token in ("velocity", "complexity", "ownership", "decision record")) for page in text) == 1
     assert result["express_pdf_renderer_truth"]["status"] == "complete"
     assert result["express_pdf_bar_geometry"]["render_mode"] == "reportlab_vector_geometry"
+    assert result["express_pdf_score_assurance"]["assurance_separate"] is True
+    assert result["express_pdf_score_assurance_geometry"]["score_band_coloring"] is True

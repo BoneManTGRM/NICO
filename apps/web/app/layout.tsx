@@ -1,6 +1,7 @@
 import type {ReactNode} from "react";
 import "../styles/globals.css";
 import "../styles/navigation.css";
+import "../styles/score-assurance.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
@@ -11,6 +12,7 @@ import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
+import AssessmentScoreAssuranceGuard from "./AssessmentScoreAssuranceGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
 import GenericRepositoryExample from "./GenericRepositoryExample";
@@ -43,6 +45,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
+          <AssessmentScoreAssuranceGuard />
           <OperationsPreloadGuard />
           <RetainerAutoEvidenceLauncher />
           <PrimaryNavigation />

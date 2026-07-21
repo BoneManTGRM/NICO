@@ -6,7 +6,9 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_cross_format_contract.v25.1"
+from nico.express_section_status_truth_v26 import assurance_presentation, technical_score_band
+
+VERSION = "nico.express_cross_format_contract.v26"
 _PATCH_MARKER = "_nico_express_cross_format_contract_v24"
 _SCANNER_IDS = {"scanner_worker", "scanner_worker_evidence"}
 _CLIENT_ACCEPTANCE_IDS = {"client_acceptance", "client_human_acceptance"}
@@ -38,17 +40,30 @@ def _canonical_records(result: dict[str, Any]) -> list[dict[str, Any]]:
         status = _text(section.get("presented_status") or section.get("status")).casefold() or "unknown"
         scanner = section_id.casefold() in _SCANNER_IDS or status == "supplemental"
         not_scored = _not_scored(section)
-        score = None if not_scored else section.get("presented_score", section.get("score"))
+        score = None if not_scored else section.get("score_value")
+        if score is None and not not_scored:
+            score = section.get("presented_score", section.get("score"))
+        score_band = technical_score_band(score, scored=not not_scored)
+        assurance = assurance_presentation("supplemental" if scanner else status, scored=not not_scored)
         records.append(
             {
                 "section_id": section_id,
                 "label": _text(section.get("label") or section.get("title") or section_id),
                 "status": "supplemental" if scanner else status,
+                "canonical_status_role": "evidence_assurance",
                 "score": score,
                 "source_score": None if not_scored else section.get("source_score", section.get("score")),
                 "confidence": _text(section.get("presented_confidence") or section.get("confidence") or "unknown").casefold(),
                 "directly_scored": not not_scored,
                 "score_label": "NOT SCORED" if not_scored else f"{score}/100",
+                "technical_band": _text(section.get("score_band") or score_band["score_band"]),
+                "technical_band_label": _text(section.get("score_band_label") or score_band["score_band_label"]),
+                "score_tone": _text(section.get("score_tone") or score_band["score_tone"]),
+                "assurance_status": _text(section.get("assurance_status") or assurance["assurance_status"]),
+                "assurance_label": _text(section.get("assurance_label") or assurance["assurance_label"]),
+                "assurance_tone": _text(section.get("assurance_tone") or assurance["assurance_tone"]),
+                "technical_score_display": "NOT SCORED" if not_scored else f"{_text(section.get('score_band_label') or score_band['score_band_label'])} · {score}/100",
+                "assurance_display": _text(section.get("assurance_label") or assurance["assurance_label"]),
             }
         )
     return records
@@ -70,9 +85,9 @@ def _contains_record(document: str, record: dict[str, Any]) -> bool:
     label = re.escape(str(record["label"]))
     status = re.escape(str(record["status"]).upper())
     if record["score"] is None:
-        expected = rf"{label}[\s\S]{{0,160}}{status}[\s\S]{{0,80}}NOT\s+SCORED"
+        expected = rf"{label}[\s\S]{{0,220}}{status}[\s\S]{{0,120}}NOT\s+SCORED"
     else:
-        expected = rf"{label}[\s\S]{{0,160}}{status}[\s\S]{{0,80}}{int(record['score'])}\s*/\s*100"
+        expected = rf"{label}[\s\S]{{0,220}}{status}[\s\S]{{0,120}}{int(record['score'])}\s*/\s*100"
     return bool(re.search(expected, document, re.I))
 
 
@@ -103,9 +118,13 @@ def build_cross_format_contract(result: dict[str, Any]) -> dict[str, Any]:
         for item in records
         if item["score_label"] == "NOT SCORED"
     )
+    separated_valid = all(
+        bool(item.get("technical_band_label")) and bool(item.get("assurance_label"))
+        for item in records
+    )
 
     contract = {
-        "status": "complete" if not markdown_missing and not html_missing and scanner_valid and not_scored_valid else "degraded",
+        "status": "complete" if not markdown_missing and not html_missing and scanner_valid and not_scored_valid and separated_valid else "degraded",
         "version": VERSION,
         "canonical_records": records,
         "record_count": len(records),
@@ -120,6 +139,10 @@ def build_cross_format_contract(result: dict[str, Any]) -> dict[str, Any]:
         "not_scored_controls_excluded": not_scored_valid,
         "source_scores_preserved": True,
         "presented_fields_are_canonical": True,
+        "score_band_separated_from_assurance": separated_valid,
+        "canonical_status_role": "evidence_assurance",
+        "technical_score_role": "score_derived_health",
+        "delivery_status_separate": True,
         "pdf_uses_same_result_object": True,
         "json_contract_embedded": True,
         "human_review_required": True,
@@ -155,6 +178,7 @@ def install_express_cross_format_contract_v24() -> dict[str, Any]:
         "score_status_parity_contract": True,
         "source_scores_preserved": True,
         "not_scored_controls_excluded": True,
+        "score_band_separated_from_assurance": True,
     }
 
 
