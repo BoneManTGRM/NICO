@@ -8,6 +8,8 @@ from pypdf import PdfReader
 
 from nico.comprehensive_report_appendix_v3 import (
     APPENDIX_HEADING,
+    LEGACY_REVIEW_HEADING,
+    REVIEW_HEADING,
     VERSION,
     build_comprehensive_report_package,
     install_native_provider_binding,
@@ -155,17 +157,20 @@ def test_markdown_and_html_include_the_same_evidence_appendix() -> None:
     assert len(report["html_sha256"]) == 64
 
 
-def test_appendix_precedes_human_review_and_preserves_delivery_boundary() -> None:
+def test_appendix_precedes_human_review_acceptance_gate_and_preserves_boundary() -> None:
     report = _package()["report_package"]
     markdown = report["markdown"]
 
-    assert markdown.index(APPENDIX_HEADING) < markdown.index("## Human Review Checklist")
+    assert markdown.index(APPENDIX_HEADING) < markdown.index(REVIEW_HEADING)
+    assert LEGACY_REVIEW_HEADING not in markdown
+    assert "<h2>Human Review and Acceptance Gate</h2>" in report["html"]
+    assert report["human_review_acceptance_gate_present"] is True
     assert "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED" in markdown
     assert report["human_review_required"] is True
     assert report["client_delivery_allowed"] is False
 
 
-def test_pdf_remains_valid_and_contains_the_evidence_appendix() -> None:
+def test_pdf_remains_valid_and_contains_matching_chapter_headings() -> None:
     report = _package()["report_package"]
     raw = base64.b64decode(report["pdf_base64"], validate=True)
     reader = PdfReader(io.BytesIO(raw))
@@ -177,7 +182,7 @@ def test_pdf_remains_valid_and_contains_the_evidence_appendix() -> None:
     assert "NICO MID TECHNICAL" not in text.upper()
 
 
-def test_quality_contract_requires_appendix_in_readable_formats() -> None:
+def test_quality_contract_requires_both_chapters_in_readable_formats() -> None:
     result = _package()
     quality = result["report_quality_contract"]
 
@@ -185,6 +190,8 @@ def test_quality_contract_requires_appendix_in_readable_formats() -> None:
     assert quality["full_evidence_appendix"] is True
     assert quality["markdown_evidence_appendix"] is True
     assert quality["html_evidence_appendix"] is True
+    assert quality["markdown_human_review_acceptance_gate"] is True
+    assert quality["html_human_review_acceptance_gate"] is True
     assert quality["human_review_required"] is True
     assert quality["client_delivery_allowed"] is False
 
@@ -199,6 +206,9 @@ def test_native_provider_binding_replaces_the_report_builder() -> None:
     assert status["markdown_evidence_appendix"] is True
     assert status["html_evidence_appendix"] is True
     assert status["pdf_evidence_appendix"] is True
+    assert status["markdown_human_review_acceptance_gate"] is True
+    assert status["html_human_review_acceptance_gate"] is True
+    assert status["pdf_human_review_acceptance_gate"] is True
 
 
 def test_production_bootstrap_binds_appendix_before_provider_install() -> None:

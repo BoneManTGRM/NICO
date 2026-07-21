@@ -6,8 +6,10 @@ from typing import Any
 
 from nico import comprehensive_report_package as base_report
 
-VERSION = "nico.comprehensive_report_appendix.v3"
+VERSION = "nico.comprehensive_report_appendix.v4"
 APPENDIX_HEADING = "## Evidence Appendix"
+REVIEW_HEADING = "## Human Review and Acceptance Gate"
+LEGACY_REVIEW_HEADING = "## Human Review Checklist"
 
 
 def _text(value: Any, limit: int = 1200) -> str:
@@ -75,13 +77,20 @@ def _appendix(stage_summaries: Any) -> str:
     return "\n".join(lines)
 
 
+def _normalize_review_heading(markdown: str) -> str:
+    if REVIEW_HEADING in markdown:
+        return markdown
+    return markdown.replace(LEGACY_REVIEW_HEADING, REVIEW_HEADING, 1)
+
+
 def _insert_before_review(markdown: str, appendix: str) -> str:
+    markdown = _normalize_review_heading(markdown)
     if APPENDIX_HEADING in markdown:
         return markdown
-    marker = "\n## Human Review Checklist\n"
+    marker = f"\n{REVIEW_HEADING}\n"
     if marker in markdown:
         return markdown.replace(marker, f"\n{appendix}\n{marker}", 1)
-    return markdown.rstrip() + f"\n\n{appendix}\n"
+    return markdown.rstrip() + f"\n\n{appendix}\n\n{REVIEW_HEADING}\n"
 
 
 def build_comprehensive_report_package(
@@ -89,11 +98,12 @@ def build_comprehensive_report_package(
     identity: dict[str, Any],
     stage_results: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build the canonical package and bind a real evidence appendix to Markdown and HTML.
+    """Build one report package with matching appendix and review-gate headings.
 
-    The v2 PDF already includes the evidence appendix. Production acceptance exposed that
-    Markdown and therefore HTML omitted the same chapter. This wrapper preserves the base
-    canonical JSON and PDF, inserts the bounded appendix into Markdown, regenerates semantic
+    The base PDF contains both the Evidence Appendix and Human Review and Acceptance
+    Gate. Production acceptance proved that the source Markdown used a shorter legacy
+    review heading. This wrapper preserves the canonical JSON and valid PDF, inserts
+    the bounded appendix, normalizes the human-review heading, regenerates semantic
     HTML from that exact Markdown, and records rendered artifact hashes.
     """
 
@@ -127,6 +137,7 @@ def build_comprehensive_report_package(
     package["html_sha256"] = hashlib.sha256(rendered_html.encode("utf-8")).hexdigest()
     package["appendix_contract_schema"] = VERSION
     package["evidence_appendix_present"] = True
+    package["human_review_acceptance_gate_present"] = True
     package["human_review_required"] = True
     package["client_delivery_allowed"] = False
 
@@ -137,6 +148,8 @@ def build_comprehensive_report_package(
             "full_evidence_appendix": True,
             "markdown_evidence_appendix": APPENDIX_HEADING in markdown,
             "html_evidence_appendix": "<h2>Evidence Appendix</h2>" in rendered_html,
+            "markdown_human_review_acceptance_gate": REVIEW_HEADING in markdown,
+            "html_human_review_acceptance_gate": "<h2>Human Review and Acceptance Gate</h2>" in rendered_html,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -148,14 +161,20 @@ def build_comprehensive_report_package(
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False
 
-    if not quality["markdown_evidence_appendix"] or not quality["html_evidence_appendix"]:
+    required = (
+        quality["markdown_evidence_appendix"],
+        quality["html_evidence_appendix"],
+        quality["markdown_human_review_acceptance_gate"],
+        quality["html_human_review_acceptance_gate"],
+    )
+    if not all(required):
         output["status"] = "blocked"
-        output["reason"] = "comprehensive_evidence_appendix_missing"
+        output["reason"] = "comprehensive_cross_format_chapter_missing"
     return output
 
 
 def install_native_provider_binding() -> dict[str, Any]:
-    """Bind the appendix-aware builder into the native provider module once."""
+    """Bind the cross-format chapter-aware builder into native providers once."""
 
     from nico import comprehensive_native_providers as providers
 
@@ -166,6 +185,9 @@ def install_native_provider_binding() -> dict[str, Any]:
         "markdown_evidence_appendix": True,
         "html_evidence_appendix": True,
         "pdf_evidence_appendix": True,
+        "markdown_human_review_acceptance_gate": True,
+        "html_human_review_acceptance_gate": True,
+        "pdf_human_review_acceptance_gate": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -173,6 +195,8 @@ def install_native_provider_binding() -> dict[str, Any]:
 
 __all__ = [
     "APPENDIX_HEADING",
+    "LEGACY_REVIEW_HEADING",
+    "REVIEW_HEADING",
     "VERSION",
     "build_comprehensive_report_package",
     "install_native_provider_binding",
