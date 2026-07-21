@@ -1,0 +1,123 @@
+name: Provider Live Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider to verify
+        required: true
+        type: choice
+        options:
+          - gitlab
+          - bitbucket_cloud
+          - bitbucket_data_center
+          - azure_devops
+      repository:
+        description: Native repository identifier (for example group/repo, workspace/repo, PROJ/repo, or Azure repository ID)
+        required: true
+        type: string
+      revision:
+        description: Optional immutable revision; leave empty to pin the first observed revision
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live-provider:
+    name: Two-pass live provider acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: provider-live-acceptance
+    env:
+      NICO_GITLAB_URL: ${{ vars.NICO_GITLAB_URL }}
+      NICO_GITLAB_TOKEN: ${{ secrets.NICO_GITLAB_TOKEN }}
+      NICO_BITBUCKET_CLOUD_URL: ${{ vars.NICO_BITBUCKET_CLOUD_URL }}
+      NICO_BITBUCKET_CLOUD_TOKEN: ${{ secrets.NICO_BITBUCKET_CLOUD_TOKEN }}
+      NICO_BITBUCKET_DC_URL: ${{ vars.NICO_BITBUCKET_DC_URL }}
+      NICO_BITBUCKET_DC_TOKEN: ${{ secrets.NICO_BITBUCKET_DC_TOKEN }}
+      NICO_AZURE_DEVOPS_URL: ${{ vars.NICO_AZURE_DEVOPS_URL }}
+      NICO_AZURE_DEVOPS_ORGANIZATION: ${{ vars.NICO_AZURE_DEVOPS_ORGANIZATION }}
+      NICO_AZURE_DEVOPS_PROJECT: ${{ vars.NICO_AZURE_DEVOPS_PROJECT }}
+      NICO_AZURE_DEVOPS_TOKEN: ${{ secrets.NICO_AZURE_DEVOPS_TOKEN }}
+    steps:
+      - name: Check out exact workflow commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install NICO
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir -e .
+
+      - name: Validate read-only live acceptance contract
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/provider_live_acceptance.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/provider_live_acceptance.py").read_text(encoding="utf-8")
+          assert 'passes < 2' in source
+          assert 'provider_acceptance_must_be_read_only' in source
+          assert 'provider_acceptance_revision_drift' in source
+          assert 'raw_credential_absent' in source
+          assert 'client_delivery_allowed": False' in source
+          PY
+
+      - name: Run two consecutive live provider passes
+        id: acceptance
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python scripts/provider_live_acceptance.py \
+            --provider '${{ inputs.provider }}' \
+            --repository '${{ inputs.repository }}' \
+            --revision '${{ inputs.revision }}' \
+            --passes 2 \
+            --output audit-results/provider-live-acceptance.json
+
+      - name: Upload immutable provider evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provider-live-acceptance-${{ inputs.provider }}-${{ github.sha }}-${{ github.run_id }}
+          path: audit-results/provider-live-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require passing live evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test '${{ steps.acceptance.outcome }}' = 'success'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("audit-results/provider-live-acceptance.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "passed"
+          assert payload["live_production_claim"] is True
+          assert payload["passes_required"] == 2
+          assert payload["passes_completed"] == 2
+          assert len(payload["runs"]) == 2
+          assert all(payload["proof"].values())
+          assert len({item["revision"] for item in payload["runs"]}) == 1
+          assert len({item["repository_id"] for item in payload["runs"]}) == 1
+          assert payload["human_review_required"] is True
+          assert payload["client_delivery_allowed"] is False
+          metadata = payload["credential_metadata"]
+          assert set(metadata) == {
+              "provider", "env_var", "scheme", "key_id", "allowed_hosts",
+              "scopes", "version", "expires_at", "resolved_at", "secret_present",
+          }
+          assert metadata["secret_present"] is True
+          assert "value" not in metadata
+          PY
