@@ -3,9 +3,36 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v1"
+VERSION = "nico.comprehensive_api_controller.v2"
+
+
+def _ordered_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a response copy with stage results in canonical execution order.
+
+    PostgreSQL JSONB does not preserve object insertion order. Without this response
+    normalization, a persisted run can render a later running stage above already
+    completed prerequisite stages even though the canonical completed-stage prefix is
+    correct. Key ordering does not change the run's hashed semantic content.
+    """
+
+    ordered_record = deepcopy(record)
+    raw_results = ordered_record.get("stage_results")
+    if not isinstance(raw_results, dict):
+        ordered_record["stage_results"] = {}
+        return ordered_record
+
+    ordered_results: dict[str, Any] = {}
+    for stage_id in COMPREHENSIVE_STAGES:
+        if stage_id in raw_results:
+            ordered_results[stage_id] = deepcopy(raw_results[stage_id])
+    for stage_id, result in raw_results.items():
+        if stage_id not in ordered_results:
+            ordered_results[str(stage_id)] = deepcopy(result)
+    ordered_record["stage_results"] = ordered_results
+    return ordered_record
 
 
 class ComprehensiveApiController:
@@ -69,7 +96,8 @@ class ComprehensiveApiController:
 
     @staticmethod
     def _response(record: dict[str, Any], *, operation: str) -> dict[str, Any]:
-        identity = deepcopy(record["identity"])
+        canonical_record = _ordered_record(record)
+        identity = deepcopy(canonical_record["identity"])
         return {
             "artifact_schema": VERSION,
             "service_id": "comprehensive",
@@ -80,16 +108,16 @@ class ComprehensiveApiController:
             "evidence_ledger_id": identity["evidence_ledger_id"],
             "customer_id": identity["customer_id"],
             "project_id": identity["project_id"],
-            "status": record["status"],
-            "current_stage": record["current_stage"],
-            "completed_stages": deepcopy(record["completed_stages"]),
-            "progress_percent": record["progress_percent"],
-            "revision": record["revision"],
-            "terminal": record["terminal"],
+            "status": canonical_record["status"],
+            "current_stage": canonical_record["current_stage"],
+            "completed_stages": deepcopy(canonical_record["completed_stages"]),
+            "progress_percent": canonical_record["progress_percent"],
+            "revision": canonical_record["revision"],
+            "terminal": canonical_record["terminal"],
             "human_review_required": True,
             "client_delivery_allowed": False,
-            "integrity_sha256": record["integrity_sha256"],
-            "record": deepcopy(record),
+            "integrity_sha256": canonical_record["integrity_sha256"],
+            "record": canonical_record,
         }
 
 
