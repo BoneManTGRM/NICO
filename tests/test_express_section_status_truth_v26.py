@@ -91,7 +91,8 @@ def test_scanner_worker_and_unapproved_client_acceptance_are_not_scored() -> Non
     assert scanner["diagnostic_finding_count"] == 27
     assert acceptance["status"] == "gray"
     assert acceptance["display_status"] == "GRAY · NOT SCORED"
-    assert acceptance["score"] == 0
+    assert acceptance["score"] is None
+    assert acceptance["score_label"] == "NOT SCORED"
 
 
 def test_approved_client_acceptance_remains_green_and_scored() -> None:
