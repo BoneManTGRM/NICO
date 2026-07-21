@@ -11,6 +11,7 @@ import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
 import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
+import AssessmentScoreAssuranceGuard from "./AssessmentScoreAssuranceGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
 import GenericRepositoryExample from "./GenericRepositoryExample";
@@ -43,6 +44,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
           <ReportPresentationGuard />
+          <AssessmentScoreAssuranceGuard />
           <OperationsPreloadGuard />
           <RetainerAutoEvidenceLauncher />
           <PrimaryNavigation />
