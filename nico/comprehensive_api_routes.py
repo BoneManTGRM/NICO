@@ -10,7 +10,7 @@ from nico.comprehensive_run_store import ComprehensiveRunConflict, Comprehensive
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v3"
+VERSION = "nico.comprehensive_api_routes.v4"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -89,6 +89,15 @@ def _runtime_persistence(request: Request) -> dict[str, Any]:
     }
 
 
+def _with_runtime_truth(request: Request, response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **response,
+        "persistence": _runtime_persistence(request),
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("request_body_must_be_object")
@@ -131,16 +140,16 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             "authorization_confirmed": True,
         }
     )
-    return {
-        **response,
-        "operation": "intake_started",
-        "repository_snapshot": snapshot,
-        "client_name": str(payload.get("client_name") or ""),
-        "project_name": str(payload.get("project_name") or ""),
-        "persistence": _runtime_persistence(request),
-        "human_review_required": True,
-        "client_delivery_allowed": False,
-    }
+    return _with_runtime_truth(
+        request,
+        {
+            **response,
+            "operation": "intake_started",
+            "repository_snapshot": snapshot,
+            "client_name": str(payload.get("client_name") or ""),
+            "project_name": str(payload.get("project_name") or ""),
+        },
+    )
 
 
 def register_comprehensive_api_routes(
@@ -179,7 +188,7 @@ def register_comprehensive_api_routes(
     async def start_comprehensive(request: Request) -> dict[str, Any]:
         try:
             payload = await request.json()
-            return _controller(request).start(payload)
+            return _with_runtime_truth(request, _controller(request).start(payload))
         except HTTPException:
             raise
         except Exception as exc:
@@ -188,7 +197,7 @@ def register_comprehensive_api_routes(
     @app.get("/assessment/comprehensive-run/{run_id}")
     async def get_comprehensive(run_id: str, request: Request) -> dict[str, Any]:
         try:
-            return _controller(request).status(run_id)
+            return _with_runtime_truth(request, _controller(request).status(run_id))
         except HTTPException:
             raise
         except Exception as exc:
@@ -199,7 +208,10 @@ def register_comprehensive_api_routes(
         try:
             raw = await request.body()
             payload = await request.json() if raw else {}
-            return _controller(request).continue_run(run_id, payload)
+            return _with_runtime_truth(
+                request,
+                _controller(request).continue_run(run_id, payload),
+            )
         except HTTPException:
             raise
         except Exception as exc:
