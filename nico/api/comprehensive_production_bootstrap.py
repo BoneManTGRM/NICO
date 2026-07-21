@@ -9,9 +9,9 @@ from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_native_providers import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
-from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
+from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v4"
+VERSION = "nico.api.comprehensive_production_bootstrap.v5"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -47,17 +47,17 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 
 
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
-    """Mount the native Comprehensive boundary on the deployed application.
+    """Mount the decision-grade native Comprehensive boundary.
 
-    The cross-format report binding is installed before native providers and before
-    the executor map is built. This ensures the final provider emits one canonical
-    Markdown/HTML/PDF/JSON package with a real Evidence Appendix in every readable
-    report format. Native providers still fail closed at their exact stage when
-    required evidence is unavailable, durable storage remains mandatory, human review
-    remains required, and client delivery remains blocked.
+    The decision-grade binding is installed before native providers and before
+    the executor map is built. This makes category-correct scoring, separated
+    technical-score/evidence-assurance presentation, structured findings,
+    named complexity hotspots, executable roadmap output, and cross-format
+    report exports the canonical production path. Human review remains
+    mandatory and client delivery remains blocked.
     """
 
-    report_binding = install_native_provider_binding()
+    report_binding = install_decision_grade_binding()
     native_providers = install_native_comprehensive_providers(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(
@@ -83,6 +83,9 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and runtime.get("client_delivery_allowed") is False
         and runtime.get("human_review_required") is True
         and report_binding.get("bound") is True
+        and report_binding.get("canonical_scoring_bound") is True
+        and report_binding.get("secret_category_isolated") is True
+        and report_binding.get("score_band_separated_from_assurance") is True
         and len(native_providers) > 0
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
@@ -128,7 +131,9 @@ if any(count != 1 for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].
 if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:
     raise RuntimeError("Comprehensive runtime diagnostics route must be registered exactly once")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
-    raise RuntimeError("Comprehensive report appendix binding was not installed")
+    raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
+    raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
     raise RuntimeError("Comprehensive production runtime did not install native providers")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
