@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_section_status_truth.v27"
+VERSION = "nico.express_section_status_truth.v27.1"
 _PATCH_MARKER = "_nico_express_section_status_truth_v26"
 _REVIEW_TERMS = (
     "status=failed",
@@ -54,12 +54,7 @@ def _client_acceptance_is_approved(section: dict[str, Any], result: dict[str, An
 
 
 def technical_score_band(score: Any, *, scored: bool = True) -> dict[str, Any]:
-    """Return a score-derived technical band independent of evidence assurance.
-
-    The thresholds intentionally classify an 80+ technical score as strong even
-    when the same control remains review-limited. Assurance and delivery gates
-    are retained separately and never inferred from this band.
-    """
+    """Return a score-derived technical band independent of evidence assurance."""
 
     if not scored or score is None:
         return {
@@ -179,6 +174,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
                     "presented_score": None,
                     "presented": None,
                     "score": None,
+                    "score_label": "NOT SCORED",
                 }
             )
             _apply_score_assurance_fields(section)
@@ -201,9 +197,10 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
                         "display_status": "GRAY · NOT SCORED",
                         "directly_scored": False,
                         "score_treatment": "not_scored_pending_approval",
-                        "presented_score": 0,
-                        "presented": 0,
-                        "score": 0,
+                        "presented_score": None,
+                        "presented": None,
+                        "score": None,
+                        "score_label": "NOT SCORED",
                     }
                 )
             _apply_score_assurance_fields(section)
