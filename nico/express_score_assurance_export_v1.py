@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from nico.express_section_status_truth_v26 import reconcile_section_status_truth
 
-VERSION = "nico.express_score_assurance_export.v1"
+VERSION = "nico.express_score_assurance_export.v1.1"
 _PATCH_MARKER = "_nico_express_score_assurance_export_v1"
 _MARKDOWN_START = "<!-- NICO_SCORE_ASSURANCE_START -->"
 _MARKDOWN_END = "<!-- NICO_SCORE_ASSURANCE_END -->"
@@ -51,6 +51,16 @@ def _replace_bounded(document: str, start: str, end: str, replacement: str) -> s
         return pattern.sub(replacement, document, count=1)
     separator = "\n\n" if document.strip() else ""
     return document.rstrip() + separator + replacement + "\n"
+
+
+def _replace_html_bounded(document: str, replacement: str) -> str:
+    pattern = re.compile(re.escape(_HTML_START) + r"[\s\S]*?" + re.escape(_HTML_END), re.I)
+    if pattern.search(document):
+        return pattern.sub(replacement, document, count=1)
+    closing_body = re.search(r"</body\s*>", document, re.I)
+    if closing_body:
+        return document[: closing_body.start()] + replacement + document[closing_body.start() :]
+    return document.rstrip() + replacement
 
 
 def _markdown(records: list[dict[str, Any]]) -> str:
@@ -111,10 +121,20 @@ def _html(records: list[dict[str, Any]]) -> str:
     )
 
 
-def publish_score_assurance_exports(result: dict[str, Any]) -> dict[str, Any]:
-    normalized = reconcile_section_status_truth(result)
+def _apply_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
+    existing_reports = result.get("reports")
     result.clear()
     result.update(normalized)
+    if isinstance(existing_reports, dict) and isinstance(result.get("reports"), dict):
+        replacement_reports = result["reports"]
+        existing_reports.clear()
+        existing_reports.update(replacement_reports)
+        result["reports"] = existing_reports
+
+
+def publish_score_assurance_exports(result: dict[str, Any]) -> dict[str, Any]:
+    normalized = reconcile_section_status_truth(result)
+    _apply_in_place(result, normalized)
     records = _records(result)
     reports = result.get("reports")
     if isinstance(reports, dict):
@@ -123,7 +143,7 @@ def publish_score_assurance_exports(result: dict[str, Any]) -> dict[str, Any]:
             reports["markdown"] = _replace_bounded(markdown, _MARKDOWN_START, _MARKDOWN_END, _markdown(records))
         html_document = reports.get("html")
         if isinstance(html_document, str):
-            reports["html"] = _replace_bounded(html_document, _HTML_START, _HTML_END, _html(records))
+            reports["html"] = _replace_html_bounded(html_document, _html(records))
     result["score_assurance_export"] = {
         "status": "complete",
         "version": VERSION,
