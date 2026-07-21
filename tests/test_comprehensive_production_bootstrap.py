@@ -29,12 +29,12 @@ def _executors() -> dict:
     return executors
 
 
-def _payload() -> dict:
+def _payload(run_id: str = "comprun_bootstrap_001") -> dict:
     return {
-        "run_id": "comprun_bootstrap_001",
+        "run_id": run_id,
         "repository": "BoneManTGRM/NICO",
         "commit_sha": "immutable-bootstrap",
-        "evidence_ledger_id": "ledger_bootstrap_001",
+        "evidence_ledger_id": f"ledger_{run_id}",
         "customer_id": "customer_001",
         "project_id": "project_001",
         "authorized": True,
@@ -56,16 +56,54 @@ def test_missing_capabilities_mount_complete_routes_but_fail_closed() -> None:
     assert response.json()["detail"] == "comprehensive_service_not_configured"
 
 
-def test_missing_database_url_fails_closed_without_leaking_credentials(monkeypatch) -> None:
+def test_missing_durable_storage_fails_closed_without_leaking_credentials(monkeypatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "false")
     app = FastAPI()
     controller = install_comprehensive_production_bootstrap(app, capability_executors=_executors())
 
     assert controller is None
     metadata = app.state.comprehensive_runtime
-    assert metadata["reason"] == "comprehensive_database_url_required"
+    assert metadata["reason"] == "comprehensive_durable_storage_required"
     assert metadata["persistence_adapter"] == "unavailable"
     assert "database_url" not in metadata
+    assert metadata["human_review_required"] is True
+    assert metadata["client_delivery_allowed"] is False
+
+
+def test_explicit_sqlite_durable_fallback_activates_without_database_url(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "production-fallback.sqlite3"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "true")
+    monkeypatch.setenv("NICO_SQLITE_PATH", str(path))
+    app = FastAPI()
+
+    controller = install_comprehensive_production_bootstrap(
+        app,
+        capability_executors=_executors(),
+    )
+
+    assert controller is not None
+    runtime = app.state.comprehensive_runtime
+    assert runtime["configured"] is True
+    assert runtime["status"] == "ready"
+    assert runtime["persistence_adapter"] == "sqlite"
+    assert runtime["storage_source"] == "configured_durable_sqlite"
+    assert runtime["durability_verified"] is True
+    assert runtime["human_review_required"] is True
+    assert runtime["client_delivery_allowed"] is False
+    assert path.exists()
+
+    client = TestClient(app)
+    started = client.post("/assessment/comprehensive-run", json=_payload())
+    assert started.status_code == 200
+    completed = client.post("/assessment/comprehensive-run/comprun_bootstrap_001/continue")
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "review_required"
+    assert completed.json()["progress_percent"] == 100.0
 
 
 def test_later_installation_upgrades_existing_routes_to_durable_controller(tmp_path: Path) -> None:
@@ -115,6 +153,36 @@ def test_restart_reuses_exact_persisted_record(tmp_path: Path) -> None:
         dialect="sqlite",
     )
     restored = TestClient(restarted).get("/assessment/comprehensive-run/comprun_bootstrap_001")
+    assert restored.status_code == 200
+    assert restored.json()["revision"] == terminal["revision"]
+    assert restored.json()["integrity_sha256"] == terminal["integrity_sha256"]
+
+
+def test_environment_sqlite_fallback_survives_process_restart(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "environment-restart.sqlite3"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "true")
+    monkeypatch.setenv("NICO_SQLITE_PATH", str(path))
+
+    first = FastAPI()
+    install_comprehensive_production_bootstrap(first, capability_executors=_executors())
+    first_client = TestClient(first)
+    assert first_client.post(
+        "/assessment/comprehensive-run",
+        json=_payload("comprun_environment_restart"),
+    ).status_code == 200
+    terminal = first_client.post(
+        "/assessment/comprehensive-run/comprun_environment_restart/continue"
+    ).json()
+
+    restarted = FastAPI()
+    install_comprehensive_production_bootstrap(restarted, capability_executors=_executors())
+    restored = TestClient(restarted).get(
+        "/assessment/comprehensive-run/comprun_environment_restart"
+    )
     assert restored.status_code == 200
     assert restored.json()["revision"] == terminal["revision"]
     assert restored.json()["integrity_sha256"] == terminal["integrity_sha256"]
