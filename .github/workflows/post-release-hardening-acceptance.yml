@@ -1,0 +1,122 @@
+name: Post-Release Hardening Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Immutable application SHA tested by both production-equivalent passes
+        required: true
+        type: string
+      pass_one_artifact_id:
+        description: GitHub artifact ID containing pass-one post-release-hardening.json
+        required: true
+        type: string
+      pass_two_artifact_id:
+        description: GitHub artifact ID containing pass-two post-release-hardening.json
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  accept:
+    name: Require two stable production-equivalent hardening passes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact acceptance implementation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install NICO
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir -e .
+
+      - name: Validate artifact IDs and exact SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          PASS_ONE_ID: ${{ inputs.pass_one_artifact_id }}
+          PASS_TWO_ID: ${{ inputs.pass_two_artifact_id }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "${PASS_ONE_ID}" =~ ^[0-9]+$ ]]
+          [[ "${PASS_TWO_ID}" =~ ^[0-9]+$ ]]
+          test "${PASS_ONE_ID}" != "${PASS_TWO_ID}"
+
+      - name: Download retained hardening evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PASS_ONE_ID: ${{ inputs.pass_one_artifact_id }}
+          PASS_TWO_ID: ${{ inputs.pass_two_artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p audit-input/pass-one audit-input/pass-two
+          for pair in "${PASS_ONE_ID}:pass-one" "${PASS_TWO_ID}:pass-two"; do
+            artifact_id="${pair%%:*}"
+            directory="${pair##*:}"
+            curl --fail-with-body --silent --show-error --location \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              --output "audit-input/${directory}.zip"
+            unzip -q "audit-input/${directory}.zip" -d "audit-input/${directory}"
+          done
+          pass_one="$(find audit-input/pass-one -type f -name 'post-release-hardening.json' -print -quit)"
+          pass_two="$(find audit-input/pass-two -type f -name 'post-release-hardening.json' -print -quit)"
+          test -n "${pass_one}"
+          test -n "${pass_two}"
+          cp "${pass_one}" audit-input/pass-one.json
+          cp "${pass_two}" audit-input/pass-two.json
+
+      - name: Require two-pass immutable hardening acceptance
+        id: acceptance
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python scripts/post_release_hardening_acceptance.py \
+            --pass-one audit-input/pass-one.json \
+            --pass-two audit-input/pass-two.json \
+            --expected-sha '${{ inputs.expected_sha }}' \
+            --output audit-results/post-release-hardening-acceptance.json
+
+      - name: Upload immutable acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-release-hardening-acceptance-${{ inputs.expected_sha }}-${{ github.run_id }}
+          path: audit-results/post-release-hardening-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require passing acceptance contract
+        if: always()
+        run: |
+          set -euo pipefail
+          test '${{ steps.acceptance.outcome }}' = 'success'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("audit-results/post-release-hardening-acceptance.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "passed"
+          assert payload["passes_required"] == 2
+          assert payload["passes_completed"] == 2
+          assert payload["truth_fingerprints_match"] is True
+          assert payload["issues"] == []
+          assert len(payload["scenarios"]) == 11
+          assert all(item["passed"] is True for item in payload["scenarios"].values())
+          assert payload["human_review_required"] is True
+          assert payload["client_delivery_allowed"] is False
+          PY
