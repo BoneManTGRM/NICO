@@ -28,10 +28,15 @@ def _identity(context: Mapping[str, Any]) -> dict[str, str]:
 
 def _authorization_provider(context: dict[str, Any]) -> dict[str, Any]:
     identity = _identity(context)
+    boundaries = {
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
     if str(context.get("service_id") or "") != "comprehensive":
         return {
             "status": "blocked",
             "reason": "service_id_must_be_comprehensive",
+            **boundaries,
             **identity,
         }
     return {
@@ -49,6 +54,7 @@ def _authorization_provider(context: dict[str, Any]) -> dict[str, Any]:
             "repository": identity["repository"],
             "commit_sha": identity["commit_sha"],
         },
+        **boundaries,
         **identity,
     }
 
