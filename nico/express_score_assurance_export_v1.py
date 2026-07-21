@@ -7,16 +7,35 @@ from typing import Any, Callable
 
 from nico.express_section_status_truth_v26 import reconcile_section_status_truth
 
-VERSION = "nico.express_score_assurance_export.v1.1"
+VERSION = "nico.express_score_assurance_export.v1.2"
 _PATCH_MARKER = "_nico_express_score_assurance_export_v1"
 _MARKDOWN_START = "<!-- NICO_SCORE_ASSURANCE_START -->"
 _MARKDOWN_END = "<!-- NICO_SCORE_ASSURANCE_END -->"
 _HTML_START = "<!-- NICO_SCORE_ASSURANCE_HTML_START -->"
 _HTML_END = "<!-- NICO_SCORE_ASSURANCE_HTML_END -->"
+_CLIENT_ACCEPTANCE_IDS = {"client_acceptance", "client_human_acceptance"}
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split())
+
+
+def _normalize_not_scored_controls(result: dict[str, Any]) -> None:
+    for section in result.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = _text(section.get("id")).casefold()
+        if section_id not in _CLIENT_ACCEPTANCE_IDS or section.get("directly_scored") is not False:
+            continue
+        section["score"] = None
+        section["presented_score"] = None
+        section["presented"] = None
+        section["score_value"] = None
+        section["score_band"] = "not_scored"
+        section["score_band_label"] = "NOT SCORED"
+        section["score_tone"] = "gray"
+        section["technical_score_display"] = "NOT SCORED"
+        section["score_label"] = "NOT SCORED"
 
 
 def _records(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -135,6 +154,7 @@ def _apply_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
 def publish_score_assurance_exports(result: dict[str, Any]) -> dict[str, Any]:
     normalized = reconcile_section_status_truth(result)
     _apply_in_place(result, normalized)
+    _normalize_not_scored_controls(result)
     records = _records(result)
     reports = result.get("reports")
     if isinstance(reports, dict):
