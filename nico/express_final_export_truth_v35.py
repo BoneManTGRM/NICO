@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+import sys
+from functools import wraps
+from typing import Any, Callable
 
 VERSION = "nico.express_final_export_truth.v35"
+_PATCH_MARKER = "_nico_express_final_export_truth_v35"
 _NOT_SCORED_IDS = {
     "scanner_worker",
     "scanner_worker_evidence",
@@ -29,12 +32,7 @@ def _not_scored(section: dict[str, Any]) -> bool:
 
 
 def reconcile_final_express_scores(result: dict[str, Any]) -> dict[str, Any]:
-    """Recompute presentation scores from the final canonical evidence state.
-
-    The Express pipeline has an early polish render and a final consistency
-    render.  This final-source hook prevents first-pass ``source_score`` values
-    from surviving after the canonical section scores have changed.
-    """
+    """Recompute presentation scores from the final canonical evidence state."""
 
     from nico.express_evidence_specific_scoring_v33 import reconcile_express_scores
     from nico.express_source_score_refresh_v34 import refresh_canonical_source_scores
@@ -93,7 +91,6 @@ def _rewrite_not_scored_document(document: str, result: dict[str, Any], *, html:
         for pattern in patterns:
             output = re.sub(pattern, replacement, output, flags=re.I)
 
-    # No final customer-facing export may retain a null numeric score token.
     output = re.sub(r"\b(?:NONE|NULL)\s*/\s*100\b", "NOT SCORED", output, flags=re.I)
     return output
 
@@ -115,8 +112,6 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     markdown = _rewrite_not_scored_document(str(reports.get("markdown") or ""), result)
     if markdown:
         reports["markdown"] = markdown
-        # Markdown is the canonical text export; rebuilding HTML prevents a
-        # separately patched HTML string from drifting from the final document.
         reports["html"] = build_html(markdown)
     else:
         reports["html"] = _rewrite_not_scored_document(
@@ -140,8 +135,64 @@ def normalize_final_express_exports(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def finalize_after_consistency(
+    current: Callable[[dict[str, Any]], dict[str, Any]],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    finalized = current(result)
+    if finalized.get("status") != "complete":
+        return finalized
+
+    from nico import final_report_consistency as finalizer
+    from nico.express_cross_format_contract_v24 import build_cross_format_contract
+
+    reconcile_final_express_scores(finalized)
+    _normalize_section_payloads(finalized)
+    finalizer.attach_score_details(finalized)
+    # Rebuild every output only after the final canonical and presented scores
+    # are settled. This second render is deliberate and bounded.
+    finalizer._rebuild_reports(finalized)
+    normalize_final_express_exports(finalized)
+    build_cross_format_contract(finalized)
+    return finalized
+
+
+def install_express_final_export_truth_v35() -> dict[str, Any]:
+    from nico import final_report_consistency as target
+
+    current: Callable[[dict[str, Any]], dict[str, Any]] = target.finalize_express_result_consistency
+    if getattr(current, _PATCH_MARKER, False):
+        api_main = sys.modules.get("nico.api.main")
+        if api_main is not None:
+            api_main.finalize_express_result_consistency = current
+        return {"status": "already_installed", "version": VERSION}
+
+    @wraps(current)
+    def finalize(result: dict[str, Any]) -> dict[str, Any]:
+        return finalize_after_consistency(current, result)
+
+    setattr(finalize, _PATCH_MARKER, True)
+    setattr(finalize, "_nico_previous", current)
+    target.finalize_express_result_consistency = finalize
+    api_main = sys.modules.get("nico.api.main")
+    if api_main is not None:
+        api_main.finalize_express_result_consistency = finalize
+    return {
+        "status": "installed",
+        "version": VERSION,
+        "backend_finalizer_bound": True,
+        "api_alias_rebound": api_main is not None,
+        "second_render_after_final_scores": True,
+        "null_score_tokens_allowed": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 __all__ = [
     "VERSION",
+    "finalize_after_consistency",
+    "install_express_final_export_truth_v35",
     "normalize_final_express_exports",
     "reconcile_final_express_scores",
 ]
