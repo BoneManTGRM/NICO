@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from nico.express_async_api import register_express_async_routes
 from nico.express_backend_diagnostics import install_express_backend_diagnostics
+from nico.express_final_truth_repair_v34 import install_express_final_truth_repair_v34
 from nico.express_recovery_compat import install_express_recovery_compatibility
 from nico.express_safe_trace_diagnostics import install_express_safe_trace_diagnostics
 from nico.scanner_redaction_cycle_guard import install_cycle_safe_scanner_redaction
@@ -88,7 +89,7 @@ def actionable_blocked_exception(result: dict[str, Any]) -> HTTPException:
 
 
 def install_assessment_block_messages() -> dict[str, Any]:
-    """Install safe blocks, diagnostics, scanner redaction, lifecycle, and recovery support."""
+    """Install safe blocks, diagnostics, scanner redaction, lifecycle, recovery, and final-report truth support."""
 
     import nico.api.main as api_main
 
@@ -103,6 +104,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
     express_safe_trace = install_express_safe_trace_diagnostics()
     express_async = register_express_async_routes(api_main.app)
     express_recovery = install_express_recovery_compatibility()
+    express_final_truth = install_express_final_truth_repair_v34()
     return {
         "status": "already_installed" if already_installed else "installed",
         "raw_provider_detail_exposed": False,
@@ -112,6 +114,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         "express_safe_trace_diagnostics": express_safe_trace,
         "express_async": express_async,
         "express_recovery": express_recovery,
+        "express_final_truth": express_final_truth,
     }
 
 
