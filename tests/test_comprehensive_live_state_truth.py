@@ -6,7 +6,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nico.comprehensive_api_controller import ComprehensiveApiController, _ordered_record
+from nico.comprehensive_api_controller import (
+    ComprehensiveApiController,
+    _display_progress,
+    _ordered_record,
+)
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
 from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -98,6 +102,47 @@ def test_response_stage_results_are_reordered_after_jsonb_style_shuffle() -> Non
 
     assert list(ordered["stage_results"]) == list(COMPREHENSIVE_STAGES[:4])
     assert list(shuffled["stage_results"])[0] == "dependency_security_static_analysis"
+
+
+def test_active_scanner_progress_moves_response_without_mutating_record_progress() -> None:
+    canonical = round((3 / len(COMPREHENSIVE_STAGES)) * 100, 2)
+    record = {
+        "terminal": False,
+        "current_stage": "dependency_security_static_analysis",
+        "progress_percent": canonical,
+        "stage_results": {
+            "dependency_security_static_analysis": {
+                "status": "running",
+                "scanner": {"progress_percent": 64},
+            }
+        },
+    }
+
+    display, active = _display_progress(record)
+
+    assert active == 64.0
+    assert display > canonical
+    assert display < round((4 / len(COMPREHENSIVE_STAGES)) * 100, 2)
+    assert record["progress_percent"] == canonical
+
+
+def test_terminal_progress_never_uses_active_stage_interpolation() -> None:
+    display, active = _display_progress(
+        {
+            "terminal": True,
+            "progress_percent": 100,
+            "current_stage": "client_acceptance_pending",
+            "stage_results": {
+                "client_acceptance_pending": {
+                    "status": "review_required",
+                    "stage_progress_percent": 25,
+                }
+            },
+        }
+    )
+
+    assert display == 100.0
+    assert active is None
 
 
 def test_native_authorization_stage_has_customer_readable_summary_and_evidence() -> None:
