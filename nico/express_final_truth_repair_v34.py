@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_final_truth_repair.v34.2"
+VERSION = "nico.express_final_truth_repair.v34.3"
 _MARKER = "_nico_express_final_truth_repair_v34"
 _FINAL_PRESENTATION_ACTIVE: ContextVar[bool] = ContextVar(
     "nico_express_final_presentation_active",
@@ -182,7 +182,7 @@ def _bind_single_terminal_overall(result: dict[str, Any], canonical_score: int) 
 
     source = result.get("score_source_of_truth")
     if isinstance(source, dict):
-        source["field"] = "maturity_signal.score"
+        source["field"] = "maturity_signal"
         source["score"] = canonical_score
         source["level"] = _level(canonical_score)
         source["rule"] = (
