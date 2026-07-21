@@ -109,8 +109,8 @@ def test_v14_pdf_meets_express_depth_and_decision_contract() -> None:
     assert 15 <= len(reader.pages) <= 20
     for required in (
         "Executive Decision Brief",
-        "Transparent Technical Score",
-        "Score Contribution and Constraints",
+        "Technical Score and Evidence Assurance",
+        "Score Contribution and Assurance Constraints",
         "Evidence Funnel",
         "Risk and Repair Matrix",
         "Prioritized Repair Intelligence",
