@@ -114,9 +114,20 @@ def _stages() -> dict[str, dict]:
                 {
                     "window": "0-30 days",
                     "objective": "Close material evidence gaps.",
+                    "work_packages": [
+                        {
+                            "title": "Close evidence gaps",
+                            "owner_role": "Product Quality Engineer",
+                            "effort": "1-2 weeks",
+                            "objective": "Complete required evidence.",
+                            "dependencies": ["Authorized access"],
+                            "acceptance_criteria": ["Two exact-SHA passes complete"],
+                            "expected_impact": "Raises evidence assurance.",
+                        }
+                    ],
                 }
             ],
-            "evidence": {"roadmap_window_count": 3},
+            "evidence": {"roadmap_window_count": 1},
         },
         "staffing_sequencing_and_cost": {
             "status": "complete",
@@ -125,9 +136,11 @@ def _stages() -> dict[str, dict]:
                 {
                     "role": "Product Engineering Architect",
                     "sequence": 1,
+                    "focus": "Architecture and governance.",
+                    "estimated_load": "0.5 FTE",
                 }
             ],
-            "evidence": {"recommended_role_count": 3},
+            "evidence": {"recommended_role_count": 1},
         },
     }
     return stages
@@ -144,7 +157,7 @@ def test_markdown_and_html_include_the_same_evidence_appendix() -> None:
     result = _package()
     report = result["report_package"]
 
-    assert result["status"] == "complete"
+    assert result["status"] == "complete", result.get("reason")
     assert APPENDIX_HEADING in report["markdown"]
     assert "<h2>Evidence Appendix</h2>" in report["html"]
     assert "### A1. Authorization and Scope — COMPLETE" in report["markdown"]
@@ -180,9 +193,10 @@ def test_pdf_remains_valid_and_contains_matching_chapter_headings() -> None:
     assert "Evidence Appendix" in text
     assert "Human Review and Acceptance Gate" in text
     assert "NICO MID TECHNICAL" not in text.upper()
+    assert report["pdf_page_count"] == len(reader.pages)
 
 
-def test_quality_contract_requires_both_chapters_in_readable_formats() -> None:
+def test_quality_contract_requires_decision_grade_chapters_and_boundaries() -> None:
     result = _package()
     quality = result["report_quality_contract"]
 
@@ -192,6 +206,8 @@ def test_quality_contract_requires_both_chapters_in_readable_formats() -> None:
     assert quality["html_evidence_appendix"] is True
     assert quality["markdown_human_review_acceptance_gate"] is True
     assert quality["html_human_review_acceptance_gate"] is True
+    assert quality["score_band_separated_from_assurance"] is True
+    assert quality["limitation_accounting_explicit"] is True
     assert quality["human_review_required"] is True
     assert quality["client_delivery_allowed"] is False
 
@@ -209,15 +225,18 @@ def test_native_provider_binding_replaces_the_report_builder() -> None:
     assert status["markdown_human_review_acceptance_gate"] is True
     assert status["html_human_review_acceptance_gate"] is True
     assert status["pdf_human_review_acceptance_gate"] is True
+    assert status["canonical_scoring_bound"] is True
+    assert status["secret_category_isolated"] is True
 
 
-def test_production_bootstrap_binds_appendix_before_provider_install() -> None:
+def test_production_bootstrap_binds_decision_grade_runtime_before_provider_install() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    binding = source.index("report_binding = install_native_provider_binding()")
+    binding = source.index("report_binding = install_decision_grade_binding()")
     providers = source.index("native_providers = install_native_comprehensive_providers(target)")
     executors = source.index("executors = build_production_capability_executors(target)")
 
     assert binding < providers < executors
     assert '"report_binding_before_provider_install": True' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:' in source
+    assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:' in source
