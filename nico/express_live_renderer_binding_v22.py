@@ -14,8 +14,9 @@ from nico.express_terminal_projection_truth_v1 import install_express_terminal_p
 from nico.express_client_report_postprocessor_v27 import install_express_client_report_postprocessor_v27
 from nico.express_client_report_postprocessor_v31_compat import install_express_client_report_postprocessor_v31_compat
 from nico.express_final_export_truth_v35 import install_express_final_export_truth_v35
+from nico.express_pdf_section_index_binding_v1 import install_express_pdf_section_index_binding_v1
 
-VERSION = "nico.express_live_renderer_binding.v26"
+VERSION = "nico.express_live_renderer_binding.v27"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -37,6 +38,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     postprocessor_compat = install_express_client_report_postprocessor_v31_compat()
     client_report_postprocessor = install_express_client_report_postprocessor_v27()
     final_export_truth = install_express_final_export_truth_v35()
+    pdf_section_index = install_express_pdf_section_index_binding_v1()
 
     return {
         "status": "installed" if previous is not live_renderer else "already_installed",
@@ -53,6 +55,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "client_report_postprocessor_compat_install": postprocessor_compat,
         "client_report_postprocessor_install": client_report_postprocessor,
         "final_export_truth_install": final_export_truth,
+        "pdf_section_index_install": pdf_section_index,
         "premium_renderer_bound": bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False)),
         "dossier_renderer_bound": bool(getattr(dossier._premium_pdf, "_nico_express_pdf_renderer_truth_v21", False)),
         "scanner_dispositions_bound": scanner_dispositions.get("status") in {"installed", "already_installed"},
@@ -66,6 +69,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "client_report_postprocessor_bound": client_report_postprocessor.get("status") in {"installed", "already_installed"},
         "client_report_postprocessor_compat_bound": postprocessor_compat.get("status") in {"installed", "already_installed"},
         "final_export_truth_bound": final_export_truth.get("status") in {"installed", "already_installed"},
+        "pdf_section_index_bound": pdf_section_index.get("status") in {"installed", "already_installed"},
         "static_import_rebound": previous is not live_renderer,
         "human_review_required": True,
     }
