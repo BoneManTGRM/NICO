@@ -152,12 +152,38 @@ function reconcile(): void {
   localizeSpanishAssessmentDom(document);
 }
 
+function installSpanishAssessmentLanguageHeader(): () => void {
+  if (!isSpanish()) return () => undefined;
+  const previousFetch = window.fetch;
+  const localizedFetch: typeof window.fetch = (input, init) => {
+    const target = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+    if (!target.includes("/api/nico/assessment")) return previousFetch(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+    headers.set("Accept-Language", "es-MX,es;q=0.9");
+    headers.set("X-NICO-Locale", "es-MX");
+    return previousFetch(input, {...init, headers});
+  };
+  window.fetch = localizedFetch;
+  return () => {
+    if (window.fetch === localizedFetch) window.fetch = previousFetch;
+  };
+}
+
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
+    const restoreFetch = installSpanishAssessmentLanguageHeader();
     reconcile();
     const observer = new MutationObserver(reconcile);
     observer.observe(document.body, {subtree: true, childList: true, characterData: true});
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      restoreFetch();
+    };
   }, []);
   return null;
 }
