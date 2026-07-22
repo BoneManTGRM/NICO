@@ -22,14 +22,19 @@ class _Response:
 class _Request:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
-        self.calls: list[tuple[str, str, dict | None]] = []
+        self.calls: list[tuple[str, str, dict | None, int | None]] = []
 
-    def post(self, url: str, data: dict | None = None) -> _Response:
-        self.calls.append(("POST", url, data))
+    def post(
+        self,
+        url: str,
+        data: dict | None = None,
+        timeout: int | None = None,
+    ) -> _Response:
+        self.calls.append(("POST", url, data, timeout))
         return _Response(self.payload)
 
-    def get(self, url: str) -> _Response:
-        self.calls.append(("GET", url, None))
+    def get(self, url: str, timeout: int | None = None) -> _Response:
+        self.calls.append(("GET", url, None, timeout))
         return _Response(self.payload)
 
 
@@ -69,6 +74,7 @@ def test_express_reconnect_uses_absolute_same_origin_url() -> None:
             "POST",
             "https://app.nicoaudit.com/api/nico/assessment/express-run/express_run_acceptance/status",
             {"customer_id": "customer_acceptance", "project_id": "project_acceptance"},
+            30_000,
         )
     ]
     assert result["identity_preserved"] is True
@@ -87,6 +93,7 @@ def test_comprehensive_reconnect_uses_absolute_same_origin_url() -> None:
             "GET",
             "https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/comprun_acceptance",
             None,
+            30_000,
         )
     ]
     assert result["identity_preserved"] is True
