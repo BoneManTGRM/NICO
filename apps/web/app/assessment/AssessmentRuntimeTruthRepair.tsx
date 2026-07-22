@@ -19,6 +19,9 @@ declare global {
   }
 }
 
+let lastHeartbeatKey = "";
+let lastHeartbeatAt = Date.now();
+
 function normalizeText(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -33,6 +36,17 @@ function terminalRunVisible(): boolean {
     || text.includes("express completó las etapas")
     || text.includes("human review required")
     || text.includes("revisión humana obligatoria");
+}
+
+function runningRunVisible(): boolean {
+  const text = normalizeText(document.body.textContent);
+  return text.includes("running automatically")
+    || text.includes("running automatically")
+    || text.includes("ejecutándose automáticamente")
+    || text.includes("iniciando: express")
+    || text.includes("starting: express")
+    || text.includes("iniciando: integral")
+    || text.includes("starting: comprehensive");
 }
 
 function technicalBand(score: number | null, spanish: boolean): string {
@@ -101,6 +115,33 @@ function setText(node: HTMLElement, text: string): void {
   if ((node.textContent || "").trim() !== text) node.textContent = text;
 }
 
+function assessmentMain(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('main.shell[data-assessment-service-count="2"]');
+}
+
+function assessmentPanels(): HTMLElement[] {
+  return Array.from(assessmentMain()?.querySelectorAll<HTMLElement>("section.panel") || []);
+}
+
+function runPanel(): HTMLElement | null {
+  return assessmentPanels().find((panel) => {
+    const eyebrow = normalizeText(panel.querySelector(".section-head .eyebrow")?.textContent);
+    return eyebrow.includes("automated run state") || eyebrow.includes("estado de ejecución automatizada");
+  }) || null;
+}
+
+function valueForLabel(root: ParentNode, labels: string[]): string {
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>("span"))) {
+    const label = normalizeText(node.querySelector("b")?.textContent);
+    if (labels.includes(label)) {
+      const clone = node.cloneNode(true) as HTMLElement;
+      clone.querySelector("b")?.remove();
+      return (clone.textContent || "").trim();
+    }
+  }
+  return "";
+}
+
 function reconcileLegacyServiceLabels(): void {
   const spanish = isSpanish();
   const replacements = new Map<string, string>([
@@ -115,16 +156,40 @@ function reconcileLegacyServiceLabels(): void {
   });
 }
 
+function installCopyControl(card: HTMLElement, value: HTMLElement, spanish: boolean): void {
+  if (card.querySelector(".nico-copy-control")) return;
+  const raw = (value.textContent || "").trim();
+  if (!raw || raw === "—") return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "nico-copy-control";
+  button.textContent = spanish ? "Copiar" : "Copy";
+  button.setAttribute("aria-label", spanish ? "Copiar valor" : "Copy value");
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(raw);
+      button.textContent = spanish ? "Copiado" : "Copied";
+      window.setTimeout(() => { button.textContent = spanish ? "Copiar" : "Copy"; }, 1400);
+    } catch {
+      button.textContent = spanish ? "No disponible" : "Unavailable";
+    }
+  });
+  card.appendChild(button);
+}
+
 function reconcileTargetCards(): void {
   const spanish = isSpanish();
   document.querySelectorAll<HTMLElement>(".target-grid article").forEach((card) => {
     const label = normalizeText(card.querySelector("b")?.textContent);
     const value = card.querySelector<HTMLElement>("span");
     if (!value) return;
+    card.classList.add("nico-metadata-card");
+    card.dataset.nicoMetric = label.replaceAll(" ", "-");
 
-    if (label === "immutable commit" || label === "commit inmutable") {
+    if (["run id", "id de ejecución", "immutable commit", "commit inmutable"].includes(label)) {
       value.classList.add("nico-immutable-commit-value");
       value.title = value.textContent?.trim() || "";
+      installCopyControl(card, value, spanish);
     }
 
     if (label === "durable record" || label === "registro durable") {
@@ -132,6 +197,8 @@ function reconcileTargetCards(): void {
       if (display) {
         setText(value, display.text);
         value.classList.toggle("nico-storage-warning", display.warning);
+        card.classList.toggle("nico-warning-card", display.warning);
+        card.classList.toggle("nico-success-card", !display.warning);
         const title = window.__nicoPersistenceSnapshot?.warning
           || window.__nicoPersistenceSnapshot?.note
           || display.text;
@@ -142,6 +209,7 @@ function reconcileTargetCards(): void {
           : "Temporary record · Postgres or a persistent volume required";
         setText(value, fallback);
         value.classList.add("nico-storage-warning");
+        card.classList.add("nico-warning-card");
       }
     }
 
@@ -158,14 +226,57 @@ function reconcileTargetCards(): void {
   });
 }
 
+function reconcileHeroAndServiceChoice(): void {
+  const main = assessmentMain();
+  if (!main) return;
+  main.classList.add("nico-command-center");
+  const hero = main.querySelector<HTMLElement>(".hero");
+  if (hero && !hero.querySelector(".nico-trust-strip")) {
+    const spanish = isSpanish();
+    const strip = document.createElement("div");
+    strip.className = "nico-trust-strip";
+    const values = spanish
+      ? ["Solo lectura", "Commit inmutable", "Revisión humana obligatoria"]
+      : ["Read-only", "Immutable commit", "Human review required"];
+    values.forEach((text) => {
+      const chip = document.createElement("span");
+      chip.textContent = text;
+      strip.appendChild(chip);
+    });
+    hero.appendChild(strip);
+  }
+
+  const spanish = isSpanish();
+  const detail = spanish
+    ? {express: "Línea base rápida", comprehensive: "Diligencia completa", integral: "Diligencia completa"}
+    : {express: "Fast technical baseline", comprehensive: "Complete technical diligence", integral: "Complete technical diligence"};
+  main.querySelectorAll<HTMLButtonElement>('#assessment button[aria-pressed]').forEach((button) => {
+    button.classList.add("nico-service-choice");
+    if (button.querySelector(".nico-service-detail")) return;
+    const key = normalizeText(button.textContent) as keyof typeof detail;
+    const descriptor = detail[key];
+    if (!descriptor) return;
+    const span = document.createElement("span");
+    span.className = "nico-service-detail";
+    span.textContent = descriptor;
+    button.appendChild(span);
+  });
+}
+
 function reconcileTimeline(): void {
-  if (!terminalRunVisible()) return;
   const spanish = isSpanish();
   document.querySelectorAll<HTMLElement>(".result-card").forEach((card) => {
+    card.classList.add("nico-result-card");
     const heading = normalizeText(card.querySelector(".result-head b")?.textContent);
     const status = card.querySelector<HTMLElement>(".result-head .status");
     if (!status) return;
-    if ((heading === "truth and review gates" || heading === "controles de veracidad y revisión")
+    const state = normalizeText(status.textContent);
+    card.dataset.nicoState = state.replaceAll(" ", "-");
+    if (state.includes("running") || state.includes("ejecución") || state.includes("ejecutando")) {
+      card.classList.add("nico-active-stage");
+    }
+    if (terminalRunVisible()
+      && (heading === "truth and review gates" || heading === "controles de veracidad y revisión")
       && /running|en ejecución|ejecutando/i.test(status.textContent || "")) {
       setText(status, spanish ? "completo" : "complete");
       status.className = "status green";
@@ -209,14 +320,91 @@ function reconcileCombinedSectionBadges(): void {
     badge.className = "status nico-score-assurance-badge";
     badge.dataset.reconciled = "true";
     badge.dataset.originalStatus = original;
+
+    const card = badge.closest<HTMLElement>(".result-card");
+    if (card && !card.querySelector(".nico-section-meter")) {
+      const meter = document.createElement("div");
+      meter.className = "nico-section-meter";
+      meter.setAttribute("aria-hidden", "true");
+      const fill = document.createElement("span");
+      fill.style.width = `${score ?? 0}%`;
+      fill.dataset.band = score === null ? "not-scored" : score >= 90 ? "exceptional" : score >= 80 ? "strong" : score >= 70 ? "moderate" : score >= 55 ? "weak" : "critical";
+      meter.appendChild(fill);
+      card.querySelector(".result-head")?.insertAdjacentElement("afterend", meter);
+    }
+  });
+}
+
+function reconcileRunningExperience(): void {
+  const panel = runPanel();
+  if (!panel) return;
+  panel.classList.add("nico-run-panel");
+  const progress = panel.querySelector<HTMLElement>('[role="progressbar"]');
+  if (!progress || !runningRunVisible()) {
+    panel.querySelector(".nico-live-heartbeat")?.remove();
+    return;
+  }
+
+  const spanish = isSpanish();
+  const stage = valueForLabel(panel, ["current stage", "etapa actual"])
+    || progress.getAttribute("aria-label")
+    || (spanish ? "Etapa activa" : "Active stage");
+  const checks = valueForLabel(panel, ["status checks", "comprobaciones de estado"]);
+  const percent = progress.getAttribute("aria-valuenow") || "";
+  const key = `${stage}|${checks}|${percent}`;
+  if (key !== lastHeartbeatKey) {
+    lastHeartbeatKey = key;
+    lastHeartbeatAt = Date.now();
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - lastHeartbeatAt) / 1000));
+  const scannerStage = /scanner|anali[sz]adores/i.test(stage);
+  let message = spanish
+    ? `Estado activo verificado hace ${seconds} s.`
+    : `Live status verified ${seconds}s ago.`;
+  if (scannerStage) {
+    message += spanish
+      ? " El conjunto de analizadores ejecuta varias herramientas y puede permanecer en esta etapa durante varios minutos."
+      : " The scanner suite runs multiple tools and can remain on this stage for several minutes.";
+  }
+  if (seconds >= 75) {
+    message = spanish
+      ? "Esta etapa está tardando más de lo habitual. NICO continúa consultando el backend automáticamente; no reinicies la ejecución."
+      : "This stage is taking longer than usual. NICO is still polling the backend automatically; do not restart the run.";
+  }
+
+  let heartbeat = panel.querySelector<HTMLElement>(".nico-live-heartbeat");
+  if (!heartbeat) {
+    heartbeat = document.createElement("div");
+    heartbeat.className = "nico-live-heartbeat";
+    heartbeat.innerHTML = '<span class="nico-live-dot" aria-hidden="true"></span><span class="nico-live-copy"></span>';
+    progress.insertAdjacentElement("afterend", heartbeat);
+  }
+  const copyNode = heartbeat.querySelector<HTMLElement>(".nico-live-copy");
+  if (copyNode) setText(copyNode, message);
+  progress.classList.add("nico-progress-live");
+}
+
+function reconcileReportActions(): void {
+  document.querySelectorAll<HTMLElement>(".report-actions").forEach((actions) => {
+    actions.classList.add("nico-report-actions");
+    if (actions.querySelector(".nico-report-gate-note")) return;
+    const note = document.createElement("span");
+    note.className = "nico-report-gate-note";
+    note.textContent = isSpanish()
+      ? "Borrador vinculado a evidencia · requiere revisión humana"
+      : "Evidence-bound draft · human review required";
+    actions.appendChild(note);
   });
 }
 
 function reconcile(): void {
   reconcileLegacyServiceLabels();
+  reconcileHeroAndServiceChoice();
   reconcileTargetCards();
   reconcileTimeline();
   reconcileCombinedSectionBadges();
+  reconcileRunningExperience();
+  reconcileReportActions();
   localizeSpanishAssessmentDom(document);
 }
 
@@ -237,20 +425,32 @@ function capturePersistence(response: Response): void {
   }).catch(() => undefined);
 }
 
+function transientStatus(status: number): boolean {
+  return [429, 502, 503, 504].includes(status);
+}
+
 function installAssessmentFetchObserver(): () => void {
   const previousFetch = window.fetch;
   const observedFetch: typeof window.fetch = async (input, init) => {
     const target = assessmentTarget(input);
     const assessmentRequest = target.includes("/assessment/") || target.includes("/api/nico/assessment");
+    const statusRequest = /\/status(?:\?|$)/.test(target);
     let nextInit = init;
-    if (assessmentRequest && isSpanish()) {
+    if (assessmentRequest) {
       const headers = new Headers(input instanceof Request ? input.headers : undefined);
       new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
-      headers.set("Accept-Language", "es-MX,es;q=0.9");
-      headers.set("X-NICO-Locale", "es-MX");
-      nextInit = {...init, headers};
+      headers.set("X-NICO-Client", "assessment-command-center-v42");
+      if (isSpanish()) {
+        headers.set("Accept-Language", "es-MX,es;q=0.9");
+        headers.set("X-NICO-Locale", "es-MX");
+      }
+      nextInit = {...init, headers, cache: "no-store"};
     }
-    const response = await previousFetch(input, nextInit);
+    let response = await previousFetch(input, nextInit);
+    if (statusRequest && transientStatus(response.status)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      response = await previousFetch(input, nextInit);
+    }
     if (assessmentRequest) capturePersistence(response);
     return response;
   };
@@ -266,10 +466,12 @@ export default function AssessmentRuntimeTruthRepair() {
     reconcile();
     const observer = new MutationObserver(reconcile);
     observer.observe(document.body, {subtree: true, childList: true, characterData: true});
+    const heartbeat = window.setInterval(reconcile, 5000);
     const persistenceListener = () => reconcile();
     window.addEventListener("nico:persistence-updated", persistenceListener);
     return () => {
       observer.disconnect();
+      window.clearInterval(heartbeat);
       window.removeEventListener("nico:persistence-updated", persistenceListener);
       restoreFetch();
     };
