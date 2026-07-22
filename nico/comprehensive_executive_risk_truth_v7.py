@@ -15,6 +15,7 @@ def reconcile_executive_risk_truth(assessment: dict[str, Any]) -> dict[str, Any]
         and static.get("exclude_from_maturity") is not True
     )
 
+    contradictory_risk_found = False
     rewritten = False
     risks = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)]
     if static_scored:
@@ -22,6 +23,7 @@ def reconcile_executive_risk_truth(assessment: dict[str, Any]) -> dict[str, Any]
             title = str(risk.get("title") or "").strip().casefold()
             if title != "static-analysis evidence incomplete":
                 continue
+            contradictory_risk_found = True
             risk.update(
                 {
                     "title": "Static-analysis assurance remains review-limited",
@@ -42,7 +44,8 @@ def reconcile_executive_risk_truth(assessment: dict[str, Any]) -> dict[str, Any]
         "status": "complete",
         "version": VERSION,
         "static_is_bounded_scored": static_scored,
-        "static_risk_wording_reconciled": rewritten or not static_scored,
+        "contradictory_static_risk_found": contradictory_risk_found,
+        "static_risk_wording_reconciled": rewritten or not contradictory_risk_found,
         "technical_score_not_conflated_with_assurance": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
