@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+import re
+from copy import deepcopy
+from typing import Any, Callable
+
+VERSION = "nico.express_report_final_polish.v41.2"
+_TRUTH_MARKER = "_nico_express_report_final_polish_v41_truth"
+_REPAIR_MARKER = "_nico_express_report_final_polish_v41_repairs"
+_DECISION_MARKER = "_nico_express_report_final_polish_v41_decision"
+
+
+def _text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _section(result: dict[str, Any], section_id: str) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in result.get("sections") or []
+            if isinstance(item, dict) and _text(item.get("id")).casefold() == section_id.casefold()
+        ),
+        None,
+    )
+
+
+def _static_section(result: dict[str, Any]) -> dict[str, Any] | None:
+    return _section(result, "static_analysis")
+
+
+def _remove_name(value: str, name: str) -> str:
+    prefix, separator, suffix = value.partition(":")
+    if not separator:
+        return value
+    names = [
+        re.sub(r"[^a-z0-9_-]+$", "", item.strip(), flags=re.I)
+        for item in re.split(r"[,/]", suffix)
+        if item.strip()
+    ]
+    names = [item for item in names if item.casefold() != name.casefold()]
+    return f"{prefix}: {', '.join(names)}" if names else ""
+
+
+def _reconcile_static_assurance(result: dict[str, Any]) -> dict[str, Any]:
+    from nico.express_truth_calibration_v38_compat import _uses_v36_truth_model
+
+    if not _uses_v36_truth_model(result):
+        return result
+    section = _static_section(result)
+    if not section:
+        return result
+
+    values = [
+        *list(section.get("evidence") or []),
+        *list(section.get("findings") or []),
+        *list(section.get("unavailable") or []),
+    ]
+    eslint_inapplicable = any(
+        "no eslint configuration exists" in _text(item).casefold()
+        or "eslint is not applicable" in _text(item).casefold()
+        for item in values
+    )
+
+    evidence: list[str] = []
+    for raw in section.get("evidence") or []:
+        value = _text(raw)
+        if eslint_inapplicable and "static artifacts were observed for:" in value.casefold():
+            value = _remove_name(value, "eslint")
+        if value:
+            evidence.append(value)
+    if eslint_inapplicable:
+        evidence.append(
+            "ESLint is not applicable for this snapshot because the repository has no ESLint configuration and its lint script does not execute ESLint; TypeScript was evaluated independently."
+        )
+
+    unavailable: list[str] = []
+    for raw in section.get("unavailable") or []:
+        value = _text(raw)
+        lowered = value.casefold()
+        if eslint_inapplicable and (
+            "no eslint configuration exists" in lowered
+            or lowered.startswith("eslint was unavailable")
+        ):
+            continue
+        if eslint_inapplicable and (
+            "accepted clean execution evidence unavailable for:" in lowered
+            or "accepted current-run execution evidence remains unresolved for:" in lowered
+        ):
+            value = _remove_name(value, "eslint")
+        if value:
+            unavailable.append(value)
+
+    section["evidence"] = list(dict.fromkeys(evidence))
+    section["unavailable"] = list(dict.fromkeys(unavailable))
+    section["status"] = "yellow"
+    section["presented_status"] = "yellow"
+    section["assurance_status"] = "review_limited"
+    section["assurance_label"] = "REVIEW LIMITED"
+    section["assurance_display"] = "REVIEW LIMITED"
+    section["assurance_tone"] = "yellow"
+    section["canonical_status_role"] = "evidence_assurance"
+    return result
+
+
+def _reconcile_code_audit_language(result: dict[str, Any]) -> dict[str, Any]:
+    section = _section(result, "code_audit")
+    if not section or section.get("findings"):
+        return result
+    evidence: list[str] = []
+    for raw in section.get("evidence") or []:
+        value = _text(raw)
+        match = re.search(r"risky pattern hits=(\d+)", value, flags=re.I)
+        if match:
+            count = int(match.group(1))
+            value = re.sub(
+                r"risky pattern hits=\d+",
+                f"built-in pattern candidates reviewed={count}; actionable retained findings=0",
+                value,
+                flags=re.I,
+            )
+        evidence.append(value)
+    section["evidence"] = evidence
+    return result
+
+
+def _reconcile_report_truth(result: dict[str, Any]) -> dict[str, Any]:
+    return _reconcile_code_audit_language(_reconcile_static_assurance(result))
+
+
+def _secret_raw_count(result: dict[str, Any]) -> int | None:
+    section = _section(result, "secrets_review")
+    if not section:
+        return None
+    text = " ".join(_text(item) for item in section.get("findings") or [])
+    match = re.search(r"secret tools reported\s+(\d+)\s+raw candidate", text, flags=re.I)
+    return int(match.group(1)) if match else None
+
+
+def _normalize_repairs(repairs: list[dict[str, Any]], result: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    raw_secret_count = _secret_raw_count(result)
+    for index, raw in enumerate(repairs, 1):
+        item = dict(raw)
+        item["source_rank"] = item.get("rank")
+        item["rank"] = f"P{index}"
+        severity = _text(item.get("severity") or "unclassified").casefold()
+        if severity in {"review", "review required", "needs review"}:
+            item["severity"] = "review required"
+        title_key = "finding" if "finding" in item else "title"
+        title = _text(item.get(title_key))
+        match = re.search(r"triage\s+(\d+)\s+unverified secret-scan candidate", title, flags=re.I)
+        if match and raw_secret_count is not None:
+            consolidated = int(match.group(1))
+            item[title_key] = (
+                f"Triage {consolidated} consolidated secret-scan candidate(s) derived from "
+                f"{raw_secret_count} raw scanner match(es) as one parallel workstream"
+            )
+        output.append(item)
+    return output
+
+
+def _compact_decision_pdf(result: dict[str, Any], section_id: str, title: str) -> bytes:
+    from nico import express_pdf_score_assurance_v1 as target
+    from nico.express_truth_calibration_v38_compat import _uses_v36_truth_model
+
+    original = getattr(_compact_decision_pdf, "_nico_original", None)
+    if not callable(original) or original is _compact_decision_pdf:
+        raise RuntimeError("Express decision renderer base is unavailable")
+    if not _uses_v36_truth_model(result):
+        return original(result, section_id, title)
+    section = target._section(result, section_id)
+    if not section:
+        return original(result, section_id, title)
+
+    limits = {
+        "static_analysis": (6, 3, 1),
+        "architecture_debt": (7, 5, 1),
+        "velocity_complexity": (5, 0, 1),
+        "dependency_health": (7, 3, 1),
+        "secrets_review": (7, 3, 1),
+    }
+    evidence_limit, finding_limit, unavailable_limit = limits.get(section_id, (7, 5, 2))
+    saved = {
+        "evidence": deepcopy(section.get("evidence")),
+        "findings": deepcopy(section.get("findings")),
+        "unavailable": deepcopy(section.get("unavailable")),
+    }
+    section["evidence"] = list(section.get("evidence") or [])[:evidence_limit]
+    section["findings"] = list(section.get("findings") or [])[:finding_limit]
+    section["unavailable"] = list(section.get("unavailable") or [])[:unavailable_limit]
+    try:
+        return original(result, section_id, title)
+    finally:
+        section.update(saved)
+
+
+def _base_decision_renderer(current: Callable[..., bytes], v39_decision: Callable[..., bytes]) -> Callable[..., bytes]:
+    if current is _compact_decision_pdf:
+        existing = getattr(_compact_decision_pdf, "_nico_original", None)
+        if callable(existing) and existing is not _compact_decision_pdf:
+            return existing
+    if current is v39_decision:
+        existing = getattr(v39_decision, "_nico_original", None)
+        if callable(existing) and existing is not _compact_decision_pdf:
+            return existing
+    existing = getattr(current, "_nico_original", None)
+    if callable(existing) and existing is not _compact_decision_pdf:
+        return existing
+    if current is not _compact_decision_pdf:
+        return current
+    raise RuntimeError("Unable to resolve the base Express decision renderer")
+
+
+def install_express_report_final_polish_v41() -> dict[str, Any]:
+    from nico import express_pdf_score_assurance_v1 as pdf_score
+    from nico import express_report_premium_v14 as premium
+    from nico import express_score_assurance_export_v1 as score_export
+    from nico import express_section_status_truth_v26 as truth
+    from nico import express_truth_calibration_v38_compat as compat
+    from nico.express_pdf_score_assurance_layout_v39 import _compact_decision_pdf as v39_decision
+
+    current_truth: Callable[[dict[str, Any]], dict[str, Any]] = compat._selective_truth
+    if not getattr(current_truth, _TRUTH_MARKER, False):
+        previous_truth = current_truth
+
+        def polished_truth(result: dict[str, Any]) -> dict[str, Any]:
+            return _reconcile_report_truth(previous_truth(result))
+
+        setattr(polished_truth, _TRUTH_MARKER, True)
+        setattr(polished_truth, "_nico_previous", previous_truth)
+        compat._selective_truth = polished_truth
+        current_truth = polished_truth
+
+    truth.reconcile_section_status_truth = current_truth
+    pdf_score.reconcile_section_status_truth = current_truth
+    score_export.reconcile_section_status_truth = current_truth
+
+    current_repairs = premium._clean_repairs
+    if not getattr(current_repairs, _REPAIR_MARKER, False):
+        previous_repairs = current_repairs
+
+        def clean_repairs(result: dict[str, Any]) -> list[dict[str, Any]]:
+            return _normalize_repairs(previous_repairs(result), result)
+
+        setattr(clean_repairs, _REPAIR_MARKER, True)
+        setattr(clean_repairs, "_nico_original", previous_repairs)
+        premium._clean_repairs = clean_repairs
+
+    if pdf_score._decision_pdf is not _compact_decision_pdf:
+        base_decision = _base_decision_renderer(pdf_score._decision_pdf, v39_decision)
+        setattr(_compact_decision_pdf, "_nico_original", base_decision)
+        setattr(_compact_decision_pdf, _DECISION_MARKER, True)
+        pdf_score._decision_pdf = _compact_decision_pdf
+
+    return {
+        "status": "installed",
+        "version": VERSION,
+        "static_not_scored_assurance": "review_limited",
+        "eslint_inapplicability_removed_from_limitations": True,
+        "repair_priorities_normalized": True,
+        "secret_raw_and_consolidated_counts_distinguished": True,
+        "code_pattern_candidates_not_mislabeled_as_unresolved_risk": True,
+        "velocity_orphan_page_prevented": True,
+        "idempotent_renderer_binding": True,
+        "full_machine_readable_evidence_preserved": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+__all__ = [
+    "VERSION",
+    "install_express_report_final_polish_v41",
+]

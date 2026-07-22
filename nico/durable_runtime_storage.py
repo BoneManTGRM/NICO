@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
-from nico.storage import POSTGRES_SCHEMA, STORE, _with_default_metadata
+from nico.storage import POSTGRES_SCHEMA, STORE, PostgresAdapter, _with_default_metadata
 
 DURABLE_RUNTIME_STORAGE_VERSION = "nico.durable_runtime_storage.v1"
 _SQLITE_SCHEMA = """
@@ -27,15 +29,77 @@ CREATE INDEX IF NOT EXISTS idx_nico_records_scope
 CREATE INDEX IF NOT EXISTS idx_nico_records_updated
     ON nico_records(table_name, updated_at);
 """
+_DEFAULT_SQLITE_PATH = "/data/nico-runtime.sqlite3"
+_POSTGRES_URL_KEYS = (
+    "DATABASE_URL",
+    "DATABASE_PRIVATE_URL",
+    "POSTGRES_URL",
+    "POSTGRES_PRIVATE_URL",
+    "RAILWAY_DATABASE_URL",
+    "RAILWAY_POSTGRES_URL",
+)
 
 
 def _enabled() -> bool:
     return os.getenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "false").strip().lower() == "true"
 
 
+def _clean_url(value: str) -> str:
+    value = str(value or "").strip()
+    if value.startswith("postgres://"):
+        return "postgresql://" + value[len("postgres://") :]
+    return value
+
+
+def _resolved_postgres_url() -> tuple[str, str]:
+    """Resolve a private Postgres connection without exposing credentials.
+
+    Railway and other hosted environments do not always inject the connection
+    under the same variable name. Direct URL aliases are preferred. A standard
+    libpq PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE set is also supported.
+    Public database URLs are intentionally not selected automatically unless an
+    operator explicitly maps one of the supported private aliases.
+    """
+
+    for key in _POSTGRES_URL_KEYS:
+        value = _clean_url(os.getenv(key, ""))
+        if value:
+            return value, key
+
+    host = os.getenv("PGHOST", "").strip()
+    user = os.getenv("PGUSER", "").strip()
+    password = os.getenv("PGPASSWORD", "")
+    database = os.getenv("PGDATABASE", "").strip()
+    if not (host and user and database):
+        return "", ""
+    port = os.getenv("PGPORT", "5432").strip() or "5432"
+    if not re.fullmatch(r"\d{1,5}", port):
+        return "", ""
+    credentials = quote(user, safe="")
+    if password:
+        credentials += ":" + quote(password, safe="")
+    query: dict[str, str] = {}
+    sslmode = os.getenv("PGSSLMODE", "").strip()
+    if sslmode:
+        query["sslmode"] = sslmode
+    suffix = "?" + urlencode(query) if query else ""
+    return f"postgresql://{credentials}@{host}:{port}/{quote(database, safe='')}{suffix}", "PG*"
+
+
 def _path() -> Path:
-    configured = os.getenv("NICO_SQLITE_PATH", "/data/nico-runtime.sqlite3").strip()
-    return Path(configured or "/data/nico-runtime.sqlite3")
+    explicit = os.getenv("NICO_SQLITE_PATH", "").strip()
+    mount = (
+        os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+        or os.getenv("NICO_DURABLE_VOLUME_PATH", "").strip()
+    )
+    # Docker ships with /data as a safe local default. When Railway provides a
+    # mounted-volume path, prefer that path unless an operator deliberately set a
+    # different SQLite file. This converts the existing hosted fallback into a
+    # deployment-surviving record without falsely treating the container layer as
+    # durable.
+    if mount and (not explicit or explicit == _DEFAULT_SQLITE_PATH):
+        return Path(mount) / "nico-runtime.sqlite3"
+    return Path(explicit or _DEFAULT_SQLITE_PATH)
 
 
 def _json_default(value: Any) -> str:
@@ -83,10 +147,12 @@ class SQLiteRuntimeAdapter:
             writable = os.access(self.database_path.parent, os.W_OK)
         except Exception:
             writable = False
+        resolved_url, resolved_source = _resolved_postgres_url()
         return {
             "mode": "sqlite",
             "adapter": "sqlite",
-            "database_url_configured": bool(os.getenv("DATABASE_URL", "").strip()),
+            "database_url_configured": bool(resolved_url),
+            "database_url_source": resolved_source or "",
             "persistence_available": writable,
             "persistence_note": "SQLite lifecycle persistence is active on the hosted data path. Assessment runs, scanner heartbeats, reports, approvals, and recovery evidence survive process restarts while the mounted data path remains available.",
             "schema_available": True,
@@ -184,9 +250,50 @@ class SQLiteRuntimeAdapter:
         return deepcopy(values)
 
 
+def _install_resolved_postgres() -> dict[str, Any] | None:
+    if getattr(STORE, "disable_postgres", False):
+        return None
+    database_url, source = _resolved_postgres_url()
+    if not database_url:
+        return None
+    try:
+        adapter = PostgresAdapter(database_url)
+    except Exception as exc:
+        STORE.adapter_error = f"Resolved Postgres connection from {source} failed: {type(exc).__name__}: {exc}"
+        return {
+            "status": "postgres_unavailable",
+            "adapter": "memory",
+            "persistence_available": False,
+            "database_url_source": source,
+        }
+    STORE.database_url = database_url
+    STORE.adapter = adapter
+    STORE.adapter_error = ""
+    status = STORE.status()
+    return {
+        "status": "installed_postgres",
+        "adapter": "postgres",
+        "persistence_available": bool(status.get("persistence_available")),
+        "database_url_source": source,
+    }
+
+
 def install_durable_runtime_storage() -> dict[str, Any]:
     current = STORE.status()
-    if bool(current.get("persistence_available")):
+    if bool(current.get("persistence_available")) and current.get("adapter") == "postgres":
+        return {
+            "status": "already_durable",
+            "version": DURABLE_RUNTIME_STORAGE_VERSION,
+            "adapter": "postgres",
+            "persistence_available": True,
+        }
+
+    postgres = _install_resolved_postgres()
+    if postgres and postgres.get("persistence_available"):
+        return {"version": DURABLE_RUNTIME_STORAGE_VERSION, **postgres}
+
+    current = STORE.status()
+    if bool(current.get("persistence_available")) and current.get("adapter") != "memory":
         return {
             "status": "already_durable",
             "version": DURABLE_RUNTIME_STORAGE_VERSION,
@@ -199,9 +306,11 @@ def install_durable_runtime_storage() -> dict[str, Any]:
             "version": DURABLE_RUNTIME_STORAGE_VERSION,
             "adapter": current.get("adapter") or current.get("mode") or "unknown",
             "persistence_available": False,
+            "postgres_resolution": postgres or {"status": "not_configured"},
         }
 
-    adapter = SQLiteRuntimeAdapter(_path())
+    database_path = _path()
+    adapter = SQLiteRuntimeAdapter(database_path)
     status = adapter.status()
     if not status.get("persistence_available"):
         raise RuntimeError("SQLite runtime storage path is not writable")
@@ -210,6 +319,10 @@ def install_durable_runtime_storage() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": DURABLE_RUNTIME_STORAGE_VERSION,
+        "resolved_sqlite_path": str(database_path),
+        "railway_volume_path_used": bool(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip())
+        and database_path.parent == Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()),
+        "postgres_resolution": postgres or {"status": "not_configured"},
         **status,
     }
 
@@ -217,5 +330,7 @@ def install_durable_runtime_storage() -> dict[str, Any]:
 __all__ = [
     "DURABLE_RUNTIME_STORAGE_VERSION",
     "SQLiteRuntimeAdapter",
+    "_path",
+    "_resolved_postgres_url",
     "install_durable_runtime_storage",
 ]

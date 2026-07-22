@@ -4,6 +4,21 @@ import {useEffect} from "react";
 import {localizeSpanishAssessmentDom} from "./AssessmentSpanishLocalization";
 import "./assessment-runtime-truth.css";
 
+type PersistenceSnapshot = {
+  recorded?: boolean;
+  durable?: boolean;
+  durability_verified?: boolean;
+  adapter?: string;
+  note?: string;
+  warning?: string;
+};
+
+declare global {
+  interface Window {
+    __nicoPersistenceSnapshot?: PersistenceSnapshot;
+  }
+}
+
 function normalizeText(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -43,6 +58,49 @@ function assuranceLabel(status: string, spanish: boolean): string {
   return spanish ? "No verificada" : "Unverified";
 }
 
+function persistenceDisplay(spanish: boolean): {text: string; warning: boolean} | null {
+  const persistence = window.__nicoPersistenceSnapshot;
+  if (!persistence) return null;
+  const adapter = normalizeText(persistence.adapter) || "unknown";
+  const durable = persistence.durable === true || persistence.durability_verified === true;
+  if (durable) {
+    if (adapter === "postgres") {
+      return {text: spanish ? "Durable · Postgres verificado" : "Durable · verified Postgres", warning: false};
+    }
+    if (adapter === "sqlite") {
+      return {text: spanish ? "Durable · volumen SQLite persistente" : "Durable · persistent SQLite volume", warning: false};
+    }
+    return {text: `Durable · ${adapter}`, warning: false};
+  }
+  if (persistence.recorded) {
+    if (adapter === "sqlite") {
+      return {
+        text: spanish
+          ? "Registro temporal · volumen persistente no verificado"
+          : "Temporary record · persistent volume not verified",
+        warning: true,
+      };
+    }
+    if (adapter === "memory") {
+      return {
+        text: spanish
+          ? "Registro temporal en memoria · requiere Postgres o un volumen persistente"
+          : "Temporary memory record · Postgres or a persistent volume required",
+        warning: true,
+      };
+    }
+    return {
+      text: spanish ? "Registrado · durabilidad no verificada" : "Recorded · durability not verified",
+      warning: true,
+    };
+  }
+  return {text: spanish ? "Persistencia no verificada" : "Persistence not verified", warning: true};
+}
+
+function setText(node: HTMLElement, text: string): void {
+  if ((node.textContent || "").trim() !== text) node.textContent = text;
+}
+
 function reconcileLegacyServiceLabels(): void {
   const spanish = isSpanish();
   const replacements = new Map<string, string>([
@@ -53,7 +111,7 @@ function reconcileLegacyServiceLabels(): void {
   ]);
   document.querySelectorAll<HTMLElement>("button, h1, h2, h3, .eyebrow, .service-label").forEach((node) => {
     const replacement = replacements.get(normalizeText(node.textContent));
-    if (replacement) node.textContent = replacement;
+    if (replacement) setText(node, replacement);
   });
 }
 
@@ -69,23 +127,33 @@ function reconcileTargetCards(): void {
       value.title = value.textContent?.trim() || "";
     }
 
-    if ((label === "durable record" || label === "registro durable")
-      && /recorded, not durable|registrado, no durable/i.test(value.textContent || "")) {
-      value.textContent = spanish
-        ? "Almacenamiento no durable · requiere conexión a Postgres"
-        : "Non-durable storage · Postgres connection required";
-      value.classList.add("nico-storage-warning");
+    if (label === "durable record" || label === "registro durable") {
+      const display = persistenceDisplay(spanish);
+      if (display) {
+        setText(value, display.text);
+        value.classList.toggle("nico-storage-warning", display.warning);
+        const title = window.__nicoPersistenceSnapshot?.warning
+          || window.__nicoPersistenceSnapshot?.note
+          || display.text;
+        if (value.title !== title) value.title = title;
+      } else if (/recorded, not durable|registrado, no durable/i.test(value.textContent || "")) {
+        const fallback = spanish
+          ? "Registro temporal · requiere Postgres o un volumen persistente"
+          : "Temporary record · Postgres or a persistent volume required";
+        setText(value, fallback);
+        value.classList.add("nico-storage-warning");
+      }
     }
 
     if ((label === "human review" || label === "revisión humana")
       && terminalRunVisible()
       && /pending|pendiente/i.test(value.textContent || "")) {
-      value.textContent = spanish ? "Obligatoria" : "Required";
+      setText(value, spanish ? "Obligatoria" : "Required");
     }
 
     if ((label === "maturity signal" || label === "señal de madurez")
       && normalizeText(value.textContent) === "mid") {
-      value.textContent = spanish ? "Moderada" : "Moderate";
+      setText(value, spanish ? "Moderada" : "Moderate");
     }
   });
 }
@@ -99,13 +167,13 @@ function reconcileTimeline(): void {
     if (!status) return;
     if ((heading === "truth and review gates" || heading === "controles de veracidad y revisión")
       && /running|en ejecución|ejecutando/i.test(status.textContent || "")) {
-      status.textContent = spanish ? "completo" : "complete";
+      setText(status, spanish ? "completo" : "complete");
       status.className = "status green";
       const message = card.querySelector<HTMLElement>(":scope > p");
       if (message) {
-        message.textContent = spanish
+        setText(message, spanish
           ? "Los controles automatizados de veracidad y revisión terminaron. La revisión humana sigue siendo obligatoria antes de la entrega."
-          : "Automated truth and review gates completed. Human review remains required before delivery.";
+          : "Automated truth and review gates completed. Human review remains required before delivery.");
       }
     }
   });
@@ -152,36 +220,57 @@ function reconcile(): void {
   localizeSpanishAssessmentDom(document);
 }
 
-function installSpanishAssessmentLanguageHeader(): () => void {
-  if (!isSpanish()) return () => undefined;
+function assessmentTarget(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function capturePersistence(response: Response): void {
+  response.clone().json().then((payload: {persistence?: PersistenceSnapshot}) => {
+    if (!payload?.persistence || typeof payload.persistence !== "object") return;
+    const next = JSON.stringify(payload.persistence);
+    const previous = JSON.stringify(window.__nicoPersistenceSnapshot || {});
+    if (next === previous) return;
+    window.__nicoPersistenceSnapshot = payload.persistence;
+    window.dispatchEvent(new CustomEvent("nico:persistence-updated", {detail: payload.persistence}));
+  }).catch(() => undefined);
+}
+
+function installAssessmentFetchObserver(): () => void {
   const previousFetch = window.fetch;
-  const localizedFetch: typeof window.fetch = (input, init) => {
-    const target = typeof input === "string"
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input.url;
-    if (!target.includes("/api/nico/assessment")) return previousFetch(input, init);
-    const headers = new Headers(input instanceof Request ? input.headers : undefined);
-    new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
-    headers.set("Accept-Language", "es-MX,es;q=0.9");
-    headers.set("X-NICO-Locale", "es-MX");
-    return previousFetch(input, {...init, headers});
+  const observedFetch: typeof window.fetch = async (input, init) => {
+    const target = assessmentTarget(input);
+    const assessmentRequest = target.includes("/assessment/") || target.includes("/api/nico/assessment");
+    let nextInit = init;
+    if (assessmentRequest && isSpanish()) {
+      const headers = new Headers(input instanceof Request ? input.headers : undefined);
+      new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+      headers.set("Accept-Language", "es-MX,es;q=0.9");
+      headers.set("X-NICO-Locale", "es-MX");
+      nextInit = {...init, headers};
+    }
+    const response = await previousFetch(input, nextInit);
+    if (assessmentRequest) capturePersistence(response);
+    return response;
   };
-  window.fetch = localizedFetch;
+  window.fetch = observedFetch;
   return () => {
-    if (window.fetch === localizedFetch) window.fetch = previousFetch;
+    if (window.fetch === observedFetch) window.fetch = previousFetch;
   };
 }
 
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
-    const restoreFetch = installSpanishAssessmentLanguageHeader();
+    const restoreFetch = installAssessmentFetchObserver();
     reconcile();
     const observer = new MutationObserver(reconcile);
     observer.observe(document.body, {subtree: true, childList: true, characterData: true});
+    const persistenceListener = () => reconcile();
+    window.addEventListener("nico:persistence-updated", persistenceListener);
     return () => {
       observer.disconnect();
+      window.removeEventListener("nico:persistence-updated", persistenceListener);
       restoreFetch();
     };
   }, []);
