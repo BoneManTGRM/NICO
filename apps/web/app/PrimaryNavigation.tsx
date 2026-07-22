@@ -60,7 +60,7 @@ const SPANISH_ADVANCED_GROUPS = [
     links: [
       {label: "Recuperación", href: "/operations/recovery"},
       {label: "Respaldo y restauración", href: "/operations/backup-restore"},
-      {label: "Analizadores a Express", href: "/scanner-workflow"},
+      {label: "Escáner a Express", href: "/scanner-workflow"},
       {label: "Actualizar evidencia", href: "/refresh-full-evidence"},
     ],
   },
@@ -128,7 +128,7 @@ export default function PrimaryNavigation() {
   return (
     <nav className="global-nav" aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}>
       <div className="global-nav-inner">
-        <a className="global-brand" href={spanishActive ? "/es/assessment?tier=express#assessment" : "/assessment?tier=express#assessment"} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>NICO</a>
+        <a className="global-brand" href="/assessment?tier=express#assessment" aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>NICO</a>
 
         <div className="primary-service-links" data-primary-service-count="3">
           {PRIMARY_SERVICES.map((service) => {
