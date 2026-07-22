@@ -7,6 +7,7 @@ from pypdf import PdfReader
 from nico import express_pdf_score_assurance_v1 as pdf_score
 from nico.express_report_final_polish_v41 import (
     _normalize_repairs,
+    _reconcile_code_audit_language,
     _reconcile_static_assurance,
     install_express_report_final_polish_v41,
 )
@@ -17,6 +18,26 @@ def _sample_result() -> dict:
         "status": "complete",
         "maturity_signal": {"level": "Strong", "score": 87, "presented_score": 85},
         "sections": [
+            {
+                "id": "code_audit",
+                "label": "Code Audit",
+                "score": 86,
+                "status": "green",
+                "evidence": [
+                    "Text files inspected for code-risk markers: actionable TODO/FIXME/security markers=0, risky pattern hits=6, test-path signals=0."
+                ],
+                "findings": [],
+                "unavailable": [],
+            },
+            {
+                "id": "secrets_review",
+                "label": "Secrets Exposure Review",
+                "score": 88,
+                "status": "yellow",
+                "evidence": [],
+                "findings": ["Scanner-worker secret tools reported 29 raw candidate(s)."],
+                "unavailable": [],
+            },
             {
                 "id": "static_analysis",
                 "label": "Static Analysis",
@@ -81,16 +102,28 @@ def test_static_not_scored_uses_review_limited_assurance_and_eslint_is_inapplica
     assert static["score"] is None
 
 
-def test_repair_priorities_are_client_facing_and_sequential() -> None:
+def test_repair_priorities_are_client_facing_sequential_and_explain_secret_counts() -> None:
+    result = _sample_result()
     repairs = _normalize_repairs([
         {"rank": 20, "title": "First", "severity": "REVIEW"},
         {"rank": 23, "title": "Second", "severity": "medium"},
-        {"rank": "P5", "title": "Third", "severity": "review required"},
-    ])
+        {"rank": "P5", "title": "Triage 12 unverified secret-scan candidate(s) as one parallel workstream", "severity": "review required"},
+    ], result)
 
     assert [item["rank"] for item in repairs] == ["P1", "P2", "P3"]
     assert repairs[0]["source_rank"] == 20
     assert repairs[0]["severity"] == "review required"
+    assert "12 consolidated" in repairs[2]["title"]
+    assert "29 raw scanner match" in repairs[2]["title"]
+
+
+def test_code_audit_pattern_candidates_are_not_presented_as_unresolved_risky_hits() -> None:
+    result = _reconcile_code_audit_language(_sample_result())
+    code = next(item for item in result["sections"] if item["id"] == "code_audit")
+    visible = " ".join(code["evidence"])
+    assert "risky pattern hits=" not in visible
+    assert "built-in pattern candidates reviewed=6" in visible
+    assert "actionable retained findings=0" in visible
 
 
 def test_velocity_decision_record_remains_one_page() -> None:
