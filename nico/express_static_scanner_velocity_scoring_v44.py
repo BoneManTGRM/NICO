@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 VERSION = "nico.express_static_scanner_velocity_scoring.v44"
 _PATCH_MARKER = "_nico_express_static_scanner_velocity_scoring_v44"
+_NUMBER_RE = r"(?:\d+(?:\.\d+)?|\.\d+)"
 
 _KNOWN_SCANNERS = {
     "bandit",
@@ -261,8 +262,8 @@ def _apply_velocity_score(result: dict[str, Any]) -> None:
         for field in ("evidence", "evidence_full", "findings", "unavailable")
         for item in section.get(field) or []
     )
-    cadence_match = re.search(r"\(([0-9.]+)\s*/\s*week\)", combined, re.I)
-    ratio_match = re.search(r"pull request traceability ratio:.*?=\s*([0-9.]+)", combined, re.I)
+    cadence_match = re.search(rf"\(({_NUMBER_RE})\s*/\s*week\)", combined, re.I)
+    ratio_match = re.search(rf"pull request traceability ratio:.*?=\s*({_NUMBER_RE})", combined, re.I)
     cadence = float(cadence_match.group(1)) if cadence_match else 0.0
     traceability = float(ratio_match.group(1)) if ratio_match else 0.0
     measured = "complexity engine current-run artifact completed" in combined.casefold()
