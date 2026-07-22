@@ -31,11 +31,17 @@ function isSpanish(): boolean {
 }
 
 function terminalRunVisible(): boolean {
-  const text = normalizeText(document.body.textContent);
-  return text.includes("express completed its evidence")
-    || text.includes("express completó las etapas")
-    || text.includes("human review required")
-    || text.includes("revisión humana obligatoria");
+  const section = document.querySelector<HTMLElement>('section[aria-live="polite"]');
+  if (!section) return false;
+  const phase = normalizeText(section.querySelector(".section-head > span")?.textContent);
+  if (["complete", "human review required", "completo", "revisión humana obligatoria"].includes(phase)) {
+    return true;
+  }
+  const message = normalizeText(section.querySelector(":scope > p")?.textContent);
+  return message.includes("express completed its evidence")
+    || message.includes("express completó las etapas")
+    || message.includes("comprehensive completed every automated stage")
+    || message.includes("integral completó todas las etapas automatizadas");
 }
 
 function runningRunVisible(): boolean {
