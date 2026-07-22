@@ -35,7 +35,9 @@ function assuranceLabel(status: string, spanish: boolean): string {
   }
   if (status === "red" || status === "blocked") return spanish ? "Bloqueada" : "Blocked";
   if (status === "supplemental") return spanish ? "Complementaria" : "Supplemental";
-  if (status === "gray" || status === "pending") return spanish ? "Revisión humana pendiente" : "Human review pending";
+  if (status === "gray" || status === "pending" || status === "human review pending") {
+    return spanish ? "Revisión humana pendiente" : "Human review pending";
+  }
   return spanish ? "No verificada" : "Unverified";
 }
 
@@ -112,7 +114,7 @@ function reconcileCombinedSectionBadges(): void {
   document.querySelectorAll<HTMLElement>(".results-grid .result-head .status").forEach((badge) => {
     if (badge.dataset.reconciled === "true") return;
     const original = (badge.textContent || "").trim();
-    const match = original.match(/^(green|yellow|red|gray|supplemental|review_limited_not_scored|verified|blocked)\s*·\s*(.+)$/i);
+    const match = original.match(/^(green|yellow|red|gray|supplemental|review_limited_not_scored|review limited|verified|blocked|human review pending)\s*·\s*(.+)$/i);
     if (!match) return;
 
     const status = match[1].toLowerCase();
