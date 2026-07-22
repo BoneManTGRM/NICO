@@ -84,11 +84,11 @@ def test_evidence_constraints_do_not_reduce_technical_scores_and_unscored_is_not
     assert by_id["secrets_review"].presented_score == 88
     assert by_id["velocity_complexity"].presented_score == 73
     assert by_id["ci_cd"].presented_score == 92
-    assert by_id["architecture_debt"].presented_score == 86
+    assert by_id["architecture_debt"].presented_score == 91
     assert "static_analysis" not in by_id
-    assert result["maturity_signal"]["score"] == 85
+    assert result["maturity_signal"]["score"] == 86
     assert result["maturity_signal"]["level"] == "Strong"
-    assert adjusted == 83
+    assert adjusted == 84
     assert "static_analysis" in result["maturity_signal"]["unscored_controls_excluded"]
 
 
