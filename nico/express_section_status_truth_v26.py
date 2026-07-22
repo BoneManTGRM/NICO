@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_section_status_truth.v28"
+VERSION = "nico.express_section_status_truth.v28.1"
 _PATCH_MARKER = "_nico_express_section_status_truth_v26"
 _REVIEW_TERMS = (
     "status=failed",
@@ -20,9 +20,14 @@ _REVIEW_TERMS = (
     " exact-snapshot scanner unavailable",
     " analyzer unavailable for this run",
 )
-_TOOL_FAILURE_RE = re.compile(r"\b([a-z0-9][a-z0-9_-]*)\s+ended with status (?:failed|timeout|timed_out)\b", re.I)
+_TOOL_FAILURE_RE = re.compile(
+    r"\b([a-z0-9][a-z0-9_-]*)\s+ended with status (?:failed|timeout|timed_out)\b",
+    re.I,
+)
 _TOOL_UNAVAILABLE_RE = re.compile(r"tools? unavailable:\s*([^.;]+)", re.I)
-_COMPLETED_TOOLS_RE = re.compile(r"scanner-worker ([a-z /_-]+) tools completed:\s*(.+)", re.I)
+_COMPLETED_TOOLS_RE = re.compile(
+    r"scanner-worker ([a-z /_-]+) tools completed:\s*(.+)", re.I
+)
 
 
 def _text(value: Any) -> str:
@@ -34,8 +39,6 @@ def _display_text(value: Any) -> str:
 
 
 def _has_unresolved(section: dict[str, Any]) -> bool:
-    """Detect unresolved current-run analyzer evidence without overriding superseding truth."""
-
     values = [*(section.get("findings") or []), *(section.get("unavailable") or [])]
     return any(any(term in _text(value) for term in _REVIEW_TERMS) for value in values)
 
@@ -44,7 +47,10 @@ def _tool_names(section: dict[str, Any]) -> tuple[set[str], set[str]]:
     failed: set[str] = set()
     unavailable: set[str] = set()
     for value in section.get("findings") or []:
-        failed.update(match.group(1).casefold() for match in _TOOL_FAILURE_RE.finditer(_display_text(value)))
+        failed.update(
+            match.group(1).casefold()
+            for match in _TOOL_FAILURE_RE.finditer(_display_text(value))
+        )
     for value in section.get("unavailable") or []:
         for match in _TOOL_UNAVAILABLE_RE.finditer(_display_text(value)):
             unavailable.update(
@@ -61,12 +67,7 @@ def _mentions_any_tool(value: Any, tools: set[str]) -> bool:
 
 
 def _normalize_scanner_claims(section: dict[str, Any]) -> None:
-    """Remove contradictory clean/completed wording when canonical execution is unresolved.
-
-    Artifact presence, parser success, process execution, exit disposition, and accepted
-    evidence are separate states. The report must never describe a failed or unavailable
-    analyzer as completed and clean in the same decision record.
-    """
+    """Separate artifact presence from accepted current-run execution truth."""
 
     failed, unavailable = _tool_names(section)
     unresolved = failed | unavailable
@@ -80,8 +81,9 @@ def _normalize_scanner_claims(section: dict[str, Any]) -> None:
         match = _COMPLETED_TOOLS_RE.search(value)
         if match and _mentions_any_tool(value, unresolved):
             evidence.append(
-                f"Scanner-worker {match.group(1).strip()} artifacts were observed for: {match.group(2).strip()}. "
-                "Execution acceptance is determined per analyzer from its canonical exit disposition."
+                f"Scanner-worker {match.group(1).strip()} artifacts were observed for: "
+                f"{match.group(2).strip()}. Execution acceptance is determined per analyzer "
+                "from its canonical exit disposition."
             )
             continue
         normalized = _text(value)
@@ -91,11 +93,11 @@ def _normalize_scanner_claims(section: dict[str, Any]) -> None:
                 "current-run, and clean",
                 "current run, and clean",
                 "reported zero credential findings",
-                "no vulnerability records",
                 "clean conclusion",
                 "scanner-clean",
             )
         )
+        # Preserve independent provider evidence such as a successful OSV API result.
         if clean_language and _mentions_any_tool(value, unresolved):
             removed_clean_claim = True
             continue
@@ -105,8 +107,8 @@ def _normalize_scanner_claims(section: dict[str, Any]) -> None:
         tools = ", ".join(sorted(unresolved))
         evidence.append(
             f"Truth reconciliation: accepted clean execution evidence is not established for {tools}; "
-            "attached or parsed artifacts remain diagnostic until the canonical analyzer disposition is completed, "
-            "explicitly inapplicable, or human-approved as review-limited."
+            "attached or parsed artifacts remain diagnostic until the canonical analyzer disposition "
+            "is completed, explicitly inapplicable, or human-approved as review-limited."
         )
 
     normalized_unavailable: list[str] = []
@@ -121,30 +123,35 @@ def _normalize_scanner_claims(section: dict[str, Any]) -> None:
             normalized_unavailable.append(value)
 
     section["evidence"] = list(dict.fromkeys(item for item in evidence if item))
-    section["unavailable"] = list(dict.fromkeys(item for item in normalized_unavailable if item))
+    section["unavailable"] = list(
+        dict.fromkeys(item for item in normalized_unavailable if item)
+    )
     section["scanner_truth_reconciled"] = True
     section["scanner_failed_tools"] = sorted(failed)
     section["scanner_unavailable_tools"] = sorted(unavailable)
 
 
-def _client_acceptance_is_approved(section: dict[str, Any], result: dict[str, Any]) -> bool:
-    top_level = result.get("client_acceptance") if isinstance(result.get("client_acceptance"), dict) else {}
+def _client_acceptance_is_approved(
+    section: dict[str, Any], result: dict[str, Any]
+) -> bool:
+    top_level = (
+        result.get("client_acceptance")
+        if isinstance(result.get("client_acceptance"), dict)
+        else {}
+    )
     statuses = {
         _text(section.get("status")),
         _text(section.get("acceptance_status")),
         _text(top_level.get("status")),
     }
-    score = section.get("score")
     try:
-        score_is_positive = float(score or 0) > 0
+        score_is_positive = float(section.get("score") or 0) > 0
     except (TypeError, ValueError):
         score_is_positive = False
     return bool(statuses & {"approved", "accepted", "green", "verified"}) and score_is_positive
 
 
 def technical_score_band(score: Any, *, scored: bool = True) -> dict[str, Any]:
-    """Return a score-derived technical band independent of evidence assurance."""
-
     if not scored or score is None:
         return {
             "score_band": "not_scored",
@@ -205,7 +212,7 @@ def assurance_presentation(status: Any, *, scored: bool = True) -> dict[str, str
             "assurance_label": "VERIFIED",
             "assurance_tone": "green",
         }
-    if token == "yellow":
+    if token in {"yellow", "review_limited", "review-limited"}:
         return {
             "assurance_status": "review_limited",
             "assurance_label": "REVIEW LIMITED",
@@ -233,33 +240,54 @@ def _apply_score_assurance_fields(section: dict[str, Any]) -> None:
         score = section.get("score")
     section.update(technical_score_band(score, scored=scored))
     section.update(assurance_presentation(section.get("status"), scored=scored))
-    if section.get("score_value") is None:
-        section["technical_score_display"] = "NOT SCORED"
-    else:
-        section["technical_score_display"] = f"{section['score_band_label']} · {section['score_value']}/100"
+    section["technical_score_display"] = (
+        "NOT SCORED"
+        if section.get("score_value") is None
+        else f"{section['score_band_label']} · {section['score_value']}/100"
+    )
     section["assurance_display"] = section["assurance_label"]
     section["canonical_status_role"] = "evidence_assurance"
     section["technical_score_role"] = "score_derived_health"
 
 
 def _static_analysis_requires_not_scored(section: dict[str, Any]) -> bool:
+    """Gate only the exact current-run multi-analyzer failure pattern.
+
+    Generic planning limitations or historical unavailable notes must not erase a valid
+    evidence-bound technical score or established release-readiness calculation.
+    """
+
     failed, unavailable = _tool_names(section)
-    analyzer_set = {"bandit", "semgrep", "eslint", "typescript"}
-    unresolved_analyzers = (failed | unavailable) & analyzer_set
+    unresolved = (failed | unavailable) & {"bandit", "semgrep", "eslint", "typescript"}
     verified_blocker = any(
-        any(term in _text(item) for term in ("verified blocker", "confirmed critical", "confirmed high severity"))
+        any(
+            term in _text(item)
+            for term in ("verified blocker", "confirmed critical", "confirmed high severity")
+        )
         for item in section.get("findings") or []
     )
-    return len(unresolved_analyzers) >= 3 and not verified_blocker
+    canonical_dispositions = " ".join(
+        _text(item) for item in [*(section.get("evidence") or []), *(section.get("findings") or [])]
+    )
+    exact_current_run_pattern = "canonical scanner disposition" in canonical_dispositions
+    return len(unresolved) >= 3 and exact_current_run_pattern and not verified_blocker
 
 
 def _architecture_score_cap(section: dict[str, Any]) -> None:
+    """Cap only when measured complexity itself is materially high.
+
+    Missing call-graph evidence remains an assurance limitation; it does not by itself
+    rewrite an established technical score or release-readiness result.
+    """
+
     evidence_text = " ".join(_display_text(item) for item in section.get("evidence") or [])
-    limitations_text = " ".join(_display_text(item) for item in section.get("unavailable") or [])
-    missing_call_graph = "call-graph" in _text(limitations_text) or "0 call-graph edge" in _text(evidence_text)
-    complexity_values = [int(value) for value in re.findall(r"max(?:imum)? measured complexity\D+(\d+)", evidence_text, re.I)]
-    high_complexity = bool(complexity_values and max(complexity_values) >= 50)
-    if not (missing_call_graph or high_complexity):
+    complexity_values = [
+        int(value)
+        for value in re.findall(
+            r"max(?:imum)? measured complexity\D+(\d+)", evidence_text, re.I
+        )
+    ]
+    if not complexity_values or max(complexity_values) < 50:
         return
     raw_score = section.get("presented_score")
     if raw_score is None:
@@ -275,14 +303,14 @@ def _architecture_score_cap(section: dict[str, Any]) -> None:
     section["presented"] = 79
     section["score"] = 79
     section["status"] = "yellow"
-    section["display_status"] = "REVIEW LIMITED"
+    section["display_status"] = "YELLOW · REVIEW LIMITED"
     section["score_rationale"] = (
-        "Architecture score capped at 79 because full call-graph proof is unavailable or measured complexity is materially high. "
+        "Architecture score capped at 79 because measured complexity is materially high. "
         "Directory presence and documentation alone cannot establish exceptional architecture."
     )
     findings = list(section.get("findings") or [])
     findings.append(
-        "Architecture requires hotspot and call-graph review before an Exceptional or Strong conclusion can be accepted."
+        "Architecture requires hotspot review before an Exceptional or Strong conclusion can be accepted."
     )
     section["findings"] = list(dict.fromkeys(findings))
 
@@ -308,7 +336,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             section.update(
                 {
                     "status": "SUPPLEMENTAL",
-                    "display_status": "SUPPLEMENTAL",
+                    "display_status": "SUPPLEMENTAL · NOT SCORED",
                     "directly_scored": False,
                     "score_treatment": "supplemental_not_scored",
                     "presented_score": None,
@@ -326,7 +354,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
                 section.update(
                     {
                         "status": "green",
-                        "display_status": "HUMAN APPROVED",
+                        "display_status": "GREEN · HUMAN APPROVED",
                         "directly_scored": True,
                         "score_treatment": "human_approved_scored_control",
                     }
@@ -335,7 +363,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
                 section.update(
                     {
                         "status": "gray",
-                        "display_status": "HUMAN REVIEW PENDING",
+                        "display_status": "GRAY · NOT SCORED",
                         "directly_scored": False,
                         "score_treatment": "not_scored_pending_approval",
                         "presented_score": None,
@@ -352,7 +380,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             section.update(
                 {
                     "status": "review_limited_not_scored",
-                    "display_status": "REVIEW LIMITED",
+                    "display_status": "YELLOW · REVIEW LIMITED",
                     "directly_scored": False,
                     "score_treatment": "not_scored_insufficient_verified_analyzer_evidence",
                     "source_score_before_evidence_gate": section.get("score"),
@@ -376,8 +404,10 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
 
         if str(section.get("status") or "").casefold() == "green" and _has_unresolved(section):
             section["status"] = "yellow"
-            section["display_status"] = "REVIEW LIMITED"
-            section["status_reason"] = "Unresolved current-run failed, timed-out, unavailable, or human-triage analyzer evidence prevents a VERIFIED assurance state."
+            section["display_status"] = "YELLOW · REVIEW LIMITED"
+            section["status_reason"] = (
+                "Unresolved current-run failed, timed-out, unavailable, or human-triage analyzer evidence prevents a GREEN assurance state."
+            )
             changed.append(section_id or label)
         _apply_score_assurance_fields(section)
 
@@ -410,7 +440,8 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
         "score_band_separated_from_assurance": True,
         "scanner_artifact_execution_acceptance_separated": True,
         "static_failure_does_not_imply_critical_quality": True,
-        "architecture_exceptional_requires_runtime_evidence": True,
+        "architecture_exceptional_requires_measured_support": True,
+        "legacy_display_status_compatibility_preserved": True,
     }
     return output
 
@@ -429,7 +460,9 @@ def _apply_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
 def install_express_section_status_truth_v26() -> dict[str, Any]:
     from nico import assessment_quality
 
-    current: Callable[[dict[str, Any]], tuple[str | None, str | None]] = assessment_quality._build_polished_pdf_base64
+    current: Callable[[dict[str, Any]], tuple[str | None, str | None]] = (
+        assessment_quality._build_polished_pdf_base64
+    )
     if getattr(current, _PATCH_MARKER, False):
         return {"status": "already_installed", "version": VERSION}
 
