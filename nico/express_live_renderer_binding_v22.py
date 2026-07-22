@@ -17,8 +17,9 @@ from nico.express_client_report_postprocessor_v31_compat import install_express_
 from nico.express_final_export_truth_v35 import install_express_final_export_truth_v35
 from nico.express_score_assurance_export_v1 import install_express_score_assurance_export_v1
 from nico.express_pdf_section_index_binding_v1 import install_express_pdf_section_index_binding_v1
+from nico.express_truth_calibration_v36 import install_express_truth_calibration_v36
 
-VERSION = "nico.express_live_renderer_binding.v28.1"
+VERSION = "nico.express_live_renderer_binding.v36"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -45,6 +46,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     final_export_truth = install_express_final_export_truth_v35()
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
+    # This must remain last. It reconciles the legacy presentation layers without
+    # deleting their compatibility contracts, then rebinds the live renderer and
+    # finalizer to the corrected scored-controls-only truth model.
+    truth_calibration = install_express_truth_calibration_v36()
 
     renderer_bound = bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
     score_assurance_bound = bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False))
@@ -67,6 +72,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_install": final_export_truth,
         "score_assurance_export_install": score_assurance_export,
         "pdf_section_index_install": pdf_section_index,
+        "truth_calibration_install": truth_calibration,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": renderer_bound and dossier._premium_pdf is live_renderer,
@@ -84,6 +90,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_bound": final_export_truth.get("status") in {"installed", "already_installed"},
         "score_assurance_export_bound": score_assurance_export.get("status") in {"installed", "already_installed"},
         "pdf_section_index_bound": pdf_section_index.get("status") in {"installed", "already_installed"},
+        "truth_calibration_bound": truth_calibration.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
         "static_import_rebound": previous is not live_renderer,
         "human_review_required": True,
