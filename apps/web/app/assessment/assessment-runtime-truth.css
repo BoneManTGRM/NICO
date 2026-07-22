@@ -1,3 +1,97 @@
+.nico-command-center {
+  --nico-cyan: #38bdf8;
+  --nico-cyan-soft: rgb(56 189 248 / 16%);
+  --nico-teal: #2dd4bf;
+  --nico-panel: rgb(8 18 36 / 96%);
+  --nico-line: rgb(71 85 105 / 74%);
+}
+
+.nico-command-center .hero {
+  isolation: isolate;
+}
+
+.nico-command-center .hero::before {
+  position: absolute;
+  z-index: -1;
+  width: 360px;
+  height: 360px;
+  top: -180px;
+  left: -120px;
+  content: "";
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(56 189 248 / 22%), transparent 68%);
+  pointer-events: none;
+}
+
+.nico-trust-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.35rem;
+}
+
+.nico-trust-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.15rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid rgb(56 189 248 / 36%);
+  border-radius: 999px;
+  background: rgb(3 105 161 / 13%);
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.nico-trust-strip span::before {
+  width: 0.42rem;
+  height: 0.42rem;
+  content: "";
+  border-radius: 999px;
+  background: linear-gradient(135deg, #38bdf8, #2dd4bf);
+  box-shadow: 0 0 12px rgb(56 189 248 / 65%);
+}
+
+.nico-service-choice {
+  display: flex !important;
+  min-height: 5.25rem !important;
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: center;
+  gap: 0.35rem;
+  overflow: hidden;
+  text-align: left;
+}
+
+.nico-service-choice[aria-pressed="true"] {
+  border-color: rgb(56 189 248 / 88%) !important;
+  background:
+    radial-gradient(circle at 90% 0%, rgb(45 212 191 / 18%), transparent 38%),
+    linear-gradient(135deg, rgb(3 105 161 / 92%), rgb(6 182 212 / 78%)) !important;
+  box-shadow: 0 18px 45px rgb(2 132 199 / 25%), inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+.nico-service-choice::after {
+  position: absolute;
+  width: 5rem;
+  height: 5rem;
+  right: -1.7rem;
+  top: -1.8rem;
+  content: "";
+  border-radius: 999px;
+  background: rgb(255 255 255 / 7%);
+}
+
+.nico-service-detail {
+  display: block;
+  color: rgb(226 232 240 / 78%);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .nico-immutable-commit-value {
   display: block;
   min-width: 0;
@@ -9,10 +103,158 @@
   line-height: 1.45;
 }
 
+.nico-metadata-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-color: rgb(71 85 105 / 76%) !important;
+  background:
+    linear-gradient(160deg, rgb(15 23 42 / 98%), rgb(7 16 32 / 98%)) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%), 0 14px 30px rgb(0 0 0 / 14%);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.nico-metadata-card:hover {
+  transform: translateY(-2px);
+  border-color: rgb(56 189 248 / 48%) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), 0 18px 38px rgb(0 0 0 / 20%);
+}
+
+.nico-metadata-card::after {
+  position: absolute;
+  width: 4.5rem;
+  height: 4.5rem;
+  right: -2.5rem;
+  bottom: -2.6rem;
+  content: "";
+  border-radius: 999px;
+  background: rgb(56 189 248 / 7%);
+}
+
+.nico-warning-card {
+  border-color: rgb(245 158 11 / 48%) !important;
+  background: linear-gradient(160deg, rgb(69 38 5 / 48%), rgb(15 23 42 / 98%)) !important;
+}
+
+.nico-success-card {
+  border-color: rgb(16 185 129 / 45%) !important;
+  background: linear-gradient(160deg, rgb(5 46 36 / 56%), rgb(15 23 42 / 98%)) !important;
+}
+
 .nico-storage-warning {
   color: #fbbf24 !important;
   font-size: 0.95rem !important;
   line-height: 1.45;
+}
+
+.nico-copy-control {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  margin-top: 0.65rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgb(56 189 248 / 42%);
+  border-radius: 999px;
+  background: rgb(3 105 161 / 14%);
+  color: #bae6fd;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.nico-run-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.nico-run-panel::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: linear-gradient(180deg, #38bdf8, #2dd4bf, transparent 92%);
+}
+
+.nico-progress-live {
+  overflow: hidden;
+}
+
+.nico-progress-live span {
+  position: relative;
+}
+
+.nico-progress-live span::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(115deg, transparent 10%, rgb(255 255 255 / 30%) 44%, transparent 72%);
+  transform: translateX(-120%);
+  animation: nicoProgressSheen 2.2s ease-in-out infinite;
+}
+
+@keyframes nicoProgressSheen {
+  0%, 20% { transform: translateX(-120%); }
+  72%, 100% { transform: translateX(130%); }
+}
+
+.nico-live-heartbeat {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.72rem;
+  margin: -0.55rem 0 1.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgb(56 189 248 / 28%);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(3 105 161 / 13%), rgb(15 23 42 / 72%));
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.nico-live-dot {
+  flex: 0 0 auto;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-top: 0.2rem;
+  border-radius: 999px;
+  background: #2dd4bf;
+  box-shadow: 0 0 0 0 rgb(45 212 191 / 45%);
+  animation: nicoHeartbeat 1.8s ease-out infinite;
+}
+
+@keyframes nicoHeartbeat {
+  0% { box-shadow: 0 0 0 0 rgb(45 212 191 / 44%); }
+  70% { box-shadow: 0 0 0 10px rgb(45 212 191 / 0%); }
+  100% { box-shadow: 0 0 0 0 rgb(45 212 191 / 0%); }
+}
+
+.nico-result-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.nico-result-card::before {
+  position: absolute;
+  width: 4px;
+  inset: 0 auto 0 0;
+  content: "";
+  background: rgb(100 116 139 / 45%);
+}
+
+.nico-result-card[data-nico-state*="complete"]::before,
+.nico-result-card[data-nico-state*="verified"]::before {
+  background: #10b981;
+}
+
+.nico-result-card[data-nico-state*="running"]::before,
+.nico-result-card[data-nico-state*="ejecución"]::before,
+.nico-active-stage::before {
+  background: linear-gradient(180deg, #38bdf8, #2dd4bf);
+  box-shadow: 0 0 18px rgb(56 189 248 / 45%);
+}
+
+.nico-result-card[data-nico-state*="failed"]::before,
+.nico-result-card[data-nico-state*="blocked"]::before {
+  background: #ef4444;
 }
 
 .results-grid .result-head .status[data-reconciled="true"] {
@@ -60,7 +302,76 @@
   background: rgb(30 41 59 / 82%);
 }
 
+.nico-section-meter {
+  width: 100%;
+  height: 5px;
+  margin: 0.75rem 0 1.15rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(2 6 23 / 82%);
+}
+
+.nico-section-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #64748b;
+  box-shadow: 0 0 14px rgb(100 116 139 / 38%);
+}
+
+.nico-section-meter span[data-band="exceptional"],
+.nico-section-meter span[data-band="strong"] {
+  background: linear-gradient(90deg, #059669, #2dd4bf);
+}
+
+.nico-section-meter span[data-band="moderate"] {
+  background: linear-gradient(90deg, #d97706, #fbbf24);
+}
+
+.nico-section-meter span[data-band="weak"],
+.nico-section-meter span[data-band="critical"] {
+  background: linear-gradient(90deg, #dc2626, #fb7185);
+}
+
+.nico-report-actions {
+  position: sticky;
+  z-index: 15;
+  bottom: 0.75rem;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem !important;
+  padding: 0.85rem;
+  border: 1px solid rgb(71 85 105 / 76%);
+  border-radius: 18px;
+  background: rgb(3 7 18 / 91%);
+  box-shadow: 0 22px 55px rgb(0 0 0 / 42%);
+  backdrop-filter: blur(16px);
+}
+
+.nico-report-actions button {
+  min-height: 3rem;
+  border-radius: 13px;
+  font-weight: 900;
+}
+
+.nico-report-gate-note {
+  grid-column: 1 / -1;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
 @media (max-width: 760px) {
+  .nico-trust-strip {
+    gap: 0.5rem;
+  }
+
+  .nico-trust-strip span {
+    min-height: 1.95rem;
+    padding: 0.38rem 0.65rem;
+    font-size: 0.7rem;
+  }
+
   .target-grid article {
     min-width: 0;
     overflow: hidden;
@@ -90,5 +401,19 @@
     max-width: 100%;
     white-space: normal;
     text-align: left;
+  }
+
+  .nico-live-heartbeat {
+    margin-top: -0.35rem;
+    font-size: 0.78rem;
+  }
+
+  .nico-report-actions {
+    grid-template-columns: 1fr;
+    bottom: 0.45rem;
+  }
+
+  .nico-report-gate-note {
+    grid-column: 1;
   }
 }
