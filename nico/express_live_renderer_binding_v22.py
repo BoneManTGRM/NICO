@@ -23,8 +23,9 @@ from nico.express_truth_calibration_v38_compat import install_express_truth_cali
 from nico.express_pdf_score_assurance_layout_v39 import install_express_pdf_score_assurance_layout_v39
 from nico.express_truth_calibration_v40_patch import install_express_truth_calibration_v40_patch
 from nico.express_report_final_polish_v41 import install_express_report_final_polish_v41
+from nico.express_report_premium_polish_v42 import install_express_report_premium_polish_v42
 
-VERSION = "nico.express_live_renderer_binding.v41"
+VERSION = "nico.express_live_renderer_binding.v42"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -57,12 +58,14 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     pdf_score_assurance_layout = install_express_pdf_score_assurance_layout_v39()
     truth_calibration_patch = install_express_truth_calibration_v40_patch()
     final_report_polish = install_express_report_final_polish_v41()
+    premium_report_polish = install_express_report_premium_polish_v42()
 
-    renderer_bound = bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
-    score_assurance_bound = bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False))
+    final_renderer = premium._premium_pdf
+    renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
+    score_assurance_bound = bool(getattr(final_renderer, "_nico_express_pdf_score_assurance_v1", False))
 
     return {
-        "status": "installed" if previous is not live_renderer else "already_installed",
+        "status": "installed" if previous is not final_renderer else "already_installed",
         "version": VERSION,
         "renderer_install": renderer,
         "score_assurance_renderer_install": score_assurance_renderer,
@@ -85,10 +88,11 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "pdf_score_assurance_layout_install": pdf_score_assurance_layout,
         "truth_calibration_patch_install": truth_calibration_patch,
         "final_report_polish_install": final_report_polish,
+        "premium_report_polish_install": premium_report_polish,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
-        "dossier_renderer_bound": renderer_bound and dossier._premium_pdf is live_renderer,
-        "dossier_score_assurance_renderer_bound": score_assurance_bound and dossier._premium_pdf is live_renderer,
+        "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
+        "dossier_score_assurance_renderer_bound": score_assurance_bound and dossier._premium_pdf is final_renderer,
         "scanner_dispositions_bound": scanner_dispositions.get("status") in {"installed", "already_installed"},
         "canonical_truth_bound": canonical_truth.get("status") in {"installed", "already_installed"},
         "cross_format_contract_bound": cross_format.get("status") in {"installed", "already_installed"},
@@ -108,8 +112,9 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "pdf_score_assurance_layout_bound": pdf_score_assurance_layout.get("status") in {"installed", "already_installed"},
         "truth_calibration_patch_bound": truth_calibration_patch.get("status") in {"installed", "already_installed"},
         "final_report_polish_bound": final_report_polish.get("status") in {"installed", "already_installed"},
+        "premium_report_polish_bound": premium_report_polish.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
-        "static_import_rebound": previous is not live_renderer,
+        "static_import_rebound": previous is not final_renderer,
         "human_review_required": True,
     }
 
