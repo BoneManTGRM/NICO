@@ -1,4 +1,5 @@
 import AssessmentPage from "../../assessment/page";
+import SpanishDocumentLanguage from "./SpanishDocumentLanguage";
 
 export const metadata = {
   title: "Evaluaciones NICO",
@@ -6,5 +7,8 @@ export const metadata = {
 };
 
 export default function SpanishAssessmentPage() {
-  return <AssessmentPage locale="es-MX" />;
+  return <>
+    <SpanishDocumentLanguage />
+    <AssessmentPage locale="es-MX" />
+  </>;
 }
