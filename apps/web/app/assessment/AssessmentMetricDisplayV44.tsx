@@ -12,7 +12,8 @@ function spanish(): boolean {
 }
 
 function canonicalServiceLabel(button: HTMLButtonElement): string | null {
-  const value = normalize(button.textContent);
+  const explicit = normalize(button.getAttribute("aria-label"));
+  const value = explicit || normalize(button.textContent);
   if (value.startsWith("express")) return "Express";
   if (value.startsWith("comprehensive")) return "Comprehensive";
   if (value.startsWith("integral")) return "Integral";
@@ -24,6 +25,9 @@ function reconcileServiceAccessibility(): void {
     const label = canonicalServiceLabel(button);
     if (label) button.setAttribute("aria-label", label);
     button.querySelectorAll<HTMLElement>(".nico-service-detail").forEach((detail) => {
+      const descriptor = (detail.textContent || "").trim();
+      if (descriptor) button.dataset.serviceDetail = descriptor;
+      detail.textContent = "";
       detail.setAttribute("aria-hidden", "true");
     });
   });
