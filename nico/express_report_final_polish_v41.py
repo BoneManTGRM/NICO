@@ -5,6 +5,9 @@ from copy import deepcopy
 from typing import Any, Callable
 
 VERSION = "nico.express_report_final_polish.v41"
+_TRUTH_MARKER = "_nico_express_report_final_polish_v41_truth"
+_REPAIR_MARKER = "_nico_express_report_final_polish_v41_repairs"
+_DECISION_MARKER = "_nico_express_report_final_polish_v41_decision"
 
 
 def _text(value: Any) -> str:
@@ -113,7 +116,9 @@ def _compact_decision_pdf(result: dict[str, Any], section_id: str, title: str) -
     from nico import express_pdf_score_assurance_v1 as target
     from nico.express_truth_calibration_v38_compat import _uses_v36_truth_model
 
-    original = getattr(_compact_decision_pdf, "_nico_original")
+    original = getattr(_compact_decision_pdf, "_nico_original", None)
+    if not callable(original) or original is _compact_decision_pdf:
+        raise RuntimeError("Express decision renderer base is unavailable")
     if not _uses_v36_truth_model(result):
         return original(result, section_id, title)
     section = target._section(result, section_id)
@@ -146,6 +151,23 @@ def _compact_decision_pdf(result: dict[str, Any], section_id: str, title: str) -
         section.update(saved)
 
 
+def _base_decision_renderer(current: Callable[..., bytes], v39_decision: Callable[..., bytes]) -> Callable[..., bytes]:
+    if current is _compact_decision_pdf:
+        existing = getattr(_compact_decision_pdf, "_nico_original", None)
+        if callable(existing) and existing is not _compact_decision_pdf:
+            return existing
+    if current is v39_decision:
+        existing = getattr(v39_decision, "_nico_original", None)
+        if callable(existing) and existing is not _compact_decision_pdf:
+            return existing
+    existing = getattr(current, "_nico_original", None)
+    if callable(existing) and existing is not _compact_decision_pdf:
+        return existing
+    if current is not _compact_decision_pdf:
+        return current
+    raise RuntimeError("Unable to resolve the base Express decision renderer")
+
+
 def install_express_report_final_polish_v41() -> dict[str, Any]:
     from nico import express_pdf_score_assurance_v1 as pdf_score
     from nico import express_report_premium_v14 as premium
@@ -154,28 +176,38 @@ def install_express_report_final_polish_v41() -> dict[str, Any]:
     from nico import express_truth_calibration_v38_compat as compat
     from nico.express_pdf_score_assurance_layout_v39 import _compact_decision_pdf as v39_decision
 
-    previous_truth: Callable[[dict[str, Any]], dict[str, Any]] = compat._selective_truth
+    current_truth: Callable[[dict[str, Any]], dict[str, Any]] = compat._selective_truth
+    if not getattr(current_truth, _TRUTH_MARKER, False):
+        previous_truth = current_truth
 
-    def polished_truth(result: dict[str, Any]) -> dict[str, Any]:
-        return _reconcile_static_assurance(previous_truth(result))
+        def polished_truth(result: dict[str, Any]) -> dict[str, Any]:
+            return _reconcile_static_assurance(previous_truth(result))
 
-    setattr(polished_truth, "_nico_previous", previous_truth)
-    compat._selective_truth = polished_truth
-    truth.reconcile_section_status_truth = polished_truth
-    pdf_score.reconcile_section_status_truth = polished_truth
-    score_export.reconcile_section_status_truth = polished_truth
+        setattr(polished_truth, _TRUTH_MARKER, True)
+        setattr(polished_truth, "_nico_previous", previous_truth)
+        compat._selective_truth = polished_truth
+        current_truth = polished_truth
 
-    previous_repairs = getattr(premium._clean_repairs, "_nico_original", premium._clean_repairs)
+    truth.reconcile_section_status_truth = current_truth
+    pdf_score.reconcile_section_status_truth = current_truth
+    score_export.reconcile_section_status_truth = current_truth
 
-    def clean_repairs(result: dict[str, Any]) -> list[dict[str, Any]]:
-        return _normalize_repairs(previous_repairs(result))
+    current_repairs = premium._clean_repairs
+    if not getattr(current_repairs, _REPAIR_MARKER, False):
+        previous_repairs = current_repairs
 
-    setattr(clean_repairs, "_nico_original", previous_repairs)
-    premium._clean_repairs = clean_repairs
+        def clean_repairs(result: dict[str, Any]) -> list[dict[str, Any]]:
+            return _normalize_repairs(previous_repairs(result))
 
-    base_decision = getattr(v39_decision, "_nico_original", pdf_score._decision_pdf)
-    setattr(_compact_decision_pdf, "_nico_original", base_decision)
-    pdf_score._decision_pdf = _compact_decision_pdf
+        setattr(clean_repairs, _REPAIR_MARKER, True)
+        setattr(clean_repairs, "_nico_original", previous_repairs)
+        premium._clean_repairs = clean_repairs
+
+    if pdf_score._decision_pdf is not _compact_decision_pdf:
+        base_decision = _base_decision_renderer(pdf_score._decision_pdf, v39_decision)
+        setattr(_compact_decision_pdf, "_nico_original", base_decision)
+        setattr(_compact_decision_pdf, _DECISION_MARKER, True)
+        pdf_score._decision_pdf = _compact_decision_pdf
 
     return {
         "status": "installed",
@@ -184,6 +216,7 @@ def install_express_report_final_polish_v41() -> dict[str, Any]:
         "eslint_inapplicability_removed_from_limitations": True,
         "repair_priorities_normalized": True,
         "velocity_orphan_page_prevented": True,
+        "idempotent_renderer_binding": True,
         "full_machine_readable_evidence_preserved": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
