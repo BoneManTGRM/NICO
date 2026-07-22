@@ -25,8 +25,9 @@ from nico.express_truth_calibration_v40_patch import install_express_truth_calib
 from nico.express_report_final_polish_v41 import install_express_report_final_polish_v41
 from nico.express_report_premium_polish_v42 import install_express_report_premium_polish_v42
 from nico.express_report_delivery_truth_v43 import install_express_report_delivery_truth_v43
+from nico.express_static_scanner_velocity_scoring_v44 import install_express_static_scanner_velocity_scoring_v44
 
-VERSION = "nico.express_live_renderer_binding.v43"
+VERSION = "nico.express_live_renderer_binding.v44"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -61,6 +62,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     final_report_polish = install_express_report_final_polish_v41()
     premium_report_polish = install_express_report_premium_polish_v42()
     delivery_truth = install_express_report_delivery_truth_v43()
+    static_scanner_velocity_scoring = install_express_static_scanner_velocity_scoring_v44()
 
     final_renderer = premium._premium_pdf
     renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
@@ -92,6 +94,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_report_polish_install": final_report_polish,
         "premium_report_polish_install": premium_report_polish,
         "delivery_truth_install": delivery_truth,
+        "static_scanner_velocity_scoring_install": static_scanner_velocity_scoring,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
@@ -117,7 +120,9 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_report_polish_bound": final_report_polish.get("status") in {"installed", "already_installed"},
         "premium_report_polish_bound": premium_report_polish.get("status") in {"installed", "already_installed"},
         "delivery_truth_bound": delivery_truth.get("status") in {"installed", "already_installed"},
+        "static_scanner_velocity_scoring_bound": static_scanner_velocity_scoring.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
+        "scanner_execution_coverage_excluded_from_maturity": True,
         "explicit_client_delivery_warning": True,
         "static_import_rebound": previous is not final_renderer,
         "human_review_required": True,
