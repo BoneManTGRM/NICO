@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect} from "react";
+import {localizeSpanishAssessmentDom} from "./AssessmentSpanishLocalization";
 import "./assessment-runtime-truth.css";
 
 function normalizeText(value: string | null | undefined): string {
@@ -29,13 +30,14 @@ function technicalBand(score: number | null, spanish: boolean): string {
 }
 
 function assuranceLabel(status: string, spanish: boolean): string {
-  if (status === "green" || status === "verified") return spanish ? "Verificada" : "Verified";
-  if (status === "yellow" || status === "review_limited_not_scored" || status === "review limited") {
+  const value = normalizeText(status).replaceAll("_", " ");
+  if (["green", "verified", "verificado", "verificada"].includes(value)) return spanish ? "Verificada" : "Verified";
+  if (["yellow", "review limited", "review limited not scored", "revisión limitada"].includes(value)) {
     return spanish ? "Revisión limitada" : "Review limited";
   }
-  if (status === "red" || status === "blocked") return spanish ? "Bloqueada" : "Blocked";
-  if (status === "supplemental") return spanish ? "Complementaria" : "Supplemental";
-  if (status === "gray" || status === "pending" || status === "human review pending") {
+  if (["red", "blocked", "bloqueado", "bloqueada"].includes(value)) return spanish ? "Bloqueada" : "Blocked";
+  if (["supplemental", "complementario", "complementaria"].includes(value)) return spanish ? "Complementaria" : "Supplemental";
+  if (["gray", "pending", "human review pending", "pendiente", "revisión humana pendiente"].includes(value)) {
     return spanish ? "Revisión humana pendiente" : "Human review pending";
   }
   return spanish ? "No verificada" : "Unverified";
@@ -114,10 +116,10 @@ function reconcileCombinedSectionBadges(): void {
   document.querySelectorAll<HTMLElement>(".results-grid .result-head .status").forEach((badge) => {
     if (badge.dataset.reconciled === "true") return;
     const original = (badge.textContent || "").trim();
-    const match = original.match(/^(green|yellow|red|gray|supplemental|review_limited_not_scored|review limited|verified|blocked|human review pending)\s*·\s*(.+)$/i);
+    const match = original.match(/^(green|yellow|red|gray|supplemental|review_limited_not_scored|review limited|verified|blocked|human review pending|verificado|verificada|revisión limitada|bloqueado|bloqueada|complementario|complementaria|revisión humana pendiente)\s*·\s*(.+)$/i);
     if (!match) return;
 
-    const status = match[1].toLowerCase();
+    const status = match[1];
     const scoreText = match[2].trim();
     const scoreMatch = scoreText.match(/(\d{1,3})\s*\/\s*100/);
     const score = scoreMatch ? Math.max(0, Math.min(100, Number(scoreMatch[1]))) : null;
@@ -147,14 +149,41 @@ function reconcile(): void {
   reconcileTargetCards();
   reconcileTimeline();
   reconcileCombinedSectionBadges();
+  localizeSpanishAssessmentDom(document);
+}
+
+function installSpanishAssessmentLanguageHeader(): () => void {
+  if (!isSpanish()) return () => undefined;
+  const previousFetch = window.fetch;
+  const localizedFetch: typeof window.fetch = (input, init) => {
+    const target = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+    if (!target.includes("/api/nico/assessment")) return previousFetch(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+    headers.set("Accept-Language", "es-MX,es;q=0.9");
+    headers.set("X-NICO-Locale", "es-MX");
+    return previousFetch(input, {...init, headers});
+  };
+  window.fetch = localizedFetch;
+  return () => {
+    if (window.fetch === localizedFetch) window.fetch = previousFetch;
+  };
 }
 
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
+    const restoreFetch = installSpanishAssessmentLanguageHeader();
     reconcile();
     const observer = new MutationObserver(reconcile);
     observer.observe(document.body, {subtree: true, childList: true, characterData: true});
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      restoreFetch();
+    };
   }, []);
   return null;
 }
