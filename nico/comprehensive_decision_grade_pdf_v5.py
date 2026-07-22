@@ -86,10 +86,12 @@ def _ensure_page_contract(pdf_bytes: bytes, stages: list[dict[str, Any]], run_id
     supplement = _supplement_pdf(stages, _MIN_DECISION_GRADE_PAGES - current, run_id)
     supplement_reader = PdfReader(io.BytesIO(supplement))
     writer = PdfWriter()
-    for page in reader.pages:
-        writer.add_page(page)
-    for page in supplement_reader.pages:
-        writer.add_page(page)
+    # append(..., import_outline=True) preserves the premium report's existing
+    # navigation tree; add_page() alone discards it and breaks the decision-grade
+    # PDF contract.
+    writer.append(reader, import_outline=True)
+    writer.append(supplement_reader, import_outline=False)
+    writer.add_outline_item("Evidence Appendix Detail", current)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue(), len(writer.pages)
