@@ -32,7 +32,7 @@ export const PRIMARY_SERVICES = [
 const SPANISH_PRIMARY_LABELS: Record<ServiceKey, string> = {
   "run-job": "Ejecutar evaluación",
   operations: "Operaciones",
-  retainer: "Retainer",
+  retainer: "Servicio continuo",
 };
 
 const ADVANCED_GROUPS = [
