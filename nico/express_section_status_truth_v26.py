@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.express_section_status_truth.v27.1"
+VERSION = "nico.express_section_status_truth.v28"
 _PATCH_MARKER = "_nico_express_section_status_truth_v26"
 _REVIEW_TERMS = (
     "status=failed",
@@ -19,23 +20,111 @@ _REVIEW_TERMS = (
     " exact-snapshot scanner unavailable",
     " analyzer unavailable for this run",
 )
+_TOOL_FAILURE_RE = re.compile(r"\b([a-z0-9][a-z0-9_-]*)\s+ended with status (?:failed|timeout|timed_out)\b", re.I)
+_TOOL_UNAVAILABLE_RE = re.compile(r"tools? unavailable:\s*([^.;]+)", re.I)
+_COMPLETED_TOOLS_RE = re.compile(r"scanner-worker ([a-z /_-]+) tools completed:\s*(.+)", re.I)
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
-def _has_unresolved(section: dict[str, Any]) -> bool:
-    """Detect unresolved current-run analyzer evidence without overriding superseding truth.
+def _display_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
 
-    Generic historical notes such as "human review required", an inherited
-    "unavailable" sentence, or the mere word "findings" are not sufficient to
-    downgrade a section that a later evidence reconciliation legitimately
-    promoted to green.
-    """
+
+def _has_unresolved(section: dict[str, Any]) -> bool:
+    """Detect unresolved current-run analyzer evidence without overriding superseding truth."""
 
     values = [*(section.get("findings") or []), *(section.get("unavailable") or [])]
     return any(any(term in _text(value) for term in _REVIEW_TERMS) for value in values)
+
+
+def _tool_names(section: dict[str, Any]) -> tuple[set[str], set[str]]:
+    failed: set[str] = set()
+    unavailable: set[str] = set()
+    for value in section.get("findings") or []:
+        failed.update(match.group(1).casefold() for match in _TOOL_FAILURE_RE.finditer(_display_text(value)))
+    for value in section.get("unavailable") or []:
+        for match in _TOOL_UNAVAILABLE_RE.finditer(_display_text(value)):
+            unavailable.update(
+                item.strip().casefold()
+                for item in re.split(r"[,/]", match.group(1))
+                if item.strip()
+            )
+    return failed, unavailable
+
+
+def _mentions_any_tool(value: Any, tools: set[str]) -> bool:
+    normalized = _text(value)
+    return any(tool and tool in normalized for tool in tools)
+
+
+def _normalize_scanner_claims(section: dict[str, Any]) -> None:
+    """Remove contradictory clean/completed wording when canonical execution is unresolved.
+
+    Artifact presence, parser success, process execution, exit disposition, and accepted
+    evidence are separate states. The report must never describe a failed or unavailable
+    analyzer as completed and clean in the same decision record.
+    """
+
+    failed, unavailable = _tool_names(section)
+    unresolved = failed | unavailable
+    if not unresolved:
+        return
+
+    evidence: list[str] = []
+    removed_clean_claim = False
+    for raw in section.get("evidence") or []:
+        value = _display_text(raw)
+        match = _COMPLETED_TOOLS_RE.search(value)
+        if match and _mentions_any_tool(value, unresolved):
+            evidence.append(
+                f"Scanner-worker {match.group(1).strip()} artifacts were observed for: {match.group(2).strip()}. "
+                "Execution acceptance is determined per analyzer from its canonical exit disposition."
+            )
+            continue
+        normalized = _text(value)
+        clean_language = any(
+            phrase in normalized
+            for phrase in (
+                "current-run, and clean",
+                "current run, and clean",
+                "reported zero credential findings",
+                "no vulnerability records",
+                "clean conclusion",
+                "scanner-clean",
+            )
+        )
+        if clean_language and _mentions_any_tool(value, unresolved):
+            removed_clean_claim = True
+            continue
+        evidence.append(value)
+
+    if removed_clean_claim or unresolved:
+        tools = ", ".join(sorted(unresolved))
+        evidence.append(
+            f"Truth reconciliation: accepted clean execution evidence is not established for {tools}; "
+            "attached or parsed artifacts remain diagnostic until the canonical analyzer disposition is completed, "
+            "explicitly inapplicable, or human-approved as review-limited."
+        )
+
+    normalized_unavailable: list[str] = []
+    for raw in section.get("unavailable") or []:
+        value = _display_text(raw)
+        match = _TOOL_UNAVAILABLE_RE.search(value)
+        if match:
+            normalized_unavailable.append(
+                f"Accepted clean execution evidence unavailable for: {match.group(1).strip()}."
+            )
+        else:
+            normalized_unavailable.append(value)
+
+    section["evidence"] = list(dict.fromkeys(item for item in evidence if item))
+    section["unavailable"] = list(dict.fromkeys(item for item in normalized_unavailable if item))
+    section["scanner_truth_reconciled"] = True
+    section["scanner_failed_tools"] = sorted(failed)
+    section["scanner_unavailable_tools"] = sorted(unavailable)
 
 
 def _client_acceptance_is_approved(section: dict[str, Any], result: dict[str, Any]) -> bool:
@@ -98,6 +187,12 @@ def assurance_presentation(status: Any, *, scored: bool = True) -> dict[str, str
             "assurance_label": "SUPPLEMENTAL",
             "assurance_tone": "blue",
         }
+    if token in {"review_limited", "review-limited", "review_limited_not_scored"}:
+        return {
+            "assurance_status": "review_limited",
+            "assurance_label": "REVIEW LIMITED",
+            "assurance_tone": "yellow",
+        }
     if not scored or token in {"gray", "pending", "pending_human_review"}:
         return {
             "assurance_status": "pending_human_review",
@@ -110,7 +205,7 @@ def assurance_presentation(status: Any, *, scored: bool = True) -> dict[str, str
             "assurance_label": "VERIFIED",
             "assurance_tone": "green",
         }
-    if token in {"yellow", "review_limited", "review-limited"}:
+    if token == "yellow":
         return {
             "assurance_status": "review_limited",
             "assurance_label": "REVIEW LIMITED",
@@ -141,12 +236,55 @@ def _apply_score_assurance_fields(section: dict[str, Any]) -> None:
     if section.get("score_value") is None:
         section["technical_score_display"] = "NOT SCORED"
     else:
-        section["technical_score_display"] = (
-            f"{section['score_band_label']} · {section['score_value']}/100"
-        )
+        section["technical_score_display"] = f"{section['score_band_label']} · {section['score_value']}/100"
     section["assurance_display"] = section["assurance_label"]
     section["canonical_status_role"] = "evidence_assurance"
     section["technical_score_role"] = "score_derived_health"
+
+
+def _static_analysis_requires_not_scored(section: dict[str, Any]) -> bool:
+    failed, unavailable = _tool_names(section)
+    analyzer_set = {"bandit", "semgrep", "eslint", "typescript"}
+    unresolved_analyzers = (failed | unavailable) & analyzer_set
+    verified_blocker = any(
+        any(term in _text(item) for term in ("verified blocker", "confirmed critical", "confirmed high severity"))
+        for item in section.get("findings") or []
+    )
+    return len(unresolved_analyzers) >= 3 and not verified_blocker
+
+
+def _architecture_score_cap(section: dict[str, Any]) -> None:
+    evidence_text = " ".join(_display_text(item) for item in section.get("evidence") or [])
+    limitations_text = " ".join(_display_text(item) for item in section.get("unavailable") or [])
+    missing_call_graph = "call-graph" in _text(limitations_text) or "0 call-graph edge" in _text(evidence_text)
+    complexity_values = [int(value) for value in re.findall(r"max(?:imum)? measured complexity\D+(\d+)", evidence_text, re.I)]
+    high_complexity = bool(complexity_values and max(complexity_values) >= 50)
+    if not (missing_call_graph or high_complexity):
+        return
+    raw_score = section.get("presented_score")
+    if raw_score is None:
+        raw_score = section.get("score")
+    try:
+        value = int(round(float(raw_score)))
+    except (TypeError, ValueError):
+        return
+    if value <= 79:
+        return
+    section["source_score_before_evidence_cap"] = value
+    section["presented_score"] = 79
+    section["presented"] = 79
+    section["score"] = 79
+    section["status"] = "yellow"
+    section["display_status"] = "REVIEW LIMITED"
+    section["score_rationale"] = (
+        "Architecture score capped at 79 because full call-graph proof is unavailable or measured complexity is materially high. "
+        "Directory presence and documentation alone cannot establish exceptional architecture."
+    )
+    findings = list(section.get("findings") or [])
+    findings.append(
+        "Architecture requires hotspot and call-graph review before an Exceptional or Strong conclusion can be accepted."
+    )
+    section["findings"] = list(dict.fromkeys(findings))
 
 
 def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
@@ -161,6 +299,8 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             continue
         section_id = str(section.get("id") or "")
         label = str(section.get("label") or "")
+        _normalize_scanner_claims(section)
+
         if section_id == "scanner_worker_evidence" or label.casefold() == "scanner worker evidence":
             prior_score = section.get("score")
             if prior_score is not None and "diagnostic_finding_count" not in section:
@@ -168,7 +308,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             section.update(
                 {
                     "status": "SUPPLEMENTAL",
-                    "display_status": "SUPPLEMENTAL · NOT SCORED",
+                    "display_status": "SUPPLEMENTAL",
                     "directly_scored": False,
                     "score_treatment": "supplemental_not_scored",
                     "presented_score": None,
@@ -180,12 +320,13 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             _apply_score_assurance_fields(section)
             changed.append(section_id or "scanner_worker_evidence")
             continue
+
         if section_id == "client_acceptance" or label.casefold() == "client / human acceptance":
             if _client_acceptance_is_approved(section, output):
                 section.update(
                     {
                         "status": "green",
-                        "display_status": "GREEN · HUMAN APPROVED",
+                        "display_status": "HUMAN APPROVED",
                         "directly_scored": True,
                         "score_treatment": "human_approved_scored_control",
                     }
@@ -194,7 +335,7 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
                 section.update(
                     {
                         "status": "gray",
-                        "display_status": "GRAY · NOT SCORED",
+                        "display_status": "HUMAN REVIEW PENDING",
                         "directly_scored": False,
                         "score_treatment": "not_scored_pending_approval",
                         "presented_score": None,
@@ -206,10 +347,37 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
             _apply_score_assurance_fields(section)
             changed.append(section_id or "client_acceptance")
             continue
+
+        if section_id == "static_analysis" and _static_analysis_requires_not_scored(section):
+            section.update(
+                {
+                    "status": "review_limited_not_scored",
+                    "display_status": "REVIEW LIMITED",
+                    "directly_scored": False,
+                    "score_treatment": "not_scored_insufficient_verified_analyzer_evidence",
+                    "source_score_before_evidence_gate": section.get("score"),
+                    "presented_score": None,
+                    "presented": None,
+                    "score": None,
+                    "score_label": "NOT SCORED",
+                    "score_rationale": (
+                        "Static analysis is not scored because most required current-run analyzers failed or were unavailable and no verified blocker was retained. "
+                        "Analyzer execution reliability constrains assurance; it does not by itself prove critical code quality."
+                    ),
+                }
+            )
+            changed.append(section_id)
+
+        if section_id == "architecture_debt":
+            before = section.get("score")
+            _architecture_score_cap(section)
+            if section.get("score") != before:
+                changed.append(section_id)
+
         if str(section.get("status") or "").casefold() == "green" and _has_unresolved(section):
             section["status"] = "yellow"
-            section["display_status"] = "YELLOW · REVIEW LIMITED"
-            section["status_reason"] = "Unresolved current-run failed, timed-out, unavailable, or human-triage analyzer evidence prevents a GREEN assurance state."
+            section["display_status"] = "REVIEW LIMITED"
+            section["status_reason"] = "Unresolved current-run failed, timed-out, unavailable, or human-triage analyzer evidence prevents a VERIFIED assurance state."
             changed.append(section_id or label)
         _apply_score_assurance_fields(section)
 
@@ -233,13 +401,16 @@ def reconcile_section_status_truth(result: dict[str, Any]) -> dict[str, Any]:
     output["express_section_status_truth"] = {
         "status": "complete",
         "version": VERSION,
-        "changed_sections": changed,
+        "changed_sections": list(dict.fromkeys(changed)),
         "green_requires_no_unresolved_current_run_analyzer_evidence": True,
         "superseding_clean_evidence_preserved": True,
         "scanner_worker_not_scored": True,
         "unapproved_client_acceptance_not_scored": True,
         "approved_client_acceptance_preserved": True,
         "score_band_separated_from_assurance": True,
+        "scanner_artifact_execution_acceptance_separated": True,
+        "static_failure_does_not_imply_critical_quality": True,
+        "architecture_exceptional_requires_runtime_evidence": True,
     }
     return output
 
