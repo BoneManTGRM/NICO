@@ -1,3 +1,23 @@
+#assessment button.nico-service-choice .nico-service-detail {
+  display: none !important;
+}
+
+#assessment button.nico-service-choice[data-service-detail]::after {
+  content: attr(data-service-detail);
+  display: block;
+  margin-top: 0.35rem;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1.15;
+  text-transform: none;
+}
+
+#assessment button.nico-service-choice.primary-button[data-service-detail]::after {
+  color: rgba(224, 242, 254, 0.9);
+}
+
 .nico-score-assurance-badge .nico-maturity-exclusion-pill {
   display: inline-flex;
   align-items: center;
