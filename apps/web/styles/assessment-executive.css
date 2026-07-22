@@ -1,0 +1,161 @@
+/* Decision-first presentation for both English and Spanish assessment routes. */
+main.shell[data-assessment-service-count="2"] .score-assurance-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 330px;
+}
+
+main.shell[data-assessment-service-count="2"] .score-assurance-badges .status {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+main.shell[data-assessment-service-count="2"] .assurance-badge::before {
+  content: "Evidence: ";
+  opacity: .72;
+  font-weight: 700;
+}
+
+main.shell[data-assessment-service-count="2"] .result-card {
+  padding: 18px;
+}
+
+main.shell[data-assessment-service-count="2"] .result-card .result-head {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+main.shell[data-assessment-service-count="2"] .result-card .result-head > b {
+  max-width: 62%;
+  font-size: clamp(18px, 2.4vw, 23px);
+  line-height: 1.15;
+}
+
+main.shell[data-assessment-service-count="2"] .result-card > p {
+  margin: 12px 0 14px;
+  color: #cbd5e1;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+main.shell[data-assessment-service-count="2"] .help-details {
+  margin-top: 8px;
+}
+
+main.shell[data-assessment-service-count="2"] .help-details summary {
+  min-height: 44px;
+  padding: 10px 13px;
+  font-size: 14px;
+}
+
+main.shell[data-assessment-service-count="2"] .help-details summary::marker {
+  color: #38bdf8;
+}
+
+main.shell[data-assessment-service-count="2"] [class*="timeline"] {
+  gap: 10px;
+}
+
+main.shell[data-assessment-service-count="2"] [class*="timeline"] .result-card {
+  padding: 14px;
+  box-shadow: none;
+}
+
+main.shell[data-assessment-service-count="2"] [class*="timeline"] .result-card > p {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+main.shell[data-assessment-service-count="2"] .report-actions {
+  position: sticky;
+  z-index: 8;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  backdrop-filter: blur(14px);
+}
+
+main.shell[data-assessment-service-count="2"] .report-actions button {
+  flex: 1 1 220px;
+  min-height: 46px;
+}
+
+@media (max-width: 760px) {
+  main.shell[data-assessment-service-count="2"] .hero {
+    padding: 24px 20px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .hero h1 {
+    font-size: clamp(32px, 10vw, 44px);
+    line-height: 1.02;
+  }
+
+  main.shell[data-assessment-service-count="2"] .hero .lead {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  main.shell[data-assessment-service-count="2"] .section {
+    padding: 18px 14px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .section-head h2 {
+    font-size: clamp(25px, 8vw, 34px);
+  }
+
+  main.shell[data-assessment-service-count="2"] .result-card {
+    padding: 16px 14px;
+    border-radius: 18px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .result-card .result-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .result-card .result-head > b {
+    max-width: none;
+    font-size: 20px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .score-assurance-badges {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  main.shell[data-assessment-service-count="2"] .result-card > p {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  main.shell[data-assessment-service-count="2"] .help-details summary {
+    min-height: 40px;
+    padding: 9px 11px;
+    font-size: 13px;
+  }
+
+  main.shell[data-assessment-service-count="2"] [class*="timeline"] {
+    display: block;
+  }
+
+  main.shell[data-assessment-service-count="2"] [class*="timeline"] .result-card {
+    margin-bottom: 8px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .target-grid article {
+    min-height: 0;
+    padding: 12px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .report-actions {
+    padding: 9px;
+    border-radius: 14px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .report-actions button {
+    min-height: 44px;
+  }
+}
