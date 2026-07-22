@@ -6,9 +6,9 @@ from pypdf import PdfReader
 
 from nico import express_pdf_score_assurance_v1 as pdf_score
 from nico.express_report_final_polish_v41 import (
-    _compact_decision_pdf,
     _normalize_repairs,
     _reconcile_static_assurance,
+    install_express_report_final_polish_v41,
 )
 
 
@@ -94,10 +94,10 @@ def test_repair_priorities_are_client_facing_and_sequential() -> None:
 
 
 def test_velocity_decision_record_remains_one_page() -> None:
+    install_express_report_final_polish_v41()
     result = _reconcile_static_assurance(_sample_result())
-    setattr(_compact_decision_pdf, "_nico_original", pdf_score._decision_pdf)
 
-    payload = _compact_decision_pdf(
+    payload = pdf_score._decision_pdf(
         result,
         "velocity_complexity",
         "Velocity, Complexity, and Ownership Decision Record",
@@ -105,3 +105,13 @@ def test_velocity_decision_record_remains_one_page() -> None:
 
     assert payload.startswith(b"%PDF")
     assert len(PdfReader(io.BytesIO(payload)).pages) == 1
+
+
+def test_final_polish_install_is_idempotent() -> None:
+    first = install_express_report_final_polish_v41()
+    renderer = pdf_score._decision_pdf
+    second = install_express_report_final_polish_v41()
+
+    assert first["idempotent_renderer_binding"] is True
+    assert second["idempotent_renderer_binding"] is True
+    assert pdf_score._decision_pdf is renderer
