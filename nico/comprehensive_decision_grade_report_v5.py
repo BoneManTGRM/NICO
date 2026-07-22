@@ -14,6 +14,7 @@ from nico.comprehensive_decision_grade_markdown_v5 import (
 )
 from nico.comprehensive_decision_grade_html_v5 import _build_html, _evidence_csv, _findings_csv
 from nico.comprehensive_decision_grade_pdf_v5 import _pdf_with_final_count
+from nico.comprehensive_premium_synthesis_v6 import VERSION as PREMIUM_VERSION, polish_assessment
 
 
 def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -22,7 +23,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     if missing:
         return {"status": "blocked", "reason": "missing_report_identity:" + ",".join(missing), "human_review_required": True, "client_delivery_allowed": False}
     generated_at = base_report._now()
-    assessment = _decorate_assessment(base_report._assessment(stage_results))
+    assessment = polish_assessment(_decorate_assessment(base_report._assessment(stage_results)))
     stages = _stage_summaries(stage_results)
     limitations = _limitation_metrics(assessment, stages)
     assessment["limitation_metrics"] = {**dict(assessment.get("limitation_metrics") or {}), **limitations}
@@ -46,6 +47,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         except Exception:
             core_page_count = 0
     findings = [item for item in assessment.get("findings_register") or [] if isinstance(item, dict)]
+    executive_risks = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)]
     findings_csv = _findings_csv(findings)
     evidence_csv = _evidence_csv(stages)
     canonical = {
@@ -54,6 +56,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "assessment": assessment,
         "stage_summaries": stages,
         "findings_register": findings,
+        "executive_risk_register": executive_risks,
+        "scoring_weights": assessment.get("scoring_weights") or [],
         "roadmap": roadmap,
         "staffing_plan": staffing,
         "limitation_metrics": limitations,
@@ -66,10 +70,15 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     filename = f"nico-comprehensive-assessment-{safe_repo}-{required_identity['run_id']}-DRAFT.pdf"
     quality = {
         "version": VERSION,
+        "premium_synthesis_version": PREMIUM_VERSION,
         "decision_grade_body": True,
         "appendix_contract_schema": VERSION,
         "full_evidence_appendix": True,
         "score_band_separated_from_assurance": all(bool(item.get("score_band_label")) and bool(item.get("assurance_label")) for item in assessment.get("sections") or [] if isinstance(item, dict)),
+        "incomplete_controls_excluded_from_maturity": all(item.get("id") != "static_analysis" or item.get("score_value") is None or not item.get("unavailable") for item in assessment.get("sections") or [] if isinstance(item, dict)),
+        "weighted_scoring_explicit": bool(assessment.get("scoring_weights")),
+        "executive_risk_register_consolidated": 0 < len(executive_risks) <= 8,
+        "unverified_medium_candidates_not_p1": all(not (item.get("priority") == "P1" and "verified=False" in str(item.get("evidence"))) for item in findings),
         "secret_category_isolated": True,
         "named_architecture_hotspots": any(item.get("category") == "architecture" and item.get("location") for item in findings),
         "structured_findings_register": bool(findings) or not assessment.get("sections"),
@@ -87,7 +96,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
-    complete = bool(pdf_bytes.startswith(b"%PDF") and not pdf_error and quality["score_band_separated_from_assurance"] and quality["semantic_html"] and quality["markdown_evidence_appendix"] and quality["markdown_human_review_acceptance_gate"])
+    complete = bool(pdf_bytes.startswith(b"%PDF") and not pdf_error and quality["score_band_separated_from_assurance"] and quality["weighted_scoring_explicit"] and quality["executive_risk_register_consolidated"] and quality["unverified_medium_candidates_not_p1"] and quality["semantic_html"] and quality["markdown_evidence_appendix"] and quality["markdown_human_review_acceptance_gate"])
     report_package = {
         "service_id": "comprehensive",
         "report_id": report_id,
