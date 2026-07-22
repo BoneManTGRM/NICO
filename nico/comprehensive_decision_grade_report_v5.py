@@ -14,6 +14,10 @@ from nico.comprehensive_decision_grade_markdown_v5 import (
 )
 from nico.comprehensive_decision_grade_html_v5 import _build_html, _evidence_csv, _findings_csv
 from nico.comprehensive_decision_grade_pdf_v5 import _pdf_with_final_count
+from nico.comprehensive_executive_reconciliation_v6 import (
+    VERSION as EXECUTIVE_VERSION,
+    reconcile_comprehensive_assessment,
+)
 
 
 def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -22,7 +26,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     if missing:
         return {"status": "blocked", "reason": "missing_report_identity:" + ",".join(missing), "human_review_required": True, "client_delivery_allowed": False}
     generated_at = base_report._now()
-    assessment = _decorate_assessment(base_report._assessment(stage_results))
+    assessment = reconcile_comprehensive_assessment(_decorate_assessment(base_report._assessment(stage_results)))
     stages = _stage_summaries(stage_results)
     limitations = _limitation_metrics(assessment, stages)
     assessment["limitation_metrics"] = {**dict(assessment.get("limitation_metrics") or {}), **limitations}
@@ -54,6 +58,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "assessment": assessment,
         "stage_summaries": stages,
         "findings_register": findings,
+        "executive_risk_register": assessment.get("executive_risk_register") or [],
+        "scoring_weight_table": assessment.get("scoring_weight_table") or [],
         "roadmap": roadmap,
         "staffing_plan": staffing,
         "limitation_metrics": limitations,
@@ -66,10 +72,15 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     filename = f"nico-comprehensive-assessment-{safe_repo}-{required_identity['run_id']}-DRAFT.pdf"
     quality = {
         "version": VERSION,
+        "executive_reconciliation_version": EXECUTIVE_VERSION,
         "decision_grade_body": True,
         "appendix_contract_schema": VERSION,
         "full_evidence_appendix": True,
         "score_band_separated_from_assurance": all(bool(item.get("score_band_label")) and bool(item.get("assurance_label")) for item in assessment.get("sections") or [] if isinstance(item, dict)),
+        "unscored_controls_excluded_from_weighted_maturity": all(not row.get("included") for row in assessment.get("scoring_weight_table") or [] if row.get("score") is None),
+        "executive_risks_consolidated": 0 < len(assessment.get("executive_risk_register") or []) <= 8,
+        "unverified_medium_candidates_not_p1": all(not ("verified=false" in str(item.get("evidence", "")).casefold() and "severity=medium" in str(item.get("evidence", "")).casefold() and item.get("priority") in {"P0", "P1"}) for item in findings),
+        "internal_module_labels_removed": all("<module-logic>" not in str(item.get("title", "")) for item in findings),
         "secret_category_isolated": True,
         "named_architecture_hotspots": any(item.get("category") == "architecture" and item.get("location") for item in findings),
         "structured_findings_register": bool(findings) or not assessment.get("sections"),
@@ -77,6 +88,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "limitation_accounting_explicit": all(key in limitations for key in ("stages_with_limitations", "individual_limitation_records", "score_affecting_records", "informational_records")),
         "final_pdf_page_count": page_count,
         "core_report_page_count": core_page_count,
+        "core_report_target_met": 10 <= core_page_count <= 18,
         "pdf_page_count_matches_final_artifact": bool(pdf_bytes) and page_count > 0,
         "semantic_html": "<table>" in rendered_html and "<h2>Evidence Appendix</h2>" in rendered_html,
         "markdown_evidence_appendix": APPENDIX_HEADING in markdown,
@@ -87,7 +99,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
-    complete = bool(pdf_bytes.startswith(b"%PDF") and not pdf_error and quality["score_band_separated_from_assurance"] and quality["semantic_html"] and quality["markdown_evidence_appendix"] and quality["markdown_human_review_acceptance_gate"])
+    complete = bool(pdf_bytes.startswith(b"%PDF") and not pdf_error and quality["score_band_separated_from_assurance"] and quality["executive_risks_consolidated"] and quality["unverified_medium_candidates_not_p1"] and quality["internal_module_labels_removed"] and quality["semantic_html"] and quality["markdown_evidence_appendix"] and quality["markdown_human_review_acceptance_gate"])
     report_package = {
         "service_id": "comprehensive",
         "report_id": report_id,
