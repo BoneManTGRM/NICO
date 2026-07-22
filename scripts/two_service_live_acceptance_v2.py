@@ -292,7 +292,9 @@ def _wait_for_service_terminal(
         now = time.monotonic()
         state = acceptance.ui_state(page)
         if _phase_is_terminal(state):
-            return last_payload, state, True
+            status = acceptance.status_value(last_payload)
+            terminal_payload = last_payload if status in SUCCESS_STATUSES | FAILURE_STATUSES else {}
+            return terminal_payload, state, True
 
         if now - last_status_read >= STATUS_POLL_SECONDS:
             last_status_read = now
@@ -467,7 +469,12 @@ def run_service(browser: Any, config: Any, pass_number: int, service: str) -> di
         )
         assert observed_run_ids == {rid}, f"{service} response identity drift: {sorted(observed_run_ids)}"
 
-        final = backend_terminal or acceptance.terminal_payload(responses, rid)
+        backend_status = acceptance.status_value(backend_terminal)
+        final = (
+            backend_terminal
+            if backend_status in SUCCESS_STATUSES | FAILURE_STATUSES
+            else acceptance.terminal_payload(responses, rid)
+        )
         if not final:
             final, _ = _backend_status(page, service, identity_payload)
         assert final, f"{service} terminal payload was not captured"
