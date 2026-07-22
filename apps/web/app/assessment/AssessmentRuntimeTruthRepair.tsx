@@ -70,7 +70,7 @@ function persistenceDisplay(spanish: boolean): {text: string; warning: boolean} 
     if (adapter === "sqlite") {
       return {text: spanish ? "Durable · volumen SQLite persistente" : "Durable · persistent SQLite volume", warning: false};
     }
-    return {text: spanish ? `Durable · ${adapter}` : `Durable · ${adapter}`, warning: false};
+    return {text: `Durable · ${adapter}`, warning: false};
   }
   if (persistence.recorded) {
     if (adapter === "sqlite") {
@@ -97,6 +97,10 @@ function persistenceDisplay(spanish: boolean): {text: string; warning: boolean} 
   return {text: spanish ? "Persistencia no verificada" : "Persistence not verified", warning: true};
 }
 
+function setText(node: HTMLElement, text: string): void {
+  if ((node.textContent || "").trim() !== text) node.textContent = text;
+}
+
 function reconcileLegacyServiceLabels(): void {
   const spanish = isSpanish();
   const replacements = new Map<string, string>([
@@ -107,7 +111,7 @@ function reconcileLegacyServiceLabels(): void {
   ]);
   document.querySelectorAll<HTMLElement>("button, h1, h2, h3, .eyebrow, .service-label").forEach((node) => {
     const replacement = replacements.get(normalizeText(node.textContent));
-    if (replacement) node.textContent = replacement;
+    if (replacement) setText(node, replacement);
   });
 }
 
@@ -126,15 +130,17 @@ function reconcileTargetCards(): void {
     if (label === "durable record" || label === "registro durable") {
       const display = persistenceDisplay(spanish);
       if (display) {
-        value.textContent = display.text;
+        setText(value, display.text);
         value.classList.toggle("nico-storage-warning", display.warning);
-        value.title = window.__nicoPersistenceSnapshot?.warning
+        const title = window.__nicoPersistenceSnapshot?.warning
           || window.__nicoPersistenceSnapshot?.note
           || display.text;
+        if (value.title !== title) value.title = title;
       } else if (/recorded, not durable|registrado, no durable/i.test(value.textContent || "")) {
-        value.textContent = spanish
+        const fallback = spanish
           ? "Registro temporal · requiere Postgres o un volumen persistente"
           : "Temporary record · Postgres or a persistent volume required";
+        setText(value, fallback);
         value.classList.add("nico-storage-warning");
       }
     }
@@ -142,12 +148,12 @@ function reconcileTargetCards(): void {
     if ((label === "human review" || label === "revisión humana")
       && terminalRunVisible()
       && /pending|pendiente/i.test(value.textContent || "")) {
-      value.textContent = spanish ? "Obligatoria" : "Required";
+      setText(value, spanish ? "Obligatoria" : "Required");
     }
 
     if ((label === "maturity signal" || label === "señal de madurez")
       && normalizeText(value.textContent) === "mid") {
-      value.textContent = spanish ? "Moderada" : "Moderate";
+      setText(value, spanish ? "Moderada" : "Moderate");
     }
   });
 }
@@ -161,13 +167,13 @@ function reconcileTimeline(): void {
     if (!status) return;
     if ((heading === "truth and review gates" || heading === "controles de veracidad y revisión")
       && /running|en ejecución|ejecutando/i.test(status.textContent || "")) {
-      status.textContent = spanish ? "completo" : "complete";
+      setText(status, spanish ? "completo" : "complete");
       status.className = "status green";
       const message = card.querySelector<HTMLElement>(":scope > p");
       if (message) {
-        message.textContent = spanish
+        setText(message, spanish
           ? "Los controles automatizados de veracidad y revisión terminaron. La revisión humana sigue siendo obligatoria antes de la entrega."
-          : "Automated truth and review gates completed. Human review remains required before delivery.";
+          : "Automated truth and review gates completed. Human review remains required before delivery.");
       }
     }
   });
@@ -223,9 +229,11 @@ function assessmentTarget(input: RequestInfo | URL): string {
 function capturePersistence(response: Response): void {
   response.clone().json().then((payload: {persistence?: PersistenceSnapshot}) => {
     if (!payload?.persistence || typeof payload.persistence !== "object") return;
+    const next = JSON.stringify(payload.persistence);
+    const previous = JSON.stringify(window.__nicoPersistenceSnapshot || {});
+    if (next === previous) return;
     window.__nicoPersistenceSnapshot = payload.persistence;
     window.dispatchEvent(new CustomEvent("nico:persistence-updated", {detail: payload.persistence}));
-    reconcile();
   }).catch(() => undefined);
 }
 
