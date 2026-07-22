@@ -13,6 +13,7 @@ from nico.comprehensive_decision_grade_markdown_v5 import (
     _roadmap_from_stages, _staffing_from_stages, _stage_summaries,
 )
 from nico.comprehensive_decision_grade_html_v5 import _build_html, _evidence_csv, _findings_csv
+from nico.comprehensive_executive_risk_truth_v7 import reconcile_executive_risk_truth
 from nico.comprehensive_express_quality_v7 import (
     VERSION as EXPRESS_QUALITY_VERSION,
     comprehensive_pdf_with_final_count,
@@ -27,7 +28,9 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     if missing:
         return {"status": "blocked", "reason": "missing_report_identity:" + ",".join(missing), "human_review_required": True, "client_delivery_allowed": False}
     generated_at = base_report._now()
-    assessment = reconcile_comprehensive_assessment(_decorate_assessment(base_report._assessment(stage_results)))
+    assessment = reconcile_executive_risk_truth(
+        reconcile_comprehensive_assessment(_decorate_assessment(base_report._assessment(stage_results)))
+    )
     stages = _stage_summaries(stage_results)
     limitations = _limitation_metrics(assessment, stages)
     assessment["limitation_metrics"] = {**dict(assessment.get("limitation_metrics") or {}), **limitations}
@@ -100,6 +103,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         ),
         "weighted_scoring_explicit": bool(assessment.get("scoring_weights")),
         "shared_control_truth_reconciled": bool(assessment.get("comprehensive_express_quality", {}).get("shared_control_truth_reconciled")),
+        "executive_risk_truth_reconciled": bool(assessment.get("comprehensive_executive_risk_truth", {}).get("static_risk_wording_reconciled")),
         "executive_risk_register_consolidated": len(executive_risks) <= 8,
         "unverified_medium_candidates_not_p1": all(not (item.get("priority") == "P1" and "verified=false" in str(item.get("evidence")).casefold()) for item in findings),
         "secret_category_isolated": True,
@@ -128,6 +132,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         and quality["bounded_static_scoring_discloses_assurance"]
         and quality["weighted_scoring_explicit"]
         and quality["shared_control_truth_reconciled"]
+        and quality["executive_risk_truth_reconciled"]
         and quality["executive_risk_register_consolidated"]
         and quality["unverified_medium_candidates_not_p1"]
         and quality["express_quality_front_matter"]
