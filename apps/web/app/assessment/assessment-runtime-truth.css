@@ -1,0 +1,94 @@
+.nico-immutable-commit-value {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: clamp(0.78rem, 2.8vw, 0.98rem) !important;
+  line-height: 1.45;
+}
+
+.nico-storage-warning {
+  color: #fbbf24 !important;
+  font-size: 0.95rem !important;
+  line-height: 1.45;
+}
+
+.results-grid .result-head .status[data-reconciled="true"] {
+  max-width: min(100%, 30rem);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.results-grid .result-head .nico-score-assurance-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.nico-technical-pill,
+.nico-assurance-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.42rem 0.78rem;
+  border: 1px solid rgb(71 85 105 / 88%);
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  line-height: 1.18;
+}
+
+.nico-technical-pill {
+  color: #e0f2fe;
+  border-color: rgb(56 189 248 / 62%);
+  background: rgb(3 105 161 / 18%);
+}
+
+.nico-assurance-pill {
+  color: #dbeafe;
+  border-color: rgb(148 163 184 / 58%);
+  background: rgb(30 41 59 / 82%);
+}
+
+@media (max-width: 760px) {
+  .target-grid article {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .target-grid article > span {
+    max-width: 100%;
+  }
+
+  .results-grid .result-head {
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .results-grid .result-head .status[data-reconciled="true"] {
+    flex: 0 1 auto;
+    font-size: 0.78rem;
+  }
+
+  .results-grid .result-head .nico-score-assurance-badge {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .nico-technical-pill,
+  .nico-assurance-pill {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+  }
+}
