@@ -77,3 +77,11 @@ def test_runtime_applies_localization_after_truth_and_badge_reconciliation() -> 
     assert "localizeSpanishAssessmentDom(document);" in source
     assert source.index("reconcileCombinedSectionBadges();") < source.index("localizeSpanishAssessmentDom(document);")
     assert "MutationObserver(reconcile)" in source
+
+
+def test_spanish_assessment_requests_advertise_the_requested_locale() -> None:
+    source = RUNTIME.read_text(encoding="utf-8")
+    assert 'target.includes("/api/nico/assessment")' in source
+    assert 'headers.set("Accept-Language", "es-MX,es;q=0.9")' in source
+    assert 'headers.set("X-NICO-Locale", "es-MX")' in source
+    assert "restoreFetch();" in source
