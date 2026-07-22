@@ -8,16 +8,17 @@ from typing import Any
 
 from nico import comprehensive_report_package as base_report
 from nico.comprehensive_decision_grade_model_v5 import APPENDIX_HEADING, REVIEW_HEADING, VERSION, _text
-from nico.comprehensive_decision_grade_markdown_v5 import (
-    _build_markdown, _decorate_assessment, _limitation_metrics,
-    _roadmap_from_stages, _staffing_from_stages, _stage_summaries,
+from nico.comprehensive_decision_grade_markdown_v6 import (
+    _build_markdown,
+    _decorate_assessment,
+    _limitation_metrics,
+    _roadmap_from_stages,
+    _staffing_from_stages,
+    _stage_summaries,
 )
 from nico.comprehensive_decision_grade_html_v5 import _build_html, _evidence_csv, _findings_csv
-from nico.comprehensive_decision_grade_pdf_v5 import _pdf_with_final_count
-from nico.comprehensive_executive_reconciliation_v6 import (
-    VERSION as EXECUTIVE_VERSION,
-    reconcile_comprehensive_assessment,
-)
+from nico.comprehensive_decision_grade_pdf_v6 import _pdf_with_final_count
+from nico.comprehensive_executive_reconciliation_v6 import VERSION as EXECUTIVE_VERSION, reconcile_comprehensive_assessment
 
 
 def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -37,7 +38,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     try:
         pdf_bytes, page_count = _pdf_with_final_count(required_identity, assessment, stages, roadmap, staffing, limitations, generated_at)
         pdf_error = None
-    except Exception as exc:  # pragma: no cover - fail-closed report boundary
+    except Exception as exc:  # pragma: no cover
         pdf_bytes, page_count = b"", 0
         pdf_error = f"Decision-grade PDF export unavailable: {type(exc).__name__}"
     core_page_count = 0
