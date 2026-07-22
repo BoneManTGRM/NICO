@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect} from "react";
+import "./assessment-metric-display-v44.css";
 
 function normalize(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
