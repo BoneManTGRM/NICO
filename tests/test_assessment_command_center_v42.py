@@ -32,6 +32,16 @@ def test_command_center_adds_copy_controls_and_truthful_storage_states() -> None
     assert "Temporary memory record · Postgres or a persistent volume required" in source
 
 
+def test_terminal_dom_reconciliation_is_scoped_to_the_live_run_panel() -> None:
+    source = RUNTIME.read_text(encoding="utf-8")
+    assert "document.querySelector<HTMLElement>('section[aria-live=\"polite\"]')" in source
+    assert 'section.querySelector(".section-head > span")' in source
+    assert 'message.includes("express completed its evidence")' in source
+    assert 'message.includes("comprehensive completed every automated stage")' in source
+    assert 'text.includes("human review required")' not in source
+    assert 'text.includes("revisión humana obligatoria")' not in source
+
+
 def test_visual_system_includes_live_heartbeat_score_meters_and_sticky_actions() -> None:
     css = CSS.read_text(encoding="utf-8")
     required = {
