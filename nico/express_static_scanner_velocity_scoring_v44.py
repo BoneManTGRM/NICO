@@ -133,6 +133,26 @@ def _has_verified_blocker(section: dict[str, Any]) -> bool:
     return blocker_language and not explicit_zero
 
 
+def _move_analyzer_execution_failures_to_limitations(section: dict[str, Any]) -> None:
+    retained: list[str] = []
+    limitations = [_text(item) for item in section.get("unavailable") or [] if _text(item)]
+    seen = {item.casefold() for item in limitations}
+    failure_re = re.compile(
+        r"\b(?:bandit|eslint|semgrep|typescript)\s+(?:ended with status|status=)\s*(?:failed|timeout|timed_out)\b",
+        re.I,
+    )
+    for raw in section.get("findings") or []:
+        value = _text(raw)
+        if failure_re.search(value):
+            if value.casefold() not in seen:
+                limitations.append(value)
+                seen.add(value.casefold())
+            continue
+        retained.append(value)
+    section["findings"] = retained
+    section["unavailable"] = limitations
+
+
 def _apply_static_score(result: dict[str, Any]) -> None:
     section = _section(result, "static_analysis")
     if not section or _has_verified_blocker(section):
@@ -198,6 +218,7 @@ def _apply_static_score(result: dict[str, Any]) -> None:
             ),
         }
     )
+    _move_analyzer_execution_failures_to_limitations(section)
     section.pop("diagnostic_score_before_truth_gate", None)
 
 
@@ -332,6 +353,7 @@ def apply_express_static_scanner_velocity_scoring_v44(result: dict[str, Any]) ->
         "static_uses_bounded_evidence_backed_score": True,
         "scanner_worker_uses_execution_coverage_not_technical_double_counting": True,
         "velocity_uses_objective_cadence_traceability_and_measurement": True,
+        "analyzer_execution_failures_are_assurance_limitations": True,
         "assurance_remains_independent": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -368,6 +390,7 @@ def install_express_static_scanner_velocity_scoring_v44() -> dict[str, Any]:
         "scanner_execution_coverage_visible": True,
         "scanner_execution_coverage_excluded_from_maturity": True,
         "velocity_minimum_strong_when_objective_signals_pass": True,
+        "analyzer_execution_failures_are_assurance_limitations": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
