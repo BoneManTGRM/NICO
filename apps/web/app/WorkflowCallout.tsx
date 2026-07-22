@@ -5,11 +5,12 @@ import {usePathname} from "next/navigation";
 
 export default function WorkflowCallout({children}: {children: ReactNode}) {
   const pathname = usePathname();
+  const spanish = pathname.startsWith("/es");
 
-  if (pathname.startsWith("/es-mx")) {
+  if (spanish) {
     return (
       <div className="full-run-callout" role="status" lang="es-MX">
-        <b>Flujo de evaluación:</b> Inicie Express, Mid o Full desde la <a href="/assessment?tier=express#assessment">página unificada de evaluación</a>. Una sola acción de ejecución completa todas las etapas automatizadas disponibles para el nivel seleccionado. Mid y Full continúan con evidencia del repositorio, escáneres, puntuación y preparación del reporte, y después se detienen para la revisión humana obligatoria. NICO nunca aprueba hallazgos ni crea entregas para clientes automáticamente. La aprobación crea un artefacto aprobado independiente, pero no crea un enlace de entrega al cliente. Las descargas del cliente requieren confirmación y generan recibos vinculados a la integridad. Los operadores pueden verificar despliegue, disponibilidad, carga de trabajo, incidentes, evidencia de respaldo y restauración, y alertas en el centro de control de <a href="/operations">Operaciones</a>, y revisar trabajo interrumpido de escáneres en <a href="/operations/recovery">Recuperación</a>. <b>Flujo de retainer:</b> Ejecute evidencia continua del repositorio, flujo de trabajo, versiones, pendientes y bloqueadores mediante <a href="/retainer-ops">Retainer Ops</a>; solo se captura manualmente el contexto comercial que GitHub no puede demostrar.
+        <b>Flujo de evaluación:</b> inicia Express o Integral desde el <a href="/es/assessment?tier=express#assessment">espacio de evaluaciones</a>. Express proporciona una línea base técnica rápida vinculada a evidencia. Integral captura un commit inmutable y continúa la misma ejecución por la evidencia del repositorio, los analizadores, los módulos técnicos y de contexto comercial, la generación del informe y la revisión humana obligatoria. NICO nunca aprueba hallazgos ni autoriza automáticamente una entrega al cliente. Los operadores pueden verificar el despliegue, la disponibilidad, la carga de trabajo, los incidentes, la evidencia de respaldo y restauración, y las alertas en el centro de control de <a href="/operations?lang=es-MX">Operaciones</a>, además de revisar ejecuciones interrumpidas de los analizadores en <a href="/operations/recovery?lang=es-MX">Recuperación</a>. <b>Flujo de servicio continuo:</b> procesa evidencia recurrente del repositorio, flujos de trabajo, publicaciones, pendientes y bloqueadores mediante <a href="/retainer-ops?lang=es-MX">Operaciones continuas</a>; únicamente se captura de forma manual el contexto comercial que GitHub no puede demostrar.
       </div>
     );
   }

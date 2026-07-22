@@ -16,9 +16,54 @@ const HERO_COPY_ES_MX = {
   eyebrow: "Plataforma NICO",
   poweredBy: "Impulsado por Reparodynamics",
   title: "NICO",
-  lead: "Inteligencia de reparación para sistemas autorizados. Evaluaciones basadas en evidencia, workflows de scanner, reportes listos para cliente y planeación de reparación con aprobación humana.",
-  actions: ["Correr evaluación", "Worker del scanner", "Inteligencia de reparación", "Cómo usar"],
+  lead: "Inteligencia de reparación para sistemas autorizados. Evaluaciones vinculadas a evidencia, flujos de análisis, informes preparados para el cliente y planificación de reparaciones sujeta a aprobación humana.",
+  actions: ["Ejecutar evaluación", "Ejecutar analizadores", "Inteligencia de reparación", "Cómo utilizar NICO"],
 };
+
+const SPANISH_VALUE_MAP = new Map<string, string>([
+  ["unavailable", "No disponible"],
+  ["available", "Disponible"],
+  ["fallback", "Alternativa"],
+  ["default", "Predeterminado"],
+  ["none", "Ninguno"],
+  ["unknown", "Desconocido"],
+  ["pending", "Pendiente"],
+  ["running", "En ejecución"],
+  ["complete", "Completo"],
+  ["completed", "Completado"],
+  ["failed", "Fallido"],
+  ["blocked", "Bloqueado"],
+  ["read-only", "Solo lectura"],
+  ["trend data loads after project run history is available.", "Los datos de tendencias se cargarán cuando exista historial de ejecuciones del proyecto."],
+  ["run and persist project assessments to build trend history.", "Ejecuta y conserva evaluaciones del proyecto para construir su historial de tendencias."],
+  ["next_public_nico_api_url is not configured in vercel.", "NEXT_PUBLIC_NICO_API_URL no está configurada en Vercel."],
+  ["backend /diagnostics returned a non-ok response.", "El endpoint /diagnostics del backend devolvió una respuesta no válida."],
+  ["backend /diagnostics returned an empty response.", "El endpoint /diagnostics del backend devolvió una respuesta vacía."],
+  ["backend /diagnostics request failed.", "Falló la solicitud al endpoint /diagnostics del backend."],
+]);
+
+const SPANISH_DIAGNOSTIC_KEYS = new Map<string, string>([
+  ["status", "estado"],
+  ["reason", "motivo"],
+  ["response", "respuesta"],
+  ["backend_url_configured", "url_del_backend_configurada"],
+  ["backend_url", "url_del_backend"],
+  ["http_status", "estado_http"],
+  ["database", "base_de_datos"],
+  ["storage", "almacenamiento"],
+  ["adapter", "adaptador"],
+  ["durable", "durable"],
+  ["recorded", "registrado"],
+  ["version", "versión"],
+  ["source", "fuente"],
+  ["features", "funciones"],
+  ["feature_flags", "indicadores_de_funciones"],
+  ["project", "proyecto"],
+  ["history", "historial"],
+  ["trend", "tendencia"],
+  ["baseline", "línea_base"],
+  ["note", "nota"],
+]);
 
 let runtimeOpsStylesInjected = false;
 
@@ -36,15 +81,20 @@ type RuntimeConfig = {
   feature_flags?: Record<string, boolean>;
 };
 
-function isEsMxRoute() { return typeof window !== "undefined" && window.location.pathname.startsWith("/es-mx"); }
-function routeCopy(isEsMx: boolean) { return isEsMx ? HERO_COPY_ES_MX : HERO_COPY_EN; }
+function isSpanishRoute() {
+  if (typeof window === "undefined") return false;
+  const pathname = window.location.pathname.toLowerCase();
+  const language = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();
+  return pathname === "/es" || pathname.startsWith("/es/") || pathname.startsWith("/es-mx") || language === "es-mx" || language === "es";
+}
+function routeCopy(spanish: boolean) { return spanish ? HERO_COPY_ES_MX : HERO_COPY_EN; }
 function escapeHtml(value: unknown) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[char] || char)); }
 function setNativeInputValue(input: HTMLInputElement, value: string) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set; setter?.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); input.dispatchEvent(new Event("change", {bubbles: true})); }
 function applyGenericRepositoryExample(example = GENERIC_REPOSITORY_EXAMPLE) { document.querySelectorAll<HTMLInputElement>("input").forEach((input) => { const value = input.value.trim(); if (PRIVATE_DEFAULTS.has(value)) setNativeInputValue(input, example); if (input.placeholder === "owner/repo" || input.placeholder === GENERIC_REPOSITORY_EXAMPLE) input.placeholder = example; }); }
 
-function applyGlobalLanguageNav(isEsMx: boolean) {
-  const labels = isEsMx
-    ? new Map([["/easy", "Modo fácil"], ["/start-job", "Iniciar trabajo"], ["/scanner-workflow", "Scanner a Express"], ["/guided-workflow", "Guía"], ["/", "Centro de mando"]])
+function applyGlobalLanguageNav(spanish: boolean) {
+  const labels = spanish
+    ? new Map([["/easy", "Modo fácil"], ["/start-job", "Iniciar trabajo"], ["/scanner-workflow", "Analizadores a Express"], ["/guided-workflow", "Guía"], ["/", "Centro de mando"]])
     : new Map([["/easy", "Easy Mode"], ["/start-job", "Start Job"], ["/scanner-workflow", "Scanner to Express"], ["/guided-workflow", "Guide"], ["/", "Command Center"]]);
   document.querySelectorAll<HTMLAnchorElement>(".global-links a").forEach((anchor) => {
     const path = new URL(anchor.href, window.location.origin).pathname;
@@ -59,8 +109,8 @@ function applyGlobalLanguageNav(isEsMx: boolean) {
     toggle.dataset.nicoLanguageToggle = "true";
     links.appendChild(toggle);
   }
-  toggle.href = isEsMx ? "/" : "/es-mx";
-  toggle.textContent = isEsMx ? "English" : "Español";
+  toggle.href = spanish ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
+  toggle.textContent = spanish ? "English" : "Español";
 }
 
 function ensureRuntimeOpsStyles() {
@@ -84,10 +134,10 @@ function ensureRuntimeOpsStyles() {
   document.head.appendChild(style);
 }
 
-function safeHeroHeadline(config: RuntimeConfig | undefined, isEsMx: boolean) {
-  const copy = routeCopy(isEsMx);
+function safeHeroHeadline(config: RuntimeConfig | undefined, spanish: boolean) {
+  const copy = routeCopy(spanish);
   const configured = (config?.hero_headline || "").trim();
-  if (!configured || isEsMx) return copy.title;
+  if (!configured || spanish) return copy.title;
   const lowered = configured.toLowerCase();
   if (lowered.includes("repair intelligence") || lowered.includes("authorized systems")) return copy.title;
   return configured;
@@ -121,61 +171,79 @@ function styleHero(hero: HTMLElement, eyebrow: HTMLElement | null, title: HTMLEl
 }
 
 function applyHeroCopy(config?: RuntimeConfig) {
-  const isEsMx = isEsMxRoute();
-  const copy = routeCopy(isEsMx);
+  const spanish = isSpanishRoute();
+  const copy = routeCopy(spanish);
   const hero = document.querySelector<HTMLElement>(".hero"); if (!hero) return;
   const eyebrow = hero.querySelector<HTMLElement>(".eyebrow"); const title = hero.querySelector<HTMLElement>("h1"); const lead = hero.querySelector<HTMLElement>(".lead");
-  if (eyebrow) eyebrow.textContent = isEsMx ? copy.eyebrow : config?.hero_eyebrow || copy.eyebrow;
-  ensurePoweredByLine(hero, eyebrow, isEsMx ? copy.poweredBy : config?.hero_powered_by || copy.poweredBy);
-  if (title) title.textContent = safeHeroHeadline(config, isEsMx);
-  if (lead) lead.textContent = isEsMx ? copy.lead : config?.hero_lead || copy.lead;
+  if (eyebrow) eyebrow.textContent = spanish ? copy.eyebrow : config?.hero_eyebrow || copy.eyebrow;
+  ensurePoweredByLine(hero, eyebrow, spanish ? copy.poweredBy : config?.hero_powered_by || copy.poweredBy);
+  if (title) title.textContent = safeHeroHeadline(config, spanish);
+  if (lead) lead.textContent = spanish ? copy.lead : config?.hero_lead || copy.lead;
   styleHero(hero, eyebrow, title, lead);
-  const actions = isEsMx ? copy.actions : [config?.primary_cta || copy.actions[0], config?.secondary_cta || copy.actions[1], copy.actions[2], copy.actions[3]];
+  const actions = spanish ? copy.actions : [config?.primary_cta || copy.actions[0], config?.secondary_cta || copy.actions[1], copy.actions[2], copy.actions[3]];
   hero.querySelectorAll<HTMLAnchorElement>(".hero-actions a").forEach((anchor, index) => { if (actions[index]) anchor.textContent = actions[index]; });
 }
 
-function valueToDisplay(value: unknown, isEsMx = false) {
-  if (value === null || value === undefined || value === "") return isEsMx ? "No disponible" : "Unavailable";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : isEsMx ? "Ninguno" : "None";
-  if (typeof value === "object") return JSON.stringify(value);
-  const text = String(value);
-  if (!isEsMx) return text;
-  if (text.toLowerCase() === "unavailable") return "No disponible";
-  if (text.toLowerCase() === "available") return "Disponible";
-  if (text.toLowerCase() === "fallback") return "respaldo";
-  if (text.toLowerCase() === "default") return "predeterminado";
-  return text;
+function localizeSpanishText(value: string): string {
+  const direct = SPANISH_VALUE_MAP.get(value.trim().toLowerCase());
+  if (direct) return direct;
+  return value
+    .replace(/Trend data loads after project run history is available\.?/gi, "Los datos de tendencias se cargarán cuando exista historial de ejecuciones del proyecto.")
+    .replace(/Run and persist project assessments to build trend history\.?/gi, "Ejecuta y conserva evaluaciones del proyecto para construir su historial de tendencias.")
+    .replace(/Diagnostics request did not return data\.?/gi, "La solicitud de diagnósticos no devolvió datos.")
+    .replace(/Backend \/diagnostics returned a non-OK response\.?/gi, "El endpoint /diagnostics del backend devolvió una respuesta no válida.")
+    .replace(/Backend \/diagnostics returned an empty response\.?/gi, "El endpoint /diagnostics del backend devolvió una respuesta vacía.")
+    .replace(/Backend \/diagnostics request failed\.?/gi, "Falló la solicitud al endpoint /diagnostics del backend.");
 }
 
-function trendRows(projectTrends?: Record<string, unknown>, isEsMx = false) {
-  const trend = projectTrends || {status: "unavailable", note: isEsMx ? "Los datos de tendencia cargan después de que exista historial de runs del proyecto." : "Trend data loads after project run history is available."};
-  const rows = isEsMx
-    ? [["Estado", valueToDisplay(trend.status, true)], ["Línea base", valueToDisplay(trend.baseline || trend.current_score || trend.score || "Unavailable", true)], ["Tendencia", valueToDisplay(trend.trend || trend.direction || "Unavailable", true)], ["Nota", valueToDisplay(trend.note || "Corre y guarda evaluaciones del proyecto para construir historial de tendencia.", true)]]
+function valueToDisplay(value: unknown, spanish = false) {
+  if (value === null || value === undefined || value === "") return spanish ? "No disponible" : "Unavailable";
+  if (Array.isArray(value)) return value.length ? value.map((item) => spanish && typeof item === "string" ? localizeSpanishText(item) : String(item)).join(", ") : spanish ? "Ninguno" : "None";
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value);
+  return spanish ? localizeSpanishText(text) : text;
+}
+
+function localizeDiagnosticValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(localizeDiagnosticValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [SPANISH_DIAGNOSTIC_KEYS.get(key) || key, localizeDiagnosticValue(item)]));
+  }
+  if (typeof value === "string") return localizeSpanishText(value);
+  return value;
+}
+
+function trendRows(projectTrends?: Record<string, unknown>, spanish = false) {
+  const trend = projectTrends || {status: "unavailable", note: spanish ? "Los datos de tendencias se cargarán cuando exista historial de ejecuciones del proyecto." : "Trend data loads after project run history is available."};
+  const rows = spanish
+    ? [["Estado", valueToDisplay(trend.status, true)], ["Línea base", valueToDisplay(trend.baseline || trend.current_score || trend.score || "Unavailable", true)], ["Tendencia", valueToDisplay(trend.trend || trend.direction || "Unavailable", true)], ["Nota", valueToDisplay(trend.note || "Ejecuta y conserva evaluaciones del proyecto para construir su historial de tendencias.", true)]]
     : [["Status", valueToDisplay(trend.status)], ["Baseline", valueToDisplay(trend.baseline || trend.current_score || trend.score || "Unavailable")], ["Trend", valueToDisplay(trend.trend || trend.direction || "Unavailable")], ["Note", valueToDisplay(trend.note || "Run and persist project assessments to build trend history.")]];
   return rows.map(([key, value]) => `<div class="trend-row"><span class="trend-key">${escapeHtml(key)}</span><span class="trend-value">${escapeHtml(value)}</span></div>`).join("");
 }
 
-function diagnosticsFallback(isEsMx: boolean) {
-  return isEsMx ? {estado: "no disponible", motivo: "La solicitud de diagnósticos no regresó datos."} : {status: "unavailable", reason: "Diagnostics request did not return data."};
+function diagnosticsFallback(spanish: boolean) {
+  return spanish ? {estado: "no disponible", motivo: "La solicitud de diagnósticos no devolvió datos."} : {status: "unavailable", reason: "Diagnostics request did not return data."};
 }
 
 function renderCommercialOpsMarkup(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
-  const isEsMx = isEsMxRoute();
+  const spanish = isSpanishRoute();
   const flags = config?.feature_flags || {};
-  const banner = config?.maintenance_banner ? `<p class="warning-box">${escapeHtml(config.maintenance_banner)}</p>` : "";
-  const source = valueToDisplay(config?.source || "fallback", isEsMx);
-  const version = valueToDisplay(config?.version || "default", isEsMx);
-  const labels = isEsMx ? {
-    eyebrow: "Operaciones comerciales", title: "Configuración de ejecución, historial del proyecto y diagnósticos", runtime: "Configuración de ejecución", source: "Fuente", version: "Versión", defaultRepo: "Repositorio predeterminado", admin: "Escrituras admin", adminText: "Solo lectura salvo que el token admin del backend esté configurado", feature: "Visibilidad de funciones", defaultFeature: "Set predeterminado de funciones activo", trends: "Línea base de tendencia del proyecto", diagnostics: "Diagnósticos seguros", settings: "Configuración admin / ajustes de ejecución", settingsText: "La configuración de ejecución puede actualizar texto público seguro sin redesplegar. Las escrituras siguen en solo lectura salvo que la autenticación admin del backend esté configurada. El backend conserva los controles de autorización y aprobación."
+  const bannerText = config?.maintenance_banner ? valueToDisplay(config.maintenance_banner, spanish) : "";
+  const banner = bannerText ? `<p class="warning-box">${escapeHtml(bannerText)}</p>` : "";
+  const source = valueToDisplay(config?.source || "fallback", spanish);
+  const version = valueToDisplay(config?.version || "default", spanish);
+  const labels = spanish ? {
+    eyebrow: "Operaciones comerciales", title: "Configuración de ejecución, historial del proyecto y diagnósticos", runtime: "Configuración de ejecución", source: "Fuente", version: "Versión", defaultRepo: "Repositorio predeterminado", admin: "Escrituras administrativas", adminText: "Solo lectura, salvo que esté configurado el token administrativo del servidor", feature: "Visibilidad de funciones", defaultFeature: "Conjunto predeterminado de funciones activo", trends: "Línea base de tendencias del proyecto", diagnostics: "Diagnósticos seguros", settings: "Configuración administrativa y ajustes de ejecución", settingsText: "La configuración de ejecución puede actualizar textos públicos seguros sin volver a desplegar. Las acciones de escritura permanecen en modo de solo lectura salvo que esté configurada la autenticación administrativa del backend. El backend conserva los controles de autorización y aprobación."
   } : {
     eyebrow: "Commercial Ops", title: "Runtime config, project history, and diagnostics", runtime: "Runtime config", source: "Source", version: "Version", defaultRepo: "Default repository", admin: "Admin writes", adminText: "Read-only unless server admin token is configured", feature: "Feature visibility", defaultFeature: "Default feature set active", trends: "Project trend baseline", diagnostics: "Safe diagnostics", settings: "Admin Config / Runtime Settings", settingsText: "Runtime config can update harmless public copy without redeploy. Write actions are read-only unless backend admin authentication is configured. Backend enforcement still controls authorization and approval gates."
   };
+  const diagnosticDisplay = spanish ? localizeDiagnosticValue(diagnostics || diagnosticsFallback(true)) : diagnostics || diagnosticsFallback(false);
   return `
     <div class="section-head"><div><p class="eyebrow">${labels.eyebrow}</p><h2>${labels.title}</h2></div><span class="status blue">${escapeHtml(source)}</span></div>
     ${banner}
     <div class="grid three inset-grid"><article><b>${labels.runtime}</b><span>${labels.source}: ${escapeHtml(source)} · ${labels.version}: ${escapeHtml(version)}</span></article><article><b>${labels.defaultRepo}</b><span>${escapeHtml(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE)}</span></article><article><b>${labels.admin}</b><span>${labels.adminText}</span></article></div>
-    <div class="two-col inset-grid"><div class="mini-panel"><p class="eyebrow">${labels.feature}</p><ul class="tight-list">${Object.entries(flags).slice(0, 8).map(([key, value]) => `<li>${escapeHtml(key)}: ${value ? (isEsMx ? "activo" : "on") : (isEsMx ? "inactivo" : "off")}</li>`).join("") || `<li>${labels.defaultFeature}</li>`}</ul></div><div class="mini-panel"><p class="eyebrow">${labels.trends}</p><div class="trend-card">${trendRows(projectTrends, isEsMx)}</div></div></div>
-    <details class="help-details"><summary>${labels.diagnostics}</summary><div class="help-body"><pre class="json-block">${escapeHtml(JSON.stringify(diagnostics || diagnosticsFallback(isEsMx), null, 2))}</pre></div></details>
+    <div class="two-col inset-grid"><div class="mini-panel"><p class="eyebrow">${labels.feature}</p><ul class="tight-list">${Object.entries(flags).slice(0, 8).map(([key, value]) => `<li>${escapeHtml(key)}: ${value ? (spanish ? "activo" : "on") : (spanish ? "inactivo" : "off")}</li>`).join("") || `<li>${labels.defaultFeature}</li>`}</ul></div><div class="mini-panel"><p class="eyebrow">${labels.trends}</p><div class="trend-card">${trendRows(projectTrends, spanish)}</div></div></div>
+    <details class="help-details"><summary>${labels.diagnostics}</summary><div class="help-body"><pre class="json-block">${escapeHtml(JSON.stringify(diagnosticDisplay, null, 2))}</pre></div></details>
     <details class="help-details"><summary>${labels.settings}</summary><div class="help-body"><p>${labels.settingsText}</p></div></details>`;
 }
 
@@ -206,8 +274,8 @@ export default function GenericRepositoryExample() {
     let cancelled = false; let attempts = 0;
     const applyHostedUiPolish = (config?: RuntimeConfig, diagnostics?: Record<string, unknown>, trends?: Record<string, unknown>) => {
       attempts += 1;
-      const isEsMx = isEsMxRoute();
-      applyGlobalLanguageNav(isEsMx);
+      const spanish = isSpanishRoute();
+      applyGlobalLanguageNav(spanish);
       applyGenericRepositoryExample(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE);
       applyHeroCopy(config);
       ensureCommercialOpsPanel(config, diagnostics, trends);
