@@ -19,8 +19,9 @@ from nico.express_score_assurance_export_v1 import install_express_score_assuran
 from nico.express_pdf_section_index_binding_v1 import install_express_pdf_section_index_binding_v1
 from nico.express_truth_calibration_v36 import install_express_truth_calibration_v36
 from nico.express_assurance_display_v37 import install_express_assurance_display_v37
+from nico.express_truth_calibration_v38_compat import install_express_truth_calibration_v38_compat
 
-VERSION = "nico.express_live_renderer_binding.v37"
+VERSION = "nico.express_live_renderer_binding.v38"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -47,11 +48,13 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     final_export_truth = install_express_final_export_truth_v35()
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
-    # These remain last. Calibration repairs the underlying truth model; the
-    # display binding then removes legacy traffic-light terminology from the
-    # client-facing score/assurance tables without weakening any review gate.
+    # These remain last. Calibration repairs the contradictory production scanner
+    # signature; display removes legacy traffic-light terminology from client
+    # formats; compatibility scopes both changes so unrelated historical contracts
+    # and normal assessment paths retain their established behavior.
     truth_calibration = install_express_truth_calibration_v36()
     assurance_display = install_express_assurance_display_v37()
+    truth_calibration_compat = install_express_truth_calibration_v38_compat()
 
     renderer_bound = bool(getattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", False))
     score_assurance_bound = bool(getattr(live_renderer, "_nico_express_pdf_score_assurance_v1", False))
@@ -76,6 +79,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "pdf_section_index_install": pdf_section_index,
         "truth_calibration_install": truth_calibration,
         "assurance_display_install": assurance_display,
+        "truth_calibration_compat_install": truth_calibration_compat,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": renderer_bound and dossier._premium_pdf is live_renderer,
@@ -95,6 +99,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "pdf_section_index_bound": pdf_section_index.get("status") in {"installed", "already_installed"},
         "truth_calibration_bound": truth_calibration.get("status") in {"installed", "already_installed"},
         "assurance_display_bound": assurance_display.get("status") in {"installed", "already_installed"},
+        "truth_calibration_compat_bound": truth_calibration_compat.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
         "static_import_rebound": previous is not live_renderer,
         "human_review_required": True,
