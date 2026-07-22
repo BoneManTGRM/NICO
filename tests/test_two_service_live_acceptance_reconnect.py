@@ -113,11 +113,14 @@ def test_reconnect_rejects_non_https_or_missing_browser_origin() -> None:
         raise AssertionError("non-HTTPS reconnect origin was accepted")
 
 
-def test_workflow_runs_v2_wrapper_and_compiles_both_contracts() -> None:
+def test_workflow_runs_terminal_reconciliation_wrapper_and_compiles_all_contracts() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_v2.py" in source
-    assert "python scripts/two_service_live_acceptance_v2.py" in source
-    assert "python scripts/two_service_live_acceptance.py" not in source.split(
-        "Run two consecutive Express and Comprehensive production passes", 1
-    )[1]
+    assert (
+        "python -m py_compile scripts/two_service_live_acceptance.py "
+        "scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py"
+    ) in source
+    assert "python scripts/two_service_live_acceptance_v3.py" in source
+    live_step = source.split("Run two consecutive Express and Comprehensive production passes", 1)[1]
+    assert "python scripts/two_service_live_acceptance_v2.py" not in live_step
+    assert "python scripts/two_service_live_acceptance.py" not in live_step
