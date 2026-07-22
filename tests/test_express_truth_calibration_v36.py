@@ -63,33 +63,35 @@ def _sample_result():
     }
 
 
-def test_static_candidate_volume_and_failed_analyzer_do_not_create_critical_score():
+def test_static_candidate_volume_supports_bounded_score_without_false_critical_claim():
     result = calibrate_express_truth(_sample_result())
     static = next(item for item in result["sections"] if item["id"] == "static_analysis")
-    assert static["score_value"] is None
-    assert static["technical_score_display"] == "NOT SCORED"
+    assert static["score_value"] == 82
+    assert static["technical_score_display"] == "STRONG · 82/100"
     assert static["assurance_label"] == "REVIEW LIMITED"
-    assert static["diagnostic_score_before_truth_gate"] == 28
+    assert "diagnostic_score_before_truth_gate" not in static
     assert not any("unavailable for: semgrep" in item.lower() for item in static["unavailable"])
     assert any("45 candidate(s) requiring review" in item for item in static["findings"])
     assert any("160 candidate false-positive" in item for item in static["findings"])
     assert not any("review_required_count=205" in item for item in static["findings"])
+    assert not any("ended with status failed" in item.lower() for item in static["findings"])
+    assert any("ended with status failed" in item.lower() for item in static["unavailable"])
 
 
-def test_evidence_constraints_do_not_reduce_technical_scores_and_unscored_is_not_zero():
+def test_evidence_constraints_do_not_reduce_technical_scores_and_scored_static_is_included():
     result = _sample_result()
     records, adjusted = calibrated_score_records(result)
     by_id = {item.section_id: item for item in records}
     assert by_id["dependency_health"].presented_score == 76
     assert by_id["secrets_review"].presented_score == 88
+    assert by_id["static_analysis"].presented_score == 82
     assert by_id["velocity_complexity"].presented_score == 73
     assert by_id["ci_cd"].presented_score == 92
     assert by_id["architecture_debt"].presented_score == 91
-    assert "static_analysis" not in by_id
-    assert result["maturity_signal"]["score"] == 86
+    assert result["maturity_signal"]["score"] == 85
     assert result["maturity_signal"]["level"] == "Strong"
-    assert adjusted == 84
-    assert "static_analysis" in result["maturity_signal"]["unscored_controls_excluded"]
+    assert adjusted == 83
+    assert "static_analysis" not in result["maturity_signal"]["unscored_controls_excluded"]
 
 
 def test_internal_none_metrics_and_legacy_mid_label_are_removed():
@@ -113,4 +115,4 @@ def test_client_tables_show_assurance_disposition_not_legacy_yellow_green_status
     assert dependency["canonical_status"] == "REVIEW LIMITED"
     assert ci["canonical_status"] == "VERIFIED"
     assert static["canonical_status"] == "REVIEW LIMITED"
-    assert static["score_label"] == "NOT SCORED"
+    assert static["score_label"] == "82/100"

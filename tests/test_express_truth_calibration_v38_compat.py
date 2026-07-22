@@ -50,7 +50,7 @@ def test_calibration_signature_is_narrow_and_explicit() -> None:
     assert _uses_v36_truth_model(target) is False
 
 
-def test_target_signature_removes_contradictory_eslint_and_semgrep_limitations() -> None:
+def test_target_signature_removes_contradictory_limits_and_uses_bounded_static_score() -> None:
     install_express_truth_calibration_v38_compat()
     result = _selective_truth(_target_result())
     static = next(item for item in result["sections"] if item["id"] == "static_analysis")
@@ -58,7 +58,8 @@ def test_target_signature_removes_contradictory_eslint_and_semgrep_limitations()
     assert "semgrep" not in limitations
     assert "eslint" not in limitations
     assert "bandit" in limitations
-    assert static["score_value"] is None
+    assert static["score_value"] == 82
+    assert static["technical_score_display"] == "STRONG · 82/100"
     assert static["status"] == "yellow"
     assert static["assurance_label"] == "REVIEW LIMITED"
 
