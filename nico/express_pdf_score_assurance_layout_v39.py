@@ -4,7 +4,7 @@ import io
 from copy import deepcopy
 from typing import Any
 
-VERSION = "nico.express_pdf_score_assurance_layout.v39"
+VERSION = "nico.express_pdf_score_assurance_layout.v44"
 
 
 def _target_signature(result: dict[str, Any]) -> bool:
@@ -23,13 +23,14 @@ def _overview_pdf(result: dict[str, Any]) -> bytes:
     styles = target._styles()
     p = lambda value, style=styles["body"]: target._paragraph(value, style)
 
-    # The calibrated client view no longer repeats a legacy traffic-light status
-    # beside evidence assurance. Four wider columns prevent long assurance labels
-    # such as HUMAN REVIEW PENDING and SUPPLEMENTAL from splitting mid-word.
+    # Scanner Worker Evidence can expose an execution-coverage metric while
+    # remaining supplemental and excluded from technical maturity. The broader
+    # headings prevent that operational metric from being mislabeled as a second
+    # technical-health score.
     rows = [[
         p("Control", styles["label"]),
-        p("Technical score", styles["label"]),
-        p("Technical band", styles["label"]),
+        p("Technical / execution metric", styles["label"]),
+        p("Band / treatment", styles["label"]),
         p("Evidence assurance", styles["label"]),
     ]]
     for item in records:
@@ -53,13 +54,13 @@ def _overview_pdf(result: dict[str, Any]) -> bytes:
         invariant=1,
     )
     doc.build([
-        p("Technical Score and Evidence Assurance", styles["title"]),
+        p("Technical Score, Execution Coverage, and Evidence Assurance", styles["title"]),
         p(
-            "Technical health and evidence assurance are independent dimensions. A high technical score can remain review-limited when an analyzer failed, timed out, returned unresolved candidates, or material evidence is unavailable. Delivery approval remains a separate human decision.",
+            "Technical health, analyzer execution coverage, and evidence assurance are separate dimensions. Core technical controls contribute to maturity. Supplemental scanner coverage shows whether observed analyzers completed, but is excluded from maturity because those outputs are already mapped into the core controls. Delivery approval remains a separate human decision.",
             styles["callout"],
         ),
         Spacer(1, .06 * inch),
-        target._table(rows, [2.45 * inch, 1.15 * inch, 1.25 * inch, 2.25 * inch]),
+        target._table(rows, [2.30 * inch, 1.55 * inch, 1.45 * inch, 2.00 * inch]),
     ])
     return buffer.getvalue()
 
@@ -114,6 +115,8 @@ def install_express_pdf_score_assurance_layout_v39() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "duplicate_legacy_status_column_removed_for_calibrated_reports": True,
+        "supplemental_execution_coverage_labeled_separately": True,
+        "scanner_execution_coverage_excluded_from_maturity": True,
         "long_assurance_labels_fit_without_mid_word_split": True,
         "decision_record_orphan_pages_reduced": True,
         "full_machine_readable_evidence_preserved": True,
