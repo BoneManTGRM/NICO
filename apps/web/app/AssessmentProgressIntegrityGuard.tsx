@@ -67,7 +67,6 @@ function completionEvidenceReady(payload: JsonRecord): boolean {
 }
 
 function reportReady(payload: JsonRecord, tier: "express" | "mid" | "full"): boolean {
-  if (completionEvidenceReady(payload)) return true;
   const reports = record(payload.reports);
   if (tier === "express") return Boolean(reports.markdown || reports.html || reports.pdf_base64 || reports.report_id);
   if (tier === "mid") {
@@ -79,7 +78,6 @@ function reportReady(payload: JsonRecord, tier: "express" | "mid" | "full"): boo
 }
 
 function reviewReady(payload: JsonRecord, tier: "express" | "mid" | "full"): boolean {
-  if (completionEvidenceReady(payload)) return true;
   if (tier === "express") return payload.human_review_required === true;
   if (tier === "mid") return Boolean(record(payload.approval_request).approval_id);
   return Boolean(record(payload.approval).approval_id || record(payload.approval_request).approval_id);
@@ -103,58 +101,27 @@ function reconcileProgress(previous: JsonRecord | undefined, next: JsonRecord, s
   return output;
 }
 
-function completedProjection(payload: JsonRecord, tier: string, sourceStatus: string): JsonRecord {
-  const output = structuredClone(payload);
-  output.status = "complete";
-  output.current_stage = "complete";
-  output.progress_percent = 100;
-  output.report_generation_status = "complete";
-  output.human_review_required = true;
-  output.client_ready = false;
-  output.client_delivery_allowed = false;
-  output.delivery_status = "blocked_pending_human_review";
-  output.recovery_required = false;
-  output.final_gate_reconciliation = {
-    status: "completed_from_backend_completion_evidence",
-    tier,
-    report_ready: true,
-    review_ready: true,
-    source_status: sourceStatus || "running",
-  };
-  const progress = Array.isArray(output.progress)
-    ? output.progress.filter((item) => item && typeof item === "object") as JsonRecord[]
-    : [];
-  const cleaned = progress.filter((item) => {
-    const step = String(item.step || "").toLowerCase();
-    const code = String(record(item.evidence).code || "").toLowerCase();
-    return !(step === "truth_and_review_gates" && code === "assessment_final_gate_stalled");
-  });
-  const completeIndex = cleaned.findIndex((item) => String(item.step || "").toLowerCase() === "complete");
-  const completeStep = {
-    ...(completeIndex >= 0 ? cleaned[completeIndex] : {}),
-    step: "complete",
-    status: "complete",
-    message: "Assessment completed and draft report artifacts are ready for required human review.",
-  };
-  if (completeIndex >= 0) cleaned[completeIndex] = completeStep;
-  else cleaned.push(completeStep);
-  output.progress = cleaned;
-  return output;
-}
-
 function waitingProjection(payload: JsonRecord, state: RunState, tier: string): JsonRecord {
   const output = structuredClone(payload);
+  const reportsReady = reportReady(payload, tier as "express" | "mid" | "full");
+  const reviewEvidenceReady = reviewReady(payload, tier as "express" | "mid" | "full");
+  const completionContractPresent = completionEvidenceReady(payload);
+  output.status = "running";
+  output.current_stage = "truth_and_review_gates";
+  output.progress_percent = Math.max(FINAL_GATE_MIN_PERCENT, Math.min(99, boundedPercent(output.progress_percent)));
   output.recovery_required = false;
   output.duplicate_start_allowed = false;
   output.human_review_required = true;
   output.client_ready = false;
+  output.client_delivery_allowed = false;
   output.status_transport = {
     ...record(output.status_transport),
-    status: "final_gate_waiting_for_backend",
+    status: "final_gate_waiting_for_backend_terminal_status",
     code: "assessment_final_gate_waiting",
     final_gate_polls: state.finalGatePolls,
-    report_ready: reportReady(payload, tier as "express" | "mid" | "full"),
-    review_ready: reviewReady(payload, tier as "express" | "mid" | "full"),
+    report_ready: reportsReady,
+    review_ready: reviewEvidenceReady,
+    completion_contract_present: completionContractPresent,
     exact_run_terminal_evidence: false,
     terminal_state_written: false,
     duplicate_start_allowed: false,
@@ -167,12 +134,13 @@ function waitingProjection(payload: JsonRecord, state: RunState, tier: string): 
   const waiting = {
     step: "truth_and_review_gates",
     status: "running",
-    message: "Report generation is complete. Waiting for the backend to persist score, completion, and review evidence for this exact run.",
+    message: "Report artifacts may be available, but the exact backend run has not persisted a terminal status. Waiting for backend completion truth without starting a duplicate assessment.",
     evidence: {
       code: "assessment_final_gate_waiting",
       final_gate_polls: state.finalGatePolls,
-      report_ready: reportReady(payload, tier as "express" | "mid" | "full"),
-      review_ready: reviewReady(payload, tier as "express" | "mid" | "full"),
+      report_ready: reportsReady,
+      review_ready: reviewEvidenceReady,
+      completion_contract_present: completionContractPresent,
       exact_run_terminal_evidence: false,
       terminal_state_written: false,
       browser_terminalization_forbidden: true,
@@ -189,18 +157,15 @@ function normalizeFinalGate(payload: JsonRecord, runId: string, state: RunState)
   const status = String(payload.status || "").toLowerCase();
   const tier = tierOf(payload, runId);
 
-  // Backend completion evidence is authoritative even when a stale browser-side
-  // final-gate timeout previously projected this exact run as blocked.
-  if (completionEvidenceReady(payload)) {
-    const output = completedProjection(payload, tier, status);
-    state.highestPercent = 100;
-    state.highestStage = "complete";
-    state.finalGatePolls = 0;
-    return output;
-  }
-
+  // Only the backend's top-level exact-run status may end polling. Report files,
+  // review flags, completion subdocuments, and browser timeouts are supporting
+  // evidence; none may manufacture a top-level terminal state in the browser.
   if (TERMINAL.has(status)) {
     state.finalGatePolls = 0;
+    if (status === "complete" || status === "completed") {
+      state.highestPercent = 100;
+      state.highestStage = "complete";
+    }
     return payload;
   }
 
@@ -212,21 +177,13 @@ function normalizeFinalGate(payload: JsonRecord, runId: string, state: RunState)
     return payload;
   }
 
-  if (reportReady(payload, tier) && reviewReady(payload, tier)) {
-    const output = completedProjection(payload, tier, status);
-    state.highestPercent = 100;
-    state.highestStage = "complete";
-    state.finalGatePolls = 0;
-    return output;
-  }
-
   state.finalGatePolls += 1;
-  if (state.finalGatePolls < FINAL_GATE_MAX_POLLS) return payload;
-
-  // A browser polling threshold is diagnostic only. It must never invent a
-  // terminal blocked/failed state or send a valid run to recovery. Only a
-  // backend response with durable exact-run terminal evidence can do that.
-  return waitingProjection(payload, state, tier);
+  const hasSupportingCompletionEvidence = completionEvidenceReady(payload)
+    || (reportReady(payload, tier) && reviewReady(payload, tier));
+  if (hasSupportingCompletionEvidence || state.finalGatePolls >= FINAL_GATE_MAX_POLLS) {
+    return waitingProjection(payload, state, tier);
+  }
+  return payload;
 }
 
 export default function AssessmentProgressIntegrityGuard() {
