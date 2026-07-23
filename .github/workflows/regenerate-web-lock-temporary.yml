@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regenerate-lock:
@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout exact branch
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -33,7 +35,7 @@ jobs:
 
       - name: Collect patched dependency audit
         working-directory: apps/web
-        run: npm audit --audit-level=high --omit=dev --json > ../../regenerated-web-npm-audit.json || true
+        run: npm audit --omit=dev --json > ../../regenerated-web-npm-audit.json || true
 
       - name: Upload regenerated lock and audit
         uses: actions/upload-artifact@v7
@@ -44,15 +46,27 @@ jobs:
             regenerated-web-npm-audit.json
           if-no-files-found: error
 
-      - name: Require zero high or critical production vulnerabilities
+      - name: Require zero known production vulnerabilities
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           data = json.loads(Path('regenerated-web-npm-audit.json').read_text(encoding='utf-8'))
           counts = ((data.get('metadata') or {}).get('vulnerabilities') or {})
-          high = int(counts.get('high') or 0)
-          critical = int(counts.get('critical') or 0)
-          if high or critical:
-              raise SystemExit(f'production dependency audit remains unsafe: high={high}, critical={critical}')
+          total = int(counts.get('total') or 0)
+          if total:
+              raise SystemExit(f'production dependency audit remains unsafe: total={total}')
           PY
+
+      - name: Commit verified lock to branch
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json is already current"
+          else
+            git commit -m "Regenerate web lock with patched production dependencies"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
