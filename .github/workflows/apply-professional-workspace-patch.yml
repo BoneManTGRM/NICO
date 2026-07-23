@@ -64,8 +64,23 @@ jobs:
       - name: Verify raw review-limited enum is hidden
         run: '! grep -Fq "REVIEW_LIMITED_NOT_SCORED" apps/web/app/assessment/AssessmentWorkspace.tsx'
 
-      - name: Verify compact copyable identifiers
-        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_long_identifiers_are_compact_but_copyable
+      - name: Verify identifier compaction helper
+        run: grep -Fq 'function compactIdentifier' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify identifier component
+        run: grep -Fq 'function IdentifierValue' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify identifier copy label
+        run: grep -Fq 'Copy full value' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify clipboard copy implementation
+        run: grep -Fq 'navigator.clipboard.writeText(fullValue)' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify complete run ID remains accessible
+        run: grep -Fq 'title={result?.run_id}' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify immutable commit fallback handling
+        run: grep -Fq 'immutableCommit === "—"' apps/web/app/assessment/AssessmentWorkspace.tsx
 
       - name: Verify dependency-aware pending stages
         run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_pending_stages_explain_their_dependencies
