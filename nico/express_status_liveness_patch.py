@@ -124,14 +124,35 @@ def _reconcile_independent_progress(run_id: str, response: dict[str, Any]) -> di
     return _overlay_progress(api, run_id, response, store=hardening.STORE)
 
 
+def _terminal_lifecycle_projection(response: dict[str, Any]) -> dict[str, Any]:
+    projected = deepcopy(response)
+    lifecycle = projected.get("lifecycle_status") if isinstance(projected.get("lifecycle_status"), dict) else {}
+    lifecycle = deepcopy(lifecycle)
+    lifecycle.update(
+        {
+            "version": EXPRESS_STATUS_LIVENESS_VERSION,
+            "mode": "durable_exact_run_read",
+            "independent_terminal_progress_reconciliation": True,
+            "terminal_progress_prewrite": True,
+            "final_terminal_progress_record_binding": True,
+            "process_local_active_set_required": False,
+            "status_read_is_terminal_write": False,
+            "request_validation_422_possible": False,
+        }
+    )
+    projected["lifecycle_status"] = lifecycle
+    return projected
+
+
 def _return_or_raise_terminal(response: dict[str, Any]) -> dict[str, Any] | None:
     status = str(response.get("status") or "").lower()
     if status in hardening._TERMINAL_SUCCESS:
-        return response
+        return _terminal_lifecycle_projection(response)
     if status in hardening._TERMINAL_FAILURE:
+        detail = _terminal_lifecycle_projection(response)
         raise HTTPException(
             status_code=400 if status in {"blocked", "rejected"} else 503,
-            detail=response,
+            detail=detail,
         )
     return None
 
