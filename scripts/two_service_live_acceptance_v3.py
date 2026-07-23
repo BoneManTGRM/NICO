@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v7"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v8"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 
@@ -87,11 +87,11 @@ def _fallback_ui_state(page: Any) -> dict[str, str]:
 
 
 def _safe_ui_state(page: Any) -> dict[str, str]:
-    """Read the live panel immediately without a locator auto-wait.
+    """Read the live panel immediately and preserve exact hidden identifiers.
 
-    The former ``locator.evaluate`` path could spend 30 seconds waiting for a live
-    region that React had briefly unmounted, converting a transient UI condition into
-    the acceptance failure while the same exact backend run was still advancing.
+    The customer UI intentionally compacts long run IDs and commit SHAs. Acceptance
+    must read the complete value from the identifier code element's ``title`` rather
+    than concatenating its shortened text with the adjacent copy-button label.
     """
 
     fallback = _fallback_ui_state(page)
@@ -109,7 +109,19 @@ def _safe_ui_state(page: Any) -> dict[str, str]:
               const phase = header?.querySelector('span')?.textContent?.trim() || '';
               const message = section.querySelector(':scope > p')?.textContent?.trim() || '';
               const articles = Array.from(section.querySelectorAll('article'));
-              const find = label => articles.find(article => article.querySelector('b')?.textContent?.trim() === label)?.querySelector('span')?.textContent?.trim() || '';
+              const articleFor = label => articles.find(
+                article => article.querySelector('b')?.textContent?.trim() === label
+              );
+              const find = label => {
+                const article = articleFor(label);
+                if (!article) return '';
+                const exactTitle = article.querySelector('code')?.getAttribute('title')?.trim() || '';
+                if (exactTitle) return exactTitle;
+                const copyLabel = article.querySelector('button[aria-label]')?.getAttribute('aria-label') || '';
+                const separator = copyLabel.indexOf(': ');
+                if (separator >= 0) return copyLabel.slice(separator + 2).trim();
+                return article.querySelector('span')?.textContent?.trim() || '';
+              };
               return {
                 phase_label: phase,
                 message,
