@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/repository-sha-resolution-742
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
