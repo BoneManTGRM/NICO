@@ -71,6 +71,13 @@ def _normalize_records(records: list[dict[str, Any]], payload: dict[str, Any]) -
     return records
 
 
+def _normalize_in_place(payload: dict[str, Any]) -> dict[str, Any]:
+    cleaned = normalize_final_report_semantics(payload)
+    payload.clear()
+    payload.update(cleaned)
+    return payload
+
+
 def _wrap_payload_function(module: Any, name: str) -> bool:
     current: Callable[..., Any] = getattr(module, name)
     if getattr(current, _PATCH_MARKER, False):
@@ -78,7 +85,7 @@ def _wrap_payload_function(module: Any, name: str) -> bool:
 
     @wraps(current)
     def wrapped(payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
-        return current(normalize_final_report_semantics(payload), *args, **kwargs)
+        return current(_normalize_in_place(payload), *args, **kwargs)
 
     setattr(wrapped, _PATCH_MARKER, True)
     setattr(wrapped, "_nico_previous", current)
@@ -121,7 +128,11 @@ def install_express_assurance_projection_compat_v45() -> dict[str, Any]:
 
     changed += int(_wrap_payload_function(postprocessor, "prepare_express_client_report"))
     changed += int(_wrap_payload_function(premium, "_premium_pdf"))
-    changed += int(_wrap_payload_function(dossier, "_premium_pdf"))
+
+    if dossier._premium_pdf is not premium._premium_pdf:
+        dossier._premium_pdf = premium._premium_pdf
+        changed += 1
+
     changed += int(_wrap_payload_function(dossier, "build_express_dossier_export"))
 
     return {
@@ -132,6 +143,8 @@ def install_express_assurance_projection_compat_v45() -> dict[str, Any]:
         "technical_band_does_not_overwrite_assurance": True,
         "risk_disposition_replaces_duplicate_status": True,
         "final_semantic_cleanup_bound": True,
+        "in_place_report_mutation_preserved": True,
+        "dossier_renderer_identity_preserved": dossier._premium_pdf is premium._premium_pdf,
         "acceptance_outside_technical_maturity": True,
         "bounded_sample_false_priority_removed": True,
     }
