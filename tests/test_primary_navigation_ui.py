@@ -26,7 +26,7 @@ def test_navigation_keeps_one_canonical_primary_assessment_destination() -> None
     primary = _primary_block(source)
 
     assert primary.count('key: "') == 1
-    assert set(re.findall(r'label: "([^"]+)"', primary)) == {"Run assessment"}
+    assert set(re.findall(r'label: "([^"]+)"', primary)) == {"Run Assessment"}
     assert 'href: "/assessment?tier=express#assessment"' in primary
     assert 'href: "/operations"' not in primary
     assert 'href: "/retainer-ops"' not in primary
@@ -61,7 +61,7 @@ def test_more_menu_exposes_only_help_and_authorized_operator_destinations() -> N
         assert removed not in secondary
 
     assert "Secondary navigation" in source
-    assert "The primary assessment workflow remains under Run assessment" in source
+    assert "The primary assessment workflow remains under Run Assessment" in source
     assert 'className="global-brand" href="/assessment?tier=express#assessment"' in source
 
 
@@ -74,7 +74,7 @@ def test_spanish_route_localizes_the_simplified_navigation_shell() -> None:
     for translated in (
         "Navegación secundaria",
         "Ayuda",
-        "Acceso para operadores autorizados",
+        "Espacios de trabajo del operador",
         "Operaciones (administrador)",
         "Servicio continuo",
         "Guía",
@@ -123,8 +123,10 @@ def test_layout_preserves_safety_disclosures_and_loads_final_polish() -> None:
         "Start Express or Comprehensive",
         "captures one immutable commit",
         "required human review",
-        "never approves findings or authorizes client delivery automatically",
-        "Guidance and authorized operator access",
+        "never approves findings or creates client delivery automatically",
+        "More → Guide",
+        "More → Operations (Admin)",
+        "More → Retainer Ops",
     ):
         assert required in layout
     assert '<div className="global-links">' not in layout
