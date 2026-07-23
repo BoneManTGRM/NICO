@@ -103,7 +103,7 @@ def test_public_git_exact_commit_rejects_sha_mismatch() -> None:
             return subprocess.CompletedProcess(
                 command,
                 0,
-                stdout=f"{'c' * 40}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Wrong release\u",
+                stdout=f"{'c' * 40}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Wrong release\n",
                 stderr="",
             )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -208,7 +208,7 @@ def test_api_commit_mismatch_never_falls_back(monkeypatch) -> None:
             None,
             1,
         ),
-     )
+    )
     monkeypatch.setattr(snapshot, "_public_git_exact_commit", fallback)
 
     result = snapshot.capture_repository_snapshot(
