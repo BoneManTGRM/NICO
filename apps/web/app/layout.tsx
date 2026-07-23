@@ -10,6 +10,7 @@ import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
+import AssessmentFinalPresentationGuard from "./AssessmentFinalPresentationGuard";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
@@ -44,6 +45,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentExpressRecoveryGuard />
           <AssessmentProgressIntegrityGuard />
           <AssessmentFinalGateAuthoritativeGuard />
+          <AssessmentFinalPresentationGuard />
           <AssessmentApiTransportBridge />
           <AssessmentExactCommitTransport />
           <AssessmentHomeRedirect />
@@ -57,7 +59,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <PrimaryNavigation />
           <WorkflowCallout>
             <div className="full-run-callout" role="status">
-              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Guidance is available under <b>More → Guide</b>. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>, and ongoing evidence refresh is available under <b>More → Retainer Ops</b>.
+              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, final report generation, and required human review. NICO generates the complete final report package for the team to review, approve, and deliver when ready; reviewers do not need to recreate the report. Guidance is available under <b>More → Guide</b>. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>, and ongoing evidence refresh is available under <b>More → Retainer Ops</b>.
             </div>
           </WorkflowCallout>
           <GenericRepositoryExample />
