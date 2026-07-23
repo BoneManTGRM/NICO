@@ -30,6 +30,9 @@ jobs:
       - name: Apply assertion-bound source transformation
         run: python scripts/apply_professional_workspace_patch.py
 
+      - name: Compile generated UI contract
+        run: python -m py_compile tests/test_professional_assessment_ui.py
+
       - name: Verify complete status vocabulary
         run: |
           python - <<'PY'
