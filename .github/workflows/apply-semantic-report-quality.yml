@@ -39,7 +39,8 @@ jobs:
             nico/mid_report_professional_v4.py \
             nico/mid_report_professional_v6.py \
             nico/mid_report_professional_v7.py \
-            nico/comprehensive_canonical_truth.py
+            nico/comprehensive_canonical_truth.py \
+            nico/express_pdf_score_assurance_v1.py
           git diff --check
 
       - name: Package verified transformed sources
@@ -56,6 +57,7 @@ jobs:
           nico/mid_report_professional_v6.py
           nico/mid_report_professional_v7.py
           nico/comprehensive_canonical_truth.py
+          nico/express_pdf_score_assurance_v1.py
           EOF
           python - <<'PY'
           import hashlib
@@ -73,5 +75,6 @@ jobs:
         with:
           name: semantic-report-quality-transformed-sources
           path: semantic-report-quality
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
