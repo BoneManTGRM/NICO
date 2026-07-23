@@ -12,7 +12,7 @@ from reportlab.pdfgen import canvas
 
 from nico.storage import STORE, utc_now
 
-VERSION = "nico.express_approved_final_report.v1"
+VERSION = "nico.express_approved_final_report.v2"
 
 
 def _assessment_for_run(run_id: str, customer_id: str, project_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -59,6 +59,14 @@ def _wrap_line(value: str, maximum: int = 92) -> list[str]:
 
 
 def _certificate_pdf(certificate: dict[str, Any]) -> bytes:
+    """Render immutable source identity.
+
+    The final approved-PDF SHA is deliberately not printed inside the PDF because a
+    document cannot contain its own final digest without changing that digest. The
+    final digest is retained in the approval record and delivery manifest after the
+    certificate page has been appended.
+    """
+
     buffer = io.BytesIO()
     page = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -83,7 +91,6 @@ def _certificate_pdf(certificate: dict[str, Any]) -> bytes:
         ("Repository", certificate.get("repository")),
         ("Immutable commit", certificate.get("commit_sha")),
         ("Original report SHA-256", certificate.get("source_report_sha256")),
-        ("Approved report SHA-256", certificate.get("approved_report_sha256")),
         ("Evidence bundle SHA-256", certificate.get("evidence_bundle_hash")),
     ]
     y = height - 185
@@ -120,10 +127,10 @@ def _certificate_pdf(certificate: dict[str, Any]) -> bytes:
 
 def _append_certificate(source_pdf: bytes, certificate_pdf: bytes) -> bytes:
     writer = PdfWriter()
-    for page in PdfReader(io.BytesIO(source_pdf)).pages:
-        writer.add_page(page)
-    for page in PdfReader(io.BytesIO(certificate_pdf)).pages:
-        writer.add_page(page)
+    for source_page in PdfReader(io.BytesIO(source_pdf)).pages:
+        writer.add_page(source_page)
+    for certificate_page in PdfReader(io.BytesIO(certificate_pdf)).pages:
+        writer.add_page(certificate_page)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -145,7 +152,8 @@ def express_approval_readiness(approval: dict[str, Any]) -> dict[str, Any]:
     evidence_bundle = assessment.get("evidence_artifact_bundle") if isinstance(assessment.get("evidence_artifact_bundle"), dict) else {}
     if not evidence_bundle.get("bundle_hash"):
         blockers.append("The exact Express evidence-bundle hash is missing.")
-    commit_sha = str(assessment.get("commit_sha") or assessment.get("repository_snapshot", {}).get("commit_sha") or "")
+    repository_snapshot = assessment.get("repository_snapshot") if isinstance(assessment.get("repository_snapshot"), dict) else {}
+    commit_sha = str(assessment.get("commit_sha") or repository_snapshot.get("commit_sha") or "")
     if not commit_sha:
         blockers.append("The immutable commit SHA is missing from the Express final report package.")
     return {
@@ -181,10 +189,8 @@ def build_express_approved_final_report(approval: dict[str, Any], note: str = ""
         "evidence_bundle_hash": readiness["evidence_bundle_hash"],
         "note": str(note or approval.get("note") or "Approved after review of the exact final report and evidence package."),
         "client_delivery_allowed": True,
+        "approved_report_sha256_location": "approval record and delivery manifest",
     }
-    provisional = _append_certificate(readiness["source_pdf"], _certificate_pdf({**certificate, "approved_report_sha256": "Calculated after certificate append"}))
-    approved_sha = hashlib.sha256(provisional).hexdigest()
-    certificate["approved_report_sha256"] = approved_sha
     approved_pdf = _append_certificate(readiness["source_pdf"], _certificate_pdf(certificate))
     approved_sha = hashlib.sha256(approved_pdf).hexdigest()
     certificate["approved_report_sha256"] = approved_sha
@@ -207,7 +213,7 @@ def build_express_approved_final_report(approval: dict[str, Any], note: str = ""
         "evidence_bundle_hash": readiness["evidence_bundle_hash"],
         "approval_certificate": certificate,
         "pdf_base64": base64.b64encode(approved_pdf).decode("ascii"),
-        "disclosure": "The original Express final report pages are unchanged; one approval certificate page is appended.",
+        "disclosure": "The original Express final report pages are unchanged; one approval certificate page is appended. The final approved-PDF hash is retained outside the PDF to avoid a self-referential digest.",
     }
     updated = deepcopy(approval)
     updated["approved_delivery"] = artifact
