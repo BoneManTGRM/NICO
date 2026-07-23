@@ -1,6 +1,9 @@
 name: Branch Governance Inventory
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       stale_days:
@@ -35,7 +38,7 @@ jobs:
 
       - name: Validate stale-days input
         env:
-          STALE_DAYS: ${{ inputs.stale_days }}
+          STALE_DAYS: ${{ inputs.stale_days || '90' }}
         run: |
           python - <<'PY'
           import os
@@ -47,7 +50,7 @@ jobs:
       - name: Generate evidence-backed classifications
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          STALE_DAYS: ${{ inputs.stale_days }}
+          STALE_DAYS: ${{ inputs.stale_days || '90' }}
         run: |
           python scripts/branch_inventory.py \
             --repository "$GITHUB_REPOSITORY" \
