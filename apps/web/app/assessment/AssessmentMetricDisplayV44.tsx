@@ -81,19 +81,18 @@ export default function AssessmentMetricDisplayV44() {
     let frame = 0;
     let attempts = 0;
 
-    // Hydration can temporarily replace the server-rendered button nodes. Retry only
-    // until both service buttons exist, then stop. This keeps the exact accessible
-    // names stable without observing or mutating the live assessment result tree.
-    const reconcileUntilReady = () => {
-      if (cancelled) return;
-      const serviceButtonCount = reconcileServiceAccessibility();
+    // Hydration may replace already-present server nodes after the first effect pass.
+    // Reconcile only these two service buttons for a bounded 120-frame settling
+    // window. This survives late hydration replacement without observing or touching
+    // the dynamic assessment result tree.
+    const reconcileDuringHydration = () => {
+      if (cancelled || attempts >= 120) return;
+      reconcileServiceAccessibility();
       attempts += 1;
-      if (serviceButtonCount < 2 && attempts < 120) {
-        frame = window.requestAnimationFrame(reconcileUntilReady);
-      }
+      frame = window.requestAnimationFrame(reconcileDuringHydration);
     };
 
-    reconcileUntilReady();
+    reconcileDuringHydration();
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
