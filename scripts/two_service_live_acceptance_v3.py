@@ -7,12 +7,70 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v5"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v6"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
 _original_report_package = acceptance.report_package
+
+
+def _fallback_ui_state(page: Any) -> dict[str, str]:
+    return {
+        "phase_label": "unavailable",
+        "message": "",
+        "run_id": "",
+        "commit_sha": "",
+        "scanner": "",
+        "report": "",
+        "review": "",
+        "score": "",
+        "page_url": acceptance.text(getattr(page, "url", ""), 500),
+    }
+
+
+def _safe_ui_state(page: Any) -> dict[str, str]:
+    """Read the live panel immediately without a locator auto-wait.
+
+    The former ``locator.evaluate`` path could spend 30 seconds waiting for a live
+    region that React had briefly unmounted, converting a transient UI condition into
+    the acceptance failure while the same exact backend run was still advancing.
+    """
+
+    fallback = _fallback_ui_state(page)
+    try:
+        value = page.evaluate(
+            """() => {
+              const section = document.querySelector('section[aria-live="polite"]');
+              if (!section) {
+                return {
+                  phase_label: 'unavailable', message: '', run_id: '', commit_sha: '',
+                  scanner: '', report: '', review: '', score: '', page_url: window.location.href,
+                };
+              }
+              const header = section.querySelector('.section-head');
+              const phase = header?.querySelector('span')?.textContent?.trim() || '';
+              const message = section.querySelector(':scope > p')?.textContent?.trim() || '';
+              const articles = Array.from(section.querySelectorAll('article'));
+              const find = label => articles.find(article => article.querySelector('b')?.textContent?.trim() === label)?.querySelector('span')?.textContent?.trim() || '';
+              return {
+                phase_label: phase,
+                message,
+                run_id: find('Run ID'),
+                commit_sha: find('Immutable commit'),
+                scanner: find('Scanner'),
+                report: find('Report'),
+                review: find('Human review'),
+                score: find('Technical score'),
+                page_url: window.location.href,
+              };
+            }"""
+        )
+    except Exception:
+        return fallback
+    if not isinstance(value, dict):
+        return fallback
+    return {key: acceptance.text(value.get(key, fallback[key]), 500) for key in fallback}
 
 
 def _backend_is_terminal(payload: dict[str, Any]) -> bool:
@@ -113,6 +171,7 @@ def _wait_for_service_terminal(
 
 
 def main(argv: list[str] | None = None) -> int:
+    acceptance.ui_state = _safe_ui_state
     acceptance.report_package = _report_package
     runtime._wait_for_service_terminal = _wait_for_service_terminal
     return runtime.main(argv)
