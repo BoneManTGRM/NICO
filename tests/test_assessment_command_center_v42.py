@@ -28,8 +28,9 @@ def test_command_center_adds_copy_controls_and_truthful_storage_states() -> None
     assert "installCopyControl" in source
     assert "Durable · verified Postgres" in source
     assert "Durable · persistent SQLite volume" in source
-    assert "Temporary record · persistent volume not verified" in source
+    assert "Recorded · storage verification pending" in source
     assert "Temporary memory record · Postgres or a persistent volume required" in source
+    assert "persistent volume not verified" not in source
 
 
 def test_terminal_dom_reconciliation_is_scoped_to_the_live_run_panel() -> None:
