@@ -56,6 +56,7 @@ from nico.mid_report_professional_v6 import install_mid_report_professional_v6
 from nico.mid_report_professional_v7_runtime_fix import install_mid_report_professional_v7_runtime_fix
 from nico.mid_report_v9_production_binding import install_mid_report_v9_production_binding
 from nico.comprehensive_canonical_truth import install_comprehensive_canonical_truth
+from nico.final_report_delivery_package import install_final_report_delivery_package
 from nico.progressive_full_report_patch import install_progressive_full_report_patch
 from nico.full_terminal_format_integrity_patch import install_full_terminal_format_integrity
 from nico.repository_input_normalization_compat import install_repository_input_normalization
@@ -190,6 +191,9 @@ install_mid_report_v9_production_binding()
 # Bind one canonical Comprehensive score object and fail closed on truncated
 # static-analyzer output after every report and scanner installer is active.
 install_comprehensive_canonical_truth()
+# Convert the completed report package from draft terminology to a final report
+# that remains blocked only for authorized human review and delivery approval.
+install_final_report_delivery_package()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
