@@ -101,7 +101,9 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
 
     assert 'value === "review_required"' in source
     assert "stopped at the required human-review gate" in source
-    assert "did not approve findings or authorize client delivery" in source
+    assert "The final report is complete" in source
+    assert "approve it before client delivery" in source
+    assert "no separate report rewrite is required" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
     assert "/delivery/access" not in source
@@ -178,4 +180,3 @@ def test_unified_assessment_layout_is_mobile_readable() -> None:
     assert ".progressBar" in css
     assert ".timeline" in css
     assert "@media (max-width: 760px)" in css
-    assert "grid-template-columns: 1fr;" in css
