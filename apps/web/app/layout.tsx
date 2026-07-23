@@ -10,6 +10,7 @@ import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
+import AssessmentFinalPresentation from "./AssessmentFinalPresentation";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
@@ -46,6 +47,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentFinalGateAuthoritativeGuard />
           <AssessmentApiTransportBridge />
           <AssessmentExactCommitTransport />
+          <AssessmentFinalPresentation />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
