@@ -11,7 +11,7 @@ const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
-    label: "Run Assessment",
+    label: "Run assessment",
     href: "/assessment?tier=express#assessment",
   },
 ] as const;
@@ -22,48 +22,38 @@ const SPANISH_PRIMARY_LABELS: Record<ServiceKey, string> = {
   retainer: "Servicio continuo",
 };
 
-const ADVANCED_GROUPS = [
+const SECONDARY_GROUPS = [
   {
-    label: "Operator workspaces",
-    description: "Deployment administration and ongoing evidence refresh",
+    label: "Help",
+    description: "Guidance for assessment operators and reviewers",
     links: [
-      {label: "Operations (Admin)", href: "/operations"},
-      {label: "Retainer Ops", href: "/retainer-ops"},
-      {label: "Recovery", href: "/operations/recovery"},
-      {label: "Backup & Restore", href: "/operations/backup-restore"},
+      {label: "Guide", href: "/guided-workflow"},
     ],
   },
   {
-    label: "Advanced evidence tools",
-    description: "Use only when the standard assessment workspace is insufficient",
+    label: "Authorized operator access",
+    description: "Deployment administration and ongoing engineering oversight",
     links: [
-      {label: "Scanner to Express", href: "/scanner-workflow"},
-      {label: "Refresh Evidence", href: "/refresh-full-evidence"},
-      {label: "Easy Mode", href: "/easy"},
-      {label: "Guide", href: "/guided-workflow"},
+      {label: "Operations (Admin)", href: "/operations"},
+      {label: "Retainer Ops", href: "/retainer-ops"},
     ],
   },
 ] as const;
 
-const SPANISH_ADVANCED_GROUPS = [
+const SPANISH_SECONDARY_GROUPS = [
   {
-    label: "Espacios para operadores",
-    description: "Administración del despliegue y actualización continua de evidencia",
+    label: "Ayuda",
+    description: "Orientación para operadores y revisores de evaluaciones",
     links: [
-      {label: "Operaciones (administrador)", href: "/operations"},
-      {label: "Servicio continuo", href: "/retainer-ops"},
-      {label: "Recuperación", href: "/operations/recovery"},
-      {label: "Respaldo y restauración", href: "/operations/backup-restore"},
+      {label: "Guía", href: "/guided-workflow"},
     ],
   },
   {
-    label: "Herramientas avanzadas de evidencia",
-    description: "Úsalas solo cuando el espacio normal de evaluación no sea suficiente",
+    label: "Acceso para operadores autorizados",
+    description: "Administración del despliegue y supervisión continua de ingeniería",
     links: [
-      {label: "Escáner a Express", href: "/scanner-workflow"},
-      {label: "Actualizar evidencia", href: "/refresh-full-evidence"},
-      {label: "Modo fácil", href: "/easy"},
-      {label: "Guía", href: "/guided-workflow"},
+      {label: "Operaciones (administrador)", href: "/operations"},
+      {label: "Servicio continuo", href: "/retainer-ops"},
     ],
   },
 ] as const;
@@ -124,8 +114,8 @@ export default function PrimaryNavigation() {
   const spanishActive = pathname.startsWith("/es");
   const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
   const languageLabel = spanishActive ? "English" : "Español";
-  const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS;
-  const advancedActive = activeService === "operations" || activeService === "retainer";
+  const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
+  const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
 
   return (
     <nav className="global-nav" aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}>
@@ -162,15 +152,15 @@ export default function PrimaryNavigation() {
           <span className="primary-service-short-label">{languageLabel}</span>
         </a>
 
-        <details className={`nav-more${advancedActive ? " active" : ""}`}>
-          <summary aria-label={spanishActive ? "Abrir herramientas para operadores y herramientas avanzadas" : "Open operator and advanced tools"}>{spanishActive ? "Más" : "More"}</summary>
+        <details className={`nav-more${secondaryActive ? " active" : ""}`}>
+          <summary aria-label={spanishActive ? "Abrir ayuda y acceso para operadores" : "Open help and operator access"}>{spanishActive ? "Más" : "More"}</summary>
           <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
             <div className="nav-more-heading">
-              <b>{spanishActive ? "Operadores y herramientas avanzadas" : "Operator and advanced tools"}</b>
-              <span>{spanishActive ? "La evaluación normal permanece en Ejecutar evaluación" : "The standard assessment remains under Run Assessment"}</span>
+              <b>{spanishActive ? "Navegación secundaria" : "Secondary navigation"}</b>
+              <span>{spanishActive ? "La evaluación principal permanece en Ejecutar evaluación" : "The primary assessment workflow remains under Run assessment"}</span>
             </div>
             <div className="nav-more-groups">
-              {advancedGroups.map((group) => (
+              {secondaryGroups.map((group) => (
                 <section className="nav-more-group" key={group.label}>
                   <p>{group.label}</p>
                   <small>{group.description}</small>
