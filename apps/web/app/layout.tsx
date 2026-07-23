@@ -24,6 +24,7 @@ import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
 import WorkflowCallout from "./WorkflowCallout";
+import WorkspaceClarityRepair from "./WorkspaceClarityRepair";
 
 export const metadata = {
   title: "NICO",
@@ -49,10 +50,11 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentScoreAssuranceGuard />
           <OperationsPreloadGuard />
           <RetainerAutoEvidenceLauncher />
+          <WorkspaceClarityRepair />
           <PrimaryNavigation />
           <WorkflowCallout>
             <div className="full-run-callout" role="status">
-              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Operators can verify deployment, readiness, workload, incidents, backup/restore evidence, and alerts in the <a href="/operations">Operations</a> control center, and review interrupted scanner work in <a href="/operations/recovery">Recovery</a>. <b>Retainer workflow:</b> Run ongoing repository, workflow, release, backlog, and blocker evidence through <a href="/retainer-ops">Retainer Ops</a>; only business context GitHub cannot prove is entered manually.
+              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>. Ongoing weekly and monthly evidence refresh is available under <b>More → Retainer Ops</b> after a baseline assessment exists.
             </div>
           </WorkflowCallout>
           <GenericRepositoryExample />
