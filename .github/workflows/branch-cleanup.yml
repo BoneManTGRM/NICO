@@ -27,7 +27,7 @@ on:
         default: ""
         type: string
       confirmation:
-        description: Execute only: DELETE REVIEWED MERGED BRANCHES
+        description: "Execute only: DELETE REVIEWED MERGED BRANCHES"
         required: false
         default: ""
         type: string
