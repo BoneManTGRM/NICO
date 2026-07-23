@@ -45,6 +45,34 @@ main.shell[data-assessment-service-count="2"] .section-head .status {
   text-align: center;
 }
 
+.nico-identifier-value {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.nico-identifier-value code {
+  display: block;
+  max-width: 100%;
+  color: inherit;
+  font: inherit;
+  font-size: clamp(14px, 3.7vw, 19px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.nico-identifier-value button {
+  min-height: 38px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
 .nav-more-panel {
   max-width: min(680px, calc(100vw - 32px));
 }
