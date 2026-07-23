@@ -1,5 +1,6 @@
 name: Apply Professional Workspace Patch
 
+# One-time assertion-bound transformation. This workflow removes itself after success.
 on:
   pull_request:
     branches:
