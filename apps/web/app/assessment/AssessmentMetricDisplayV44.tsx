@@ -20,8 +20,9 @@ function canonicalServiceLabel(button: HTMLButtonElement): string | null {
   return null;
 }
 
-export function reconcileServiceAccessibility(): void {
-  document.querySelectorAll<HTMLButtonElement>('#assessment button[aria-pressed]').forEach((button) => {
+export function reconcileServiceAccessibility(): number {
+  const buttons = document.querySelectorAll<HTMLButtonElement>('#assessment button[aria-pressed]');
+  buttons.forEach((button) => {
     const label = canonicalServiceLabel(button);
     if (label) button.setAttribute("aria-label", label);
     button.querySelectorAll<HTMLElement>(".nico-service-detail").forEach((detail) => {
@@ -31,6 +32,7 @@ export function reconcileServiceAccessibility(): void {
       detail.setAttribute("aria-hidden", "true");
     });
   });
+  return buttons.length;
 }
 
 function scoreFromCard(card: HTMLElement): number | null {
@@ -43,8 +45,8 @@ function scoreFromCard(card: HTMLElement): number | null {
 }
 
 /**
- * Compatibility utility for completed, static report snapshots. It is not attached
- * to a MutationObserver because appending nodes inside React-owned result cards can
+ * Compatibility utility for completed, static report snapshots. It is never attached
+ * to a live DOM observer because appending nodes inside React-owned result cards can
  * invalidate React's child tree during a long Comprehensive continuation sequence.
  */
 export function reconcileScannerCoverage(): void {
@@ -75,9 +77,27 @@ export function reconcileScannerCoverage(): void {
 
 export default function AssessmentMetricDisplayV44() {
   useEffect(() => {
-    // One bounded accessibility pass is safe. React remains the sole owner of all
-    // dynamic assessment nodes for the remainder of the run.
-    reconcileServiceAccessibility();
+    let cancelled = false;
+    let frame = 0;
+    let attempts = 0;
+
+    // Hydration can temporarily replace the server-rendered button nodes. Retry only
+    // until both service buttons exist, then stop. React remains the sole owner of all
+    // dynamic assessment nodes throughout the run.
+    const reconcileUntilReady = () => {
+      if (cancelled) return;
+      const serviceButtonCount = reconcileServiceAccessibility();
+      attempts += 1;
+      if (serviceButtonCount < 2 && attempts < 120) {
+        frame = window.requestAnimationFrame(reconcileUntilReady);
+      }
+    };
+
+    reconcileUntilReady();
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
   }, []);
   return null;
 }
