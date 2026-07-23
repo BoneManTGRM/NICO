@@ -16,6 +16,7 @@ _TECHNICAL_IDS = {
     "architecture_debt",
     "velocity_complexity",
 }
+_SCANNER_IDS = {"scanner_worker_evidence", "scanner_evidence", "scanner_assurance_ledger"}
 _ACCEPTANCE_IDS = {"client_human_acceptance", "client_acceptance", "human_acceptance"}
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _TREE_TEST_RE = re.compile(r"recursive repository tree contains\s+(\d+)\s+test-path", re.I)
@@ -62,7 +63,15 @@ def _recursive_clean(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_recursive_clean(item) for item in value)
     if isinstance(value, dict):
-        return {key: _recursive_clean(item) for key, item in value.items()}
+        output: dict[str, Any] = {}
+        for key, item in value.items():
+            canonical_key = {
+                "draft_label": "report_label",
+                "draft_status": "approval_status",
+                "source_draft_pdf_sha256": "source_final_report_sha256",
+            }.get(str(key), str(key))
+            output[canonical_key] = _recursive_clean(item)
+        return output
     return value
 
 
@@ -146,6 +155,7 @@ def _move_acceptance_out_of_velocity(sections: dict[str, dict[str, Any]]) -> Non
     acceptance["review_items"] = _unique(list(acceptance.get("review_items") or []) + moved)
     acceptance["findings"] = []
     acceptance["unavailable"] = []
+    acceptance["label"] = "Review and Delivery"
     acceptance["section_group"] = "review_delivery"
     acceptance["technical_section"] = False
     acceptance["score"] = None
@@ -163,7 +173,11 @@ def normalize_final_report_semantics(payload: dict[str, Any]) -> dict[str, Any]:
         section["unavailable"] = _unique(list(section.get("unavailable") or []))
         section["review_items"] = _unique(list(section.get("review_items") or []))
         _normalize_confidence(section)
-        if section_id not in _TECHNICAL_IDS:
+        if section_id in _SCANNER_IDS or section.get("section_group") == "assurance_ledger":
+            section["label"] = "Scanner Assurance Ledger"
+            section["section_group"] = "assurance_ledger"
+            section["technical_section"] = False
+        elif section_id not in _TECHNICAL_IDS:
             section["technical_section"] = False
             section.setdefault("section_group", "review_delivery" if section_id in _ACCEPTANCE_IDS else "supplemental")
     _remove_bounded_sample_false_priority(output, sections)
@@ -186,7 +200,7 @@ def normalize_final_report_semantics(payload: dict[str, Any]) -> dict[str, Any]:
     output["report_finality"] = "final"
     output["approval_status"] = "pending_human_approval"
     output["delivery_status"] = "blocked_pending_human_approval"
-    output["draft_only"] = False
+    output.pop("draft_only", None)
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False
     output["semantic_report_quality"] = {
@@ -196,6 +210,8 @@ def normalize_final_report_semantics(payload: dict[str, Any]) -> dict[str, Any]:
         "bounded_sample_false_priority_removed": True,
         "acceptance_outside_technical_maturity": True,
         "scanner_claims_reconciled": True,
+        "scanner_control_renamed": True,
+        "legacy_draft_metadata_removed": True,
         "control_characters_removed": True,
         "final_report_pending_approval": True,
     }
