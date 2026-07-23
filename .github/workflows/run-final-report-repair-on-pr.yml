@@ -44,19 +44,36 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Execute the reviewed assertion-bound repair script
+        id: transform
         run: |
           python - <<'PY'
           from pathlib import Path
           import textwrap
+          import traceback
 
-          workflow = Path('.github/workflows/final-report-approval-semantics-once.yml').read_text(encoding='utf-8')
-          marker = "          python - <<'PY'\n"
-          start = workflow.index(marker) + len(marker)
-          end = workflow.index("\n          PY", start)
-          script = textwrap.dedent(workflow[start:end])
-          namespace = {'__name__': '__main__'}
-          exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
+          try:
+              workflow = Path('.github/workflows/final-report-approval-semantics-once.yml').read_text(encoding='utf-8')
+              marker = "          python - <<'PY'\n"
+              start = workflow.index(marker) + len(marker)
+              end = workflow.index("\n          PY", start)
+              script = textwrap.dedent(workflow[start:end])
+              namespace = {'__name__': '__main__'}
+              exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
+          except BaseException:
+              diagnostic = traceback.format_exc()
+              Path('repair-error.txt').write_text(diagnostic, encoding='utf-8')
+              print(diagnostic)
+              raise
           PY
+
+      - name: Upload repair diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: final-report-repair-diagnostics
+          path: repair-error.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify focused report semantics
         run: pytest -q tests/test_final_report_approval_semantics.py tests/test_full_assessment_pdf.py tests/test_durable_storage_resolution_v2.py
