@@ -64,6 +64,17 @@ def _final_language(value: Any) -> str:
     text = str(value or "")
     for source, replacement in _TEXT_REPLACEMENTS:
         text = text.replace(source, replacement)
+    upper = text.upper()
+    if "DRAFT" in upper and any(
+        marker in upper
+        for marker in (
+            "HUMAN REVIEW",
+            "CLIENT DELIVERY",
+            "NICO COMPREHENSIVE",
+            "NICO EXPRESS",
+        )
+    ):
+        text = re.sub(r"\bDRAFT\b", "FINAL REPORT", text, flags=re.IGNORECASE)
     return text
 
 
