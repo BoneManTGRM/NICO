@@ -211,7 +211,8 @@ def test_mid_and_full_persistence_metadata_do_not_call_writable_sqlite_durable()
 
     status = _truthful_persistence_metadata(FakeStore(), restored=False)
 
-    assert status["recorded"] is True
+    assert status["writable"] is True
+    assert status["recorded"] is False
     assert status["durable"] is False
     assert status["durability_verified"] is False
     assert status["survives_container_replacement_verified"] is False
