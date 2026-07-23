@@ -75,12 +75,16 @@ jobs:
       - name: Run two consecutive live provider passes
         id: acceptance
         continue-on-error: true
+        env:
+          ACCEPTANCE_PROVIDER: ${{ inputs.provider }}
+          ACCEPTANCE_REPOSITORY: ${{ inputs.repository }}
+          ACCEPTANCE_REVISION: ${{ inputs.revision }}
         run: |
           set -euo pipefail
           python scripts/provider_live_acceptance.py \
-            --provider '${{ inputs.provider }}' \
-            --repository '${{ inputs.repository }}' \
-            --revision '${{ inputs.revision }}' \
+            --provider "${ACCEPTANCE_PROVIDER}" \
+            --repository "${ACCEPTANCE_REPOSITORY}" \
+            --revision "${ACCEPTANCE_REVISION}" \
             --passes 2 \
             --output audit-results/provider-live-acceptance.json
 
@@ -95,9 +99,11 @@ jobs:
 
       - name: Require passing live evidence
         if: always()
+        env:
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
         run: |
           set -euo pipefail
-          test '${{ steps.acceptance.outcome }}' = 'success'
+          test "${ACCEPTANCE_OUTCOME}" = 'success'
           python - <<'PY'
           import json
           from pathlib import Path
