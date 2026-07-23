@@ -215,9 +215,9 @@ def install_tool(tool: dict[str, Any]) -> str:
         archive = Path(temp) / asset_name
         _download(asset, archive)
         _install_archive(archive, asset_name, binary)
-    installed = shutil.which(binary)
-    if not installed:
-        raise RuntimeError(f"{binary} was installed but is not available on PATH")
+    installed = INSTALL_DIR / binary
+    if not installed.is_file() or not os.access(installed, os.X_OK):
+        raise RuntimeError(f"{binary} was installed but is not executable at {installed}")
     print(f"installed {binary}@{tag}: {installed}")
     return tag
 
