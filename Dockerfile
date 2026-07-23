@@ -59,5 +59,6 @@ USER nico
 
 EXPOSE 8000
 
+# Compatibility contracts remain transitively loaded: uvicorn nico.api.production_bootstrap:app and uvicorn nico.api.comprehensive_production_bootstrap:app.
 # The terminal-authority bootstrap imports the complete production app first, then installs the final exact-run terminal writer and readback guard after every prior wrapper.
 CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.terminal_authority_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
