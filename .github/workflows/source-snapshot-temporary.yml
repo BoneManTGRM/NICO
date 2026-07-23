@@ -1,0 +1,38 @@
+name: Source snapshot temporary
+
+on:
+  push:
+    branches:
+      - fix/repository-sha-resolution-742
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Record commit-resolution references
+        run: |
+          mkdir -p source-diagnostic
+          grep -RInE "resolve.*commit|commit.*resolve|snapshot_commit_sha|repository_snapshot|ls-remote|default_branch|commit_sha" nico apps/web/app scripts tests > source-diagnostic/references.txt || true
+          git rev-parse HEAD > source-diagnostic/workflow-head.txt
+
+      - name: Upload source diagnostic snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-diagnostic-snapshot
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            nico
+            apps/web/app
+            scripts
+            tests
+            .github/workflows
+            source-diagnostic
