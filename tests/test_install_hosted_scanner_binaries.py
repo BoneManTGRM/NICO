@@ -108,3 +108,32 @@ def test_safe_tar_extraction_allows_regular_file_and_blocks_links(tmp_path: Path
 def test_bounded_download_rejects_oversized_payload() -> None:
     with pytest.raises(RuntimeError):
         installer._read_bounded(io.BytesIO(b"12345"), limit=4)
+
+
+def test_install_tool_verifies_configured_directory_without_requiring_path(monkeypatch, tmp_path: Path) -> None:
+    install_dir = tmp_path / "scanners"
+    monkeypatch.setattr(installer, "INSTALL_DIR", install_dir)
+    monkeypatch.setattr(installer, "_release", lambda _repository, tag: {"tag_name": tag, "assets": [{}]})
+    monkeypatch.setattr(installer, "_select_asset", lambda _release, _markers: {"name": "tool.tar.gz"})
+    monkeypatch.setattr(installer, "_download", lambda _asset, destination: destination.write_bytes(b"archive"))
+
+    def fake_install(_archive: Path, _asset_name: str, binary: str) -> None:
+        install_dir.mkdir(parents=True, exist_ok=True)
+        target = install_dir / binary
+        target.write_text("#!/bin/sh\n", encoding="utf-8")
+        target.chmod(0o755)
+
+    monkeypatch.setattr(installer, "_install_archive", fake_install)
+    tag = installer.install_tool(
+        {
+            "name": "example",
+            "repository": "owner/repository",
+            "version_env": "",
+            "default_tag": "v1.0.0",
+            "asset_markers": ("linux",),
+            "binary": "example",
+        }
+    )
+
+    assert tag == "v1.0.0"
+    assert (install_dir / "example").is_file()
