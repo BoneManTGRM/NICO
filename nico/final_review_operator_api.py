@@ -13,13 +13,18 @@ from nico.client_acceptance import (
     request_client_acceptance,
     transition_client_acceptance,
 )
+from nico.express_approved_final_report import (
+    build_express_approved_final_report,
+    express_approval_readiness,
+)
 from nico.final_review_workflow import (
     final_review_status,
     request_final_review,
     transition_final_review,
 )
+from nico.storage import STORE
 
-VERSION = "nico.final_review_operator_api.v1"
+VERSION = "nico.final_review_operator_api.v2"
 OPERATOR_REVIEW_ROUTES = {
     ("GET", "/operations/final-review/{service}/{run_id}"),
     ("POST", "/operations/final-review/{service}/{run_id}/request"),
@@ -79,6 +84,7 @@ def _blocked(result: dict[str, Any]) -> dict[str, Any]:
             detail={
                 "status": "blocked",
                 "message": str(result.get("error") or result.get("message") or "Final-review action was blocked."),
+                "evidence": result.get("readiness") or result.get("acceptance_validation") or result.get("review_validation") or {},
             },
         )
     return result
@@ -87,6 +93,10 @@ def _blocked(result: dict[str, Any]) -> dict[str, Any]:
 def _review_status(service: str, run_id: str, customer_id: str, project_id: str) -> dict[str, Any]:
     if service == "express":
         result = client_acceptance_status(run_id, customer_id, project_id)
+        approvals = result.get("approvals") if isinstance(result.get("approvals"), list) else []
+        latest = approvals[0] if approvals and isinstance(approvals[0], dict) else {}
+        approved_delivery = latest.get("approved_delivery") if isinstance(latest.get("approved_delivery"), dict) else {}
+        result["approved_delivery"] = approved_delivery
         result["service"] = "express"
         result["review_kind"] = "client_acceptance_signoff"
         return result
@@ -117,7 +127,25 @@ def _transition_review(service: str, approval_id: str, state: str, actor: str, n
             detail={"status": "blocked", "message": "state must be approved, needs_more_evidence, or rejected"},
         )
     if service == "express":
+        approval = STORE.get("approvals", approval_id) or {}
+        if state == "approved":
+            readiness = express_approval_readiness(approval)
+            if not readiness.get("ready"):
+                return _blocked(
+                    {
+                        "status": "blocked",
+                        "error": "Express approval is blocked because the exact final PDF, immutable commit, or evidence-bundle hash is missing.",
+                        "readiness": readiness,
+                    }
+                )
         result = _blocked(transition_client_acceptance(approval_id, state, actor=actor, note=note))
+        if state == "approved":
+            updated = result.get("approval") if isinstance(result.get("approval"), dict) else STORE.get("approvals", approval_id) or approval
+            approved_delivery = _blocked(build_express_approved_final_report(updated, note=note))
+            result["approved_delivery"] = approved_delivery
+            if isinstance(result.get("acceptance"), dict):
+                result["acceptance"]["approved_delivery"] = approved_delivery
+                result["acceptance"]["client_delivery_allowed"] = True
         result["service"] = "express"
         result["review_kind"] = "client_acceptance_signoff"
         return result
@@ -153,7 +181,7 @@ class FinalReviewAdminBoundaryMiddleware:
             key.decode("latin-1").lower(): value.decode("latin-1")
             for key, value in scope.get("headers") or []
         }
-        allowed, status = require_admin_write(headers.get("x-nico-admin-token", ""))
+        allowed, _status = require_admin_write(headers.get("x-nico-admin-token", ""))
         if allowed:
             await self.app(scope, receive, send)
             return
@@ -254,6 +282,7 @@ def register_final_review_operator_routes(target: FastAPI) -> dict[str, Any]:
         "legacy_write_routes_require_admin": True,
         "operator_routes_require_admin": True,
         "express_and_comprehensive_supported": True,
+        "express_approval_certificate_appended": True,
         "human_review_required": True,
     }
 
