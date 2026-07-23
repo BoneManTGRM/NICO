@@ -10,14 +10,14 @@ VERSION = "nico.comprehensive_canonical_truth.v1"
 _REPORT_MARKER = "_nico_comprehensive_canonical_truth_v1"
 _SCANNER_MARKER = "_nico_comprehensive_scanner_capacity_v1"
 
-_WEIGHTS = {
+_DEFAULT_WEIGHTS = {
     "code_audit": 20,
     "dependency_health": 15,
-    "secrets_review": 15,
+    "secrets_review": 10,
     "static_analysis": 15,
     "ci_cd": 15,
     "architecture_debt": 15,
-    "velocity_complexity": 5,
+    "velocity_complexity": 10,
 }
 
 _CANONICAL_STAGE_IDS = {
@@ -48,6 +48,11 @@ def _items(value: Any) -> list[Any]:
 def _number(value: Any) -> int | None:
     if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, str):
+        match = re.search(r"\b(100|[0-9]{1,2})(?:\.0+)?(?:/100)?\b", value.strip())
+        if not match:
+            return None
+        value = match.group(1)
     try:
         number = int(round(float(value)))
     except (TypeError, ValueError):
@@ -59,11 +64,25 @@ def _technical_sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         item
         for item in _items(payload.get("sections"))
-        if isinstance(item, dict) and str(item.get("id") or "") in _WEIGHTS
+        if isinstance(item, dict) and str(item.get("id") or "") in _DEFAULT_WEIGHTS
     ]
 
 
+def _weights(payload: dict[str, Any]) -> dict[str, int]:
+    supplied = _dict(_dict(payload.get("score_integrity")).get("weights"))
+    normalized: dict[str, int] = {}
+    for section_id, default_weight in _DEFAULT_WEIGHTS.items():
+        value = supplied.get(section_id, default_weight)
+        try:
+            weight = int(value)
+        except (TypeError, ValueError):
+            weight = default_weight
+        normalized[section_id] = max(0, weight)
+    return normalized
+
+
 def weighted_technical_score(payload: dict[str, Any]) -> int | None:
+    weights = _weights(payload)
     numerator = 0
     denominator = 0
     for section in _technical_sections(payload):
@@ -71,12 +90,30 @@ def weighted_technical_score(payload: dict[str, Any]) -> int | None:
         score = _number(section.get("score"))
         if score is None:
             continue
-        weight = _WEIGHTS[section_id]
+        weight = weights[section_id]
         numerator += score * weight
         denominator += weight
     if denominator == 0:
         return None
     return max(0, min(100, int(round(numerator / denominator))))
+
+
+def canonical_technical_score(payload: dict[str, Any]) -> tuple[int | None, str]:
+    integrity = _dict(payload.get("score_integrity"))
+    candidates = (
+        (_dict(payload.get("canonical_report_truth")).get("technical_score"), "existing canonical report truth"),
+        (integrity.get("final_report_score"), "final score-integrity result"),
+        (integrity.get("reported_score"), "reported immutable maturity signal"),
+        (_dict(payload.get("maturity_signal")).get("score"), "immutable maturity signal"),
+        (_dict(payload.get("decision_summary")).get("technical_score"), "executive decision summary"),
+        (_dict(payload.get("executive_summary")).get("technical_score"), "executive summary"),
+        (payload.get("technical_score"), "existing report technical score"),
+    )
+    for value, source in candidates:
+        score = _number(value)
+        if score is not None:
+            return score, source
+    return weighted_technical_score(payload), "normalized weighted scored technical controls"
 
 
 def evidence_adjusted_score(payload: dict[str, Any]) -> int | None:
@@ -171,7 +208,7 @@ def _normalize_nested_truth(value: Any, *, score: int, band: str, adjusted: int 
 
 def canonicalize_comprehensive_payload(payload: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(payload)
-    score = weighted_technical_score(output)
+    score, score_source = canonical_technical_score(output)
     if score is None:
         return output
 
@@ -191,7 +228,7 @@ def canonicalize_comprehensive_payload(payload: dict[str, Any]) -> dict[str, Any
         "delivery_status": "Draft only",
         "human_review_required": True,
         "client_delivery_allowed": False,
-        "score_source": "normalized weighted scored technical controls",
+        "score_source": score_source,
         "unscored_controls_are_excluded_not_zeroed": True,
     }
     if previous_truth and previous_truth != truth:
@@ -213,7 +250,7 @@ def canonicalize_comprehensive_payload(payload: dict[str, Any]) -> dict[str, Any
         "technical_score": score,
         "technical_band": band,
         "maturity_level": band.title(),
-        "score_source": truth["score_source"],
+        "score_source": score_source,
         "human_context_sections_affect_score_without_review": False,
     })
     if adjusted is not None:
@@ -238,11 +275,11 @@ def canonicalize_comprehensive_payload(payload: dict[str, Any]) -> dict[str, Any
     previous_reported = integrity.get("final_report_score") or integrity.get("reported_score")
     integrity.update({
         "version": VERSION,
-        "calculated_score": score,
         "final_report_score": score,
         "score_match": True,
-        "final_report_score_matches_weighted_calculation": True,
+        "final_report_score_matches_canonical_source": True,
         "canonical_truth_bound": True,
+        "canonical_score_source": score_source,
     })
     if previous_reported not in (None, score):
         integrity["pre_reconciliation_reported_score"] = previous_reported
@@ -317,13 +354,14 @@ def install_comprehensive_canonical_truth() -> dict[str, Any]:
         "version": VERSION,
         "report_functions_rebound": _install_report_truth(),
         "bandit_capacity_guard_installed": _install_scanner_capacity(),
-        "technical_score_source": "normalized weighted scored technical controls",
+        "technical_score_source": "established immutable maturity signal, with weighted fallback",
         "truncated_scanner_output_scored": False,
     }
 
 
 __all__ = [
     "VERSION",
+    "canonical_technical_score",
     "canonicalize_comprehensive_payload",
     "evidence_adjusted_score",
     "install_comprehensive_canonical_truth",
