@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Regression contract for NICO's canonical customer and operator navigation.
+
 import re
 from pathlib import Path
 
