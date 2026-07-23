@@ -1,0 +1,68 @@
+name: Branch Governance Inventory
+
+on:
+  workflow_dispatch:
+    inputs:
+      stale_days:
+        description: Days without branch activity before unique commits are classified as stale
+        required: true
+        default: "90"
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: branch-governance-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Generate read-only branch inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch every remote branch without modifying GitHub
+        run: |
+          git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Validate stale-days input
+        env:
+          STALE_DAYS: ${{ inputs.stale_days }}
+        run: |
+          python - <<'PY'
+          import os
+          value = os.environ["STALE_DAYS"]
+          if not value.isdigit() or int(value) < 1 or int(value) > 3650:
+              raise SystemExit("stale_days must be an integer between 1 and 3650")
+          PY
+
+      - name: Generate evidence-backed classifications
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STALE_DAYS: ${{ inputs.stale_days }}
+        run: |
+          python scripts/branch_inventory.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-dir "$GITHUB_WORKSPACE" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            --stale-days "$STALE_DAYS" \
+            --output-dir branch-governance
+
+      - name: Publish inventory summary
+        run: cat branch-governance/branch-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload immutable inventory artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: branch-governance-inventory-${{ github.sha }}-${{ github.run_id }}
+          path: branch-governance/
+          if-no-files-found: error
+          retention-days: 90
