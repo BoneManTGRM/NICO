@@ -48,7 +48,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import textwrap
           import traceback
 
           try:
@@ -56,7 +55,11 @@ jobs:
               marker = "          python - <<'PY'\n"
               start = workflow.index(marker) + len(marker)
               end = workflow.index("\n          PY", start)
-              script = textwrap.dedent(workflow[start:end])
+              raw_script = workflow[start:end]
+              script = "\n".join(
+                  line[10:] if line.startswith("          ") else line
+                  for line in raw_script.splitlines()
+              )
               namespace = {'__name__': '__main__'}
               exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
           except BaseException:
