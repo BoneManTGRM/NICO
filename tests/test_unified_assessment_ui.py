@@ -139,9 +139,11 @@ def test_primary_navigation_uses_one_assessment_entry_and_normalizes_legacy_tier
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
     assert 'type AssessmentMode = "express" | "comprehensive"' in navigation
-    assert 'label: "Run a Job"' in primary
+    assert 'label: "Run Assessment"' in primary
     assert 'href: "/assessment?tier=express#assessment"' in primary
-    assert 'data-primary-service-count="3"' in navigation
+    assert 'data-primary-service-count="1"' in navigation
+    assert 'href: "/operations"' not in primary
+    assert 'href: "/retainer-ops"' not in primary
     assert '["comprehensive", "mid", "full", "deep"]' in navigation
     assert '"/es/assessment?tier=express#assessment"' in navigation
     assert 'if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job"' in navigation
