@@ -178,10 +178,7 @@ def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
         normalized = str(key)
         if normalized in _OMITTED_STAGE_KEYS or normalized in projected:
             continue
-        if normalized in {"message", "summary", "reason", "capability", "run_id", "repository", "commit_sha", "evidence_ledger_id"}:
-            projected[normalized] = _bounded_value(value)
-            continue
-        if normalized in {"stage_progress_percent", "progress_percent", "finding_count", "findings_count", "files_analyzed", "tool_count"}:
+        if value is None or isinstance(value, (bool, int, float, str)):
             projected[normalized] = _bounded_value(value)
             continue
         if normalized in {"evidence", "scanner", "metrics", "coverage", "unavailable", "findings"}:
