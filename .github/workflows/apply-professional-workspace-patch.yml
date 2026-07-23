@@ -29,8 +29,40 @@ jobs:
       - name: Apply assertion-bound source transformation
         run: python scripts/apply_professional_workspace_patch.py
 
-      - name: Verify centralized status vocabulary
-        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_status_copy_is_centralized_and_human_readable
+      - name: Verify complete status vocabulary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('apps/web/app/assessment/AssessmentWorkspace.tsx').read_text(encoding='utf-8')
+          required = (
+              'Awaiting stage',
+              'Awaiting scanner completion',
+              'Begins after automated report',
+              'Calculated after scoring',
+              'Not scored yet',
+              'Review limited · Not scored',
+              'Baseline not established',
+              'Input not provided',
+              'Not applicable',
+              'Runtime acceptance not provided',
+              'Awaiting commercial inputs',
+          )
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit('Missing status copy: ' + ', '.join(missing))
+          PY
+
+      - name: Verify centralized status formatter
+        run: grep -Fq 'function formatStatus' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify legacy timeline status renderer removed
+        run: '! grep -Fq "{item.status || copy.notVerified}" apps/web/app/assessment/AssessmentWorkspace.tsx'
+
+      - name: Verify legacy section badge renderer removed
+        run: '! grep -Fq "{state} · {label}" apps/web/app/assessment/AssessmentWorkspace.tsx'
+
+      - name: Verify raw review-limited enum is hidden
+        run: '! grep -Fq "REVIEW_LIMITED_NOT_SCORED" apps/web/app/assessment/AssessmentWorkspace.tsx'
 
       - name: Verify compact copyable identifiers
         run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_long_identifiers_are_compact_but_copyable
