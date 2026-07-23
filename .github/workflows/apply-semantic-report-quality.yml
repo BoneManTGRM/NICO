@@ -120,7 +120,6 @@ jobs:
               '        "approval_status": "pending_human_approval",\n'
               '        "delivery_status": "blocked_pending_human_approval",'
           )
-          Path(".github/workflows/apply-semantic-report-quality.yml").unlink()
           PY
 
       - name: Verify transformed source contracts
@@ -137,7 +136,7 @@ jobs:
           assert "DRAFT — HUMAN REVIEW REQUIRED" not in report
           assert 'canvas.drawString(LEFT + 2, y, "-")' in report
           assert '"report_finality": "final"' in canonical
-          assert not Path(".github/workflows/apply-semantic-report-quality.yml").exists()
+          assert Path(".github/workflows/apply-semantic-report-quality.yml").exists()
           PY
           python -m py_compile \
             scripts/two_service_live_acceptance.py \
@@ -149,7 +148,13 @@ jobs:
 
       - name: Stage transformed sources
         run: |
-          git add -A
+          git add scripts/two_service_live_acceptance.py \
+            .github/workflows/two-service-production-acceptance.yml \
+            nico/mid_assessment_report.py \
+            nico/mid_report_professional_v4.py \
+            nico/mid_report_professional_v6.py \
+            nico/mid_report_professional_v7.py \
+            nico/comprehensive_canonical_truth.py
           git status --short
           git diff --cached --check
 
