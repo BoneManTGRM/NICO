@@ -128,7 +128,13 @@ def test_v14_withholds_placeholder_code_and_preserves_truth_boundary() -> None:
     assert "<minimum-fixed-version>" not in text
     assert "Unsupported claims permitted: 0" in text
     assert "human review required" in text.lower()
-    assert "Not approved for client delivery" in text
+    assert "FINAL REPORT" in text
+    assert "Pending approval" in text
+    assert "Final report · pending human approval" in text
+    assert "Not approved for client delivery" not in text
+    assert result["express_delivery_truth"]["report_finality"] == "final"
+    assert result["express_delivery_truth"]["approval_status"] == "pending_human_approval"
+    assert result["express_delivery_truth"]["client_delivery_allowed"] is False
     assert result["express_premium_report"]["placeholder_code_withheld"] is True
 
 
