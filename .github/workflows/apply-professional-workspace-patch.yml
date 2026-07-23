@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: fix/professional-ui-polish
           fetch-depth: 1
@@ -29,11 +29,20 @@ jobs:
       - name: Apply assertion-bound source transformation
         run: python scripts/apply_professional_workspace_patch.py
 
-      - name: Run focused source contracts
-        run: |
-          python -m pytest -q --tb=short \
-            tests/test_professional_assessment_ui.py \
-            tests/test_primary_navigation_ui.py
+      - name: Verify centralized status vocabulary
+        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_status_copy_is_centralized_and_human_readable
+
+      - name: Verify compact copyable identifiers
+        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_long_identifiers_are_compact_but_copyable
+
+      - name: Verify dependency-aware pending stages
+        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_pending_stages_explain_their_dependencies
+
+      - name: Verify mobile identifier containment
+        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_mobile_identifier_controls_stay_contained
+
+      - name: Verify simplified primary navigation
+        run: python -m pytest -q --tb=short tests/test_primary_navigation_ui.py
 
       - name: Validate frontend type safety
         working-directory: apps/web
