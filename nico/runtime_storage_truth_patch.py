@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from nico import durable_runtime_storage, express_async_api, storage
 
-RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v3_renderer_truth"
+RUNTIME_STORAGE_TRUTH_VERSION = "nico.runtime_storage_truth.v4_verified_record"
 _STATUS_MARKER = "_nico_runtime_storage_truth_v1"
 _PERSISTENCE_MARKER = "_nico_express_persistence_truth_v1"
 
@@ -55,6 +55,7 @@ def _wrap_status(cls: type, durability: Callable[[Any, dict[str, Any]], bool]) -
         verified = bool(durability(self, result))
         result["durability_verified"] = verified
         result["durable"] = verified
+        result["survives_container_replacement_verified"] = verified
         if result.get("adapter") == "sqlite" and result.get("persistence_available") and not verified:
             result["persistence_note"] = (
                 "SQLite lifecycle recording is writable, but deployment-survival is not verified because the configured data path is not confirmed as a persistent mount."
@@ -81,23 +82,32 @@ def _install_express_persistence_truth() -> bool:
         except Exception:
             return {
                 "recorded": False,
+                "writable": False,
                 "durable": False,
                 "durability_verified": False,
+                "survives_container_replacement_verified": False,
                 "adapter": "unknown",
                 "note": "Express lifecycle storage status is unavailable.",
             }
         adapter = str(status.get("adapter") or status.get("mode") or "unknown")
         persistence_available = bool(status.get("persistence_available"))
+        writable = bool(persistence_available or adapter in {"memory", "sqlite", "postgres"})
         verified = bool(
             status.get("durability_verified")
+            or status.get("survives_container_replacement_verified")
             or (adapter == "postgres" and persistence_available)
         )
         return {
-            "recorded": bool(persistence_available or adapter in {"memory", "sqlite", "postgres"}),
+            # Customer-facing "recorded" now means a durable record is verified.
+            # Ephemeral memory and unverified SQLite remain writable diagnostic states,
+            # but cannot present as a durable record in the workspace.
+            "recorded": verified,
+            "writable": writable,
             "durable": verified,
             "durability_verified": verified,
+            "survives_container_replacement_verified": verified,
             "adapter": adapter,
-            "note": str(status.get("persistence_note") or "Express lifecycle state is recorded through the configured storage adapter."),
+            "note": str(status.get("persistence_note") or "Express lifecycle state uses the configured storage adapter."),
             "warning": str(status.get("durability_warning") or ""),
         }
 
@@ -139,6 +149,7 @@ def install_runtime_storage_truth() -> dict[str, Any]:
         "pdf_vector_geometry_bound": True,
         "architecture_velocity_split_bound": True,
         "sqlite_writable_equals_durable": False,
+        "memory_writable_equals_recorded": False,
         "postgres_durability_verified": True,
         "human_review_required": True,
         "client_delivery_allowed": False,

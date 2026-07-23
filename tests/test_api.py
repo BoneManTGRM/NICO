@@ -28,7 +28,9 @@ def test_full_assessment_requires_authorization():
     assert detail['code'] == 'authorization confirmation is required'
     assert detail['progress'][0]['step'] == 'authorization'
     assert detail['run_id'].startswith('fullrun_')
-    assert detail['persistence']['recorded'] is True
+    assert detail['persistence']['writable'] is True
+    assert detail['persistence']['recorded'] is False
+    assert detail['persistence']['durable'] is False
 
 
 def test_full_assessment_endpoint_returns_planned_progress_shape():
@@ -44,7 +46,9 @@ def test_full_assessment_endpoint_returns_planned_progress_shape():
     assert data['project_id'] == 'proj-a'
     assert data['human_review_required'] is True
     assert data['client_ready'] is False
-    assert data['persistence']['recorded'] is True
+    assert data['persistence']['writable'] is True
+    assert data['persistence']['recorded'] is False
+    assert data['persistence']['durable'] is False
     assert data['persistence']['record_id'] == data['run_id']
     assert data['persistence']['updated_at']
     assert [item['step'] for item in data['progress']] == ['authorization', 'repo_evidence', 'scanner_worker', 'evidence_attachment', 'scoring', 'reports', 'approval_request']
@@ -72,7 +76,9 @@ def test_full_assessment_status_refresh_does_not_request_final_review():
     assert data['run_id'] == 'fullrun_ui'
     assert data['repository'] == 'BoneManTGRM/NICO'
     assert data['approval']['status'] == 'not_requested'
-    assert data['persistence']['recorded'] is True
+    assert data['persistence']['writable'] is True
+    assert data['persistence']['recorded'] is False
+    assert data['persistence']['durable'] is False
     by_step = {item['step']: item for item in data['progress']}
     assert by_step['scanner_worker']['status'] == 'skipped'
     assert by_step['reports']['status'] == 'skipped'
@@ -93,7 +99,9 @@ def test_full_assessment_status_refresh_restores_saved_scope_with_empty_body():
     assert data['repository'] == 'BoneManTGRM/NICO'
     assert data['customer_id'] == 'cust-restore'
     assert data['project_id'] == 'proj-restore'
-    assert data['persistence']['recorded'] is True
+    assert data['persistence']['writable'] is True
+    assert data['persistence']['recorded'] is False
+    assert data['persistence']['durable'] is False
     assert data['persistence']['restored'] is True
     assert data['approval']['status'] == 'not_requested'
 

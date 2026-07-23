@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-ASSESSMENT_PERSISTENCE_TRUTH_VERSION = "nico.assessment_persistence_truth.v2"
+ASSESSMENT_PERSISTENCE_TRUTH_VERSION = "nico.assessment_persistence_truth.v3_verified_record"
 _MARKER = "_nico_assessment_persistence_truth_v1"
 
 
@@ -16,23 +16,27 @@ def _truthful_persistence_metadata(store: Any = None, *, restored: bool = False)
         status = {}
     adapter = str(status.get("adapter") or status.get("mode") or "unknown")
     persistence_available = bool(status.get("persistence_available"))
+    writable = bool(persistence_available or adapter in {"memory", "sqlite", "postgres"})
     durability_verified = bool(
         status.get("durability_verified")
+        or status.get("survives_container_replacement_verified")
         or (adapter == "postgres" and persistence_available)
     )
-    recorded = persistence_available or adapter in {"memory", "sqlite", "postgres"}
     note = str(
         status.get("persistence_note")
-        or "Assessment lifecycle state is recorded through the configured storage adapter."
+        or "Assessment lifecycle state uses the configured storage adapter."
     )
     warning = str(status.get("durability_warning") or "")
-    if recorded and not durability_verified and not warning:
+    if writable and not durability_verified and not warning:
         warning = (
-            "The assessment record is writable but deployment-survival is not verified. "
+            "The assessment state is writable but deployment-survival is not verified. "
             "It may disappear after a container replacement."
         )
     return {
-        "recorded": recorded,
+        # "recorded" is customer-facing and therefore requires verified durable
+        # persistence. Writable ephemeral state remains disclosed separately.
+        "recorded": durability_verified,
+        "writable": writable,
         "durable": durability_verified,
         "durability_verified": durability_verified,
         "survives_container_replacement_verified": durability_verified,
@@ -63,6 +67,7 @@ def install_assessment_persistence_truth() -> dict[str, Any]:
         "mid_api_binding_installed": mid_assessment_api.persistence_metadata is _truthful_persistence_metadata,
         "full_binding_installed": full_assessment_runs.persistence_metadata is _truthful_persistence_metadata,
         "sqlite_writable_equals_durable": False,
+        "memory_writable_equals_recorded": False,
         "container_survival_requires_verification": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
