@@ -7,8 +7,9 @@ from fastapi import HTTPException
 
 from nico import lifecycle_status_hardening as hardening
 
-EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v1"
+EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v2"
 _PATCH_MARKER = "_nico_express_status_liveness_v1"
+_PROGRESS_RECONCILIATION_MARKER = "_nico_express_independent_progress_reconciliation_v1"
 _EXPRESS_STALE_SECONDS = 300
 _SCANNER_STALE_SECONDS = 600
 
@@ -63,6 +64,7 @@ def _lifecycle_metadata(
         "scanner_status": scanner.get("status") or "not_started",
         "scanner_heartbeat_age_seconds": round(scanner_age, 1) if scanner_age is not None else None,
         "scanner_liveness_corroborated": scanner_corroborated,
+        "independent_terminal_progress_reconciliation": True,
         "process_local_active_set_required": False,
         "status_read_is_terminal_write": False,
         "request_validation_422_possible": False,
@@ -107,13 +109,41 @@ def _nonterminal_liveness_projection(
     return projected
 
 
+def _reconcile_independent_progress(run_id: str, response: dict[str, Any]) -> dict[str, Any]:
+    """Reconcile the compact exact-run record inside the outer production read.
+
+    Production installs this liveness wrapper after the earlier progress wrapper.
+    Active-state reads are handled directly here rather than delegated to the
+    previous function, so terminal progress must be reconciled at this outermost
+    boundary or a completed run can remain visible as 94% running indefinitely.
+    """
+
+    from nico import express_async_api as api
+    from nico.express_progress_persistence_patch import _overlay_progress
+
+    return _overlay_progress(api, run_id, response, store=hardening.STORE)
+
+
+def _return_or_raise_terminal(response: dict[str, Any]) -> dict[str, Any] | None:
+    status = str(response.get("status") or "").lower()
+    if status in hardening._TERMINAL_SUCCESS:
+        return response
+    if status in hardening._TERMINAL_FAILURE:
+        raise HTTPException(
+            status_code=400 if status in {"blocked", "rejected"} else 503,
+            detail=response,
+        )
+    return None
+
+
 def install_express_status_liveness_patch() -> dict[str, Any]:
     current: Callable[[str, str, str], dict[str, Any]] = hardening._express_status_response
-    if getattr(current, _PATCH_MARKER, False):
+    if getattr(current, _PATCH_MARKER, False) and getattr(current, _PROGRESS_RECONCILIATION_MARKER, False):
         return {
             "status": "already_installed",
             "version": EXPRESS_STATUS_LIVENESS_VERSION,
             "scanner_liveness_corroboration": True,
+            "independent_terminal_progress_reconciliation": True,
             "status_read_terminal_write": False,
         }
 
@@ -158,6 +188,11 @@ def install_express_status_liveness_patch() -> dict[str, Any]:
             scanner_corroborated=scanner_corroborated,
         )
 
+        response = _reconcile_independent_progress(run_id, response)
+        terminal = _return_or_raise_terminal(response)
+        if terminal is not None:
+            return terminal
+
         if scanner_corroborated:
             return response
         if not worker_started and run_age is not None and run_age > hardening._EXPRESS_WORKER_START_GRACE_SECONDS:
@@ -186,12 +221,14 @@ def install_express_status_liveness_patch() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=detail)
 
     setattr(resilient_status_response, _PATCH_MARKER, True)
+    setattr(resilient_status_response, _PROGRESS_RECONCILIATION_MARKER, True)
     setattr(resilient_status_response, "_nico_previous", current)
     hardening._express_status_response = resilient_status_response
     return {
         "status": "installed",
         "version": EXPRESS_STATUS_LIVENESS_VERSION,
         "scanner_liveness_corroboration": True,
+        "independent_terminal_progress_reconciliation": True,
         "express_stale_seconds": _EXPRESS_STALE_SECONDS,
         "scanner_stale_seconds": _SCANNER_STALE_SECONDS,
         "status_read_terminal_write": False,
