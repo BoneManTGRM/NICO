@@ -1,0 +1,262 @@
+.nico-home-redirect {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.65rem;
+  padding: 2rem;
+  background: radial-gradient(circle at 50% 20%, #12345f 0, #07111f 42%, #030712 100%);
+  color: #e0f2fe;
+  text-align: center;
+}
+
+.nico-home-redirect b {
+  color: #fff;
+  font-size: clamp(3rem, 15vw, 6rem);
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.nico-home-redirect span {
+  color: #bae6fd;
+  font-weight: 800;
+}
+
+.primary-service-links[data-primary-service-count="1"] {
+  grid-template-columns: minmax(10rem, 19rem);
+  justify-content: start;
+}
+
+#assessment .nico-service-choice-contained {
+  isolation: isolate;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1rem 1.15rem !important;
+  overflow: hidden !important;
+}
+
+#assessment .nico-service-choice-contained::after {
+  z-index: -1;
+  right: -2.35rem;
+  top: -2.65rem;
+  pointer-events: none;
+}
+
+#assessment .nico-service-choice-contained .nico-service-detail {
+  position: static !important;
+  inset: auto !important;
+  display: block !important;
+  width: 100%;
+  max-width: calc(100% - 0.5rem);
+  margin: 0.28rem 0 0;
+  overflow: hidden;
+  color: #dbeafe !important;
+  font-size: clamp(0.72rem, 2.8vw, 0.84rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.015em !important;
+  text-align: left !important;
+  text-overflow: ellipsis;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+.nico-run-identity-heading {
+  max-width: 100%;
+  margin-top: 0.45rem;
+  font-size: clamp(1.45rem, 4vw, 2.15rem) !important;
+  line-height: 1.12 !important;
+  letter-spacing: -0.025em !important;
+  overflow-wrap: anywhere;
+}
+
+.nico-storage-warning {
+  border-color: rgb(245 158 11 / 68%) !important;
+  box-shadow: inset 4px 0 0 rgb(245 158 11 / 72%);
+}
+
+.nico-storage-remediation {
+  display: block;
+  margin-top: 0.8rem;
+  color: #fde68a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.nico-workspace-guide {
+  display: grid;
+  gap: 0.7rem;
+  margin: 1rem 0 1.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgb(56 189 248 / 55%);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgb(8 47 73 / 72%), rgb(15 23 42 / 92%));
+  color: #dbeafe;
+}
+
+.nico-workspace-guide h3 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.05rem;
+}
+
+.nico-workspace-guide p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.55;
+}
+
+.nico-workspace-guide a {
+  justify-self: start;
+  border: 1px solid #38bdf8;
+  border-radius: 999px;
+  padding: 0.58rem 0.85rem;
+  background: rgb(3 105 161 / 18%);
+  color: #bae6fd;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.nico-operator-workspace input[type="password"] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.nav-more.active > summary {
+  border-color: #38bdf8;
+  background: #0c4a6e;
+  color: #bae6fd;
+}
+
+.nav-more-group small {
+  display: block;
+  margin: -0.15rem 0 0.45rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.retainer-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 1rem 0 1.4rem;
+}
+
+.retainer-flow-grid article {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgb(56 189 248 / 32%);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgb(8 47 73 / 55%), rgb(15 23 42 / 92%));
+}
+
+.retainer-flow-grid b {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: #7dd3fc;
+  letter-spacing: 0.045em;
+}
+
+.retainer-flow-grid p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.retainer-source-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0.9rem 0 1.1rem;
+}
+
+.retainer-source-strip span {
+  padding: 0.48rem 0.72rem;
+  border: 1px solid rgb(34 211 238 / 34%);
+  border-radius: 999px;
+  background: rgb(8 145 178 / 14%);
+  color: #cffafe;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.retainer-context-note {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border-left: 4px solid #38bdf8;
+  border-radius: 12px;
+  background: rgb(14 116 144 / 14%);
+  color: #dbeafe;
+  line-height: 1.55;
+}
+
+.retainer-advanced {
+  margin: 1rem 0;
+  border: 1px solid rgb(100 116 139 / 48%);
+  border-radius: 14px;
+  background: rgb(2 6 23 / 38%);
+}
+
+.retainer-advanced summary {
+  cursor: pointer;
+  padding: 0.9rem 1rem;
+  color: #bae6fd;
+  font-weight: 850;
+}
+
+.retainer-advanced > div {
+  padding: 0 1rem 1rem;
+}
+
+@media (max-width: 960px) {
+  .retainer-flow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .primary-service-links[data-primary-service-count="1"] {
+    display: flex;
+  }
+}
+
+@media (max-width: 760px) {
+  #assessment .nico-service-choice-contained {
+    min-height: 5.6rem !important;
+    padding-right: 1rem !important;
+  }
+
+  #assessment .nico-service-choice-contained::after {
+    right: -2.8rem;
+    top: -2.9rem;
+  }
+
+  #assessment .nico-service-choice-contained .nico-service-detail {
+    max-width: calc(100% - 1rem);
+    font-size: 0.76rem !important;
+  }
+
+  .nico-run-identity-heading {
+    font-size: 1.45rem !important;
+  }
+
+  .nico-storage-remediation {
+    font-size: 0.74rem;
+  }
+
+  .nico-workspace-guide {
+    padding: 0.9rem;
+  }
+
+  .nico-workspace-guide a {
+    width: 100%;
+    text-align: center;
+  }
+
+  .retainer-flow-grid {
+    grid-template-columns: 1fr;
+  }
+}

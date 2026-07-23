@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "apps" / "web" / "app" / "retainer-ops" / "page.tsx"
 LAUNCHER = ROOT / "apps" / "web" / "app" / "RetainerAutoEvidenceLauncher.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 
 
 def test_retainer_page_submits_repository_binding_and_business_context_only() -> None:
@@ -37,6 +38,20 @@ def test_retainer_page_submits_repository_binding_and_business_context_only() ->
         assert forbidden not in request_block
 
 
+def test_retainer_page_is_continuous_oversight_not_a_legacy_job_runner() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert "CONTINUOUS ENGINEERING OVERSIGHT" in source
+    assert "This is not another one-time assessment or a generic job runner" in source
+    assert "1 · BASELINE" in source
+    assert "2 · REFRESH" in source
+    assert "3 · CONTEXT" in source
+    assert "4 · REVIEW" in source
+    assert "Refresh Ongoing Evidence" in source
+    assert 'href="/assessment?tier=comprehensive#assessment"' in source
+    assert "No manual technical summaries" in source
+
+
 def test_retainer_page_has_no_manual_technical_evidence_fields() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
@@ -45,6 +60,8 @@ def test_retainer_page_has_no_manual_technical_evidence_fields() -> None:
     assert "Client update context" in source
     assert "Business or retainer metrics" in source
     assert "Budget and priority context" in source
+    for source_name in ["Commits", "Pull requests", "Issues", "Workflows", "CodeQL", "Releases", "Deployments"]:
+        assert source_name in source
     for forbidden_label in [
         "Commit summary",
         "PR summary",
@@ -76,6 +93,7 @@ def test_retainer_page_discloses_source_identity_and_unverified_scores() -> None
 def test_command_center_legacy_retainer_form_is_hidden_and_replaced_with_launcher() -> None:
     launcher = LAUNCHER.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
+    navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert 'document.querySelector<HTMLElement>("#retainer")' in launcher
     assert 'section.querySelector<HTMLElement>(".command-card")' in launcher
@@ -85,4 +103,5 @@ def test_command_center_legacy_retainer_form_is_hidden_and_replaced_with_launche
     assert 'href="/retainer-ops"' in launcher
     assert "Automatic evidence mode" in launcher
     assert "RetainerAutoEvidenceLauncher" in layout
-    assert '<a href="/retainer-ops">Retainer Ops</a>' in layout
+    assert '{label: "Retainer Ops", href: "/retainer-ops"}' in navigation
+    assert "More → Retainer Ops" in layout

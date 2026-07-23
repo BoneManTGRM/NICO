@@ -7,9 +7,11 @@ from fastapi import HTTPException
 
 from nico import lifecycle_status_hardening as hardening
 
-EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v2"
+EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v3"
 _PATCH_MARKER = "_nico_express_status_liveness_v1"
 _PROGRESS_RECONCILIATION_MARKER = "_nico_express_independent_progress_reconciliation_v1"
+_FINAL_RECORD_MARKER = "_nico_express_terminal_progress_record_binding_v1"
+_FINAL_RECORD_OWNER_MARKER = "_nico_express_terminal_progress_record_owner_v1"
 _EXPRESS_STALE_SECONDS = 300
 _SCANNER_STALE_SECONDS = 600
 
@@ -65,6 +67,7 @@ def _lifecycle_metadata(
         "scanner_heartbeat_age_seconds": round(scanner_age, 1) if scanner_age is not None else None,
         "scanner_liveness_corroborated": scanner_corroborated,
         "independent_terminal_progress_reconciliation": True,
+        "final_terminal_progress_record_binding": True,
         "process_local_active_set_required": False,
         "status_read_is_terminal_write": False,
         "request_validation_422_possible": False,
@@ -136,14 +139,58 @@ def _return_or_raise_terminal(response: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+def _install_final_progress_record_binding() -> dict[str, Any]:
+    """Bind compact progress persistence to the final production record function.
+
+    Several production repairs wrap ``express_async_api._record`` after the first
+    progress installer runs. Some wrappers use ``functools.wraps`` and therefore
+    copy the old boolean marker even though they no longer execute the progress
+    writer. The owner marker points to the actual function object, so copied
+    metadata cannot be mistaken for a live terminal-progress binding.
+    """
+
+    from nico import express_async_api as api
+    from nico.express_progress_persistence_patch import _persist_progress
+
+    current: Callable[[str, dict[str, Any], dict[str, Any]], dict[str, Any]] = api._record
+    if getattr(current, _FINAL_RECORD_OWNER_MARKER, None) is current:
+        return {
+            "status": "already_installed",
+            "marker": _FINAL_RECORD_MARKER,
+            "owner_verified": True,
+        }
+
+    def record_with_final_terminal_progress(
+        run_id: str,
+        request_payload: dict[str, Any],
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        persisted = current(run_id, request_payload, response)
+        progress_source = persisted if isinstance(persisted, dict) else response
+        _persist_progress(api, run_id, progress_source)
+        return persisted
+
+    setattr(record_with_final_terminal_progress, _FINAL_RECORD_MARKER, True)
+    setattr(record_with_final_terminal_progress, _FINAL_RECORD_OWNER_MARKER, record_with_final_terminal_progress)
+    setattr(record_with_final_terminal_progress, "_nico_previous", current)
+    api._record = record_with_final_terminal_progress
+    return {
+        "status": "installed",
+        "marker": _FINAL_RECORD_MARKER,
+        "owner_verified": getattr(api._record, _FINAL_RECORD_OWNER_MARKER, None) is api._record,
+    }
+
+
 def install_express_status_liveness_patch() -> dict[str, Any]:
     current: Callable[[str, str, str], dict[str, Any]] = hardening._express_status_response
     if getattr(current, _PATCH_MARKER, False) and getattr(current, _PROGRESS_RECONCILIATION_MARKER, False):
+        final_record_binding = _install_final_progress_record_binding()
         return {
             "status": "already_installed",
             "version": EXPRESS_STATUS_LIVENESS_VERSION,
             "scanner_liveness_corroboration": True,
             "independent_terminal_progress_reconciliation": True,
+            "final_terminal_progress_record_binding": final_record_binding,
             "status_read_terminal_write": False,
         }
 
@@ -224,11 +271,13 @@ def install_express_status_liveness_patch() -> dict[str, Any]:
     setattr(resilient_status_response, _PROGRESS_RECONCILIATION_MARKER, True)
     setattr(resilient_status_response, "_nico_previous", current)
     hardening._express_status_response = resilient_status_response
+    final_record_binding = _install_final_progress_record_binding()
     return {
         "status": "installed",
         "version": EXPRESS_STATUS_LIVENESS_VERSION,
         "scanner_liveness_corroboration": True,
         "independent_terminal_progress_reconciliation": True,
+        "final_terminal_progress_record_binding": final_record_binding,
         "express_stale_seconds": _EXPRESS_STALE_SECONDS,
         "scanner_stale_seconds": _SCANNER_STALE_SECONDS,
         "status_read_terminal_write": False,
