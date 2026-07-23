@@ -82,8 +82,17 @@ jobs:
       - name: Verify immutable commit fallback handling
         run: grep -Fq 'immutableCommit === "—"' apps/web/app/assessment/AssessmentWorkspace.tsx
 
-      - name: Verify dependency-aware pending stages
-        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_pending_stages_explain_their_dependencies
+      - name: Verify report waits for scanner completion
+        run: grep -Fq 'running ? copy.awaitingScanner : copy.awaitingStage' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify human review waits for report
+        run: grep -Fq 'running ? copy.reviewAfterReport : copy.awaitingStage' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify maturity waits for scoring
+        run: grep -Fq 'running ? copy.maturityAfterScoring : copy.awaitingStage' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Verify technical score distinguishes active run
+        run: grep -Fq 'running ? copy.notScoredYet : copy.notScored' apps/web/app/assessment/AssessmentWorkspace.tsx
 
       - name: Verify mobile identifier containment
         run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py::test_mobile_identifier_controls_stay_contained
