@@ -31,13 +31,28 @@ jobs:
         working-directory: apps/web
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Verify patched production dependencies
+      - name: Collect patched dependency audit
         working-directory: apps/web
-        run: npm audit --audit-level=high --omit=dev
+        run: npm audit --audit-level=high --omit=dev --json > ../../regenerated-web-npm-audit.json || true
 
-      - name: Upload regenerated lock
+      - name: Upload regenerated lock and audit
         uses: actions/upload-artifact@v7
         with:
           name: regenerated-web-package-lock
-          path: apps/web/package-lock.json
+          path: |
+            apps/web/package-lock.json
+            regenerated-web-npm-audit.json
           if-no-files-found: error
+
+      - name: Require zero high or critical production vulnerabilities
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('regenerated-web-npm-audit.json').read_text(encoding='utf-8'))
+          counts = ((data.get('metadata') or {}).get('vulnerabilities') or {})
+          high = int(counts.get('high') or 0)
+          critical = int(counts.get('critical') or 0)
+          if high or critical:
+              raise SystemExit(f'production dependency audit remains unsafe: high={high}, critical={critical}')
+          PY
