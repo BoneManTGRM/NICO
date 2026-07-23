@@ -25,7 +25,7 @@ from nico.hosted_secret_scanner_execution_patch import install_hosted_secret_sca
 from nico.hosted_static_scanner_execution_patch import install_hosted_static_scanner_execution_patch
 from nico.scanner_output_truth_patch import install_scanner_output_truth_patch
 from nico.scanner_output_truth_compat import install_scanner_output_truth_compat
-from nico.hosted_bandit_triage_workflow_patch import install_bandit_triage_workflow_patch
+from nico.hosted_bandit_triage_workflow_patch import install_hosted_bandit_triage_workflow_patch
 from nico.hosted_complexity_engine_attachment_patch import install_hosted_complexity_engine_attachment_patch
 from nico.report_full_detail_export_patch import install_report_full_detail_export_patch
 from nico.client_final_review_gate_patch import install_client_final_review_gate_patch
@@ -120,7 +120,7 @@ install_hosted_secret_scanner_execution_patch()
 install_hosted_static_scanner_execution_patch()
 install_scanner_output_truth_patch()
 install_scanner_output_truth_compat()
-install_bandit_triage_workflow_patch()
+install_hosted_bandit_triage_workflow_patch()
 install_hosted_complexity_engine_attachment_patch()
 install_report_full_detail_export_patch()
 install_client_final_review_gate_patch()
@@ -207,4 +207,4 @@ install_express_final_gate_checkpoint_patch()
 install_express_backend_completion_transport()
 install_express_run_record_integrity()
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
