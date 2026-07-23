@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 from fastapi import FastAPI, Request
 
 from nico.express_final_report_progress_patch import install_express_final_report_progress_patch
 from nico.final_report_runtime_copy_patch import install_final_report_runtime_copy_patch
+from nico.operations_readiness import build_operations_readiness
 
 FINAL_REPORT_RUNTIME_COPY = install_final_report_runtime_copy_patch()
 EXPRESS_FINAL_REPORT_PROGRESS = install_express_final_report_progress_patch()
-
-from nico.final_review_operator_api import register_final_review_operator_routes
-from nico.operations_readiness import build_operations_readiness
+register_final_review_operator_routes = import_module(
+    "nico.final_review_operator_api"
+).register_final_review_operator_routes
 
 OPERATIONS_READINESS_PATH = "/operations/readiness"
 
