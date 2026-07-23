@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "apps" / "web" / "app" / "operations" / "page.tsx"
 STYLES = ROOT / "apps" / "web" / "app" / "operations" / "operations.module.css"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 
 
 def test_operator_control_center_wires_every_required_evidence_endpoint() -> None:
@@ -79,13 +80,16 @@ def test_operator_page_surfaces_required_status_and_incident_fields() -> None:
     assert "Unavailable" in source
 
 
-def test_operator_page_is_responsive_and_added_to_primary_navigation() -> None:
+def test_operator_page_is_responsive_and_available_from_operator_menu() -> None:
     css = STYLES.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
+    navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert "@media(max-width:1050px)" in css
     assert "@media(max-width:800px)" in css
     assert ".eventTable" in css
     assert ".alertList" in css
-    assert '<a href="/operations">Operations</a>' in layout
-    assert "Operators can verify deployment" in layout
+    assert '{label: "Operations (Admin)", href: "/operations"}' in navigation
+    assert 'label: "Operator workspaces"' in navigation
+    assert "Operator-only deployment controls are available under" in layout
+    assert "More → Operations (Admin)" in layout
