@@ -6,13 +6,15 @@ from fastapi import FastAPI
 
 from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
+from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
+from nico.comprehensive_exact_commit_intake_repair import install_comprehensive_exact_commit_intake_repair
 from nico.comprehensive_native_providers import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
-from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
+from nico.final_report_package_v1 import install_final_report_package_v1
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v5"
+VERSION = "nico.api.comprehensive_production_bootstrap.v6"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -60,6 +62,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
+    exact_commit_intake_repair = install_comprehensive_exact_commit_intake_repair()
+    final_report_binding = install_final_report_package_v1()
     native_providers = install_native_comprehensive_providers(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(
@@ -78,6 +82,12 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         getattr(target.state, "nico_native_comprehensive_provider_status", {}) or {}
     )
     missing_capabilities = list(provider_status.get("missing_capabilities") or [])
+    final_report_ready = (
+        final_report_binding.get("report_finalized") is True
+        and final_report_binding.get("human_review_required") is True
+        and final_report_binding.get("client_delivery_allowed") is False
+    )
+    intake_repair_ready = exact_commit_intake_repair.get("status") in {"installed", "already_installed"}
     ready = (
         controller is not None
         and runtime.get("configured") is True
@@ -89,6 +99,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
+        and final_report_ready
+        and intake_repair_ready
         and len(native_providers) > 0
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
@@ -103,13 +115,18 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
+        "final_report_binding": final_report_binding,
+        "exact_commit_intake_repair": exact_commit_intake_repair,
         "native_provider_status": native_status,
         "capability_provider_status": provider_status,
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "report_binding_before_provider_install": True,
+        "final_report_binding_before_executor_build": True,
         "provider_install_before_executor_build": True,
         "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
+        "report_state": "final_report_pending_human_approval",
+        "report_finalized": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -140,6 +157,10 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["final_report_binding"].get("report_finalized") is not True:
+    raise RuntimeError("Final report package binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["exact_commit_intake_repair"].get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError("Comprehensive exact-commit intake repair was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
     raise RuntimeError("Comprehensive production runtime did not install native providers")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
