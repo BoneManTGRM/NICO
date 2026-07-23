@@ -1,0 +1,83 @@
+name: Run final report repair on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/final-report-approval-semantics-once.yml
+      - .github/workflows/run-final-report-repair-on-pr.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-final-report-repair-on-pr
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install application dependencies
+        run: pip install -r requirements.txt
+
+      - name: Execute the reviewed assertion-bound repair script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/final-report-approval-semantics-once.yml').read_text(encoding='utf-8')
+          marker = "          python - <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          script = textwrap.dedent(workflow[start:end])
+          namespace = {'__name__': '__main__'}
+          exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
+          PY
+
+      - name: Verify focused report semantics
+        run: pytest -q tests/test_final_report_approval_semantics.py tests/test_full_assessment_pdf.py tests/test_durable_storage_resolution_v2.py
+
+      - name: Install exact frontend dependencies
+        working-directory: apps/web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify frontend typecheck and production build
+        working-directory: apps/web
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Remove temporary workflows and commit verified repair
+        run: |
+          rm .github/workflows/final-report-approval-semantics-once.yml
+          rm .github/workflows/run-final-report-repair-on-pr.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Separate final report artifacts from approval status"
+          git push origin HEAD:${{ github.head_ref }}
