@@ -83,12 +83,14 @@ jobs:
       - name: Require two-pass immutable hardening acceptance
         id: acceptance
         continue-on-error: true
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
           python scripts/post_release_hardening_acceptance.py \
             --pass-one audit-input/pass-one.json \
             --pass-two audit-input/pass-two.json \
-            --expected-sha '${{ inputs.expected_sha }}' \
+            --expected-sha "${EXPECTED_SHA}" \
             --output audit-results/post-release-hardening-acceptance.json
 
       - name: Upload immutable acceptance evidence
@@ -102,9 +104,11 @@ jobs:
 
       - name: Require passing acceptance contract
         if: always()
+        env:
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
         run: |
           set -euo pipefail
-          test '${{ steps.acceptance.outcome }}' = 'success'
+          test "${ACCEPTANCE_OUTCOME}" = 'success'
           python - <<'PY'
           import json
           from pathlib import Path
