@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _payload() -> dict:
     return {
+        "draft_label": "DRAFT — HUMAN REVIEW REQUIRED",
+        "draft_status": "human_review_required",
+        "draft_only": True,
         "canonical_report_truth": {"delivery_status": "Draft only"},
         "sections": [
             {
@@ -41,6 +44,17 @@ def _payload() -> dict:
                     "Precise story-point expectation requires stakeholder context.",
                     "Client/human acceptance evidence unavailable: no approved final report record was found.",
                 ],
+            },
+            {
+                "id": "scanner_worker_evidence",
+                "label": "Scanner Worker Evidence",
+                "score": None,
+                "section_group": "assurance_ledger",
+                "assurance_label": "REVIEW LIMITED",
+                "confidence": "review-limited",
+                "evidence": [],
+                "findings": [],
+                "unavailable": [],
             },
             {
                 "id": "client_human_acceptance",
@@ -94,6 +108,7 @@ def test_cleanup_moves_acceptance_out_of_velocity_and_matches_confidence() -> No
 
     assert velocity["confidence"] == "high"
     assert velocity["unavailable"] == ["Precise story-point expectation requires stakeholder context."]
+    assert acceptance["label"] == "Review and Delivery"
     assert acceptance["score"] is None
     assert acceptance["technical_section"] is False
     assert acceptance["section_group"] == "review_delivery"
@@ -103,6 +118,20 @@ def test_cleanup_moves_acceptance_out_of_velocity_and_matches_confidence() -> No
     assert result["report_finality"] == "final"
     assert result["approval_status"] == "pending_human_approval"
     assert result["client_delivery_allowed"] is False
+
+
+def test_cleanup_renames_scanner_control_and_removes_draft_metadata() -> None:
+    result = normalize_final_report_semantics(_payload())
+    scanner = next(item for item in result["sections"] if item["id"] == "scanner_worker_evidence")
+
+    assert scanner["label"] == "Scanner Assurance Ledger"
+    assert scanner["technical_section"] is False
+    assert scanner["section_group"] == "assurance_ledger"
+    assert result["report_label"] == "FINAL REPORT - PENDING HUMAN APPROVAL"
+    assert result["approval_status"] == "pending_human_approval"
+    assert "draft_label" not in result
+    assert "draft_status" not in result
+    assert "draft_only" not in result
 
 
 def test_source_acceptance_uses_semantic_contract_not_page_quota() -> None:
