@@ -12,7 +12,9 @@ LANGUAGE_COMPONENT = ROOT / "apps/web/app/es/assessment/SpanishDocumentLanguage.
 def test_spanish_navigation_uses_customer_facing_spanish_terms() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
     assert 'retainer: "Servicio continuo"' in source
-    assert 'label: "Escáner a Express"' in source
+    assert 'label: "Espacios de trabajo del operador"' in source
+    assert 'label: "Guía"' in source
+    assert 'label: "Escáner a Express"' not in source
     assert 'retainer: "Retainer"' not in source
     assert 'className="global-brand" href="/assessment?tier=express#assessment"' in source
 
