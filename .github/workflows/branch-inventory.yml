@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: write
 
 concurrency:
   group: branch-governance-inventory
@@ -61,6 +62,17 @@ jobs:
 
       - name: Publish inventory summary
         run: cat branch-governance/branch-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish current inventory to issue 744
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python scripts/branch_governance_issue.py post-inventory \
+            --repository "$GITHUB_REPOSITORY" \
+            --inventory branch-governance/branch-inventory.json \
+            --manifest branch-governance/safe-delete-branches.txt \
+            --run-url "$RUN_URL"
 
       - name: Upload immutable inventory artifact
         uses: actions/upload-artifact@v7
