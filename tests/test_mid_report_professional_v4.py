@@ -206,7 +206,7 @@ def test_mid_v4_markdown_retains_domain_evidence_and_review_boundaries() -> None
     markdown = _markdown(payload)
 
     assert "# NICO MID ASSESSMENT" in markdown
-    assert "DRAFT — HUMAN REVIEW REQUIRED" in markdown
+    assert "FINAL REPORT - PENDING HUMAN APPROVAL" in markdown
     assert "## Decision summary" in markdown
     assert "The score is the weighted result of seven technical sections" in markdown
     assert "Human-context sections unscored: 5" in markdown

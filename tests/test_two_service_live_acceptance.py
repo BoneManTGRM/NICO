@@ -104,7 +104,7 @@ def test_live_proof_checks_language_parity_formats_depth_and_review_boundary() -
         '"post_run_reconnect_identity_preserved": True',
         '"human_review_required": True',
         '"client_delivery_blocked": True',
-        'assert pdf["page_count"] >= 30',
+        '"semantic_contract": {',
         'assert commit == config.expected_sha',
         'assert observed_run_ids == {rid}',
     ):

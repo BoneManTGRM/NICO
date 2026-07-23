@@ -112,7 +112,7 @@ def test_client_tables_show_assurance_disposition_not_legacy_yellow_green_status
     dependency = next(item for item in records if item["section_id"] == "dependency_health")
     ci = next(item for item in records if item["section_id"] == "ci_cd")
     static = next(item for item in records if item["section_id"] == "static_analysis")
-    assert dependency["canonical_status"] == "REVIEW LIMITED"
-    assert ci["canonical_status"] == "VERIFIED"
-    assert static["canonical_status"] == "REVIEW LIMITED"
+    assert dependency["canonical_status"] == "HUMAN TRIAGE REQUIRED"
+    assert ci["canonical_status"] == "ADVISORY FINDINGS"
+    assert static["canonical_status"] == "HUMAN TRIAGE REQUIRED"
     assert static["score_label"] == "82/100"
