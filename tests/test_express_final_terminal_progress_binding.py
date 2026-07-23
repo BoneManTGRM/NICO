@@ -60,7 +60,7 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
                 "worker_started": True,
             }
         )
-        store.put(
+        return store.put(
             "assessment_runs",
             run,
             {
@@ -75,10 +75,11 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
                 "payload": stale,
             },
         )
-        return deepcopy(response)
 
     # Reproduce a later wrapper that copied the old boolean marker with
     # functools.wraps even though it no longer executes the progress writer.
+    # The return value deliberately matches the real _record contract: a rich
+    # assessment record with response fields nested below response/payload.
     setattr(later_record_wrapper, "_nico_express_progress_record_v1", True)
     monkeypatch.setattr(api, "_record", later_record_wrapper)
 
@@ -94,6 +95,7 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
     installed = install_express_status_liveness_patch()
 
     assert installed["final_terminal_progress_record_binding"]["owner_verified"] is True
+    assert installed["final_terminal_progress_record_binding"]["progress_source"] == "response_argument"
     assert getattr(api._record, _FINAL_RECORD_OWNER_MARKER, None) is api._record
 
     api._record(run_id, request, _terminal(run_id))
