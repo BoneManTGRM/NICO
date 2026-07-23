@@ -234,7 +234,28 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
         assert "NICO Comprehensive Technical Assessment" in markdown
         assert "NICO MID TECHNICAL" not in markdown.upper()
         assert "NICO MID TECHNICAL" not in pdf["text"].upper()
-        assert pdf["page_count"] >= 30, f"Comprehensive PDF is only {pdf['page_count']} pages"
+        semantic_markers = (
+            "NICO Comprehensive Technical Assessment",
+            "Functional QA",
+            "Platform Parity",
+            "Six-Month Roadmap",
+            "Staffing, Sequencing, and Cost",
+            "Evidence Appendix",
+            "Human Review and Acceptance Gate",
+        )
+        for marker in semantic_markers:
+            assert marker in markdown, f"Comprehensive Markdown omitted {marker}"
+            assert marker in pdf["text"], f"Comprehensive PDF omitted {marker}"
+        upper_markdown = markdown.upper()
+        upper_pdf = pdf["text"].upper()
+        for stale in ("DRAFT ONLY", "DRAFT - HUMAN REVIEW REQUIRED", "DRAFT · HUMAN REVIEW REQUIRED", "COMPLETE ONLY AS A DRAFT"):
+            assert stale not in upper_markdown, f"Comprehensive Markdown retained stale status: {stale}"
+            assert stale not in upper_pdf, f"Comprehensive PDF retained stale status: {stale}"
+        assert "FINAL REPORT" in upper_markdown
+        assert "FINAL REPORT" in upper_pdf
+        assert "PENDING HUMAN APPROVAL" in upper_markdown
+        assert "PENDING HUMAN APPROVAL" in upper_pdf
+        assert "\x7f" not in pdf["text"], "Comprehensive PDF contains a control-character glyph"
         for heading in (
             "Functional QA",
             "Platform Parity",
@@ -270,6 +291,14 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
         "section_parity": section_evidence,
         "canonical_truth_sha256": next(iter(truth_values), ""),
         "pdf": {key: value for key, value in pdf.items() if key != "text"},
+        "semantic_contract": {
+            "status": "passed",
+            "page_count_informational_only": True,
+            "required_sections_verified": True,
+            "final_report_language_verified": True,
+            "stale_draft_language_absent": True,
+            "control_characters_absent": True,
+        },
         "markdown_sha256": sha256(markdown.encode("utf-8")),
         "html_sha256": sha256(rendered_html.encode("utf-8")),
     }

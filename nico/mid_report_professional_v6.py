@@ -23,7 +23,7 @@ from nico.mid_report_professional_v5 import (
 )
 
 
-MID_REPORT_V6_VERSION = "mid-assessment-draft-v6-executive-actionable"
+MID_REPORT_V6_VERSION = "mid-assessment-final-v6-executive-actionable"
 _PATCH_MARKER = "_nico_mid_report_professional_v6"
 
 _CONTROL_PLAYBOOK: dict[str, dict[str, str]] = {

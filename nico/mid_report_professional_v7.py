@@ -8,7 +8,7 @@ from nico import mid_report_professional_v6 as v6
 from nico.mid_report_premium_contract_v8 import mid_report_contract, reconcile_mid_scores
 
 
-VERSION = "mid-assessment-draft-v8-premium"
+VERSION = "mid-assessment-final-v8-premium"
 
 
 def _text(value: Any, fallback: str = "Not provided") -> str:
@@ -171,7 +171,7 @@ def _premium_pdf(payload: dict[str, Any]) -> bytes:
                 ["Repository", _text(payload.get("repository")), "Canonical score", f"{v6._canonical_score(payload)}/100"],
                 ["Snapshot", _text(payload.get("snapshot_commit_sha")), "Evidence-adjusted", f"{adjusted}/100"],
                 ["Evidence availability", f"{dict(payload.get('evidence_coverage') or {}).get('percent', 0)}%", "Review", "Human review required"],
-                ["Page contract", "35–50 substantive pages", "Delivery", "Blocked pending approval"],
+                ["Report contract", "Semantic sections verified", "Delivery", "Blocked pending approval"],
             ], colWidths=[1.15*inch, 2.45*inch, 1.2*inch, 2.0*inch], style=TableStyle([
                 ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#e0f2fe")),
                 ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),

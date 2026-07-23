@@ -18,10 +18,10 @@ from nico.mid_assessment_runs import load_mid_assessment_run
 from nico.mid_review_by_exception import build_mid_review_packet
 from nico.storage import STORE, StorageAdapter, utc_now
 
-MID_REPORT_VERSION = "mid-assessment-draft-v1"
+MID_REPORT_VERSION = "mid-assessment-final-pending-approval-v2"
 MID_REPORT_PATH = "mid_run"
 MID_REPORT_TYPE = "mid_assessment"
-DRAFT_LABEL = "DRAFT — HUMAN REVIEW REQUIRED"
+DRAFT_LABEL = "FINAL REPORT - PENDING HUMAN APPROVAL"
 
 PAGE_WIDTH, PAGE_HEIGHT = LETTER
 LEFT = 54
@@ -109,7 +109,7 @@ def _report_payload(record: dict[str, Any], packet: dict[str, Any], identity: di
     request = _dict(record.get("request"))
     coverage = _dict(truth.get("evidence_coverage"))
     return {
-        "status": "draft",
+        "status": "final_pending_human_approval",
         "report_version": MID_REPORT_VERSION,
         "report_type": MID_REPORT_TYPE,
         "report_path": MID_REPORT_PATH,
@@ -149,7 +149,7 @@ def _report_payload(record: dict[str, Any], packet: dict[str, Any], identity: di
             "unsupported_claims_permitted": 0,
         },
         "disclosures": [
-            "This is a draft Mid Assessment and requires human technical review before approval or client delivery.",
+            "This is a complete final assessment report pending required human approval; client delivery remains blocked until approval.",
             "Every code-based section is bound to the captured repository commit shown in this report.",
             "Commit, pull-request, CI job, and deployment history is time-window operational evidence and is identified separately from exact-commit code evidence.",
             "User-submitted external context is not direct repository proof and cannot change a score without human validation.",
@@ -345,7 +345,7 @@ def _pdf(payload: dict[str, Any]) -> bytes:
         ensure(len(lines) * 11 + 3)
         canvas.setFont("Helvetica", 8.8)
         canvas.setFillColorRGB(0.12, 0.15, 0.18)
-        canvas.drawString(LEFT + 2, y, "•")
+        canvas.drawString(LEFT + 2, y, "-")
         for line in lines:
             canvas.drawString(LEFT + 14, y, line)
             y -= 11
@@ -427,11 +427,11 @@ def generate_mid_draft_report(
     admin_token: str = "",
     store: StorageAdapter | None = None,
 ) -> dict[str, Any]:
-    """Generate one professional Mid draft report bound to the current review packet."""
+    """Generate one professional final report pending approval, bound to the current review packet."""
 
     allowed, admin = require_admin_write(admin_token)
     if not allowed:
-        return {"status": "blocked", "error": "Admin authentication is required to generate a Mid draft report.", "admin_write": admin}
+        return {"status": "blocked", "error": "Admin authentication is required to generate a final report pending approval.", "admin_write": admin}
     active = _store(store)
     record = load_mid_assessment_run(str(run_id or ""), store=active)
     if not record:
@@ -439,7 +439,7 @@ def generate_mid_draft_report(
     if str(record.get("customer_id") or "default_customer") != str(customer_id) or str(record.get("project_id") or "default_project") != str(project_id):
         return {"status": "not_found", "error": "Mid Assessment run not found."}
     if record.get("status") != "complete":
-        return {"status": "blocked", "error": "The Mid run must complete before its draft report can be generated.", "run_status": record.get("status") or "unknown"}
+        return {"status": "blocked", "error": "The assessment run must complete before its final report can be generated.", "run_status": record.get("status") or "unknown"}
 
     response = _dict(record.get("response"))
     truth = _dict(response.get("mid_truth_status"))
@@ -464,11 +464,11 @@ def generate_mid_draft_report(
     try:
         pdf = _pdf(payload)
     except Exception as exc:
-        return {"status": "blocked", "error": f"Mid draft PDF rendering failed: {type(exc).__name__}."}
+        return {"status": "blocked", "error": f"Final report PDF rendering failed: {type(exc).__name__}."}
     if not pdf.startswith(b"%PDF"):
-        return {"status": "blocked", "error": "Mid draft PDF rendering did not produce a valid PDF."}
+        return {"status": "blocked", "error": "Final report PDF rendering did not produce a valid PDF."}
     pdf_hash = hashlib.sha256(pdf).hexdigest()
-    filename = f"nico-mid-assessment-{_safe_filename(record.get('repository') or 'repository')}-{_safe_filename(run_id)}-DRAFT.pdf"
+    filename = f"nico-mid-assessment-{_safe_filename(record.get('repository') or 'repository')}-{_safe_filename(run_id)}-FINAL-PENDING-APPROVAL.pdf"
     report = {
         "record_type": "mid_assessment_report",
         "status": "complete",
