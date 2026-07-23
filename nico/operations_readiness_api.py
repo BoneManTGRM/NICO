@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request
 
+from nico.express_final_report_progress_patch import install_express_final_report_progress_patch
+from nico.final_report_runtime_copy_patch import install_final_report_runtime_copy_patch
+
+FINAL_REPORT_RUNTIME_COPY = install_final_report_runtime_copy_patch()
+EXPRESS_FINAL_REPORT_PROGRESS = install_express_final_report_progress_patch()
+
 from nico.final_review_operator_api import register_final_review_operator_routes
 from nico.operations_readiness import build_operations_readiness
 
