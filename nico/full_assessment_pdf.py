@@ -6,7 +6,7 @@ import io
 import re
 from typing import Any
 
-FULL_ASSESSMENT_PDF_STYLE_VERSION = "full-assessment-report-v1"
+FULL_ASSESSMENT_PDF_STYLE_VERSION = "full-assessment-final-report-v2"
 
 
 def _text(value: Any, limit: int = 1400) -> str:
@@ -53,7 +53,7 @@ def build_full_assessment_pdf_base64(
     *,
     report_id: str = "",
 ) -> tuple[str | None, str | None]:
-    """Render a reviewable Full Assessment PDF without changing delivery approval state."""
+    """Render the complete final Full Assessment PDF without changing delivery approval state."""
 
     try:
         from reportlab.lib import colors
@@ -95,7 +95,7 @@ def build_full_assessment_pdf_base64(
             bottomMargin=0.72 * inch,
             title="NICO Full Assessment",
             author="NICO",
-            subject="Evidence-bound Full Assessment draft requiring human review",
+            subject="Evidence-bound Full Assessment final report pending human approval",
         )
         styles = getSampleStyleSheet()
         hero_brand = ParagraphStyle(
@@ -234,7 +234,7 @@ def build_full_assessment_pdf_base64(
                 flowables.append(p(f"- {len(cleaned) - max_items} additional item(s) omitted from the PDF; Markdown and JSON retain the detailed report.", small))
             return flowables
 
-        footer_left = "NICO Full Assessment - evidence-bound draft - human review required"
+        footer_left = "NICO Full Assessment - final report - pending human approval"
         footer_right = f"Report {resolved_report_id}" if resolved_report_id != "Not specified" else "Full Assessment"
 
         def draw_footer(canvas: Any, document: Any) -> None:
@@ -256,7 +256,7 @@ def build_full_assessment_pdf_base64(
                 [p("NICO", hero_brand)],
                 [p("POWERED BY REPARODYNAMICS", hero_powered)],
                 [p("Full Assessment", hero_title)],
-                [p("DRAFT - HUMAN REVIEW REQUIRED", hero_draft)],
+                [p("FINAL REPORT - PENDING HUMAN APPROVAL", hero_draft)],
             ],
             colWidths=[7.08 * inch],
         )

@@ -89,7 +89,10 @@ def build_client_final_review_gate(result: dict[str, Any]) -> dict[str, Any]:
         "artifact_schema": FINAL_REVIEW_SCHEMA,
         "status": status,
         "client_delivery_allowed": False,
-        "automation_finality": "not_final",
+        "report_finality": "final",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
+        "automation_finality": "final_report_pending_human_approval",
         "disclosure_state": disclosure_state,
         "unavailable_count": unavailable_count,
         "finding_count": finding_count,
@@ -119,7 +122,10 @@ def attach_client_final_review_gate(result: dict[str, Any]) -> dict[str, Any]:
     if client_gate:
         client_gate["final_review_gate"] = deepcopy(final_gate)
         client_gate["client_delivery_allowed"] = False
-        client_gate["automation_finality"] = "not_final"
+        client_gate["report_finality"] = "final"
+        client_gate["approval_status"] = "pending_human_approval"
+        client_gate["delivery_status"] = "blocked_pending_human_approval"
+        client_gate["automation_finality"] = "final_report_pending_human_approval"
         output["client_acceptance"] = client_gate
     return output
 

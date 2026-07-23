@@ -169,7 +169,11 @@ def prepare_full_assessment_trust(
     verdict["blockers"] = blockers
     prepared = attach_trust_report_display(prepared)
     _normalize_full_assessment_identity(prepared)
-    prepared["status"] = "draft"
+    prepared["status"] = "complete"
+    prepared["report_finality"] = "final"
+    prepared["review_status"] = "pending_human_approval"
+    prepared["delivery_status"] = "blocked_pending_human_approval"
+    prepared["draft_only"] = False
     return prepared
 
 
@@ -239,7 +243,11 @@ def finalize_full_assessment_exports(
     candidate["human_review_required"] = True
     candidate["client_ready"] = False
     candidate["delivery_verdict"] = "human_review_required"
-    candidate["status"] = "draft"
+    candidate["status"] = "complete"
+    candidate["report_finality"] = "final"
+    candidate["review_status"] = "pending_human_approval"
+    candidate["delivery_status"] = "blocked_pending_human_approval"
+    candidate["draft_only"] = False
 
     guarded_package = deepcopy(package)
     guarded_package["formats"] = dict(guarded_package.get("formats") or {})
@@ -256,7 +264,11 @@ def finalize_full_assessment_exports(
     guarded_package["export_truth_gate"] = candidate.get("export_truth_gate") or {}
     guarded_package["client_delivery_allowed"] = False
     guarded_package["human_review_required"] = True
-    guarded_package["draft_only"] = bool((candidate.get("export_truth_gate") or {}).get("draft_only"))
+    guarded_package["report_finality"] = "final"
+    guarded_package["review_status"] = "pending_human_approval"
+    guarded_package["delivery_status"] = "blocked_pending_human_approval"
+    guarded_package["draft_only"] = False
+    guarded_package["legacy_export_draft_gate"] = bool((candidate.get("export_truth_gate") or {}).get("draft_only"))
 
     if report_id:
         STORE.put("reports", report_id, guarded_package)
@@ -289,7 +301,10 @@ def finalize_full_assessment_exports(
         "trust_level": guarded_package.get("trust_level") or "Review-limited",
         "client_delivery_allowed": False,
         "human_review_required": True,
-        "draft_only": bool(guarded_package.get("draft_only")),
+        "report_finality": "final",
+        "review_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
+        "draft_only": False,
         "evidence_ledger_status": str((candidate.get("evidence_ledger") or {}).get("status") or "missing"),
         "export_truth_gate": candidate.get("export_truth_gate") or {},
     }

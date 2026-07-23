@@ -5,7 +5,7 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-VERSION = "nico.express_report_delivery_truth.v43"
+VERSION = "nico.express_report_delivery_truth.v43_final_report"
 _MARKER = "_nico_express_report_delivery_truth_v43"
 
 
@@ -17,7 +17,7 @@ def _overlay(page_width: float, page_height: float) -> bytes:
     c = canvas.Canvas(buffer, pagesize=(page_width, page_height), invariant=1)
     c.setFillColor(colors.HexColor("#fb7185"))
     c.setFont("Helvetica-Bold", 8.4)
-    c.drawString(42, 31, "Not approved for client delivery")
+    c.drawString(42, 31, "Final report · pending human approval")
     c.save()
     return buffer.getvalue()
 
@@ -60,7 +60,10 @@ def install_express_report_delivery_truth_v43() -> dict[str, Any]:
         result["express_delivery_truth"] = {
             "status": "complete",
             "version": VERSION,
-            "explicit_warning": "Not approved for client delivery",
+            "explicit_warning": "Final report · pending human approval",
+            "report_finality": "final",
+            "approval_status": "pending_human_approval",
+            "delivery_status": "blocked_pending_human_approval",
             "human_review_required": True,
             "client_delivery_allowed": False,
         }

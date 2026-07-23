@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from pypdf import PdfReader, PdfWriter
 
-VERSION = "nico.express_report_premium_polish.v42"
+VERSION = "nico.express_report_premium_polish.v42_final_report"
 _TRUTH_MARKER = "_nico_express_report_premium_polish_v42_truth"
 _PDF_MARKER = "_nico_express_report_premium_polish_v42_pdf"
 
@@ -172,6 +172,9 @@ def _reconcile_report_truth(result: dict[str, Any]) -> dict[str, Any]:
         "score_rationales_are_specific": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "report_finality": "final",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
     }
     return result
 
@@ -245,7 +248,7 @@ def _cover_pdf(result: dict[str, Any], width: float, height: float) -> bytes:
     metric_card(margin, card_y, card_w, "Technical maturity", f"{technical}/100" if technical is not None else "Not scored", cyan)
     metric_card(margin + (card_w + card_gap), card_y, card_w, "Evidence-adjusted", f"{adjusted}/100" if adjusted is not None else "Pending", teal)
     metric_card(margin + 2 * (card_w + card_gap), card_y, card_w, "Review posture", "Required", amber)
-    metric_card(margin + 3 * (card_w + card_gap), card_y, card_w, "Delivery", "Draft only", colors.HexColor("#fb7185"))
+    metric_card(margin + 3 * (card_w + card_gap), card_y, card_w, "Delivery", "Pending approval", colors.HexColor("#fb7185"))
 
     repository = _text(result.get("repository") or "Authorized repository")
     commit = _text(result.get("commit_sha") or result.get("repository_snapshot", {}).get("commit_sha") if isinstance(result.get("repository_snapshot"), dict) else "")
@@ -329,7 +332,7 @@ def _cover_pdf(result: dict[str, Any], width: float, height: float) -> bytes:
 
     c.setFillColor(muted)
     c.setFont("Helvetica", 8)
-    c.drawString(margin, 48, "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED")
+    c.drawString(margin, 48, "FINAL REPORT · IMMUTABLE SNAPSHOT · HUMAN APPROVAL REQUIRED")
     c.setFillColor(cyan)
     c.setFont("Helvetica-Bold", 8)
     c.drawRightString(width - margin, 48, "POWERED BY REPARODYNAMICS")
@@ -400,6 +403,9 @@ def _branded_pdf(pdf_bytes: bytes, result: dict[str, Any]) -> bytes:
         "page_count": len(writer.pages),
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "report_finality": "final",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
     }
     return output.getvalue()
 
@@ -455,6 +461,9 @@ def install_express_report_premium_polish_v42() -> dict[str, Any]:
         "navigation_outline_bound": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "report_finality": "final",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
     }
 
 

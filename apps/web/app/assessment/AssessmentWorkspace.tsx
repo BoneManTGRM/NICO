@@ -205,9 +205,9 @@ const EN: Copy = {
   review: "Human review",
   maturity: "Maturity signal",
   score: "Technical score",
-  durable: "Durable record",
-  yes: "Yes",
-  recorded: "Recorded, not durable",
+  durable: "Persistence",
+  yes: "Durable",
+  recorded: "Recorded",
   pending: "Pending",
   awaitingStage: "Awaiting stage",
   awaitingScanner: "Awaiting scanner completion",
@@ -228,13 +228,13 @@ const EN: Copy = {
   notVerified: "Not verified",
   copied: "Markdown copied",
   copy: "Copy Markdown",
-  download: "Download draft PDF",
+  download: "Download final PDF",
   select: "Select a service and run an authorized repository.",
   unavailable: "Unavailable or limited evidence",
   evidence: "Evidence",
   findings: "Findings",
   stepEvidence: "Step evidence",
-  reviewNotice: "Automated work is complete. NICO did not approve findings or authorize client delivery. A human must review the exact evidence-bound artifact.",
+  reviewNotice: "The final report is complete. The team must review the exact evidence-bound package and approve it before client delivery; no separate report rewrite is required.",
   backendError: "The assessment backend could not be reached from this deployment.",
   authError: "Confirm that you own the target or have explicit permission to assess it.",
   invalidJson: "The assessment endpoint returned invalid JSON.",
@@ -242,13 +242,13 @@ const EN: Copy = {
   expressComplete: "Express completed its evidence, scoring, reporting, and truth-gate stages. Human review remains required before delivery.",
   comprehensiveReview: "Comprehensive completed every automated stage and stopped at the required human-review gate.",
   stopped: "The assessment stopped because a required stage failed or was blocked.",
-  pdfMissing: "A PDF was not returned for this draft report.",
+  pdfMissing: "A PDF was not returned for this final report package.",
   services: {
     express: {
       label: "Express",
       eyebrow: "EXPRESS ASSESSMENT",
       heading: "Fast evidence-bound technical baseline",
-      summary: "Repository evidence, calibrated scoring, repair intelligence, and a downloadable draft report.",
+      summary: "Repository evidence, calibrated scoring, repair intelligence, and a complete final report prepared for human approval.",
       instructionsTitle: "Express instructions",
       instructions: [
         "Publishes real backend stages and evidence status.",
@@ -298,9 +298,9 @@ const ES: Copy = {
   review: "Revisión humana",
   maturity: "Señal de madurez",
   score: "Puntuación técnica",
-  durable: "Registro durable",
-  yes: "Sí",
-  recorded: "Registrado, no durable",
+  durable: "Persistencia",
+  yes: "Durable",
+  recorded: "Registrado",
   pending: "Pendiente",
   awaitingStage: "En espera de la etapa",
   awaitingScanner: "En espera de que finalicen los analizadores",
@@ -321,13 +321,13 @@ const ES: Copy = {
   notVerified: "No verificado",
   copied: "Markdown copiado",
   copy: "Copiar Markdown",
-  download: "Descargar PDF preliminar",
+  download: "Descargar PDF final",
   select: "Selecciona un servicio y ejecuta un repositorio autorizado.",
   unavailable: "Evidencia no disponible o limitada",
   evidence: "Evidencia",
   findings: "Hallazgos",
   stepEvidence: "Evidencia de la etapa",
-  reviewNotice: "El trabajo automatizado terminó. NICO no aprobó los hallazgos ni autorizó la entrega al cliente. Una persona debe revisar el artefacto exacto vinculado a evidencia.",
+  reviewNotice: "El informe final está completo. El equipo debe revisar el paquete exacto vinculado a evidencia y aprobarlo antes de entregarlo al cliente; no es necesario rehacer el informe.",
   backendError: "No se pudo acceder al backend de evaluación desde este despliegue.",
   authError: "Confirma que eres propietario del objetivo o que tienes autorización explícita para evaluarlo.",
   invalidJson: "El endpoint de evaluación devolvió JSON no válido.",
@@ -335,13 +335,13 @@ const ES: Copy = {
   expressComplete: "Express completó las etapas de evidencia, puntuación, informe y control de veracidad. Aún se requiere revisión humana antes de la entrega.",
   comprehensiveReview: "Integral completó todas las etapas automatizadas y se detuvo ante la revisión humana obligatoria.",
   stopped: "La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.",
-  pdfMissing: "No se devolvió un PDF para este informe preliminar.",
+  pdfMissing: "No se devolvió un PDF para este paquete de informe final.",
   services: {
     express: {
       label: "Express",
       eyebrow: "EVALUACIÓN EXPRESS",
       heading: "Línea base técnica rápida vinculada a evidencia",
-      summary: "Evidencia del repositorio, puntuación calibrada, inteligencia de reparación y un informe preliminar descargable.",
+      summary: "Evidencia del repositorio, puntuación calibrada, inteligencia de reparación y un informe final completo preparado para aprobación humana.",
       instructionsTitle: "Instrucciones de Express",
       instructions: [
         "Publica etapas reales del backend y el estado de la evidencia.",
@@ -401,7 +401,7 @@ function formatStatus(status: unknown, copy: Copy): string {
   if (["pending", "queued", "planned", "ready", "not_started"].includes(value)) return copy.awaitingStage;
   if (["failed", "blocked", "error", "rejected", "interrupted"].includes(value)) return copy.phases.failed;
   if (["timed_out", "timeout"].includes(value)) return copy.phases.timed_out;
-  if (value === "unavailable") return copy.unavailableStatus;
+  if (value.includes("unavailable") || value === "not_available") return copy.unavailableStatus;
   if (value === "not_applicable") return copy.notApplicable;
   return value.split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
@@ -578,14 +578,19 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const scannerRawStatus = service === "express"
     ? result?.scanner_evidence?.scanner_status || result?.scanner?.status || result?.scanner_evidence?.status || (running ? "running" : "pending")
     : stage(result, "dependency_security_static_analysis")?.status || stage(result, "deep_scanner_triage")?.status || (running ? "running" : "pending");
-  const scannerStatus = formatStatus(scannerRawStatus, copy);
+  const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");
+  const scannerStatus = running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);
   const reportStatus = report?.markdown || report?.html || report?.pdf_base64
     ? copy.phases.complete
     : running ? copy.awaitingScanner : copy.awaitingStage;
   const reviewStatus = phase === "review_required"
     ? copy.phases.review_required
     : running ? copy.reviewAfterReport : copy.awaitingStage;
-  const maturityStatus = assessment?.maturity_signal?.level || (running ? copy.maturityAfterScoring : copy.awaitingStage);
+  const maturityRawStatus = assessment?.maturity_signal?.level;
+  const maturityUnavailable = String(maturityRawStatus || "").toLowerCase().includes("unavailable");
+  const maturityStatus = running && (!maturityRawStatus || maturityUnavailable)
+    ? copy.maturityAfterScoring
+    : formatStatus(maturityRawStatus || (running ? "pending" : "not_started"), copy);
 
   function choose(next: Service): void {
     if (running) return;
