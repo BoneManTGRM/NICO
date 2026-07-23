@@ -32,7 +32,7 @@ def payload_fixture() -> dict:
         },
         "technical_score": 75,
         "technical_band": "MODERATE",
-        "maturity_signal": {"score": 75, "level": "Mid"},
+        "maturity_signal": {"score": 83, "level": "Strong"},
         "decision_summary": {"technical_score": 75},
         "executive_summary": {"technical_score": "75/100"},
         "stage_results": [
@@ -60,6 +60,7 @@ def test_canonical_truth_reconciles_every_final_score_surface() -> None:
     assert result["maturity_signal"]["level"] == "Strong"
     assert result["decision_summary"]["technical_score"] == 83
     assert result["executive_summary"]["technical_score"] == "83/100"
+    assert result["canonical_report_truth"]["score_source"] == "immutable maturity signal"
     assert result["canonical_report_truth"]["evidence_adjusted_score"] == 79
     assert result["canonical_report_truth"]["evidence_coverage_percent"] == 89
 
@@ -70,6 +71,32 @@ def test_canonical_truth_reconciles_every_final_score_surface() -> None:
     assert stage["pre_reconciliation_technical_score"] == 75
     assert "Technical score: 83" in stage["summary"]
     assert "technical band: STRONG" in stage["summary"]
+
+
+def test_existing_reported_immutable_score_wins_over_weighted_fallback() -> None:
+    payload = payload_fixture()
+    payload["maturity_signal"] = {"score": 81, "level": "Mid"}
+    payload["score_integrity"] = {
+        "weights": {
+            "code_audit": 20,
+            "dependency_health": 15,
+            "secrets_review": 10,
+            "static_analysis": 15,
+            "ci_cd": 15,
+            "architecture_debt": 15,
+            "velocity_complexity": 10,
+        },
+        "calculated_score": 82,
+        "reported_score": 81,
+        "score_match": False,
+        "calculated_from_seven_technical_sections": True,
+    }
+    result = canonicalize_comprehensive_payload(payload)
+    assert result["technical_score"] == 81
+    assert result["score_integrity"]["calculated_score"] == 82
+    assert result["score_integrity"]["reported_score"] == 81
+    assert result["score_integrity"]["final_report_score"] == 81
+    assert result["canonical_report_truth"]["score_source"] == "reported immutable maturity signal"
 
 
 def test_canonicalization_is_idempotent() -> None:
