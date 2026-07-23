@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from nico import lifecycle_status_hardening as hardening
 
-EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v3"
+EXPRESS_STATUS_LIVENESS_VERSION = "nico.express_status_liveness.v4"
 _PATCH_MARKER = "_nico_express_status_liveness_v1"
 _PROGRESS_RECONCILIATION_MARKER = "_nico_express_independent_progress_reconciliation_v1"
 _FINAL_RECORD_MARKER = "_nico_express_terminal_progress_record_binding_v1"
@@ -68,6 +68,7 @@ def _lifecycle_metadata(
         "scanner_liveness_corroborated": scanner_corroborated,
         "independent_terminal_progress_reconciliation": True,
         "final_terminal_progress_record_binding": True,
+        "terminal_progress_source": "exact_record_argument_with_persisted_payload_fallback",
         "process_local_active_set_required": False,
         "status_read_is_terminal_write": False,
         "request_validation_422_possible": False,
@@ -139,6 +140,32 @@ def _return_or_raise_terminal(response: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+def _terminal_progress_source(response: Any, persisted: Any) -> dict[str, Any]:
+    """Return the exact write payload, enriched only with missing stored fields.
+
+    ``express_async_api._record`` returns the outer assessment storage record,
+    while terminal stage fields and report artifacts live inside its nested
+    ``response``/``payload`` member. Treating that outer record as the progress
+    payload silently produced ``complete / request_accepted / 0%`` and prevented
+    the status overlay from verifying terminal success. The function argument is
+    the authoritative stage write; a nested persisted payload is only a fallback
+    for fields the argument does not contain.
+    """
+
+    exact = deepcopy(response) if isinstance(response, dict) else {}
+    persisted_record = persisted if isinstance(persisted, dict) else {}
+    nested = persisted_record.get("response")
+    if not isinstance(nested, dict):
+        nested = persisted_record.get("payload")
+    if isinstance(nested, dict):
+        combined = deepcopy(nested)
+        combined.update(exact)
+        return combined
+    if exact:
+        return exact
+    return deepcopy(persisted_record)
+
+
 def _install_final_progress_record_binding() -> dict[str, Any]:
     """Bind compact progress persistence to the final production record function.
 
@@ -158,6 +185,7 @@ def _install_final_progress_record_binding() -> dict[str, Any]:
             "status": "already_installed",
             "marker": _FINAL_RECORD_MARKER,
             "owner_verified": True,
+            "progress_source": "exact_record_argument_with_persisted_payload_fallback",
         }
 
     def record_with_final_terminal_progress(
@@ -166,7 +194,7 @@ def _install_final_progress_record_binding() -> dict[str, Any]:
         response: dict[str, Any],
     ) -> dict[str, Any]:
         persisted = current(run_id, request_payload, response)
-        progress_source = persisted if isinstance(persisted, dict) else response
+        progress_source = _terminal_progress_source(response, persisted)
         _persist_progress(api, run_id, progress_source)
         return persisted
 
@@ -178,6 +206,7 @@ def _install_final_progress_record_binding() -> dict[str, Any]:
         "status": "installed",
         "marker": _FINAL_RECORD_MARKER,
         "owner_verified": getattr(api._record, _FINAL_RECORD_OWNER_MARKER, None) is api._record,
+        "progress_source": "exact_record_argument_with_persisted_payload_fallback",
     }
 
 
