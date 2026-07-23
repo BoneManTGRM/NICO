@@ -45,8 +45,8 @@ function scoreFromCard(card: HTMLElement): number | null {
 }
 
 /**
- * Compatibility utility for completed, static report snapshots. It is not attached
- * to a MutationObserver because appending nodes inside React-owned result cards can
+ * Compatibility utility for completed, static report snapshots. It is never attached
+ * to a live DOM observer because appending nodes inside React-owned result cards can
  * invalidate React's child tree during a long Comprehensive continuation sequence.
  */
 export function reconcileScannerCoverage(): void {
@@ -82,8 +82,8 @@ export default function AssessmentMetricDisplayV44() {
     let attempts = 0;
 
     // Hydration can temporarily replace the server-rendered button nodes. Retry only
-    // until both service buttons exist, then stop. This keeps the exact accessible
-    // names stable without observing or mutating the live assessment result tree.
+    // until both service buttons exist, then stop. React remains the sole owner of all
+    // dynamic assessment nodes throughout the run.
     const reconcileUntilReady = () => {
       if (cancelled) return;
       const serviceButtonCount = reconcileServiceAccessibility();

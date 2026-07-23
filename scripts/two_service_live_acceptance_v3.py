@@ -3,16 +3,73 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v6"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v7"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
 _original_report_package = acceptance.report_package
+_original_run_service = runtime.run_service
+
+
+class _ExpectedCommitPage:
+    def __init__(self, page: Any, expected_sha: str) -> None:
+        self._page = page
+        self._expected_sha = expected_sha
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._page, name)
+
+    def goto(self, url: str, *args: Any, **kwargs: Any) -> Any:
+        parts = urlsplit(url)
+        if parts.path.endswith("/assessment"):
+            query = dict(parse_qsl(parts.query, keep_blank_values=True))
+            query["expected_commit_sha"] = self._expected_sha
+            url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        return self._page.goto(url, *args, **kwargs)
+
+
+class _ExpectedCommitContext:
+    def __init__(self, context: Any, expected_sha: str) -> None:
+        self._context = context
+        self._expected_sha = expected_sha
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._context, name)
+
+    def new_page(self) -> _ExpectedCommitPage:
+        return _ExpectedCommitPage(self._context.new_page(), self._expected_sha)
+
+
+class _ExpectedCommitBrowser:
+    def __init__(self, browser: Any, expected_sha: str) -> None:
+        self._browser = browser
+        self._expected_sha = expected_sha
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._browser, name)
+
+    def new_context(self, *args: Any, **kwargs: Any) -> _ExpectedCommitContext:
+        return _ExpectedCommitContext(self._browser.new_context(*args, **kwargs), self._expected_sha)
+
+
+def _run_service_at_expected_commit(
+    browser: Any,
+    config: Any,
+    pass_number: int,
+    service: str,
+) -> dict[str, Any]:
+    return _original_run_service(
+        _ExpectedCommitBrowser(browser, config.expected_sha),
+        config,
+        pass_number,
+        service,
+    )
 
 
 def _fallback_ui_state(page: Any) -> dict[str, str]:
@@ -174,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     acceptance.ui_state = _safe_ui_state
     acceptance.report_package = _report_package
     runtime._wait_for_service_terminal = _wait_for_service_terminal
+    runtime.run_service = _run_service_at_expected_commit
     return runtime.main(argv)
 
 
