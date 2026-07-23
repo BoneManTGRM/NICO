@@ -6,6 +6,32 @@ import nico.repository_snapshot as snapshot
 from nico.storage import MemoryAdapter
 
 
+class AuditedMemoryStore(MemoryAdapter):
+    """Test store that preserves the production snapshot audit contract."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.audit_events: list[dict] = []
+
+    def audit(
+        self,
+        action: str,
+        payload: dict,
+        customer_id: str | None = None,
+        project_id: str | None = None,
+    ) -> dict:
+        audit_id = f"audit_test_{len(self.audit_events) + 1}"
+        event = {
+            "audit_id": audit_id,
+            "customer_id": customer_id,
+            "project_id": project_id,
+            "action": action,
+            "payload": payload,
+        }
+        self.audit_events.append(event)
+        return self.put("audit_log", audit_id, event)
+
+
 class FakeClient:
     def __init__(self, *, private: bool = False, commit: dict | None = None, error: str | None = "rate limited") -> None:
         self.private = private
@@ -77,7 +103,7 @@ def test_public_git_exact_commit_rejects_sha_mismatch() -> None:
             return subprocess.CompletedProcess(
                 command,
                 0,
-                stdout=f"{'c' * 40}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Wrong release\n",
+                stdout=f"{'c' * 40}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Wrong release\u",
                 stderr="",
             )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -91,6 +117,7 @@ def test_public_git_exact_commit_rejects_sha_mismatch() -> None:
 def test_snapshot_uses_public_git_fallback_after_bounded_api_failure(monkeypatch) -> None:
     expected = "d" * 40
     client = FakeClient()
+    store = AuditedMemoryStore()
     monkeypatch.setattr(
         snapshot,
         "_retry_commit_lookup",
@@ -116,7 +143,7 @@ def test_snapshot_uses_public_git_fallback_after_bounded_api_failure(monkeypatch
     result = snapshot.capture_repository_snapshot(
         _context(expected),
         client=client,
-        store=MemoryAdapter(),
+        store=store,
     )
 
     assert result["status"] == "attached"
@@ -126,6 +153,8 @@ def test_snapshot_uses_public_git_fallback_after_bounded_api_failure(monkeypatch
     assert result["public_git_fallback_used"] is True
     assert result["api_commit_lookup_attempts"] == 3
     assert result["source"] == "public_git_read_only"
+    assert store.audit_events[0]["action"] == "assessment.repository_snapshot_captured"
+    assert store.audit_events[0]["payload"]["commit_capture_method"] == "public_git_exact_sha"
 
 
 def test_private_repository_never_uses_public_git_fallback(monkeypatch) -> None:
@@ -148,7 +177,7 @@ def test_private_repository_never_uses_public_git_fallback(monkeypatch) -> None:
     result = snapshot.capture_repository_snapshot(
         _context(expected),
         client=client,
-        store=MemoryAdapter(),
+        store=AuditedMemoryStore(),
     )
 
     assert result["status"] == "unavailable"
@@ -179,13 +208,13 @@ def test_api_commit_mismatch_never_falls_back(monkeypatch) -> None:
             None,
             1,
         ),
-    )
+     )
     monkeypatch.setattr(snapshot, "_public_git_exact_commit", fallback)
 
     result = snapshot.capture_repository_snapshot(
         _context(expected),
         client=client,
-        store=MemoryAdapter(),
+        store=AuditedMemoryStore(),
     )
 
     assert result["status"] == "unavailable"
@@ -196,6 +225,7 @@ def test_api_commit_mismatch_never_falls_back(monkeypatch) -> None:
 def test_successful_api_commit_remains_primary_path(monkeypatch) -> None:
     expected = "d" * 40
     client = FakeClient(private=False)
+    store = AuditedMemoryStore()
     fallback_called = False
 
     def fallback(repository: str, sha: str):
@@ -224,10 +254,12 @@ def test_successful_api_commit_remains_primary_path(monkeypatch) -> None:
     result = snapshot.capture_repository_snapshot(
         _context(expected),
         client=client,
-        store=MemoryAdapter(),
+        store=store,
     )
 
     assert result["status"] == "attached"
     assert result["commit_capture_method"] == "github_api_commit"
     assert result["public_git_fallback_used"] is False
     assert fallback_called is False
+    assert store.audit_events[0]["action"] == "assessment.repository_snapshot_captured"
+    assert store.audit_events[0]["payload"]["commit_capture_method"] == "github_api_commit"
