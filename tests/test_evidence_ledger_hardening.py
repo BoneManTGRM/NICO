@@ -45,7 +45,7 @@ def result_with_evidence() -> dict:
 def test_hardened_evidence_ledger_classifies_section_and_tool_rows():
     ledger = build_hardened_evidence_ledger(result_with_evidence())
 
-    assert ledger["artifact_schema"] == "nico.evidence_ledger.v1"
+    assert ledger["artifact_schema"] == "nico.evidence_ledger.v2"
     assert ledger["entry_count"] >= 5
     assert ledger["verified_entry_count"] >= 2
     assert ledger["unavailable_entry_count"] >= 1
@@ -53,6 +53,7 @@ def test_hardened_evidence_ledger_classifies_section_and_tool_rows():
     assert ledger["ledger_hash"]
     assert any(item["entry_type"] == "scanner_tool" and item["scope"] == "pip-audit" for item in ledger["entries"])
     assert any(item["entry_type"] == "section" and item["verification_state"] == "unavailable" for item in ledger["entries"])
+    assert all("payload_hash" in item and "payload_bytes" in item for item in ledger["entries"] if item["entry_type"] == "scanner_tool")
 
 
 def test_evidence_bundle_exports_ledger_artifact_and_hash():
@@ -62,12 +63,13 @@ def test_evidence_bundle_exports_ledger_artifact_and_hash():
     assert bundle["artifacts"]["evidence_ledger_json"]["sha256"]
     assert bundle["evidence_ledger"]["ledger_hash"]
     assert bundle["evidence_ledger"]["unavailable_entry_count"] >= 1
+    assert bundle["bundle_limits"]["oversized_payload_policy"] == "digest_size_summary_without_raw_embedding"
 
 
 def test_attach_evidence_bundle_adds_ledger_report_export():
     output = attach_evidence_artifact_bundle(result_with_evidence())
 
-    assert output["evidence_ledger"]["artifact_schema"] == "nico.evidence_ledger.v1"
+    assert output["evidence_ledger"]["artifact_schema"] == "nico.evidence_ledger.v2"
     assert output["reports"]["evidence_ledger_filename"].endswith(".json")
     parsed = json.loads(output["reports"]["evidence_ledger_json"])
     assert parsed["repository"] == "BoneManTGRM/NICO"
