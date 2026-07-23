@@ -18,20 +18,19 @@ def _advanced_block(source: str) -> str:
     return source.split("const ADVANCED_GROUPS = [", 1)[1].split("] as const;", 1)[0]
 
 
-def test_navigation_has_three_primary_service_destinations() -> None:
+def test_navigation_keeps_one_primary_assessment_destination() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
     primary = _primary_block(source)
+    advanced = _advanced_block(source)
 
-    assert primary.count('key: "') == 3
-    assert set(re.findall(r'label: "([^"]+)"', primary)) == {
-        "Run a Job",
-        "Operations",
-        "Retainer",
-    }
+    assert primary.count('key: "') == 1
+    assert set(re.findall(r'label: "([^"]+)"', primary)) == {"Run Assessment"}
     assert 'href: "/assessment?tier=express#assessment"' in primary
-    assert 'href: "/operations"' in primary
-    assert 'href: "/retainer-ops"' in primary
-    assert 'data-primary-service-count="3"' in source
+    assert 'href: "/operations"' not in primary
+    assert 'href: "/retainer-ops"' not in primary
+    assert 'data-primary-service-count="1"' in source
+    assert '{label: "Operations (Admin)", href: "/operations"}' in advanced
+    assert '{label: "Retainer Ops", href: "/retainer-ops"}' in advanced
     for legacy_label in ("Express Assessment", "Mid Assessment", "Full Assessment"):
         assert legacy_label not in primary
 
@@ -41,9 +40,11 @@ def test_internal_workflow_steps_remain_out_of_global_more_menu() -> None:
     primary = _primary_block(source)
     advanced = _advanced_block(source)
 
-    assert '<details className="nav-more">' in source
-    assert "Advanced tools" in source
+    assert 'className={`nav-more${advancedActive ? " active" : ""}`}' in source
+    assert "Operator and advanced tools" in source
     for label, href in {
+        "Operations (Admin)": "/operations",
+        "Retainer Ops": "/retainer-ops",
         "Recovery": "/operations/recovery",
         "Backup & Restore": "/operations/backup-restore",
         "Scanner to Express": "/scanner-workflow",
@@ -79,17 +80,18 @@ def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
     assert 'const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment"' in source
     assert "SPANISH_PRIMARY_LABELS" in source
     assert '"run-job": "Ejecutar evaluación"' in source
-    assert 'operations: "Operaciones"' in source
+    assert 'operations: "Operaciones (administrador)"' in source
     assert "const SPANISH_ADVANCED_GROUPS" in source
     for translated in (
-        "Herramientas avanzadas",
-        "Diagnóstico y utilidades para operadores",
-        "Operaciones y diagnóstico",
+        "Espacios para operadores",
+        "Administración del despliegue y actualización continua de evidencia",
+        "Operaciones (administrador)",
+        "Servicio continuo",
         "Recuperación",
         "Respaldo y restauración",
+        "Herramientas avanzadas de evidencia",
         "Escáner a Express",
         "Actualizar evidencia",
-        "Utilidades",
         "Modo fácil",
         "Guía",
     ):
@@ -98,12 +100,12 @@ def test_spanish_route_localizes_the_complete_shared_navigation_shell() -> None:
     assert "Iniciar trabajo" not in source
     assert 'spanishActive ? "Más" : "More"' in source
     assert 'spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"' in source
-    assert 'spanishActive ? "Abrir herramientas avanzadas de NICO" : "Open advanced NICO tools"' in source
+    assert 'spanishActive ? "Abrir herramientas para operadores y herramientas avanzadas" : "Open operator and advanced tools"' in source
     assert "const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS" in source
     assert 'lang={spanishActive ? "es-MX" : undefined}' in source
 
 
-def test_run_a_job_uses_one_query_selected_native_intake() -> None:
+def test_run_assessment_uses_one_query_selected_native_intake() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     for required in [
@@ -132,6 +134,7 @@ def test_run_a_job_uses_one_query_selected_native_intake() -> None:
 
 def test_layout_uses_native_assessment_and_preserves_safety_disclosures() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
+    navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert 'import "../styles/navigation.css";' in layout
     assert 'import {MidWorkspaceProvider} from "./MidWorkspaceContext";' in layout
@@ -148,10 +151,13 @@ def test_layout_uses_native_assessment_and_preserves_safety_disclosures() -> Non
         "captures one immutable commit",
         "required human review",
         "never approves findings or creates client delivery automatically",
-        "review interrupted scanner work",
-        "Retainer workflow:",
+        "Operator-only deployment controls",
+        "More → Operations (Admin)",
+        "Ongoing weekly and monthly evidence refresh",
+        "More → Retainer Ops",
     ]:
         assert disclosure in layout
+    assert '{label: "Recovery", href: "/operations/recovery"}' in navigation
     for legacy_global in (
         "AssessmentMidLiveStatusTransport",
         "AssessmentSavedMidRunGuard",
