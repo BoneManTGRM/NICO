@@ -12,6 +12,31 @@ def _text(value: Any) -> str:
     return " ".join(str(value or "").split())
 
 
+def _assurance_label(section: dict[str, Any]) -> str:
+    explicit = _text(section.get("assurance_label"))
+    if explicit:
+        return explicit.upper()
+    status = _text(
+        section.get("assurance_status")
+        or section.get("presented_confidence")
+        or section.get("confidence")
+        or section.get("status")
+    ).casefold().replace("-", "_").replace(" ", "_")
+    if status in {"verified", "complete", "completed", "green", "strong", "exceptional"}:
+        return "VERIFIED"
+    if status in {"unavailable", "not_available"}:
+        return "UNAVAILABLE"
+    if status in {"incomplete", "failed", "blocked", "error", "timed_out", "timeout"}:
+        return "INCOMPLETE"
+    if status in {"supplemental"}:
+        return "SUPPLEMENTAL"
+    if status in {"human_review_pending", "pending_human_approval"}:
+        return "PENDING HUMAN APPROVAL"
+    if status in {"review_limited", "reviewlimited", "yellow", "moderate", "weak"}:
+        return "REVIEW LIMITED"
+    return "UNVERIFIED"
+
+
 def _apply_in_place(result: dict[str, Any], normalized: dict[str, Any]) -> None:
     existing_reports = result.get("reports")
     result.clear()
@@ -126,7 +151,7 @@ def _pdf_records(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(section, dict):
             continue
         score = section.get("score_value")
-        assurance = _text(section.get("assurance_label") or "UNVERIFIED")
+        assurance = _assurance_label(section)
         output.append(
             {
                 "section_id": _text(section.get("id")),
@@ -159,7 +184,7 @@ def _export_records(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(section, dict):
             continue
         score = section.get("score_value")
-        assurance = _text(section.get("assurance_label") or "UNVERIFIED")
+        assurance = _assurance_label(section)
         output.append(
             {
                 "section_id": _text(section.get("id")),
