@@ -6,18 +6,26 @@ on:
       - fix/professional-ui-polish
     paths:
       - scripts/apply_professional_workspace_patch.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/apply_professional_workspace_patch.py
+      - .github/workflows/apply-professional-workspace-patch.yml
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   apply:
-    if: github.event.head_commit.message != 'Apply professional assessment UI semantics'
+    if: github.event_name == 'pull_request' || github.event.head_commit.message != 'Apply professional assessment UI semantics'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: fix/professional-ui-polish
           fetch-depth: 0
 
       - name: Apply assertion-bound source transformation
