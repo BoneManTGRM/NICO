@@ -32,9 +32,10 @@ const SECONDARY_GROUPS = [
   },
   {
     label: "Operator workspaces",
-    description: "Deployment administration and ongoing engineering oversight",
+    description: "Deployment administration, final approval, and ongoing engineering oversight",
     links: [
       {label: "Operations (Admin)", href: "/operations"},
+      {label: "Final Review", href: "/operations/final-review"},
       {label: "Retainer Ops", href: "/retainer-ops"},
     ],
   },
@@ -50,9 +51,10 @@ const SPANISH_SECONDARY_GROUPS = [
   },
   {
     label: "Espacios de trabajo del operador",
-    description: "Administración del despliegue y supervisión continua de ingeniería",
+    description: "Administración del despliegue, aprobación final y supervisión continua de ingeniería",
     links: [
       {label: "Operaciones (administrador)", href: "/operations"},
+      {label: "Revisión final", href: "/operations/final-review"},
       {label: "Servicio continuo", href: "/retainer-ops"},
     ],
   },
