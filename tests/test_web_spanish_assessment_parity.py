@@ -51,10 +51,13 @@ def test_spanish_catalog_covers_primary_assessment_controls() -> None:
         "Ejecutar",
         "Propietario/nombre del repositorio o URL de GitHub",
         "Se requiere revisión humana",
-        "Descargar PDF preliminar",
+        "Descargar PDF final",
+        "El informe final está completo",
+        "no es necesario rehacer el informe",
     )
     for text in required:
         assert text in source
+    assert "Descargar PDF preliminar" not in source
 
 
 def test_locale_is_static_and_does_not_mutate_the_rendered_dom() -> None:
