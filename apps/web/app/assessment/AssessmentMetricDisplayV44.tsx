@@ -20,7 +20,7 @@ function canonicalServiceLabel(button: HTMLButtonElement): string | null {
   return null;
 }
 
-function reconcileServiceAccessibility(): void {
+export function reconcileServiceAccessibility(): void {
   document.querySelectorAll<HTMLButtonElement>('#assessment button[aria-pressed]').forEach((button) => {
     const label = canonicalServiceLabel(button);
     if (label) button.setAttribute("aria-label", label);
@@ -42,7 +42,12 @@ function scoreFromCard(card: HTMLElement): number | null {
   return Math.max(0, Math.min(100, Number(match[1])));
 }
 
-function reconcileScannerCoverage(): void {
+/**
+ * Compatibility utility for completed, static report snapshots. It is not attached
+ * to a MutationObserver because appending nodes inside React-owned result cards can
+ * invalidate React's child tree during a long Comprehensive continuation sequence.
+ */
+export function reconcileScannerCoverage(): void {
   const isSpanish = spanish();
   document.querySelectorAll<HTMLElement>(".results-grid .result-card").forEach((card) => {
     const heading = normalize(card.querySelector(".result-head b")?.textContent);
@@ -63,25 +68,16 @@ function reconcileScannerCoverage(): void {
       const exclusion = document.createElement("span");
       exclusion.className = "nico-maturity-exclusion-pill";
       exclusion.textContent = isSpanish ? "No se incluye en madurez" : "Excluded from maturity";
-      exclusion.title = isSpanish
-        ? "Los resultados de los analizadores ya alimentan los controles técnicos principales; incluirlos de nuevo duplicaría la evidencia."
-        : "Scanner results already feed the core technical controls; including them again would double-count the evidence.";
       badge.appendChild(exclusion);
     }
   });
 }
 
-function reconcile(): void {
-  reconcileServiceAccessibility();
-  reconcileScannerCoverage();
-}
-
 export default function AssessmentMetricDisplayV44() {
   useEffect(() => {
-    reconcile();
-    const observer = new MutationObserver(reconcile);
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true});
-    return () => observer.disconnect();
+    // One bounded accessibility pass is safe. React remains the sole owner of all
+    // dynamic assessment nodes for the remainder of the run.
+    reconcileServiceAccessibility();
   }, []);
   return null;
 }
