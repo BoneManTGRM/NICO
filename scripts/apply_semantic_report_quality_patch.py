@@ -11,6 +11,7 @@ TRANSFORMED_PATHS = (
     "nico/mid_report_professional_v6.py",
     "nico/mid_report_professional_v7.py",
     "nico/comprehensive_canonical_truth.py",
+    "nico/express_pdf_score_assurance_v1.py",
 )
 
 
@@ -103,6 +104,12 @@ def apply() -> None:
         '        "approval_status": "pending_human_approval",\n'
         '        "delivery_status": "blocked_pending_human_approval",',
     )
+    replace(
+        "nico/express_pdf_score_assurance_v1.py",
+        'p("Canonical status", styles["label"])',
+        'p("Risk disposition", styles["label"])',
+        count=2,
+    )
 
 
 def verify() -> None:
@@ -110,12 +117,15 @@ def verify() -> None:
     workflow = Path(".github/workflows/two-service-production-acceptance.yml").read_text(encoding="utf-8")
     report = Path("nico/mid_assessment_report.py").read_text(encoding="utf-8")
     canonical = Path("nico/comprehensive_canonical_truth.py").read_text(encoding="utf-8")
+    score_pdf = Path("nico/express_pdf_score_assurance_v1.py").read_text(encoding="utf-8")
     assert 'pdf["page_count"] >= 30' not in acceptance
     assert '"semantic_contract"' in acceptance
     assert 'semantic_contract"]["status"] == "passed"' in workflow
     assert "DRAFT — HUMAN REVIEW REQUIRED" not in report
     assert 'canvas.drawString(LEFT + 2, y, "-")' in report
     assert '"report_finality": "final"' in canonical
+    assert 'p("Canonical status", styles["label"])' not in score_pdf
+    assert score_pdf.count('p("Risk disposition", styles["label"])') == 2
 
 
 if __name__ == "__main__":
