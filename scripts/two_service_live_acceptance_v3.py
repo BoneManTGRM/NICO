@@ -7,11 +7,12 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v4"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v5"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
+_original_report_package = acceptance.report_package
 
 
 def _backend_is_terminal(payload: dict[str, Any]) -> bool:
@@ -21,6 +22,23 @@ def _backend_is_terminal(payload: dict[str, Any]) -> bool:
     record = acceptance.record(payload)
     terminal = bool(payload.get("terminal", record.get("terminal", False)))
     return status in runtime.SUCCESS_STATUSES | runtime.FAILURE_STATUSES or terminal
+
+
+def _report_package(service: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Read the terminal Comprehensive package from its bounded top-level field.
+
+    Active Comprehensive responses intentionally omit generated reports and large
+    stage payloads. At the terminal human-review boundary the API attaches one report
+    package at ``reports`` rather than duplicating it inside the projected run record.
+    """
+
+    if service == "comprehensive":
+        reports = payload.get("reports")
+        if isinstance(reports, dict) and (
+            reports.get("markdown") or reports.get("html") or reports.get("pdf_base64")
+        ):
+            return reports
+    return _original_report_package(service, payload)
 
 
 def _status_error_summary(identity_payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
@@ -52,12 +70,6 @@ def _wait_for_service_terminal(
     status_history: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, str], bool]:
     """Reconcile a terminal browser state with the exact persisted run.
-
-    The v3 observer correctly detected the browser and backend separately, but it
-    returned as soon as the DOM became terminal. In production run #197, Express
-    rendered Complete from a terminal response while the observer's most recent
-    direct status sample was still the preceding RUNNING/94% record. The caller then
-    selected that stale payload and rejected an otherwise completed run.
 
     Preserve the original bounded observer for normal execution. When the UI reaches
     a terminal state first, immediately re-read the same exact run until its status is
@@ -101,6 +113,7 @@ def _wait_for_service_terminal(
 
 
 def main(argv: list[str] | None = None) -> int:
+    acceptance.report_package = _report_package
     runtime._wait_for_service_terminal = _wait_for_service_terminal
     return runtime.main(argv)
 
