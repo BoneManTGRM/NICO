@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 from fastapi import FastAPI, Request
 
+from nico.express_final_report_progress_patch import install_express_final_report_progress_patch
+from nico.final_report_runtime_copy_patch import install_final_report_runtime_copy_patch
 from nico.operations_readiness import build_operations_readiness
+
+FINAL_REPORT_RUNTIME_COPY = install_final_report_runtime_copy_patch()
+EXPRESS_FINAL_REPORT_PROGRESS = install_express_final_report_progress_patch()
+register_final_review_operator_routes = import_module(
+    "nico.final_review_operator_api"
+).register_final_review_operator_routes
 
 OPERATIONS_READINESS_PATH = "/operations/readiness"
 
@@ -36,6 +46,9 @@ def _route_registered(app: FastAPI) -> bool:
 
 
 def register_operations_readiness_routes(app: FastAPI) -> None:
+    # Final-review operations share the operator control plane and must be installed
+    # before readiness inventory is calculated. Their write paths remain admin-gated.
+    register_final_review_operator_routes(app)
     if _route_registered(app):
         return
     app.get(OPERATIONS_READINESS_PATH, tags=["operations"])(operations_readiness_response)
