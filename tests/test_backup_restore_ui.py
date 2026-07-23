@@ -12,10 +12,13 @@ def _page() -> str:
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_operations_navigation_exposes_backup_restore_verification() -> None:
+def test_backup_restore_is_internalized_under_operations() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
 
-    assert '{label: "Backup & Restore", href: "/operations/backup-restore"}' in navigation
+    assert '{label: "Backup & Restore", href: "/operations/backup-restore"}' not in navigation
+    assert '{label: "Operations (Admin)", href: "/operations"}' in navigation
+    assert 'label: "Operator workspaces"' in navigation
+    assert PAGE.is_file()
     assert 'pathname.startsWith("/operations")' in navigation
 
 
