@@ -11,7 +11,7 @@ const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
-    label: "Run assessment",
+    label: "Run Assessment",
     href: "/assessment?tier=express#assessment",
   },
 ] as const;
@@ -31,7 +31,7 @@ const SECONDARY_GROUPS = [
     ],
   },
   {
-    label: "Authorized operator access",
+    label: "Operator workspaces",
     description: "Deployment administration and ongoing engineering oversight",
     links: [
       {label: "Operations (Admin)", href: "/operations"},
@@ -49,7 +49,7 @@ const SPANISH_SECONDARY_GROUPS = [
     ],
   },
   {
-    label: "Acceso para operadores autorizados",
+    label: "Espacios de trabajo del operador",
     description: "Administración del despliegue y supervisión continua de ingeniería",
     links: [
       {label: "Operaciones (administrador)", href: "/operations"},
@@ -157,7 +157,7 @@ export default function PrimaryNavigation() {
           <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
             <div className="nav-more-heading">
               <b>{spanishActive ? "Navegación secundaria" : "Secondary navigation"}</b>
-              <span>{spanishActive ? "La evaluación principal permanece en Ejecutar evaluación" : "The primary assessment workflow remains under Run assessment"}</span>
+              <span>{spanishActive ? "La evaluación principal permanece en Ejecutar evaluación" : "The primary assessment workflow remains under Run Assessment"}</span>
             </div>
             <div className="nav-more-groups">
               {secondaryGroups.map((group) => (
