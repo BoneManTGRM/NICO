@@ -67,6 +67,21 @@ jobs:
               )
               namespace = {'__name__': '__main__'}
               exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
+
+              test_path = Path('tests/test_full_assessment_pdf.py')
+              test_text = test_path.read_text(encoding='utf-8')
+              old_assertion = '    assert assessment["status"] == "draft"\n'
+              new_assertions = (
+                  '    assert assessment["status"] == "complete"\n'
+                  '    assert assessment["report_finality"] == "final"\n'
+                  '    assert assessment["review_status"] == "pending_human_approval"\n'
+                  '    assert assessment["delivery_status"] == "blocked_pending_human_approval"\n'
+                  '    assert assessment["draft_only"] is False\n'
+              )
+              observed = test_text.count(old_assertion)
+              if observed != 1:
+                  raise RuntimeError(f'Expected one obsolete Full draft assertion, found {observed}')
+              test_path.write_text(test_text.replace(old_assertion, new_assertions, 1), encoding='utf-8')
           except BaseException:
               diagnostic = traceback.format_exc()
               Path('repair-error.txt').write_text(diagnostic, encoding='utf-8')
