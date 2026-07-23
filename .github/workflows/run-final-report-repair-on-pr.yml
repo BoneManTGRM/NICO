@@ -60,6 +60,11 @@ jobs:
                   line[10:] if line.startswith("          ") else line
                   for line in raw_script.splitlines()
               )
+              script = script.replace(
+                  "    }', count=1)\n\nexpress_delivery =",
+                  "    }', count=3)\n\nexpress_delivery =",
+                  1,
+              )
               namespace = {'__name__': '__main__'}
               exec(compile(script, 'final-report-approval-semantics-once.yml', 'exec'), namespace, namespace)
           except BaseException:
