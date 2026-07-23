@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "nico.security_audit_gate.v1"
+VERSION = "nico.security_audit_gate.v2"
+SEMGREP_BLOCKING_RULES = {
+    "yaml.github-actions.security.run-shell-injection.run-shell-injection",
+}
 REQUIRED_TOOLS = {
     "pip-audit",
     "npm-audit",
@@ -30,6 +33,28 @@ def _read_json(root: Path, name: str) -> tuple[Any, str | None]:
         return json.loads(path.read_text(encoding="utf-8", errors="strict")), None
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return None, f"artifact_invalid:{type(exc).__name__}"
+
+
+def _read_json_lines(root: Path, name: str) -> tuple[list[dict[str, Any]] | None, str | None]:
+    path = root / name
+    if not path.is_file():
+        return None, "artifact_missing"
+    try:
+        raw = path.read_text(encoding="utf-8", errors="strict")
+    except (OSError, UnicodeError) as exc:
+        return None, f"artifact_invalid:{type(exc).__name__}"
+    findings: list[dict[str, Any]] = []
+    for line_number, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            return None, f"invalid_json_line:{line_number}"
+        if not isinstance(item, dict):
+            return None, f"unexpected_json_line_shape:{line_number}"
+        findings.append(item)
+    return findings, None
 
 
 def _digest(root: Path, name: str) -> str | None:
@@ -112,6 +137,18 @@ def _semgrep(root: Path) -> dict[str, Any]:
         if isinstance(item, dict)
         and str(item.get("level") or "").lower() in {"error", "fatal"}
     ]
+    blocking_items: list[dict[str, str]] = []
+    review_items: list[dict[str, str]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        check_id = str(result.get("check_id") or "unknown")
+        path = str(result.get("path") or "")
+        evidence = {"check_id": check_id, "path": path}
+        if check_id in SEMGREP_BLOCKING_RULES:
+            blocking_items.append(evidence)
+        else:
+            review_items.append(evidence)
     status = "completed" if not fatal_errors else "failed"
     return _record(
         root,
@@ -119,6 +156,9 @@ def _semgrep(root: Path) -> dict[str, Any]:
         status,
         len(results),
         scanner_error_count=len(fatal_errors),
+        blocking=len(blocking_items),
+        needs_review=len(review_items),
+        blocking_items=blocking_items[:50],
     )
 
 
@@ -140,7 +180,13 @@ def _osv(root: Path) -> dict[str, Any]:
         for package in result.get("packages") or []:
             if isinstance(package, dict):
                 count += len(package.get("vulnerabilities") or [])
-    return _record(root, "osv-scanner.json", "completed", count)
+    return _record(
+        root,
+        "osv-scanner.json",
+        "completed",
+        count,
+        disposition="supplemental_review_required" if count else "completed_clean",
+    )
 
 
 def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
@@ -152,6 +198,129 @@ def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
         summary_name,
         str(data.get("status") or "unavailable"),
         int(data.get("finding_count") or 0),
+    )
+
+
+def _gitleaks(root: Path) -> dict[str, Any]:
+    data, error = _read_json(root, "gitleaks.json")
+    summary, summary_error = _read_json(root, "gitleaks-summary.json")
+    if (
+        error
+        or not isinstance(data, list)
+        or summary_error
+        or not isinstance(summary, dict)
+        or str(summary.get("status") or "") != "completed"
+    ):
+        return _record(
+            root,
+            "gitleaks.json",
+            "unavailable",
+            0,
+            reason=error or summary_error or "unexpected_json_shape",
+        )
+
+    blocking = 0
+    approved_test_placeholders = 0
+    triage: list[dict[str, Any]] = []
+    for finding in data:
+        if not isinstance(finding, dict):
+            blocking += 1
+            continue
+        path = str(finding.get("File") or "")
+        rule = str(finding.get("RuleID") or "")
+        secret = str(finding.get("Secret") or "")
+        approved = (
+            path.startswith("tests/")
+            and rule == "generic-api-key"
+            and secret == "REDACTED"
+        )
+        disposition = "approved_test_placeholder" if approved else "blocking"
+        if approved:
+            approved_test_placeholders += 1
+        else:
+            blocking += 1
+        triage.append(
+            {
+                "fingerprint": str(finding.get("Fingerprint") or ""),
+                "file": path,
+                "line": finding.get("StartLine"),
+                "rule_id": rule,
+                "disposition": disposition,
+            }
+        )
+    return _record(
+        root,
+        "gitleaks.json",
+        "completed",
+        len(data),
+        blocking=blocking,
+        needs_review=0,
+        approved_test_placeholders=approved_test_placeholders,
+        triage=triage[:200],
+        summary_artifact_hash=_digest(root, "gitleaks-summary.json"),
+    )
+
+
+def _trufflehog_source_path(finding: dict[str, Any]) -> str:
+    metadata = finding.get("SourceMetadata")
+    data = metadata.get("Data") if isinstance(metadata, dict) else None
+    git = data.get("Git") if isinstance(data, dict) else None
+    return str(git.get("file") or "") if isinstance(git, dict) else ""
+
+
+def _trufflehog(root: Path) -> dict[str, Any]:
+    findings, error = _read_json_lines(root, "trufflehog.json")
+    summary, summary_error = _read_json(root, "trufflehog-summary.json")
+    if (
+        error
+        or findings is None
+        or summary_error
+        or not isinstance(summary, dict)
+        or str(summary.get("status") or "") != "completed"
+    ):
+        return _record(
+            root,
+            "trufflehog.json",
+            "unavailable",
+            0,
+            reason=error or summary_error or "unexpected_json_shape",
+        )
+
+    blocking = 0
+    needs_review = 0
+    approved_test_placeholders = 0
+    triage: list[dict[str, Any]] = []
+    for finding in findings:
+        path = _trufflehog_source_path(finding)
+        verified = finding.get("Verified") is True
+        fixture_path = path.startswith("tests/") or path == ".env.example"
+        if verified:
+            disposition = "blocking_verified_secret"
+            blocking += 1
+        elif fixture_path:
+            disposition = "approved_unverified_test_placeholder"
+            approved_test_placeholders += 1
+        else:
+            disposition = "blocking_unverified_non_fixture"
+            blocking += 1
+        triage.append(
+            {
+                "file": path,
+                "detector": str(finding.get("DetectorName") or "unknown"),
+                "verified": verified,
+                "disposition": disposition,
+            }
+        )
+    return _record(
+        root,
+        "trufflehog.json",
+        "completed",
+        len(findings),
+        blocking=blocking,
+        needs_review=needs_review,
+        approved_test_placeholders=approved_test_placeholders,
+        triage=triage[:200],
+        summary_artifact_hash=_digest(root, "trufflehog-summary.json"),
     )
 
 
@@ -192,14 +361,22 @@ def evaluate_gate(tools: dict[str, dict[str, Any]]) -> list[str]:
     if npm_findings:
         blockers.append(f"npm audit reported {npm_findings} known production vulnerabilities")
 
-    for name in ("credential-scan", "gitleaks", "trufflehog"):
-        count = int((tools.get(name) or {}).get("finding_count") or 0)
+    credential_findings = int((tools.get("credential-scan") or {}).get("finding_count") or 0)
+    if credential_findings:
+        blockers.append(f"credential-scan reported {credential_findings} high-confidence secrets")
+
+    for name in ("gitleaks", "trufflehog"):
+        count = int((tools.get(name) or {}).get("blocking") or 0)
         if count:
-            blockers.append(f"{name} reported {count} potential secrets")
+            blockers.append(f"{name} reported {count} unapproved potential secrets")
 
     bandit_blocking = int((tools.get("bandit") or {}).get("blocking") or 0)
     if bandit_blocking:
         blockers.append(f"Bandit reported {bandit_blocking} high/critical findings")
+
+    semgrep_blocking = int((tools.get("semgrep") or {}).get("blocking") or 0)
+    if semgrep_blocking:
+        blockers.append(f"Semgrep reported {semgrep_blocking} high-confidence blocking findings")
 
     typescript_findings = int((tools.get("typescript") or {}).get("finding_count") or 0)
     if typescript_findings:
@@ -211,6 +388,27 @@ def evaluate_gate(tools: dict[str, dict[str, Any]]) -> list[str]:
     return blockers
 
 
+def evaluate_review_required(tools: dict[str, dict[str, Any]]) -> list[str]:
+    review: list[str] = []
+    for name in ("bandit", "semgrep", "osv-scanner", "gitleaks", "trufflehog"):
+        tool = tools.get(name) or {}
+        count = int(tool.get("needs_review") or 0)
+        if name == "osv-scanner":
+            count = int(tool.get("finding_count") or 0)
+        if count:
+            review.append(f"{name} retained {count} non-blocking findings for human review")
+    for name in ("bandit", "gitleaks", "trufflehog"):
+        tool = tools.get(name) or {}
+        candidates = int(
+            tool.get("candidate_false_positive")
+            or tool.get("approved_test_placeholders")
+            or 0
+        )
+        if candidates:
+            review.append(f"{name} retained {candidates} triaged candidates with evidence")
+    return review
+
+
 def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dict[str, Any]:
     tools = {
         "pip-audit": _pip_audit(root),
@@ -218,13 +416,14 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dic
         "bandit": _bandit(root),
         "semgrep": _semgrep(root),
         "osv-scanner": _osv(root),
-        "gitleaks": _summary_tool(root, "gitleaks-summary.json"),
-        "trufflehog": _summary_tool(root, "trufflehog-summary.json"),
+        "gitleaks": _gitleaks(root),
+        "trufflehog": _trufflehog(root),
         "typescript": _summary_tool(root, "typescript-summary.json"),
         "eslint": _eslint(root),
         "credential-scan": _credential_scan(root),
     }
     blockers = evaluate_gate(tools)
+    review_required = evaluate_review_required(tools)
     generated_at = (
         datetime.now(timezone.utc)
         .replace(microsecond=0)
@@ -241,8 +440,11 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dic
         "security_gate": {
             "status": "blocked" if blockers else "passed",
             "blockers": blockers,
+            "review_required": review_required,
             "known_production_dependency_vulnerabilities_allowed": False,
             "missing_required_scanners_allowed": False,
+            "untriaged_secret_findings_allowed": False,
+            "high_confidence_workflow_injection_allowed": False,
         },
         "human_review_required": True,
         "client_delivery_allowed": False,
