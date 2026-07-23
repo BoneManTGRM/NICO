@@ -3,7 +3,12 @@ from __future__ import annotations
 import base64
 import json
 
-from nico.evidence_artifact_bundle import attach_evidence_artifact_bundle, build_evidence_artifact_bundle
+from nico.evidence_artifact_bundle import (
+    MAX_EMBEDDED_VALUE_BYTES,
+    MAX_EXPORT_BYTES,
+    attach_evidence_artifact_bundle,
+    build_evidence_artifact_bundle,
+)
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts
 
 
@@ -61,11 +66,12 @@ def _result() -> dict:
     }
 
 
-def test_build_evidence_artifact_bundle_includes_hashes_and_inventory():
+def test_build_evidence_artifact_bundle_includes_hashes_inventory_and_limits():
     bundle = build_evidence_artifact_bundle(_result())
 
-    assert bundle["artifact_schema"] == "nico.evidence_bundle.v1"
+    assert bundle["artifact_schema"] == "nico.evidence_bundle.v2"
     assert bundle["bundle_hash"]
+    assert bundle["bundle_limits"]["max_embedded_value_bytes"] == MAX_EMBEDDED_VALUE_BYTES
     assert bundle["artifacts"]["markdown"]["sha256"]
     assert bundle["artifacts"]["html"]["sha256"]
     assert bundle["artifacts"]["pdf"]["available"] is True
@@ -74,15 +80,67 @@ def test_build_evidence_artifact_bundle_includes_hashes_and_inventory():
     assert bundle["scanner_outputs"]["complexity_engine"]["complexity_score"] == 88
     assert bundle["ci_references"]
     assert bundle["unavailable_inventory"][0]["scope"] == "Secrets Exposure Review"
+    assert bundle["evidence_ledger"]["artifact_schema"] == "nico.evidence_ledger.v2"
 
 
-def test_attach_evidence_artifact_bundle_adds_report_json_export():
+def test_attach_evidence_artifact_bundle_adds_bounded_report_json_export():
     result = attach_evidence_artifact_bundle(_result())
 
-    assert result["evidence_artifact_bundle"]["artifact_schema"] == "nico.evidence_bundle.v1"
+    assert result["evidence_artifact_bundle"]["artifact_schema"] == "nico.evidence_bundle.v2"
     assert result["reports"]["evidence_bundle_filename"].endswith(".json")
     parsed = json.loads(result["reports"]["evidence_bundle_json"])
     assert parsed["repository"] == "BoneManTGRM/NICO"
+    assert result["reports"]["evidence_bundle_export_status"] in {"complete", "bounded_manifest"}
+    assert result["evidence_bundle_runtime"]["bounded"] is True
+    assert len(result["reports"]["evidence_bundle_json"].encode("utf-8")) <= MAX_EXPORT_BYTES
+
+
+def test_large_scanner_payload_is_hash_addressed_instead_of_rawly_duplicated():
+    source = _result()
+    repeated = "scanner-output-" * 20_000
+    source["scanner_worker_artifact"] = {
+        "status": "completed",
+        "tools": {
+            "semgrep": {"status": "completed", "finding_count": 3, "stdout": repeated},
+            "bandit": {"status": "completed", "finding_count": 0, "stdout": repeated},
+        },
+        "raw_output": repeated,
+    }
+
+    result = attach_evidence_artifact_bundle(source)
+    scanner = result["evidence_artifact_bundle"]["scanner_outputs"]
+    exported = result["reports"]["evidence_bundle_json"]
+
+    assert len(exported.encode("utf-8")) <= MAX_EXPORT_BYTES
+    assert repeated not in exported
+    if scanner.get("bounded_payload"):
+        assert scanner["embedded"] is False
+        assert scanner["sha256"]
+        assert scanner["original_bytes"] > MAX_EMBEDDED_VALUE_BYTES
+    else:
+        worker = scanner["scanner_worker_artifact"]
+        assert worker["bounded_payload"] is True
+        assert worker["embedded"] is False
+        assert worker["sha256"]
+        assert worker["summary"]["tools"]["semgrep"]["finding_count"] == 3
+    ledger_rows = result["evidence_ledger"]["entries"]
+    semgrep = next(row for row in ledger_rows if row.get("scope") == "semgrep")
+    assert semgrep["payload_bytes"] > MAX_EMBEDDED_VALUE_BYTES
+    assert semgrep["payload_hash"]
+
+
+def test_bundle_attachment_does_not_deepcopy_large_report_or_scanner_trees():
+    source = _result()
+    scanner = {"tools": {"semgrep": {"status": "completed", "finding_count": 0}}}
+    source["scanner_worker_artifact"] = scanner
+    reports = source["reports"]
+
+    result = attach_evidence_artifact_bundle(source)
+
+    assert result["scanner_worker_artifact"] is scanner
+    assert result["reports"] is not reports
+    assert source["reports"].get("evidence_bundle_json") is None
+    assert result["reports"]["pdf_base64"] == source["reports"]["pdf_base64"]
 
 
 def test_scanner_artifact_attachment_keeps_existing_behavior_before_bundle():
