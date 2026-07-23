@@ -1,11 +1,6 @@
 name: Apply Professional Workspace Patch
 
 on:
-  push:
-    branches:
-      - fix/professional-ui-polish
-    paths:
-      - scripts/apply_professional_workspace_patch.py
   pull_request:
     branches:
       - main
@@ -17,9 +12,12 @@ permissions:
   contents: write
   pull-requests: read
 
+concurrency:
+  group: professional-workspace-patch-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   apply:
-    if: github.event_name == 'pull_request' || github.event.head_commit.message != 'Apply professional assessment UI semantics'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
