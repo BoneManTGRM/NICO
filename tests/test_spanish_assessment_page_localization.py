@@ -70,13 +70,12 @@ def test_raw_step_evidence_is_localized_without_mutating_backend_records() -> No
     assert "node.textContent = localized" in source
 
 
-def test_runtime_applies_localization_after_truth_and_badge_reconciliation() -> None:
+def test_runtime_applies_localization_once_without_observing_live_react_nodes() -> None:
     source = RUNTIME.read_text(encoding="utf-8")
     assert 'from "./AssessmentSpanishLocalization"' in source
-    assert "reconcileCombinedSectionBadges();" in source
     assert "localizeSpanishAssessmentDom(document);" in source
-    assert source.index("reconcileCombinedSectionBadges();") < source.index("localizeSpanishAssessmentDom(document);")
-    assert "MutationObserver(reconcile)" in source
+    assert "MutationObserver(reconcile)" not in source
+    assert "One bounded localization pass" in source
 
 
 def test_spanish_assessment_requests_advertise_the_requested_locale() -> None:
