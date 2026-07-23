@@ -6,8 +6,8 @@ from typing import Any, Callable
 
 from nico.worker_execution import WorkerCommandResult, WorkerLimits
 
-VERSION = "nico.comprehensive_canonical_truth.v1"
-_REPORT_MARKER = "_nico_comprehensive_canonical_truth_v1"
+VERSION = "nico.comprehensive_canonical_truth.v2"
+_REPORT_MARKER = "_nico_comprehensive_canonical_truth_v2"
 _SCANNER_MARKER = "_nico_comprehensive_scanner_capacity_v1"
 
 _DEFAULT_WEIGHTS = {
@@ -305,6 +305,28 @@ def normalize_truncated_tool_record(record: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _is_comprehensive_payload(payload: dict[str, Any]) -> bool:
+    source_identity = _dict(payload.get("source_identity"))
+    candidates = (
+        payload.get("run_id"),
+        source_identity.get("run_id"),
+        payload.get("report_type"),
+        payload.get("report_path"),
+        payload.get("service_id"),
+        payload.get("service_tier"),
+        payload.get("assessment_type"),
+        payload.get("title"),
+        payload.get("subtitle"),
+    )
+    normalized = [str(value or "").strip().lower().replace("_", "-") for value in candidates]
+    return any(
+        value.startswith(("comprun-", "fullrun-"))
+        or "comprehensive" in value
+        or "integral" in value
+        for value in normalized
+    )
+
+
 def _install_report_truth() -> int:
     from nico import mid_report_v9_production_binding as v9
 
@@ -312,11 +334,16 @@ def _install_report_truth() -> int:
     if getattr(current, _REPORT_MARKER, False):
         return 0
 
+    previous: Callable[[dict[str, Any]], dict[str, Any]] = getattr(current, "_nico_previous", current)
+
     def wrapped(payload: dict[str, Any]) -> dict[str, Any]:
-        return canonicalize_comprehensive_payload(current(payload))
+        result = previous(payload)
+        if _is_comprehensive_payload(payload) or _is_comprehensive_payload(result):
+            return canonicalize_comprehensive_payload(result)
+        return result
 
     setattr(wrapped, _REPORT_MARKER, True)
-    setattr(wrapped, "_nico_previous", current)
+    setattr(wrapped, "_nico_previous", previous)
     v9.enrich_mid_v9 = wrapped
     return 1
 
