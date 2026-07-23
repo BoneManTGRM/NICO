@@ -1,0 +1,102 @@
+name: Branch Governance Issue Control
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: branch-governance-issue-control
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.issue.number == 744 &&
+      github.event.comment.author_association == 'OWNER' &&
+      startsWith(github.event.comment.body, '/branch-cleanup ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out canonical main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Parse exact owner command
+        id: command
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          python scripts/branch_governance_issue.py parse-command \
+            --body "$COMMENT_BODY" \
+            --output branch-command.json
+
+      - name: Fetch all current branch refs
+        run: git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Generate a fresh branch inventory
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/branch_inventory.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-dir "$GITHUB_WORKSPACE" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            --stale-days 90 \
+            --output-dir branch-governance
+
+      - name: Validate or execute the exact reviewed batch
+        id: cleanup
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODE: ${{ steps.command.outputs.mode }}
+          BATCH_SIZE: ${{ steps.command.outputs.batch_size }}
+          EXPECTED_HASH: ${{ steps.command.outputs.manifest_sha256 }}
+          CONFIRMATION: ${{ steps.command.outputs.confirmation }}
+        run: |
+          python scripts/branch_cleanup.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --inventory branch-governance/branch-inventory.json \
+            --manifest branch-governance/safe-delete-branches.txt \
+            --mode "$MODE" \
+            --batch-size "$BATCH_SIZE" \
+            --expected-manifest-sha256 "$EXPECTED_HASH" \
+            --confirmation "$CONFIRMATION" \
+            --output branch-governance/cleanup-result.json
+
+      - name: Publish cleanup evidence to issue 744
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SUCCEEDED: ${{ steps.cleanup.outcome == 'success' }}
+        run: |
+          python scripts/branch_governance_issue.py post-cleanup \
+            --repository "$GITHUB_REPOSITORY" \
+            --result branch-governance/cleanup-result.json \
+            --run-url "$RUN_URL" \
+            --succeeded "$SUCCEEDED"
+
+      - name: Upload immutable governance result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: branch-governance-command-${{ github.run_id }}
+          path: |
+            branch-command.json
+            branch-governance/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Fail when cleanup validation or execution failed
+        if: steps.cleanup.outcome != 'success'
+        run: exit 1
