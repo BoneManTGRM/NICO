@@ -9,6 +9,8 @@ from nico.hosted_assessment import GitHubAssessmentClient, _iso, _now
 from nico.storage import STORE, StorageAdapter
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
+_EXACT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_EXPECTED_MARKER_RE = re.compile(r"(?:^|[;\s])expected_commit_sha=([0-9a-fA-F]{40})(?:$|[;\s])")
 
 
 def _store(store: StorageAdapter | None = None) -> StorageAdapter:
@@ -22,6 +24,21 @@ def repository_snapshot_id(run_id: str, repository: str) -> str:
 
 def _short(value: Any, limit: int = 180) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def _expected_commit_sha(context: dict[str, Any]) -> tuple[str, str]:
+    for key in ("expected_commit_sha", "commit_sha", "snapshot_commit_sha"):
+        raw = str(context.get(key) or "").strip()
+        if not raw:
+            continue
+        if not _EXACT_SHA_RE.fullmatch(raw):
+            return "", "invalid_explicit_commit_sha"
+        return raw.lower(), "explicit_request"
+    marker = str(context.get("authorized_by") or "")
+    match = _EXPECTED_MARKER_RE.search(marker)
+    if match:
+        return match.group(1).lower(), "authorized_request_marker"
+    return "", "default_branch_resolved_once"
 
 
 def _get_commit(client: Any, repository: str, ref: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -43,13 +60,31 @@ def capture_repository_snapshot(
     client: GitHubAssessmentClient | None = None,
     store: StorageAdapter | None = None,
 ) -> dict[str, Any]:
-    """Capture one immutable default-branch commit identity for an assessment run."""
+    """Capture one immutable commit identity for an assessment run.
+
+    A production acceptance request may explicitly bind the run to the exact deployed
+    commit through ``expected_commit_sha`` in the authorization marker. Ordinary
+    customer runs resolve the default branch exactly once, then use that immutable SHA.
+    """
 
     run_id = str(context.get("run_id") or "").strip()
     repository = str(context.get("repository") or "").strip()
     customer_id = str(context.get("customer_id") or "default_customer")
     project_id = str(context.get("project_id") or "default_project")
     snapshot_id = repository_snapshot_id(run_id, repository)
+    expected_sha, binding_source = _expected_commit_sha(context)
+    if binding_source == "invalid_explicit_commit_sha":
+        return {
+            "status": "unavailable",
+            "snapshot_id": snapshot_id,
+            "run_id": run_id,
+            "repository": repository,
+            "customer_id": customer_id,
+            "project_id": project_id,
+            "unavailable_data_notes": ["The explicitly requested immutable commit SHA was invalid."],
+            "idempotent_reuse": False,
+            "human_review_required": True,
+        }
     if not run_id or not repository:
         return {
             "status": "unavailable",
@@ -79,14 +114,18 @@ def capture_repository_snapshot(
             "customer_id": customer_id,
             "project_id": project_id,
             "source": "github_api_read_only",
+            "expected_commit_sha": expected_sha,
+            "commit_binding_source": binding_source,
             "unavailable_data_notes": ["Repository metadata was unavailable through the authorized GitHub API scope."],
             "idempotent_reuse": False,
         }
 
     default_branch = str(repo_meta.get("default_branch") or "main")
-    commit, commit_error = _get_commit(github, repository, default_branch)
-    commit_sha = str((commit or {}).get("sha") or "")
-    if commit_error or not commit or not _SHA_RE.fullmatch(commit_sha):
+    requested_ref = expected_sha or default_branch
+    commit, commit_error = _get_commit(github, repository, requested_ref)
+    commit_sha = str((commit or {}).get("sha") or "").lower()
+    mismatch = bool(expected_sha and commit_sha and commit_sha != expected_sha)
+    if commit_error or not commit or not _SHA_RE.fullmatch(commit_sha) or mismatch:
         return {
             "status": "unavailable",
             "snapshot_id": snapshot_id,
@@ -96,7 +135,14 @@ def capture_repository_snapshot(
             "project_id": project_id,
             "source": "github_api_read_only",
             "default_branch": default_branch,
-            "unavailable_data_notes": ["The exact default-branch commit could not be captured through the authorized GitHub API scope."],
+            "requested_ref": requested_ref,
+            "expected_commit_sha": expected_sha,
+            "commit_binding_source": binding_source,
+            "unavailable_data_notes": [
+                "The exact requested commit could not be captured through the authorized GitHub API scope."
+                if expected_sha
+                else "The exact default-branch commit could not be captured through the authorized GitHub API scope."
+            ],
             "idempotent_reuse": False,
         }
 
@@ -114,7 +160,11 @@ def capture_repository_snapshot(
         "source": "github_api_read_only",
         "captured_at": _iso(_now()),
         "default_branch": default_branch,
-        "commit_sha": commit_sha.lower(),
+        "requested_ref": requested_ref,
+        "expected_commit_sha": expected_sha or commit_sha,
+        "commit_binding_source": binding_source,
+        "exact_commit_verified": True,
+        "commit_sha": commit_sha,
         "tree_sha": str(tree.get("sha") or "").lower(),
         "commit_date": str(committer.get("date") or author.get("date") or ""),
         "commit_message": _short(commit_payload.get("message"), 180),
@@ -146,7 +196,10 @@ def capture_repository_snapshot(
             "run_id": run_id,
             "repository": repository,
             "default_branch": default_branch,
-            "commit_sha": commit_sha.lower(),
+            "requested_ref": requested_ref,
+            "expected_commit_sha": expected_sha or commit_sha,
+            "commit_binding_source": binding_source,
+            "commit_sha": commit_sha,
             "tree_sha": str(tree.get("sha") or "").lower(),
         },
         customer_id=customer_id,
