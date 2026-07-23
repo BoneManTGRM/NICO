@@ -17,7 +17,7 @@ jobs:
   audit-evidence:
     name: Audit evidence collection
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Checkout repo
@@ -30,65 +30,71 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python audit tools
+      - name: Install application audit tools
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Collect pip-audit evidence
-        continue-on-error: true
+      - name: Install isolated pinned Semgrep
         run: |
-          if [ -f requirements.txt ]; then
-            pip-audit -r requirements.txt --format json --output pip-audit.json || true
-          else
-            echo '{"status":"skipped","reason":"requirements.txt not found"}' > pip-audit.json
-          fi
+          python -m venv "$RUNNER_TEMP/nico-semgrep"
+          "$RUNNER_TEMP/nico-semgrep/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/nico-semgrep/bin/pip" install semgrep==1.170.0
+          mkdir -p "$RUNNER_TEMP/nico-tools-bin"
+          ln -s "$RUNNER_TEMP/nico-semgrep/bin/semgrep" "$RUNNER_TEMP/nico-tools-bin/semgrep"
+          echo "$RUNNER_TEMP/nico-tools-bin" >> "$GITHUB_PATH"
+
+      - name: Install pinned scanner binaries strictly
+        env:
+          NICO_SCANNER_INSTALL_DIR: ${{ runner.temp }}/nico-scanners
+          NICO_SCANNER_INSTALL_STRICT: "true"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$NICO_SCANNER_INSTALL_DIR"
+          python scripts/install_hosted_scanner_binaries.py
+          echo "$NICO_SCANNER_INSTALL_DIR" >> "$GITHUB_PATH"
+
+      - name: Collect pip-audit evidence
+        run: |
+          pip-audit -r requirements.txt --format json --output pip-audit.json || true
+          test -s pip-audit.json || echo '{"status":"unavailable","reason":"pip-audit emitted no JSON"}' > pip-audit.json
 
       - name: Collect Bandit evidence
-        continue-on-error: true
         run: |
           bandit -r nico -f json -o bandit.json || true
+          test -s bandit.json || echo '{"results":[],"errors":["bandit emitted no JSON"]}' > bandit.json
 
-      - name: Collect Bandit triage evidence
-        continue-on-error: true
+      - name: Build Bandit triage evidence
         run: |
           python - <<'PY'
           from pathlib import Path
           import hashlib
           import json
 
-          path = Path('bandit.json')
-          try:
-              data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
-          except Exception:
-              data = {}
-          results = data.get('results') if isinstance(data, dict) else []
+          data = json.loads(Path('bandit.json').read_text(encoding='utf-8'))
+          results = data.get('results') if isinstance(data, dict) else None
           if not isinstance(results, list):
-              results = []
-
+              raise SystemExit('Bandit output is not a results object')
           items = []
-          blocking = 0
-          needs_review = 0
-          approved = 0
-          candidate_false_positive = 0
+          counts = {'blocking': 0, 'needs_review': 0, 'candidate_false_positive': 0}
           for item in results:
               if not isinstance(item, dict):
                   continue
-              severity = str(item.get('issue_severity') or item.get('severity') or 'UNKNOWN').upper()
-              confidence = str(item.get('issue_confidence') or item.get('confidence') or 'UNKNOWN').upper()
-              test_id = str(item.get('test_id') or item.get('code') or 'unknown')
+              severity = str(item.get('issue_severity') or 'UNKNOWN').upper()
+              confidence = str(item.get('issue_confidence') or 'UNKNOWN').upper()
+              test_id = str(item.get('test_id') or 'unknown')
               filename = str(item.get('filename') or '')
               line_number = item.get('line_number')
-              fingerprint = hashlib.sha256(f"{test_id}|{filename}|{line_number}|{severity}|{confidence}".encode()).hexdigest()[:16]
-              disposition = 'needs_review'
+              fingerprint = hashlib.sha256(
+                  f'{test_id}|{filename}|{line_number}|{severity}|{confidence}'.encode()
+              ).hexdigest()[:16]
               if severity in {'HIGH', 'CRITICAL'}:
-                  blocking += 1
                   disposition = 'blocking'
-              elif severity == 'LOW' and confidence in {'LOW', 'MEDIUM', 'HIGH'}:
-                  candidate_false_positive += 1
+              elif severity == 'LOW':
                   disposition = 'candidate_false_positive'
               else:
-                  needs_review += 1
+                  disposition = 'needs_review'
+              counts[disposition] += 1
               items.append({
                   'fingerprint': fingerprint,
                   'tool': 'bandit',
@@ -99,105 +105,147 @@ jobs:
                   'line': line_number,
                   'disposition': disposition,
               })
-
           triage = {
               'schema': 'nico.bandit_triage.v1',
               'tool': 'bandit',
               'finding_count': len(items),
-              'blocking': blocking,
-              'needs_review': needs_review,
-              'approved': approved,
-              'candidate_false_positive': candidate_false_positive,
-              'human_review_required': bool(blocking or needs_review or candidate_false_positive),
+              **counts,
+              'human_review_required': bool(items),
               'items': items,
           }
-          Path('bandit-triage.json').write_text(json.dumps(triage, indent=2, sort_keys=True), encoding='utf-8')
-          print(json.dumps({k: triage[k] for k in ('finding_count','blocking','needs_review','approved','candidate_false_positive')}, sort_keys=True))
+          Path('bandit-triage.json').write_text(
+              json.dumps(triage, indent=2, sort_keys=True), encoding='utf-8'
+          )
           PY
 
       - name: Collect Semgrep evidence
-        continue-on-error: true
         run: |
-          semgrep scan --config auto --json --output semgrep.json || true
+          set +e
+          semgrep scan --config auto --json --output semgrep.json 2>semgrep.stderr.txt
+          status=$?
+          set -e
+          python - "$status" <<'PY'
+          from pathlib import Path
+          import json
+          import sys
 
-      - name: Set up Go for scanner CLIs
-        uses: actions/setup-go@v7
-        with:
-          go-version: "1.23.x"
-
-      - name: Install OSV Scanner and secret scanners
-        continue-on-error: true
-        run: |
-          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
-          go install github.com/gitleaks/gitleaks/v8@latest
-          go install github.com/trufflesecurity/trufflehog/v3@latest
+          status = int(sys.argv[1])
+          path = Path('semgrep.json')
+          try:
+              data = json.loads(path.read_text(encoding='utf-8'))
+          except Exception:
+              data = None
+          if not isinstance(data, dict) or not isinstance(data.get('results'), list) or not isinstance(data.get('errors'), list):
+              reason = Path('semgrep.stderr.txt').read_text(encoding='utf-8', errors='replace')[-2000:]
+              data = {'results': [], 'errors': [{'level': 'error', 'message': reason or f'exit {status}'}]}
+              path.write_text(json.dumps(data, indent=2), encoding='utf-8')
+          PY
 
       - name: Collect OSV Scanner evidence
-        continue-on-error: true
         run: |
-          if [ -x "$HOME/go/bin/osv-scanner" ]; then
-            "$HOME/go/bin/osv-scanner" --format json . > osv-scanner.json || true
-          else
-            echo '{"status":"unavailable","reason":"osv-scanner binary install failed"}' > osv-scanner.json
-          fi
-          test -s osv-scanner.json || echo '{"results":[]}' > osv-scanner.json
+          set +e
+          osv-scanner scan source -r . --format json > osv-scanner.json 2>osv-scanner.stderr.txt
+          status=$?
+          set -e
+          python - "$status" <<'PY'
+          from pathlib import Path
+          import json
+          import sys
+
+          status = int(sys.argv[1])
+          path = Path('osv-scanner.json')
+          try:
+              data = json.loads(path.read_text(encoding='utf-8'))
+          except Exception:
+              data = None
+          if not isinstance(data, dict) or not isinstance(data.get('results'), list):
+              reason = Path('osv-scanner.stderr.txt').read_text(encoding='utf-8', errors='replace')[-2000:]
+              path.write_text(json.dumps({
+                  'status': 'unavailable',
+                  'reason': reason or f'exit {status}',
+              }, indent=2), encoding='utf-8')
+          PY
 
       - name: Collect gitleaks git-history evidence
-        continue-on-error: true
         run: |
-          if [ -x "$HOME/go/bin/gitleaks" ]; then
-            "$HOME/go/bin/gitleaks" detect --source . --report-format json --report-path gitleaks.json --no-banner --redact || true
-          else
-            echo '[]' > gitleaks.json
-          fi
-          if [ ! -s gitleaks.json ]; then
-            echo '[]' > gitleaks.json
-          fi
-          python - <<'PY'
+          set +e
+          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-banner --redact
+          status=$?
+          set -e
+          python - "$status" <<'PY'
           from pathlib import Path
           import json
+          import sys
+
+          status = int(sys.argv[1])
           path = Path('gitleaks.json')
-          data = json.loads(path.read_text(encoding='utf-8'))
-          count = len(data) if isinstance(data, list) else len(data.get('findings', []) or data.get('results', []) or data.get('leaks', []))
-          Path('gitleaks-summary.json').write_text(json.dumps({'scanner': 'gitleaks', 'status': 'completed', 'finding_count': count, 'artifact_present': True, 'history_depth': 'full'}, indent=2), encoding='utf-8')
-          print(f'gitleaks finding count: {count}')
+          if status == 0 and not path.exists():
+              path.write_text('[]\n', encoding='utf-8')
+          try:
+              data = json.loads(path.read_text(encoding='utf-8'))
+          except Exception:
+              data = None
+          valid = isinstance(data, list)
+          findings = data if valid else []
+          summary = {
+              'scanner': 'gitleaks',
+              'status': 'completed' if valid else 'unavailable',
+              'finding_count': len(findings),
+              'artifact_present': path.exists(),
+              'history_depth': 'full',
+              'exit_code': status,
+          }
+          Path('gitleaks-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
           PY
-          ls -lah gitleaks.json gitleaks-summary.json
 
       - name: Collect trufflehog git-history evidence
-        continue-on-error: true
         run: |
-          if [ -x "$HOME/go/bin/trufflehog" ]; then
-            "$HOME/go/bin/trufflehog" git file://"$PWD" --json --no-update > trufflehog.json || true
-          else
-            echo '' > trufflehog.json
-          fi
-          python - <<'PY'
+          set +e
+          trufflehog git "file://$PWD" --json --no-update > trufflehog.json 2>trufflehog.stderr.txt
+          status=$?
+          set -e
+          python - "$status" <<'PY'
           from pathlib import Path
           import json
+          import sys
+
+          status = int(sys.argv[1])
           path = Path('trufflehog.json')
           raw = path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
           findings = []
+          invalid_lines = 0
           for line in raw.splitlines():
-              line = line.strip()
-              if not line:
+              if not line.strip():
                   continue
               try:
-                  item = json.loads(line)
-              except Exception:
+                  value = json.loads(line)
+              except json.JSONDecodeError:
+                  invalid_lines += 1
                   continue
-              findings.append(item)
-          status = 'completed' if path.exists() else 'unavailable'
-          Path('trufflehog-summary.json').write_text(json.dumps({'scanner': 'trufflehog', 'status': status, 'finding_count': len(findings), 'artifact_present': path.exists(), 'history_depth': 'full'}, indent=2), encoding='utf-8')
-          print(f'trufflehog finding count: {len(findings)}')
+              if isinstance(value, dict):
+                  findings.append(value)
+              else:
+                  invalid_lines += 1
+          completed = invalid_lines == 0 and (status == 0 or bool(findings))
+          summary = {
+              'scanner': 'trufflehog',
+              'status': 'completed' if completed else 'unavailable',
+              'finding_count': len(findings),
+              'artifact_present': path.exists(),
+              'history_depth': 'full',
+              'exit_code': status,
+              'invalid_json_lines': invalid_lines,
+          }
+          Path('trufflehog-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
           PY
 
-      - name: Built-in high-confidence credential scan
+      - name: Collect built-in high-confidence credential evidence
         run: |
           python - <<'PY'
           from pathlib import Path
           import json
           import re
+
           skip = {'.git', 'node_modules', '.next', 'dist', 'build', '.venv', 'venv', '__pycache__'}
           suffixes = {'.py','.js','.jsx','.ts','.tsx','.json','.yaml','.yml','.toml','.ini','.cfg','.txt','.md','.sh','.html','.css','.xml','.env','.example'}
           patterns = {
@@ -211,167 +259,171 @@ jobs:
                   continue
               if path.suffix not in suffixes and path.name not in {'Dockerfile','Procfile','.env.example'}:
                   continue
-              try:
-                  text = path.read_text(encoding='utf-8', errors='replace')
-              except Exception:
-                  continue
-              for line_no, line in enumerate(text.splitlines(), 1):
-                  for name, pattern in patterns.items():
+              text = path.read_text(encoding='utf-8', errors='replace')
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  for finding_type, pattern in patterns.items():
                       if pattern.search(line):
-                          findings.append({'path': str(path), 'line': line_no, 'type': name})
-          Path('credential-scan.json').write_text(json.dumps({'findings': findings}, indent=2), encoding='utf-8')
-          if findings:
-              raise SystemExit(f'High-confidence credential findings detected: {len(findings)}')
+                          findings.append({
+                              'path': str(path),
+                              'line': line_number,
+                              'type': finding_type,
+                          })
+          Path('credential-scan.json').write_text(
+              json.dumps({'findings': findings}, indent=2), encoding='utf-8'
+          )
           PY
 
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install exact frontend dependencies
         working-directory: apps/web
-        run: npm install --legacy-peer-deps --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Collect TypeScript evidence
         working-directory: apps/web
-        continue-on-error: true
         run: |
-          npm run lint > ../../typescript.txt 2>&1 || true
+          set +e
+          npm run lint > ../../typescript.txt 2>&1
+          status=$?
+          set -e
+          python - "$status" <<'PY'
+          from pathlib import Path
+          import json
+          import sys
+
+          status = int(sys.argv[1])
+          Path('../../typescript-summary.json').write_text(json.dumps({
+              'scanner': 'typescript',
+              'status': 'completed_clean' if status == 0 else 'completed_with_findings',
+              'finding_count': 0 if status == 0 else 1,
+              'artifact_present': True,
+              'exit_code': status,
+          }, indent=2), encoding='utf-8')
+          PY
+
+      - name: Collect honest ESLint evidence
+        working-directory: apps/web
+        run: |
           python - <<'PY'
           from pathlib import Path
           import json
-          text = Path('../../typescript.txt').read_text(encoding='utf-8', errors='replace') if Path('../../typescript.txt').exists() else ''
-          finding_count = 1 if 'error TS' in text or 'Found ' in text else 0
-          status = 'completed_clean' if finding_count == 0 else 'completed_with_findings'
-          Path('../../typescript-summary.json').write_text(json.dumps({'scanner':'typescript','status':status,'finding_count':finding_count,'artifact_present':True}, indent=2), encoding='utf-8')
-          PY
+          import subprocess
 
-      - name: Collect ESLint evidence
-        working-directory: apps/web
-        continue-on-error: true
-        run: |
-          npx --yes eslint . --format json > ../../eslint.json || true
-          test -s ../../eslint.json || echo '[]' > ../../eslint.json
+          configs = [
+              'eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs',
+              '.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json',
+              '.eslintrc.yaml', '.eslintrc.yml',
+          ]
+          configured = any(Path(name).is_file() for name in configs)
+          binary = Path('node_modules/.bin/eslint')
+          if not configured:
+              data = []
+              summary = {
+                  'scanner': 'eslint',
+                  'status': 'unavailable_not_configured',
+                  'configured': False,
+                  'finding_count': 0,
+                  'error_count': 0,
+                  'warning_count': 0,
+              }
+          elif not binary.is_file():
+              data = []
+              summary = {
+                  'scanner': 'eslint',
+                  'status': 'unavailable',
+                  'configured': True,
+                  'finding_count': 0,
+                  'error_count': 0,
+                  'warning_count': 0,
+                  'reason': 'local ESLint binary is unavailable',
+              }
+          else:
+              result = subprocess.run(
+                  [str(binary), '.', '--format', 'json'],
+                  capture_output=True,
+                  text=True,
+                  timeout=180,
+                  check=False,
+              )
+              try:
+                  data = json.loads(result.stdout)
+              except json.JSONDecodeError:
+                  data = []
+              messages = [
+                  message
+                  for file_result in data if isinstance(file_result, dict)
+                  for message in file_result.get('messages') or [] if isinstance(message, dict)
+              ]
+              errors = sum(1 for message in messages if int(message.get('severity') or 0) == 2)
+              warnings = sum(1 for message in messages if int(message.get('severity') or 0) == 1)
+              summary = {
+                  'scanner': 'eslint',
+                  'status': 'completed_clean' if result.returncode == 0 else 'completed_with_findings',
+                  'configured': True,
+                  'finding_count': len(messages),
+                  'error_count': errors,
+                  'warning_count': warnings,
+                  'exit_code': result.returncode,
+              }
+          Path('../../eslint.json').write_text(json.dumps(data, indent=2), encoding='utf-8')
+          Path('../../eslint-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          PY
 
       - name: Collect npm audit evidence
         working-directory: apps/web
-        continue-on-error: true
-        run: |
-          npm audit --audit-level=critical --omit=dev --json > ../../npm-audit.json || true
+        run: npm audit --omit=dev --json > ../../npm-audit.json || true
 
       - name: Collect complexity evidence
-        continue-on-error: true
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           from nico.complexity_engine import build_complexity_profile
-          Path('complexity-profile.json').write_text(json.dumps(build_complexity_profile(Path('.')), indent=2, sort_keys=True), encoding='utf-8')
+
+          Path('complexity-profile.json').write_text(
+              json.dumps(build_complexity_profile(Path('.')), indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
           PY
 
-      - name: Build scanner manifest
+      - name: Build fail-closed scanner manifest
         if: always()
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib
-          import json
-          import os
-          from datetime import datetime, timezone
+        run: python scripts/security_audit_gate.py
 
-          def read_json(path, default):
-              p = Path(path)
-              if not p.exists():
-                  return default
-              try:
-                  return json.loads(p.read_text(encoding='utf-8', errors='replace'))
-              except Exception:
-                  return default
-
-          def count_list_or_key(data, keys=('results','findings','issues','vulnerabilities','leaks')):
-              if isinstance(data, list):
-                  return len(data)
-              if isinstance(data, dict):
-                  for key in keys:
-                      value = data.get(key)
-                      if isinstance(value, list):
-                          return len(value)
-                  metadata = data.get('metadata')
-                  if isinstance(metadata, dict):
-                      vulns = metadata.get('vulnerabilities')
-                      if isinstance(vulns, dict) and 'total' in vulns:
-                          return int(vulns.get('total') or 0)
-              return 0
-
-          def count_osv(data):
-              if not isinstance(data, dict):
-                  return 0
-              total = 0
-              for item in data.get('results') or []:
-                  if isinstance(item, dict):
-                      total += len(item.get('packages') or item.get('vulnerabilities') or [])
-              return total
-
-          def status_for(path, count=0):
-              return 'completed' if Path(path).exists() else 'unavailable'
-
-          run_id = os.getenv('GITHUB_RUN_ID') or ''
-          generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
-          files = {
-              'pip-audit': ('pip-audit.json', count_list_or_key(read_json('pip-audit.json', {}))),
-              'npm-audit': ('npm-audit.json', count_list_or_key(read_json('npm-audit.json', {}))),
-              'osv-scanner': ('osv-scanner.json', count_osv(read_json('osv-scanner.json', {}))),
-              'bandit': ('bandit.json', count_list_or_key(read_json('bandit.json', {}))),
-              'semgrep': ('semgrep.json', count_list_or_key(read_json('semgrep.json', {}))),
-              'eslint': ('eslint.json', sum(len(item.get('messages') or []) for item in (read_json('eslint.json', []) if isinstance(read_json('eslint.json', []), list) else []))),
-              'typescript': ('typescript-summary.json', int((read_json('typescript-summary.json', {}) or {}).get('finding_count') or 0)),
-              'gitleaks': ('gitleaks-summary.json', int((read_json('gitleaks-summary.json', {}) or {}).get('finding_count') or 0)),
-              'trufflehog': ('trufflehog-summary.json', int((read_json('trufflehog-summary.json', {}) or {}).get('finding_count') or 0)),
-          }
-          tools = {}
-          for tool, (path, count) in files.items():
-              p = Path(path)
-              digest = hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
-              tools[tool] = {
-                  'status': status_for(path, count),
-                  'finding_count': count,
-                  'artifact_hash': digest,
-                  'execution_source': 'github_actions_security_audit_evidence',
-                  'run_id': run_id,
-                  'generated_at': generated_at,
-              }
-          manifest = {
-              'artifact_schema': 'nico.scanner_worker.v1',
-              'worker_execution_state': 'completed',
-              'repository': os.getenv('GITHUB_REPOSITORY'),
-              'run_id': run_id,
-              'generated_at': generated_at,
-              'tools': tools,
-              'human_review_required': True,
-          }
-          Path('scanner-worker-artifact.json').write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding='utf-8')
-          PY
-
-      - name: Upload audit evidence
+      - name: Upload audit evidence before enforcement
         uses: actions/upload-artifact@v7
         if: always()
         with:
           name: security-audit-evidence
+          if-no-files-found: error
           path: |
             pip-audit.json
             bandit.json
             bandit-triage.json
             semgrep.json
+            semgrep.stderr.txt
             osv-scanner.json
+            osv-scanner.stderr.txt
             gitleaks.json
             gitleaks-summary.json
             trufflehog.json
             trufflehog-summary.json
+            trufflehog.stderr.txt
             credential-scan.json
             npm-audit.json
             typescript.txt
             typescript-summary.json
             eslint.json
+            eslint-summary.json
             complexity-profile.json
             scanner-worker-artifact.json
+            security-gate.json
+
+      - name: Require complete clean security evidence
+        if: always()
+        run: python scripts/security_audit_gate.py --enforce
