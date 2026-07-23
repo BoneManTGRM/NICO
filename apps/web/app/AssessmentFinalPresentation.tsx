@@ -32,19 +32,24 @@ function polishStatuses(root: ParentNode): void {
   });
 }
 
-function polishDurability(root: ParentNode): void {
+function polishPersistence(root: ParentNode): void {
   root.querySelectorAll("article").forEach((article) => {
-    const label = String(article.querySelector("b")?.textContent || "").trim().toLowerCase();
-    if (!["durable record", "registro duradero"].includes(label)) return;
+    const labelNode = article.querySelector("b");
+    const originalLabel = String(labelNode?.textContent || "").trim().toLowerCase();
+    if (!["durable record", "registro duradero", "persistence", "persistencia"].includes(originalLabel)) return;
     const value = article.querySelector("span");
-    if (!value) return;
+    if (!value || !labelNode) return;
+
+    const spanish = ["registro duradero", "persistencia"].includes(originalLabel);
+    labelNode.textContent = spanish ? "Persistencia" : "Persistence";
+
     const current = String(value.textContent || "").trim();
-    if (/^yes$/i.test(current) || /^sí$/i.test(current)) {
-      value.textContent = label === "registro duradero" ? "Durabilidad verificada" : "Durability verified";
+    if (/^yes$/i.test(current) || /^sí$/i.test(current) || /durability verified/i.test(current) || /durabilidad verificada/i.test(current)) {
+      value.textContent = spanish ? "Durabilidad verificada" : "Durability verified";
       return;
     }
-    if (/recorded,?\s*not durable/i.test(current)) {
-      value.textContent = label === "registro duradero" ? "Persistido" : "Persisted";
+    if (/recorded,?\s*not durable/i.test(current) || /^persisted$/i.test(current) || /^persistido$/i.test(current)) {
+      value.textContent = spanish ? "Registrado" : "Recorded";
     }
   });
 }
@@ -52,7 +57,7 @@ function polishDurability(root: ParentNode): void {
 function applyPresentation(root: ParentNode = document): void {
   polishButtons(root);
   polishStatuses(root);
-  polishDurability(root);
+  polishPersistence(root);
 }
 
 export default function AssessmentFinalPresentation() {
