@@ -47,6 +47,55 @@ function reconcileAssessmentChoices(): void {
   });
 }
 
+function runKind(value: string): "express" | "comprehensive" | null {
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue.startsWith("express_run_")) return "express";
+  if (normalizedValue.startsWith("comprun_") || normalizedValue.startsWith("midrun_") || normalizedValue.startsWith("fullrun_")) return "comprehensive";
+  return null;
+}
+
+function reconcileRunIdentity(): void {
+  const main = document.querySelector<HTMLElement>('main.shell[data-assessment-service-count="2"]');
+  if (!main) return;
+  const spanish = spanishPage() || main.dataset.assessmentLocale === "es-MX";
+  main.querySelectorAll<HTMLElement>("h2").forEach((heading) => {
+    const raw = String(heading.dataset.nicoFullRunId || heading.textContent || "").trim();
+    const kind = runKind(raw);
+    if (!kind) return;
+    heading.dataset.nicoFullRunId = raw;
+    heading.title = raw;
+    heading.classList.add("nico-run-identity-heading");
+    const replacement = kind === "express"
+      ? (spanish ? "Ejecución Express" : "Express run")
+      : (spanish ? "Ejecución Integral" : "Comprehensive run");
+    if (heading.textContent !== replacement) heading.textContent = replacement;
+  });
+}
+
+function reconcileStorageGuidance(): void {
+  const main = document.querySelector<HTMLElement>('main.shell[data-assessment-service-count="2"]');
+  if (!main) return;
+  const spanish = spanishPage() || main.dataset.assessmentLocale === "es-MX";
+  main.querySelectorAll<HTMLElement>(".target-grid article").forEach((card) => {
+    const label = normalized(card.querySelector("b")?.textContent);
+    if (label !== "durable record" && label !== "registro durable") return;
+    const value = normalized(card.querySelector("span")?.textContent);
+    const unverified = value.includes("temporary")
+      || value.includes("temporal")
+      || value.includes("not verified")
+      || value.includes("no verificado");
+    card.classList.toggle("nico-storage-warning", unverified);
+    if (!unverified || card.querySelector(".nico-storage-remediation")) return;
+
+    const note = document.createElement("small");
+    note.className = "nico-storage-remediation";
+    note.textContent = spanish
+      ? "La ejecución está registrada, pero todavía no se ha probado que sobreviva al reemplazo del contenedor. Conecta Postgres o monta un volumen persistente de Railway en /data; Operaciones verificará la durabilidad después del despliegue."
+      : "The run is recorded, but survival across container replacement is not yet proven. Connect Postgres or mount a Railway persistent volume at /data; Operations will verify durability after deployment.";
+    card.appendChild(note);
+  });
+}
+
 function createGuide(id: string, title: string, paragraphs: string[], link?: {href: string; label: string}): HTMLElement {
   const guide = document.createElement("aside");
   guide.id = id;
@@ -100,36 +149,12 @@ function reconcileRetainerWorkspace(): void {
   const main = document.querySelector<HTMLElement>("main");
   if (!main) return;
   main.classList.add("nico-retainer-workspace");
-  const heading = main.querySelector<HTMLElement>("h1");
-  if (heading) heading.textContent = "Retainer Ops: ongoing evidence refresh";
-  const lead = main.querySelector<HTMLElement>(".lead");
-  if (lead) lead.textContent = "Use this after an Express or Comprehensive baseline to refresh weekly delivery, backlog, release, blocker, and approval evidence. It does not replace or start the baseline assessment.";
-
-  const hero = main.querySelector<HTMLElement>(".hero");
-  if (hero && !hero.querySelector("#nico-retainer-guide")) {
-    hero.appendChild(createGuide(
-      "nico-retainer-guide",
-      "When to use Retainer Ops",
-      [
-        "First run Express or Comprehensive in the assessment workspace. Then return here for recurring oversight against that baseline.",
-        "Add a baseline run ID when available. NICO refreshes repository and workflow evidence; enter only business decisions, budgets, client context, or priorities GitHub cannot prove.",
-        "This is an operator workflow for ongoing service delivery, not a second one-time assessment form.",
-      ],
-      {href: "/assessment?tier=comprehensive#assessment", label: "Create or open a baseline assessment"},
-    ));
-  }
-
-  main.querySelectorAll<HTMLInputElement>("input").forEach((input) => {
-    if (input.placeholder === "midrun_... or fullrun_...") input.placeholder = "express_run_... or comprun_...";
-  });
-  const submit = main.querySelector<HTMLButtonElement>('button[type="submit"]');
-  if (submit && !submit.disabled && normalized(submit.textContent) === "run retainer evidence refresh") {
-    submit.textContent = "Refresh Ongoing Evidence";
-  }
 }
 
 function reconcile(): void {
   reconcileAssessmentChoices();
+  reconcileRunIdentity();
+  reconcileStorageGuidance();
   reconcileOperationsWorkspace();
   reconcileRetainerWorkspace();
 }
