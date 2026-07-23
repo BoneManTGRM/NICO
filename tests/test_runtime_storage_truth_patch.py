@@ -45,10 +45,12 @@ def test_express_persistence_uses_verified_durability_not_writability(monkeypatc
 
     persistence = express._persistence()
 
-    assert persistence["recorded"] is True
+    assert persistence["writable"] is True
+    assert persistence["recorded"] is False
     assert persistence["adapter"] == "sqlite"
     assert persistence["durable"] is False
     assert persistence["durability_verified"] is False
+    assert persistence["survives_container_replacement_verified"] is False
     assert "container replacement" in persistence["warning"]
 
 
