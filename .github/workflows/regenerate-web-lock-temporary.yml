@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/system-wide-audit-hardening-740
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
