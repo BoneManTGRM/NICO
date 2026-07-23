@@ -32,7 +32,26 @@ jobs:
         run: python scripts/apply_professional_workspace_patch.py
 
       - name: Run focused source contracts
-        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py tests/test_primary_navigation_ui.py
+        id: focused
+        continue-on-error: true
+        run: |
+          python -m pytest -q --tb=short \
+            --junitxml=professional-ui-test-results.xml \
+            tests/test_professional_assessment_ui.py \
+            tests/test_primary_navigation_ui.py
+
+      - name: Upload focused test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: professional-ui-focused-tests-${{ github.sha }}-${{ github.run_id }}
+          path: professional-ui-test-results.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Stop on focused contract failure
+        if: steps.focused.outcome != 'success'
+        run: exit 1
 
       - name: Validate frontend type safety
         working-directory: apps/web
