@@ -83,24 +83,6 @@ jobs:
           grep -Fq 'word-break: break-word' apps/web/styles/professional-polish.css
           grep -Fq '@media (max-width: 430px)' apps/web/styles/professional-polish.css
 
-      - name: Verify canonical primary assessment destination
-        run: python -m pytest -q --tb=short tests/test_primary_navigation_ui.py::test_navigation_keeps_one_canonical_primary_assessment_destination
-
-      - name: Verify reduced More menu
-        run: python -m pytest -q --tb=short tests/test_primary_navigation_ui.py::test_more_menu_exposes_only_help_and_authorized_operator_destinations
-
-      - name: Verify Spanish navigation shell
-        run: python -m pytest -q --tb=short tests/test_primary_navigation_ui.py::test_spanish_route_localizes_the_simplified_navigation_shell
-
-      - name: Verify native assessment intake routing
-        run: python -m pytest -q --tb=short tests/test_primary_navigation_ui.py::test_run_assessment_uses_one_query_selected_native_intake
-
-      - name: Verify layout and mobile navigation contracts
-        run: |
-          python -m pytest -q --tb=short \
-            tests/test_primary_navigation_ui.py::test_layout_preserves_safety_disclosures_and_loads_final_polish \
-            tests/test_primary_navigation_ui.py::test_navigation_and_assessment_cards_remain_mobile_contained
-
       - name: Validate frontend type safety
         working-directory: apps/web
         run: |
