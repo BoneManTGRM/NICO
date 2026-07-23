@@ -4,13 +4,14 @@ from functools import wraps
 from typing import Any, Callable
 
 from nico.express_score_assurance_ledger_v45 import apply_express_score_assurance_ledger_v45
+from nico.scanner_claim_reconciliation_v45 import reconcile_scanner_claims_v45
 
 VERSION = "nico.comprehensive_score_assurance_ledger.v45"
 _PATCH_MARKER = "_nico_comprehensive_score_assurance_ledger_v45"
 
 
 def apply_comprehensive_score_assurance_ledger_v45(payload: dict[str, Any]) -> dict[str, Any]:
-    output = apply_express_score_assurance_ledger_v45(payload)
+    output = reconcile_scanner_claims_v45(apply_express_score_assurance_ledger_v45(payload))
     truth = output.get("canonical_report_truth")
     if not isinstance(truth, dict):
         truth = {}
@@ -54,6 +55,7 @@ def install_comprehensive_score_assurance_ledger_v45() -> dict[str, Any]:
         "express_comprehensive_parity": True,
         "technical_score_controls_color": True,
         "scanner_ledger_not_scored": True,
+        "scanner_claims_reconciled": True,
         "acceptance_outside_technical_maturity": True,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
