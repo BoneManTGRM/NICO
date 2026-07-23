@@ -70,8 +70,8 @@ export function persistenceDisplay(spanish: boolean): {text: string; warning: bo
     if (adapter === "sqlite") {
       return {
         text: spanish
-          ? "Registro temporal · volumen persistente no verificado"
-          : "Temporary record · persistent volume not verified",
+          ? "Registrado · verificación de almacenamiento pendiente"
+          : "Recorded · storage verification pending",
         warning: true,
       };
     }
@@ -83,9 +83,9 @@ export function persistenceDisplay(spanish: boolean): {text: string; warning: bo
         warning: true,
       };
     }
-    return {text: spanish ? "Registrado · durabilidad no verificada" : "Recorded · durability not verified", warning: true};
+    return {text: spanish ? "Registrado · verificación de almacenamiento pendiente" : "Recorded · storage verification pending", warning: true};
   }
-  return {text: spanish ? "Persistencia no verificada" : "Persistence not verified", warning: true};
+  return {text: spanish ? "Estado de persistencia pendiente" : "Persistence status pending", warning: true};
 }
 
 /** Retained as a bounded opt-in utility; it is never injected into React-owned nodes automatically. */

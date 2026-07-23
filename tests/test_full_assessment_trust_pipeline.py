@@ -93,7 +93,11 @@ def test_prepare_trust_attaches_real_ledger_and_preserves_weighted_score() -> No
     by_id = {item["id"]: item for item in prepared["sections"]}
     coverage = prepared["evidence_ledger"]["coverage_by_section"]
 
-    assert prepared["status"] == "draft"
+    assert prepared["status"] == "complete"
+    assert prepared["report_finality"] == "final"
+    assert prepared["review_status"] == "pending_human_approval"
+    assert prepared["delivery_status"] == "blocked_pending_human_approval"
+    assert prepared["draft_only"] is False
     assert prepared["report_path"] == "full_run"
     assert prepared["report_path_label"] == "Full Assessment"
     assert prepared["trust_engine"]["status"] == "applied"
@@ -140,7 +144,15 @@ def test_finalize_exports_applies_export_gate_and_preserves_report_artifacts() -
     assert stored is not None
     assert stored["export_truth_gate"]["status"] == assessment["export_truth_gate"]["status"]
     assert stored["formats"]["markdown"] == reports["markdown"]
-    assert assessment["status"] == "draft"
+    assert assessment["status"] == "complete"
+    assert assessment["report_finality"] == "final"
+    assert assessment["review_status"] == "pending_human_approval"
+    assert assessment["delivery_status"] == "blocked_pending_human_approval"
+    assert assessment["draft_only"] is False
+    assert reports["report_finality"] == "final"
+    assert reports["review_status"] == "pending_human_approval"
+    assert reports["delivery_status"] == "blocked_pending_human_approval"
+    assert reports["draft_only"] is False
     assert assessment["client_ready"] is False
 
 
@@ -176,7 +188,10 @@ def test_export_contradiction_becomes_review_required_without_destroying_artifac
     assert gate["client_delivery_allowed"] is False
     assert finalized["reports"]["markdown"]
     assert finalized["reports"]["html"]
-    assert finalized["reports"]["draft_only"] is True
+    assert finalized["reports"]["report_finality"] == "final"
+    assert finalized["reports"]["review_status"] == "pending_human_approval"
+    assert finalized["reports"]["delivery_status"] == "blocked_pending_human_approval"
+    assert finalized["reports"]["draft_only"] is False
 
 
 def test_api_truth_summary_surfaces_nested_gate_state_without_changing_delivery_rule() -> None:

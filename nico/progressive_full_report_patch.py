@@ -5,7 +5,7 @@ from typing import Any
 
 
 _INSTALLED = False
-FULL_REPORT_VERSION = "full-assessment-draft-v2"
+FULL_REPORT_VERSION = "full-assessment-final-v3"
 FULL_DETAIL_LEVEL = 3
 FULL_INCLUDED_MODULES = (
     "express_baseline",

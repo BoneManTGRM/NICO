@@ -87,9 +87,13 @@ def _install_express_persistence_truth() -> bool:
                 "note": "Express lifecycle storage status is unavailable.",
             }
         adapter = str(status.get("adapter") or status.get("mode") or "unknown")
-        verified = bool(status.get("durability_verified", adapter == "postgres"))
+        persistence_available = bool(status.get("persistence_available"))
+        verified = bool(
+            status.get("durability_verified")
+            or (adapter == "postgres" and persistence_available)
+        )
         return {
-            "recorded": bool(status.get("persistence_available") or adapter in {"memory", "sqlite", "postgres"}),
+            "recorded": bool(persistence_available or adapter in {"memory", "sqlite", "postgres"}),
             "durable": verified,
             "durability_verified": verified,
             "adapter": adapter,

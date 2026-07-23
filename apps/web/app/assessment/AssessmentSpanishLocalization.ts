@@ -75,6 +75,9 @@ const EXACT_SPANISH = new Map<string, string>([
   ["supplemental", "Complementario"],
   ["human review pending", "Revisión humana pendiente"],
   ["human review required", "Revisión humana obligatoria"],
+  ["final report", "Informe final"],
+  ["pending approval", "Aprobación pendiente"],
+  ["pending human approval", "Aprobación humana pendiente"],
   ["not scored", "Sin puntuación"],
   ["not verified", "No verificado"],
   ["unverified", "No verificado"],
@@ -151,7 +154,7 @@ const JSON_KEY_SPANISH = new Map<string, string>([
 const SPANISH_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bExpress completed its evidence, scoring, reporting, and truth-gate stages\. Human review remains required before delivery\./gi, "Express completó las etapas de evidencia, puntuación, informe y controles de veracidad. La revisión humana sigue siendo obligatoria antes de la entrega."],
   [/\bComprehensive completed every automated stage and stopped at the required human-review gate\./gi, "Integral completó todas las etapas automatizadas y se detuvo ante la revisión humana obligatoria."],
-  [/\bAutomated work is complete\. NICO did not approve findings or authorize client delivery\. A human must review the exact evidence-bound artifact\./gi, "El trabajo automatizado terminó. NICO no aprobó los hallazgos ni autorizó la entrega al cliente. Una persona debe revisar el artefacto exacto vinculado a evidencia."],
+  [/\bThe final report is complete\. The team must review the exact evidence-bound package and approve it before client delivery; no separate report rewrite is required\./gi, "El informe final está completo. El equipo debe revisar el paquete exacto vinculado a evidencia y aprobarlo antes de entregarlo al cliente; no es necesario rehacer el informe."],
   [/\bAutomated truth and review gates completed\. Human review remains required before delivery\./gi, "Los controles automatizados de veracidad y revisión terminaron. La revisión humana sigue siendo obligatoria antes de la entrega."],
   [/\bThe assessment stopped because a required stage failed or was blocked\./gi, "La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada."],
   [/\bTechnical health and evidence assurance are independent dimensions\./gi, "La salud técnica y la garantía de evidencia son dimensiones independientes."],

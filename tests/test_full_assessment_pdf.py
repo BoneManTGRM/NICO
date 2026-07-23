@@ -152,7 +152,11 @@ def test_finalize_full_assessment_exports_persists_pdf_and_updates_truth_snapsho
     assert guarded_package["formats"]["pdf"] == reports["pdf_base64"]
     assert guarded_package["pdf_filename"] == reports["pdf_filename"]
     assert assessment["export_truth_gate"]["artifact_snapshot"]["pdf"] is True
-    assert assessment["status"] == "draft"
+    assert assessment["status"] == "complete"
+    assert assessment["report_finality"] == "final"
+    assert assessment["review_status"] == "pending_human_approval"
+    assert assessment["delivery_status"] == "blocked_pending_human_approval"
+    assert assessment["draft_only"] is False
     assert assessment["client_ready"] is False
     assert stored is not None
     assert stored["formats"]["pdf"] == reports["pdf_base64"]
