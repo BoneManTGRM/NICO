@@ -7,10 +7,11 @@ from fastapi import FastAPI, HTTPException, Request
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
+from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v4"
+VERSION = "nico.comprehensive_api_routes.v5"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -78,8 +79,11 @@ def _runtime_persistence(request: Request) -> dict[str, Any]:
     runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
     adapter = str(runtime.get("persistence_adapter") or "unavailable")
     configured = runtime.get("configured") is True
+    # The active durable adapter is authoritative. Older deployments may retain a
+    # stale false durability flag even after Postgres or persistent SQLite opened.
     durable = configured and bool(
-        runtime.get("durability_verified", adapter in {"postgres", "sqlite"})
+        runtime.get("durability_verified")
+        or adapter in {"postgres", "sqlite"}
     )
     return {
         "recorded": configured,
@@ -107,6 +111,7 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     repository = normalize_repository(_required(payload.get("repository"), "repository"))
     customer_id = _required(payload.get("customer_id") or "default_customer", "customer_id")
     project_id = _required(payload.get("project_id") or "default_project", "project_id")
+    requested_sha = expected_commit_sha(payload)
     run_id = f"comprun_{uuid4().hex}"
     evidence_ledger_id = f"ledger_comprehensive_{uuid4().hex}"
     snapshot = capture_repository_snapshot(
@@ -121,12 +126,17 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
                 payload.get("authorization_scope") or "authorized defensive repository assessment",
                 "authorization_scope",
             ),
+            # Preserve the explicit immutable release binding as a first-class field.
+            # The authorization marker remains a compatibility fallback only.
+            "expected_commit_sha": requested_sha,
         }
     )
     if snapshot.get("status") != "attached" or not str(snapshot.get("commit_sha") or "").strip():
         notes = [str(item) for item in snapshot.get("unavailable_data_notes") or [] if str(item).strip()]
         reason = notes[0] if notes else "repository_snapshot_unavailable"
         raise ValueError(f"repository_snapshot_unavailable:{reason}")
+    if requested_sha and str(snapshot.get("commit_sha") or "").strip().lower() != requested_sha:
+        raise ValueError("repository_snapshot_commit_mismatch")
 
     response = _controller(request).start(
         {
