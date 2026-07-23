@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "apps" / "web" / "app" / "retainer-ops" / "page.tsx"
 LAUNCHER = ROOT / "apps" / "web" / "app" / "RetainerAutoEvidenceLauncher.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
+NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 
 
 def test_retainer_page_submits_repository_binding_and_business_context_only() -> None:
@@ -76,6 +77,7 @@ def test_retainer_page_discloses_source_identity_and_unverified_scores() -> None
 def test_command_center_legacy_retainer_form_is_hidden_and_replaced_with_launcher() -> None:
     launcher = LAUNCHER.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
+    navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert 'document.querySelector<HTMLElement>("#retainer")' in launcher
     assert 'section.querySelector<HTMLElement>(".command-card")' in launcher
@@ -85,4 +87,5 @@ def test_command_center_legacy_retainer_form_is_hidden_and_replaced_with_launche
     assert 'href="/retainer-ops"' in launcher
     assert "Automatic evidence mode" in launcher
     assert "RetainerAutoEvidenceLauncher" in layout
-    assert '<a href="/retainer-ops">Retainer Ops</a>' in layout
+    assert '{label: "Retainer Ops", href: "/retainer-ops"}' in navigation
+    assert "More → Retainer Ops" in layout
