@@ -1,0 +1,303 @@
+name: Final report approval semantics once
+
+on:
+  push:
+    branches:
+      - fix/final-report-approval-semantics
+    paths:
+      - .github/workflows/final-report-approval-semantics-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: final-report-approval-semantics-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/final-report-approval-semantics
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install application dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply assertion-bound report finality repair
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, *, count: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              observed = text.count(old)
+              if observed != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {observed}: {old[:100]!r}")
+              target.write_text(text.replace(old, new, count), encoding="utf-8")
+
+          workspace = "apps/web/app/assessment/AssessmentWorkspace.tsx"
+          replacements = {
+              '  durable: "Durable record",': '  durable: "Persistence",',
+              '  yes: "Yes",': '  yes: "Durable",',
+              '  recorded: "Recorded, not durable",': '  recorded: "Recorded",',
+              '  download: "Download draft PDF",': '  download: "Download final PDF",',
+              '  reviewNotice: "Automated work is complete. NICO did not approve findings or authorize client delivery. A human must review the exact evidence-bound artifact.",': '  reviewNotice: "The final report is complete. The team must review the exact evidence-bound package and approve it before client delivery; no separate report rewrite is required.",',
+              '  pdfMissing: "A PDF was not returned for this draft report.",': '  pdfMissing: "A PDF was not returned for this final report package.",',
+              '      summary: "Repository evidence, calibrated scoring, repair intelligence, and a downloadable draft report.",': '      summary: "Repository evidence, calibrated scoring, repair intelligence, and a complete final report prepared for human approval.",',
+              '  durable: "Registro durable",': '  durable: "Persistencia",',
+              '  yes: "Sí",': '  yes: "Durable",',
+              '  recorded: "Registrado, no durable",': '  recorded: "Registrado",',
+              '  download: "Descargar PDF preliminar",': '  download: "Descargar PDF final",',
+              '  reviewNotice: "El trabajo automatizado terminó. NICO no aprobó los hallazgos ni autorizó la entrega al cliente. Una persona debe revisar el artefacto exacto vinculado a evidencia.",': '  reviewNotice: "El informe final está completo. El equipo debe revisar el paquete exacto vinculado a evidencia y aprobarlo antes de entregarlo al cliente; no es necesario rehacer el informe.",',
+              '  pdfMissing: "No se devolvió un PDF para este informe preliminar.",': '  pdfMissing: "No se devolvió un PDF para este paquete de informe final.",',
+              '      summary: "Evidencia del repositorio, puntuación calibrada, inteligencia de reparación y un informe preliminar descargable.",': '      summary: "Evidencia del repositorio, puntuación calibrada, inteligencia de reparación y un informe final completo preparado para aprobación humana.",',
+          }
+          for old, new in replacements.items():
+              replace(workspace, old, new)
+
+          replace(
+              workspace,
+              '  if (value === "unavailable") return copy.unavailableStatus;',
+              '  if (value.includes("unavailable") || value === "not_available") return copy.unavailableStatus;',
+          )
+          replace(
+              workspace,
+              '  const scannerStatus = formatStatus(scannerRawStatus, copy);\n'
+              '  const reportStatus = report?.markdown || report?.html || report?.pdf_base64\n'
+              '    ? copy.phases.complete\n'
+              '    : running ? copy.awaitingScanner : copy.awaitingStage;\n'
+              '  const reviewStatus = phase === "review_required"\n'
+              '    ? copy.phases.review_required\n'
+              '    : running ? copy.reviewAfterReport : copy.awaitingStage;\n'
+              '  const maturityStatus = assessment?.maturity_signal?.level || (running ? copy.maturityAfterScoring : copy.awaitingStage);',
+              '  const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");\n'
+              '  const scannerStatus = running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);\n'
+              '  const reportStatus = report?.markdown || report?.html || report?.pdf_base64\n'
+              '    ? copy.phases.complete\n'
+              '    : running ? copy.awaitingScanner : copy.awaitingStage;\n'
+              '  const reviewStatus = phase === "review_required"\n'
+              '    ? copy.phases.review_required\n'
+              '    : running ? copy.reviewAfterReport : copy.awaitingStage;\n'
+              '  const maturityRawStatus = assessment?.maturity_signal?.level;\n'
+              '  const maturityUnavailable = String(maturityRawStatus || "").toLowerCase().includes("unavailable");\n'
+              '  const maturityStatus = running && (!maturityRawStatus || maturityUnavailable)\n'
+              '    ? copy.maturityAfterScoring\n'
+              '    : formatStatus(maturityRawStatus || (running ? "pending" : "not_started"), copy);',
+          )
+
+          runtime_ui = "apps/web/app/assessment/AssessmentRuntimeTruthRepair.tsx"
+          replace(runtime_ui, '          ? "Registro temporal · volumen persistente no verificado"\n          : "Temporary record · persistent volume not verified",', '          ? "Registrado · verificación de almacenamiento pendiente"\n          : "Recorded · storage verification pending",')
+          replace(runtime_ui, '    return {text: spanish ? "Registrado · durabilidad no verificada" : "Recorded · durability not verified", warning: true};', '    return {text: spanish ? "Registrado · verificación de almacenamiento pendiente" : "Recorded · storage verification pending", warning: true};')
+          replace(runtime_ui, '  return {text: spanish ? "Persistencia no verificada" : "Persistence not verified", warning: true};', '  return {text: spanish ? "Estado de persistencia pendiente" : "Persistence status pending", warning: true};')
+
+          localization = "apps/web/app/assessment/AssessmentSpanishLocalization.ts"
+          replace(localization, '  ["human review required", "Revisión humana obligatoria"],', '  ["human review required", "Revisión humana obligatoria"],\n  ["final report", "Informe final"],\n  ["pending approval", "Aprobación pendiente"],\n  ["pending human approval", "Aprobación humana pendiente"],')
+          replace(localization, '  [/\\bAutomated work is complete\\. NICO did not approve findings or authorize client delivery\\. A human must review the exact evidence-bound artifact\\./gi, "El trabajo automatizado terminó. NICO no aprobó los hallazgos ni autorizó la entrega al cliente. Una persona debe revisar el artefacto exacto vinculado a evidencia."],', '  [/\\bThe final report is complete\\. The team must review the exact evidence-bound package and approve it before client delivery; no separate report rewrite is required\\./gi, "El informe final está completo. El equipo debe revisar el paquete exacto vinculado a evidencia y aprobarlo antes de entregarlo al cliente; no es necesario rehacer el informe."],')
+
+          storage_truth = "nico/runtime_storage_truth_patch.py"
+          replace(
+              storage_truth,
+              '        adapter = str(status.get("adapter") or status.get("mode") or "unknown")\n'
+              '        verified = bool(status.get("durability_verified", adapter == "postgres"))\n'
+              '        return {\n'
+              '            "recorded": bool(status.get("persistence_available") or adapter in {"memory", "sqlite", "postgres"}),',
+              '        adapter = str(status.get("adapter") or status.get("mode") or "unknown")\n'
+              '        persistence_available = bool(status.get("persistence_available"))\n'
+              '        verified = bool(\n'
+              '            status.get("durability_verified")\n'
+              '            or (adapter == "postgres" and persistence_available)\n'
+              '        )\n'
+              '        return {\n'
+              '            "recorded": bool(persistence_available or adapter in {"memory", "sqlite", "postgres"}),',
+          )
+
+          express_cover = "nico/express_report_premium_polish_v42.py"
+          replace(express_cover, 'VERSION = "nico.express_report_premium_polish.v42"', 'VERSION = "nico.express_report_premium_polish.v42_final_report"')
+          replace(express_cover, '    metric_card(margin + 3 * (card_w + card_gap), card_y, card_w, "Delivery", "Draft only", colors.HexColor("#fb7185"))', '    metric_card(margin + 3 * (card_w + card_gap), card_y, card_w, "Delivery", "Pending approval", colors.HexColor("#fb7185"))')
+          replace(express_cover, '    c.drawString(margin, 48, "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED")', '    c.drawString(margin, 48, "FINAL REPORT · IMMUTABLE SNAPSHOT · HUMAN APPROVAL REQUIRED")')
+          replace(express_cover, '        "client_delivery_allowed": False,\n    }', '        "client_delivery_allowed": False,\n        "report_finality": "final",\n        "approval_status": "pending_human_approval",\n        "delivery_status": "blocked_pending_human_approval",\n    }', count=1)
+
+          express_delivery = "nico/express_report_delivery_truth_v43.py"
+          replace(express_delivery, 'VERSION = "nico.express_report_delivery_truth.v43"', 'VERSION = "nico.express_report_delivery_truth.v43_final_report"')
+          replace(express_delivery, '    c.drawString(42, 31, "Not approved for client delivery")', '    c.drawString(42, 31, "Final report · pending human approval")')
+          replace(express_delivery, '            "explicit_warning": "Not approved for client delivery",', '            "explicit_warning": "Final report · pending human approval",\n            "report_finality": "final",\n            "approval_status": "pending_human_approval",\n            "delivery_status": "blocked_pending_human_approval",')
+
+          full_pdf = "nico/full_assessment_pdf.py"
+          replace(full_pdf, 'FULL_ASSESSMENT_PDF_STYLE_VERSION = "full-assessment-report-v1"', 'FULL_ASSESSMENT_PDF_STYLE_VERSION = "full-assessment-final-report-v2"')
+          replace(full_pdf, '    """Render a reviewable Full Assessment PDF without changing delivery approval state."""', '    """Render the complete final Full Assessment PDF without changing delivery approval state."""')
+          replace(full_pdf, '            subject="Evidence-bound Full Assessment draft requiring human review",', '            subject="Evidence-bound Full Assessment final report pending human approval",')
+          replace(full_pdf, '        footer_left = "NICO Full Assessment - evidence-bound draft - human review required"', '        footer_left = "NICO Full Assessment - final report - pending human approval"')
+          replace(full_pdf, '                [p("DRAFT - HUMAN REVIEW REQUIRED", hero_draft)],', '                [p("FINAL REPORT - PENDING HUMAN APPROVAL", hero_draft)],')
+
+          full_depth = "nico/progressive_full_report_patch.py"
+          replace(full_depth, 'FULL_REPORT_VERSION = "full-assessment-draft-v2"', 'FULL_REPORT_VERSION = "full-assessment-final-v3"')
+
+          full_pipeline = "nico/full_assessment_trust_pipeline.py"
+          finality_block = (
+              '    prepared["status"] = "complete"\n'
+              '    prepared["report_finality"] = "final"\n'
+              '    prepared["review_status"] = "pending_human_approval"\n'
+              '    prepared["delivery_status"] = "blocked_pending_human_approval"\n'
+              '    prepared["draft_only"] = False'
+          )
+          replace(full_pipeline, '    prepared["status"] = "draft"', finality_block)
+          candidate_block = (
+              '    candidate["status"] = "complete"\n'
+              '    candidate["report_finality"] = "final"\n'
+              '    candidate["review_status"] = "pending_human_approval"\n'
+              '    candidate["delivery_status"] = "blocked_pending_human_approval"\n'
+              '    candidate["draft_only"] = False'
+          )
+          replace(full_pipeline, '    candidate["status"] = "draft"', candidate_block)
+          replace(full_pipeline, '    guarded_package["draft_only"] = bool((candidate.get("export_truth_gate") or {}).get("draft_only"))', '    guarded_package["report_finality"] = "final"\n    guarded_package["review_status"] = "pending_human_approval"\n    guarded_package["delivery_status"] = "blocked_pending_human_approval"\n    guarded_package["draft_only"] = False\n    guarded_package["legacy_export_draft_gate"] = bool((candidate.get("export_truth_gate") or {}).get("draft_only"))')
+          replace(full_pipeline, '        "draft_only": bool(guarded_package.get("draft_only")),', '        "report_finality": "final",\n        "review_status": "pending_human_approval",\n        "delivery_status": "blocked_pending_human_approval",\n        "draft_only": False,')
+
+          review_gate = "nico/client_final_review_gate_patch.py"
+          replace(review_gate, '        "automation_finality": "not_final",', '        "report_finality": "final",\n        "approval_status": "pending_human_approval",\n        "delivery_status": "blocked_pending_human_approval",\n        "automation_finality": "final_report_pending_human_approval",')
+          replace(review_gate, '        client_gate["automation_finality"] = "not_final"', '        client_gate["report_finality"] = "final"\n        client_gate["approval_status"] = "pending_human_approval"\n        client_gate["delivery_status"] = "blocked_pending_human_approval"\n        client_gate["automation_finality"] = "final_report_pending_human_approval"')
+
+          Path("tests/test_final_report_approval_semantics.py").write_text(r'''from __future__ import annotations
+
+import io
+from pathlib import Path
+
+from pypdf import PdfReader
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def source(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def pdf_text(data: bytes) -> str:
+    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
+
+
+def test_customer_workspace_uses_final_report_and_contextual_pending_states() -> None:
+    text = source("apps/web/app/assessment/AssessmentWorkspace.tsx")
+    assert "Download final PDF" in text
+    assert "Download draft PDF" not in text
+    assert "Recorded, not durable" not in text
+    assert 'durable: "Persistence"' in text
+    assert 'value.includes("unavailable")' in text
+    assert "running && scannerUnavailable ? copy.awaitingScanner" in text
+    assert "running && (!maturityRawStatus || maturityUnavailable)" in text
+    assert "no separate report rewrite is required" in text
+
+
+def test_postgres_persistence_is_durable_when_available_even_with_false_legacy_flag() -> None:
+    text = source("nico/runtime_storage_truth_patch.py")
+    assert 'or (adapter == "postgres" and persistence_available)' in text
+    assert 'status.get("durability_verified", adapter == "postgres")' not in text
+
+
+def test_express_cover_is_a_final_report_pending_approval() -> None:
+    from nico.express_report_premium_polish_v42 import _cover_pdf
+
+    result = {
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "a" * 40,
+        "generated_at": "2026-07-23T00:00:00Z",
+        "maturity_signal": {"score": 85},
+        "evidence_adjusted_score": 80,
+        "executive_summary": "Evidence-bound final assessment.",
+        "repair_intelligence": {"candidates": []},
+    }
+    text = pdf_text(_cover_pdf(result, 612, 792))
+    assert "FINAL REPORT" in text
+    assert "Pending approval" in text
+    assert "Draft only" not in text
+
+
+def test_express_delivery_overlay_describes_approval_not_draft_state() -> None:
+    text = source("nico/express_report_delivery_truth_v43.py")
+    assert "Final report · pending human approval" in text
+    assert "Not approved for client delivery" not in text
+    assert '"report_finality": "final"' in text
+
+
+def test_full_pdf_is_final_but_still_review_gated() -> None:
+    from nico.full_assessment_pdf import build_full_assessment_pdf_base64
+    import base64
+
+    payload = {
+        "repository": "BoneManTGRM/NICO",
+        "run_id": "comprun_test",
+        "generated_at": "2026-07-23T00:00:00Z",
+        "maturity_signal": {"level": "Senior", "score": 85},
+        "sections": [],
+        "human_review_required": True,
+        "client_delivery_verdict": {"status": "human_review_required", "blockers": []},
+    }
+    encoded, error = build_full_assessment_pdf_base64(payload, report_id="report_test")
+    assert not error
+    assert encoded
+    text = pdf_text(base64.b64decode(encoded))
+    assert "FINAL REPORT - PENDING HUMAN APPROVAL" in text
+    assert "evidence-bound draft" not in text.casefold()
+    assert "DRAFT - HUMAN REVIEW REQUIRED" not in text
+
+
+def test_full_pipeline_separates_artifact_finality_from_delivery_approval() -> None:
+    text = source("nico/full_assessment_trust_pipeline.py")
+    assert 'candidate["report_finality"] = "final"' in text
+    assert 'candidate["review_status"] = "pending_human_approval"' in text
+    assert 'candidate["delivery_status"] = "blocked_pending_human_approval"' in text
+    assert 'candidate["status"] = "draft"' not in text
+    assert 'guarded_package["draft_only"] = False' in text
+    assert 'guarded_package["client_delivery_allowed"] = False' in text
+
+
+def test_final_review_gate_treats_report_as_final_and_approval_as_pending() -> None:
+    text = source("nico/client_final_review_gate_patch.py")
+    assert '"report_finality": "final"' in text
+    assert '"approval_status": "pending_human_approval"' in text
+    assert '"automation_finality": "final_report_pending_human_approval"' in text
+    assert '"client_delivery_allowed": False' in text
+    assert '"automation_finality": "not_final"' not in text
+''', encoding="utf-8")
+          PY
+
+      - name: Verify focused report semantics
+        run: pytest -q tests/test_final_report_approval_semantics.py tests/test_full_assessment_pdf.py tests/test_durable_storage_resolution_v2.py
+
+      - name: Install exact frontend dependencies
+        working-directory: apps/web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify frontend typecheck and production build
+        working-directory: apps/web
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Remove temporary workflow and commit verified repair
+        run: |
+          rm .github/workflows/final-report-approval-semantics-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Separate final report artifacts from approval status"
+          git push origin HEAD:fix/final-report-approval-semantics
