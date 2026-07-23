@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v7"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v8"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 
@@ -92,6 +92,10 @@ def _safe_ui_state(page: Any) -> dict[str, str]:
     The former ``locator.evaluate`` path could spend 30 seconds waiting for a live
     region that React had briefly unmounted, converting a transient UI condition into
     the acceptance failure while the same exact backend run was still advancing.
+
+    Customer-facing identifiers are compacted on mobile. Acceptance must read their
+    full immutable values from the code element title rather than concatenating the
+    compact label and the adjacent copy-button text.
     """
 
     fallback = _fallback_ui_state(page)
@@ -109,16 +113,23 @@ def _safe_ui_state(page: Any) -> dict[str, str]:
               const phase = header?.querySelector('span')?.textContent?.trim() || '';
               const message = section.querySelector(':scope > p')?.textContent?.trim() || '';
               const articles = Array.from(section.querySelectorAll('article'));
-              const find = label => articles.find(article => article.querySelector('b')?.textContent?.trim() === label)?.querySelector('span')?.textContent?.trim() || '';
+              const findArticle = label => articles.find(
+                article => article.querySelector('b')?.textContent?.trim() === label
+              );
+              const findText = label => findArticle(label)?.querySelector('span')?.textContent?.trim() || '';
+              const findIdentifier = label => {
+                const code = findArticle(label)?.querySelector('code');
+                return code?.getAttribute('title')?.trim() || code?.textContent?.trim() || '';
+              };
               return {
                 phase_label: phase,
                 message,
-                run_id: find('Run ID'),
-                commit_sha: find('Immutable commit'),
-                scanner: find('Scanner'),
-                report: find('Report'),
-                review: find('Human review'),
-                score: find('Technical score'),
+                run_id: findIdentifier('Run ID'),
+                commit_sha: findIdentifier('Immutable commit'),
+                scanner: findText('Scanner'),
+                report: findText('Report'),
+                review: findText('Human review'),
+                score: findText('Technical score'),
                 page_url: window.location.href,
               };
             }"""
