@@ -22,5 +22,5 @@ def test_hydration_reconciliation_is_bounded_to_service_buttons() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
 
     assert "#assessment button[aria-pressed]" in source
-    assert "dynamic assessment result tree" in source
+    assert "dynamic assessment nodes" in source
     assert "document.body" not in source
