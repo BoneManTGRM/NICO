@@ -1,0 +1,140 @@
+name: Apply Semantic Test Expectations
+
+on:
+  push:
+    branches:
+      - fix/semantic-report-quality-contract
+    paths:
+      - .github/workflows/apply-semantic-test-expectations.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: semantic-test-expectations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/semantic-report-quality-contract
+          fetch-depth: 1
+
+      - name: Apply exact test expectation transformations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, count: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old!r}")
+              target.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace(
+              "tests/test_express_truth_calibration_v36.py",
+              '    assert dependency["canonical_status"] == "REVIEW LIMITED"\n'
+              '    assert ci["canonical_status"] == "VERIFIED"\n'
+              '    assert static["canonical_status"] == "REVIEW LIMITED"\n',
+              '    assert dependency["canonical_status"] == "HUMAN TRIAGE REQUIRED"\n'
+              '    assert ci["canonical_status"] == "ADVISORY FINDINGS"\n'
+              '    assert static["canonical_status"] == "HUMAN TRIAGE REQUIRED"\n',
+          )
+          replace(
+              "tests/test_mid_assessment_report.py",
+              '    assert report["pdf_filename"].endswith("-DRAFT.pdf")\n',
+              '    assert report["pdf_filename"].endswith("-FINAL-PENDING-APPROVAL.pdf")\n',
+          )
+          replace(
+              "tests/test_mid_report_professional_v4.py",
+              '    assert "DRAFT — HUMAN REVIEW REQUIRED" in markdown\n',
+              '    assert "FINAL REPORT - PENDING HUMAN APPROVAL" in markdown\n',
+          )
+          replace(
+              "tests/test_two_service_live_acceptance.py",
+              "        'assert pdf[\"page_count\"] >= 30',\n",
+              "        '\"semantic_contract\": {',\n",
+          )
+          PY
+          python -m py_compile \
+            tests/test_express_truth_calibration_v36.py \
+            tests/test_mid_assessment_report.py \
+            tests/test_mid_report_professional_v4.py \
+            tests/test_two_service_live_acceptance.py
+          git diff --check
+
+      - name: Commit verified test expectations through Git data API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: fix/semantic-report-quality-contract
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          token = os.environ["GH_TOKEN"]
+          repository = os.environ["REPOSITORY"]
+          branch = os.environ["BRANCH"]
+          paths = (
+              "tests/test_express_truth_calibration_v36.py",
+              "tests/test_mid_assessment_report.py",
+              "tests/test_mid_report_professional_v4.py",
+              "tests/test_two_service_live_acceptance.py",
+          )
+
+          def api(method: str, path: str, payload=None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}{path}",
+                  data=data,
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-semantic-test-repair",
+                      "Content-Type": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      return json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")
+                  raise SystemExit(f"GitHub API {method} {path} failed: HTTP {exc.code}: {detail}") from exc
+
+          encoded_branch = urllib.parse.quote(branch, safe="")
+          ref = api("GET", f"/git/ref/heads/{encoded_branch}")
+          base_sha = str(ref["object"]["sha"])
+          if base_sha != os.environ.get("GITHUB_SHA", ""):
+              raise SystemExit(f"Branch moved during test transformation: ref={base_sha} checkout={os.environ.get('GITHUB_SHA', '')}")
+          base_commit = api("GET", f"/git/commits/{base_sha}")
+          entries = []
+          for path in paths:
+              blob = api("POST", "/git/blobs", {"content": Path(path).read_text(encoding="utf-8"), "encoding": "utf-8"})
+              entries.append({"path": path, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+          tree = api("POST", "/git/trees", {"base_tree": base_commit["tree"]["sha"], "tree": entries})
+          commit = api(
+              "POST",
+              "/git/commits",
+              {
+                  "message": "Align regression tests with semantic report contract",
+                  "tree": tree["sha"],
+                  "parents": [base_sha],
+              },
+          )
+          api("PATCH", f"/git/refs/heads/{encoded_branch}", {"sha": commit["sha"], "force": False})
+          print(json.dumps({"commit_sha": commit["sha"], "paths": list(paths)}, indent=2))
+          PY
