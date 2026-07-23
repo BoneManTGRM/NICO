@@ -192,7 +192,9 @@ def test_status_payload_restores_saved_scope_and_scan_without_default_overwrite(
 def test_memory_persistence_metadata_is_honest_about_durability() -> None:
     metadata = persistence_metadata(MemoryAdapter(), restored=True)
 
-    assert metadata["recorded"] is True
+    assert metadata["writable"] is True
+    assert metadata["recorded"] is False
     assert metadata["durable"] is False
+    assert metadata["survives_container_replacement_verified"] is False
     assert metadata["adapter"] == "memory"
     assert metadata["restored"] is True
