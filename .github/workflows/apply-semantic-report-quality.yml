@@ -41,7 +41,6 @@ jobs:
                   raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old!r}")
               target.write_text(text.replace(old, new), encoding="utf-8")
 
-          # Release acceptance must validate semantic completeness, not arbitrary length.
           replace(
               "scripts/two_service_live_acceptance.py",
               '        assert pdf["page_count"] >= 30, f"Comprehensive PDF is only {pdf[\'page_count\']} pages"\n',
@@ -89,7 +88,6 @@ jobs:
               '          assert all(item["report"]["semantic_contract"]["stale_draft_language_absent"] is True for item in comprehensive)\n'
           )
 
-          # Final-report semantics must originate in the report source, not an overlay.
           replace("nico/mid_assessment_report.py", 'MID_REPORT_VERSION = "mid-assessment-draft-v1"', 'MID_REPORT_VERSION = "mid-assessment-final-pending-approval-v2"')
           replace("nico/mid_assessment_report.py", 'DRAFT_LABEL = "DRAFT — HUMAN REVIEW REQUIRED"', 'DRAFT_LABEL = "FINAL REPORT - PENDING HUMAN APPROVAL"')
           replace("nico/mid_assessment_report.py", '        "status": "draft",', '        "status": "final_pending_human_approval",')
@@ -122,8 +120,6 @@ jobs:
               '        "approval_status": "pending_human_approval",\n'
               '        "delivery_status": "blocked_pending_human_approval",'
           )
-
-          # Remove temporary transformation workflow from the resulting product commit.
           Path(".github/workflows/apply-semantic-report-quality.yml").unlink()
           PY
 
@@ -151,11 +147,18 @@ jobs:
             nico/mid_report_professional_v7.py \
             nico/comprehensive_canonical_truth.py
 
-      - name: Commit repaired sources
+      - name: Stage transformed sources
+        run: |
+          git add -A
+          git status --short
+          git diff --cached --check
+
+      - name: Commit transformed sources
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
           git commit -m "Replace report page quotas with semantic quality contracts"
-          git push origin HEAD:fix/semantic-report-quality-contract
+
+      - name: Push transformed sources
+        run: |
+          git push --force-with-lease origin HEAD:fix/semantic-report-quality-contract
