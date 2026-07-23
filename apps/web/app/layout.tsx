@@ -3,6 +3,7 @@ import "../styles/globals.css";
 import "../styles/navigation.css";
 import "../styles/score-assurance.css";
 import "../styles/assessment-executive.css";
+import "../styles/professional-polish.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
@@ -56,7 +57,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <PrimaryNavigation />
           <WorkflowCallout>
             <div className="full-run-callout" role="status">
-              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>. Ongoing weekly and monthly evidence refresh is available under <b>More → Retainer Ops</b> after a baseline assessment exists.
+              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Guidance is available under <b>More → Guide</b>. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>, and ongoing evidence refresh is available under <b>More → Retainer Ops</b>.
             </div>
           </WorkflowCallout>
           <GenericRepositoryExample />

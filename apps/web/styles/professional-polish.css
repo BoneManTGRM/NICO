@@ -1,0 +1,188 @@
+/* Final mobile containment and navigation hierarchy for the canonical NICO workspace. */
+
+.global-nav-inner,
+.primary-service-links,
+.nav-more,
+.nav-more-panel,
+.nav-more-groups,
+main.shell[data-assessment-service-count="2"],
+main.shell[data-assessment-service-count="2"] .section,
+main.shell[data-assessment-service-count="2"] .grid,
+main.shell[data-assessment-service-count="2"] article {
+  min-width: 0;
+}
+
+main.shell[data-assessment-service-count="2"] .target-grid article {
+  overflow: hidden;
+}
+
+main.shell[data-assessment-service-count="2"] .target-grid article > span,
+main.shell[data-assessment-service-count="2"] .result-card .status,
+main.shell[data-assessment-service-count="2"] .result-card b,
+main.shell[data-assessment-service-count="2"] .json-block {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+main.shell[data-assessment-service-count="2"] .target-grid article > span {
+  font-size: clamp(15px, 3.8vw, 21px);
+  line-height: 1.35;
+}
+
+main.shell[data-assessment-service-count="2"] .target-grid article > b {
+  line-height: 1.25;
+}
+
+main.shell[data-assessment-service-count="2"] .section-head > div {
+  min-width: 0;
+}
+
+main.shell[data-assessment-service-count="2"] .section-head .status {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.nico-identifier-value {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.nico-identifier-value code {
+  display: block;
+  max-width: 100%;
+  color: inherit;
+  font: inherit;
+  font-size: clamp(14px, 3.7vw, 19px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.nico-identifier-value button {
+  min-height: 38px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.nav-more-panel {
+  max-width: min(680px, calc(100vw - 32px));
+}
+
+.nav-more-group a {
+  border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+  .global-nav-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .global-brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .nav-more {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .primary-service-links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .global-nav-inner > .primary-service-link:not([data-service]) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .nav-more-panel {
+    position: fixed;
+    top: 84px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+  }
+
+  .nav-more-groups {
+    grid-template-columns: 1fr;
+  }
+
+  main.shell[data-assessment-service-count="2"] .hero {
+    padding: 28px 22px;
+    border-radius: 24px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .hero h1 {
+    font-size: clamp(34px, 12vw, 52px);
+    line-height: 1.02;
+  }
+
+  main.shell[data-assessment-service-count="2"] .hero .lead {
+    font-size: 17px;
+    line-height: 1.55;
+  }
+
+  main.shell[data-assessment-service-count="2"] .section-head {
+    flex-direction: column;
+  }
+
+  main.shell[data-assessment-service-count="2"] .section-head .status {
+    align-self: stretch;
+  }
+
+  main.shell[data-assessment-service-count="2"] .grid.four,
+  main.shell[data-assessment-service-count="2"] .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .global-nav {
+    padding-inline: 14px;
+  }
+
+  .global-brand {
+    font-size: 27px;
+    letter-spacing: 0.2em;
+  }
+
+  .primary-service-link,
+  .nav-more summary {
+    min-height: 52px;
+    padding: 12px 16px;
+  }
+
+  main.shell[data-assessment-service-count="2"] {
+    padding-inline: 14px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .panel {
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+
+  main.shell[data-assessment-service-count="2"] .section-head h2 {
+    font-size: clamp(25px, 8.5vw, 34px);
+  }
+
+  main.shell[data-assessment-service-count="2"] .target-grid article {
+    padding: 18px 16px;
+  }
+}
