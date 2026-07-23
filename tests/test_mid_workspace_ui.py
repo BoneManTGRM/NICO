@@ -20,8 +20,9 @@ def test_primary_navigation_opens_native_two_service_assessment_intake() -> None
     navigation = NAVIGATION.read_text(encoding="utf-8")
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
-    assert 'label: "Run a Job"' in primary
+    assert 'label: "Run Assessment"' in primary
     assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'data-primary-service-count="1"' in navigation
     assert 'label: "Mid Assessment"' not in primary
     assert 'href: "/assessment?tier=mid#assessment"' not in primary
     assert 'href: "/mid-assessment"' not in primary
