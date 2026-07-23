@@ -1,0 +1,138 @@
+name: Branch Governance Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Dry-run validates candidates; execute deletes only reviewed, unchanged candidates
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - execute
+      stale_days:
+        description: Inventory stale threshold
+        required: true
+        default: "90"
+        type: string
+      batch_size:
+        description: Maximum candidates to validate or delete (1-100)
+        required: true
+        default: "100"
+        type: string
+      expected_manifest_sha256:
+        description: Required for execute; copy from the reviewed dry-run summary
+        required: false
+        default: ""
+        type: string
+      confirmation:
+        description: Execute only: DELETE REVIEWED MERGED BRANCHES
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-governance-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Recompute safety and process one approved batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate workflow inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          STALE_DAYS: ${{ inputs.stale_days }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          EXPECTED_HASH: ${{ inputs.expected_manifest_sha256 }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          python - <<'PY'
+          import os
+          mode = os.environ["MODE"]
+          stale = os.environ["STALE_DAYS"]
+          batch = os.environ["BATCH_SIZE"]
+          expected_hash = os.environ["EXPECTED_HASH"].strip().lower()
+          confirmation = os.environ["CONFIRMATION"]
+          if mode not in {"dry-run", "execute"}:
+              raise SystemExit("mode must be dry-run or execute")
+          if not stale.isdigit() or not 1 <= int(stale) <= 3650:
+              raise SystemExit("stale_days must be an integer between 1 and 3650")
+          if not batch.isdigit() or not 1 <= int(batch) <= 100:
+              raise SystemExit("batch_size must be an integer between 1 and 100")
+          if mode == "execute":
+              if len(expected_hash) != 64 or any(ch not in "0123456789abcdef" for ch in expected_hash):
+                  raise SystemExit("execute requires a 64-character reviewed manifest SHA-256")
+              if confirmation != "DELETE REVIEWED MERGED BRANCHES":
+                  raise SystemExit("execute confirmation phrase is incorrect")
+          PY
+
+      - name: Fetch all current remote branches
+        run: git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Generate a fresh read-only inventory
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STALE_DAYS: ${{ inputs.stale_days }}
+        run: |
+          python scripts/branch_inventory.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-dir "$GITHUB_WORKSPACE" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            --stale-days "$STALE_DAYS" \
+            --output-dir branch-governance
+
+      - name: Validate or execute reviewed batch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          EXPECTED_HASH: ${{ inputs.expected_manifest_sha256 }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          python scripts/branch_cleanup.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --inventory branch-governance/branch-inventory.json \
+            --manifest branch-governance/safe-delete-branches.txt \
+            --mode "$MODE" \
+            --batch-size "$BATCH_SIZE" \
+            --expected-manifest-sha256 "$EXPECTED_HASH" \
+            --confirmation "$CONFIRMATION" \
+            --output branch-governance/cleanup-result.json
+
+      - name: Publish review summary
+        run: |
+          cat branch-governance/branch-summary.md >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          result = json.loads(Path("branch-governance/cleanup-result.json").read_text())
+          print("\n## Cleanup gate\n")
+          print(f"- Mode: `{result['mode']}`")
+          print(f"- Manifest SHA-256: `{result['manifest_sha256']}`")
+          print(f"- Candidates in this batch: **{result['candidate_count']}**")
+          print(f"- Deleted: **{len(result['deleted'])}**")
+          if result["mode"] == "dry-run":
+              print("- No refs were deleted. Review the artifact, then rerun in execute mode with this exact hash.")
+          PY
+
+      - name: Upload immutable governance artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: branch-governance-${{ inputs.mode }}-${{ github.sha }}-${{ github.run_id }}
+          path: branch-governance/
+          if-no-files-found: error
+          retention-days: 90
