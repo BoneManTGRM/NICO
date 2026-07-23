@@ -38,6 +38,20 @@ def test_retainer_page_submits_repository_binding_and_business_context_only() ->
         assert forbidden not in request_block
 
 
+def test_retainer_page_is_continuous_oversight_not_a_legacy_job_runner() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert "CONTINUOUS ENGINEERING OVERSIGHT" in source
+    assert "This is not another one-time assessment or a generic job runner" in source
+    assert "1 · BASELINE" in source
+    assert "2 · REFRESH" in source
+    assert "3 · CONTEXT" in source
+    assert "4 · REVIEW" in source
+    assert "Refresh Ongoing Evidence" in source
+    assert 'href="/assessment?tier=comprehensive#assessment"' in source
+    assert "No manual technical summaries" in source
+
+
 def test_retainer_page_has_no_manual_technical_evidence_fields() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
@@ -46,6 +60,8 @@ def test_retainer_page_has_no_manual_technical_evidence_fields() -> None:
     assert "Client update context" in source
     assert "Business or retainer metrics" in source
     assert "Budget and priority context" in source
+    for source_name in ["Commits", "Pull requests", "Issues", "Workflows", "CodeQL", "Releases", "Deployments"]:
+        assert source_name in source
     for forbidden_label in [
         "Commit summary",
         "PR summary",
