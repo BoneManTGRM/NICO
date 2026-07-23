@@ -62,49 +62,60 @@ function browserGeneratedStall(payload: JsonRecord): boolean {
 
 function repairFalseFinalGateBlock(payload: JsonRecord): JsonRecord {
   if (!browserGeneratedStall(payload)) return payload;
-  if (!usableReportArtifacts(payload) || payload.human_review_required !== true) return payload;
 
+  // A browser-generated timeout is not backend terminal evidence. Remove the false
+  // blocked projection, retain any completed report artifacts, and continue polling
+  // the exact run in a fail-closed nonterminal state.
   const output = structuredClone(payload);
-  output.status = "complete";
-  output.current_stage = "complete";
-  output.progress_percent = 100;
-  output.report_generation_status = "complete";
+  const reportReady = usableReportArtifacts(output);
+  output.status = "running";
+  output.current_stage = "truth_and_review_gates";
+  output.progress_percent = Math.max(94, Math.min(99, Number(output.progress_percent) || 94));
+  output.report_generation_status = reportReady ? "complete" : String(output.report_generation_status || "running");
   output.recovery_required = false;
+  output.duplicate_start_allowed = false;
   output.human_review_required = true;
   output.client_ready = false;
   output.client_delivery_allowed = false;
-  output.delivery_status = "blocked_pending_human_review";
+  output.delivery_status = "blocked_pending_backend_completion_and_human_review";
   output.status_transport = {
     ...record(output.status_transport),
-    status: "completed_from_usable_report_artifacts",
-    code: "browser_final_gate_false_block_repaired",
-    report_ready: true,
-    review_ready: true,
+    status: "browser_false_stall_removed_waiting_for_backend",
+    code: "browser_final_gate_false_block_removed",
+    report_ready: reportReady,
+    exact_run_terminal_evidence: false,
     terminal_state_written: false,
     browser_projection_only: true,
+    browser_terminalization_forbidden: true,
+    duplicate_start_allowed: false,
+    recovery_required: false,
   };
 
   const cleaned = progressItems(output).filter((item) => {
     const code = String(record(item.evidence).code || "").toLowerCase();
     return code !== "assessment_final_gate_stalled";
   });
-  const completeIndex = cleaned.findIndex((item) => String(item.step || "").toLowerCase() === "complete");
-  const completeStep = {
-    ...(completeIndex >= 0 ? cleaned[completeIndex] : {}),
-    step: "complete",
-    status: "complete",
-    message: "Automated report generation completed. Markdown, HTML, and PDF artifacts are ready for required human review.",
+  const gateIndex = cleaned.findIndex((item) => String(item.step || "").toLowerCase() === "truth_and_review_gates");
+  const gateStep = {
+    ...(gateIndex >= 0 ? cleaned[gateIndex] : {}),
+    step: "truth_and_review_gates",
+    status: "running",
+    message: reportReady
+      ? "Markdown, HTML, and PDF artifacts are available. Waiting for the backend to persist the exact run's terminal completion state."
+      : "Waiting for the backend to persist final report and terminal completion evidence for this exact run.",
     evidence: {
-      ...record(completeIndex >= 0 ? cleaned[completeIndex].evidence : {}),
-      report_generation_complete: true,
-      usable_report_artifacts: true,
+      ...record(gateIndex >= 0 ? cleaned[gateIndex].evidence : {}),
+      report_generation_complete: reportReady,
+      usable_report_artifacts: reportReady,
       required_formats: ["markdown", "html", "pdf"],
       human_review_required: true,
       client_delivery_allowed: false,
+      exact_run_terminal_evidence: false,
+      browser_terminalization_forbidden: true,
     },
   };
-  if (completeIndex >= 0) cleaned[completeIndex] = completeStep;
-  else cleaned.push(completeStep);
+  if (gateIndex >= 0) cleaned[gateIndex] = gateStep;
+  else cleaned.push(gateStep);
   output.progress = cleaned;
   return output;
 }
