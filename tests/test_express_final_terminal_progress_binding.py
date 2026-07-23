@@ -60,7 +60,9 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
                 "worker_started": True,
             }
         )
-        store.put(
+        # Match the real express_async_api._record contract: return the outer
+        # assessment storage record, whose nested response can still be stale.
+        return store.put(
             "assessment_runs",
             run,
             {
@@ -75,7 +77,6 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
                 "payload": stale,
             },
         )
-        return deepcopy(response)
 
     # Reproduce a later wrapper that copied the old boolean marker with
     # functools.wraps even though it no longer executes the progress writer.
@@ -93,10 +94,14 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
 
     installed = install_express_status_liveness_patch()
 
-    assert installed["final_terminal_progress_record_binding"]["owner_verified"] is True
+    binding = installed["final_terminal_progress_record_binding"]
+    assert binding["owner_verified"] is True
+    assert binding["progress_source"] == "exact_record_argument_with_persisted_payload_fallback"
     assert getattr(api._record, _FINAL_RECORD_OWNER_MARKER, None) is api._record
 
-    api._record(run_id, request, _terminal(run_id))
+    persisted = api._record(run_id, request, _terminal(run_id))
+    assert persisted["status"] == "running"
+    assert persisted["response"]["current_stage"] == "truth_and_review_gates"
 
     progress = store.get("express_run_progress", run_id)
     assert isinstance(progress, dict)
@@ -120,3 +125,4 @@ def test_final_production_record_binding_survives_copied_legacy_marker(monkeypat
     assert response["human_review_required"] is True
     assert response["client_delivery_allowed"] is False
     assert response["progress_reconciliation"]["terminal_success_recovered"] is True
+    assert response["lifecycle_status"]["terminal_progress_source"] == "exact_record_argument_with_persisted_payload_fallback"
