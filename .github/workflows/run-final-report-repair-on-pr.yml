@@ -84,7 +84,20 @@ jobs:
           retention-days: 7
 
       - name: Verify focused report semantics
-        run: pytest -q tests/test_final_report_approval_semantics.py tests/test_full_assessment_pdf.py tests/test_durable_storage_resolution_v2.py
+        run: |
+          set +e
+          pytest -q tests/test_final_report_approval_semantics.py tests/test_full_assessment_pdf.py tests/test_durable_storage_resolution_v2.py 2>&1 | tee report-semantics-test-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Upload focused regression output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: final-report-regression-output
+          path: report-semantics-test-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Install exact frontend dependencies
         working-directory: apps/web
