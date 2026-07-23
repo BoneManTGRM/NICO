@@ -30,21 +30,38 @@ jobs:
         run: python scripts/apply_professional_workspace_patch.py
 
       - name: Run focused source contracts
+        id: focused
+        continue-on-error: true
         run: |
+          mkdir -p diagnostics
           python -m pytest -q --tb=short \
+            --junitxml=diagnostics/professional-ui-test-results.xml \
             tests/test_professional_assessment_ui.py \
             tests/test_primary_navigation_ui.py
 
+      - name: Retain exact focused-test failure
+        if: steps.focused.outcome != 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/professional-ui-test-results.xml
+          git commit -m "Record professional UI assertion failure"
+          git push origin HEAD:fix/professional-ui-polish
+          exit 1
+
       - name: Validate frontend type safety
+        if: steps.focused.outcome == 'success'
         working-directory: apps/web
         run: |
           npm install --legacy-peer-deps
           npm run lint
 
       - name: Remove one-time transformation tooling
+        if: steps.focused.outcome == 'success'
         run: git rm scripts/apply_professional_workspace_patch.py .github/workflows/apply-professional-workspace-patch.yml
 
       - name: Commit transformed source
+        if: steps.focused.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
