@@ -31,14 +31,14 @@ jobs:
       - name: Apply assertion-bound source transformation
         run: python scripts/apply_professional_workspace_patch.py
 
+      - name: Run focused source contracts
+        run: python -m pytest -q --tb=short tests/test_professional_assessment_ui.py tests/test_primary_navigation_ui.py
+
       - name: Validate frontend type safety
         working-directory: apps/web
         run: |
           npm install --legacy-peer-deps
           npm run lint
-
-      - name: Run focused source contracts
-        run: python -m pytest -q tests/test_professional_assessment_ui.py tests/test_primary_navigation_ui.py
 
       - name: Remove one-time transformation tooling
         run: git rm scripts/apply_professional_workspace_patch.py .github/workflows/apply-professional-workspace-patch.yml
