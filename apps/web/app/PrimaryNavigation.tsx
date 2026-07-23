@@ -11,43 +11,34 @@ const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
-    label: "Run a Job",
-    shortLabel: "Run a Job",
+    label: "Run Assessment",
     href: "/assessment?tier=express#assessment",
-  },
-  {
-    key: "operations" as ServiceKey,
-    label: "Operations",
-    shortLabel: "Operations",
-    href: "/operations",
-  },
-  {
-    key: "retainer" as ServiceKey,
-    label: "Retainer",
-    shortLabel: "Retainer",
-    href: "/retainer-ops",
   },
 ] as const;
 
 const SPANISH_PRIMARY_LABELS: Record<ServiceKey, string> = {
   "run-job": "Ejecutar evaluación",
-  operations: "Operaciones",
+  operations: "Operaciones (administrador)",
   retainer: "Servicio continuo",
 };
 
 const ADVANCED_GROUPS = [
   {
-    label: "Operations and diagnostics",
+    label: "Operator workspaces",
+    description: "Deployment administration and ongoing evidence refresh",
     links: [
+      {label: "Operations (Admin)", href: "/operations"},
+      {label: "Retainer Ops", href: "/retainer-ops"},
       {label: "Recovery", href: "/operations/recovery"},
       {label: "Backup & Restore", href: "/operations/backup-restore"},
-      {label: "Scanner to Express", href: "/scanner-workflow"},
-      {label: "Refresh Evidence", href: "/refresh-full-evidence"},
     ],
   },
   {
-    label: "Utilities",
+    label: "Advanced evidence tools",
+    description: "Use only when the standard assessment workspace is insufficient",
     links: [
+      {label: "Scanner to Express", href: "/scanner-workflow"},
+      {label: "Refresh Evidence", href: "/refresh-full-evidence"},
       {label: "Easy Mode", href: "/easy"},
       {label: "Guide", href: "/guided-workflow"},
     ],
@@ -56,17 +47,21 @@ const ADVANCED_GROUPS = [
 
 const SPANISH_ADVANCED_GROUPS = [
   {
-    label: "Operaciones y diagnóstico",
+    label: "Espacios para operadores",
+    description: "Administración del despliegue y actualización continua de evidencia",
     links: [
+      {label: "Operaciones (administrador)", href: "/operations"},
+      {label: "Servicio continuo", href: "/retainer-ops"},
       {label: "Recuperación", href: "/operations/recovery"},
       {label: "Respaldo y restauración", href: "/operations/backup-restore"},
-      {label: "Escáner a Express", href: "/scanner-workflow"},
-      {label: "Actualizar evidencia", href: "/refresh-full-evidence"},
     ],
   },
   {
-    label: "Utilidades",
+    label: "Herramientas avanzadas de evidencia",
+    description: "Úsalas solo cuando el espacio normal de evaluación no sea suficiente",
     links: [
+      {label: "Escáner a Express", href: "/scanner-workflow"},
+      {label: "Actualizar evidencia", href: "/refresh-full-evidence"},
       {label: "Modo fácil", href: "/easy"},
       {label: "Guía", href: "/guided-workflow"},
     ],
@@ -93,6 +88,12 @@ function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKe
     || pathname.startsWith("/refresh-full-evidence")
   ) return "run-job";
   return "";
+}
+
+function linkIsActive(pathname: string, href: string): boolean {
+  const target = href.split("?")[0].split("#")[0];
+  if (target === "/operations") return pathname === "/operations";
+  return pathname.startsWith(target);
 }
 
 export default function PrimaryNavigation() {
@@ -124,13 +125,14 @@ export default function PrimaryNavigation() {
   const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
   const languageLabel = spanishActive ? "English" : "Español";
   const advancedGroups = spanishActive ? SPANISH_ADVANCED_GROUPS : ADVANCED_GROUPS;
+  const advancedActive = activeService === "operations" || activeService === "retainer";
 
   return (
     <nav className="global-nav" aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}>
       <div className="global-nav-inner">
         <a className="global-brand" href="/assessment?tier=express#assessment" aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>NICO</a>
 
-        <div className="primary-service-links" data-primary-service-count="3">
+        <div className="primary-service-links" data-primary-service-count="1">
           {PRIMARY_SERVICES.map((service) => {
             const active = activeService === service.key;
             const label = spanishActive ? SPANISH_PRIMARY_LABELS[service.key] : service.label;
@@ -160,20 +162,22 @@ export default function PrimaryNavigation() {
           <span className="primary-service-short-label">{languageLabel}</span>
         </a>
 
-        <details className="nav-more">
-          <summary aria-label={spanishActive ? "Abrir herramientas avanzadas de NICO" : "Open advanced NICO tools"}>{spanishActive ? "Más" : "More"}</summary>
+        <details className={`nav-more${advancedActive ? " active" : ""}`}>
+          <summary aria-label={spanishActive ? "Abrir herramientas para operadores y herramientas avanzadas" : "Open operator and advanced tools"}>{spanishActive ? "Más" : "More"}</summary>
           <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
             <div className="nav-more-heading">
-              <b>{spanishActive ? "Herramientas avanzadas" : "Advanced tools"}</b>
-              <span>{spanishActive ? "Diagnóstico y utilidades para operadores" : "Operator diagnostics and utilities"}</span>
+              <b>{spanishActive ? "Operadores y herramientas avanzadas" : "Operator and advanced tools"}</b>
+              <span>{spanishActive ? "La evaluación normal permanece en Ejecutar evaluación" : "The standard assessment remains under Run Assessment"}</span>
             </div>
             <div className="nav-more-groups">
               {advancedGroups.map((group) => (
                 <section className="nav-more-group" key={group.label}>
                   <p>{group.label}</p>
-                  {group.links.map((link) => (
-                    <a href={link.href} key={link.href}>{link.label}</a>
-                  ))}
+                  <small>{group.description}</small>
+                  {group.links.map((link) => {
+                    const active = linkIsActive(pathname, link.href);
+                    return <a href={link.href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
+                  })}
                 </section>
               ))}
             </div>
