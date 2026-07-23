@@ -4,6 +4,7 @@ import "../styles/navigation.css";
 import "../styles/score-assurance.css";
 import "../styles/assessment-executive.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
+import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
 import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
@@ -43,6 +44,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentProgressIntegrityGuard />
           <AssessmentFinalGateAuthoritativeGuard />
           <AssessmentApiTransportBridge />
+          <AssessmentExactCommitTransport />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
