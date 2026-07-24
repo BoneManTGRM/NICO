@@ -1,19 +1,108 @@
 "use client";
 
-import type {ReactNode} from "react";
 import {usePathname} from "next/navigation";
 
-export default function WorkflowCallout({children}: {children: ReactNode}) {
+type WorkflowCopy = {
+  eyebrow: string;
+  title: string;
+  summary: string;
+  steps: Array<{number: string; title: string; detail: string}>;
+  runLabel: string;
+  reviewLabel: string;
+  boundary: string;
+};
+
+const ENGLISH_COPY: WorkflowCopy = {
+  eyebrow: "Assessment workflow",
+  title: "From repository evidence to an approval-ready report",
+  summary: "One guided workspace keeps the assessment, evidence package, report, and final human decision connected to the same immutable repository snapshot.",
+  steps: [
+    {
+      number: "01",
+      title: "Run",
+      detail: "Choose Express for a fast evidence-bound baseline or Comprehensive for deeper technical and business-context analysis.",
+    },
+    {
+      number: "02",
+      title: "Verify",
+      detail: "Review exact-commit evidence, scanner dispositions, limitations, and cross-format report consistency.",
+    },
+    {
+      number: "03",
+      title: "Approve",
+      detail: "Use Final Review to accept the exact report package. NICO never authorizes client delivery automatically.",
+    },
+  ],
+  runLabel: "Run an assessment",
+  reviewLabel: "Open Final Review",
+  boundary: "Human review required · Client delivery remains blocked until the exact report and evidence snapshot are approved.",
+};
+
+const SPANISH_COPY: WorkflowCopy = {
+  eyebrow: "Flujo de evaluación",
+  title: "De la evidencia del repositorio a un informe listo para aprobación",
+  summary: "Un solo espacio guiado mantiene la evaluación, el paquete de evidencia, el informe y la decisión humana final vinculados al mismo estado inmutable del repositorio.",
+  steps: [
+    {
+      number: "01",
+      title: "Ejecutar",
+      detail: "Elige Express para una línea base rápida vinculada a evidencia o Integral para un análisis técnico y de contexto comercial más profundo.",
+    },
+    {
+      number: "02",
+      title: "Verificar",
+      detail: "Revisa la evidencia del commit exacto, las disposiciones de los analizadores, las limitaciones y la consistencia entre formatos.",
+    },
+    {
+      number: "03",
+      title: "Aprobar",
+      detail: "Usa Revisión final para aceptar el paquete exacto. NICO nunca autoriza automáticamente la entrega al cliente.",
+    },
+  ],
+  runLabel: "Ejecutar una evaluación",
+  reviewLabel: "Abrir Revisión final",
+  boundary: "Revisión humana obligatoria · La entrega al cliente permanece bloqueada hasta aprobar el informe exacto y su evidencia.",
+};
+
+export default function WorkflowCallout() {
   const pathname = usePathname();
   const spanish = pathname.startsWith("/es");
+  const copy = spanish ? SPANISH_COPY : ENGLISH_COPY;
+  const assessmentHref = spanish
+    ? "/es/assessment?tier=express#assessment"
+    : "/assessment?tier=express#assessment";
 
-  if (spanish) {
-    return (
-      <div className="full-run-callout" role="status" lang="es-MX">
-        <b>Flujo de evaluación:</b> inicia Express o Integral desde el <a href="/es/assessment?tier=express#assessment">espacio de evaluaciones</a>. Express proporciona una línea base técnica rápida vinculada a evidencia. Integral captura un commit inmutable y continúa la misma ejecución por la evidencia del repositorio, los analizadores, los módulos técnicos y de contexto comercial, la generación del informe y la revisión humana obligatoria. NICO nunca aprueba hallazgos ni autoriza automáticamente una entrega al cliente. Los operadores pueden verificar el despliegue, la disponibilidad, la carga de trabajo, los incidentes, la evidencia de respaldo y restauración, y las alertas en el centro de control de <a href="/operations?lang=es-MX">Operaciones</a>, además de revisar ejecuciones interrumpidas de los analizadores en <a href="/operations/recovery?lang=es-MX">Recuperación</a>. <b>Flujo de servicio continuo:</b> procesa evidencia recurrente del repositorio, flujos de trabajo, publicaciones, pendientes y bloqueadores mediante <a href="/retainer-ops?lang=es-MX">Operaciones continuas</a>; únicamente se captura de forma manual el contexto comercial que GitHub no puede demostrar.
+  return (
+    <section
+      className="workflow-banner"
+      aria-labelledby="workflow-banner-title"
+      lang={spanish ? "es-MX" : undefined}
+    >
+      <div className="workflow-banner-intro">
+        <span className="workflow-banner-eyebrow">{copy.eyebrow}</span>
+        <h2 id="workflow-banner-title">{copy.title}</h2>
+        <p>{copy.summary}</p>
       </div>
-    );
-  }
 
-  return children;
+      <ol className="workflow-banner-steps">
+        {copy.steps.map((step) => (
+          <li key={step.number}>
+            <span className="workflow-step-number" aria-hidden="true">{step.number}</span>
+            <div>
+              <strong>{step.title}</strong>
+              <p>{step.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <div className="workflow-banner-footer">
+        <div className="workflow-banner-actions">
+          <a className="workflow-action-primary" href={assessmentHref}>{copy.runLabel}</a>
+          <a className="workflow-action-secondary" href="/operations/final-review">{copy.reviewLabel}</a>
+        </div>
+        <p className="workflow-boundary">{copy.boundary}</p>
+      </div>
+    </section>
+  );
 }
