@@ -87,6 +87,10 @@ function selectComprehensiveAndHideChoices(main: HTMLElement): void {
   if (grid) {
     if (!grid.hidden) grid.hidden = true;
     if (grid.getAttribute("aria-hidden") !== "true") grid.setAttribute("aria-hidden", "true");
+    if (grid.style.getPropertyValue("display") !== "none" || grid.style.getPropertyPriority("display") !== "important") {
+      grid.style.setProperty("display", "none", "important");
+    }
+    if (!grid.hasAttribute("inert")) grid.setAttribute("inert", "");
   }
   buttons.forEach((button) => {
     if (button.tabIndex !== -1) button.tabIndex = -1;

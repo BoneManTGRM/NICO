@@ -22,7 +22,20 @@ def test_public_assessment_exposes_one_canonical_strategic_workflow() -> None:
     assert "everything useful from Express, Mid, and Comprehensive" in source
     assert "Run NICO Assessment" in source
     assert 'grid.hidden = true' in source
+    assert 'grid.setAttribute("aria-hidden", "true")' in source
+    assert 'grid.style.setProperty("display", "none", "important")' in source
+    assert 'grid.setAttribute("inert", "")' in source
     assert "comprehensive.click()" in source
+
+
+def test_retired_tier_selector_is_visually_and_interactively_unavailable() -> None:
+    source = _read("apps/web/app/UnifiedAssessmentPublicGuard.tsx")
+
+    assert 'grid.style.getPropertyValue("display") !== "none"' in source
+    assert 'grid.style.getPropertyPriority("display") !== "important"' in source
+    assert "button.tabIndex !== -1" in source
+    assert "button.tabIndex = -1" in source
+    assert 'grid.hasAttribute("inert")' in source
 
 
 def test_operator_workspaces_are_not_public_assessment_navigation() -> None:
