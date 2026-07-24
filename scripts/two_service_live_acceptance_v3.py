@@ -86,11 +86,15 @@ class _ExpectedCommitPage:
             url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
         response = self._page.goto(url, *args, **kwargs)
         if assessment_page:
-            try:
-                self._page.wait_for_load_state("networkidle", timeout=FORM_HYDRATION_TIMEOUT_MS)
-            except Exception:
-                # Controlled-field stability checks below remain the source of truth.
-                self._page.wait_for_timeout(1000)
+            wait_for_load_state = getattr(self._page, "wait_for_load_state", None)
+            wait_for_timeout = getattr(self._page, "wait_for_timeout", None)
+            if callable(wait_for_load_state):
+                try:
+                    wait_for_load_state("networkidle", timeout=FORM_HYDRATION_TIMEOUT_MS)
+                except Exception:
+                    # Controlled-field stability checks below remain the source of truth.
+                    if callable(wait_for_timeout):
+                        wait_for_timeout(1000)
         return response
 
     def get_by_label(self, *args: Any, **kwargs: Any) -> _StableFormLocator:
