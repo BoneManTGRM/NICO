@@ -28,22 +28,23 @@ import OperationsPreloadGuard from "./OperationsPreloadGuard";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
+import UnifiedAssessmentPublicGuard from "./UnifiedAssessmentPublicGuard";
 import WorkflowCallout from "./WorkflowCallout";
 import WorkspaceClarityRepair from "./WorkspaceClarityRepair";
 
 /*
 Canonical workflow disclosure retained as a source-level regression contract:
-Assessment workflow: Start Express or Comprehensive from href="/assessment?tier=express#assessment".
-Comprehensive captures one immutable commit and continues through required human review.
+Assessment workflow: Run one unified NICO assessment from href="/assessment?tier=comprehensive#assessment".
+The assessment captures one immutable commit and continues through required human review.
 NICO never approves findings or creates client delivery automatically.
 Guidance remains under More → Guide.
-Operator-only deployment controls are available under More → Operations (Admin).
-Ongoing evidence refresh remains under More → Retainer Ops.
+Operator-only deployment controls are available only in protected operator workspaces.
+Ongoing evidence refresh remains a post-acceptance operator workflow.
 */
 
 export const metadata = {
   title: "NICO",
-  description: "Evidence-bound technical health assessments with exact-snapshot reporting and required human review.",
+  description: "Evidence-bound technical and strategic assessment with exact-snapshot reporting and required human review.",
 };
 
 export default function RootLayout({children}: {children: ReactNode}) {
@@ -68,6 +69,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <OperationsPreloadGuard />
           <RetainerAutoEvidenceLauncher />
           <WorkspaceClarityRepair />
+          <UnifiedAssessmentPublicGuard />
           <PrimaryNavigation />
           <WorkflowCallout />
           <GenericRepositoryExample />
