@@ -13,7 +13,9 @@ def test_comprehensive_run_identity_is_presented_without_raw_identifier() -> Non
     assert 'return "Comprehensive Run"' in source
     assert "element.dataset.technicalRunId = technicalRunId" in source
     assert "Technical run ID:" in source
-    assert "element.textContent = friendlyTierLabel(technicalRunId)" in source
+    assert "const displayLabel = friendlyTierLabel(technicalRunId)" in source
+    assert "element.textContent = displayLabel" in source
+    assert "Active authorized repository" in source
 
 
 def test_mobile_report_cards_wrap_long_paths_and_use_compact_actions() -> None:
