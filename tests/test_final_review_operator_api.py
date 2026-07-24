@@ -165,3 +165,41 @@ def test_operator_approved_pdf_download_fails_closed_on_invalid_pdf(monkeypatch)
 
     assert response.status_code == 409
     assert "PDF integrity validation" in response.json()["detail"]["message"]
+
+
+def test_express_approved_pdf_lookup_uses_approved_same_run_record(monkeypatch) -> None:
+    expected = {"client_delivery_allowed": True, "pdf_base64": "encoded"}
+    monkeypatch.setattr(
+        operator,
+        "client_acceptance_status",
+        lambda run_id, customer_id, project_id: {
+            "approvals": [
+                {"status": "pending", "approved_delivery": {}},
+                {"status": "approved", "approved_delivery": expected},
+            ]
+        },
+    )
+
+    artifact = operator._approved_pdf_artifact("express", "express_run_1", "c1", "p1")
+
+    assert artifact is expected
+
+
+def test_comprehensive_approved_pdf_lookup_reads_full_report_artifact(monkeypatch) -> None:
+    expected = {"client_delivery_allowed": True, "pdf_base64": "encoded"}
+    monkeypatch.setattr(
+        operator,
+        "final_review_status",
+        lambda run_id, customer_id, project_id: {
+            "approvals": [{"status": "approved", "report_id": "report_1"}]
+        },
+    )
+    monkeypatch.setattr(
+        operator,
+        "get_report",
+        lambda report_id: {"report_id": report_id, "approved_delivery": expected},
+    )
+
+    artifact = operator._approved_pdf_artifact("comprehensive", "comprun_1", "c1", "p1")
+
+    assert artifact is expected
