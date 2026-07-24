@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from nico.accurate_green_release_v2 import install_accurate_green_release_v2
 from nico.comprehensive_score_assurance_ledger_v45 import install_comprehensive_score_assurance_ledger_v45
 from nico.express_assurance_projection_compat_v45 import install_express_assurance_projection_compat_v45
 from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_truth_v21
@@ -34,7 +35,7 @@ from nico.express_report_quality_v47 import install_express_report_quality_v47
 from nico.express_report_quality_v471_compat import install_express_report_quality_v471_compat
 from nico.express_report_quality_v472_qa_gate import install_express_report_quality_v472_qa_gate
 
-VERSION = "nico.express_live_renderer_binding.v47.2"
+VERSION = "nico.express_live_renderer_binding.v48"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -61,6 +62,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     final_export_truth = install_express_final_export_truth_v35()
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
+    accurate_green_release = install_accurate_green_release_v2()
     truth_calibration = install_express_truth_calibration_v36()
     assurance_display = install_express_assurance_display_v37()
     truth_calibration_compat = install_express_truth_calibration_v38_compat()
@@ -100,6 +102,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_install": final_export_truth,
         "score_assurance_export_install": score_assurance_export,
         "pdf_section_index_install": pdf_section_index,
+        "accurate_green_release_install": accurate_green_release,
         "truth_calibration_install": truth_calibration,
         "assurance_display_install": assurance_display,
         "truth_calibration_compat_install": truth_calibration_compat,
@@ -133,6 +136,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_bound": final_export_truth.get("status") in {"installed", "already_installed"},
         "score_assurance_export_bound": score_assurance_export.get("status") in {"installed", "already_installed"},
         "pdf_section_index_bound": pdf_section_index.get("status") in {"installed", "already_installed"},
+        "accurate_green_release_bound": accurate_green_release.get("status") in {"installed", "already_installed"},
         "truth_calibration_bound": truth_calibration.get("status") in {"installed", "already_installed"},
         "assurance_display_bound": assurance_display.get("status") in {"installed", "already_installed"},
         "truth_calibration_compat_bound": truth_calibration_compat.get("status") in {"installed", "already_installed"},
@@ -156,6 +160,9 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "scanner_cross_tool_claims_reconciled": True,
         "express_comprehensive_score_semantics_parity": True,
         "premium_client_report_layout": True,
+        "verified_green_remediation_page": True,
+        "yellow_controls_have_exit_criteria": True,
+        "history_scanner_runtime_hardened": True,
         "readable_paginated_appendix": True,
         "orphan_page_detection": True,
         "markdown_line_structure_preserved": True,
