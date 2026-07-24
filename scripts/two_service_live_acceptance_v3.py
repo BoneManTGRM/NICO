@@ -8,13 +8,65 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v8"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v9"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
+FORM_HYDRATION_TIMEOUT_MS = 30_000
+FORM_STABILITY_SECONDS = 0.8
+FORM_RETRY_SECONDS = 0.2
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
 _original_report_package = acceptance.report_package
 _original_run_service = runtime.run_service
+
+
+class _StableFormLocator:
+    """Retry controlled form writes across late Next/React hydration.
+
+    The production assessment shell can become visible before its client state has
+    completed hydration. A one-shot Playwright fill/check may therefore appear to
+    succeed and then be replaced by the initial empty React state, leaving Run disabled.
+    Keep each controlled value stable for a short bounded interval before continuing.
+    """
+
+    def __init__(self, locator: Any, page: Any) -> None:
+        self._locator = locator
+        self._page = page
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._locator, name)
+
+    def fill(self, value: str, *args: Any, **kwargs: Any) -> Any:
+        deadline = time.monotonic() + FORM_HYDRATION_TIMEOUT_MS / 1000.0
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                result = self._locator.fill(value, *args, **kwargs)
+                self._page.wait_for_timeout(int(FORM_STABILITY_SECONDS * 1000))
+                if self._locator.input_value() == value:
+                    return result
+            except Exception as exc:  # bounded retry while hydration replaces nodes
+                last_error = exc
+            self._page.wait_for_timeout(int(FORM_RETRY_SECONDS * 1000))
+        raise AssertionError(
+            f"controlled assessment input did not remain stable after hydration: {value!r}"
+        ) from last_error
+
+    def check(self, *args: Any, **kwargs: Any) -> Any:
+        deadline = time.monotonic() + FORM_HYDRATION_TIMEOUT_MS / 1000.0
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                result = self._locator.check(*args, **kwargs)
+                self._page.wait_for_timeout(int(FORM_STABILITY_SECONDS * 1000))
+                if self._locator.is_checked():
+                    return result
+            except Exception as exc:  # bounded retry while hydration replaces nodes
+                last_error = exc
+            self._page.wait_for_timeout(int(FORM_RETRY_SECONDS * 1000))
+        raise AssertionError(
+            "assessment authorization checkbox did not remain checked after hydration"
+        ) from last_error
 
 
 class _ExpectedCommitPage:
@@ -27,11 +79,28 @@ class _ExpectedCommitPage:
 
     def goto(self, url: str, *args: Any, **kwargs: Any) -> Any:
         parts = urlsplit(url)
-        if parts.path.endswith("/assessment"):
+        assessment_page = parts.path.endswith("/assessment")
+        if assessment_page:
             query = dict(parse_qsl(parts.query, keep_blank_values=True))
             query["expected_commit_sha"] = self._expected_sha
             url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
-        return self._page.goto(url, *args, **kwargs)
+        response = self._page.goto(url, *args, **kwargs)
+        if assessment_page:
+            try:
+                self._page.wait_for_load_state("networkidle", timeout=FORM_HYDRATION_TIMEOUT_MS)
+            except Exception:
+                # Controlled-field stability checks below remain the source of truth.
+                self._page.wait_for_timeout(1000)
+        return response
+
+    def get_by_label(self, *args: Any, **kwargs: Any) -> _StableFormLocator:
+        return _StableFormLocator(self._page.get_by_label(*args, **kwargs), self._page)
+
+    def get_by_role(self, role: str, *args: Any, **kwargs: Any) -> Any:
+        locator = self._page.get_by_role(role, *args, **kwargs)
+        if str(role).lower() == "checkbox":
+            return _StableFormLocator(locator, self._page)
+        return locator
 
 
 class _ExpectedCommitContext:
@@ -92,7 +161,6 @@ def _safe_ui_state(page: Any) -> dict[str, str]:
     The former ``locator.evaluate`` path could spend 30 seconds waiting for a live
     region that React had briefly unmounted, converting a transient UI condition into
     the acceptance failure while the same exact backend run was still advancing.
-
     Customer-facing identifiers are compacted on mobile. Acceptance must read their
     full immutable values from the code element title rather than concatenating the
     compact label and the adjacent copy-button text.
