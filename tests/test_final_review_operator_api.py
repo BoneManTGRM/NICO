@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -106,3 +108,98 @@ def test_operator_transition_requires_reviewer_note_for_rejection(monkeypatch) -
     assert response.status_code == 200
     assert response.json()["state"] == "rejected"
     assert response.json()["actor"] == "Reviewer"
+
+
+def test_operator_approved_pdf_download_returns_exact_pdf(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    pdf = b"%PDF-1.4\n% exact approved report\n"
+    monkeypatch.setattr(
+        operator,
+        "_approved_pdf_artifact",
+        lambda service, run_id, customer_id, project_id: {
+            "client_delivery_allowed": True,
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+            "pdf_filename": "nico-approved.pdf",
+            "pdf_sha256": "a" * 64,
+        },
+    )
+
+    response = client.get(
+        "/operations/final-review/comprehensive/comprun_1/approved-pdf?customer_id=c1&project_id=p1",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == pdf
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == 'attachment; filename="nico-approved.pdf"'
+    assert response.headers["cache-control"] == "no-store, private, max-age=0"
+    assert response.headers["x-nico-run-id"] == "comprun_1"
+    assert response.headers["x-nico-pdf-sha256"] == "a" * 64
+
+
+def test_operator_approved_pdf_download_is_admin_gated(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    response = client.get("/operations/final-review/express/express_run_1/approved-pdf")
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["status"] == "blocked"
+
+
+def test_operator_approved_pdf_download_fails_closed_on_invalid_pdf(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        operator,
+        "_approved_pdf_artifact",
+        lambda service, run_id, customer_id, project_id: {
+            "client_delivery_allowed": True,
+            "pdf_base64": base64.b64encode(b"not-a-pdf").decode("ascii"),
+        },
+    )
+
+    response = client.get(
+        "/operations/final-review/express/express_run_1/approved-pdf",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+
+    assert response.status_code == 409
+    assert "PDF integrity validation" in response.json()["detail"]["message"]
+
+
+def test_express_approved_pdf_lookup_uses_approved_same_run_record(monkeypatch) -> None:
+    expected = {"client_delivery_allowed": True, "pdf_base64": "encoded"}
+    monkeypatch.setattr(
+        operator,
+        "client_acceptance_status",
+        lambda run_id, customer_id, project_id: {
+            "approvals": [
+                {"status": "pending", "approved_delivery": {}},
+                {"status": "approved", "approved_delivery": expected},
+            ]
+        },
+    )
+
+    artifact = operator._approved_pdf_artifact("express", "express_run_1", "c1", "p1")
+
+    assert artifact is expected
+
+
+def test_comprehensive_approved_pdf_lookup_reads_full_report_artifact(monkeypatch) -> None:
+    expected = {"client_delivery_allowed": True, "pdf_base64": "encoded"}
+    monkeypatch.setattr(
+        operator,
+        "final_review_status",
+        lambda run_id, customer_id, project_id: {
+            "approvals": [{"status": "approved", "report_id": "report_1"}]
+        },
+    )
+    monkeypatch.setattr(
+        operator,
+        "get_report",
+        lambda report_id: {"report_id": report_id, "approved_delivery": expected},
+    )
+
+    artifact = operator._approved_pdf_artifact("comprehensive", "comprun_1", "c1", "p1")
+
+    assert artifact is expected

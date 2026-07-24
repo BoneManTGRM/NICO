@@ -29,6 +29,25 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+function approvedDeliveryFrom(value: ReviewResponse | null | undefined): JsonRecord {
+  if (!value) return {};
+  return asRecord(
+    value.approved_delivery
+      || asRecord(value.review).approved_delivery
+      || asRecord(value.acceptance).approved_delivery,
+  );
+}
+
+function mergeReviewResponses(latest: ReviewResponse, mutation: ReviewResponse): ReviewResponse {
+  const mutationDelivery = approvedDeliveryFrom(mutation);
+  const latestDelivery = approvedDeliveryFrom(latest);
+  const merged: ReviewResponse = {...mutation, ...latest};
+  if (Object.keys(mutationDelivery).length) {
+    merged.approved_delivery = {...latestDelivery, ...mutationDelivery};
+  }
+  return merged;
+}
+
 function jsonText(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
@@ -36,6 +55,25 @@ function jsonText(value: unknown): string {
 function statusLabel(value: string): string {
   const normalized = value.trim().replace(/_/g, " ");
   return normalized ? normalized.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Not loaded";
+}
+
+function safeFilename(value: string, fallback: string): string {
+  const normalized = value.replace(/[\r\n]/g, "").replace(/[\\/:*?"<>|]/g, "-").trim();
+  return normalized || fallback;
+}
+
+function filenameFromResponse(response: Response, fallback: string): string {
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const quoted = disposition.match(/filename="([^"]+)"/i)?.[1];
+  const plain = disposition.match(/filename=([^;]+)/i)?.[1];
+  let candidate = encoded || quoted || plain || "";
+  try {
+    candidate = decodeURIComponent(candidate);
+  } catch {
+    // Use the original server filename when it is not URL encoded.
+  }
+  return safeFilename(candidate, fallback);
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -54,7 +92,20 @@ function downloadBase64Pdf(encoded: string, filename: string): void {
   const binary = window.atob(clean);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  if (bytes.length < 4 || String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") {
+    throw new Error("Approved PDF signature is invalid.");
+  }
   downloadBlob(new Blob([bytes], {type: "application/pdf"}), filename);
+}
+
+async function responseError(response: Response, fallback: string): Promise<Error> {
+  const payload = await response.json().catch(() => ({})) as {
+    detail?: string | {message?: string};
+    message?: string;
+    error?: string;
+  };
+  const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message;
+  return new Error(detail || payload.message || payload.error || `${fallback} (${response.status}).`);
 }
 
 export default function FinalReviewOperationsPage() {
@@ -88,10 +139,9 @@ export default function FinalReviewOperationsPage() {
       || "",
   );
   const normalizedStatus = rawStatus.trim().toLowerCase();
-  const approvedDelivery = asRecord(
-    result?.approved_delivery
-      || asRecord(result?.review).approved_delivery
-      || asRecord(result?.acceptance).approved_delivery,
+  const approvedDelivery = approvedDeliveryFrom(result);
+  const embeddedApprovedPdf = String(
+    approvedDelivery.pdf_base64 || approvedDelivery.approved_pdf_base64 || "",
   );
   const deliveryAllowed = result?.client_delivery_allowed === true
     || asRecord(result?.acceptance).client_delivery_allowed === true
@@ -118,23 +168,18 @@ export default function FinalReviewOperationsPage() {
     return `${API_URL}/operations/final-review/${service}/${encodeURIComponent(runId.trim())}?${reviewQuery()}`;
   }
 
+  function approvedPdfUrl(): string {
+    return `${API_URL}/operations/final-review/${service}/${encodeURIComponent(runId.trim())}/approved-pdf?${reviewQuery()}`;
+  }
+
   async function requestJson(url: string, options: RequestInit = {}): Promise<ReviewResponse> {
     const response = await fetch(url, {cache: "no-store", ...options});
-    let payload: ReviewResponse & {
-      detail?: string | {message?: string};
-      message?: string;
-      error?: string;
-    };
+    if (!response.ok) throw await responseError(response, "Final-review request failed");
     try {
-      payload = await response.json();
+      return await response.json() as ReviewResponse;
     } catch {
       throw new Error(`Final-review endpoint returned invalid JSON (${response.status}).`);
     }
-    if (!response.ok) {
-      const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message;
-      throw new Error(detail || payload.message || payload.error || `Final-review request failed (${response.status}).`);
-    }
-    return payload;
   }
 
   function validate(requireReviewer = false): boolean {
@@ -161,12 +206,13 @@ export default function FinalReviewOperationsPage() {
     return requestJson(reviewUrl(), {headers: headers()});
   }
 
-  async function refreshAfterMutation(fallback: ReviewResponse): Promise<boolean> {
+  async function refreshAfterMutation(mutation: ReviewResponse): Promise<boolean> {
     try {
-      setResult(await fetchReviewStatus());
+      const latest = await fetchReviewStatus();
+      setResult(mergeReviewResponses(latest, mutation));
       return true;
     } catch {
-      setResult(fallback);
+      setResult(mutation);
       return false;
     }
   }
@@ -247,7 +293,7 @@ export default function FinalReviewOperationsPage() {
       setNotice(
         refreshed
           ? state === "approved"
-            ? "Approval recorded. Approved delivery is now available when the package is ready."
+            ? "Approval recorded. Approved delivery is available for this exact run."
             : state === "needs_more_evidence"
               ? "More evidence requested. Client delivery remains blocked."
               : "Rejection recorded. Client delivery remains blocked."
@@ -260,20 +306,38 @@ export default function FinalReviewOperationsPage() {
     }
   }
 
-  function downloadApprovedPdf(): void {
+  async function downloadApprovedPdf(): Promise<void> {
+    if (!validate()) return;
+    setLoading(true);
     setError("");
-    const encoded = String(approvedDelivery.pdf_base64 || approvedDelivery.approved_pdf_base64 || "");
-    if (!encoded) {
-      setError("The approved PDF is not attached yet. Reload status after the delivery package finishes.");
-      return;
-    }
+    setNotice("");
+    const fallbackName = `nico-${service}-${runId.trim()}-approved-final-report.pdf`;
     try {
-      downloadBase64Pdf(
-        encoded,
-        String(approvedDelivery.pdf_filename || `nico-${service}-approved-final-report.pdf`),
-      );
-    } catch {
-      setError("The approved PDF data is invalid. Reload status and try again.");
+      if (embeddedApprovedPdf) {
+        downloadBase64Pdf(
+          embeddedApprovedPdf,
+          safeFilename(String(approvedDelivery.pdf_filename || ""), fallbackName),
+        );
+      } else {
+        const response = await fetch(approvedPdfUrl(), {
+          cache: "no-store",
+          headers: headers(),
+        });
+        if (!response.ok) throw await responseError(response, "Approved PDF download failed");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.length < 4 || String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") {
+          throw new Error("The approved PDF failed browser integrity validation.");
+        }
+        downloadBlob(
+          new Blob([bytes], {type: "application/pdf"}),
+          filenameFromResponse(response, fallbackName),
+        );
+      }
+      setNotice("Approved final PDF downloaded.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to download the approved final PDF.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -287,13 +351,7 @@ export default function FinalReviewOperationsPage() {
         `${API_URL}/assessment/full-run/${encodeURIComponent(runId.trim())}/approved-delivery/package?${reviewQuery()}`,
         {cache: "no-store", headers: headers()},
       );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as {
-          detail?: string | {message?: string};
-        };
-        const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message;
-        throw new Error(detail || `Approved package download failed (${response.status}).`);
-      }
+      if (!response.ok) throw await responseError(response, "Approved package download failed");
       downloadBlob(
         await response.blob(),
         `nico-${service}-${runId.trim()}-approved-delivery.zip`,
@@ -497,7 +555,14 @@ export default function FinalReviewOperationsPage() {
       </div>
 
       <div className={styles.downloadActions}>
-        <button type="button" disabled={!deliveryAllowed || loading} onClick={downloadApprovedPdf}>
+        <button
+          type="button"
+          disabled={!deliveryAllowed || loading}
+          title={embeddedApprovedPdf
+            ? "Download the approved PDF attached to this review result."
+            : "Retrieve the exact approved PDF from the authenticated operator endpoint."}
+          onClick={downloadApprovedPdf}
+        >
           Download approved final PDF
         </button>
         {service === "comprehensive" ? <button
