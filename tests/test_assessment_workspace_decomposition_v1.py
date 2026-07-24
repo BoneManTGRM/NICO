@@ -21,7 +21,8 @@ def test_workspace_is_decomposed_by_responsibility() -> None:
     assert "async function run()" not in workspace
     assert "const EN:" not in workspace
     assert "const ES:" not in workspace
-    assert workspace.count("useState") <= 2
+    # One import occurrence plus the two bounded presentation-only states.
+    assert workspace.count("useState") <= 3
 
 
 def test_customer_sees_one_assessment_with_core_and_strategic_depths() -> None:
