@@ -32,6 +32,10 @@ def _supplement_pdf(stages: list[dict[str, Any]], pages_needed: int, run_id: str
     def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
         return Paragraph(html.escape(_text(value, 2200)), style)
 
+    def item(value: Any) -> Paragraph:
+        # ReportLab's standard Helvetica bullet can extract as DEL (U+007F).
+        return p(f"- {_text(value, 2100)}", small)
+
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
@@ -55,18 +59,18 @@ def _supplement_pdf(stages: list[dict[str, Any]], pages_needed: int, run_id: str
         evidence = list(stage.get("evidence") or [])
         findings = list(stage.get("findings") or [])
         unavailable = list(stage.get("unavailable") or [])
-        for item in evidence[:18]:
-            story.append(p(f"• {item}", small))
+        for value in evidence[:18]:
+            story.append(item(value))
         if findings:
             story.append(p("Findings", h2))
-            for item in findings[:10]:
-                story.append(p(f"• {item}", small))
+            for value in findings[:10]:
+                story.append(item(value))
         if unavailable:
             story.append(p("Unavailable or limited evidence", h2))
-            for item in unavailable[:10]:
-                story.append(p(f"• {item}", small))
+            for value in unavailable[:10]:
+                story.append(item(value))
         if not evidence and not findings and not unavailable:
-            story.append(p("• No additional machine-readable evidence was retained for this stage.", small))
+            story.append(item("No additional machine-readable evidence was retained for this stage."))
         if page_index < pages_needed - 1:
             story.append(PageBreak())
 
