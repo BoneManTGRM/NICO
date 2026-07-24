@@ -2,6 +2,8 @@
 
 import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
+import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
+import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";
 
 type ServiceKey = "run-job" | "operations" | "retainer";
 type AssessmentMode = "express" | "comprehensive";
@@ -88,47 +90,75 @@ function linkIsActive(pathname: string, href: string): boolean {
   return pathname.startsWith(target);
 }
 
+function isOperatorPath(pathname: string): boolean {
+  return pathname.startsWith("/operations")
+    || pathname.startsWith("/retainer-ops")
+    || pathname.startsWith("/guided-workflow");
+}
+
+function withLanguage(href: string, spanish: boolean): string {
+  if (!spanish || (!href.startsWith("/operations") && !href.startsWith("/retainer-ops") && !href.startsWith("/guided-workflow"))) return href;
+  const [pathAndQuery, hash = ""] = href.split("#", 2);
+  const [path, query = ""] = pathAndQuery.split("?", 2);
+  const params = new URLSearchParams(query);
+  params.set("lang", "es-MX");
+  return `${path}?${params.toString()}${hash ? `#${hash}` : ""}`;
+}
+
 export default function PrimaryNavigation() {
   const pathname = usePathname();
   const [assessment, setAssessment] = useState<AssessmentMode>("express");
+  const [currentSearch, setCurrentSearch] = useState("");
 
   useEffect(() => {
-    if (!pathname.startsWith("/assessment") && !pathname.startsWith("/es/assessment")) return;
-
-    const synchronizeFromUrl = () => {
-      setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
+    const synchronizeLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      setCurrentSearch(params.toString());
+      if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) {
+        setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
+      }
     };
     const synchronizeFromEvent = (event: Event) => {
       const detail = (event as CustomEvent<{tier?: string}>).detail;
       setAssessment(normalizeAssessmentMode(detail?.tier));
     };
 
-    synchronizeFromUrl();
-    window.addEventListener("popstate", synchronizeFromUrl);
+    synchronizeLocation();
+    window.addEventListener("popstate", synchronizeLocation);
     window.addEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
     return () => {
-      window.removeEventListener("popstate", synchronizeFromUrl);
+      window.removeEventListener("popstate", synchronizeLocation);
       window.removeEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
     };
   }, [pathname]);
 
   const activeService = serviceForPath(pathname, assessment);
-  const spanishActive = pathname.startsWith("/es");
+  const queryLocale = new URLSearchParams(currentSearch).get("lang");
+  const spanishActive = pathname.startsWith("/es") || queryLocale === "es-MX";
   const assessmentPath = spanishActive ? "/es/assessment" : "/assessment";
   const assessmentHref = `${assessmentPath}?tier=${assessment}#assessment`;
 
   // Canonical default links retained for route-contract compatibility.
   const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
-  const tierPreservingLanguageHref = spanishActive
-    ? `/assessment?tier=${assessment}#assessment`
-    : `/es/assessment?tier=${assessment}#assessment`;
+  const operatorWorkspace = isOperatorPath(pathname);
+  const operatorParams = new URLSearchParams(currentSearch);
+  if (spanishActive) operatorParams.delete("lang");
+  else operatorParams.set("lang", "es-MX");
+  const operatorLanguageHref = `${pathname}${operatorParams.toString() ? `?${operatorParams.toString()}` : ""}`;
+  const tierPreservingLanguageHref = operatorWorkspace
+    ? operatorLanguageHref
+    : spanishActive
+      ? `/assessment?tier=${assessment}#assessment`
+      : `/es/assessment?tier=${assessment}#assessment`;
   const languageLabel = spanishActive ? "English" : "Español";
   const languageCode = spanishActive ? "EN" : "ES";
   const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
   void languageHref;
 
-  return (
+  return <>
+    <OperatorWorkspaceLocale />
+    <AssessmentFinalReviewAction />
     <nav
       className="global-nav"
       aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}
@@ -191,7 +221,8 @@ export default function PrimaryNavigation() {
                     <small>{group.description}</small>
                     {group.links.map((link) => {
                       const active = linkIsActive(pathname, link.href);
-                      return <a href={link.href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
+                      const href = withLanguage(link.href, spanishActive);
+                      return <a href={href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
                     })}
                   </section>
                 ))}
@@ -201,5 +232,5 @@ export default function PrimaryNavigation() {
         </div>
       </div>
     </nav>
-  );
+  </>;
 }

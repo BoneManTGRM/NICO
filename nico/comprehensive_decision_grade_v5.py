@@ -20,6 +20,7 @@ from nico.comprehensive_final_report_filename_v48 import (
 from nico.comprehensive_final_report_semantics_v47 import (
     install_comprehensive_final_report_semantics_v47,
 )
+from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
@@ -69,6 +70,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
 
     final_report_semantics = install_comprehensive_final_report_semantics_v47()
     final_report_filename = install_comprehensive_final_report_filename_v48()
+    report_clarity = install_comprehensive_report_clarity_v8()
     build_comprehensive_report_package = report_module.build_comprehensive_report_package
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -89,8 +91,10 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "scanner_wrapper_composed": True,
         "final_report_semantics": final_report_semantics,
         "final_report_filename": final_report_filename,
+        "report_clarity": report_clarity,
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
         "final_report_filename_bound": final_report_filename.get("bound") is True,
+        "report_clarity_bound": report_clarity.get("status") in {"installed", "already_installed"},
         "report_finality": "final",
         "approval_status": "pending_human_approval",
         "delivery_status": "blocked_pending_human_approval",
