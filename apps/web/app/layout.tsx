@@ -25,6 +25,7 @@ import GenericRepositoryExample from "./GenericRepositoryExample";
 import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
 import OperationsPreloadGuard from "./OperationsPreloadGuard";
+import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";
 import PrimaryNavigation from "./PrimaryNavigation";
 import ReportPresentationGuard from "./ReportPresentationGuard";
 import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
@@ -68,6 +69,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <OperationsPreloadGuard />
           <RetainerAutoEvidenceLauncher />
           <WorkspaceClarityRepair />
+          <OperatorWorkspaceLocale />
           <PrimaryNavigation />
           <WorkflowCallout />
           <GenericRepositoryExample />
