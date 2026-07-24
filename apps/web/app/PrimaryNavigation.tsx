@@ -113,7 +113,7 @@ export default function PrimaryNavigation() {
       const params = new URLSearchParams(window.location.search);
       setCurrentSearch(params.toString());
       if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) {
-        setAssessment(normalizeAssessmentMode(params.get("tier")));
+        setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
       }
     };
     const synchronizeFromEvent = (event: Event) => {
