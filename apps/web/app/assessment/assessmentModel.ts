@@ -6,6 +6,7 @@ import type {
   ProgressItem,
   Report,
   Result,
+  Section,
   Service,
   Stage,
 } from "./assessmentTypes";
@@ -182,11 +183,11 @@ export function savePdf(encoded: string, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export function sectionPresentation(section: Assessment["sections"] extends Array<infer T> ? T : never, copy: Copy) {
-  const value = section?.presented_score ?? section?.score;
+export function sectionPresentation(section: Section, copy: Copy) {
+  const value = section.presented_score ?? section.score;
   const score = typeof value === "number" ? `${value}/100` : copy.notScored;
-  const assurance = String(section?.assurance_label || section?.presented_status || section?.status || "unknown");
-  const risk = String(section?.risk_disposition || "");
+  const assurance = String(section.assurance_label || section.presented_status || section.status || "unknown");
+  const risk = String(section.risk_disposition || "");
   return {
     scoreValue: typeof value === "number" ? value : null,
     score,
