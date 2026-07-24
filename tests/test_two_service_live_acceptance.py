@@ -8,12 +8,13 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "two_service_live_acceptance.py"
+LEGACY_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance.py"
+CANONICAL_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance_v3.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "two-service-production-acceptance.yml"
 
 
 def _module():
-    spec = importlib.util.spec_from_file_location("two_service_live_acceptance", SCRIPT)
+    spec = importlib.util.spec_from_file_location("two_service_live_acceptance", LEGACY_SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -21,7 +22,7 @@ def _module():
     return module
 
 
-def test_live_acceptance_has_exactly_two_public_services() -> None:
+def test_legacy_runner_retains_backend_tier_compatibility() -> None:
     module = _module()
 
     assert module.SERVICE_LABELS == {
@@ -92,26 +93,42 @@ def test_report_and_assessment_extractors_use_native_comprehensive_stage() -> No
     assert module.assessment_payload("comprehensive", payload)["maturity_signal"]["score"] == 90
 
 
-def test_live_proof_checks_language_parity_formats_depth_and_review_boundary() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+def test_canonical_live_proof_matches_unified_public_assessment() -> None:
+    source = CANONICAL_SCRIPT.read_text(encoding="utf-8")
 
     for required in (
-        'main[data-assessment-service-count="2"]',
-        '["Express", "Comprehensive"]',
-        '["Express", "Integral"]',
+        'data-assessment-service-count=\"1\"',
+        'data-canonical-assessment=\"strategic\"',
+        '"Run NICO Assessment"',
+        '"Ejecutar evaluación NICO"',
+        '"public_assessment": "strategic"',
+        '"services": ["comprehensive"]',
+        '"one_public_assessment": True',
+        '"legacy_tier_selector_hidden": True',
         '"markdown_html_pdf_json_parity": True',
         '"comprehensive_depth_verified": True',
         '"post_run_reconnect_identity_preserved": True',
         '"human_review_required": True',
         '"client_delivery_blocked": True',
-        '"semantic_contract": {',
-        'assert commit == config.expected_sha',
-        'assert observed_run_ids == {rid}',
+        'assert all(item["service"] == "comprehensive" for item in runs)',
     ):
         assert required in source
 
 
-def test_post_merge_workflow_waits_for_deployments_and_publishes_status() -> None:
+def test_legacy_report_validation_keeps_depth_and_review_boundaries() -> None:
+    source = LEGACY_SCRIPT.read_text(encoding="utf-8")
+
+    for required in (
+        '"semantic_contract": {',
+        'assert commit == config.expected_sha',
+        'assert observed_run_ids == {rid}',
+        'assert first_bool(final, "human_review_required") is True',
+        'assert first_bool(final, "client_delivery_allowed") is not True',
+    ):
+        assert required in source
+
+
+def test_post_merge_workflow_waits_for_deployments_and_validates_unified_proof() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request:" in source
@@ -121,5 +138,9 @@ def test_post_merge_workflow_waits_for_deployments_and_publishes_status() -> Non
     assert "Wait for exact frontend and backend deployments" in source
     assert "--passes 2" in source
     assert "NICO Two-Service Production Acceptance" in source
+    assert 'payload["artifact_schema"] == "nico.unified_live_acceptance.v1"' in source
+    assert 'payload["public_assessment"] == "strategic"' in source
+    assert 'payload["services"] == ["comprehensive"]' in source
+    assert 'len(payload["runs"]) == 2' in source
     assert '"state": "success"' in source
     assert '"state": "failure"' in source

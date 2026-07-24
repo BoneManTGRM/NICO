@@ -8,14 +8,25 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v10"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v11"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 FORM_HYDRATION_TIMEOUT_MS = 30_000
 FORM_STABILITY_SECONDS = 0.8
 FORM_RETRY_SECONDS = 0.2
-SERVICE_SELECTOR = '[aria-label="Assessment type"] button'
+LEGACY_WORKSPACE_SELECTOR = 'main[data-assessment-service-count="2"]'
+UNIFIED_WORKSPACE_SELECTOR = (
+    'main[data-assessment-service-count="1"][data-canonical-assessment="strategic"]'
+)
 RUN_SELECTOR = '#assessment > button.primary-button'
+PUBLIC_RUN_LABELS = {
+    "en": "Run NICO Assessment",
+    "es-MX": "Ejecutar evaluación NICO",
+}
+PUBLIC_HEADINGS = {
+    "en": "Complete technical and strategic diligence",
+    "es-MX": "Diligencia técnica y estratégica completa",
+}
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
 _original_report_package = acceptance.report_package
@@ -23,13 +34,7 @@ _original_run_service = runtime.run_service
 
 
 class _StableFormLocator:
-    """Retry controlled form writes across late Next/React hydration.
-
-    The production assessment shell can become visible before its client state has
-    completed hydration. A one-shot Playwright fill/check may therefore appear to
-    succeed and then be replaced by the initial empty React state, leaving Run disabled.
-    Keep each controlled value stable for a short bounded interval before continuing.
-    """
+    """Retry controlled form writes across late Next/React hydration."""
 
     def __init__(self, locator: Any, page: Any) -> None:
         self._locator = locator
@@ -47,7 +52,7 @@ class _StableFormLocator:
                 self._page.wait_for_timeout(int(FORM_STABILITY_SECONDS * 1000))
                 if self._locator.input_value() == value:
                     return result
-            except Exception as exc:  # bounded retry while hydration replaces nodes
+            except Exception as exc:
                 last_error = exc
             self._page.wait_for_timeout(int(FORM_RETRY_SECONDS * 1000))
         raise AssertionError(
@@ -63,12 +68,22 @@ class _StableFormLocator:
                 self._page.wait_for_timeout(int(FORM_STABILITY_SECONDS * 1000))
                 if self._locator.is_checked():
                     return result
-            except Exception as exc:  # bounded retry while hydration replaces nodes
+            except Exception as exc:
                 last_error = exc
             self._page.wait_for_timeout(int(FORM_RETRY_SECONDS * 1000))
         raise AssertionError(
             "assessment authorization checkbox did not remain checked after hydration"
         ) from last_error
+
+
+class _CanonicalServiceLocator:
+    """Represent the already-selected hidden Comprehensive execution tier."""
+
+    def get_attribute(self, name: str) -> str | None:
+        return "true" if name == "aria-pressed" else None
+
+    def click(self, *args: Any, **kwargs: Any) -> None:
+        return None
 
 
 class _ExpectedCommitPage:
@@ -85,6 +100,7 @@ class _ExpectedCommitPage:
         if assessment_page:
             query = dict(parse_qsl(parts.query, keep_blank_values=True))
             query["expected_commit_sha"] = self._expected_sha
+            query["tier"] = "comprehensive"
             url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
         response = self._page.goto(url, *args, **kwargs)
         if assessment_page:
@@ -94,10 +110,14 @@ class _ExpectedCommitPage:
                 try:
                     wait_for_load_state("networkidle", timeout=FORM_HYDRATION_TIMEOUT_MS)
                 except Exception:
-                    # Controlled-field stability checks below remain the source of truth.
                     if callable(wait_for_timeout):
                         wait_for_timeout(1000)
         return response
+
+    def locator(self, selector: str, *args: Any, **kwargs: Any) -> Any:
+        if selector == LEGACY_WORKSPACE_SELECTOR:
+            selector = UNIFIED_WORKSPACE_SELECTOR
+        return self._page.locator(selector, *args, **kwargs)
 
     def get_by_label(self, *args: Any, **kwargs: Any) -> _StableFormLocator:
         return _StableFormLocator(self._page.get_by_label(*args, **kwargs), self._page)
@@ -105,13 +125,10 @@ class _ExpectedCommitPage:
     def get_by_role(self, role: str, *args: Any, **kwargs: Any) -> Any:
         normalized_role = str(role).lower()
         name = kwargs.get("name")
-        locator_factory = getattr(self._page, "locator", None)
-        if normalized_role == "button" and isinstance(name, str) and callable(locator_factory):
-            if name in {"Express", "Comprehensive"}:
-                return locator_factory(SERVICE_SELECTOR).filter(has_text=name).first
-            if name in {"Run Express", "Run Comprehensive"}:
-                return locator_factory(RUN_SELECTOR).first
-
+        if normalized_role == "button" and name == "Comprehensive":
+            return _CanonicalServiceLocator()
+        if normalized_role == "button" and name in {"Run Comprehensive", "Run NICO Assessment"}:
+            return self._page.locator(RUN_SELECTOR).first
         locator = self._page.get_by_role(role, *args, **kwargs)
         if normalized_role == "checkbox":
             return _StableFormLocator(locator, self._page)
@@ -148,12 +165,133 @@ def _run_service_at_expected_commit(
     pass_number: int,
     service: str,
 ) -> dict[str, Any]:
+    if service != "comprehensive":
+        raise AssertionError("The canonical public assessment must execute Comprehensive internally.")
     return _original_run_service(
         _ExpectedCommitBrowser(browser, config.expected_sha),
         config,
         pass_number,
-        service,
+        "comprehensive",
     )
+
+
+def _verify_unified_language_parity(browser: Any, config: Any) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    for locale, path in (
+        ("en", "/assessment?tier=comprehensive#assessment"),
+        ("es-MX", "/es/assessment?tier=comprehensive#assessment"),
+    ):
+        context = browser.new_context(viewport={"width": 390, "height": 844}, locale=locale)
+        page = context.new_page()
+        try:
+            page.goto(
+                config.frontend_origin + path,
+                wait_until="domcontentloaded",
+                timeout=config.navigation_timeout_ms,
+            )
+            workspace = page.locator(UNIFIED_WORKSPACE_SELECTOR).first
+            workspace.wait_for(state="visible", timeout=config.navigation_timeout_ms)
+            choice_grid = workspace.locator('[aria-label="Assessment type"]').first
+            choice_grid.wait_for(state="attached", timeout=config.navigation_timeout_ms)
+            assert choice_grid.get_attribute("aria-hidden") == "true"
+            assert choice_grid.is_hidden(), f"{locale} exposed the retired tier selector"
+            buttons = choice_grid.locator("button")
+            assert buttons.count() == 2, f"{locale} lost legacy internal tier controls"
+            assert all(buttons.nth(index).is_hidden() for index in range(buttons.count()))
+
+            run_button = workspace.locator(RUN_SELECTOR).first
+            run_button.wait_for(state="visible", timeout=config.navigation_timeout_ms)
+            run_label = acceptance.text(run_button.inner_text(), 120)
+            assert run_label == PUBLIC_RUN_LABELS[locale], (
+                f"{locale} canonical run label was {run_label!r}, expected {PUBLIC_RUN_LABELS[locale]!r}"
+            )
+            heading = acceptance.text(
+                workspace.locator("#assessment .section-head h2").first.inner_text(),
+                200,
+            )
+            assert heading == PUBLIC_HEADINGS[locale], (
+                f"{locale} canonical heading was {heading!r}, expected {PUBLIC_HEADINGS[locale]!r}"
+            )
+            tier = page.evaluate("() => new URL(window.location.href).searchParams.get('tier')")
+            assert tier == "comprehensive"
+
+            screenshot = config.screenshot_dir / f"parity-{locale}.png"
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(screenshot), full_page=True)
+            results[locale] = {
+                "public_assessment_count": 1,
+                "canonical_assessment": "strategic",
+                "execution_service": "comprehensive",
+                "legacy_selector_hidden": True,
+                "run_label": run_label,
+                "heading": heading,
+                "screenshot": screenshot.as_posix(),
+                "screenshot_sha256": acceptance.sha256(screenshot.read_bytes()),
+            }
+        finally:
+            context.close()
+    return results
+
+
+def _run_unified(config: Any) -> dict[str, Any]:
+    from playwright.sync_api import sync_playwright
+
+    config.output.parent.mkdir(parents=True, exist_ok=True)
+    config.screenshot_dir.mkdir(parents=True, exist_ok=True)
+    config.artifact_dir.mkdir(parents=True, exist_ok=True)
+    started = acceptance.now_epoch()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            parity = _verify_unified_language_parity(
+                _ExpectedCommitBrowser(browser, config.expected_sha),
+                config,
+            )
+            runs = [
+                _run_service_at_expected_commit(browser, config, pass_number, "comprehensive")
+                for pass_number in range(1, config.passes + 1)
+            ]
+        finally:
+            browser.close()
+
+    run_ids = [item["run_id"] for item in runs]
+    assert len(run_ids) == len(set(run_ids)), "acceptance runs reused an existing run ID"
+    assert len(runs) == config.passes
+    assert all(item["status"] == "passed" for item in runs)
+    assert all(item["service"] == "comprehensive" for item in runs)
+    return {
+        "artifact_schema": "nico.unified_live_acceptance.v1",
+        "status": "passed",
+        "live_production_claim": True,
+        "authorized_repository": config.repository,
+        "expected_deployed_sha": config.expected_sha,
+        "passes_required": config.passes,
+        "passes_completed": config.passes,
+        "public_assessment": "strategic",
+        "services": ["comprehensive"],
+        "language_parity": parity,
+        "proof": {
+            "one_public_assessment": True,
+            "legacy_tier_selector_hidden": True,
+            "english_spanish_parity": True,
+            "one_start_per_pass": True,
+            "exact_run_continuation": True,
+            "exact_sha_bound": True,
+            "markdown_html_pdf_json_parity": True,
+            "comprehensive_depth_verified": True,
+            "post_run_reconnect_identity_preserved": True,
+            "human_review_required": True,
+            "client_delivery_blocked": True,
+            "two_consecutive_passes": config.passes >= 2,
+        },
+        "runs": runs,
+        "started_at_epoch": started,
+        "finished_at_epoch": acceptance.now_epoch(),
+        "guardrail": (
+            "Live automated evidence is a release-acceptance proof, not human approval "
+            "or client-delivery authorization."
+        ),
+    }
 
 
 def _fallback_ui_state(page: Any) -> dict[str, str]:
@@ -171,16 +309,6 @@ def _fallback_ui_state(page: Any) -> dict[str, str]:
 
 
 def _safe_ui_state(page: Any) -> dict[str, str]:
-    """Read the live panel immediately without a locator auto-wait.
-
-    The former ``locator.evaluate`` path could spend 30 seconds waiting for a live
-    region that React had briefly unmounted, converting a transient UI condition into
-    the acceptance failure while the same exact backend run was still advancing.
-    Customer-facing identifiers are compacted on mobile. Acceptance must read their
-    full immutable values from the code element title rather than concatenating the
-    compact label and the adjacent copy-button text.
-    """
-
     fallback = _fallback_ui_state(page)
     try:
         value = page.evaluate(
@@ -234,13 +362,6 @@ def _backend_is_terminal(payload: dict[str, Any]) -> bool:
 
 
 def _report_package(service: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Read the terminal Comprehensive package from its bounded top-level field.
-
-    Active Comprehensive responses intentionally omit generated reports and large
-    stage payloads. At the terminal human-review boundary the API attaches one report
-    package at ``reports`` rather than duplicating it inside the projected run record.
-    """
-
     if service == "comprehensive":
         reports = payload.get("reports")
         if isinstance(reports, dict) and (
@@ -278,14 +399,6 @@ def _wait_for_service_terminal(
     timeout_ms: int,
     status_history: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, str], bool]:
-    """Reconcile a terminal browser state with the exact persisted run.
-
-    Preserve the original bounded observer for normal execution. When the UI reaches
-    a terminal state first, immediately re-read the same exact run until its status is
-    terminal or the short reconciliation budget expires. No duplicate run is started,
-    and no incomplete backend record is relabeled as successful.
-    """
-
     backend_payload, state, ui_terminal_observed = _original_wait_for_service_terminal(
         page=page,
         service=service,
@@ -301,7 +414,7 @@ def _wait_for_service_terminal(
     while time.monotonic() < deadline:
         try:
             current, summary = runtime._backend_status(page, service, identity_payload)
-        except Exception as exc:  # temporary transport failures remain bounded
+        except Exception as exc:
             current = {}
             summary = _status_error_summary(identity_payload, exc)
         status_history.append(summary)
@@ -324,6 +437,8 @@ def _wait_for_service_terminal(
 def main(argv: list[str] | None = None) -> int:
     acceptance.ui_state = _safe_ui_state
     acceptance.report_package = _report_package
+    acceptance.verify_language_parity = _verify_unified_language_parity
+    acceptance.run = _run_unified
     runtime._wait_for_service_terminal = _wait_for_service_terminal
     runtime.run_service = _run_service_at_expected_commit
     return runtime.main(argv)

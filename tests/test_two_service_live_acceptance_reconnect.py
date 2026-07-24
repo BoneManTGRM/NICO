@@ -121,6 +121,7 @@ def test_workflow_runs_terminal_reconciliation_wrapper_and_compiles_all_contract
         "scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py"
     ) in source
     assert "python scripts/two_service_live_acceptance_v3.py" in source
-    live_step = source.split("Run two consecutive Express and Comprehensive production passes", 1)[1]
+    live_step = source.split("Run two consecutive unified strategic assessment passes", 1)[1]
     assert "python scripts/two_service_live_acceptance_v2.py" not in live_step
     assert "python scripts/two_service_live_acceptance.py" not in live_step
+    assert 'payload["public_assessment"] == "strategic"' in live_step

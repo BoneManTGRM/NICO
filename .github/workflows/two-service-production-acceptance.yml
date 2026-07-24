@@ -1,4 +1,4 @@
-name: Two-Service Production Acceptance
+name: Unified Production Acceptance
 
 on:
   pull_request:
@@ -12,12 +12,12 @@ permissions:
   statuses: write
 
 concurrency:
-  group: two-service-production-acceptance-${{ github.ref }}
+  group: unified-production-acceptance-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   contract:
-    name: Validate two-service acceptance contract
+    name: Validate unified acceptance contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -36,28 +36,37 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          source = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
+          legacy = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
           reconnect = Path("scripts/two_service_live_acceptance_v2.py").read_text(encoding="utf-8")
-          terminal_reconciliation = Path("scripts/two_service_live_acceptance_v3.py").read_text(encoding="utf-8")
-          assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in source
-          assert 'data-assessment-service-count="2"' in source
-          assert 'passes=args.passes' in source
-          assert '"two_consecutive_passes": config.passes >= 2' in source
-          assert '"human_review_required": True' in source
-          assert '"client_delivery_blocked": True' in source
-          assert '"markdown_html_pdf_json_parity": True' in source
-          assert '"comprehensive_depth_verified": True' in source
-          assert '"post_run_reconnect_identity_preserved": True' in source
+          unified = Path("scripts/two_service_live_acceptance_v3.py").read_text(encoding="utf-8")
+
+          assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in legacy
+          assert 'passes=args.passes' in legacy
           assert 'acceptance.status_reconnect = status_reconnect' in reconnect
           assert 'return f"{parsed.scheme}://{parsed.netloc}{path}"' in reconnect
           assert 'APIRequestContext: Invalid URL' in reconnect
-          assert 'runtime._wait_for_service_terminal = _wait_for_service_terminal' in terminal_reconciliation
-          assert 'UI_BACKEND_RECONCILIATION_SECONDS' in terminal_reconciliation
-          assert 'No duplicate run is started' in terminal_reconciliation
+
+          assert 'UNIFIED_WORKSPACE_SELECTOR' in unified
+          assert 'data-assessment-service-count=\"1\"' in unified
+          assert 'data-canonical-assessment=\"strategic\"' in unified
+          assert '"public_assessment": "strategic"' in unified
+          assert '"services": ["comprehensive"]' in unified
+          assert '"one_public_assessment": True' in unified
+          assert '"legacy_tier_selector_hidden": True' in unified
+          assert '"Run NICO Assessment"' in unified
+          assert '"Ejecutar evaluación NICO"' in unified
+          assert 'runtime._wait_for_service_terminal = _wait_for_service_terminal' in unified
+          assert 'runtime.run_service = _run_service_at_expected_commit' in unified
+          assert 'UI_BACKEND_RECONCILIATION_SECONDS' in unified
+          assert '"human_review_required": True' in unified
+          assert '"client_delivery_blocked": True' in unified
+          assert '"markdown_html_pdf_json_parity": True' in unified
+          assert '"comprehensive_depth_verified": True' in unified
+          assert '"post_run_reconnect_identity_preserved": True' in unified
           PY
 
   live-production:
-    name: Run two consecutive deployed acceptance passes
+    name: Run two consecutive deployed unified passes
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: contract
     runs-on: ubuntu-latest
@@ -85,7 +94,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for deployed two-service acceptance proof",
+              "description": "Waiting for deployed unified assessment acceptance proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -127,7 +136,7 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-two-service-acceptance",
+                      "User-Agent": "nico-unified-acceptance",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -158,7 +167,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0" "pypdf>=5,<7"
           python -m playwright install --with-deps chromium
 
-      - name: Run two consecutive Express and Comprehensive production passes
+      - name: Run two consecutive unified strategic assessment passes
         id: acceptance
         continue-on-error: true
         run: |
@@ -176,7 +185,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: two-service-production-acceptance-${{ github.sha }}-${{ github.run_id }}
+          name: unified-production-acceptance-${{ github.sha }}-${{ github.run_id }}
           path: |
             audit-results/two-service-live-acceptance.json
             audit-results/two-service-live-screenshots/
@@ -194,21 +203,27 @@ jobs:
           from pathlib import Path
 
           payload = json.loads(Path("audit-results/two-service-live-acceptance.json").read_text(encoding="utf-8"))
+          assert payload["artifact_schema"] == "nico.unified_live_acceptance.v1"
           assert payload["status"] == "passed"
           assert payload["live_production_claim"] is True
           assert payload["passes_required"] == 2
           assert payload["passes_completed"] == 2
-          assert payload["services"] == ["express", "comprehensive"]
-          assert len(payload["runs"]) == 4
+          assert payload["public_assessment"] == "strategic"
+          assert payload["services"] == ["comprehensive"]
+          assert len(payload["runs"]) == 2
           assert all(payload["proof"].values())
+          assert payload["proof"]["one_public_assessment"] is True
+          assert payload["proof"]["legacy_tier_selector_hidden"] is True
+          assert all(item["service"] == "comprehensive" for item in payload["runs"])
           assert all(item["commit_sha"] == payload["expected_deployed_sha"] for item in payload["runs"])
           assert all(item["human_review_required"] is True for item in payload["runs"])
           assert all(item["client_delivery_allowed"] is False for item in payload["runs"])
-          comprehensive = [item for item in payload["runs"] if item["service"] == "comprehensive"]
-          assert len(comprehensive) == 2
-          assert all(item["report"]["semantic_contract"]["status"] == "passed" for item in comprehensive)
-          assert all(item["report"]["semantic_contract"]["required_sections_verified"] is True for item in comprehensive)
-          assert all(item["report"]["semantic_contract"]["stale_draft_language_absent"] is True for item in comprehensive)
+          assert all(item["report"]["semantic_contract"]["status"] == "passed" for item in payload["runs"])
+          assert all(item["report"]["semantic_contract"]["required_sections_verified"] is True for item in payload["runs"])
+          assert all(item["report"]["semantic_contract"]["stale_draft_language_absent"] is True for item in payload["runs"])
+          assert set(payload["language_parity"]) == {"en", "es-MX"}
+          assert all(item["public_assessment_count"] == 1 for item in payload["language_parity"].values())
+          assert all(item["legacy_selector_hidden"] is True for item in payload["language_parity"].values())
           PY
 
       - name: Publish successful production acceptance status
@@ -220,7 +235,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Two Express + Comprehensive production passes succeeded",
+              "description": "Two unified strategic assessment passes succeeded",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -241,7 +256,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Two-service production acceptance failed; release requires repair",
+              "description": "Unified production acceptance failed; release requires repair",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY

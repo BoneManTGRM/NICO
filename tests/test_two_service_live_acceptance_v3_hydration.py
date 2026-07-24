@@ -66,11 +66,6 @@ class FlakyCheckbox:
 class Locator:
     def __init__(self, selector):
         self.selector = selector
-        self.has_text = ""
-
-    def filter(self, *, has_text):
-        self.has_text = has_text
-        return self
 
     @property
     def first(self):
@@ -81,8 +76,10 @@ class SelectorPage(Page):
     def __init__(self) -> None:
         super().__init__()
         self.role_calls = []
+        self.locator_calls = []
 
-    def locator(self, selector):
+    def locator(self, selector, *args, **kwargs):
+        self.locator_calls.append(selector)
         return Locator(selector)
 
     def get_by_role(self, role, *args, **kwargs):
@@ -108,33 +105,47 @@ def test_stable_checkbox_retries_after_hydration_reset() -> None:
     assert checkbox.checked is True
 
 
-def test_expected_commit_page_waits_and_preserves_sha() -> None:
+def test_expected_commit_page_forces_comprehensive_and_preserves_sha() -> None:
     module = _module()
     page = Page()
     wrapped = module._ExpectedCommitPage(page, "a" * 40)
     wrapped.goto("https://app.nicoaudit.com/assessment?tier=express#assessment")
     assert "expected_commit_sha=" + "a" * 40 in page.goto_urls[0]
+    assert "tier=comprehensive" in page.goto_urls[0]
     assert page.load_states == [("networkidle", module.FORM_HYDRATION_TIMEOUT_MS)]
 
 
-def test_service_and_run_buttons_use_stable_selectors() -> None:
+def test_legacy_workspace_selector_maps_to_unified_workspace() -> None:
     module = _module()
     page = SelectorPage()
     wrapped = module._ExpectedCommitPage(page, "a" * 40)
 
-    service = wrapped.get_by_role("button", name="Express", exact=True)
+    locator = wrapped.locator(module.LEGACY_WORKSPACE_SELECTOR)
+
+    assert locator.selector == module.UNIFIED_WORKSPACE_SELECTOR
+    assert page.locator_calls == [module.UNIFIED_WORKSPACE_SELECTOR]
+
+
+def test_hidden_comprehensive_tier_is_treated_as_already_selected() -> None:
+    module = _module()
+    page = SelectorPage()
+    wrapped = module._ExpectedCommitPage(page, "a" * 40)
+
+    service = wrapped.get_by_role("button", name="Comprehensive", exact=True)
     run = wrapped.get_by_role("button", name="Run Comprehensive", exact=True)
 
-    assert service.selector == module.SERVICE_SELECTOR
-    assert service.has_text == "Express"
+    assert service.get_attribute("aria-pressed") == "true"
     assert run.selector == module.RUN_SELECTOR
     assert page.role_calls == []
 
 
 def test_acceptance_repair_contract_is_installed() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
-    assert 'VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v10"' in source
+    assert 'VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v11"' in source
     assert "FORM_HYDRATION_TIMEOUT_MS" in source
-    assert "SERVICE_SELECTOR" in source
+    assert "LEGACY_WORKSPACE_SELECTOR" in source
+    assert "UNIFIED_WORKSPACE_SELECTOR" in source
     assert "RUN_SELECTOR" in source
+    assert "acceptance.verify_language_parity = _verify_unified_language_parity" in source
+    assert "acceptance.run = _run_unified" in source
     assert "runtime.run_service = _run_service_at_expected_commit" in source

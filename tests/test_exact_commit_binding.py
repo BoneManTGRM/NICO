@@ -95,7 +95,7 @@ def _v3_module():
     return module
 
 
-def test_acceptance_navigation_carries_the_exact_release_sha() -> None:
+def test_acceptance_navigation_carries_exact_release_sha_and_canonical_tier() -> None:
     module = _v3_module()
     seen: list[str] = []
 
@@ -108,7 +108,7 @@ def test_acceptance_navigation_carries_the_exact_release_sha() -> None:
     page = module._ExpectedCommitPage(Page(), sha)
     assert page.goto("https://app.nicoaudit.com/assessment?tier=express#assessment") == "ok"
     assert seen == [
-        f"https://app.nicoaudit.com/assessment?tier=express&expected_commit_sha={sha}#assessment"
+        f"https://app.nicoaudit.com/assessment?tier=comprehensive&expected_commit_sha={sha}#assessment"
     ]
 
 
