@@ -18,8 +18,11 @@ def test_public_assessment_exposes_one_canonical_strategic_workflow() -> None:
     assert 'url.searchParams.set("tier", "comprehensive")' in source
     assert 'main.dataset.assessmentServiceCount = "1"' in source
     assert 'main.dataset.canonicalAssessment = "strategic"' in source
+    assert 'main.dataset.customerFacingAssessment = "comprehensive"' in source
     assert "One assessment. One evidence ledger. One decision-grade report." in source
-    assert "everything useful from Express, Mid, and Comprehensive" in source
+    assert "One assessment reviews technical health, security, architecture, delivery risk, remediation, roadmap, and resourcing against one immutable repository snapshot." in source
+    assert "everything useful from Express, Mid, and Comprehensive" not in source
+    assert "NICO COMPREHENSIVE ASSESSMENT" in source
     assert "Run NICO Assessment" in source
     assert 'grid.hidden = true' in source
     assert 'grid.setAttribute("aria-hidden", "true")' in source
