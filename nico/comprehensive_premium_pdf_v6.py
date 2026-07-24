@@ -65,7 +65,9 @@ def _build_pdf(
         return Paragraph(html.escape(_text(value)), style)
 
     def bullets(values: Iterable[Any], limit: int = 12) -> list[Paragraph]:
-        return [p(f"• {_text(item, 900)}", small) for item in list(values)[:limit] if _text(item)]
+        # ReportLab's standard Helvetica bullet can extract as DEL (U+007F).
+        # Use an ASCII marker so PDF text remains portable and acceptance-safe.
+        return [p(f"- {_text(item, 900)}", small) for item in list(values)[:limit] if _text(item)]
 
     def table(rows: list[list[Any]], widths: list[float], header: bool = True, font_size: float = 6.8) -> LongTable:
         converted = [[p(cell, small) for cell in row] for row in rows]
