@@ -5,10 +5,13 @@ import re
 from functools import wraps
 from typing import Any, Callable, Mapping
 
-VERSION = "nico.runtime_deployment_commit_resolution.v1"
+VERSION = "nico.runtime_deployment_commit_resolution.v2"
 _MARKER = "_nico_runtime_deployment_commit_resolution_v1"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_EXPECTED_MARKER_RE = re.compile(
+    r"(?:^|[;\s])expected_commit_sha=([0-9a-fA-F]{40})(?=$|[;\s])"
+)
 
 
 def _text(value: Any) -> str:
@@ -21,11 +24,22 @@ def _repository(value: Any) -> str:
 
 
 def _expected_sha(context: Mapping[str, Any]) -> str:
+    """Read the immutable release SHA from first-class or compatibility transport.
+
+    The browser writes ``expected_commit_sha`` directly and also records the same value
+    in the authorization marker. Pydantic request models from older Express deployments
+    may discard unknown first-class fields while preserving ``authorized_by``. Provider
+    runtime proof must therefore recognize the marker instead of falling through to an
+    external GitHub lookup for the commit already running on Railway or Vercel.
+    """
+
     for key in ("expected_commit_sha", "commit_sha", "snapshot_commit_sha"):
         value = _text(context.get(key)).lower()
         if _SHA_RE.fullmatch(value):
             return value
-    return ""
+    marker = _text(context.get("authorized_by"))
+    match = _EXPECTED_MARKER_RE.search(marker)
+    return match.group(1).lower() if match else ""
 
 
 def _provider_candidates(environ: Mapping[str, str]) -> list[dict[str, str]]:
@@ -110,6 +124,7 @@ def runtime_deployment_resolution(
             "deployment_provider": candidate["provider"],
             "deployment_repository_verified": True,
             "deployment_commit_verified": True,
+            "authorization_marker_supported": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -131,6 +146,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
             "version": VERSION,
             "repository_snapshot_bound": True,
             "exact_commit_binding_bound": True,
+            "authorization_marker_supported": True,
             "comprehensive_cross_format_finality": cross_format_finality,
         }
 
@@ -153,6 +169,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
         "provider_owned_variables_only": True,
         "repository_identity_required": True,
         "exact_sha_match_required": True,
+        "authorization_marker_supported": True,
         "api_and_public_git_fallback_preserved": True,
         "comprehensive_cross_format_finality": cross_format_finality,
         "human_review_required": True,
