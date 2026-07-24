@@ -93,7 +93,32 @@ def _wrap_payload_function(module: Any, name: str) -> bool:
     return True
 
 
+def _install_assessment_pdf_metadata_compat(module: Any) -> bool:
+    current: Callable[[dict[str, Any]], Any] = module._polish_pdf_report
+    marker = f"{_PATCH_MARKER}_pdf_metadata"
+    if getattr(current, marker, False):
+        return False
+
+    @wraps(current)
+    def polish_pdf_report(result: dict[str, Any]) -> Any:
+        outcome = current(result)
+        reports = result.setdefault("reports", {})
+        if reports.get("pdf_base64"):
+            reports.setdefault("pdf_style", module.PDF_STYLE_VERSION)
+            reports.setdefault(
+                "pdf_filename",
+                f"nico-express-{str(result.get('repository') or 'assessment').replace('/', '-')}.pdf",
+            )
+        return outcome
+
+    setattr(polish_pdf_report, marker, True)
+    setattr(polish_pdf_report, "_nico_previous", current)
+    module._polish_pdf_report = polish_pdf_report
+    return True
+
+
 def install_express_assurance_projection_compat_v45() -> dict[str, Any]:
+    from nico import assessment_quality
     from nico import express_assurance_display_v37 as target
     from nico import express_client_report_postprocessor_v27 as postprocessor
     from nico import express_report_dossier_export_v15 as dossier
@@ -134,6 +159,7 @@ def install_express_assurance_projection_compat_v45() -> dict[str, Any]:
         changed += 1
 
     changed += int(_wrap_payload_function(dossier, "build_express_dossier_export"))
+    changed += int(_install_assessment_pdf_metadata_compat(assessment_quality))
 
     return {
         "status": "installed" if changed else "already_installed",
@@ -145,7 +171,9 @@ def install_express_assurance_projection_compat_v45() -> dict[str, Any]:
         "final_semantic_cleanup_bound": True,
         "in_place_report_mutation_preserved": True,
         "dossier_renderer_identity_preserved": dossier._premium_pdf is premium._premium_pdf,
-        "acceptance_outside_technical_maturity": True,
+        "pdf_export_metadata_preserved": True,
+        "acceptance_outside_technical_maturity_until_approved": True,
+        "approved_acceptance_lifecycle_preserved": True,
         "bounded_sample_false_priority_removed": True,
     }
 
