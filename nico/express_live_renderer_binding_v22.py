@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from nico.accurate_green_pdf_polish_v2 import install_accurate_green_pdf_polish_v2
+from nico.accurate_green_release_v2 import install_accurate_green_release_v2
 from nico.comprehensive_score_assurance_ledger_v45 import install_comprehensive_score_assurance_ledger_v45
 from nico.express_assurance_projection_compat_v45 import install_express_assurance_projection_compat_v45
 from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_truth_v21
@@ -33,8 +35,10 @@ from nico.scanner_claim_reconciliation_v45 import install_scanner_claim_reconcil
 from nico.express_report_quality_v47 import install_express_report_quality_v47
 from nico.express_report_quality_v471_compat import install_express_report_quality_v471_compat
 from nico.express_report_quality_v472_qa_gate import install_express_report_quality_v472_qa_gate
+from nico.scanner_runtime_accuracy_v2 import install_scanner_runtime_accuracy_v2
+from nico.score_assurance_export_final_compat_v2 import install_score_assurance_export_final_compat_v2
 
-VERSION = "nico.express_live_renderer_binding.v47.2"
+VERSION = "nico.express_live_renderer_binding.v48.3"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -43,6 +47,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
 
     renderer = install_express_pdf_renderer_truth_v21()
     score_assurance_renderer = install_express_pdf_score_assurance_v1()
+    accurate_green_pdf_polish = install_accurate_green_pdf_polish_v2()
     live_renderer = premium._premium_pdf
     if score_assurance_renderer.get("status") in {"installed", "already_installed"}:
         setattr(live_renderer, "_nico_express_pdf_renderer_truth_v21", True)
@@ -61,6 +66,8 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     final_export_truth = install_express_final_export_truth_v35()
     score_assurance_export = install_express_score_assurance_export_v1()
     pdf_section_index = install_express_pdf_section_index_binding_v1()
+    accurate_green_release = install_accurate_green_release_v2()
+    scanner_runtime_accuracy = install_scanner_runtime_accuracy_v2()
     truth_calibration = install_express_truth_calibration_v36()
     assurance_display = install_express_assurance_display_v37()
     truth_calibration_compat = install_express_truth_calibration_v38_compat()
@@ -77,6 +84,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     report_quality = install_express_report_quality_v47()
     report_quality_compat = install_express_report_quality_v471_compat()
     report_quality_qa_gate = install_express_report_quality_v472_qa_gate()
+    score_assurance_final_compat = install_score_assurance_export_final_compat_v2()
 
     final_renderer = premium._premium_pdf
     renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
@@ -87,6 +95,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "version": VERSION,
         "renderer_install": renderer,
         "score_assurance_renderer_install": score_assurance_renderer,
+        "accurate_green_pdf_polish_install": accurate_green_pdf_polish,
         "scanner_disposition_install": scanner_dispositions,
         "canonical_truth_install": canonical_truth,
         "cross_format_contract_install": cross_format,
@@ -100,6 +109,8 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_install": final_export_truth,
         "score_assurance_export_install": score_assurance_export,
         "pdf_section_index_install": pdf_section_index,
+        "accurate_green_release_install": accurate_green_release,
+        "scanner_runtime_accuracy_install": scanner_runtime_accuracy,
         "truth_calibration_install": truth_calibration,
         "assurance_display_install": assurance_display,
         "truth_calibration_compat_install": truth_calibration_compat,
@@ -116,6 +127,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "report_quality_install": report_quality,
         "report_quality_compat_install": report_quality_compat,
         "report_quality_qa_gate_install": report_quality_qa_gate,
+        "score_assurance_final_compat_install": score_assurance_final_compat,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
@@ -133,6 +145,10 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "final_export_truth_bound": final_export_truth.get("status") in {"installed", "already_installed"},
         "score_assurance_export_bound": score_assurance_export.get("status") in {"installed", "already_installed"},
         "pdf_section_index_bound": pdf_section_index.get("status") in {"installed", "already_installed"},
+        "accurate_green_release_bound": accurate_green_release.get("status") in {"installed", "already_installed"},
+        "accurate_green_pdf_polish_bound": accurate_green_pdf_polish.get("status") in {"installed", "already_installed"},
+        "scanner_runtime_accuracy_bound": scanner_runtime_accuracy.get("status") in {"installed", "already_installed"},
+        "score_assurance_final_compat_bound": score_assurance_final_compat.get("status") in {"installed", "already_installed"},
         "truth_calibration_bound": truth_calibration.get("status") in {"installed", "already_installed"},
         "assurance_display_bound": assurance_display.get("status") in {"installed", "already_installed"},
         "truth_calibration_compat_bound": truth_calibration_compat.get("status") in {"installed", "already_installed"},
@@ -156,6 +172,14 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "scanner_cross_tool_claims_reconciled": True,
         "express_comprehensive_score_semantics_parity": True,
         "premium_client_report_layout": True,
+        "verified_green_remediation_page": True,
+        "yellow_controls_have_exit_criteria": True,
+        "history_scanner_runtime_hardened": True,
+        "real_eslint_execution": True,
+        "typescript_and_eslint_separate": True,
+        "polished_score_assurance_typography": True,
+        "polished_evidence_tables": True,
+        "bounded_heading_rewrite": True,
         "readable_paginated_appendix": True,
         "orphan_page_detection": True,
         "markdown_line_structure_preserved": True,

@@ -17,9 +17,10 @@ ENV NICO_TRUST_PROXY_HEADERS=true
 ENV NICO_TOOL_TIMEOUT_SECONDS=120
 ENV NICO_TOTAL_SCAN_TIMEOUT_SECONDS=1500
 ENV NICO_OSV_TIMEOUT_SECONDS=240
-ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=420
+ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=600
 ENV NICO_WEB_WORKERS=1
 ENV NICO_SEMGREP_HOME=/opt/nico-tools/semgrep
+ENV NODE_PATH=/usr/local/lib/node_modules
 
 WORKDIR /app
 
@@ -36,7 +37,14 @@ RUN apt-get update \
     && mkdir -p /data/reports /opt/nico-tools \
     && chown -R nico:nico /data
 
-RUN npm install -g eslint typescript --no-audit --no-fund
+RUN npm install -g eslint typescript --no-audit --no-fund \
+    && npm install -g \
+        @eslint/js@9 \
+        @typescript-eslint/parser@8 \
+        @typescript-eslint/eslint-plugin@8 \
+        --no-audit --no-fund \
+    && eslint --version \
+    && node -e "require('@typescript-eslint/parser'); require('@eslint/js')"
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
