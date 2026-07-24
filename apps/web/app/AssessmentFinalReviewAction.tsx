@@ -86,13 +86,14 @@ function installAction(): void {
 
   const existing = actions.querySelector<HTMLAnchorElement>("[data-nico-final-review-action='true']");
   const context = contextFor(runId);
+  const spanish = window.location.pathname.startsWith("/es/") || document.documentElement.lang.toLowerCase().startsWith("es");
   const query = new URLSearchParams({
     service: context.service,
     run_id: context.run_id,
     customer_id: context.customer_id,
     project_id: context.project_id,
   });
-  const spanish = window.location.pathname.startsWith("/es/") || document.documentElement.lang.toLowerCase().startsWith("es");
+  if (spanish) query.set("lang", "es-MX");
   const label = spanish ? "Revisar y aceptar este informe" : "Review and accept this report";
 
   if (existing) {
