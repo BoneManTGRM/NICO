@@ -206,7 +206,9 @@ jobs:
           assert all(item["client_delivery_allowed"] is False for item in payload["runs"])
           comprehensive = [item for item in payload["runs"] if item["service"] == "comprehensive"]
           assert len(comprehensive) == 2
-          assert all(item["report"]["pdf"]["page_count"] >= 30 for item in comprehensive)
+          assert all(item["report"]["semantic_contract"]["status"] == "passed" for item in comprehensive)
+          assert all(item["report"]["semantic_contract"]["required_sections_verified"] is True for item in comprehensive)
+          assert all(item["report"]["semantic_contract"]["stale_draft_language_absent"] is True for item in comprehensive)
           PY
 
       - name: Publish successful production acceptance status

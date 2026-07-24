@@ -5,9 +5,9 @@ import io
 from copy import deepcopy
 from typing import Any
 
-MID_REPORT_V4_VERSION = "mid-assessment-draft-v4-full-depth"
+MID_REPORT_V4_VERSION = "mid-assessment-final-v4-full-depth"
 _PATCH_MARKER = "_nico_mid_report_professional_v4"
-_DRAFT_LABEL = "DRAFT — HUMAN REVIEW REQUIRED"
+_DRAFT_LABEL = "FINAL REPORT - PENDING HUMAN APPROVAL"
 _WEIGHTS = {
     "code_audit": 20,
     "dependency_health": 15,

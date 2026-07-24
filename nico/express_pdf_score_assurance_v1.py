@@ -132,7 +132,7 @@ def _overview_pdf(result: dict[str, Any]) -> bytes:
     records = _records(result)
     styles = _styles()
     p = lambda value, style=styles["body"]: _paragraph(value, style)
-    rows = [[p("Control", styles["label"]), p("Technical score", styles["label"]), p("Technical band", styles["label"]), p("Assurance", styles["label"]), p("Canonical status", styles["label"])]]
+    rows = [[p("Control", styles["label"]), p("Technical score", styles["label"]), p("Technical band", styles["label"]), p("Assurance", styles["label"]), p("Risk disposition", styles["label"])]]
     for item in records:
         rows.append([p(item["label"]), p(item["score_label"]), p(item["band"]), p(item["assurance"]), p(item["canonical_status"])])
     buffer = io.BytesIO()
@@ -225,7 +225,7 @@ def _decision_pdf(result: dict[str, Any], section_id: str, title: str) -> bytes:
     summary = _table(
         [
             [p("Technical score", styles["label"]), p(record.get("score_label") or "NOT SCORED"), p("Technical band", styles["label"]), p(record.get("band") or "NOT SCORED")],
-            [p("Assurance", styles["label"]), p(record.get("assurance") or "UNVERIFIED"), p("Canonical status", styles["label"]), p(record.get("canonical_status") or "UNKNOWN")],
+            [p("Assurance", styles["label"]), p(record.get("assurance") or "UNVERIFIED"), p("Risk disposition", styles["label"]), p(record.get("canonical_status") or "UNKNOWN")],
             [p("Confidence", styles["label"]), p(record.get("confidence") or "unknown"), p("Treatment", styles["label"]), p(treatment)],
         ],
         [1.05*inch, 2.45*inch, 1.05*inch, 2.45*inch],

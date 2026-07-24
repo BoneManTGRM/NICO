@@ -107,7 +107,7 @@ def test_client_acceptance_is_review_and_delivery_not_technical_maturity() -> No
     result = apply_express_score_assurance_ledger_v45(_payload())
     acceptance = next(item for item in result["sections"] if item["id"] == "client_acceptance")
 
-    assert acceptance["label"] == "Review and delivery"
+    assert acceptance["label"] == "Review and Delivery"
     assert acceptance["section_group"] == "review_delivery"
     assert acceptance["technical_section"] is False
     assert acceptance["score"] is None

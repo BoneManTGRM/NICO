@@ -236,7 +236,7 @@ def test_markdown_html_and_pdf_contain_draft_truth_and_integrity_material():
     assert "Automated evidence coverage" in html_report
     assert pdf.startswith(b"%PDF")
     assert hashlib.sha256(pdf).hexdigest() == report["pdf_sha256"]
-    assert report["pdf_filename"].endswith("-DRAFT.pdf")
+    assert report["pdf_filename"].endswith("-FINAL-PENDING-APPROVAL.pdf")
 
 
 def test_every_truth_section_is_preserved_in_report_payload():
