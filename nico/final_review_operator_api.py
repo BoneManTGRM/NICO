@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import base64
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from starlette.middleware import Middleware
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -22,11 +23,13 @@ from nico.final_review_workflow import (
     request_final_review,
     transition_final_review,
 )
+from nico.reports import get_report
 from nico.storage import STORE
 
-VERSION = "nico.final_review_operator_api.v2"
+VERSION = "nico.final_review_operator_api.v3"
 OPERATOR_REVIEW_ROUTES = {
     ("GET", "/operations/final-review/{service}/{run_id}"),
+    ("GET", "/operations/final-review/{service}/{run_id}/approved-pdf"),
     ("POST", "/operations/final-review/{service}/{run_id}/request"),
     ("POST", "/operations/final-review/{service}/{approval_id}/{state}"),
 }
@@ -104,6 +107,78 @@ def _review_status(service: str, run_id: str, customer_id: str, project_id: str)
     result["service"] = "comprehensive"
     result["review_kind"] = "final_report_approval"
     return result
+
+
+def _approved_pdf_artifact(service: str, run_id: str, customer_id: str, project_id: str) -> dict[str, Any]:
+    if service == "express":
+        status = client_acceptance_status(run_id, customer_id, project_id)
+        approvals = status.get("approvals") if isinstance(status.get("approvals"), list) else []
+        approved = next(
+            (
+                item
+                for item in approvals
+                if isinstance(item, dict)
+                and item.get("status") == "approved"
+                and isinstance(item.get("approved_delivery"), dict)
+            ),
+            None,
+        )
+        artifact = approved.get("approved_delivery") if isinstance(approved, dict) else {}
+    else:
+        status = final_review_status(run_id, customer_id, project_id)
+        approvals = status.get("approvals") if isinstance(status.get("approvals"), list) else []
+        approved = next(
+            (item for item in approvals if isinstance(item, dict) and item.get("status") == "approved"),
+            None,
+        )
+        report_id = str((approved or {}).get("report_id") or run_id)
+        report = get_report(report_id)
+        artifact = report.get("approved_delivery") if isinstance(report, dict) and isinstance(report.get("approved_delivery"), dict) else {}
+
+    if not artifact or artifact.get("client_delivery_allowed") is not True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "blocked",
+                "message": "The approved client-delivery PDF is not available for this exact run.",
+            },
+        )
+    return artifact
+
+
+def _approved_pdf_response(service: str, run_id: str, customer_id: str, project_id: str) -> Response:
+    artifact = _approved_pdf_artifact(service, run_id, customer_id, project_id)
+    encoded = str(artifact.get("pdf_base64") or artifact.get("approved_pdf_base64") or "").strip()
+    try:
+        pdf = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "blocked",
+                "message": "The approved client-delivery PDF failed base64 integrity validation.",
+            },
+        ) from exc
+    if not pdf.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "blocked",
+                "message": "The approved client-delivery PDF failed PDF integrity validation.",
+            },
+        )
+
+    filename = str(artifact.get("pdf_filename") or f"nico-{service}-{run_id}-approved-final-report.pdf")
+    filename = filename.replace("\r", "").replace("\n", "").replace('"', "'")
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store, private, max-age=0",
+        "X-NICO-Run-ID": run_id,
+    }
+    pdf_sha256 = str(artifact.get("pdf_sha256") or "").strip()
+    if pdf_sha256:
+        headers["X-NICO-PDF-SHA256"] = pdf_sha256
+    return Response(content=pdf, media_type="application/pdf", headers=headers)
 
 
 def _request_review(service: str, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -234,6 +309,16 @@ def register_final_review_operator_routes(target: FastAPI) -> dict[str, Any]:
         _authorize(x_nico_admin_token)
         return _review_status(_service(service), run_id, customer_id, project_id)
 
+    def approved_pdf(
+        service: str,
+        run_id: str,
+        customer_id: str = "default_customer",
+        project_id: str = "default_project",
+        x_nico_admin_token: str = Header(default=""),
+    ) -> Response:
+        _authorize(x_nico_admin_token)
+        return _approved_pdf_response(_service(service), run_id, customer_id, project_id)
+
     def request_review(
         service: str,
         run_id: str,
@@ -256,6 +341,12 @@ def register_final_review_operator_routes(target: FastAPI) -> dict[str, Any]:
     target.add_api_route(
         "/operations/final-review/{service}/{run_id}",
         review_status,
+        methods=["GET"],
+        tags=["operations", "final-review"],
+    )
+    target.add_api_route(
+        "/operations/final-review/{service}/{run_id}/approved-pdf",
+        approved_pdf,
         methods=["GET"],
         tags=["operations", "final-review"],
     )
@@ -283,6 +374,7 @@ def register_final_review_operator_routes(target: FastAPI) -> dict[str, Any]:
         "operator_routes_require_admin": True,
         "express_and_comprehensive_supported": True,
         "express_approval_certificate_appended": True,
+        "approved_pdf_download_supported": True,
         "human_review_required": True,
     }
 
