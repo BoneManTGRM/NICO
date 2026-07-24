@@ -4,15 +4,21 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import Any, Callable
 
+from nico import comprehensive_decision_grade_report_v5 as report_module
 from nico import comprehensive_native_providers as providers
 from nico import snapshot_repository_evidence as snapshot_evidence
 from nico.comprehensive_decision_grade_assessment_v5 import (
     build_decision_grade_assessment, canonical_scoring_provider,
 )
 from nico.comprehensive_decision_grade_model_v5 import APPENDIX_HEADING, REVIEW_HEADING, VERSION
-from nico.comprehensive_decision_grade_report_v5 import build_comprehensive_report_package
 from nico.comprehensive_decision_grade_roadmap_v5 import (
     build_roadmap, executive_briefing_provider, resourcing_provider, roadmap_provider,
+)
+from nico.comprehensive_final_report_filename_v48 import (
+    install_comprehensive_final_report_filename_v48,
+)
+from nico.comprehensive_final_report_semantics_v47 import (
+    install_comprehensive_final_report_semantics_v47,
 )
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
@@ -59,6 +65,11 @@ def _collect_with_safe_samples(*args: Any, **kwargs: Any):
 
 
 def install_decision_grade_binding() -> dict[str, Any]:
+    global build_comprehensive_report_package
+
+    final_report_semantics = install_comprehensive_final_report_semantics_v47()
+    final_report_filename = install_comprehensive_final_report_filename_v48()
+    build_comprehensive_report_package = report_module.build_comprehensive_report_package
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
     snapshot_evidence.scan_files = scanner_with_samples
@@ -71,11 +82,19 @@ def install_decision_grade_binding() -> dict[str, Any]:
     providers.build_comprehensive_report_package = build_comprehensive_report_package
     return {
         "artifact_schema": VERSION,
-        "bound": providers.build_comprehensive_report_package is build_comprehensive_report_package,
+        "bound": providers.build_comprehensive_report_package is report_module.build_comprehensive_report_package,
         "canonical_scoring_bound": providers.canonical_scoring_provider is canonical_scoring_provider,
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
         "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
         "scanner_wrapper_composed": True,
+        "final_report_semantics": final_report_semantics,
+        "final_report_filename": final_report_filename,
+        "final_report_semantics_bound": final_report_semantics.get("bound") is True,
+        "final_report_filename_bound": final_report_filename.get("bound") is True,
+        "report_finality": "final",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
+        "stale_draft_language_allowed": False,
         "score_band_separated_from_assurance": True,
         "secret_category_isolated": True,
         "structured_findings_register": True,
@@ -88,6 +107,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "client_delivery_allowed": False,
     }
 
+
+build_comprehensive_report_package = report_module.build_comprehensive_report_package
 
 __all__ = [
     "APPENDIX_HEADING", "REVIEW_HEADING", "VERSION",
