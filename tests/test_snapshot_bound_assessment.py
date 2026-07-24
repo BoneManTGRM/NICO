@@ -120,9 +120,8 @@ def test_clone_repository_at_snapshot_verifies_exact_head(monkeypatch):
     monkeypatch.setattr(snapshot_scanner.shutil, "which", lambda name: "/usr/bin/git")
 
     def fake_git(command, *, cwd, env, timeout=90):
-        if command[1] == "clone":
-            Path(command[-1]).mkdir(parents=True, exist_ok=True)
-            return subprocess.CompletedProcess(command, 0, "cloned", "")
+        if command[1:3] == ["rev-parse", "--is-shallow-repository"]:
+            return subprocess.CompletedProcess(command, 0, "false\n", "")
         if command[1] == "rev-parse":
             return subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", "")
         return subprocess.CompletedProcess(command, 0, "ok", "")
@@ -142,9 +141,6 @@ def test_clone_repository_blocks_mismatched_checkout(monkeypatch):
     monkeypatch.setattr(snapshot_scanner.shutil, "which", lambda name: "/usr/bin/git")
 
     def fake_git(command, *, cwd, env, timeout=90):
-        if command[1] == "clone":
-            Path(command[-1]).mkdir(parents=True, exist_ok=True)
-            return subprocess.CompletedProcess(command, 0, "cloned", "")
         if command[1] == "rev-parse":
             return subprocess.CompletedProcess(command, 0, "c" * 40 + "\n", "")
         return subprocess.CompletedProcess(command, 0, "ok", "")
