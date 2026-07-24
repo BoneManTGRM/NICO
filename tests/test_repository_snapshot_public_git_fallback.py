@@ -68,10 +68,10 @@ def _context(expected: str) -> dict:
 
 def test_public_git_exact_commit_verifies_requested_sha_and_tree() -> None:
     expected = "a" * 40
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict]] = []
 
     def runner(command, **kwargs):
-        calls.append(command)
+        calls.append((command, kwargs))
         if "show" in command:
             return subprocess.CompletedProcess(
                 command,
@@ -88,11 +88,69 @@ def test_public_git_exact_commit_verifies_requested_sha_and_tree() -> None:
     assert commit["sha"] == expected
     assert commit["commit"]["tree"]["sha"] == "b" * 40
     assert commit["commit"]["message"] == "Exact release"
-    fetch = next(command for command in calls if "fetch" in command)
-    assert expected in fetch
+    fetch, fetch_kwargs = next((command, kwargs) for command, kwargs in calls if "fetch" in command)
+    assert expected not in fetch
+    assert "https://github.com/BoneManTGRM/NICO.git" not in fetch
+    assert fetch_kwargs["input"] == f"{expected}\n"
+    assert fetch_kwargs["shell"] is False
+    assert fetch_kwargs["cwd"].endswith("repository.git")
+    assert "--stdin" in fetch
     assert "--depth=1" in fetch
     assert "--no-tags" in fetch
     assert not any("token" in part.casefold() or "authorization" in part.casefold() for part in fetch)
+
+
+def test_public_git_exact_commit_uses_sanitized_git_environment(monkeypatch) -> None:
+    expected = "a" * 40
+    observed: list[dict] = []
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.sshCommand")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "malicious-command")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "malicious-command")
+
+    def runner(command, **kwargs):
+        observed.append(kwargs)
+        if "show" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=f"{expected}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Exact release\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    commit, error = snapshot._public_git_exact_commit("BoneManTGRM/NICO", expected, runner=runner)
+
+    assert error is None
+    assert commit is not None
+    environment = observed[0]["env"]
+    assert "GIT_CONFIG_COUNT" not in environment
+    assert "GIT_CONFIG_KEY_0" not in environment
+    assert "GIT_CONFIG_VALUE_0" not in environment
+    assert "GIT_SSH_COMMAND" not in environment
+    assert environment["GIT_ALLOW_PROTOCOL"] == "https"
+    assert environment["GIT_PROTOCOL_FROM_USER"] == "0"
+    assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert environment["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_public_git_exact_commit_rejects_untrusted_command_values() -> None:
+    called = False
+
+    def runner(command, **kwargs):
+        nonlocal called
+        called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    commit, error = snapshot._public_git_exact_commit("owner/repo;touch-pwned", "a" * 40, runner=runner)
+    assert commit is None
+    assert error == "public_git_invalid_repository"
+    assert called is False
+
+    commit, error = snapshot._public_git_exact_commit("owner/repo", "--upload-pack=malicious", runner=runner)
+    assert commit is None
+    assert error == "public_git_invalid_commit_sha"
+    assert called is False
 
 
 def test_public_git_exact_commit_rejects_sha_mismatch() -> None:

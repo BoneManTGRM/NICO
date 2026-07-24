@@ -80,24 +80,123 @@ def _retry_commit_lookup(
     return None, last_error, _API_COMMIT_ATTEMPTS
 
 
-def _git_command(
-    command: list[str],
-    *,
-    timeout: int,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> subprocess.CompletedProcess[str]:
+def _git_environment(workspace: Path) -> dict[str, str]:
+    """Build a bounded environment for anonymous Git execution.
+
+    Git-specific process overrides are intentionally not inherited. This prevents
+    request-adjacent runtime state from changing the transport, configuration,
+    credential, hook, or executable behavior used by the exact-SHA proof path.
+    """
+
+    inherited_keys = (
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+    )
     environment = {
-        **os.environ,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_ASKPASS": "",
-        "SSH_ASKPASS": "",
+        key: value
+        for key in inherited_keys
+        if (value := os.environ.get(key))
     }
+    environment.update(
+        {
+            "HOME": str(workspace),
+            "XDG_CONFIG_HOME": str(workspace / ".config"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "",
+            "SSH_ASKPASS": "",
+            "GIT_ALLOW_PROTOCOL": "https",
+            "GIT_PROTOCOL_FROM_USER": "0",
+        }
+    )
+    return environment
+
+
+def _git_init_bare(
+    git_dir: Path,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
     return runner(
-        command,
+        ["git", "-c", "credential.helper=", "-c", "http.extraHeader=", "init", "--bare", "."],
+        cwd=str(git_dir),
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=20,
         check=False,
+        shell=False,
+        env=environment,
+    )
+
+
+def _configure_public_origin(git_dir: Path, repository_url: str) -> None:
+    if not repository_url.startswith("https://github.com/") or "\n" in repository_url or "\r" in repository_url:
+        raise ValueError("invalid public GitHub repository URL")
+    with (git_dir / "config").open("a", encoding="utf-8", newline="\n") as config:
+        config.write(f'\n[remote "origin"]\n\turl = {repository_url}\n')
+
+
+def _git_fetch_exact_sha(
+    git_dir: Path,
+    expected_sha: str,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    return runner(
+        [
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "http.extraHeader=",
+            "fetch",
+            "--depth=1",
+            "--no-tags",
+            "--stdin",
+            "origin",
+        ],
+        cwd=str(git_dir),
+        input=f"{expected_sha}\n",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        shell=False,
+        env=environment,
+    )
+
+
+def _git_describe_fetch_head(
+    git_dir: Path,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    return runner(
+        ["git", "show", "-s", "--format=%H%x00%T%x00%cI%x00%s", "FETCH_HEAD"],
+        cwd=str(git_dir),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        shell=False,
         env=environment,
     )
 
@@ -110,9 +209,9 @@ def _public_git_exact_commit(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Verify one exact anonymously accessible commit without API quota.
 
-    A successful credential-free fetch proves that the requested repository object is
-    publicly reachable. Private repositories fail closed because anonymous fetch cannot
-    retrieve the object. The exact 40-character SHA is verified byte-for-byte.
+    The subprocess command vectors are fixed literals. The validated repository URL
+    is written to a temporary local Git configuration, and the validated exact SHA is
+    supplied as fetch refspec input rather than becoming part of the command line.
     """
 
     if not _SAFE_REPOSITORY_RE.fullmatch(repository):
@@ -123,49 +222,21 @@ def _public_git_exact_commit(
     repository_url = f"https://github.com/{repository}.git"
     try:
         with tempfile.TemporaryDirectory(prefix="nico-public-snapshot-") as temporary:
-            git_dir = Path(temporary) / "repository.git"
-            initialized = _git_command(
-                ["git", "-c", "credential.helper=", "init", "--bare", str(git_dir)],
-                timeout=20,
-                runner=runner,
-            )
+            workspace = Path(temporary)
+            git_dir = workspace / "repository.git"
+            git_dir.mkdir(mode=0o700)
+            environment = _git_environment(workspace)
+
+            initialized = _git_init_bare(git_dir, environment, runner=runner)
             if initialized.returncode != 0:
                 return None, "public_git_initialize_failed"
 
-            fetched = _git_command(
-                [
-                    "git",
-                    "-c",
-                    "credential.helper=",
-                    "-c",
-                    "http.extraHeader=",
-                    "--git-dir",
-                    str(git_dir),
-                    "fetch",
-                    "--depth=1",
-                    "--no-tags",
-                    repository_url,
-                    expected_sha,
-                ],
-                timeout=60,
-                runner=runner,
-            )
+            _configure_public_origin(git_dir, repository_url)
+            fetched = _git_fetch_exact_sha(git_dir, expected_sha, environment, runner=runner)
             if fetched.returncode != 0:
                 return None, "public_git_exact_sha_fetch_failed"
 
-            described = _git_command(
-                [
-                    "git",
-                    "--git-dir",
-                    str(git_dir),
-                    "show",
-                    "-s",
-                    "--format=%H%x00%T%x00%cI%x00%s",
-                    "FETCH_HEAD",
-                ],
-                timeout=20,
-                runner=runner,
-            )
+            described = _git_describe_fetch_head(git_dir, environment, runner=runner)
             if described.returncode != 0:
                 return None, "public_git_commit_description_failed"
             fields = described.stdout.rstrip("\n").split("\x00", 3)
@@ -187,7 +258,7 @@ def _public_git_exact_commit(
                     "message": message.strip(),
                 },
             }, None
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None, "public_git_execution_failed"
 
 
