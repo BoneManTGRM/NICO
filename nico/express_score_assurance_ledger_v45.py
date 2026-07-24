@@ -73,19 +73,41 @@ def _structured_scanner_records(value: Any, *, depth: int = 0) -> list[dict[str,
         return output
     if not isinstance(value, dict):
         return []
+
     output: list[dict[str, Any]] = []
     tool = _text(value.get("tool") or value.get("analyzer") or value.get("name"))
     status = _text(value.get("status") or value.get("result") or value.get("disposition"))
     if tool and status:
         output.append(value)
-    for nested in value.values():
-        output.extend(_structured_scanner_records(nested, depth=depth + 1))
+
+    for key, nested in value.items():
+        if isinstance(nested, dict):
+            nested_status = _text(nested.get("status") or nested.get("result") or nested.get("disposition"))
+            nested_tool = _text(nested.get("tool") or nested.get("analyzer") or nested.get("name"))
+            if nested_status:
+                candidate = dict(nested)
+                candidate["tool"] = nested_tool or _text(key)
+                output.append(candidate)
+            else:
+                output.extend(_structured_scanner_records(nested, depth=depth + 1))
+        elif isinstance(nested, list):
+            output.extend(_structured_scanner_records(nested, depth=depth + 1))
     return output
 
 
 def _lifecycle(raw: str) -> str:
     value = _text(raw).casefold().replace("-", "_").replace(" ", "_")
-    if value in {"completed", "complete", "completed_clean", "completed_with_candidates", "completed_with_findings", "success", "passed", "ok"}:
+    if value in {
+        "completed",
+        "complete",
+        "completed_clean",
+        "completed_findings",
+        "completed_with_candidates",
+        "completed_with_findings",
+        "success",
+        "passed",
+        "ok",
+    }:
         return "completed"
     if value in {"failed", "failure", "error", "blocked"}:
         return "failed"
@@ -115,35 +137,49 @@ def _build_scanner_ledger(result: dict[str, Any], section: dict[str, Any]) -> tu
     for key in (
         "scanner_dispositions",
         "scanner_worker_evidence",
+        "scanner_worker_results",
         "scanner_results",
         "scanner_artifact_summary",
         "scanner_assurance_ledger",
     ):
         records.extend(_structured_scanner_records(result.get(key)))
     records.extend(_structured_scanner_records(section.get("scanner_dispositions")))
+    records.extend(_structured_scanner_records(section.get("scanner_worker_results")))
 
     by_tool: dict[str, dict[str, Any]] = {}
     for record in records:
         tool = _text(record.get("tool") or record.get("analyzer") or record.get("name"))
         if not tool:
             continue
-        status = _text(record.get("status") or record.get("result") or record.get("disposition"))
-        lifecycle = _lifecycle(status)
+        source_status = _text(record.get("status") or record.get("result") or record.get("disposition"))
+        source_statements = [
+            _text(item)
+            for item in record.get("source_statements") or []
+            if _text(item)
+        ]
+        lifecycle = _lifecycle(source_status)
+        combined = " ".join([tool, source_status, *source_statements]).casefold()
+        if lifecycle == "unavailable" and tool.casefold() == "eslint" and any(
+            marker in combined
+            for marker in ("no eslint configuration", "eslint is not configured", "package lint script does not execute eslint")
+        ):
+            lifecycle = "not_configured"
+        candidates = _candidate_count(record)
+        in_scope = lifecycle != "not_configured"
+        clean_claim_eligible = lifecycle == "completed" and candidates == 0
         normalized = {
             "tool": tool,
             "lifecycle_result": lifecycle,
-            "source_status": status or "unknown",
-            "raw_candidate_count": _candidate_count(record),
-            "deduplicated_candidate_count": _candidate_count(record),
+            "source_status": source_status or "unknown",
+            "raw_candidate_count": candidates,
+            "deduplicated_candidate_count": candidates,
             "evidence_scope": _text(record.get("evidence_scope") or record.get("scope") or "exact checked-out repository state"),
             "artifact_identity": _text(record.get("artifact_identity") or record.get("artifact") or record.get("path")),
             "exit_code": record.get("exit_code"),
             "timeout_seconds": record.get("timeout_seconds"),
-            "source_statements": [
-                _text(item)
-                for item in record.get("source_statements") or []
-                if _text(item)
-            ],
+            "source_statements": source_statements,
+            "in_scope": in_scope,
+            "clean_claim_eligible": clean_claim_eligible,
         }
         previous = by_tool.get(tool.casefold())
         if previous is None or (
@@ -348,15 +384,21 @@ def apply_express_score_assurance_ledger_v45(result: dict[str, Any]) -> dict[str
                 "score_assurance_separated": True,
             }
         )
+
+    approved = (result.get("review_and_delivery") or {}).get("status") == "approved"
     result["score_assurance_risk_contract"] = {
         "version": VERSION,
         "technical_score_controls_color": True,
         "assurance_is_independent": True,
         "risk_disposition_is_independent": True,
+        "risk_is_independent": True,
         "scanner_ledger_not_scored": True,
         "acceptance_pending_not_scored": True,
         "acceptance_approved_verified": True,
-        "human_review_required": True,
+        "acceptance_outside_technical_maturity": not approved,
+        "acceptance_outside_technical_maturity_until_approved": True,
+        "client_delivery_allowed": approved,
+        "human_review_required": not approved,
     }
     return result
 
@@ -381,9 +423,11 @@ def install_express_score_assurance_ledger_v45() -> dict[str, Any]:
         "technical_score_controls_color": True,
         "assurance_is_independent": True,
         "risk_disposition_is_independent": True,
+        "risk_is_independent": True,
         "scanner_ledger_not_scored": True,
         "acceptance_pending_not_scored": True,
         "acceptance_approved_verified": True,
+        "acceptance_outside_technical_maturity_until_approved": True,
     }
 
 
