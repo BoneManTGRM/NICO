@@ -7,6 +7,7 @@ import {useEffect} from "react";
 const EMPTY_SCORE = /(?:^|\s*·\s*)(?:null|undefined|nan)?\s*\/100\s*$/i;
 const RAW_RUN_ID = /^(express_run_|midrun_|mid_run_|full_run_|comprun_)[a-z0-9_-]+$/i;
 const POLISH_STYLE_ID = "nico-comprehensive-ui-polish";
+const ACTIVE_SCOPE_LABEL = "Active authorized repository";
 
 function textKey(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase().replace(/[.;:]+$/, "");
@@ -41,9 +42,11 @@ function normalizeRunIdentity(root: ParentNode) {
     element.style.wordBreak = "break-word";
 
     if (element.matches("h1, h2, h3")) {
+      const displayLabel = friendlyTierLabel(technicalRunId);
       element.dataset.technicalRunId = technicalRunId;
       element.title = `Technical run ID: ${technicalRunId}`;
-      element.textContent = friendlyTierLabel(technicalRunId);
+      element.setAttribute("aria-label", `${displayLabel} · ${ACTIVE_SCOPE_LABEL}`);
+      element.textContent = displayLabel;
     }
   });
 }
