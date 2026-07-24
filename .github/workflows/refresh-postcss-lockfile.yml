@@ -4,19 +4,19 @@ on:
   push:
     branches:
       - fix/postcss-8-5-18-security
-  pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   refresh-lockfile:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout branch
         uses: actions/checkout@v7
+        with:
+          ref: fix/postcss-8-5-18-security
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -34,10 +34,11 @@ jobs:
         run: |
           node -e "const lock=require('./package-lock.json'); const entry=lock.packages['node_modules/postcss']; if (!entry || entry.version !== '8.5.18') { throw new Error('PostCSS lock entry is not 8.5.18'); }"
 
-      - name: Upload refreshed lockfile
-        uses: actions/upload-artifact@v7
-        with:
-          name: refreshed-postcss-lockfile
-          path: apps/web/package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit lockfile and remove temporary workflow
+        run: |
+          rm .github/workflows/refresh-postcss-lockfile.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/package-lock.json .github/workflows/refresh-postcss-lockfile.yml
+          git commit -m "Refresh lockfile for PostCSS 8.5.18"
+          git push origin HEAD:fix/postcss-8-5-18-security
