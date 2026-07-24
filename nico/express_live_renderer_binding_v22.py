@@ -36,8 +36,9 @@ from nico.express_report_quality_v47 import install_express_report_quality_v47
 from nico.express_report_quality_v471_compat import install_express_report_quality_v471_compat
 from nico.express_report_quality_v472_qa_gate import install_express_report_quality_v472_qa_gate
 from nico.scanner_runtime_accuracy_v2 import install_scanner_runtime_accuracy_v2
+from nico.score_assurance_export_final_compat_v2 import install_score_assurance_export_final_compat_v2
 
-VERSION = "nico.express_live_renderer_binding.v48.2"
+VERSION = "nico.express_live_renderer_binding.v48.3"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -83,6 +84,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     report_quality = install_express_report_quality_v47()
     report_quality_compat = install_express_report_quality_v471_compat()
     report_quality_qa_gate = install_express_report_quality_v472_qa_gate()
+    score_assurance_final_compat = install_score_assurance_export_final_compat_v2()
 
     final_renderer = premium._premium_pdf
     renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
@@ -125,6 +127,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "report_quality_install": report_quality,
         "report_quality_compat_install": report_quality_compat,
         "report_quality_qa_gate_install": report_quality_qa_gate,
+        "score_assurance_final_compat_install": score_assurance_final_compat,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
@@ -145,6 +148,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "accurate_green_release_bound": accurate_green_release.get("status") in {"installed", "already_installed"},
         "accurate_green_pdf_polish_bound": accurate_green_pdf_polish.get("status") in {"installed", "already_installed"},
         "scanner_runtime_accuracy_bound": scanner_runtime_accuracy.get("status") in {"installed", "already_installed"},
+        "score_assurance_final_compat_bound": score_assurance_final_compat.get("status") in {"installed", "already_installed"},
         "truth_calibration_bound": truth_calibration.get("status") in {"installed", "already_installed"},
         "assurance_display_bound": assurance_display.get("status") in {"installed", "already_installed"},
         "truth_calibration_compat_bound": truth_calibration_compat.get("status") in {"installed", "already_installed"},
@@ -175,6 +179,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "typescript_and_eslint_separate": True,
         "polished_score_assurance_typography": True,
         "polished_evidence_tables": True,
+        "bounded_heading_rewrite": True,
         "readable_paginated_appendix": True,
         "orphan_page_detection": True,
         "markdown_line_structure_preserved": True,
