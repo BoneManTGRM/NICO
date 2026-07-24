@@ -91,7 +91,7 @@ def test_comprehensive_acceptance_is_review_delivery_and_report_is_final() -> No
     acceptance = next(item for item in result["sections"] if item["id"] == "client_human_acceptance")
     truth = result["canonical_report_truth"]
 
-    assert acceptance["label"] == "Review and delivery"
+    assert acceptance["label"] == "Review and Delivery"
     assert acceptance["section_group"] == "review_delivery"
     assert acceptance["technical_section"] is False
     assert acceptance["findings"] == []
