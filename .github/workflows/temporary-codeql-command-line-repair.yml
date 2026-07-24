@@ -1,0 +1,292 @@
+name: Temporary CodeQL command-line repair
+
+on:
+  push:
+    branches:
+      - fix/codeql-uncontrolled-command-line
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Apply fixed-command Git transport hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('nico/repository_snapshot.py')
+          source = source_path.read_text(encoding='utf-8')
+          start_marker = '\ndef _git_command('
+          end_marker = '\ndef _public_repository('
+          start = source.find(start_marker)
+          end = source.find(end_marker, start + 1)
+          if start < 0 or end < 0 or source.find(start_marker, start + 1) >= 0:
+              raise SystemExit('repository snapshot Git helper markers changed')
+
+          replacement = r'''
+
+def _git_environment(workspace: Path) -> dict[str, str]:
+    """Build a bounded environment for anonymous Git execution.
+
+    Git-specific process overrides are intentionally not inherited. This prevents
+    request-adjacent runtime state from changing the executable, transport, config,
+    hooks, or credential behavior used by the exact-SHA proof path.
+    """
+
+    inherited_keys = (
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+    )
+    environment = {
+        key: value
+        for key in inherited_keys
+        if (value := os.environ.get(key))
+    }
+    environment.update(
+        {
+            "HOME": str(workspace),
+            "XDG_CONFIG_HOME": str(workspace / ".config"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "",
+            "SSH_ASKPASS": "",
+            "GIT_ALLOW_PROTOCOL": "https",
+            "GIT_PROTOCOL_FROM_USER": "0",
+        }
+    )
+    return environment
+
+
+def _git_init_bare(
+    git_dir: Path,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    return runner(
+        ["git", "-c", "credential.helper=", "-c", "http.extraHeader=", "init", "--bare", "."],
+        cwd=str(git_dir),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        shell=False,
+        env=environment,
+    )
+
+
+def _configure_public_origin(git_dir: Path, repository_url: str) -> None:
+    if not repository_url.startswith("https://github.com/") or "\n" in repository_url or "\r" in repository_url:
+        raise ValueError("invalid public GitHub repository URL")
+    with (git_dir / "config").open("a", encoding="utf-8", newline="\n") as config:
+        config.write(f'\n[remote "origin"]\n\turl = {repository_url}\n')
+
+
+def _git_fetch_exact_sha(
+    git_dir: Path,
+    expected_sha: str,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    return runner(
+        [
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "http.extraHeader=",
+            "fetch",
+            "--depth=1",
+            "--no-tags",
+            "--stdin",
+            "origin",
+        ],
+        cwd=str(git_dir),
+        input=f"{expected_sha}\n",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        shell=False,
+        env=environment,
+    )
+
+
+def _git_describe_fetch_head(
+    git_dir: Path,
+    environment: dict[str, str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    return runner(
+        ["git", "show", "-s", "--format=%H%x00%T%x00%cI%x00%s", "FETCH_HEAD"],
+        cwd=str(git_dir),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        shell=False,
+        env=environment,
+    )
+
+
+def _public_git_exact_commit(
+    repository: str,
+    expected_sha: str,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Verify one exact anonymously accessible commit without API quota.
+
+    The subprocess command vectors are fixed literals. The validated repository URL
+    is written to a temporary local Git configuration, and the validated exact SHA is
+    supplied as fetch refspec input rather than becoming part of the command line.
+    """
+
+    if not _SAFE_REPOSITORY_RE.fullmatch(repository):
+        return None, "public_git_invalid_repository"
+    if not _EXACT_SHA_RE.fullmatch(expected_sha):
+        return None, "public_git_invalid_commit_sha"
+
+    repository_url = f"https://github.com/{repository}.git"
+    try:
+        with tempfile.TemporaryDirectory(prefix="nico-public-snapshot-") as temporary:
+            workspace = Path(temporary)
+            git_dir = workspace / "repository.git"
+            git_dir.mkdir(mode=0o700)
+            environment = _git_environment(workspace)
+
+            initialized = _git_init_bare(git_dir, environment, runner=runner)
+            if initialized.returncode != 0:
+                return None, "public_git_initialize_failed"
+
+            _configure_public_origin(git_dir, repository_url)
+            fetched = _git_fetch_exact_sha(git_dir, expected_sha, environment, runner=runner)
+            if fetched.returncode != 0:
+                return None, "public_git_exact_sha_fetch_failed"
+
+            described = _git_describe_fetch_head(git_dir, environment, runner=runner)
+            if described.returncode != 0:
+                return None, "public_git_commit_description_failed"
+            fields = described.stdout.rstrip("\n").split("\x00", 3)
+            if len(fields) != 4:
+                return None, "public_git_commit_description_invalid"
+            commit_sha, tree_sha, commit_date, message = fields
+            commit_sha = commit_sha.strip().lower()
+            tree_sha = tree_sha.strip().lower()
+            if commit_sha != expected_sha.lower() or not _EXACT_SHA_RE.fullmatch(commit_sha):
+                return None, "public_git_commit_mismatch"
+            if tree_sha and not _SHA_RE.fullmatch(tree_sha):
+                return None, "public_git_tree_sha_invalid"
+            return {
+                "sha": commit_sha,
+                "commit": {
+                    "committer": {"date": commit_date.strip()},
+                    "author": {"date": commit_date.strip()},
+                    "tree": {"sha": tree_sha},
+                    "message": message.strip(),
+                },
+            }, None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None, "public_git_execution_failed"
+'''
+          source = source[:start] + replacement + source[end:]
+          source_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('tests/test_repository_snapshot_public_git_fallback.py')
+          test = test_path.read_text(encoding='utf-8')
+          test = test.replace(
+              '    calls: list[list[str]] = []\n\n    def runner(command, **kwargs):\n        calls.append(command)\n',
+              '    calls: list[tuple[list[str], dict]] = []\n\n    def runner(command, **kwargs):\n        calls.append((command, kwargs))\n',
+              1,
+          )
+          old_assertions = '''    fetch = next(command for command in calls if "fetch" in command)\n    assert expected in fetch\n    assert "--depth=1" in fetch\n    assert "--no-tags" in fetch\n    assert not any("token" in part.casefold() or "authorization" in part.casefold() for part in fetch)\n'''
+          new_assertions = '''    fetch, fetch_kwargs = next((command, kwargs) for command, kwargs in calls if "fetch" in command)\n    assert expected not in fetch\n    assert "https://github.com/BoneManTGRM/NICO.git" not in fetch\n    assert fetch_kwargs["input"] == f"{expected}\\n"\n    assert fetch_kwargs["shell"] is False\n    assert fetch_kwargs["cwd"].endswith("repository.git")\n    assert "--stdin" in fetch\n    assert "--depth=1" in fetch\n    assert "--no-tags" in fetch\n    assert not any("token" in part.casefold() or "authorization" in part.casefold() for part in fetch)\n'''
+          if old_assertions not in test:
+              raise SystemExit('public Git fallback assertion block changed')
+          test = test.replace(old_assertions, new_assertions, 1)
+
+          insertion_marker = '\n\ndef test_public_git_exact_commit_rejects_sha_mismatch() -> None:\n'
+          if test.count(insertion_marker) != 1:
+              raise SystemExit('public Git fallback test insertion marker changed')
+          added_test = r'''
+
+
+def test_public_git_exact_commit_uses_sanitized_git_environment(monkeypatch) -> None:
+    expected = "a" * 40
+    observed: list[dict] = []
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.sshCommand")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "malicious-command")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "malicious-command")
+
+    def runner(command, **kwargs):
+        observed.append(kwargs)
+        if "show" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=f"{expected}\x00{'b' * 40}\x002026-07-23T20:00:00Z\x00Exact release\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    commit, error = snapshot._public_git_exact_commit("BoneManTGRM/NICO", expected, runner=runner)
+
+    assert error is None
+    assert commit is not None
+    environment = observed[0]["env"]
+    assert "GIT_CONFIG_COUNT" not in environment
+    assert "GIT_CONFIG_KEY_0" not in environment
+    assert "GIT_CONFIG_VALUE_0" not in environment
+    assert "GIT_SSH_COMMAND" not in environment
+    assert environment["GIT_ALLOW_PROTOCOL"] == "https"
+    assert environment["GIT_PROTOCOL_FROM_USER"] == "0"
+    assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert environment["GIT_TERMINAL_PROMPT"] == "0"
+'''
+          test = test.replace(insertion_marker, added_test + insertion_marker, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+      - name: Verify focused security repair
+        run: |
+          set -euo pipefail
+          python -m py_compile nico/repository_snapshot.py
+          python -m pytest -q tests/test_repository_snapshot_public_git_fallback.py
+      - name: Remove temporary workflow and commit reviewed files
+        shell: bash
+        run: |
+          rm .github/workflows/temporary-codeql-command-line-repair.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add nico/repository_snapshot.py tests/test_repository_snapshot_public_git_fallback.py .github/workflows/temporary-codeql-command-line-repair.yml
+          git diff --cached --check
+          git commit -m "Harden exact-SHA Git subprocess execution"
+          git push origin HEAD:fix/codeql-uncontrolled-command-line
