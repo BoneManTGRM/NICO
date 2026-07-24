@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/postcss-8-5-18-security
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
