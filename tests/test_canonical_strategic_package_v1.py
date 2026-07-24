@@ -166,8 +166,16 @@ def test_core_and_strategic_share_the_same_contract_and_core_does_not_fake_human
     assert core["canonical_core_contract"]["independent_core_scorecard_allowed"] is False
     assert core["canonical_run_manifest"]["identity"]["assessment_depth"] == "core"
     statuses = {item["module_id"]: item["status"] for item in core["canonical_run_manifest"]["module_status"]}
-    for module_id, _label in STRATEGIC_MODULES:
+    human_evidence_modules = {
+        "functional_qa",
+        "platform_parity",
+        "accessibility_ux",
+        "stakeholder_context",
+        "decision_log",
+    }
+    for module_id in human_evidence_modules:
         assert statuses[module_id] == "not_in_core_scope"
+    assert statuses["business_consequences"] == "complete"
 
 
 def test_final_accepted_gate_blocks_missing_strategic_human_evidence_and_named_approval() -> None:
