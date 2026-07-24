@@ -10,6 +10,7 @@ This is not another one-time assessment or a generic job runner
 4 · REVIEW
 Refresh Ongoing Evidence
 href="/assessment?tier=comprehensive#assessment"
+placeholder="Leave blank to use the latest verified baseline"
 No manual technical summaries
 Roadmap decisions and priorities
 Client update context
