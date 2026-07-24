@@ -21,6 +21,7 @@ def test_completed_assessment_adds_exact_run_final_review_action() -> None:
     assert "run_id: context.run_id" in source
     assert "customer_id: context.customer_id" in source
     assert "project_id: context.project_id" in source
+    assert 'query.set("lang", "es-MX")' in source
     assert "sessionStorage" in source
     assert "admin" not in source.lower().split("sessionstorage")[0][-100:]
 
@@ -56,6 +57,22 @@ def test_retainer_workspace_requires_one_exact_baseline_and_explains_scope() -> 
     assert "commit_summary" not in source
     assert "pr_summary" not in source
     assert "issue_summary" not in source
+
+
+def test_operator_workspaces_preserve_mexican_spanish_locale() -> None:
+    layout = _read("apps/web/app/layout.tsx")
+    navigation = _read("apps/web/app/PrimaryNavigation.tsx")
+    locale = _read("apps/web/app/OperatorWorkspaceLocale.tsx")
+
+    assert 'import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";' in layout
+    assert "<OperatorWorkspaceLocale />" in layout
+    assert 'queryLocale === "es-MX"' in navigation
+    assert 'params.set("lang", "es-MX")' in navigation
+    assert "withLanguage(link.href, spanishActive)" in navigation
+    assert "REVISIÓN FINAL DE NICO" in locale
+    assert "SUPERVISIÓN CONTINUA DE INGENIERÍA" in locale
+    assert 'document.documentElement.lang = "es-MX"' in locale
+    assert 'params.get("lang") !== "es-MX"' in locale
 
 
 def test_simplified_workflow_styles_are_loaded() -> None:
