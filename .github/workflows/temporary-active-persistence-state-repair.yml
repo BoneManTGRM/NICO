@@ -1,0 +1,140 @@
+name: Temporary active persistence state repair
+
+on:
+  push:
+    branches:
+      - fix/active-persistence-verification-state
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Apply bounded source transformation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/web/app/assessment/AssessmentWorkspace.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '  persistence?: {recorded?: boolean; durable?: boolean; adapter?: string};',
+                  '  persistence?: {recorded?: boolean; durable?: boolean; durability_verified?: boolean; adapter?: string};',
+              ),
+              (
+                  '  notScored: string;\n  notVerified: string;',
+                  '  notScored: string;\n  verificationPending: string;\n  verifiedPersistentStorage: string;\n  notVerified: string;',
+              ),
+              (
+                  '  notScored: "Not scored",\n  notVerified: "Not verified",',
+                  '  notScored: "Not scored",\n  verificationPending: "Verification pending",\n  verifiedPersistentStorage: "Verified persistent storage",\n  notVerified: "Not verified",',
+              ),
+              (
+                  '  notScored: "Sin puntuación",\n  notVerified: "No verificado",',
+                  '  notScored: "Sin puntuación",\n  verificationPending: "Verificación pendiente",\n  verifiedPersistentStorage: "Almacenamiento persistente verificado",\n  notVerified: "No verificado",',
+              ),
+          ]
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}: {old!r}')
+              source = source.replace(old, new, 1)
+
+          marker = '\nfunction IdentifierValue({value, fallback, copy}: {value?: string; fallback: string; copy: Copy}) {'
+          if source.count(marker) != 1:
+              raise SystemExit('IdentifierValue insertion marker changed')
+          helper = '''
+
+function persistenceStatus(persistence: Result["persistence"], phase: Phase, copy: Copy): string {
+  const verified = persistence?.durable === true || persistence?.durability_verified === true;
+  if (verified) return copy.verifiedPersistentStorage;
+  const terminal = ["review_required", "complete", "failed", "timed_out"].includes(phase);
+  if (!terminal) return copy.verificationPending;
+  return copy.notVerified;
+}
+'''
+          source = source.replace(marker, helper + marker, 1)
+
+          old_render = '<article><b>{copy.durable}</b><span>{result.persistence?.durable ? copy.yes : result.persistence?.recorded ? copy.recorded : copy.notVerified}</span></article>'
+          new_render = '<article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article>'
+          if source.count(old_render) != 1:
+              raise SystemExit('persistence rendering contract changed')
+          source = source.replace(old_render, new_render, 1)
+          path.write_text(source, encoding='utf-8')
+
+          test = Path('tests/test_active_persistence_status_ui.py')
+          test.write_text('''from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
+
+
+def source() -> str:
+    return SOURCE.read_text(encoding="utf-8")
+
+
+def test_active_run_uses_pending_persistence_language() -> None:
+    text = source()
+
+    assert 'verificationPending: "Verification pending"' in text
+    assert 'verificationPending: "Verificación pendiente"' in text
+    assert 'if (!terminal) return copy.verificationPending;' in text
+    assert 'persistenceStatus(result.persistence, phase, copy)' in text
+
+
+def test_verified_persistence_requires_explicit_backend_proof() -> None:
+    text = source()
+
+    assert 'persistence?.durable === true || persistence?.durability_verified === true' in text
+    assert 'verifiedPersistentStorage: "Verified persistent storage"' in text
+    assert 'verifiedPersistentStorage: "Almacenamiento persistente verificado"' in text
+    assert 'if (verified) return copy.verifiedPersistentStorage;' in text
+
+
+def test_not_verified_is_reserved_for_terminal_unproven_runs() -> None:
+    text = source()
+
+    assert 'const terminal = ["review_required", "complete", "failed", "timed_out"].includes(phase);' in text
+    assert 'if (!terminal) return copy.verificationPending;' in text
+    assert 'return copy.notVerified;' in text
+    assert 'result.persistence?.durable ? copy.yes : result.persistence?.recorded ? copy.recorded : copy.notVerified' not in text
+''', encoding='utf-8')
+          PY
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Run frontend typecheck
+        working-directory: apps/web
+        run: npm run typecheck
+      - name: Run focused persistence regressions
+        run: python -m pytest -q tests/test_active_persistence_status_ui.py tests/test_unified_assessment_ui.py tests/test_assessment_command_center_v42.py
+      - name: Remove temporary workflow and commit reviewed files
+        shell: bash
+        run: |
+          rm .github/workflows/temporary-active-persistence-state-repair.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/web/app/assessment/AssessmentWorkspace.tsx tests/test_active_persistence_status_ui.py .github/workflows/temporary-active-persistence-state-repair.yml
+          git diff --cached --check
+          git commit -m "Show pending persistence truth during active runs"
+          git push origin HEAD:fix/active-persistence-verification-state
