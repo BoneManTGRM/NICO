@@ -6,7 +6,7 @@ from nico.express_failure_stage_truth_v3 import install_express_failure_stage_tr
 from nico.express_terminal_authority import install_express_terminal_authority
 from nico.scanner_repeatability_compat_v1 import install_scanner_repeatability_compat_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v4"
+VERSION = "nico.api.terminal_authority_bootstrap.v5"
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
@@ -46,6 +46,8 @@ if EXPRESS_FAILURE_STAGE_TRUTH.get("status") not in {"installed", "already_insta
     raise RuntimeError(f"Express failure-stage truth did not install: {EXPRESS_FAILURE_STAGE_TRUTH}")
 if EXPRESS_FAILURE_STAGE_TRUTH.get("actual_failure_stage_preserved") is not True:
     raise RuntimeError("Express terminal failures can still erase the actual failed stage")
+if EXPRESS_FAILURE_STAGE_TRUTH.get("backend_stage_mapped_to_ui_stage") is not True:
+    raise RuntimeError("Express backend diagnostic stages are not mapped to the truthful UI stage")
 if EXPRESS_FAILURE_STAGE_TRUTH.get("later_pending_stages_remain_pending") is not True:
     raise RuntimeError("Express terminal failures can still relabel later pending stages as failed")
 if EXPRESS_FAILURE_STAGE_TRUTH.get("safe_failure_code_exposed") is not True:
