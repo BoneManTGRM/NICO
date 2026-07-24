@@ -32,7 +32,7 @@ type Result = Assessment & {
   repository_snapshot?: {commit_sha?: string};
   scanner?: {status?: string};
   scanner_evidence?: {status?: string; scanner_status?: string};
-  persistence?: {recorded?: boolean; durable?: boolean; adapter?: string};
+  persistence?: {recorded?: boolean; durable?: boolean; durability_verified?: boolean; adapter?: string};
   human_review_required?: boolean;
   client_ready?: boolean;
   client_delivery_allowed?: boolean;
@@ -82,6 +82,8 @@ type Copy = {
   copyValue: string;
   valueCopied: string;
   notScored: string;
+  verificationPending: string;
+  verifiedPersistentStorage: string;
   notVerified: string;
   copied: string;
   copy: string;
@@ -225,6 +227,8 @@ const EN: Copy = {
   copyValue: "Copy full value",
   valueCopied: "Copied",
   notScored: "Not scored",
+  verificationPending: "Verification pending",
+  verifiedPersistentStorage: "Verified persistent storage",
   notVerified: "Not verified",
   copied: "Markdown copied",
   copy: "Copy Markdown",
@@ -318,6 +322,8 @@ const ES: Copy = {
   copyValue: "Copiar valor completo",
   valueCopied: "Copiado",
   notScored: "Sin puntuación",
+  verificationPending: "Verificación pendiente",
+  verifiedPersistentStorage: "Almacenamiento persistente verificado",
   notVerified: "No verificado",
   copied: "Markdown copiado",
   copy: "Copiar Markdown",
@@ -329,7 +335,7 @@ const ES: Copy = {
   stepEvidence: "Evidencia de la etapa",
   reviewNotice: "El informe final está completo. El equipo debe revisar el paquete exacto vinculado a evidencia y aprobarlo antes de entregarlo al cliente; no es necesario rehacer el informe.",
   backendError: "No se pudo acceder al backend de evaluación desde este despliegue.",
-  authError: "Confirma que eres propietario del objetivo o que tienes autorización explícita para evaluarlo.",
+  authError: "Confirma que eres propietario de este objetivo o que tienes autorización explícita para evaluarlo.",
   invalidJson: "El endpoint de evaluación devolvió JSON no válido.",
   runIdMissing: "La respuesta de la evaluación no incluyó un ID de ejecución.",
   expressComplete: "Express completó las etapas de evidencia, puntuación, informe y control de veracidad. Aún se requiere revisión humana antes de la entrega.",
@@ -404,6 +410,14 @@ function formatStatus(status: unknown, copy: Copy): string {
   if (value.includes("unavailable") || value === "not_available") return copy.unavailableStatus;
   if (value === "not_applicable") return copy.notApplicable;
   return value.split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function persistenceStatus(persistence: Result["persistence"], phase: Phase, copy: Copy): string {
+  const verified = persistence?.durable === true || persistence?.durability_verified === true;
+  if (verified) return copy.verifiedPersistentStorage;
+  const terminal = ["review_required", "complete", "failed", "timed_out"].includes(phase);
+  if (!terminal) return copy.verificationPending;
+  return copy.notVerified;
 }
 
 function IdentifierValue({value, fallback, copy}: {value?: string; fallback: string; copy: Copy}) {
@@ -747,7 +761,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <article><b>{copy.review}</b><span>{reviewStatus}</span></article>
           <article><b>{copy.maturity}</b><span>{maturityStatus}</span></article>
           <article><b>{copy.score}</b><span>{scoreLabel}</span></article>
-          <article><b>{copy.durable}</b><span>{result.persistence?.durable ? copy.yes : result.persistence?.recorded ? copy.recorded : copy.notVerified}</span></article>
+          <article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article>
         </div>
         {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
         {progressItems.length ? <div className={styles.timeline}>{progressItems.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}><div className="result-head"><b>{copy.stageLabels[String(item.step || "")] || String(item.step || copy.stage).replaceAll("_", " ")}</b><span className={statusClass(item.status)}>{formatStatus(item.status, copy)}</span></div><p>{item.message || copy.notVerified}</p>{item.evidence ? <details className="help-details"><summary>{copy.stepEvidence}</summary><pre className="json-block">{JSON.stringify(item.evidence, null, 2)}</pre></details> : null}</article>)}</div> : null}
