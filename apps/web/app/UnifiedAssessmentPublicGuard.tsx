@@ -9,6 +9,10 @@ function normalized(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function setText(element: HTMLElement | null | undefined, value: string): void {
+  if (element && element.textContent !== value) element.textContent = value;
+}
+
 function isAssessmentPath(pathname: string): boolean {
   return pathname === "/assessment" || pathname === "/es/assessment";
 }
@@ -27,45 +31,49 @@ function forceCanonicalTier(pathname: string): void {
 }
 
 function rewriteAssessmentCopy(main: HTMLElement, spanish: boolean): void {
-  main.dataset.assessmentServiceCount = "1";
-  main.dataset.canonicalAssessment = "strategic";
+  if (main.dataset.assessmentServiceCount !== "1") main.dataset.assessmentServiceCount = "1";
+  if (main.dataset.canonicalAssessment !== "strategic") main.dataset.canonicalAssessment = "strategic";
 
   const hero = main.querySelector<HTMLElement>(".hero");
-  const heroEyebrow = hero?.querySelector<HTMLElement>(".eyebrow");
-  const heroTitle = hero?.querySelector<HTMLElement>("h1");
-  const heroLead = hero?.querySelector<HTMLElement>(".lead");
-  if (heroEyebrow) heroEyebrow.textContent = spanish ? "EVALUACIÓN ESTRATÉGICA NICO" : "NICO STRATEGIC ASSESSMENT";
-  if (heroTitle) heroTitle.textContent = spanish
-    ? "Una evaluación. Un libro de evidencia. Un informe decisivo."
-    : "One assessment. One evidence ledger. One decision-grade report.";
-  if (heroLead) heroLead.textContent = spanish
-    ? "NICO ejecuta automáticamente la línea base técnica, el análisis profundo, el triaje de hallazgos, la planificación y el paquete final sobre una sola instantánea inmutable."
-    : "NICO automatically runs the technical baseline, deep analysis, finding triage, planning, and final package against one immutable snapshot.";
+  setText(hero?.querySelector<HTMLElement>(".eyebrow"), spanish ? "EVALUACIÓN ESTRATÉGICA NICO" : "NICO STRATEGIC ASSESSMENT");
+  setText(
+    hero?.querySelector<HTMLElement>("h1"),
+    spanish ? "Una evaluación. Un libro de evidencia. Un informe decisivo." : "One assessment. One evidence ledger. One decision-grade report.",
+  );
+  setText(
+    hero?.querySelector<HTMLElement>(".lead"),
+    spanish
+      ? "NICO ejecuta automáticamente la línea base técnica, el análisis profundo, el triaje de hallazgos, la planificación y el paquete final sobre una sola instantánea inmutable."
+      : "NICO automatically runs the technical baseline, deep analysis, finding triage, planning, and final package against one immutable snapshot.",
+  );
 
   const assessment = main.querySelector<HTMLElement>("#assessment");
-  const eyebrow = assessment?.querySelector<HTMLElement>(".section-head .eyebrow");
-  const heading = assessment?.querySelector<HTMLElement>(".section-head h2");
-  const summary = assessment?.querySelector<HTMLElement>(".summary-box");
-  if (eyebrow) eyebrow.textContent = spanish ? "EVALUACIÓN NICO UNIFICADA" : "UNIFIED NICO ASSESSMENT";
-  if (heading) heading.textContent = spanish
-    ? "Diligencia técnica y estratégica completa"
-    : "Complete technical and strategic diligence";
-  if (summary) summary.textContent = spanish
-    ? "Una ejecución reúne todo lo útil de Express, Mid y Comprehensive: evidencia exacta, analizadores, puntuación calibrada, arquitectura, riesgo, código a corregir, hoja de ruta, recursos y un único informe final sujeto a revisión humana."
-    : "One run combines everything useful from Express, Mid, and Comprehensive: exact evidence, scanners, calibrated scoring, architecture, risk, code-specific remediation, roadmap, resourcing, and one final report subject to human review.";
+  setText(assessment?.querySelector<HTMLElement>(".section-head .eyebrow"), spanish ? "EVALUACIÓN NICO UNIFICADA" : "UNIFIED NICO ASSESSMENT");
+  setText(
+    assessment?.querySelector<HTMLElement>(".section-head h2"),
+    spanish ? "Diligencia técnica y estratégica completa" : "Complete technical and strategic diligence",
+  );
+  setText(
+    assessment?.querySelector<HTMLElement>(".summary-box"),
+    spanish
+      ? "Una ejecución reúne todo lo útil de Express, Mid y Comprehensive: evidencia exacta, analizadores, puntuación calibrada, arquitectura, riesgo, código a corregir, hoja de ruta, recursos y un único informe final sujeto a revisión humana."
+      : "One run combines everything useful from Express, Mid, and Comprehensive: exact evidence, scanners, calibrated scoring, architecture, risk, code-specific remediation, roadmap, resourcing, and one final report subject to human review.",
+  );
 
   const details = assessment?.querySelector<HTMLDetailsElement>("details.help-details");
-  const detailSummary = details?.querySelector<HTMLElement>("summary");
-  if (detailSummary) detailSummary.textContent = spanish ? "Qué incluye la evaluación" : "What the assessment includes";
+  setText(details?.querySelector<HTMLElement>("summary"), spanish ? "Qué incluye la evaluación" : "What the assessment includes");
 
   const runButton = Array.from(assessment?.querySelectorAll<HTMLButtonElement>("button.primary-button") || [])
     .find((button) => !button.hasAttribute("aria-pressed"));
   if (runButton) {
     const running = normalized(runButton.textContent).includes("running")
       || normalized(runButton.textContent).includes("ejecutándose");
-    runButton.textContent = running
-      ? (spanish ? "Ejecutando evaluación NICO" : "Running NICO Assessment")
-      : (spanish ? "Ejecutar evaluación NICO" : "Run NICO Assessment");
+    setText(
+      runButton,
+      running
+        ? (spanish ? "Ejecutando evaluación NICO" : "Running NICO Assessment")
+        : (spanish ? "Ejecutar evaluación NICO" : "Run NICO Assessment"),
+    );
   }
 }
 
@@ -77,11 +85,11 @@ function selectComprehensiveAndHideChoices(main: HTMLElement): void {
   });
   const grid = comprehensive?.parentElement;
   if (grid) {
-    grid.hidden = true;
-    grid.setAttribute("aria-hidden", "true");
+    if (!grid.hidden) grid.hidden = true;
+    if (grid.getAttribute("aria-hidden") !== "true") grid.setAttribute("aria-hidden", "true");
   }
   buttons.forEach((button) => {
-    button.tabIndex = -1;
+    if (button.tabIndex !== -1) button.tabIndex = -1;
   });
   if (comprehensive && comprehensive.getAttribute("aria-pressed") !== "true" && !comprehensive.disabled) {
     comprehensive.click();
@@ -98,8 +106,8 @@ function hideOperatorNavigation(pathname: string): void {
       || text.includes("operations (admin)")
       || text.includes("operaciones (administrador)");
     if (operatorGroup) {
-      group.hidden = true;
-      group.setAttribute("aria-hidden", "true");
+      if (!group.hidden) group.hidden = true;
+      if (group.getAttribute("aria-hidden") !== "true") group.setAttribute("aria-hidden", "true");
     }
   });
 }
@@ -130,7 +138,7 @@ export default function UnifiedAssessmentPublicGuard() {
       window.requestAnimationFrame(run);
     };
     const observer = new MutationObserver(schedule);
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true});
+    observer.observe(document.body, {subtree: true, childList: true, characterData: true});
     window.addEventListener("popstate", schedule);
     schedule();
     const timer = window.setInterval(run, 750);
