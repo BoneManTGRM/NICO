@@ -33,9 +33,11 @@ def test_acceptance_ui_read_is_immediate_and_non_blocking() -> None:
 
     assert "acceptance.ui_state = _safe_ui_state" in source
     assert "document.querySelector('section[aria-live=\"polite\"]')" in source
-    assert "locator.evaluate" in source
+    assert "value = page.evaluate(" in source
+    assert "locator.evaluate" not in source
     assert "return fallback" in source
-    assert "No duplicate run is started" in source
+    assert "UI_BACKEND_RECONCILIATION_SECONDS" in source
+    assert "acceptance.run = _run_unified" in source
 
 
 def test_terminal_comprehensive_report_projection_remains_supported() -> None:
