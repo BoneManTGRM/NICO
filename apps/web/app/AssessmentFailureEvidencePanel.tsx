@@ -67,7 +67,7 @@ export default function AssessmentFailureEvidencePanel() {
     run: "Identidad de ejecución",
     missing: "no devuelto",
     noSteps: "El backend no devolvió evidencia acotada de la etapa que falló.",
-    boundary: "Este panel conserva únicamente evidencia acotada del estado. No convierte una etapa fallida o no disponible en un resultado aprobado.",
+    boundary: "Este panel conserva únicamente evidencia acotada del estado para la página abierta actualmente. No convierte una etapa fallida o no disponible en un resultado aprobado.",
     recovery: "Abrir esta misma ejecución en Recuperación antes de iniciar otra.",
   } : {
     eyebrow: "ASSESSMENT FAILURE EVIDENCE",
@@ -79,7 +79,7 @@ export default function AssessmentFailureEvidencePanel() {
     run: "Run identity",
     missing: "not returned",
     noSteps: "The backend did not return bounded evidence for the actual failed stage.",
-    boundary: "This panel preserves only bounded status evidence. It does not convert a failed or unavailable stage into a passing result.",
+    boundary: "This panel preserves only bounded status evidence for the current open page. It does not convert a failed or unavailable stage into a passing result.",
     recovery: "Open this same run in Recovery before starting another.",
   };
   const recoveryHref = failure.run_id
