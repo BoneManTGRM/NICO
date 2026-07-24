@@ -37,12 +37,11 @@ RUN apt-get update \
     && mkdir -p /data/reports /opt/nico-tools \
     && chown -R nico:nico /data
 
-RUN npm install -g \
-        eslint@9 \
+RUN npm install -g eslint typescript --no-audit --no-fund \
+    && npm install -g \
         @eslint/js@9 \
         @typescript-eslint/parser@8 \
         @typescript-eslint/eslint-plugin@8 \
-        typescript@5.6.3 \
         --no-audit --no-fund \
     && eslint --version \
     && node -e "require('@typescript-eslint/parser'); require('@eslint/js')"
