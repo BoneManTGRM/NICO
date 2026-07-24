@@ -6,6 +6,7 @@ import "../styles/assessment-executive.css";
 import "../styles/professional-polish.css";
 import "../styles/site-polish-v2.css";
 import "../styles/workflow-simplification.css";
+import "../styles/canonical-assessment.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
@@ -39,6 +40,9 @@ NICO never approves findings or creates client delivery automatically.
 Guidance remains under More → Guide.
 Operator-only deployment controls are available under More → Operations (Admin).
 Ongoing evidence refresh remains under More → Retainer Ops.
+
+Customer-facing product contract:
+Run one NICO Assessment with Core or Strategic depth. Both depths use the canonical run and report-package contract.
 */
 
 export const metadata = {
