@@ -213,7 +213,8 @@ def _markdown(records: list[dict[str, Any]]) -> str:
     for item in records:
         current = f"{item['technical_band_label']} {item['technical_score_label']} · {item['assurance_label']}"
         requirements = " ".join(_green_requirements(item)).replace("|", "\\|")
-        rows.append(f"| {item['label'].replace('|', '\\|')} | {current} | {requirements} |")
+        label = item["label"].replace("|", "\\|")
+        rows.append(f"| {label} | {current} | {requirements} |")
 
     rows.extend(
         [
