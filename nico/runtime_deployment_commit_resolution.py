@@ -118,7 +118,11 @@ def runtime_deployment_resolution(
 
 def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
     from nico import exact_commit_binding, repository_snapshot
+    from nico.comprehensive_cross_format_finality_v49 import (
+        install_comprehensive_cross_format_finality_v49,
+    )
 
+    cross_format_finality = install_comprehensive_cross_format_finality_v49()
     current: Callable[..., dict[str, Any]] = repository_snapshot.resolve_repository_commit
     if getattr(current, _MARKER, False):
         exact_commit_binding.resolve_repository_commit = current
@@ -127,6 +131,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
             "version": VERSION,
             "repository_snapshot_bound": True,
             "exact_commit_binding_bound": True,
+            "comprehensive_cross_format_finality": cross_format_finality,
         }
 
     @wraps(current)
@@ -149,6 +154,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
         "repository_identity_required": True,
         "exact_sha_match_required": True,
         "api_and_public_git_fallback_preserved": True,
+        "comprehensive_cross_format_finality": cross_format_finality,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
