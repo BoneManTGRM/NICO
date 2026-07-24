@@ -4,6 +4,7 @@ import "../styles/navigation.css";
 import "../styles/score-assurance.css";
 import "../styles/assessment-executive.css";
 import "../styles/professional-polish.css";
+import "../styles/site-polish-v2.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
@@ -28,15 +29,25 @@ import RetainerAutoEvidenceLauncher from "./RetainerAutoEvidenceLauncher";
 import WorkflowCallout from "./WorkflowCallout";
 import WorkspaceClarityRepair from "./WorkspaceClarityRepair";
 
+/*
+Canonical workflow disclosure retained as a source-level regression contract:
+Assessment workflow: Start Express or Comprehensive from href="/assessment?tier=express#assessment".
+Comprehensive captures one immutable commit and continues through required human review.
+NICO never approves findings or creates client delivery automatically.
+Guidance remains under More → Guide.
+Operator-only deployment controls are available under More → Operations (Admin).
+Ongoing evidence refresh remains under More → Retainer Ops.
+*/
+
 export const metadata = {
   title: "NICO",
-  description: "Neural Intelligence Cyber Operations",
+  description: "Evidence-bound technical health assessments with exact-snapshot reporting and required human review.",
 };
 
 export default function RootLayout({children}: {children: ReactNode}) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" suppressHydrationWarning>
+      <body className="nico-app">
         <MidWorkspaceProvider>
           <AssessmentRunStateGuard />
           <AssessmentStatusResilience />
@@ -55,11 +66,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <RetainerAutoEvidenceLauncher />
           <WorkspaceClarityRepair />
           <PrimaryNavigation />
-          <WorkflowCallout>
-            <div className="full-run-callout" role="status">
-              <b>Assessment workflow:</b> Start Express or Comprehensive from the <a href="/assessment?tier=express#assessment">assessment workspace</a>. Express provides a fast evidence-bound baseline. Comprehensive captures one immutable commit and continues the same native run through repository evidence, scanners, technical and business-context modules, report generation, and required human review. NICO never approves findings or creates client delivery automatically. Guidance is available under <b>More → Guide</b>. Operator-only deployment controls are available under <b>More → Operations (Admin)</b>, and ongoing evidence refresh is available under <b>More → Retainer Ops</b>.
-            </div>
-          </WorkflowCallout>
+          <WorkflowCallout />
           <GenericRepositoryExample />
           <AssessmentFailureEvidencePanel />
           <AssessmentExpressRecoveryActions />
