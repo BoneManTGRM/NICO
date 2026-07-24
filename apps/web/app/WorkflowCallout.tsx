@@ -41,7 +41,7 @@ const ENGLISH_COPY: WorkflowCopy = {
 const SPANISH_COPY: WorkflowCopy = {
   eyebrow: "Flujo de evaluación",
   title: "De la evidencia del repositorio a un informe listo para aprobación",
-  summary: "Un solo espacio guiado mantiene la evaluación, el paquete de evidencia, el informe y la decisión humana final vinculados al mismo estado inmutable del repositorio.",
+  summary: "Inicia Express o Integral desde un solo espacio guiado que mantiene la evaluación, el paquete de evidencia, el informe y la decisión humana final vinculados al mismo estado inmutable del repositorio.",
   steps: [
     {
       number: "01",
