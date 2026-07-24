@@ -4,9 +4,14 @@ import base64
 import hashlib
 import io
 import re
+from copy import deepcopy
 from typing import Any
 
 from nico import comprehensive_report_package as base_report
+from nico.canonical_strategic_package_v1 import (
+    VERSION as CANONICAL_PACKAGE_VERSION,
+    attach_canonical_strategic_package,
+)
 from nico.comprehensive_decision_grade_model_v5 import APPENDIX_HEADING, REVIEW_HEADING, VERSION, _text
 from nico.comprehensive_decision_grade_markdown_v5 import (
     _build_markdown, _decorate_assessment, _limitation_metrics,
@@ -20,6 +25,37 @@ from nico.comprehensive_express_quality_v7 import (
     reconcile_comprehensive_assessment,
 )
 from nico.comprehensive_premium_synthesis_v6 import VERSION as PREMIUM_VERSION
+
+
+def _scanner_from_stages(stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    for result in reversed(list(stage_results.values())):
+        if not isinstance(result, dict):
+            continue
+        for key in ("scanner", "scanner_run", "scanner_evidence", "scan"):
+            candidate = result.get(key)
+            if isinstance(candidate, dict) and candidate:
+                return deepcopy(candidate)
+        evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+        for key in ("scanner", "scanner_run", "scanner_evidence", "scan"):
+            candidate = evidence.get(key)
+            if isinstance(candidate, dict) and candidate:
+                return deepcopy(candidate)
+    return {}
+
+
+def _snapshot_from_stages(stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    for result in stage_results.values():
+        if not isinstance(result, dict):
+            continue
+        for key in ("repository_snapshot", "snapshot"):
+            candidate = result.get(key)
+            if isinstance(candidate, dict) and candidate:
+                return deepcopy(candidate)
+        evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+        candidate = evidence.get("repository_snapshot") or evidence.get("snapshot")
+        if isinstance(candidate, dict) and candidate:
+            return deepcopy(candidate)
+    return {}
 
 
 def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -84,6 +120,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "version": VERSION,
         "premium_synthesis_version": PREMIUM_VERSION,
         "express_quality_version": EXPRESS_QUALITY_VERSION,
+        "canonical_package_version": CANONICAL_PACKAGE_VERSION,
         "decision_grade_body": True,
         "appendix_contract_schema": VERSION,
         "full_evidence_appendix": True,
@@ -125,22 +162,6 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
-    complete = bool(
-        pdf_bytes.startswith(b"%PDF")
-        and not pdf_error
-        and quality["score_band_separated_from_assurance"]
-        and quality["bounded_static_scoring_discloses_assurance"]
-        and quality["weighted_scoring_explicit"]
-        and quality["shared_control_truth_reconciled"]
-        and quality["executive_risk_truth_reconciled"]
-        and quality["executive_risk_register_consolidated"]
-        and quality["unverified_medium_candidates_not_p1"]
-        and quality["express_quality_front_matter"]
-        and quality["pdf_page_count_label_matches_artifact"]
-        and quality["semantic_html"]
-        and quality["markdown_evidence_appendix"]
-        and quality["markdown_human_review_acceptance_gate"]
-    )
     report_package = {
         "service_id": "comprehensive",
         "report_id": report_id,
@@ -164,10 +185,83 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "appendix_contract_schema": VERSION,
         "evidence_appendix_present": True,
         "human_review_acceptance_gate_present": True,
-        "report_quality_contract": quality,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+
+    snapshot = _snapshot_from_stages(stage_results)
+    scanner = _scanner_from_stages(stage_results)
+    contract_source = attach_canonical_strategic_package(
+        {
+            "repository": required_identity["repository"],
+            "commit_sha": required_identity["commit_sha"],
+            "tree_sha": snapshot.get("tree_sha") or identity.get("tree_sha") or "",
+            "run_id": required_identity["run_id"],
+            "customer_id": required_identity["customer_id"],
+            "project_id": required_identity["project_id"],
+            "evidence_bundle_hash": required_identity["evidence_ledger_id"],
+            "generated_at": generated_at,
+            "assessment_type": "comprehensive",
+            "service_tier": "strategic",
+            "report_language": identity.get("report_language") or identity.get("language") or "en",
+            "repository_snapshot": snapshot,
+            "scanner": scanner,
+            "assessment": assessment,
+            "roadmap": roadmap,
+            "staffing_plan": staffing,
+            "report_package": report_package,
+            "executive_risk_register": executive_risks,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+        depth="strategic",
+        language=str(identity.get("report_language") or identity.get("language") or "en"),
+    )
+    enriched_package = contract_source.get("report_package") if isinstance(contract_source.get("report_package"), dict) else report_package
+    report_package.update(enriched_package)
+    report_package.update(
+        {
+            "canonical_run_manifest": contract_source["canonical_run_manifest"],
+            "evidence_manifest": contract_source["evidence_manifest"],
+            "premium_artifact_manifest": contract_source["premium_artifact_manifest"],
+            "code_remediation_plan": contract_source["code_remediation_plan"],
+            "risk_register": contract_source["risk_register"],
+            "canonical_package_contract": contract_source["canonical_package_contract"],
+        }
+    )
+    quality.update(
+        {
+            "canonical_run_manifest_present": contract_source["canonical_run_manifest"].get("status") == "complete",
+            "canonical_score_assurance_ledger_present": bool(contract_source["canonical_run_manifest"].get("canonical_score_and_assurance_ledger")),
+            "implementation_ready_remediation_plan_present": contract_source["code_remediation_plan"].get("status") in {"complete", "not_applicable"},
+            "risk_register_present": isinstance(contract_source.get("risk_register"), list),
+            "evidence_manifest_present": bool(contract_source.get("evidence_manifest")),
+            "premium_artifact_manifest_present": bool(contract_source.get("premium_artifact_manifest")),
+        }
+    )
+    report_package["report_quality_contract"] = quality
+    complete = bool(
+        pdf_bytes.startswith(b"%PDF")
+        and not pdf_error
+        and quality["score_band_separated_from_assurance"]
+        and quality["bounded_static_scoring_discloses_assurance"]
+        and quality["weighted_scoring_explicit"]
+        and quality["shared_control_truth_reconciled"]
+        and quality["executive_risk_truth_reconciled"]
+        and quality["executive_risk_register_consolidated"]
+        and quality["unverified_medium_candidates_not_p1"]
+        and quality["express_quality_front_matter"]
+        and quality["pdf_page_count_label_matches_artifact"]
+        and quality["semantic_html"]
+        and quality["markdown_evidence_appendix"]
+        and quality["markdown_human_review_acceptance_gate"]
+        and quality["canonical_run_manifest_present"]
+        and quality["canonical_score_assurance_ledger_present"]
+        and quality["implementation_ready_remediation_plan_present"]
+        and quality["risk_register_present"]
+        and quality["evidence_manifest_present"]
+        and quality["premium_artifact_manifest_present"]
+    )
     return {
         "status": "complete" if complete else "blocked",
         "reason": "" if complete else (pdf_error or "decision_grade_report_contract_failed"),
@@ -178,6 +272,12 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "assessment": assessment,
         "stage_summaries": stages,
         "canonical_truth_sha256": truth_sha,
+        "canonical_run_manifest": contract_source["canonical_run_manifest"],
+        "evidence_manifest": contract_source["evidence_manifest"],
+        "premium_artifact_manifest": contract_source["premium_artifact_manifest"],
+        "code_remediation_plan": contract_source["code_remediation_plan"],
+        "risk_register": contract_source["risk_register"],
+        "canonical_package_contract": contract_source["canonical_package_contract"],
         "report_quality_contract": quality,
         "report_package": report_package,
         "appendix_contract_schema": VERSION,
