@@ -108,12 +108,11 @@ def _public_git_exact_commit(
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Verify one exact public commit without GitHub API quota.
+    """Verify one exact anonymously accessible commit without API quota.
 
-    This fallback is intentionally limited to public repositories and an already
-    validated 40-character SHA. It never inserts credentials into command arguments,
-    never accepts a branch name in place of the requested SHA, and verifies FETCH_HEAD
-    byte-for-byte before returning evidence.
+    A successful credential-free fetch proves that the requested repository object is
+    publicly reachable. Private repositories fail closed because anonymous fetch cannot
+    retrieve the object. The exact 40-character SHA is verified byte-for-byte.
     """
 
     if not _SAFE_REPOSITORY_RE.fullmatch(repository):
@@ -198,20 +197,179 @@ def _public_repository(repo_meta: dict[str, Any]) -> bool:
     return str(repo_meta.get("visibility") or "").strip().lower() == "public"
 
 
+def _preverified_resolution(
+    context: dict[str, Any],
+    repository: str,
+    expected_sha: str,
+) -> dict[str, Any] | None:
+    value = context.get("exact_commit_resolution")
+    if not isinstance(value, dict) or value.get("status") != "attached":
+        return None
+    resolved_repository = str(value.get("repository") or "").strip()
+    commit_sha = str(value.get("commit_sha") or "").strip().lower()
+    resolved_expected = str(value.get("expected_commit_sha") or commit_sha).strip().lower()
+    if resolved_repository.lower() != repository.lower():
+        return None
+    if not _EXACT_SHA_RE.fullmatch(commit_sha):
+        return None
+    if expected_sha and commit_sha != expected_sha:
+        return None
+    if resolved_expected and resolved_expected != commit_sha:
+        return None
+    if value.get("exact_commit_verified") is not True:
+        return None
+    return dict(value)
+
+
+def _legacy_snapshot_failure_code(value: Any) -> str:
+    """Preserve the established snapshot API contract for existing consumers."""
+
+    code = str(value or "").strip()
+    aliases = {
+        "repository_commit_mismatch": "repository_snapshot_commit_mismatch",
+        "private_repository_api_commit_unavailable": "repository_snapshot_commit_unavailable",
+        "repository_commit_unavailable": "repository_snapshot_commit_unavailable",
+    }
+    return aliases.get(code, code or "repository_snapshot_commit_unavailable")
+
+
+def resolve_repository_commit(
+    context: dict[str, Any],
+    *,
+    client: GitHubAssessmentClient | None = None,
+) -> dict[str, Any]:
+    """Resolve one immutable commit through API or anonymous exact-SHA Git proof.
+
+    API metadata remains authoritative when available. If metadata or commit lookup is
+    rate-limited and an explicit SHA is present, anonymous Git may prove public access
+    and the exact object identity. API mismatches and repositories confirmed private
+    never use the fallback.
+    """
+
+    repository = str(context.get("repository") or "").strip()
+    expected_sha, binding_source = _expected_commit_sha(context)
+    if binding_source == "invalid_explicit_commit_sha":
+        return {
+            "status": "unavailable",
+            "repository": repository,
+            "expected_commit_sha": "",
+            "commit_binding_source": binding_source,
+            "resolution_failure_code": "invalid_explicit_commit_sha",
+            "unavailable_data_notes": ["The explicitly requested immutable commit SHA was invalid."],
+        }
+    if not repository or not _SAFE_REPOSITORY_RE.fullmatch(repository):
+        return {
+            "status": "unavailable",
+            "repository": repository,
+            "expected_commit_sha": expected_sha,
+            "commit_binding_source": binding_source,
+            "resolution_failure_code": "invalid_repository",
+            "unavailable_data_notes": ["A normalized owner/repository target is required for immutable commit resolution."],
+        }
+
+    github = client or GitHubAssessmentClient()
+    repo_meta, repo_error = github.get_repo(repository)
+    metadata_available = bool(isinstance(repo_meta, dict) and repo_meta and not repo_error)
+    repo_meta = repo_meta if isinstance(repo_meta, dict) else {}
+    confirmed_private = metadata_available and not _public_repository(repo_meta)
+    default_branch = str(repo_meta.get("default_branch") or "main") if metadata_available else ""
+    requested_ref = expected_sha or default_branch
+
+    commit: dict[str, Any] | None = None
+    commit_error: str | None = repo_error or None
+    api_attempts = 0
+    commit_capture_method = ""
+    api_mismatch = False
+    fallback_attempted = False
+    fallback_error = ""
+
+    if metadata_available and requested_ref:
+        commit, commit_error, api_attempts = _retry_commit_lookup(github, repository, requested_ref)
+        api_sha = str((commit or {}).get("sha") or "").strip().lower()
+        api_mismatch = bool(expected_sha and api_sha and api_sha != expected_sha)
+        if commit and not commit_error and _SHA_RE.fullmatch(api_sha) and not api_mismatch:
+            commit_capture_method = "github_api_commit"
+
+    fallback_allowed = bool(expected_sha and not api_mismatch and not confirmed_private)
+    if not commit_capture_method and fallback_allowed:
+        fallback_attempted = True
+        fallback, fallback_error = _public_git_exact_commit(repository, expected_sha)
+        if fallback:
+            commit = fallback
+            commit_error = None
+            commit_capture_method = "public_git_exact_sha"
+
+    commit_sha = str((commit or {}).get("sha") or "").strip().lower()
+    mismatch = bool(expected_sha and commit_sha and commit_sha != expected_sha)
+    if not commit_capture_method or commit_error or not _SHA_RE.fullmatch(commit_sha) or mismatch:
+        if mismatch or api_mismatch:
+            failure_code = "repository_commit_mismatch"
+        elif confirmed_private:
+            failure_code = "private_repository_api_commit_unavailable"
+        elif not metadata_available and not expected_sha:
+            failure_code = "repository_metadata_unavailable"
+        else:
+            failure_code = fallback_error or "repository_commit_unavailable"
+        return {
+            "status": "unavailable",
+            "repository": repository,
+            "default_branch": default_branch,
+            "requested_ref": requested_ref,
+            "expected_commit_sha": expected_sha,
+            "commit_binding_source": binding_source,
+            "repository_metadata_available": metadata_available,
+            "repository_confirmed_private": confirmed_private,
+            "api_commit_lookup_attempts": api_attempts,
+            "public_git_fallback_attempted": fallback_attempted,
+            "resolution_failure_code": failure_code,
+            "unavailable_data_notes": [
+                "The exact requested commit could not be verified through the GitHub API or credential-free exact-SHA Git transport."
+                if expected_sha and fallback_attempted
+                else "The exact requested commit could not be verified through the authorized GitHub API scope."
+                if expected_sha
+                else "The exact default-branch commit could not be resolved because repository metadata was unavailable."
+            ],
+        }
+
+    commit_payload = commit.get("commit") if isinstance(commit.get("commit"), dict) else {}
+    committer = commit_payload.get("committer") if isinstance(commit_payload.get("committer"), dict) else {}
+    author = commit_payload.get("author") if isinstance(commit_payload.get("author"), dict) else {}
+    tree = commit_payload.get("tree") if isinstance(commit_payload.get("tree"), dict) else {}
+    visibility = str(repo_meta.get("visibility") or "").strip().lower()
+    if not visibility:
+        visibility = "public_verified_by_anonymous_git" if commit_capture_method == "public_git_exact_sha" else "unknown"
+    return {
+        "status": "attached",
+        "repository": repository,
+        "source": "github_api_read_only" if commit_capture_method == "github_api_commit" else "public_git_read_only",
+        "commit_capture_method": commit_capture_method,
+        "api_commit_lookup_attempts": api_attempts,
+        "public_git_fallback_attempted": fallback_attempted,
+        "public_git_fallback_used": commit_capture_method == "public_git_exact_sha",
+        "repository_metadata_available": metadata_available,
+        "default_branch": default_branch,
+        "requested_ref": requested_ref or commit_sha,
+        "expected_commit_sha": expected_sha or commit_sha,
+        "commit_binding_source": binding_source,
+        "exact_commit_verified": True,
+        "commit_sha": commit_sha,
+        "tree_sha": str(tree.get("sha") or "").lower(),
+        "commit_date": str(committer.get("date") or author.get("date") or ""),
+        "commit_message": _short(commit_payload.get("message"), 180),
+        "repository_pushed_at": str(repo_meta.get("pushed_at") or ""),
+        "repository_visibility": visibility,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 def capture_repository_snapshot(
     context: dict[str, Any],
     *,
     client: GitHubAssessmentClient | None = None,
     store: StorageAdapter | None = None,
 ) -> dict[str, Any]:
-    """Capture one immutable commit identity for an assessment run.
-
-    A production acceptance request may explicitly bind the run to the exact deployed
-    commit through ``expected_commit_sha``. Ordinary customer runs resolve the default
-    branch exactly once, then use that immutable SHA. When an exact public SHA cannot
-    be read through the GitHub API after bounded retries, NICO may verify the same SHA
-    through credential-free Git transport. Private repositories remain API-only.
-    """
+    """Capture one immutable commit identity for an assessment run."""
 
     run_id = str(context.get("run_id") or "").strip()
     repository = str(context.get("repository") or "").strip()
@@ -249,9 +407,10 @@ def capture_repository_snapshot(
         reused["idempotent_reuse"] = True
         return reused
 
-    github = client or GitHubAssessmentClient()
-    repo_meta, repo_error = github.get_repo(repository)
-    if repo_error or not repo_meta:
+    resolution = _preverified_resolution(context, repository, expected_sha)
+    if resolution is None:
+        resolution = resolve_repository_commit(context, client=client)
+    if resolution.get("status") != "attached":
         return {
             "status": "unavailable",
             "snapshot_id": snapshot_id,
@@ -259,91 +418,30 @@ def capture_repository_snapshot(
             "repository": repository,
             "customer_id": customer_id,
             "project_id": project_id,
-            "source": "github_api_read_only",
+            "source": str(resolution.get("source") or "github_api_read_only"),
+            "default_branch": str(resolution.get("default_branch") or ""),
+            "requested_ref": str(resolution.get("requested_ref") or expected_sha),
             "expected_commit_sha": expected_sha,
             "commit_binding_source": binding_source,
-            "snapshot_failure_code": "repository_metadata_unavailable",
-            "unavailable_data_notes": ["Repository metadata was unavailable through the authorized GitHub API scope."],
+            "api_commit_lookup_attempts": int(resolution.get("api_commit_lookup_attempts") or 0),
+            "public_git_fallback_attempted": bool(resolution.get("public_git_fallback_attempted")),
+            "repository_metadata_available": bool(resolution.get("repository_metadata_available")),
+            "snapshot_failure_code": _legacy_snapshot_failure_code(resolution.get("resolution_failure_code")),
+            "unavailable_data_notes": list(resolution.get("unavailable_data_notes") or ["The exact repository commit could not be captured."]),
             "idempotent_reuse": False,
+            "human_review_required": True,
         }
 
-    default_branch = str(repo_meta.get("default_branch") or "main")
-    requested_ref = expected_sha or default_branch
-    commit, commit_error, api_attempts = _retry_commit_lookup(github, repository, requested_ref)
-    commit_capture_method = "github_api_commit"
-    fallback_error = ""
-
-    api_commit_sha = str((commit or {}).get("sha") or "").lower()
-    api_mismatch = bool(expected_sha and api_commit_sha and api_commit_sha != expected_sha)
-    api_valid = bool(commit and _SHA_RE.fullmatch(api_commit_sha) and not api_mismatch)
-
-    if not api_valid and expected_sha and not api_mismatch and _public_repository(repo_meta):
-        fallback, fallback_error = _public_git_exact_commit(repository, expected_sha)
-        if fallback:
-            commit = fallback
-            commit_error = None
-            commit_capture_method = "public_git_exact_sha"
-
-    commit_sha = str((commit or {}).get("sha") or "").lower()
-    mismatch = bool(expected_sha and commit_sha and commit_sha != expected_sha)
-    if commit_error or not commit or not _SHA_RE.fullmatch(commit_sha) or mismatch:
-        failure_code = "repository_snapshot_commit_mismatch" if mismatch or api_mismatch else (
-            fallback_error or "repository_snapshot_commit_unavailable"
-        )
-        return {
-            "status": "unavailable",
-            "snapshot_id": snapshot_id,
-            "run_id": run_id,
-            "repository": repository,
-            "customer_id": customer_id,
-            "project_id": project_id,
-            "source": "github_api_read_only",
-            "default_branch": default_branch,
-            "requested_ref": requested_ref,
-            "expected_commit_sha": expected_sha,
-            "commit_binding_source": binding_source,
-            "api_commit_lookup_attempts": api_attempts,
-            "public_git_fallback_attempted": bool(expected_sha and not api_mismatch and _public_repository(repo_meta)),
-            "snapshot_failure_code": failure_code,
-            "unavailable_data_notes": [
-                "The exact requested commit could not be captured through the authorized GitHub API scope or the bounded public Git verification path."
-                if expected_sha and _public_repository(repo_meta)
-                else "The exact requested commit could not be captured through the authorized GitHub API scope."
-                if expected_sha
-                else "The exact default-branch commit could not be captured through the authorized GitHub API scope."
-            ],
-            "idempotent_reuse": False,
-        }
-
-    commit_payload = commit.get("commit") if isinstance(commit.get("commit"), dict) else {}
-    committer = commit_payload.get("committer") if isinstance(commit_payload.get("committer"), dict) else {}
-    author = commit_payload.get("author") if isinstance(commit_payload.get("author"), dict) else {}
-    tree = commit_payload.get("tree") if isinstance(commit_payload.get("tree"), dict) else {}
     snapshot = {
-        "status": "attached",
+        **resolution,
         "snapshot_id": snapshot_id,
         "run_id": run_id,
-        "repository": repository,
         "customer_id": customer_id,
         "project_id": project_id,
-        "source": "github_api_read_only" if commit_capture_method == "github_api_commit" else "public_git_read_only",
-        "commit_capture_method": commit_capture_method,
-        "api_commit_lookup_attempts": api_attempts,
-        "public_git_fallback_used": commit_capture_method == "public_git_exact_sha",
         "captured_at": _iso(_now()),
-        "default_branch": default_branch,
-        "requested_ref": requested_ref,
-        "expected_commit_sha": expected_sha or commit_sha,
-        "commit_binding_source": binding_source,
-        "exact_commit_verified": True,
-        "commit_sha": commit_sha,
-        "tree_sha": str(tree.get("sha") or "").lower(),
-        "commit_date": str(committer.get("date") or author.get("date") or ""),
-        "commit_message": _short(commit_payload.get("message"), 180),
-        "repository_pushed_at": str(repo_meta.get("pushed_at") or ""),
-        "repository_visibility": str(repo_meta.get("visibility") or ("private" if repo_meta.get("private") else "public")),
         "idempotent_reuse": False,
         "human_review_required": True,
+        "client_delivery_allowed": False,
         "guardrail": "All repository file evidence and scanner execution for this run must use this exact commit SHA or be marked unavailable.",
     }
     active_store.put(
@@ -367,16 +465,24 @@ def capture_repository_snapshot(
             "snapshot_id": snapshot_id,
             "run_id": run_id,
             "repository": repository,
-            "default_branch": default_branch,
-            "requested_ref": requested_ref,
-            "expected_commit_sha": expected_sha or commit_sha,
-            "commit_binding_source": binding_source,
-            "commit_capture_method": commit_capture_method,
-            "api_commit_lookup_attempts": api_attempts,
-            "commit_sha": commit_sha,
-            "tree_sha": str(tree.get("sha") or "").lower(),
+            "default_branch": snapshot.get("default_branch", ""),
+            "requested_ref": snapshot.get("requested_ref", ""),
+            "expected_commit_sha": snapshot.get("expected_commit_sha", ""),
+            "commit_binding_source": snapshot.get("commit_binding_source", binding_source),
+            "commit_capture_method": snapshot.get("commit_capture_method", ""),
+            "api_commit_lookup_attempts": snapshot.get("api_commit_lookup_attempts", 0),
+            "repository_metadata_available": snapshot.get("repository_metadata_available", False),
+            "commit_sha": snapshot.get("commit_sha", ""),
+            "tree_sha": snapshot.get("tree_sha", ""),
         },
         customer_id=customer_id,
         project_id=project_id,
     )
     return snapshot
+
+
+__all__ = [
+    "capture_repository_snapshot",
+    "repository_snapshot_id",
+    "resolve_repository_commit",
+]

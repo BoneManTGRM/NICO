@@ -6,7 +6,9 @@ from functools import wraps
 from typing import Any, Callable
 from urllib.parse import quote
 
-EXACT_COMMIT_BINDING_VERSION = "nico.exact_commit_binding.v1"
+from nico.repository_snapshot import resolve_repository_commit
+
+EXACT_COMMIT_BINDING_VERSION = "nico.exact_commit_binding.v2"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _MARKER_RE = re.compile(r"(?:^|[;\s])expected_commit_sha=([0-9a-fA-F]{40})(?:$|[;\s])")
 _ASSESSMENT_MARKER = "_nico_exact_commit_assessment_v1"
@@ -44,30 +46,33 @@ def _blocked(repository: str, code: str, message: str) -> dict[str, Any]:
     }
 
 
-def _resolve_commit(payload: dict[str, Any]) -> tuple[str, str, str]:
-    from nico.hosted_assessment import GitHubAssessmentClient, normalize_repository
+def _resolve_commit_details(
+    payload: dict[str, Any],
+    *,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    from nico.hosted_assessment import normalize_repository
 
     repository = normalize_repository(str(payload.get("repository") or ""))
-    client = GitHubAssessmentClient()
-    repo_meta, repo_error = client.get_repo(repository)
-    if repo_error or not repo_meta:
-        return repository, "", f"Repository metadata unavailable while binding the immutable commit: {repo_error or 'unknown error'}"
+    request_payload = dict(payload or {})
+    request_payload["repository"] = repository
+    return resolve_repository_commit(request_payload, client=client)
 
-    requested = expected_commit_sha(payload)
-    default_branch = str(repo_meta.get("default_branch") or "main")
-    ref = requested or default_branch
-    commit, commit_error = client.get_json(
-        client.repo_url(repository, f"/commits/{quote(ref, safe='')}"),
+
+def _resolve_commit(payload: dict[str, Any]) -> tuple[str, str, str]:
+    """Compatibility wrapper around the shared immutable commit resolver."""
+
+    resolution = _resolve_commit_details(payload)
+    repository = str(resolution.get("repository") or payload.get("repository") or "")
+    resolved = str(resolution.get("commit_sha") or "").strip().lower()
+    if resolution.get("status") == "attached" and _SHA_RE.fullmatch(resolved):
+        return repository, resolved, ""
+    message = " ".join(
+        str(item or "").strip()
+        for item in resolution.get("unavailable_data_notes") or []
+        if str(item or "").strip()
     )
-    resolved = str(commit.get("sha") or "").strip().lower() if isinstance(commit, dict) else ""
-    if commit_error or not _SHA_RE.fullmatch(resolved):
-        return repository, "", (
-            f"The requested repository commit could not be resolved through the authorized GitHub API scope: "
-            f"{commit_error or 'invalid commit response'}"
-        )
-    if requested and resolved != requested:
-        return repository, "", f"GitHub resolved {requested} to a different commit ({resolved}); assessment stopped fail-closed."
-    return repository, resolved, ""
+    return repository, "", message or "The requested repository commit could not be resolved."
 
 
 def _active_ref(repository: str) -> str:
@@ -212,10 +217,12 @@ def _bind_result(
     commit_sha: str,
     requested_sha: str,
     scanner_checkout_sha: str,
+    resolution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if result.get("status") != "complete":
         return result
 
+    resolution = resolution if isinstance(resolution, dict) else {}
     observed = str(result.get("commit_sha") or "").strip().lower()
     conflict = bool(observed and _SHA_RE.fullmatch(observed) and observed != commit_sha)
     if result.get("scanner_worker_auto_ran") is True and scanner_checkout_sha != commit_sha:
@@ -225,6 +232,8 @@ def _bind_result(
             "The hosted scanner worker did not verify the exact immutable commit, so the assessment was stopped.",
         )
 
+    capture_method = str(resolution.get("commit_capture_method") or "verified_exact_commit")
+    source = str(resolution.get("source") or "verified_exact_commit")
     result["repository"] = repository
     result["commit_sha"] = commit_sha
     result["repository_snapshot"] = {
@@ -232,7 +241,11 @@ def _bind_result(
         "repository": repository,
         "commit_sha": commit_sha,
         "expected_commit_sha": requested_sha or commit_sha,
-        "source": "github_api_exact_commit",
+        "source": source,
+        "commit_capture_method": capture_method,
+        "api_commit_lookup_attempts": int(resolution.get("api_commit_lookup_attempts") or 0),
+        "public_git_fallback_used": bool(resolution.get("public_git_fallback_used")),
+        "repository_metadata_available": bool(resolution.get("repository_metadata_available")),
         "exact_commit_verified": True,
         "human_review_required": True,
     }
@@ -242,6 +255,11 @@ def _bind_result(
         "repository": repository,
         "requested_commit_sha": requested_sha or "default_branch_resolved_once",
         "resolved_commit_sha": commit_sha,
+        "resolution_source": source,
+        "commit_capture_method": capture_method,
+        "api_commit_lookup_attempts": int(resolution.get("api_commit_lookup_attempts") or 0),
+        "public_git_fallback_used": bool(resolution.get("public_git_fallback_used")),
+        "repository_metadata_available": bool(resolution.get("repository_metadata_available")),
         "repository_files_ref": commit_sha,
         "scanner_checkout_sha": scanner_checkout_sha or "not_executed",
         "scanner_exact_commit_verified": scanner_checkout_sha == commit_sha if scanner_checkout_sha else False,
@@ -254,7 +272,7 @@ def _bind_result(
             "detected": True,
             "observed": observed,
             "canonical": commit_sha,
-            "resolution": "The verified GitHub commit binding is authoritative; conflicting derived metadata was retained as a review signal but cannot replace it.",
+            "resolution": "The verified immutable commit binding is authoritative; conflicting derived metadata was retained as a review signal but cannot replace it.",
             "human_review_required": True,
         }
     return result
@@ -270,20 +288,32 @@ def _install_assessment_binding(api_main: Any, attribute: str) -> dict[str, Any]
         request_payload = dict(payload or {})
         requested = expected_commit_sha(request_payload)
         try:
-            repository, resolved, error = _resolve_commit(request_payload)
+            resolution = _resolve_commit_details(request_payload)
         except Exception as exc:
             return _blocked(
                 str(request_payload.get("repository") or ""),
                 "exact_commit_resolution_failed",
                 f"Exact commit resolution failed before assessment: {type(exc).__name__}.",
             )
-        if error or not resolved:
-            return _blocked(repository, "exact_commit_unavailable", error or "Exact commit was unavailable.")
+        repository = str(resolution.get("repository") or request_payload.get("repository") or "")
+        resolved = str(resolution.get("commit_sha") or "").strip().lower()
+        if resolution.get("status") != "attached" or not _SHA_RE.fullmatch(resolved):
+            message = " ".join(
+                str(item or "").strip()
+                for item in resolution.get("unavailable_data_notes") or []
+                if str(item or "").strip()
+            )
+            return _blocked(repository, "exact_commit_unavailable", message or "Exact commit was unavailable.")
 
         bound_payload = dict(request_payload)
         bound_payload["expected_commit_sha"] = resolved
         bound_payload["commit_sha"] = resolved
         bound_payload["ref"] = resolved
+        bound_payload["exact_commit_resolution"] = {
+            key: value
+            for key, value in resolution.items()
+            if key not in {"unavailable_data_notes"}
+        }
         previous_repository = getattr(_STATE, "repository", None)
         previous_commit = getattr(_STATE, "commit_sha", None)
         previous_scanner = getattr(_STATE, "scanner_checkout_sha", None)
@@ -315,6 +345,7 @@ def _install_assessment_binding(api_main: Any, attribute: str) -> dict[str, Any]
             commit_sha=resolved,
             requested_sha=requested,
             scanner_checkout_sha=scanner_checkout,
+            resolution=resolution,
         )
 
     setattr(assessment_at_exact_commit, _ASSESSMENT_MARKER, True)
@@ -341,6 +372,9 @@ def install_exact_commit_binding() -> dict[str, Any]:
         "scanner_checkout": scanner_checkout,
         "direct_assessment": direct,
         "scanner_assessment": scanner,
+        "shared_snapshot_resolver": True,
+        "anonymous_exact_sha_fallback": True,
+        "preverified_resolution_reused": True,
         "expected_commit_marker_supported": True,
         "default_branch_resolved_once_when_marker_absent": True,
         "repository_files_bound_to_exact_commit": True,
