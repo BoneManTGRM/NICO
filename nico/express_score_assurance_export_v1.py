@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from nico.express_section_status_truth_v26 import reconcile_section_status_truth
 
-VERSION = "nico.express_score_assurance_export.v2"
+VERSION = "nico.express_score_assurance_export.v2.1"
 _PATCH_MARKER = "_nico_express_score_assurance_export_v1"
 _MARKDOWN_START = "<!-- NICO_SCORE_ASSURANCE_START -->"
 _MARKDOWN_END = "<!-- NICO_SCORE_ASSURANCE_END -->"
@@ -110,9 +110,9 @@ def _markdown_heading(item: dict[str, Any]) -> str:
 def _rewrite_markdown_section_headings(document: str, records: list[dict[str, Any]]) -> str:
     """Replace legacy status-colored score headings with independent truth fields.
 
-    Earlier reports emitted headings such as ``YELLOW (89/100)``. That incorrectly
-    colored a strong technical score with an evidence-assurance state. The canonical
-    status is preserved explicitly on the next line and is never weakened.
+    Horizontal whitespace is matched deliberately. A broad ``\s*`` can consume the
+    blank line and the beginning of the next section, which breaks idempotency and can
+    leave a later legacy heading unreplaced.
     """
 
     output = document
@@ -121,11 +121,11 @@ def _rewrite_markdown_section_headings(document: str, records: list[dict[str, An
             continue
         label = re.escape(item["label"])
         pattern = re.compile(
-            rf"(?m)^###\s+{label}\s+(?:—|-)\s+[^\n(]+\s*"
-            rf"\((?:\d{{1,3}}\s*/\s*100|NOT\s+SCORED)\)\s*"
+            rf"(?m)^###[ \t]+{label}[ \t]+(?:—|-)[ \t]+[^\n(]+[ \t]*"
+            rf"\((?:\d{{1,3}}[ \t]*/[ \t]*100|NOT[ \t]+SCORED)\)[ \t]*"
             rf"(?:\n\*\*Evidence assurance:\*\*[^\n]*)?"
         )
-        output = pattern.sub(_markdown_heading(item), output, count=1)
+        output = pattern.sub(lambda _match: _markdown_heading(item), output, count=1)
     return output
 
 
@@ -154,7 +154,25 @@ def _rewrite_html_section_headings(document: str, records: list[dict[str, Any]])
     return output
 
 
+def _ensure_green_contract(item: dict[str, Any]) -> dict[str, Any]:
+    item.setdefault("findings", [])
+    item.setdefault("unavailable", [])
+    item.setdefault("score_rationale", "")
+    if "verified_green" not in item:
+        score = item.get("technical_score")
+        item["verified_green"] = bool(
+            item.get("directly_scored") is True
+            and isinstance(score, (int, float))
+            and not isinstance(score, bool)
+            and score >= 80
+            and _text(item.get("assurance_status")).casefold() == "verified"
+            and _text(item.get("canonical_status")).upper() == "GREEN"
+        )
+    return item
+
+
 def _green_requirements(item: dict[str, Any]) -> list[str]:
+    item = _ensure_green_contract(item)
     if not item["directly_scored"]:
         return ["This control is intentionally not scored; complete its review or approval workflow instead of manufacturing a technical score."]
     if item["verified_green"]:
@@ -282,7 +300,7 @@ def publish_score_assurance_exports(result: dict[str, Any]) -> dict[str, Any]:
     normalized = reconcile_section_status_truth(result)
     _apply_in_place(result, normalized)
     _normalize_not_scored_controls(result)
-    records = _records(result)
+    records = [_ensure_green_contract(item) for item in _records(result)]
     reports = result.get("reports")
     if isinstance(reports, dict):
         markdown = reports.get("markdown")
