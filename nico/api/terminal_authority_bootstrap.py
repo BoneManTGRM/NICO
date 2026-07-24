@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
+from nico.canonical_express_binding_v1 import install_canonical_express_binding_v1
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v3"
+VERSION = "nico.api.terminal_authority_bootstrap.v4"
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
+CANONICAL_EXPRESS_BINDING = install_canonical_express_binding_v1()
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
+app.state.nico_canonical_express_binding = CANONICAL_EXPRESS_BINDING
 
 if EXACT_COMMIT_BINDING.get("status") != "installed":
     raise RuntimeError(f"Exact commit binding did not install: {EXACT_COMMIT_BINDING}")
@@ -52,10 +55,24 @@ if EXPRESS_FAILURE_STAGE_TRUTH.get("human_review_required") is not True:
 if EXPRESS_FAILURE_STAGE_TRUTH.get("client_delivery_allowed") is not False:
     raise RuntimeError("Express failure-stage truth must block client delivery")
 
+if CANONICAL_EXPRESS_BINDING.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(f"Canonical Express binding did not install: {CANONICAL_EXPRESS_BINDING}")
+if CANONICAL_EXPRESS_BINDING.get("completed_express_runs_receive_core_contract") is not True:
+    raise RuntimeError("Completed Express runs do not receive the canonical Core package contract")
+if CANONICAL_EXPRESS_BINDING.get("same_contract_used_by_strategic") is not True:
+    raise RuntimeError("Core and Strategic are not bound to the same canonical package contract")
+if CANONICAL_EXPRESS_BINDING.get("independent_core_scorecard_allowed") is not False:
+    raise RuntimeError("The canonical package binding still permits an independent Core scorecard")
+if CANONICAL_EXPRESS_BINDING.get("human_review_required") is not True:
+    raise RuntimeError("Canonical Core package binding must preserve required human review")
+if CANONICAL_EXPRESS_BINDING.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Canonical Core package binding must block client delivery")
+
 __all__ = [
     "app",
     "EXACT_COMMIT_BINDING",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
+    "CANONICAL_EXPRESS_BINDING",
     "VERSION",
 ]
