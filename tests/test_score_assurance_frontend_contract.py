@@ -11,6 +11,7 @@ def test_frontend_splits_score_badges_from_assurance() -> None:
     assert "EXCEPTIONAL" in guard
     assert "STRONG" in guard
     assert "MODERATE" in guard
+    assert "WEAK" in guard
     assert "REVIEW LIMITED" in guard
     assert "VERIFIED" in guard
     assert "BLOCKED" in guard
@@ -28,3 +29,13 @@ def test_guard_preserves_canonical_status_as_metadata() -> None:
     assert "nicoCanonicalStatus" in guard
     assert "Evidence assurance" in guard
     assert "Technical score" in guard
+
+
+def test_guard_rechecks_the_whole_document_after_react_updates() -> None:
+    guard = Path("apps/web/app/AssessmentScoreAssuranceGuard.tsx").read_text(encoding="utf-8")
+
+    assert "function processDocument" in guard
+    assert 'document.querySelectorAll<HTMLElement>(".status")' in guard
+    assert "new MutationObserver(() => schedule())" in guard
+    assert 'window.addEventListener("pageshow", schedule)' in guard
+    assert "for (const mutation of mutations)" not in guard
