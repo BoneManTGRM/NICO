@@ -4,14 +4,17 @@ from nico.api.comprehensive_production_bootstrap import app
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
+from nico.scanner_repeatability_compat_v1 import install_scanner_repeatability_compat_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v3"
+VERSION = "nico.api.terminal_authority_bootstrap.v4"
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
+SCANNER_REPEATABILITY_COMPAT = install_scanner_repeatability_compat_v1()
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
+app.state.nico_scanner_repeatability_compat = SCANNER_REPEATABILITY_COMPAT
 
 if EXACT_COMMIT_BINDING.get("status") != "installed":
     raise RuntimeError(f"Exact commit binding did not install: {EXACT_COMMIT_BINDING}")
@@ -52,10 +55,26 @@ if EXPRESS_FAILURE_STAGE_TRUTH.get("human_review_required") is not True:
 if EXPRESS_FAILURE_STAGE_TRUTH.get("client_delivery_allowed") is not False:
     raise RuntimeError("Express failure-stage truth must block client delivery")
 
+if SCANNER_REPEATABILITY_COMPAT.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(f"Scanner repeatability compatibility did not install: {SCANNER_REPEATABILITY_COMPAT}")
+if SCANNER_REPEATABILITY_COMPAT.get("public_parser_returns_findings_list") is not True:
+    raise RuntimeError("Scanner public parser no longer preserves its stable findings-list API")
+if SCANNER_REPEATABILITY_COMPAT.get("complete_capture_metadata_retained") is not True:
+    raise RuntimeError("Scanner complete-output capture metadata was lost at compatibility boundary")
+if SCANNER_REPEATABILITY_COMPAT.get("legacy_tool_wrappers_accept_preparation") is not True:
+    raise RuntimeError("Legacy scanner wrappers cannot consume deterministic project preparation")
+if SCANNER_REPEATABILITY_COMPAT.get("automatic_clean_claim_from_unavailable_tool") is not False:
+    raise RuntimeError("Unavailable scanner evidence can still be interpreted as a clean result")
+if SCANNER_REPEATABILITY_COMPAT.get("human_review_required") is not True:
+    raise RuntimeError("Scanner repeatability compatibility must preserve required human review")
+if SCANNER_REPEATABILITY_COMPAT.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Scanner repeatability compatibility must block client delivery")
+
 __all__ = [
     "app",
     "EXACT_COMMIT_BINDING",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
+    "SCANNER_REPEATABILITY_COMPAT",
     "VERSION",
 ]
