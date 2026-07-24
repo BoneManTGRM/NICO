@@ -1,0 +1,40 @@
+name: Refresh PostCSS lockfile
+
+on:
+  push:
+    branches:
+      - fix/postcss-8-5-18-security
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Refresh exact lockfile
+        working-directory: apps/web
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verify patched PostCSS resolution
+        working-directory: apps/web
+        run: |
+          node -e "const lock=require('./package-lock.json'); const entry=lock.packages['node_modules/postcss']; if (!entry || entry.version !== '8.5.18') { throw new Error('PostCSS lock entry is not 8.5.18'); }"
+
+      - name: Upload refreshed lockfile
+        uses: actions/upload-artifact@v7
+        with:
+          name: refreshed-postcss-lockfile
+          path: apps/web/package-lock.json
+          if-no-files-found: error
+          retention-days: 1
