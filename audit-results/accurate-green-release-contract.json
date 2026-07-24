@@ -1,0 +1,13 @@
+{
+  "artifact_schema": "nico.accurate_green_release_contract.v1",
+  "technical_green_threshold": 80,
+  "verified_green_requires": [
+    "technical_score_at_least_80",
+    "evidence_assurance_verified",
+    "canonical_risk_disposition_green"
+  ],
+  "score_and_assurance_separate": true,
+  "missing_evidence_never_green": true,
+  "human_review_required": true,
+  "client_delivery_allowed": false
+}
