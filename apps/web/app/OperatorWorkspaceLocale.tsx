@@ -93,7 +93,6 @@ const TEXT: Record<string, string> = {
   "No verified items returned.": "No se devolvieron elementos verificados.",
   "not calculated": "no calculada",
   "Not calculated": "No calculada",
-  "Unavailable": "No disponible",
 };
 
 const PLACEHOLDERS: Record<string, string> = {
