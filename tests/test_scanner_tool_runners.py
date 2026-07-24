@@ -45,18 +45,46 @@ def test_parse_bandit_findings():
         stderr="",
     )
 
-    assert len(parse_tool_findings("bandit", result)) == 2
+    findings, complete, reason = parse_tool_findings("bandit", result)
+
+    assert len(findings) == 2
+    assert complete is True
+    assert reason == ""
 
 
 def test_parse_trufflehog_json_lines():
     result = WorkerCommandResult(
         args=("trufflehog",),
-        returncode=183,
+        returncode=0,
         stdout='{"SourceMetadata": {}}\n{"DetectorName": "test"}\nnot-json',
         stderr="",
     )
 
-    assert len(parse_tool_findings("trufflehog", result)) == 2
+    findings, complete, reason = parse_tool_findings("trufflehog", result)
+
+    assert len(findings) == 2
+    assert complete is True
+    assert reason == ""
+
+
+def test_file_backed_output_is_parsed_without_preview_truncation(tmp_path: Path):
+    output = tmp_path / "bandit.json"
+    output.write_text('{"results": [{"issue_text": "from-file"}]}', encoding="utf-8")
+    result = WorkerCommandResult(
+        args=("bandit",),
+        returncode=1,
+        stdout='{',
+        stderr="",
+        output_truncated=True,
+        stdout_path=str(output),
+        stdout_bytes=output.stat().st_size,
+    )
+
+    findings, complete, reason = parse_tool_findings("bandit", result)
+
+    assert findings == [{"issue_text": "from-file"}]
+    assert complete is True
+    assert reason == ""
 
 
 def test_run_scanner_tool_marks_missing_executable_unavailable(monkeypatch, tmp_path: Path):
@@ -76,8 +104,8 @@ def test_run_scanner_tool_uses_safe_runner(monkeypatch, tmp_path: Path):
     workspace.repo_dir.mkdir()
     calls = []
 
-    def fake_runner(args, *, cwd, limits):
-        calls.append((tuple(args), cwd, limits.timeout_seconds))
+    def fake_runner(args, *, cwd, limits, extra_env=None, stdout_path=None):
+        calls.append((tuple(args), cwd, limits.timeout_seconds, bool(extra_env), stdout_path.name if stdout_path else ""))
         return WorkerCommandResult(args=tuple(args), returncode=0, stdout='{"results": []}', stderr="")
 
     payload = run_scanner_tool(
@@ -88,7 +116,25 @@ def test_run_scanner_tool_uses_safe_runner(monkeypatch, tmp_path: Path):
 
     assert payload["status"] == "completed"
     assert payload["findings"] == []
-    assert calls == [(("bandit", "-r", ".", "-f", "json"), workspace.repo_dir, 7)]
+    assert calls == [(("bandit", "-r", ".", "-f", "json"), workspace.repo_dir, 7, True, "bandit.stdout")]
+
+
+def test_run_scanner_tool_rejects_execution_error_returncode(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda name: f"/usr/bin/{name}")
+    workspace = WorkerWorkspace(root=tmp_path)
+    workspace.repo_dir.mkdir()
+
+    def fake_runner(args, *, cwd, limits, extra_env=None, stdout_path=None):
+        return WorkerCommandResult(args=tuple(args), returncode=2, stdout="", stderr="configuration failure")
+
+    payload = run_scanner_tool(
+        ScannerToolSpec("eslint", ("eslint", ".", "--format", "json"), "static", valid_returncodes=frozenset({0, 1})),
+        workspace,
+        runner=fake_runner,
+    )
+
+    assert payload["status"] == "unavailable"  # project preparation is required before ESLint can execute
+    assert payload["verified_for_this_report"] is False
 
 
 def test_run_scanner_tools_requires_checked_out_repo(tmp_path: Path):
@@ -101,7 +147,7 @@ def test_run_scanner_tools_returns_normalized_payload(monkeypatch, tmp_path: Pat
     workspace = WorkerWorkspace(root=tmp_path)
     workspace.repo_dir.mkdir()
 
-    def fake_runner(args, *, cwd, limits):
+    def fake_runner(args, *, cwd, limits, extra_env=None, stdout_path=None):
         return WorkerCommandResult(args=tuple(args), returncode=0, stdout='{"results": []}', stderr="")
 
     payload = run_scanner_tools(
@@ -110,7 +156,7 @@ def test_run_scanner_tools_returns_normalized_payload(monkeypatch, tmp_path: Pat
         runner=fake_runner,
     )
 
-    assert payload["artifact_schema"] == "nico.scanner_worker.v1"
+    assert payload["artifact_schema"] == "nico.scanner_worker.v2"
     assert payload["normalized"]["static_tools_completed"] == ["bandit"]
     assert "semgrep" in payload["normalized"]["missing_static_tools"]
 
