@@ -30,8 +30,9 @@ from nico.express_report_delivery_truth_v43 import install_express_report_delive
 from nico.express_static_scanner_velocity_scoring_v44 import install_express_static_scanner_velocity_scoring_v44
 from nico.express_score_assurance_ledger_v45 import install_express_score_assurance_ledger_v45
 from nico.scanner_claim_reconciliation_v45 import install_scanner_claim_reconciliation_v45
+from nico.express_report_quality_v47 import install_express_report_quality_v47
 
-VERSION = "nico.express_live_renderer_binding.v45"
+VERSION = "nico.express_live_renderer_binding.v47"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -71,6 +72,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     scanner_claim_reconciliation = install_scanner_claim_reconciliation_v45()
     assurance_projection_compat = install_express_assurance_projection_compat_v45()
     comprehensive_score_assurance_ledger = install_comprehensive_score_assurance_ledger_v45()
+    report_quality = install_express_report_quality_v47()
 
     final_renderer = premium._premium_pdf
     renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
@@ -107,6 +109,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "scanner_claim_reconciliation_install": scanner_claim_reconciliation,
         "assurance_projection_compat_install": assurance_projection_compat,
         "comprehensive_score_assurance_ledger_install": comprehensive_score_assurance_ledger,
+        "report_quality_install": report_quality,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
@@ -137,12 +140,16 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "scanner_claim_reconciliation_bound": scanner_claim_reconciliation.get("status") in {"installed", "already_installed"},
         "assurance_projection_compat_bound": assurance_projection_compat.get("status") in {"installed", "already_installed"},
         "comprehensive_score_assurance_ledger_bound": comprehensive_score_assurance_ledger.get("status") in {"installed", "already_installed"},
+        "report_quality_bound": report_quality.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
         "risk_disposition_separated_from_assurance": True,
         "scanner_execution_coverage_excluded_from_maturity": True,
         "scanner_ledger_not_scored": True,
         "scanner_cross_tool_claims_reconciled": True,
         "express_comprehensive_score_semantics_parity": True,
+        "premium_client_report_layout": True,
+        "readable_paginated_appendix": True,
+        "orphan_page_detection": True,
         "explicit_client_delivery_warning": True,
         "static_import_rebound": previous is not final_renderer,
         "human_review_required": True,
