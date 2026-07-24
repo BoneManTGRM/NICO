@@ -7,6 +7,12 @@ from typing import Any, Callable
 from nico import comprehensive_decision_grade_report_v5 as report_module
 from nico import comprehensive_native_providers as providers
 from nico import snapshot_repository_evidence as snapshot_evidence
+from nico.comprehensive_code_remediation_appendix_v1 import (
+    install_comprehensive_code_remediation_appendix_v1,
+)
+from nico.comprehensive_code_remediation_outline_v1 import (
+    install_comprehensive_code_remediation_outline_v1,
+)
 from nico.comprehensive_decision_grade_assessment_v5 import (
     build_decision_grade_assessment, canonical_scoring_provider,
 )
@@ -71,6 +77,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
     final_report_semantics = install_comprehensive_final_report_semantics_v47()
     final_report_filename = install_comprehensive_final_report_filename_v48()
     report_clarity = install_comprehensive_report_clarity_v8()
+    code_remediation = install_comprehensive_code_remediation_appendix_v1()
+    code_outline = install_comprehensive_code_remediation_outline_v1()
     build_comprehensive_report_package = report_module.build_comprehensive_report_package
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -92,9 +100,17 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "final_report_semantics": final_report_semantics,
         "final_report_filename": final_report_filename,
         "report_clarity": report_clarity,
+        "code_remediation": code_remediation,
+        "code_remediation_outline": code_outline,
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
         "final_report_filename_bound": final_report_filename.get("bound") is True,
         "report_clarity_bound": report_clarity.get("status") in {"installed", "already_installed"},
+        "code_remediation_bound": code_remediation.get("status") in {"installed", "already_installed"},
+        "code_remediation_outline_bound": code_outline.get("status") in {"installed", "already_installed"},
+        "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
+        "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
+        "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
+        "automatic_code_merge_allowed": False,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
         "delivery_status": "blocked_pending_human_approval",

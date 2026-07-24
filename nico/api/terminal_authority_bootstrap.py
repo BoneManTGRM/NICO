@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
 from nico.exact_commit_binding import install_exact_commit_binding
+from nico.exact_scanner_checkout_reconciliation_v1 import (
+    install_exact_scanner_checkout_reconciliation_v1,
+)
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v4"
+VERSION = "nico.api.terminal_authority_bootstrap.v5"
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
+EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
+app.state.nico_exact_scanner_checkout_reconciliation = EXACT_SCANNER_CHECKOUT_RECONCILIATION
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -25,6 +30,24 @@ if EXACT_COMMIT_BINDING.get("human_review_required") is not True:
     raise RuntimeError("Exact commit binding must preserve required human review")
 if EXACT_COMMIT_BINDING.get("client_delivery_allowed") is not False:
     raise RuntimeError("Exact commit binding must block client delivery")
+
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(
+        "Exact scanner checkout reconciliation did not install: "
+        f"{EXACT_SCANNER_CHECKOUT_RECONCILIATION}"
+    )
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("checkout_identity_retained") is not True:
+    raise RuntimeError("Hosted scanner checkout identity is still discarded during normalization")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("completed_autorun_required") is not True:
+    raise RuntimeError("Exact scanner reconciliation can accept a non-completed or external artifact")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("exact_sha_match_required") is not True:
+    raise RuntimeError("Exact scanner reconciliation can accept a mismatched checkout SHA")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("mismatched_or_untrusted_artifacts_blocked") is not True:
+    raise RuntimeError("Mismatched or untrusted scanner artifacts are not fail-closed")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("human_review_required") is not True:
+    raise RuntimeError("Exact scanner reconciliation must preserve required human review")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Exact scanner reconciliation must block client delivery")
 
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
@@ -57,6 +80,7 @@ if EXPRESS_FAILURE_STAGE_TRUTH.get("client_delivery_allowed") is not False:
 __all__ = [
     "app",
     "EXACT_COMMIT_BINDING",
+    "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",
