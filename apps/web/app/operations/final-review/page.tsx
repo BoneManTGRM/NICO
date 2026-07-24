@@ -34,7 +34,7 @@ function jsonText(value: unknown): string {
 }
 
 function statusLabel(value: string): string {
-  const normalized = value.trim().replaceAll("_", " ");
+  const normalized = value.trim().replace(/_/g, " ");
   return normalized ? normalized.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Not loaded";
 }
 
