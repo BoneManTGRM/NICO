@@ -12,7 +12,6 @@ export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
     label: "Run Assessment",
-    href: "/assessment?tier=express#assessment",
   },
 ] as const;
 
@@ -114,15 +113,30 @@ export default function PrimaryNavigation() {
 
   const activeService = serviceForPath(pathname, assessment);
   const spanishActive = pathname.startsWith("/es");
-  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
-  const languageLabel = spanishActive ? "English" : "Español";
+  const assessmentPath = spanishActive ? "/es/assessment" : "/assessment";
+  const assessmentHref = `${assessmentPath}?tier=${assessment}#assessment`;
+  const languageHref = spanishActive
+    ? `/assessment?tier=${assessment}#assessment`
+    : `/es/assessment?tier=${assessment}#assessment`;
+  const languageLabel = spanishActive ? "EN" : "ES";
+  const languageName = spanishActive ? "English" : "Español";
   const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
 
   return (
-    <nav className="global-nav" aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}>
+    <nav
+      className="global-nav"
+      aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}
+      data-locale={spanishActive ? "es-MX" : "en"}
+    >
       <div className="global-nav-inner">
-        <a className="global-brand" href="/assessment?tier=express#assessment" aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>NICO</a>
+        <a className="global-brand" href={assessmentHref} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>
+          <span className="global-brand-mark" aria-hidden="true">N</span>
+          <span className="global-brand-copy">
+            <strong>NICO</strong>
+            <small>{spanishActive ? "Evaluación técnica vinculada a evidencia" : "Evidence-bound technical assessment"}</small>
+          </span>
+        </a>
 
         <div className="primary-service-links" data-primary-service-count="1">
           {PRIMARY_SERVICES.map((service) => {
@@ -132,7 +146,7 @@ export default function PrimaryNavigation() {
               <a
                 key={service.key}
                 className={`primary-service-link${active ? " active" : ""}`}
-                href={service.href}
+                href={assessmentHref}
                 aria-current={active ? "page" : undefined}
                 data-service={service.key}
               >
@@ -143,38 +157,42 @@ export default function PrimaryNavigation() {
           })}
         </div>
 
-        <a
-          className={`primary-service-link${spanishActive ? " active" : ""}`}
-          href={languageHref}
-          hrefLang={spanishActive ? "en" : "es-MX"}
-          lang={spanishActive ? "en" : "es-MX"}
-          aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
-        >
-          <span className="primary-service-label">{languageLabel}</span>
-          <span className="primary-service-short-label">{languageLabel}</span>
-        </a>
+        <div className="global-nav-actions">
+          <a
+            className="language-switcher"
+            href={languageHref}
+            hrefLang={spanishActive ? "en" : "es-MX"}
+            lang={spanishActive ? "en" : "es-MX"}
+            aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
+          >
+            <span className="language-switcher-code">{languageLabel}</span>
+            <span className="language-switcher-name">{languageName}</span>
+          </a>
 
-        <details className={`nav-more${secondaryActive ? " active" : ""}`}>
-          <summary aria-label={spanishActive ? "Abrir ayuda y acceso para operadores" : "Open help and operator access"}>{spanishActive ? "Más" : "More"}</summary>
-          <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
-            <div className="nav-more-heading">
-              <b>{spanishActive ? "Navegación secundaria" : "Secondary navigation"}</b>
-              <span>{spanishActive ? "La evaluación principal permanece en Ejecutar evaluación" : "The primary assessment workflow remains under Run Assessment"}</span>
+          <details className={`nav-more${secondaryActive ? " active" : ""}`}>
+            <summary aria-label={spanishActive ? "Abrir ayuda y acceso para operadores" : "Open help and operator access"}>
+              {spanishActive ? "Más" : "More"}
+            </summary>
+            <div className="nav-more-panel" lang={spanishActive ? "es-MX" : undefined}>
+              <div className="nav-more-heading">
+                <b>{spanishActive ? "Navegación secundaria" : "Secondary navigation"}</b>
+                <span>{spanishActive ? "La evaluación principal permanece en Ejecutar evaluación" : "The primary assessment workflow remains under Run Assessment"}</span>
+              </div>
+              <div className="nav-more-groups">
+                {secondaryGroups.map((group) => (
+                  <section className="nav-more-group" key={group.label}>
+                    <p>{group.label}</p>
+                    <small>{group.description}</small>
+                    {group.links.map((link) => {
+                      const active = linkIsActive(pathname, link.href);
+                      return <a href={link.href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
+                    })}
+                  </section>
+                ))}
+              </div>
             </div>
-            <div className="nav-more-groups">
-              {secondaryGroups.map((group) => (
-                <section className="nav-more-group" key={group.label}>
-                  <p>{group.label}</p>
-                  <small>{group.description}</small>
-                  {group.links.map((link) => {
-                    const active = linkIsActive(pathname, link.href);
-                    return <a href={link.href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
-                  })}
-                </section>
-              ))}
-            </div>
-          </div>
-        </details>
+          </details>
+        </div>
       </div>
     </nav>
   );
