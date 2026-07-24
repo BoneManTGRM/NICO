@@ -221,6 +221,18 @@ def _preverified_resolution(
     return dict(value)
 
 
+def _legacy_snapshot_failure_code(value: Any) -> str:
+    """Preserve the established snapshot API contract for existing consumers."""
+
+    code = str(value or "").strip()
+    aliases = {
+        "repository_commit_mismatch": "repository_snapshot_commit_mismatch",
+        "private_repository_api_commit_unavailable": "repository_snapshot_commit_unavailable",
+        "repository_commit_unavailable": "repository_snapshot_commit_unavailable",
+    }
+    return aliases.get(code, code or "repository_snapshot_commit_unavailable")
+
+
 def resolve_repository_commit(
     context: dict[str, Any],
     *,
@@ -315,7 +327,7 @@ def resolve_repository_commit(
                 if expected_sha and fallback_attempted
                 else "The exact requested commit could not be verified through the authorized GitHub API scope."
                 if expected_sha
-                else "The default-branch commit could not be resolved because repository metadata was unavailable."
+                else "The exact default-branch commit could not be resolved because repository metadata was unavailable."
             ],
         }
 
@@ -414,7 +426,7 @@ def capture_repository_snapshot(
             "api_commit_lookup_attempts": int(resolution.get("api_commit_lookup_attempts") or 0),
             "public_git_fallback_attempted": bool(resolution.get("public_git_fallback_attempted")),
             "repository_metadata_available": bool(resolution.get("repository_metadata_available")),
-            "snapshot_failure_code": str(resolution.get("resolution_failure_code") or "repository_snapshot_commit_unavailable"),
+            "snapshot_failure_code": _legacy_snapshot_failure_code(resolution.get("resolution_failure_code")),
             "unavailable_data_notes": list(resolution.get("unavailable_data_notes") or ["The exact repository commit could not be captured."]),
             "idempotent_reuse": False,
             "human_review_required": True,
