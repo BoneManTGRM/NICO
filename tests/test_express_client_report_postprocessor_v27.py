@@ -66,10 +66,10 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     markdown = result["reports"]["markdown"]
     html = result["reports"]["html"]
 
-    assert "Scanner Worker Evidence — SUPPLEMENTAL (None/100)" not in markdown
-    assert "Client / Human Acceptance — GRAY (0/100)" not in markdown
-    assert "SUPPLEMENTAL (NOT SCORED)" in markdown
-    assert "GRAY (NOT SCORED)" in markdown
+    assert "Scanner Worker Evidence" not in markdown
+    assert "Client / Human Acceptance" not in markdown
+    assert "Scanner Assurance Ledger — SUPPLEMENTAL (NOT SCORED)" in markdown
+    assert "Review and Delivery — PENDING HUMAN APPROVAL (NOT SCORED)" in markdown
     assert "Generic summary" not in markdown
     assert "Generic quick win" not in markdown
     assert "Generic plan" not in markdown
@@ -84,8 +84,10 @@ def test_visible_not_scored_leakage_and_generic_sections_are_replaced() -> None:
     assert "Cross-format drift" in markdown
     assert "Two consecutive same-SHA runs" in markdown
     assert "- [ ] [ ]" not in markdown
-    assert "Scanner Worker Evidence — SUPPLEMENTAL (None/100)" not in html
-    assert "Client / Human Acceptance — GRAY (0/100)" not in html
+    assert "Scanner Worker Evidence" not in html
+    assert "Client / Human Acceptance" not in html
+    assert "Scanner Assurance Ledger — SUPPLEMENTAL (NOT SCORED)" in html
+    assert "Review and Delivery — PENDING HUMAN APPROVAL (NOT SCORED)" in html
     assert result["express_client_report_postprocessor"]["status"] == "complete"
     assert result["service_id"] == "express"
     assert result["customer_service_name"] == "NICO Express Technical Assessment"
