@@ -8,12 +8,14 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v9"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v10"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 FORM_HYDRATION_TIMEOUT_MS = 30_000
 FORM_STABILITY_SECONDS = 0.8
 FORM_RETRY_SECONDS = 0.2
+SERVICE_SELECTOR = '[aria-label="Assessment type"] button'
+RUN_SELECTOR = '#assessment > button.primary-button'
 
 _original_wait_for_service_terminal = runtime._wait_for_service_terminal
 _original_report_package = acceptance.report_package
@@ -101,8 +103,17 @@ class _ExpectedCommitPage:
         return _StableFormLocator(self._page.get_by_label(*args, **kwargs), self._page)
 
     def get_by_role(self, role: str, *args: Any, **kwargs: Any) -> Any:
+        normalized_role = str(role).lower()
+        name = kwargs.get("name")
+        locator_factory = getattr(self._page, "locator", None)
+        if normalized_role == "button" and isinstance(name, str) and callable(locator_factory):
+            if name in {"Express", "Comprehensive"}:
+                return locator_factory(SERVICE_SELECTOR).filter(has_text=name).first
+            if name in {"Run Express", "Run Comprehensive"}:
+                return locator_factory(RUN_SELECTOR).first
+
         locator = self._page.get_by_role(role, *args, **kwargs)
-        if str(role).lower() == "checkbox":
+        if normalized_role == "checkbox":
             return _StableFormLocator(locator, self._page)
         return locator
 
