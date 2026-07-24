@@ -14,6 +14,7 @@ from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
 OSV_API = "https://api.osv.dev/v1/querybatch"
+MAX_SCANNER_PARSE_BYTES = int(os.getenv("NICO_MAX_SCANNER_PARSE_BYTES", str(20 * 1024 * 1024)))
 
 SECRET_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -33,19 +34,60 @@ class ScannerToolSpec:
     max_output_chars: int = 80_000
     requires_project_commands: bool = False
     scans_git_history: bool = False
+    valid_returncodes: frozenset[int] = frozenset({0, 1})
+
+
+@dataclass(frozen=True)
+class ProjectCommandPreparation:
+    status: str
+    web_dir: Path
+    node_modules_ready: bool
+    reason: str = ""
+    returncode: int | None = None
+    timed_out: bool = False
+    output_truncated: bool = False
 
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
-    ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=180),
-    ScannerToolSpec("npm-audit", ("npm", "audit", "--json", "--package-lock-only", "--ignore-scripts"), "dependency", timeout_seconds=180),
-    ScannerToolSpec("osv-scanner", ("osv-scanner", "--format", "json", "."), "dependency", timeout_seconds=180),
-    ScannerToolSpec("bandit", ("bandit", "-r", ".", "-f", "json"), "static", timeout_seconds=180),
-    ScannerToolSpec("semgrep", ("semgrep", "scan", "--config", "auto", "--json", "."), "static", timeout_seconds=240),
-    ScannerToolSpec("eslint", ("npx", "eslint", ".", "--format", "json"), "static", timeout_seconds=180, requires_project_commands=True),
-    ScannerToolSpec("typescript", ("npx", "tsc", "--noEmit", "--pretty", "false"), "static", timeout_seconds=180, requires_project_commands=True),
-    ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", "."), "secret", timeout_seconds=240, scans_git_history=True),
-    ScannerToolSpec("trufflehog", ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification"), "secret", timeout_seconds=300, scans_git_history=True),
-    ScannerToolSpec("coverage", ("coverage", "run", "-m", "pytest", "-q"), "coverage", timeout_seconds=240, requires_project_commands=True),
+    ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=240, max_output_chars=500_000),
+    ScannerToolSpec("npm-audit", ("npm", "audit", "--json", "--package-lock-only", "--ignore-scripts"), "dependency", timeout_seconds=240, max_output_chars=1_000_000),
+    ScannerToolSpec("osv-scanner", ("osv-scanner", "--format", "json", "."), "dependency", timeout_seconds=240, max_output_chars=1_000_000),
+    ScannerToolSpec("bandit", ("bandit", "-r", ".", "-f", "json"), "static", timeout_seconds=240, max_output_chars=2_000_000),
+    ScannerToolSpec(
+        "semgrep",
+        (
+            "semgrep",
+            "scan",
+            "--config",
+            "auto",
+            "--json",
+            "--jobs",
+            "1",
+            "--max-memory",
+            "1024",
+            "--timeout",
+            "30",
+            "--timeout-threshold",
+            "5",
+            "--exclude",
+            "node_modules",
+            "--exclude",
+            ".next",
+            "--exclude",
+            "dist",
+            "--exclude",
+            "build",
+            ".",
+        ),
+        "static",
+        timeout_seconds=360,
+        max_output_chars=4_000_000,
+    ),
+    ScannerToolSpec("eslint", ("eslint", ".", "--format", "json"), "static", timeout_seconds=300, max_output_chars=4_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1})),
+    ScannerToolSpec("typescript", ("tsc", "--noEmit", "--pretty", "false", "--incremental", "false"), "static", timeout_seconds=300, max_output_chars=2_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1, 2})),
+    ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", ".", "--log-opts", "HEAD"), "secret", timeout_seconds=600, max_output_chars=2_000_000, scans_git_history=True),
+    ScannerToolSpec("trufflehog", ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification"), "secret", timeout_seconds=600, max_output_chars=4_000_000, scans_git_history=True, valid_returncodes=frozenset({0})),
+    ScannerToolSpec("coverage", ("coverage", "run", "-m", "pytest", "-q"), "coverage", timeout_seconds=360, max_output_chars=2_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1})),
 )
 
 
@@ -148,30 +190,72 @@ def _osv_findings(payload: dict[str, Any]) -> list[Any]:
     return findings
 
 
-def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any]:
-    text = redact_text(result.stdout or "")
+def _complete_stdout(result: WorkerCommandResult) -> tuple[str, bool, str]:
+    if result.stdout_path:
+        path = Path(result.stdout_path)
+        try:
+            size = path.stat().st_size
+            if size > MAX_SCANNER_PARSE_BYTES:
+                return result.stdout, False, f"scanner output exceeded the bounded parse limit of {MAX_SCANNER_PARSE_BYTES} bytes"
+            return path.read_text(encoding="utf-8", errors="replace"), True, ""
+        except OSError as exc:
+            return result.stdout, False, f"scanner output file could not be read: {type(exc).__name__}"
+    return result.stdout, not result.output_truncated, "" if not result.output_truncated else "scanner output was truncated before parsing"
+
+
+def _typescript_findings(text: str) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    pattern = re.compile(r"^(?P<file>.+?)\((?P<line>\d+),(?P<column>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<message>.+)$")
+    for line in text.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            findings.append(
+                {
+                    "file_path": match.group("file"),
+                    "line": int(match.group("line")),
+                    "column": int(match.group("column")),
+                    "code": match.group("code"),
+                    "message": match.group("message"),
+                    "severity": "high",
+                }
+            )
+    if findings:
+        return findings
+    return [{"message": redact_text(text[:20_000])}] if text.strip() else []
+
+
+def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> tuple[list[Any], bool, str]:
+    raw_text, capture_complete, capture_reason = _complete_stdout(result)
+    text = redact_text(raw_text or "")
     if not text.strip():
-        return [] if result.returncode == 0 else [{"message": redact_text(result.stderr or "tool failed without stdout")}]
+        if result.returncode == 0:
+            return [], capture_complete, capture_reason
+        fallback = redact_text(result.stderr or "tool failed without stdout")
+        return ([{"message": fallback}] if fallback else []), capture_complete, capture_reason
+
+    if tool_name == "typescript":
+        return _typescript_findings(text), capture_complete, capture_reason
 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
         if tool_name == "trufflehog":
-            return _parse_json_lines(text)
-        if tool_name in {"eslint", "typescript", "coverage"} and result.returncode != 0:
-            return [{"message": redact_text(result.stderr or result.stdout)}]
-        return []
+            items = _parse_json_lines(text)
+            return items, capture_complete and bool(items or not text.strip()), capture_reason or ("" if items else "trufflehog JSON-lines output could not be parsed")
+        if tool_name in {"eslint", "coverage"} and result.returncode != 0:
+            return [{"message": redact_text(result.stderr or text)}], False, capture_reason or "tool returned non-JSON diagnostic output"
+        return [], False, capture_reason or "scanner JSON output could not be parsed"
 
     if tool_name == "pip-audit" and isinstance(payload, dict):
-        return _pip_audit_findings(payload)
+        return _pip_audit_findings(payload), capture_complete, capture_reason
     if tool_name == "npm-audit" and isinstance(payload, dict):
-        return _npm_audit_findings(payload)
+        return _npm_audit_findings(payload), capture_complete, capture_reason
     if tool_name == "osv-scanner" and isinstance(payload, dict):
-        return _osv_findings(payload)
+        return _osv_findings(payload), capture_complete, capture_reason
     if tool_name == "bandit" and isinstance(payload, dict):
-        return payload.get("results") or []
+        return payload.get("results") or [], capture_complete, capture_reason
     if tool_name == "semgrep" and isinstance(payload, dict):
-        return payload.get("results") or []
+        return payload.get("results") or [], capture_complete, capture_reason
     if tool_name == "eslint" and isinstance(payload, list):
         findings: list[Any] = []
         for file_result in payload:
@@ -181,25 +265,35 @@ def parse_tool_findings(tool_name: str, result: WorkerCommandResult) -> list[Any
                         item = dict(message)
                         item.setdefault("filePath", file_result.get("filePath"))
                         findings.append(item)
-        return findings
-    if tool_name in {"typescript", "coverage"}:
-        return [] if result.returncode == 0 else [{"message": redact_text(result.stderr or result.stdout)}]
+        return findings, capture_complete, capture_reason
+    if tool_name == "coverage":
+        return ([] if result.returncode == 0 else [{"message": redact_text(result.stderr or text)}]), capture_complete, capture_reason
     if tool_name == "gitleaks" and isinstance(payload, list):
-        return payload
+        return payload, capture_complete, capture_reason
     if tool_name == "trufflehog" and isinstance(payload, dict):
-        return [payload]
-    return []
+        return [payload], capture_complete, capture_reason
+    return [], capture_complete, capture_reason
 
 
-def _unavailable_tool(spec: ScannerToolSpec, reason: str) -> dict[str, Any]:
-    return {
+def _unavailable_tool(spec: ScannerToolSpec, reason: str, *, preparation: ProjectCommandPreparation | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "tool": spec.name,
         "status": "unavailable",
         "category": spec.category,
         "reason": reason,
         "findings": [],
         "scans_git_history": spec.scans_git_history,
+        "verified_for_this_report": False,
     }
+    if preparation is not None:
+        payload["project_preparation"] = {
+            "status": preparation.status,
+            "reason": preparation.reason,
+            "returncode": preparation.returncode,
+            "timed_out": preparation.timed_out,
+            "output_truncated": preparation.output_truncated,
+        }
+    return payload
 
 
 def _normalize_requirement(raw: str) -> dict[str, str] | None:
@@ -263,7 +357,7 @@ def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, A
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
-        return _unavailable_tool(spec, f"osv-scanner CLI is not installed and OSV API fallback was unavailable: {exc}")
+        return _unavailable_tool(spec, f"osv-scanner CLI is not installed and OSV API fallback was unavailable: {type(exc).__name__}")
     results = payload.get("results") if isinstance(payload, dict) else []
     findings: list[dict[str, Any]] = []
     if isinstance(results, list):
@@ -284,11 +378,13 @@ def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, A
             "returncode": 1 if findings else 0,
             "timed_out": False,
             "output_truncated": False,
+            "output_capture_complete": True,
             "execution_source": "osv_api_fallback",
             "evidence_summary": f"OSV API fallback queried {len(dependencies)} exact dependency version(s) because osv-scanner CLI was not installed.",
             "findings": findings,
             "stderr": "",
             "scans_git_history": spec.scans_git_history,
+            "verified_for_this_report": True,
         }
     )
 
@@ -314,7 +410,72 @@ def _package_script(path: Path, script_name: str) -> str | None:
     return str(value) if value else None
 
 
-def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | None, Path, str | None]:
+def _node_env(workspace: WorkerWorkspace, web_dir: Path) -> dict[str, str]:
+    local_modules = web_dir / "node_modules"
+    configured_node_path = os.getenv("NODE_PATH", "")
+    node_paths = [str(local_modules)]
+    if configured_node_path:
+        node_paths.append(configured_node_path)
+    return {
+        "CI": "true",
+        "NO_COLOR": "1",
+        "FORCE_COLOR": "0",
+        "NODE_PATH": os.pathsep.join(node_paths),
+        "NPM_CONFIG_CACHE": str(workspace.root / "npm-cache"),
+        "npm_config_cache": str(workspace.root / "npm-cache"),
+        "NODE_OPTIONS": os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=768"),
+    }
+
+
+def prepare_project_commands(
+    workspace: WorkerWorkspace,
+    *,
+    runner: Callable[..., WorkerCommandResult] = run_command,
+) -> ProjectCommandPreparation:
+    web_dir = workspace.repo_dir / "apps" / "web"
+    package_json = web_dir / "package.json"
+    lockfile = web_dir / "package-lock.json"
+    if not package_json.exists():
+        return ProjectCommandPreparation("unavailable", web_dir, False, "apps/web/package.json not found.")
+    if not lockfile.exists():
+        return ProjectCommandPreparation("unavailable", web_dir, False, "apps/web/package-lock.json is required for deterministic project-tool preparation.")
+    npm = shutil.which("npm")
+    if not npm:
+        return ProjectCommandPreparation("unavailable", web_dir, False, "npm is not installed in the worker image.")
+
+    output_path = workspace.root / "scanner-output" / "npm-ci.stdout"
+    result = runner(
+        (
+            npm,
+            "ci",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "--prefer-offline",
+        ),
+        cwd=web_dir,
+        limits=WorkerLimits(timeout_seconds=420, max_output_chars=200_000),
+        extra_env=_node_env(workspace, web_dir),
+        stdout_path=output_path,
+    )
+    ready = result.returncode == 0 and not result.timed_out and (web_dir / "node_modules").is_dir()
+    reason = "" if ready else redact_text(result.stderr or result.stdout or "npm ci did not establish node_modules")[:2000]
+    return ProjectCommandPreparation(
+        "completed" if ready else "failed",
+        web_dir,
+        ready,
+        reason,
+        returncode=result.returncode,
+        timed_out=result.timed_out,
+        output_truncated=result.output_truncated,
+    )
+
+
+def _resolve_command_and_cwd(
+    spec: ScannerToolSpec,
+    workspace: WorkerWorkspace,
+    preparation: ProjectCommandPreparation | None,
+) -> tuple[tuple[str, ...] | None, Path, str | None]:
     repo_dir = workspace.repo_dir
     web_dir = repo_dir / "apps" / "web"
     if spec.name == "pip-audit" and not (repo_dir / "requirements.txt").exists():
@@ -327,23 +488,44 @@ def _resolve_command_and_cwd(spec: ScannerToolSpec, workspace: WorkerWorkspace) 
         if not existing:
             return None, repo_dir, "package-lock.json not found for npm audit."
         return spec.command, existing[0].parent, None
-    if spec.name == "eslint":
-        if (web_dir / "package.json").exists():
-            if _has_eslint_config(web_dir):
-                return spec.command, web_dir, None
-            if _package_script(web_dir, "lint"):
-                return ("npm", "run", "lint"), web_dir, None
-            return spec.command, web_dir, None
-        return None, repo_dir, "apps/web/package.json not found for scanner-worker ESLint evidence."
-    if spec.name == "typescript":
-        if (web_dir / "package.json").exists():
-            if _package_script(web_dir, "lint"):
-                return ("npm", "run", "lint"), web_dir, None
-            return spec.command, web_dir, None
-        return None, repo_dir, "apps/web/package.json not found for TypeScript scanner-worker evidence."
+    if spec.name in {"eslint", "typescript"}:
+        if preparation is None or not preparation.node_modules_ready:
+            return None, web_dir, preparation.reason if preparation else "Project dependencies were not prepared."
+        bin_name = "eslint" if spec.name == "eslint" else "tsc"
+        binary = web_dir / "node_modules" / ".bin" / bin_name
+        if not binary.exists():
+            return None, web_dir, f"{bin_name} was not installed by the exact package-lock dependency preparation."
+        if spec.name == "eslint":
+            if not _has_eslint_config(web_dir) and not _package_script(web_dir, "lint"):
+                return None, web_dir, "No ESLint configuration or lint script was found in apps/web."
+            return (str(binary), ".", "--format", "json"), web_dir, None
+        tsconfig = web_dir / "tsconfig.json"
+        if not tsconfig.exists():
+            return None, web_dir, "apps/web/tsconfig.json not found for TypeScript evidence."
+        return (str(binary), "--noEmit", "--pretty", "false", "--incremental", "false", "-p", str(tsconfig)), web_dir, None
     if spec.name == "trufflehog":
         return tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command), repo_dir, None
     return spec.command, repo_dir, None
+
+
+def _command_available(command: tuple[str, ...]) -> bool:
+    executable = command[0]
+    if "/" in executable:
+        return Path(executable).is_file() and os.access(executable, os.X_OK)
+    return shutil.which(executable) is not None
+
+
+def _tool_env(spec: ScannerToolSpec, workspace: WorkerWorkspace, cwd: Path) -> dict[str, str]:
+    env: dict[str, str] = {
+        "CI": "true",
+        "NO_COLOR": "1",
+        "FORCE_COLOR": "0",
+    }
+    if spec.name in {"eslint", "typescript"}:
+        env.update(_node_env(workspace, cwd))
+    if spec.name == "semgrep":
+        env.update({"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0"})
+    return env
 
 
 def run_scanner_tool(
@@ -351,6 +533,7 @@ def run_scanner_tool(
     workspace: WorkerWorkspace,
     *,
     runner: Callable[..., WorkerCommandResult] = run_command,
+    preparation: ProjectCommandPreparation | None = None,
 ) -> dict[str, Any]:
     if spec.requires_project_commands and not project_commands_allowed():
         return _unavailable_tool(
@@ -358,38 +541,65 @@ def run_scanner_tool(
             f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
         )
 
-    if shutil.which(spec.command[0]) is None:
-        if spec.name == "osv-scanner":
-            return _osv_api_fallback_tool(spec, workspace.repo_dir)
-        return _unavailable_tool(spec, f"{spec.command[0]} is not installed in the worker image")
+    if spec.name == "osv-scanner" and shutil.which(spec.command[0]) is None:
+        return _osv_api_fallback_tool(spec, workspace.repo_dir)
 
-    command, cwd, unavailable_reason = _resolve_command_and_cwd(spec, workspace)
+    command, cwd, unavailable_reason = _resolve_command_and_cwd(spec, workspace, preparation)
     if command is None:
-        return _unavailable_tool(spec, unavailable_reason or f"{spec.name} could not resolve a safe command")
-    if shutil.which(command[0]) is None:
-        return _unavailable_tool(spec, f"{command[0]} is not installed in the worker image")
+        return _unavailable_tool(spec, unavailable_reason or f"{spec.name} could not resolve a safe command", preparation=preparation)
+    if not _command_available(command):
+        return _unavailable_tool(spec, f"{command[0]} is not installed in the worker image", preparation=preparation)
 
+    output_path = workspace.root / "scanner-output" / f"{spec.name}.stdout"
     result = runner(
         command,
         cwd=cwd,
         limits=WorkerLimits(timeout_seconds=spec.timeout_seconds, max_output_chars=spec.max_output_chars),
+        extra_env=_tool_env(spec, workspace, cwd),
+        stdout_path=output_path,
     )
-    status = "completed" if not result.timed_out else "timeout"
-    findings = parse_tool_findings(spec.name, result)
-    return redact_payload(
-        {
-            "tool": spec.name,
-            "status": status,
-            "category": spec.category,
-            "returncode": result.returncode,
-            "timed_out": result.timed_out,
-            "output_truncated": result.output_truncated,
-            "command_intent": " ".join(command[:3]),
-            "findings": findings,
-            "stderr": result.stderr,
-            "scans_git_history": spec.scans_git_history,
+    findings, capture_complete, capture_reason = parse_tool_findings(spec.name, result)
+    returncode_valid = result.returncode in spec.valid_returncodes
+    if result.timed_out:
+        status = "timeout"
+        execution_error = f"{spec.name} exceeded its {spec.timeout_seconds}-second bounded timeout."
+    elif not returncode_valid:
+        status = "failed"
+        execution_error = redact_text(result.stderr or result.stdout or f"unexpected return code {result.returncode}")[:4000]
+    elif not capture_complete:
+        status = "failed"
+        execution_error = capture_reason or "scanner output could not be parsed completely"
+    else:
+        status = "completed"
+        execution_error = ""
+
+    payload = {
+        "tool": spec.name,
+        "status": status,
+        "category": spec.category,
+        "returncode": result.returncode,
+        "returncode_valid": returncode_valid,
+        "timed_out": result.timed_out,
+        "output_truncated": result.output_truncated,
+        "output_capture_complete": capture_complete,
+        "stdout_bytes": result.stdout_bytes,
+        "stderr_bytes": result.stderr_bytes,
+        "command_intent": " ".join(Path(part).name if index == 0 else part for index, part in enumerate(command[:5])),
+        "findings": findings,
+        "stderr": result.stderr,
+        "reason": execution_error,
+        "scans_git_history": spec.scans_git_history,
+        "verified_for_this_report": status == "completed",
+    }
+    if preparation is not None and spec.requires_project_commands:
+        payload["project_preparation"] = {
+            "status": preparation.status,
+            "node_modules_ready": preparation.node_modules_ready,
+            "returncode": preparation.returncode,
+            "timed_out": preparation.timed_out,
+            "output_truncated": preparation.output_truncated,
         }
-    )
+    return redact_payload(payload)
 
 
 def run_scanner_tools(
@@ -401,18 +611,29 @@ def run_scanner_tools(
     if not workspace.repo_dir.exists() or not workspace.repo_dir.is_dir():
         raise ValueError("workspace repo directory must exist before scanner tools run")
 
-    tool_results = [run_scanner_tool(spec, workspace, runner=runner) for spec in specs]
+    needs_project = any(spec.requires_project_commands for spec in specs)
+    preparation = prepare_project_commands(workspace, runner=runner) if needs_project and project_commands_allowed() else None
+    tool_results = [run_scanner_tool(spec, workspace, runner=runner, preparation=preparation) for spec in specs]
     raw_payload = {"tools": tool_results}
     normalized = normalize_scanner_worker_artifact(raw_payload)
     history_secret_tools = [
         item["tool"]
         for item in tool_results
-        if isinstance(item, dict) and item.get("category") == "secret" and item.get("status") == "completed" and item.get("scans_git_history")
+        if isinstance(item, dict)
+        and item.get("category") == "secret"
+        and item.get("status") == "completed"
+        and item.get("scans_git_history")
+        and item.get("full_history_verified") is True
     ]
     return {
-        "artifact_schema": "nico.scanner_worker.v1",
+        "artifact_schema": "nico.scanner_worker.v2",
         "tools": {item["tool"]: item for item in tool_results if isinstance(item, dict) and item.get("tool")},
         "normalized": normalized,
+        "project_preparation": {
+            "status": preparation.status,
+            "node_modules_ready": preparation.node_modules_ready,
+            "reason": preparation.reason,
+        } if preparation else {"status": "not_required", "node_modules_ready": False},
         "secret_history_scan": {
             "completed_tools": history_secret_tools,
             "history_aware": bool(history_secret_tools),
