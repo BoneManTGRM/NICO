@@ -6,6 +6,29 @@ const ASSESSMENT_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|f
 const STATUS_PATH = /^\/(?:api\/nico\/)?assessment\/(?:express-run|mid-run|full-run)\/([^/?#]+)\/status$/;
 const TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 const ACTIVE_STATUSES = new Set(["queued", "running", "pending", "planned", "starting"]);
+const IN_FLIGHT_STATUSES = new Set(["queued", "running", "starting"]);
+
+const BACKEND_TO_UI_STAGE: Record<string, string> = {
+  record_running: "repository_evidence",
+  import_api: "repository_evidence",
+  validate_request: "repository_evidence",
+  start_snapshot_scanner: "repository_evidence",
+  collect_assessment: "repository_evidence",
+  classify_blocked_result: "repository_evidence",
+  wait_snapshot_scanner: "scanner_reconciliation",
+  attach_exact_scanner_evidence: "scanner_reconciliation",
+  enrich_scanner_evidence: "scanner_reconciliation",
+  apply_report_accuracy: "accuracy_review",
+  attach_review_target: "accuracy_review",
+  polish_result: "score_reconciliation",
+  finalize_consistency: "report_generation",
+  reattach_review_target: "report_generation",
+  attach_evidence_bundle: "truth_and_review_gates",
+  attach_client_acceptance: "truth_and_review_gates",
+  sanitize_response: "truth_and_review_gates",
+  validate_final_artifacts: "truth_and_review_gates",
+  persist_final_response: "truth_and_review_gates",
+};
 
 const RETAINED_TERMINAL_FIELDS = [
   "repository",
@@ -54,7 +77,7 @@ function lifecycleIdentity(payload: JsonRecord | null) {
   return {
     runId: String(detail.run_id || payload?.run_id || ""),
     status: String(detail.status || payload?.status || "").toLowerCase(),
-    code: String(detail.code || payload?.code || ""),
+    code: String(detail.failure_code || detail.code || payload?.failure_code || payload?.code || ""),
   };
 }
 
@@ -116,6 +139,86 @@ function recoveryResponse(
   return jsonResponse(output);
 }
 
+function terminalStages(output: JsonRecord) {
+  const backendStage = String(output.failure_stage || output.backend_stage || "");
+  const explicitUiStage = String(output.failure_ui_stage || "");
+  const currentStage = String(output.current_stage || "");
+  const uiStage = explicitUiStage
+    || BACKEND_TO_UI_STAGE[backendStage]
+    || (currentStage && !TERMINAL_STATUSES.has(currentStage.toLowerCase()) ? currentStage : "")
+    || backendStage;
+  return {backendStage, uiStage};
+}
+
+function normalizeTerminalProgress(
+  output: JsonRecord,
+  lastGood: JsonRecord | undefined,
+  terminalStatus: string,
+  terminalMessage: string,
+  code: string,
+  httpStatus: number,
+): ProgressRecord[] {
+  const sourceProgress = progressItems(output).length
+    ? progressItems(output)
+    : lastGood
+      ? progressItems(lastGood)
+      : [];
+  const retained = sourceProgress.map((item) => structuredClone(item));
+  const {backendStage, uiStage} = terminalStages(output);
+
+  let failedIndex = retained.findIndex((item) => {
+    const step = String(item.step || "");
+    return Boolean(step) && (step === uiStage || step === backendStage);
+  });
+  if (failedIndex < 0) {
+    failedIndex = retained.findIndex((item) => IN_FLIGHT_STATUSES.has(String(item.status || "").toLowerCase()));
+  }
+
+  const normalized = retained.map((item, index) => {
+    const itemStatus = String(item.status || "").toLowerCase();
+    if (index === failedIndex) {
+      return {
+        ...item,
+        step: item.step || uiStage || backendStage || terminalStatus,
+        status: terminalStatus,
+        message: terminalMessage,
+        evidence: {
+          ...record(item.evidence),
+          failure_stage: backendStage || uiStage,
+          failure_ui_stage: uiStage || backendStage,
+          failure_code: code,
+          http_status: httpStatus,
+          exact_run_terminal_evidence: true,
+        },
+      };
+    }
+    if (TERMINAL_STATUSES.has(itemStatus)) return item;
+    if (IN_FLIGHT_STATUSES.has(itemStatus)) {
+      return {...item, status: "pending"};
+    }
+    // Pending and planned stages did not execute. They must remain pending rather
+    // than being relabeled as independent failures.
+    return item;
+  });
+
+  const hasTerminal = normalized.some((item) => TERMINAL_STATUSES.has(String(item.status || "").toLowerCase()));
+  if (!hasTerminal) {
+    normalized.push({
+      step: uiStage || backendStage || terminalStatus,
+      status: terminalStatus,
+      message: terminalMessage,
+      evidence: {
+        failure_stage: backendStage || uiStage,
+        failure_ui_stage: uiStage || backendStage,
+        failure_code: code,
+        http_status: httpStatus,
+        exact_run_terminal_evidence: true,
+      },
+    });
+  }
+  return normalized;
+}
+
 function terminalResponse(
   runId: string,
   response: Response,
@@ -132,38 +235,19 @@ function terminalResponse(
     if (output[key] == null && lastGood?.[key] != null) output[key] = structuredClone(lastGood[key]);
   }
 
-  const code = String(output.code || identity.code || `http_${response.status}`);
+  const code = String(output.failure_code || output.code || identity.code || `http_${response.status}`);
   const terminalMessage = String(
     output.message
     || output.error
     || `Exact run ${runId} became ${terminalStatus} before every required stage completed.`,
   );
-  const interruptedStatus = terminalStatus === "blocked" || terminalStatus === "rejected" ? "blocked" : "interrupted";
-  const retainedProgress = progressItems(output).length
-    ? progressItems(output)
-    : lastGood
-      ? progressItems(lastGood)
-      : [];
-  const normalizedProgress = retainedProgress.map((item) => {
-    const itemStatus = String(item.status || "").toLowerCase();
-    if (!ACTIVE_STATUSES.has(itemStatus)) return structuredClone(item);
-    return {
-      ...structuredClone(item),
-      status: interruptedStatus,
-      message: `This stage did not complete because the exact run became ${terminalStatus}. ${terminalMessage}`,
-    };
-  });
-  if (!normalizedProgress.some((item) => TERMINAL_STATUSES.has(String(item.status || "").toLowerCase()))) {
-    normalizedProgress.push({
-      step: String(output.failure_stage || output.current_stage || terminalStatus),
-      status: terminalStatus,
-      message: terminalMessage,
-      evidence: {code, http_status: response.status, exact_run_terminal_evidence: true},
-    });
-  }
+  const stages = terminalStages(output);
+  output.failure_stage = stages.backendStage || stages.uiStage;
+  output.failure_ui_stage = stages.uiStage || stages.backendStage;
+  output.progress = normalizeTerminalProgress(output, lastGood, terminalStatus, terminalMessage, code, response.status);
 
   const scanner = record(output.scanner);
-  if (ACTIVE_STATUSES.has(String(scanner.status || "").toLowerCase())) {
+  if (IN_FLIGHT_STATUSES.has(String(scanner.status || "").toLowerCase())) {
     output.scanner = {
       ...scanner,
       status: "interrupted",
@@ -173,8 +257,8 @@ function terminalResponse(
   }
   const scannerEvidence = record(output.scanner_evidence);
   if (
-    ACTIVE_STATUSES.has(String(scannerEvidence.status || "").toLowerCase())
-    || ACTIVE_STATUSES.has(String(scannerEvidence.scanner_status || "").toLowerCase())
+    IN_FLIGHT_STATUSES.has(String(scannerEvidence.status || "").toLowerCase())
+    || IN_FLIGHT_STATUSES.has(String(scannerEvidence.scanner_status || "").toLowerCase())
   ) {
     output.scanner_evidence = {
       ...scannerEvidence,
@@ -192,15 +276,16 @@ function terminalResponse(
 
   output.status = terminalStatus;
   output.run_id = runId;
-  output.current_stage = String(output.failure_stage || output.current_stage || terminalStatus);
+  output.current_stage = String(output.failure_ui_stage || output.failure_stage || terminalStatus);
   output.progress_percent = 100;
-  output.progress = normalizedProgress;
   output.human_review_required = true;
   output.client_ready = false;
   output.status_transport = {
     status: "exact_run_terminal",
     http_status: response.status,
     code,
+    failure_stage: output.failure_stage,
+    failure_ui_stage: output.failure_ui_stage,
     exact_run_terminal_evidence: true,
     duplicate_start_allowed: false,
     recovery_required: Boolean(output.recovery_required),
@@ -266,6 +351,11 @@ export default function AssessmentStatusOutcomeGuard() {
       if (window.fetch === guardedFetch) window.fetch = originalFetch;
     };
   }, []);
-
   return null;
 }
+
+export {
+  BACKEND_TO_UI_STAGE,
+  normalizeTerminalProgress,
+  terminalStages,
+};

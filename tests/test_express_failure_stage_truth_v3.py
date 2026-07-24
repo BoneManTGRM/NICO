@@ -44,6 +44,7 @@ def test_terminal_failure_preserves_actual_stage_and_later_stages_remain_pending
 
     progress = {item["step"]: item for item in failure["progress"]}
     assert failure["failure_stage"] == "repository_evidence"
+    assert failure["failure_ui_stage"] == "repository_evidence"
     assert failure["failure_code"] == "express_backend_execution_failed"
     assert failure["current_stage"] == "repository_evidence"
     assert progress["request_accepted"]["status"] == "complete"
@@ -55,6 +56,36 @@ def test_terminal_failure_preserves_actual_stage_and_later_stages_remain_pending
     assert progress["complete"]["status"] == "pending"
 
     truth._forget(run_id)
+
+
+def test_backend_diagnostic_stage_maps_to_one_truthful_ui_failure() -> None:
+    installed = truth.install_express_failure_stage_truth_v3()
+    assert installed["backend_stage_mapped_to_ui_stage"] is True
+
+    failure = express._response(
+        "express_run_backend_stage_truth",
+        _payload(),
+        "failed",
+        "Express report artifacts did not satisfy the final gate.",
+        code="express_report_artifacts_missing",
+        stage="failed",
+        progress_percent=100,
+        evidence={
+            "failure_stage": "validate_final_artifacts",
+            "diagnostic_id": "express_diag_test",
+            "exception_class": "HTTPException",
+        },
+    )
+
+    progress = {item["step"]: item for item in failure["progress"]}
+    assert failure["failure_stage"] == "validate_final_artifacts"
+    assert failure["failure_ui_stage"] == "truth_and_review_gates"
+    assert failure["current_stage"] == "truth_and_review_gates"
+    assert progress["report_generation"]["status"] == "complete"
+    assert progress["truth_and_review_gates"]["status"] == "failed"
+    assert progress["truth_and_review_gates"]["evidence"]["failure_stage"] == "validate_final_artifacts"
+    assert progress["complete"]["status"] == "pending"
+    assert sum(item["status"] == "failed" for item in progress.values()) == 1
 
 
 def test_installation_is_idempotent_and_does_not_expose_raw_exception_details() -> None:

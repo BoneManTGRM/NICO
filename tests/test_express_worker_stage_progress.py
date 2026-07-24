@@ -240,8 +240,9 @@ def test_backend_diagnostic_failure_is_terminal_not_request_accepted(monkeypatch
     response = store.get("assessment_runs", run_id)["response"]
     assert response["status"] == "failed"
     assert response["progress_percent"] == 100
-    assert response["current_stage"] == "failed"
+    assert response["current_stage"] == "repository_evidence"
     assert response["failure_stage"] == "collect_assessment"
+    assert response["failure_ui_stage"] == "repository_evidence"
     assert response["code"] == "express_backend_execution_failed"
     assert "private failure" not in repr(response)
 
