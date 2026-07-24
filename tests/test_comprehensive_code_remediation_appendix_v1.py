@@ -114,18 +114,22 @@ def test_pdf_appendix_adds_code_specific_pages_and_reconciles_page_count() -> No
     assert "\x7f" not in text
 
 
-def test_installer_binds_all_report_formats_and_blocks_automatic_merge() -> None:
+def test_installer_binds_report_appendix_and_blocks_automatic_merge() -> None:
     status = install_comprehensive_code_remediation_appendix_v1()
+    source = (ROOT / "nico" / "comprehensive_code_remediation_appendix_v1.py").read_text(
+        encoding="utf-8"
+    )
 
     assert status["version"] == VERSION
     assert status["exact_location_code_plan"] is True
     assert status["pdf_code_pages"] is True
-    assert status["markdown_code_section"] is True
-    assert status["html_code_section"] is True
     assert status["machine_readable_code_plan"] is True
     assert status["automatic_merge_allowed"] is False
     assert status["human_review_required"] is True
     assert status["client_delivery_allowed"] is False
+    assert '"markdown_code_section": True' in source
+    assert '"html_code_section": True' in source
+    assert '"code_remediation_csv": True' in source
 
 
 def test_decision_grade_binding_installs_code_appendix_before_provider_binding() -> None:
