@@ -56,13 +56,26 @@ def test_final_review_page_uses_a_simple_two_step_workflow() -> None:
     assert advanced_start < source.index("Project ID") < advanced_end
 
 
-def test_final_review_page_refreshes_truth_after_every_mutation() -> None:
+def test_final_review_page_refreshes_truth_without_losing_approved_pdf() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
-    assert "async function refreshAfterMutation" in source
-    assert "setResult(await fetchReviewStatus())" in source
+    assert "function approvedDeliveryFrom" in source
+    assert "function mergeReviewResponses" in source
+    assert "const latest = await fetchReviewStatus();" in source
+    assert "setResult(mergeReviewResponses(latest, mutation));" in source
     assert source.count("await refreshAfterMutation(payload)") == 2
     assert "Use Reload status before downloading." in source
+
+
+def test_final_review_page_recovers_approved_pdf_after_reload() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert "/approved-pdf?${reviewQuery()}" in source
+    assert "if (embeddedApprovedPdf)" in source
+    assert "Approved PDF download failed" in source
+    assert "The approved PDF failed browser integrity validation." in source
+    assert "Approved final PDF downloaded." in source
+    assert "Retrieve the exact approved PDF from the authenticated operator endpoint." in source
 
 
 def test_final_review_page_has_accessible_feedback_and_safe_download_failures() -> None:
@@ -70,5 +83,5 @@ def test_final_review_page_has_accessible_feedback_and_safe_download_failures() 
 
     assert 'aria-live="polite"' in source
     assert 'role="alert"' in source
-    assert "The approved PDF data is invalid." in source
+    assert "Approved PDF signature is invalid." in source
     assert "Final-review endpoint returned invalid JSON" in source
