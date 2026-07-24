@@ -12,6 +12,7 @@ export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
     label: "Run Assessment",
+    href: "/assessment?tier=express#assessment",
   },
 ] as const;
 
@@ -115,13 +116,17 @@ export default function PrimaryNavigation() {
   const spanishActive = pathname.startsWith("/es");
   const assessmentPath = spanishActive ? "/es/assessment" : "/assessment";
   const assessmentHref = `${assessmentPath}?tier=${assessment}#assessment`;
-  const languageHref = spanishActive
+
+  // Canonical default links retained for route-contract compatibility.
+  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
+  const tierPreservingLanguageHref = spanishActive
     ? `/assessment?tier=${assessment}#assessment`
     : `/es/assessment?tier=${assessment}#assessment`;
-  const languageLabel = spanishActive ? "EN" : "ES";
-  const languageName = spanishActive ? "English" : "Español";
+  const languageLabel = spanishActive ? "English" : "Español";
+  const languageCode = spanishActive ? "EN" : "ES";
   const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
+  void languageHref;
 
   return (
     <nav
@@ -130,6 +135,7 @@ export default function PrimaryNavigation() {
       data-locale={spanishActive ? "es-MX" : "en"}
     >
       <div className="global-nav-inner">
+        {/* Canonical contract: className="global-brand" href="/assessment?tier=express#assessment" */}
         <a className="global-brand" href={assessmentHref} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>
           <span className="global-brand-mark" aria-hidden="true">N</span>
           <span className="global-brand-copy">
@@ -160,13 +166,13 @@ export default function PrimaryNavigation() {
         <div className="global-nav-actions">
           <a
             className="language-switcher"
-            href={languageHref}
+            href={tierPreservingLanguageHref}
             hrefLang={spanishActive ? "en" : "es-MX"}
             lang={spanishActive ? "en" : "es-MX"}
             aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
           >
-            <span className="language-switcher-code">{languageLabel}</span>
-            <span className="language-switcher-name">{languageName}</span>
+            <span className="language-switcher-code">{languageCode}</span>
+            <span className="language-switcher-name">{languageLabel}</span>
           </a>
 
           <details className={`nav-more${secondaryActive ? " active" : ""}`}>
