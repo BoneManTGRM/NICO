@@ -7,7 +7,9 @@
 
 .hero,
 .panel {
-  width: min(100%, 920px);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
   margin: 0 auto 18px;
   border: 1px solid #334155;
   border-radius: 22px;
