@@ -34,15 +34,21 @@ def test_exact_terminal_payload_is_returned_as_structured_success_for_page_state
     assert 'output.client_ready = false' in source
 
 
-def test_terminal_projection_never_displays_active_scanner_or_report() -> None:
+def test_terminal_projection_preserves_one_failed_stage_and_truthful_artifact_state() -> None:
     source = GUARD.read_text(encoding="utf-8")
 
-    assert 'ACTIVE_STATUSES.has(String(scanner.status || "").toLowerCase())' in source
+    assert 'function normalizeTerminalProgress(' in source
+    assert 'const {backendStage, uiStage} = terminalStages(output);' in source
+    assert 'if (index === failedIndex)' in source
+    assert 'status: terminalStatus' in source
+    assert 'if (IN_FLIGHT_STATUSES.has(itemStatus))' in source
+    assert 'return {...item, status: "pending"};' in source
+    assert 'Pending and planned stages did not execute.' in source
+    assert 'IN_FLIGHT_STATUSES.has(String(scanner.status || "").toLowerCase())' in source
     assert 'status: "interrupted"' in source
     assert 'current_stage: "interrupted"' in source
     assert 'scanner_status: "interrupted"' in source
     assert 'output.report_generation_status = terminalStatus === "blocked" || terminalStatus === "rejected" ? "blocked" : "failed"' in source
-    assert 'This stage did not complete because the exact run became ${terminalStatus}' in source
     assert 'RETAINED_TERMINAL_FIELDS' in source
     assert '"scanner"' in source
     assert '"reports"' in source
@@ -56,4 +62,5 @@ def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_r
     assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in workspace
     assert 'return jsonResponse(output);' in guard
     assert 'output.run_id = runId' in guard
-    assert 'output.progress = normalizedProgress' in guard
+    assert 'output.progress = normalizeTerminalProgress(' in guard
+    assert 'output.current_stage = String(output.failure_ui_stage || output.failure_stage || terminalStatus)' in guard
