@@ -27,6 +27,7 @@ from nico.comprehensive_final_report_semantics_v47 import (
 )
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.strategic_human_report_binding_v1 import install_strategic_human_report_binding_v1
+from nico.supply_chain_report_binding_v1 import install_supply_chain_report_binding_v1
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
@@ -80,6 +81,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     ci_classification = install_ci_run_classification_v1()
     ci_report_binding = install_canonical_ci_report_binding_v1()
     human_evidence_binding = install_strategic_human_report_binding_v1()
+    supply_chain_binding = install_supply_chain_report_binding_v1()
     build_comprehensive_report_package = report_module.build_comprehensive_report_package
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -108,6 +110,11 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "human_evidence_ledger_exported": human_evidence_binding.get("human_evidence_ledger_exported") is True,
         "missing_human_evidence_disclosed": human_evidence_binding.get("missing_human_evidence_disclosed") is True,
         "repository_inference_for_human_facts_allowed": human_evidence_binding.get("repository_inference_for_human_facts_allowed") is True,
+        "supply_chain_binding": supply_chain_binding,
+        "supply_chain_inventory_exported": supply_chain_binding.get("supply_chain_inventory_exported") is True,
+        "sbom_exported": supply_chain_binding.get("sbom_exported") is True,
+        "unknown_licenses_disclosed": supply_chain_binding.get("unknown_licenses_disclosed") is True,
+        "unsupported_license_clean_claim_allowed": supply_chain_binding.get("unsupported_license_clean_claim_allowed") is True,
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
         "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
         "scanner_wrapper_composed": True,
