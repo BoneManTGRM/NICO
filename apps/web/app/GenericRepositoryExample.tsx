@@ -87,10 +87,22 @@ function isSpanishRoute() {
   const language = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();
   return pathname === "/es" || pathname.startsWith("/es/") || pathname.startsWith("/es-mx") || language === "es-mx" || language === "es";
 }
+function isAssessmentRoute() {
+  if (typeof window === "undefined") return false;
+  const pathname = window.location.pathname.toLowerCase();
+  return pathname === "/assessment" || pathname.startsWith("/assessment/") || pathname === "/es/assessment" || pathname.startsWith("/es/assessment/");
+}
+function isLegacyHomeRoute() {
+  if (typeof window === "undefined") return false;
+  const pathname = window.location.pathname.toLowerCase();
+  return pathname === "/" || pathname === "/es" || pathname === "/es/";
+}
 function routeCopy(spanish: boolean) { return spanish ? HERO_COPY_ES_MX : HERO_COPY_EN; }
 function escapeHtml(value: unknown) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[char] || char)); }
 function setNativeInputValue(input: HTMLInputElement, value: string) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set; setter?.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); input.dispatchEvent(new Event("change", {bubbles: true})); }
 function applyGenericRepositoryExample(example = GENERIC_REPOSITORY_EXAMPLE) { document.querySelectorAll<HTMLInputElement>("input").forEach((input) => { const value = input.value.trim(); if (PRIVATE_DEFAULTS.has(value)) setNativeInputValue(input, example); if (input.placeholder === "owner/repo" || input.placeholder === GENERIC_REPOSITORY_EXAMPLE) input.placeholder = example; }); }
+function applyAssessmentRepositoryPlaceholder() { document.querySelectorAll<HTMLInputElement>("input").forEach((input) => { if (input.placeholder === "owner/repo" || input.placeholder === GENERIC_REPOSITORY_EXAMPLE) input.placeholder = GENERIC_REPOSITORY_EXAMPLE; }); }
+function removeCommercialOpsPanel() { document.getElementById("runtime-commercial-ops")?.remove(); }
 
 function applyGlobalLanguageNav(spanish: boolean) {
   const labels = spanish
@@ -171,6 +183,7 @@ function styleHero(hero: HTMLElement, eyebrow: HTMLElement | null, title: HTMLEl
 }
 
 function applyHeroCopy(config?: RuntimeConfig) {
+  if (!isLegacyHomeRoute()) return;
   const spanish = isSpanishRoute();
   const copy = routeCopy(spanish);
   const hero = document.querySelector<HTMLElement>(".hero"); if (!hero) return;
@@ -249,6 +262,10 @@ function renderCommercialOpsMarkup(config?: RuntimeConfig, diagnostics?: Record<
 
 function setTrustedEscapedMarkup(target: HTMLElement, markup: string) { target.textContent = ""; target.insertAdjacentHTML("afterbegin", markup); }
 function ensureCommercialOpsPanel(config?: RuntimeConfig, diagnostics?: Record<string, unknown>, projectTrends?: Record<string, unknown>) {
+  if (!isLegacyHomeRoute()) {
+    removeCommercialOpsPanel();
+    return;
+  }
   ensureRuntimeOpsStyles();
   const target = document.querySelector<HTMLElement>(".status-panel") || document.querySelector<HTMLElement>(".section.panel"); if (!target?.parentElement) return;
   let panel = document.getElementById("runtime-commercial-ops") as HTMLElement | null;
@@ -271,11 +288,22 @@ async function fetchDiagnostics() {
 
 export default function GenericRepositoryExample() {
   useEffect(() => {
+    const spanish = isSpanishRoute();
+    applyGlobalLanguageNav(spanish);
+
+    // The assessment workspace owns its repository input, status, diagnostics,
+    // and exact project identity. Legacy home-page content must never overwrite
+    // those values or inject an unrelated default-project trend panel.
+    if (isAssessmentRoute()) {
+      removeCommercialOpsPanel();
+      applyAssessmentRepositoryPlaceholder();
+      return;
+    }
+
     let cancelled = false; let attempts = 0;
     const applyHostedUiPolish = (config?: RuntimeConfig, diagnostics?: Record<string, unknown>, trends?: Record<string, unknown>) => {
       attempts += 1;
-      const spanish = isSpanishRoute();
-      applyGlobalLanguageNav(spanish);
+      applyGlobalLanguageNav(isSpanishRoute());
       applyGenericRepositoryExample(config?.default_repository_example || GENERIC_REPOSITORY_EXAMPLE);
       applyHeroCopy(config);
       ensureCommercialOpsPanel(config, diagnostics, trends);
