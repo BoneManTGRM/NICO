@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import base64
 import io
+from pathlib import Path
 
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
+from nico import express_pdf_score_assurance_v1 as pdf_score
 from nico import express_pdf_section_index_binding_v1 as index_binding
 from nico import express_score_assurance_export_v1 as score_export
 from nico import scanner_tool_runners
+from nico.accurate_green_pdf_polish_v2 import install_accurate_green_pdf_polish_v2
 from nico.accurate_green_release_v2 import install_accurate_green_release_v2
 
 
@@ -121,8 +124,32 @@ def test_history_scanner_runtime_is_hardened_without_weakening_scope() -> None:
     assert specs["trufflehog"].scans_git_history is True
 
 
+def test_pdf_polish_changes_style_not_report_truth() -> None:
+    install_accurate_green_pdf_polish_v2()
+    styles = pdf_score._styles()
+    table = pdf_score._table([["Header"], ["Evidence"]], [100])
+
+    assert styles["title"].fontSize == 20
+    assert styles["callout"].borderWidth == 0.8
+    assert table is not None
+
+
+def test_real_typescript_aware_eslint_configuration_is_retained() -> None:
+    config = Path("apps/web/eslint.config.cjs").read_text(encoding="utf-8")
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert '@typescript-eslint/parser' in config
+    assert 'js.configs.recommended' in config
+    assert 'no-unreachable' in config
+    assert '@typescript-eslint/parser@8' in dockerfile
+    assert 'NICO_HISTORY_TOOL_TIMEOUT_SECONDS=600' in dockerfile
+    assert 'NODE_PATH=/usr/local/lib/node_modules' in dockerfile
+
+
 def test_live_binding_installs_accurate_green_release() -> None:
-    source = __import__("pathlib").Path("nico/express_live_renderer_binding_v22.py").read_text(encoding="utf-8")
+    source = Path("nico/express_live_renderer_binding_v22.py").read_text(encoding="utf-8")
     assert "install_accurate_green_release_v2" in source
+    assert "install_accurate_green_pdf_polish_v2" in source
     assert "verified_green_remediation_page" in source
     assert "yellow_controls_have_exit_criteria" in source
+    assert "polished_evidence_tables" in source
