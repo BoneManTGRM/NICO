@@ -7,6 +7,7 @@ from typing import Any, Callable
 from nico import comprehensive_decision_grade_report_v5 as report_module
 from nico import comprehensive_native_providers as providers
 from nico import snapshot_repository_evidence as snapshot_evidence
+from nico.canonical_ci_report_binding_v1 import install_canonical_ci_report_binding_v1
 from nico.ci_run_classification_v1 import (
     install_ci_run_classification_v1,
     scoring_provider_with_ci_classification,
@@ -76,6 +77,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     final_report_filename = install_comprehensive_final_report_filename_v48()
     report_clarity = install_comprehensive_report_clarity_v8()
     ci_classification = install_ci_run_classification_v1()
+    ci_report_binding = install_canonical_ci_report_binding_v1()
     build_comprehensive_report_package = report_module.build_comprehensive_report_package
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -97,6 +99,9 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "non_success_runs_classified": ci_classification.get("non_success_runs_classified") is True,
         "expected_cancellations_excluded_from_reliability": ci_classification.get("expected_cancellations_excluded_from_reliability") is True,
         "unclassified_runs_remain_review_limited": ci_classification.get("unclassified_runs_remain_review_limited") is True,
+        "ci_report_binding": ci_report_binding,
+        "ci_classification_exported": ci_report_binding.get("ci_classification_exported") is True,
+        "ci_classification_hashed": ci_report_binding.get("ci_classification_hashed") is True,
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
         "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
         "scanner_wrapper_composed": True,
