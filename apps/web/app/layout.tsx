@@ -5,6 +5,7 @@ import "../styles/score-assurance.css";
 import "../styles/assessment-executive.css";
 import "../styles/professional-polish.css";
 import "../styles/site-polish-v2.css";
+import "../styles/workflow-simplification.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
