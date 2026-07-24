@@ -31,8 +31,9 @@ from nico.express_static_scanner_velocity_scoring_v44 import install_express_sta
 from nico.express_score_assurance_ledger_v45 import install_express_score_assurance_ledger_v45
 from nico.scanner_claim_reconciliation_v45 import install_scanner_claim_reconciliation_v45
 from nico.express_report_quality_v47 import install_express_report_quality_v47
+from nico.express_report_quality_v471_compat import install_express_report_quality_v471_compat
 
-VERSION = "nico.express_live_renderer_binding.v47"
+VERSION = "nico.express_live_renderer_binding.v47.1"
 
 
 def install_express_live_renderer_binding_v22() -> dict[str, Any]:
@@ -73,6 +74,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
     assurance_projection_compat = install_express_assurance_projection_compat_v45()
     comprehensive_score_assurance_ledger = install_comprehensive_score_assurance_ledger_v45()
     report_quality = install_express_report_quality_v47()
+    report_quality_compat = install_express_report_quality_v471_compat()
 
     final_renderer = premium._premium_pdf
     renderer_bound = bool(getattr(final_renderer, "_nico_express_pdf_renderer_truth_v21", False))
@@ -110,6 +112,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "assurance_projection_compat_install": assurance_projection_compat,
         "comprehensive_score_assurance_ledger_install": comprehensive_score_assurance_ledger,
         "report_quality_install": report_quality,
+        "report_quality_compat_install": report_quality_compat,
         "premium_renderer_bound": renderer_bound,
         "score_assurance_renderer_bound": score_assurance_bound,
         "dossier_renderer_bound": dossier._premium_pdf is final_renderer,
@@ -141,6 +144,7 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "assurance_projection_compat_bound": assurance_projection_compat.get("status") in {"installed", "already_installed"},
         "comprehensive_score_assurance_ledger_bound": comprehensive_score_assurance_ledger.get("status") in {"installed", "already_installed"},
         "report_quality_bound": report_quality.get("status") in {"installed", "already_installed"},
+        "report_quality_compat_bound": report_quality_compat.get("status") in {"installed", "already_installed"},
         "score_band_separated_from_assurance": True,
         "risk_disposition_separated_from_assurance": True,
         "scanner_execution_coverage_excluded_from_maturity": True,
@@ -150,6 +154,9 @@ def install_express_live_renderer_binding_v22() -> dict[str, Any]:
         "premium_client_report_layout": True,
         "readable_paginated_appendix": True,
         "orphan_page_detection": True,
+        "markdown_line_structure_preserved": True,
+        "legacy_vector_geometry_retained": True,
+        "legacy_visual_qa_contract_preserved": True,
         "explicit_client_delivery_warning": True,
         "static_import_rebound": previous is not final_renderer,
         "human_review_required": True,
