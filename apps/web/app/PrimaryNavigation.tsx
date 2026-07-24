@@ -2,6 +2,8 @@
 
 import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
+import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
+import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";
 
 type ServiceKey = "run-job" | "operations" | "retainer";
 type AssessmentMode = "express" | "comprehensive";
@@ -154,7 +156,9 @@ export default function PrimaryNavigation() {
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
   void languageHref;
 
-  return (
+  return <>
+    <OperatorWorkspaceLocale />
+    <AssessmentFinalReviewAction />
     <nav
       className="global-nav"
       aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}
@@ -228,5 +232,5 @@ export default function PrimaryNavigation() {
         </div>
       </div>
     </nav>
-  );
+  </>;
 }
