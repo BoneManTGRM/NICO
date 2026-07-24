@@ -33,9 +33,10 @@ function forceCanonicalTier(pathname: string): void {
 function rewriteAssessmentCopy(main: HTMLElement, spanish: boolean): void {
   if (main.dataset.assessmentServiceCount !== "1") main.dataset.assessmentServiceCount = "1";
   if (main.dataset.canonicalAssessment !== "strategic") main.dataset.canonicalAssessment = "strategic";
+  if (main.dataset.customerFacingAssessment !== "comprehensive") main.dataset.customerFacingAssessment = "comprehensive";
 
   const hero = main.querySelector<HTMLElement>(".hero");
-  setText(hero?.querySelector<HTMLElement>(".eyebrow"), spanish ? "EVALUACIÓN ESTRATÉGICA NICO" : "NICO STRATEGIC ASSESSMENT");
+  setText(hero?.querySelector<HTMLElement>(".eyebrow"), spanish ? "EVALUACIÓN INTEGRAL NICO" : "NICO COMPREHENSIVE ASSESSMENT");
   setText(
     hero?.querySelector<HTMLElement>("h1"),
     spanish ? "Una evaluación. Un libro de evidencia. Un informe decisivo." : "One assessment. One evidence ledger. One decision-grade report.",
@@ -48,7 +49,7 @@ function rewriteAssessmentCopy(main: HTMLElement, spanish: boolean): void {
   );
 
   const assessment = main.querySelector<HTMLElement>("#assessment");
-  setText(assessment?.querySelector<HTMLElement>(".section-head .eyebrow"), spanish ? "EVALUACIÓN NICO UNIFICADA" : "UNIFIED NICO ASSESSMENT");
+  setText(assessment?.querySelector<HTMLElement>(".section-head .eyebrow"), spanish ? "EVALUACIÓN INTEGRAL NICO" : "NICO COMPREHENSIVE ASSESSMENT");
   setText(
     assessment?.querySelector<HTMLElement>(".section-head h2"),
     spanish ? "Diligencia técnica y estratégica completa" : "Complete technical and strategic diligence",
@@ -56,12 +57,12 @@ function rewriteAssessmentCopy(main: HTMLElement, spanish: boolean): void {
   setText(
     assessment?.querySelector<HTMLElement>(".summary-box"),
     spanish
-      ? "Una ejecución reúne todo lo útil de Express, Mid y Comprehensive: evidencia exacta, analizadores, puntuación calibrada, arquitectura, riesgo, código a corregir, hoja de ruta, recursos y un único informe final sujeto a revisión humana."
-      : "One run combines everything useful from Express, Mid, and Comprehensive: exact evidence, scanners, calibrated scoring, architecture, risk, code-specific remediation, roadmap, resourcing, and one final report subject to human review.",
+      ? "Una evaluación revisa la salud técnica, seguridad, arquitectura, riesgo de entrega, remediación, hoja de ruta y recursos sobre una instantánea inmutable del repositorio."
+      : "One assessment reviews technical health, security, architecture, delivery risk, remediation, roadmap, and resourcing against one immutable repository snapshot.",
   );
 
   const details = assessment?.querySelector<HTMLDetailsElement>("details.help-details");
-  setText(details?.querySelector<HTMLElement>("summary"), spanish ? "Qué incluye la evaluación" : "What the assessment includes");
+  setText(details?.querySelector<HTMLElement>("summary"), spanish ? "Qué incluye la evaluación integral" : "What the comprehensive assessment includes");
 
   const runButton = Array.from(assessment?.querySelectorAll<HTMLButtonElement>("button.primary-button") || [])
     .find((button) => !button.hasAttribute("aria-pressed"));
