@@ -97,7 +97,8 @@ def _build_html(identity: dict[str, Any], assessment: dict[str, Any], stages: li
 
 
 def _findings_csv(findings: list[dict[str, Any]]) -> str:
-    fields = ["id", "finding_id", "priority", "category", "title", "location", "fact", "interpretation", "evidence", "business_impact", "impact", "confidence", "owner_role", "effort", "recommendation", "acceptance_criteria", "cost_of_inaction", "residual_risk", "roadmap_mappings", "backlog_issue_mapping"]
+    # Preserve the historical prefix for downstream consumers while adding decision-grade columns.
+    fields = ["id", "priority", "category", "title", "location", "finding_id", "fact", "interpretation", "evidence", "business_impact", "impact", "confidence", "owner_role", "effort", "recommendation", "acceptance_criteria", "cost_of_inaction", "residual_risk", "roadmap_mappings", "backlog_issue_mapping"]
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
