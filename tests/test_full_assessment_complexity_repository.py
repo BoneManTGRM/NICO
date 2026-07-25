@@ -90,10 +90,7 @@ def test_repository_complexity_evidence_is_run_bound_and_persisted() -> None:
     assert record is not None
     assert record["run_id"] == "fullrun_complexity"
     assert record["filename"] == "full-assessment-complexity-evidence.json"
-    assert record["evidence"]["analyzer_version"] in {
-        "nico-bounded-complexity-v1",
-        "nico-bounded-complexity-v2",
-    }
+    assert record["evidence"]["analyzer_version"] == "nico.typescript_ast_complexity.v1"
 
 
 def test_repository_complexity_evidence_reuses_same_run_artifact() -> None:
