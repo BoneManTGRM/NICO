@@ -214,7 +214,7 @@ def build_report_view(contract: DecisionGradeContract | dict[str, Any]) -> dict[
             "Execute work in the stated dependency order.",
             "Re-run NICO after P1 closure.",
             "Compare score, risk, evidence, and complexity deltas.",
-            "Obtain human approval before external delivery when required by the review posture.",
+            "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED until exact-package approval is recorded.",
         ],
     }
 
