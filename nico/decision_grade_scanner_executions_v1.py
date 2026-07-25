@@ -88,15 +88,16 @@ def normalize_scanner_executions(scan: dict[str, Any]) -> dict[str, Any]:
     unavailable = _names(scan, "unavailable_tools")
     optional = set(_names(scan, "optional_tools"))
 
-    observed = []
+    observed: list[str] = []
     for names in (requested, completed, failed, timed_out, unavailable):
         for tool in names:
             if tool not in observed:
                 observed.append(tool)
 
-    inferred_status: dict[str, str] = {}
+    # Lowest-confidence state first. More explicit failure states override request or
+    # completion arrays when legacy fields disagree.
+    inferred_status: dict[str, str] = {tool: "partial" for tool in requested}
     inferred_status.update({tool: "complete" for tool in completed})
-    inferred_status.update({tool: "partial" for tool in requested})
     inferred_status.update({tool: "unavailable" for tool in unavailable})
     inferred_status.update({tool: "timeout" for tool in timed_out})
     inferred_status.update({tool: "failed" for tool in failed})
