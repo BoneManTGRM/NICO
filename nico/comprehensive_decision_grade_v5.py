@@ -55,6 +55,10 @@ from nico.decision_grade_history_store_v1 import (
     VERSION as DECISION_GRADE_HISTORY_STORE_VERSION,
     wrap_report_builder_with_persisted_history,
 )
+from nico.decision_grade_human_evidence_binding_v1 import (
+    VERSION as DECISION_GRADE_HUMAN_EVIDENCE_VERSION,
+    wrap_report_builder_with_human_evidence,
+)
 from nico.full_source_archive_profile_v1 import install_full_source_archive_profile_v1
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
@@ -136,7 +140,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
     history_builder = wrap_report_builder_with_persisted_history(report_module.build_comprehensive_report_package)
     quality_builder = _quality_report_builder(history_builder)
-    build_comprehensive_report_package = wrap_report_builder(quality_builder)
+    human_evidence_builder = wrap_report_builder_with_human_evidence(quality_builder)
+    build_comprehensive_report_package = wrap_report_builder(human_evidence_builder)
 
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -203,6 +208,13 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "posture_contradictions_detected": True,
         "resolved_findings_excluded_from_executive_register": True,
         "client_ready_promoted_automatically": False,
+        "decision_grade_human_evidence_version": DECISION_GRADE_HUMAN_EVIDENCE_VERSION,
+        "decision_grade_human_evidence_bound": True,
+        "human_evidence_module_count": 10,
+        "human_evidence_repository_inference_allowed": False,
+        "human_evidence_client_delivery_allowed": False,
+        "human_evidence_intake_template_generated": True,
+        "human_evidence_csv_exports_generated": True,
         "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
