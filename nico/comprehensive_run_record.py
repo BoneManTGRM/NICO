@@ -7,8 +7,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.strategic_human_evidence_v1 import (
+    VERSION as HUMAN_EVIDENCE_VERSION,
+    normalize_strategic_human_evidence,
+)
 
-VERSION = "nico.comprehensive_run_record.v2"
+VERSION = "nico.comprehensive_run_record.v3"
+LEGACY_VERSION = "nico.comprehensive_run_record.v2"
 TERMINAL_STATUSES = {"review_required", "approved", "rejected", "failed", "blocked"}
 ACTIVE_STAGE_STATUSES = {"queued", "running", "pending", "planned", "in_progress"}
 SUCCESS_STAGE_STATUSES = {"complete", "completed", "passed", "review_required"}
@@ -22,7 +27,13 @@ def _required(value: Any, field: str) -> str:
 
 
 def _canonical_hash(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -35,6 +46,9 @@ def create_comprehensive_run_record(
     customer_id: str,
     project_id: str,
     authorized: bool,
+    assessment_depth: str = "strategic",
+    report_language: str = "en",
+    human_evidence: Any = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     if not authorized:
@@ -47,11 +61,15 @@ def create_comprehensive_run_record(
         "evidence_ledger_id": _required(evidence_ledger_id, "evidence_ledger_id"),
         "customer_id": _required(customer_id, "customer_id"),
         "project_id": _required(project_id, "project_id"),
+        "assessment_depth": _required(assessment_depth, "assessment_depth"),
+        "report_language": _required(report_language, "report_language"),
     }
+    normalized_human_evidence = normalize_strategic_human_evidence(human_evidence)
     record = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "identity": identity,
+        "human_evidence": normalized_human_evidence,
         "status": "ready",
         "current_stage": None,
         "completed_stages": [],
@@ -74,10 +92,24 @@ def _record_hash(record: dict[str, Any]) -> str:
     return _canonical_hash(payload)
 
 
-def validate_comprehensive_run_record(record: dict[str, Any]) -> dict[str, Any]:
+def _validate_record(
+    record: dict[str, Any],
+    *,
+    require_strategic_context: bool,
+) -> list[str]:
     violations: list[str] = []
     identity = record.get("identity") if isinstance(record.get("identity"), dict) else {}
-    for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id"):
+    fields = [
+        "run_id",
+        "repository",
+        "commit_sha",
+        "evidence_ledger_id",
+        "customer_id",
+        "project_id",
+    ]
+    if require_strategic_context:
+        fields.extend(["assessment_depth", "report_language"])
+    for field in fields:
         if not str(identity.get(field) or "").strip():
             violations.append(f"{field}_required")
     if record.get("service_id") != "comprehensive":
@@ -86,6 +118,18 @@ def validate_comprehensive_run_record(record: dict[str, Any]) -> dict[str, Any]:
         violations.append("human_review_required")
     if record.get("client_delivery_allowed") is not False:
         violations.append("client_delivery_must_remain_blocked")
+    if require_strategic_context:
+        human_evidence = record.get("human_evidence")
+        if not isinstance(human_evidence, dict):
+            violations.append("human_evidence_required")
+        else:
+            normalized = normalize_strategic_human_evidence(human_evidence)
+            if normalized.get("artifact_schema") != HUMAN_EVIDENCE_VERSION:
+                violations.append("human_evidence_schema_invalid")
+            if human_evidence.get("human_evidence_sha256") != normalized.get(
+                "human_evidence_sha256"
+            ):
+                violations.append("human_evidence_hash_mismatch")
     completed = list(record.get("completed_stages") or [])
     if completed != list(COMPREHENSIVE_STAGES[: len(completed)]):
         violations.append("completed_stages_must_be_ordered_prefix")
@@ -99,7 +143,19 @@ def validate_comprehensive_run_record(record: dict[str, Any]) -> dict[str, Any]:
     terminal = str(record.get("status") or "").lower() in TERMINAL_STATUSES
     if bool(record.get("terminal")) != terminal:
         violations.append("terminal_flag_mismatch")
-    return {"status": "valid" if not violations else "invalid", "violations": violations}
+    return violations
+
+
+def validate_comprehensive_run_record(record: dict[str, Any]) -> dict[str, Any]:
+    schema = str(record.get("artifact_schema") or "")
+    violations = _validate_record(
+        record,
+        require_strategic_context=schema != LEGACY_VERSION,
+    )
+    return {
+        "status": "valid" if not violations else "invalid",
+        "violations": violations,
+    }
 
 
 def apply_comprehensive_stage_result(
@@ -114,7 +170,11 @@ def apply_comprehensive_stage_result(
         raise ValueError("invalid_run_record:" + ",".join(validation["violations"]))
     updated = deepcopy(record)
     completed = list(updated["completed_stages"])
-    expected_stage = COMPREHENSIVE_STAGES[len(completed)] if len(completed) < len(COMPREHENSIVE_STAGES) else None
+    expected_stage = (
+        COMPREHENSIVE_STAGES[len(completed)]
+        if len(completed) < len(COMPREHENSIVE_STAGES)
+        else None
+    )
     if stage_id != expected_stage:
         raise ValueError(f"unexpected_stage:{stage_id}:expected:{expected_stage}")
     identity = updated["identity"]
@@ -126,6 +186,8 @@ def apply_comprehensive_stage_result(
     normalized = {**deepcopy(result), "stage_id": stage_id, "status": status}
     for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
         normalized[field] = identity[field]
+    normalized["assessment_depth"] = identity["assessment_depth"]
+    normalized["report_language"] = identity["report_language"]
     normalized["human_review_required"] = True
     normalized["client_delivery_allowed"] = False
     updated["stage_results"][stage_id] = normalized
@@ -134,13 +196,20 @@ def apply_comprehensive_stage_result(
     if status in SUCCESS_STAGE_STATUSES:
         completed.append(stage_id)
         updated["completed_stages"] = completed
-        updated["status"] = "review_required" if len(completed) == len(COMPREHENSIVE_STAGES) else "running"
+        updated["status"] = (
+            "review_required"
+            if len(completed) == len(COMPREHENSIVE_STAGES)
+            else "running"
+        )
     elif status in ACTIVE_STAGE_STATUSES:
         updated["status"] = "running"
     else:
         updated["status"] = "blocked"
 
-    updated["progress_percent"] = round((len(completed) / len(COMPREHENSIVE_STAGES)) * 100, 2)
+    updated["progress_percent"] = round(
+        (len(completed) / len(COMPREHENSIVE_STAGES)) * 100,
+        2,
+    )
     updated["updated_at"] = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
     updated["revision"] = int(updated.get("revision") or 0) + 1
     updated["terminal"] = updated["status"] in TERMINAL_STATUSES
@@ -154,7 +223,21 @@ def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
     restored = deepcopy(payload)
     validation = validate_comprehensive_run_record(restored)
     if validation["status"] != "valid":
-        raise ValueError("invalid_persisted_run_record:" + ",".join(validation["violations"]))
+        raise ValueError(
+            "invalid_persisted_run_record:" + ",".join(validation["violations"])
+        )
+    if restored.get("artifact_schema") == LEGACY_VERSION:
+        identity = restored["identity"]
+        identity.setdefault("assessment_depth", "not_recorded")
+        identity.setdefault("report_language", "not_recorded")
+        restored["human_evidence"] = normalize_strategic_human_evidence(None)
+        restored["artifact_schema"] = VERSION
+        restored["integrity_sha256"] = _record_hash(restored)
+        upgraded = validate_comprehensive_run_record(restored)
+        if upgraded["status"] != "valid":
+            raise ValueError(
+                "invalid_upgraded_run_record:" + ",".join(upgraded["violations"])
+            )
     return restored
 
 
