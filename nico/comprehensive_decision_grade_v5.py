@@ -30,6 +30,7 @@ from nico.comprehensive_final_report_semantics_v47 import (
     install_comprehensive_final_report_semantics_v47,
 )
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
+from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
@@ -80,6 +81,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     final_report_semantics = install_comprehensive_final_report_semantics_v47()
     final_report_filename = install_comprehensive_final_report_filename_v48()
     report_clarity = install_comprehensive_report_clarity_v8()
+    report_polish = install_comprehensive_report_polish_v1()
     code_remediation = install_comprehensive_code_remediation_appendix_v1()
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
@@ -104,12 +106,14 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "final_report_semantics": final_report_semantics,
         "final_report_filename": final_report_filename,
         "report_clarity": report_clarity,
+        "report_polish": report_polish,
         "code_remediation": code_remediation,
         "code_remediation_outline": code_outline,
         "final_pdf_front_matter": final_pdf_front_matter,
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
         "final_report_filename_bound": final_report_filename.get("bound") is True,
         "report_clarity_bound": report_clarity.get("status") in {"installed", "already_installed"},
+        "report_polish_bound": report_polish.get("status") in {"installed", "already_installed"},
         "code_remediation_bound": code_remediation.get("status") in {"installed", "already_installed"},
         "code_remediation_outline_bound": code_outline.get("status") in {"installed", "already_installed"},
         "final_pdf_front_matter_bound": final_pdf_front_matter.get("status") in {"installed", "already_installed"},
@@ -117,6 +121,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
         "front_matter_pages_replaced_not_overlaid": final_pdf_front_matter.get("front_matter_pages_replaced_not_overlaid") is True,
+        "unverified_candidates_not_p1": report_polish.get("unverified_candidates_not_p1") is True,
+        "equivalent_review_candidates_grouped": report_polish.get("equivalent_review_candidates_grouped") is True,
         "automatic_code_merge_allowed": False,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
