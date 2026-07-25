@@ -3,6 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from nico.scanner_complete_output_compat_v3 import install_scanner_complete_output_compat_v3
+
+# Install against the base runner before dependency, secret, static, heartbeat,
+# and execution-metadata wrappers capture their delegates.
+install_scanner_complete_output_compat_v3()
+
 
 def _as_int(value: Any) -> int:
     try:
