@@ -2,6 +2,7 @@
 
 import {useMemo, useState} from "react";
 import styles from "./assessment.module.css";
+import scoreStyles from "./scorecard.module.css";
 import {copyFor} from "./assessmentCopy";
 import {
   assessmentFor,
@@ -47,6 +48,11 @@ function List({items, empty}: {items?: string[]; empty: string}) {
     : <p className="muted">{empty}</p>;
 }
 
+function numeric(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 function ProgressTimeline({items, copy}: {items: ReturnType<typeof progressFor>; copy: Copy}) {
   if (!items.length) return null;
   return <div className={styles.timeline}>{items.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}>
@@ -63,14 +69,24 @@ function Scorecard({sections, copy}: {sections: NonNullable<ReturnType<typeof as
   if (!sections?.length) return null;
   return <div className="results-grid">{sections.map((section, index) => {
     const view = sectionPresentation(section, copy);
-    return <article className="result-card" key={section.id || index}>
-      <div className="result-head assessment-control-head">
-        <b>{section.label || String(section.id || "").replaceAll("_", " ")}</b>
-        <span className={view.technicalClass}>{view.score}</span>
+    const identity = section.label || String(section.id || "").replaceAll("_", " ");
+    return <article className={`result-card ${scoreStyles.controlCard}`} key={section.id || index}>
+      <div className={scoreStyles.header}>
+        <b className={scoreStyles.title}>{identity}</b>
+        <div className={scoreStyles.scoreSignal}>
+          <span className={scoreStyles.signalCaption}>{copy.technicalScoreLabel || "Technical score"}</span>
+          <strong className={`${scoreStyles.technicalBadge} ${scoreStyles[view.technicalTone]}`}>{view.score}</strong>
+        </div>
       </div>
-      <div className="assessment-control-signals" aria-label={`${section.label || section.id || "Control"} score and evidence signals`}>
-        <span className={view.assuranceClass}><b>{copy.evidence}:</b> {view.assuranceLabel}</span>
-        {view.risk ? <span className={view.riskClass}><b>Risk:</b> {view.riskLabel}</span> : null}
+      <div className={scoreStyles.signalRow} aria-label={`${identity} score and evidence signals`}>
+        <div className={scoreStyles.assuranceSignal}>
+          <span className={scoreStyles.signalCaption}>{copy.evidenceAssuranceLabel || "Evidence assurance"}</span>
+          <strong className={`${scoreStyles.assuranceBadge} ${scoreStyles[view.assuranceTone]}`}>{view.assuranceLabel}</strong>
+        </div>
+        {view.risk ? <div className={scoreStyles.riskSignal}>
+          <span className={scoreStyles.signalCaption}>{copy.riskLabel || "Risk"}</span>
+          <strong className={`${scoreStyles.riskBadge} ${scoreStyles[view.riskTone]}`}>{view.riskLabel}</strong>
+        </div> : null}
       </div>
       <p>{section.summary}</p>
       <details className="help-details"><summary>{copy.evidence} ({section.evidence?.length || 0})</summary><List items={section.evidence} empty={copy.notVerified} /></details>
@@ -97,8 +113,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const coverageLabel = coverage?.calculated && Number.isFinite(Number(coverage.percent))
     ? `${coverage.label || copy.evidence}: ${Math.max(0, Math.min(100, Number(coverage.percent)))}%`
     : copy.coverage;
-  const scoreValue = assessment?.maturity_signal?.presented_score ?? assessment?.maturity_signal?.score;
-  const scoreLabel = typeof scoreValue === "number" && Number.isFinite(scoreValue) ? `${scoreValue}/100` : running ? copy.notScoredYet : copy.notScored;
+  const assessmentRecord = assessment as Record<string, unknown> | null;
+  const maturityRecord = assessment?.maturity_signal as Record<string, unknown> | undefined;
+  const technicalValue = numeric(assessmentRecord?.technical_score ?? maturityRecord?.technical_score ?? maturityRecord?.score);
+  const adjustedValue = numeric(assessmentRecord?.canonical_evidence_adjusted_score ?? assessmentRecord?.evidence_adjusted_score ?? maturityRecord?.canonical_evidence_adjusted_score ?? maturityRecord?.evidence_adjusted_score ?? maturityRecord?.presented_score);
+  const technicalLabel = technicalValue == null ? (running ? copy.notScoredYet : copy.notScored) : `${technicalValue}/100`;
+  const adjustedLabel = adjustedValue == null ? (running ? copy.notScoredYet : copy.notScored) : `${adjustedValue}/100`;
   const immutableCommit = immutableCommitFor(result);
   const scannerRawStatus = scannerStatusFor(service, result, running);
   const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");
@@ -149,7 +169,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
 
       {result ? <>
         <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
-        <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.maturity}</b><span>{maturityStatus}</span></article><article><b>{copy.score}</b><span>{scoreLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
+        <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
         {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
         <ProgressTimeline items={progressItems} copy={copy} />
         <Scorecard sections={assessment?.sections} copy={copy} />
