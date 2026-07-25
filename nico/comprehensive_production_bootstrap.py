@@ -184,7 +184,7 @@ def install_comprehensive_production_bootstrap(
         try:
             resolved_factory = _sqlite_connection_factory(path)
             resolved_dialect = "sqlite"
-            storage_source = "mounted_durable_sqlite" if survives_container_replacement else "explicit_sqlite_test_or_local"
+            storage_source = "mounted_durable_sqlite" if survives_container_replacement else "configured_durable_sqlite"
         except Exception:
             register_comprehensive_api_routes(app)
             app.state.comprehensive_runtime = _blocked_state(
