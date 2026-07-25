@@ -5,7 +5,7 @@ from typing import Any
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v4"
+VERSION = "nico.comprehensive_api_controller.v5"
 MAX_PROJECTED_STRING_CHARS = 4_000
 MAX_PROJECTED_LIST_ITEMS = 80
 MAX_PROJECTED_OBJECT_ITEMS = 80
@@ -47,12 +47,7 @@ _REPORT_KEYS = (
 
 
 def _ordered_record(record: dict[str, Any]) -> dict[str, Any]:
-    """Return a shallow canonical-order view without cloning large stage payloads.
-
-    PostgreSQL JSONB does not preserve object insertion order. The public response
-    needs canonical stage ordering, but it must not deep-copy report PDFs, scanner
-    trees, or every prior stage result on each continuation request.
-    """
+    """Return a shallow canonical-order view without cloning large stage payloads."""
 
     ordered_record = dict(record)
     raw_results = record.get("stage_results")
@@ -181,7 +176,14 @@ def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
         if value is None or isinstance(value, (bool, int, float, str)):
             projected[normalized] = _bounded_value(value)
             continue
-        if normalized in {"evidence", "scanner", "metrics", "coverage", "unavailable", "findings"}:
+        if normalized in {
+            "evidence",
+            "scanner",
+            "metrics",
+            "coverage",
+            "unavailable",
+            "findings",
+        }:
             projected[normalized] = _bounded_value(value)
     omitted = [key for key in _OMITTED_STAGE_KEYS if key in result]
     if omitted:
@@ -189,13 +191,45 @@ def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
     return projected
 
 
+def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
+    package = record.get("human_evidence")
+    if not isinstance(package, dict):
+        return {
+            "status": "not_assessed",
+            "provided_module_ids": [],
+            "provided_module_count": 0,
+        }
+    provided = [str(item) for item in package.get("provided_module_ids") or []]
+    return {
+        "artifact_schema": str(package.get("artifact_schema") or ""),
+        "status": str(package.get("status") or "not_assessed"),
+        "provided_module_ids": provided,
+        "provided_module_count": len(provided),
+        "status_counts": _bounded_value(package.get("status_counts") or {}),
+        "human_statement_count": int(package.get("human_statement_count") or 0),
+        "attachment_reference_count": int(
+            package.get("attachment_reference_count") or 0
+        ),
+        "structured_record_count": int(package.get("structured_record_count") or 0),
+        "human_evidence_sha256": str(package.get("human_evidence_sha256") or ""),
+        "repository_inference_prohibited": True,
+    }
+
+
 def _project_record(record: dict[str, Any]) -> dict[str, Any]:
-    stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+    stage_results = (
+        record.get("stage_results")
+        if isinstance(record.get("stage_results"), dict)
+        else {}
+    )
     return {
         "artifact_schema": str(record.get("artifact_schema") or ""),
         "service_id": "comprehensive",
         "status": str(record.get("status") or "unknown"),
-        "identity": _bounded_value(record.get("identity") if isinstance(record.get("identity"), dict) else {}),
+        "identity": _bounded_value(
+            record.get("identity") if isinstance(record.get("identity"), dict) else {}
+        ),
+        "human_evidence_summary": _human_evidence_summary(record),
         "current_stage": record.get("current_stage"),
         "completed_stages": [str(item) for item in record.get("completed_stages") or []],
         "stage_results": {
@@ -220,7 +254,11 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+    stage_results = (
+        record.get("stage_results")
+        if isinstance(record.get("stage_results"), dict)
+        else {}
+    )
     report: dict[str, Any] = {}
     assessment: dict[str, Any] = {}
     for stage_id in _REPORT_STAGE_IDS:
@@ -228,7 +266,11 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
         if not isinstance(stage, dict):
             continue
         if not report:
-            candidate = stage.get("report_package") if isinstance(stage.get("report_package"), dict) else stage.get("reports")
+            candidate = (
+                stage.get("report_package")
+                if isinstance(stage.get("report_package"), dict)
+                else stage.get("reports")
+            )
             if isinstance(candidate, dict):
                 report = candidate
         if not assessment and isinstance(stage.get("assessment"), dict):
@@ -246,7 +288,9 @@ def _project_report(report: dict[str, Any]) -> dict[str, Any]:
     projected = {key: report[key] for key in _REPORT_KEYS if key in report}
     json_value = report.get("json")
     if isinstance(json_value, dict) and json_value.get("canonical_truth_sha256"):
-        projected["json"] = {"canonical_truth_sha256": json_value["canonical_truth_sha256"]}
+        projected["json"] = {
+            "canonical_truth_sha256": json_value["canonical_truth_sha256"]
+        }
     return projected
 
 
@@ -310,10 +354,24 @@ class ComprehensiveApiController:
         repository = self._required(body.get("repository"), "repository")
         commit_sha = self._required(body.get("commit_sha"), "commit_sha")
         run_id = self._required(body.get("run_id"), "run_id")
-        evidence_ledger_id = self._required(body.get("evidence_ledger_id"), "evidence_ledger_id")
+        evidence_ledger_id = self._required(
+            body.get("evidence_ledger_id"),
+            "evidence_ledger_id",
+        )
         customer_id = self._required(body.get("customer_id"), "customer_id")
         project_id = self._required(body.get("project_id"), "project_id")
-        if body.get("authorization_confirmed") is not True or body.get("authorized") is not True:
+        assessment_depth = self._required(
+            body.get("assessment_depth") or "strategic",
+            "assessment_depth",
+        )
+        report_language = self._required(
+            body.get("report_language") or "en",
+            "report_language",
+        )
+        if (
+            body.get("authorization_confirmed") is not True
+            or body.get("authorized") is not True
+        ):
             raise ValueError("explicit_authorization_required")
 
         record = self._service.start(
@@ -324,6 +382,9 @@ class ComprehensiveApiController:
             customer_id=customer_id,
             project_id=project_id,
             authorized=True,
+            assessment_depth=assessment_depth,
+            report_language=report_language,
+            human_evidence=body.get("human_evidence"),
         )
         return self._response(record, operation="started")
 
@@ -331,13 +392,20 @@ class ComprehensiveApiController:
         record = self._service.load(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
 
-    def continue_run(self, run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def continue_run(
+        self,
+        run_id: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         body = self._object(payload or {})
         bounded = body.get("max_stages")
         max_stages = None if bounded is None else int(bounded)
         if max_stages is not None and max_stages < 0:
             raise ValueError("max_stages_must_be_non_negative")
-        record = self._service.resume(self._required(run_id, "run_id"), max_stages=max_stages)
+        record = self._service.resume(
+            self._required(run_id, "run_id"),
+            max_stages=max_stages,
+        )
         return self._response(record, operation="continued")
 
     @staticmethod
@@ -369,6 +437,9 @@ class ComprehensiveApiController:
             "evidence_ledger_id": identity["evidence_ledger_id"],
             "customer_id": identity["customer_id"],
             "project_id": identity["project_id"],
+            "assessment_depth": identity["assessment_depth"],
+            "report_language": identity["report_language"],
+            "human_evidence_summary": _human_evidence_summary(canonical_record),
             "status": canonical_record["status"],
             "current_stage": canonical_record["current_stage"],
             "completed_stages": list(canonical_record["completed_stages"]),
