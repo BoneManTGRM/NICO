@@ -37,7 +37,8 @@ _SCORE_BANDS = (
 
 
 def _text(value: Any, limit: int = 1200) -> str:
-    normalized = " ".join(str(value or "").split())
+    raw = "" if value is None else str(value)
+    normalized = " ".join(raw.split())
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
@@ -199,7 +200,7 @@ def _recommendation(category: str) -> tuple[str, str, str]:
         "ci_cd": (
             "Classify non-success runs by cause, remove recurrent failures, and publish a rolling reliability trend separated from expected cancellations.",
             "M",
-            "The last two retained acceptance windows meet the approved CI success threshold with no unexplained recurring failure class.",
+            "The last two retained acceptance windows meet the approved success threshold with no unexplained recurring failure class.",
         ),
         "code": (
             "Retain exact locations for bounded code-risk hits, triage each hit, remediate unsafe patterns, and rerun against the same immutable revision.",
@@ -398,7 +399,6 @@ def _section(
         **band,
         **assurance,
     }
-
 
 
 __all__ = ["VERSION", "APPENDIX_HEADING", "REVIEW_HEADING", "_TOOL_CATEGORY", "_text", "_bounded_int", "_score_band", "_assurance", "_category_counts", "_tools_for_category", "_result_category", "_finding_location", "_finding_message", "_severity", "_priority", "_owner", "_recommendation", "_record", "_scanner_register", "_complexity_register", "_dedupe_records", "_section"]
