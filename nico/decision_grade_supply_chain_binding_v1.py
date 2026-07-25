@@ -11,8 +11,8 @@ from nico.decision_grade_supply_chain_v2 import (
     build_supply_chain_package,
 )
 
-VERSION = "nico.decision_grade_supply_chain_binding.v3"
-_MARKER = "__nico_decision_grade_supply_chain_binding_v3__"
+VERSION = "nico.decision_grade_supply_chain_binding.v4"
+_MARKER = "__nico_decision_grade_supply_chain_binding_v4__"
 
 
 def _source_files(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, str]:
@@ -104,6 +104,7 @@ def wrap_report_builder_with_supply_chain(
                 repository=repository,
                 commit_sha=commit_sha,
             )
+            evidence["sbom"] = evidence.get("cyclonedx_sbom") or {}
             status = "complete"
         else:
             evidence = {
@@ -116,6 +117,7 @@ def wrap_report_builder_with_supply_chain(
                 "lockfile_register": [],
                 "license_register": [],
                 "vulnerability_register": [],
+                "cyclonedx_sbom": {},
                 "sbom": {},
                 "limitations": [
                     "Immutable repository file content was not retained at the report boundary, so the supply-chain package was not generated."
