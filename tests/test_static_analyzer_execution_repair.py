@@ -4,8 +4,11 @@ import json
 import sys
 from pathlib import Path
 
-from nico.scanner_tool_runners import parse_tool_findings
+from nico.scanner_complete_output_compat_v3 import install_scanner_complete_output_compat_v3
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, run_command
+
+install_scanner_complete_output_compat_v3()
+from nico.scanner_tool_runners import parse_tool_findings
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNERS = ROOT / "nico" / "scanner_tool_runners.py"
