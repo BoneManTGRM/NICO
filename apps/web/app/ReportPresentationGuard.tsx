@@ -129,10 +129,12 @@ function ensurePolishStyles() {
     }
 
     main.shell[data-assessment-service-count] .result-head .status {
-      max-width: 260px;
+      justify-self: end;
+      max-width: 220px;
+      padding: 8px 12px;
       white-space: normal;
       text-align: center;
-      line-height: 1.2;
+      line-height: 1.15;
     }
 
     main.shell[data-assessment-service-count] .result-card p,
@@ -212,19 +214,25 @@ function ensurePolishStyles() {
       }
 
       main.shell[data-assessment-service-count] .result-head {
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) minmax(116px, 37vw);
+        gap: 8px;
       }
 
       main.shell[data-assessment-service-count] .result-head > b {
-        font-size: clamp(22px, 6vw, 28px);
+        font-size: clamp(20px, 5.35vw, 26px);
+        line-height: 1.14;
+        text-wrap: pretty;
       }
 
       main.shell[data-assessment-service-count] .result-head .status {
-        max-width: 46vw;
-        padding: 9px 12px;
-        font-size: 13px;
-        letter-spacing: 0.06em;
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+        padding: 7px 9px;
+        border-radius: 999px;
+        font-size: clamp(10px, 2.8vw, 12px);
+        line-height: 1.1;
+        letter-spacing: 0.045em;
       }
 
       main.shell[data-assessment-service-count] .result-card > p,
@@ -256,6 +264,21 @@ function ensurePolishStyles() {
       main.shell[data-assessment-service-count] .report-actions button {
         min-height: 54px;
         border-radius: 14px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      main.shell[data-assessment-service-count] .result-head {
+        grid-template-columns: minmax(0, 1fr) minmax(110px, 36vw);
+      }
+
+      main.shell[data-assessment-service-count] .result-head > b {
+        font-size: clamp(19px, 5.2vw, 24px);
+      }
+
+      main.shell[data-assessment-service-count] .result-head .status {
+        padding: 6px 8px;
+        font-size: clamp(9.5px, 2.65vw, 11px);
       }
     }
   `;
