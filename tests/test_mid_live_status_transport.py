@@ -67,8 +67,8 @@ def test_same_origin_proxy_allows_native_comprehensive_lifecycle_and_short_read_
     assert "comprehensive-runtime" in source
     assert "mid-runtime" not in source
     assert "/live-status" not in source
-    assert "AbortSignal.timeout(15_000)" in source
-    assert "AbortSignal.timeout(180_000)" in source
+    assert "AbortSignal.timeout(shortRead ? 20_000 : 240_000)" in source
+    assert "RETRY_DELAYS_MS = [0, 1_500, 4_000]" in source
     assert "export const GET = proxyNico" in source
     assert "export const POST = proxyNico" in source
 

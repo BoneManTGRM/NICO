@@ -78,5 +78,5 @@ def test_same_origin_proxy_allows_only_native_runtime_diagnostics() -> None:
     assert "diagnosticAllowed" in source
     assert 'request.method === "GET"' in source
     assert "shortRead" in source
-    assert "AbortSignal.timeout(15_000)" in source
+    assert "AbortSignal.timeout(shortRead ? 20_000 : 240_000)" in source
     assert "mid-runtime" not in source

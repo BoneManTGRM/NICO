@@ -84,7 +84,9 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
 def test_server_proxy_allows_only_native_lifecycle_and_bounded_diagnostic_routes() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
-    assert 'process.env.NICO_API_URL || process.env.NEXT_PUBLIC_NICO_API_URL' in source
+    assert 'process.env.NICO_API_URL' in source
+    assert 'process.env.NICO_BACKEND_URL' in source
+    assert 'process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'assessmentRouteAllowed(request.method, apiPath)' in source
     assert 'ALLOWED_DIAGNOSTIC_PATH.test(apiPath)' in source
     assert 'const EXPRESS_START = "/assessment/express-run"' in source
@@ -104,8 +106,9 @@ def test_server_proxy_allows_only_native_lifecycle_and_bounded_diagnostic_routes
     assert 'request.headers.get("authorization")' not in source
     assert 'request.headers.get("cookie")' not in source
     assert 'Cache-Control": "no-store"' in source
-    assert 'AbortSignal.timeout(180_000)' in source
-    assert 'AbortSignal.timeout(15_000)' in source
+    assert 'AbortSignal.timeout(shortRead ? 20_000 : 240_000)' in source
+    assert 'RETRY_DELAYS_MS = [0, 1_500, 4_000]' in source
+    assert 'TRANSIENT_STATUS.has(response.status)' in source
     assert '"/assessment/mid-run"' not in source
     assert '"/assessment/full-run"' not in source
 
