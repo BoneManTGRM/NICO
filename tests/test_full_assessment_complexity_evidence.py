@@ -55,24 +55,19 @@ export function choose(value: number) {
     assert result["files_analyzed"] == 3
     assert result["python_files_analyzed"] == 2
     assert result["javascript_typescript_files_analyzed"] == 1
+    assert result["typescript_ast_status"] == "complete"
+    assert result["typescript_ast_files_analyzed"] == 1
     assert result["functions_measured"] >= 5
     assert result["average_cyclomatic_complexity"] is not None
     assert result["maximum_cyclomatic_complexity"] >= 4
     assert result["import_edges"] >= 3
-    assert result["internal_import_edges"] >= 3
+    assert result["internal_import_edges"] >= 2
     assert result["maximum_fan_out"] >= 1
     assert result["duplicate_evidence"]["duplicate_block_groups"] >= 1
     assert result["duplicate_evidence"]["duplicate_line_ratio"] > 0
     assert result["duplicate_evidence"]["samples"]
     assert all("tests/test_alpha.py" not in str(item) for item in result["hotspots"])
-    assert any(
-        "bounded lexical heuristic" in note or "bounded function-level lexical extraction" in note
-        for note in result["unavailable_data_notes"]
-    )
-    assert result["analyzer_version"] in {
-        "nico-bounded-complexity-v1",
-        "nico-bounded-complexity-v2",
-    }
+    assert result["analyzer_version"] == "nico.typescript_ast_complexity.v1"
     assert "source contents are not stored" in result["retention_note"]
     assert result["human_review_required"] is True
 
@@ -88,9 +83,9 @@ def test_python_parse_failure_is_disclosed_and_excluded() -> None:
     assert result["status"] == "attached"
     assert result["files_considered"] == 2
     assert result["files_analyzed"] == 1
-    assert result["python_parse_failures"] == 1
+    assert result["source_parse_limitations"] == 1
     assert result["parse_notes"]
-    assert any("could not be parsed" in note for note in result["unavailable_data_notes"])
+    assert any("parser limitation" in note.lower() for note in result["unavailable_data_notes"])
 
 
 def test_no_eligible_source_files_returns_unavailable_evidence() -> None:
@@ -106,4 +101,4 @@ def test_no_eligible_source_files_returns_unavailable_evidence() -> None:
     assert result["files_considered"] == 0
     assert result["files_analyzed"] == 0
     assert result["functions_measured"] == 0
-    assert any("No eligible source files" in note for note in result["unavailable_data_notes"])
+    assert any("No eligible first-party source files" in note for note in result["unavailable_data_notes"])
