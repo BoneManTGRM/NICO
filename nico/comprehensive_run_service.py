@@ -11,7 +11,7 @@ from nico.comprehensive_run_record import (
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
 
-VERSION = "nico.comprehensive_run_service.v1"
+VERSION = "nico.comprehensive_run_service.v2"
 
 
 class ComprehensiveRunService:
@@ -23,7 +23,11 @@ class ComprehensiveRunService:
     in the persisted record rather than inferred by callers.
     """
 
-    def __init__(self, store: ComprehensiveRunStore, capability_executors: Mapping[str, CapabilityExecutor]) -> None:
+    def __init__(
+        self,
+        store: ComprehensiveRunStore,
+        capability_executors: Mapping[str, CapabilityExecutor],
+    ) -> None:
         self._store = store
         self._stage_executors = bind_capability_executors(capability_executors)
 
@@ -37,6 +41,9 @@ class ComprehensiveRunService:
         customer_id: str,
         project_id: str,
         authorized: bool,
+        assessment_depth: str = "strategic",
+        report_language: str = "en",
+        human_evidence: Any = None,
     ) -> dict[str, Any]:
         record = create_comprehensive_run_record(
             run_id=run_id,
@@ -46,19 +53,33 @@ class ComprehensiveRunService:
             customer_id=customer_id,
             project_id=project_id,
             authorized=authorized,
+            assessment_depth=assessment_depth,
+            report_language=report_language,
+            human_evidence=human_evidence,
         )
         return self._store.create(record)
 
     def load(self, run_id: str) -> dict[str, Any]:
         return self._store.load(run_id)
 
-    def resume(self, run_id: str, *, max_stages: int | None = None) -> dict[str, Any]:
+    def resume(
+        self,
+        run_id: str,
+        *,
+        max_stages: int | None = None,
+    ) -> dict[str, Any]:
         record = self._store.load(run_id)
         if record.get("terminal"):
             return record
 
-        remaining = len(COMPREHENSIVE_STAGES) - len(record.get("completed_stages") or [])
-        budget = remaining if max_stages is None else max(0, min(remaining, int(max_stages)))
+        remaining = len(COMPREHENSIVE_STAGES) - len(
+            record.get("completed_stages") or []
+        )
+        budget = (
+            remaining
+            if max_stages is None
+            else max(0, min(remaining, int(max_stages)))
+        )
         for _ in range(budget):
             record = self._run_next_stage(record)
             if record.get("terminal"):
@@ -92,6 +113,9 @@ class ComprehensiveRunService:
                 "evidence_ledger_id": identity["evidence_ledger_id"],
                 "customer_id": identity["customer_id"],
                 "project_id": identity["project_id"],
+                "assessment_depth": identity["assessment_depth"],
+                "report_language": identity["report_language"],
+                "human_evidence": deepcopy(record.get("human_evidence") or {}),
                 "prior_stage_results": deepcopy(record.get("stage_results") or {}),
                 "human_review_required": True,
                 "client_delivery_allowed": False,
