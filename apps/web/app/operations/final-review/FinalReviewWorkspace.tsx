@@ -137,6 +137,7 @@ export default function FinalReviewWorkspace() {
     || asRecord(result?.acceptance).client_delivery_allowed === true
     || delivery.client_delivery_allowed === true;
   const ready = Boolean(API_URL && runId.trim() && adminToken.trim() && reviewer.trim());
+  const identityReady = Boolean(runId.trim());
 
   function headers(json = false): HeadersInit {
     return {
@@ -165,7 +166,7 @@ export default function FinalReviewWorkspace() {
   async function loadStatus(event?: FormEvent): Promise<ReviewResponse | null> {
     event?.preventDefault();
     if (!ready) {
-      setError("Enter the exact run, operator token, and authorized reviewer.");
+      setError("Enter the operator token and authorized reviewer for this exact run.");
       return null;
     }
     setLoading(true);
@@ -174,7 +175,7 @@ export default function FinalReviewWorkspace() {
     try {
       const payload = await requestJson(statusUrl(), {headers: headers()});
       setResult(payload);
-      setNotice("Exact report package loaded. Review the report and limitations before approval.");
+      setNotice("Secure review loaded. Confirm the report below when you are ready.");
       return payload;
     } catch (caught) {
       setResult(null);
@@ -297,36 +298,49 @@ export default function FinalReviewWorkspace() {
 
   return <main className={styles.shell}>
     <section className={styles.hero}>
-      <p className={styles.eyebrow}>NICO FINAL REVIEW</p>
-      <h1>Review once. Approve once. Download the accepted report.</h1>
-      <p className={styles.lead}>The assessment report is not rewritten. Approval binds the authorized reviewer to the exact run, immutable report, evidence package, and disclosed limitations.</p>
+      <div className={styles.heroGlow} aria-hidden="true" />
+      <p className={styles.eyebrow}>NICO CONTROLLED ACCEPTANCE</p>
+      <h1>Final review, without the friction.</h1>
+      <p className={styles.lead}>Open the exact immutable report, confirm the evidence boundary, and receive the approved PDF in one secure flow.</p>
+      <div className={styles.identityStrip}>
+        <div><span>Assessment</span><strong>{service === "comprehensive" ? "Comprehensive" : "Express"}</strong></div>
+        <div><span>Exact run</span><strong>{runId.trim() || "Open this page from a completed assessment"}</strong></div>
+        <div className={identityReady ? styles.identityReady : styles.identityMissing}><span>Identity</span><strong>{identityReady ? "Bound" : "Missing"}</strong></div>
+      </div>
     </section>
 
     <section className={styles.panel}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><h2>Load the exact report</h2><p>Opening Final Review from a completed assessment automatically fills the service and run ID.</p></div></div>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>SECURE ACCESS</p><h2>Identify the reviewer</h2><p>The report identity is already attached when this page is opened from a completed run.</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
-        <label>Assessment type<select value={service} onChange={(event) => {setService(event.target.value as Service); setResult(null);}}><option value="express">Express</option><option value="comprehensive">Comprehensive</option></select></label>
-        <label>Exact run ID<input value={runId} onChange={(event) => {setRunId(event.target.value); setResult(null);}} placeholder="express_run_… or comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
-        <label>Operator admin token<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} /></label>
-        <label>Authorized reviewer<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="Name and role" autoComplete="name" /></label>
-        <details className={styles.advanced}><summary>Advanced scope</summary><div className={styles.advancedGrid}><label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label><label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label></div></details>
-        <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? "Loading…" : result ? "Reload exact status" : "Load exact report"}</button>
+        <label className={styles.reviewerField}>Authorized reviewer<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="Name and role" autoComplete="name" /></label>
+        <label className={styles.tokenField}>Operator admin token<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder="Secure token" autoComplete="off" spellCheck={false} /></label>
+        <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? "Opening secure review…" : result ? "Refresh secure review" : "Open secure review"}</button>
+        <details className={styles.advanced}><summary>Change report identity or scope</summary><div className={styles.advancedGrid}>
+          <label>Assessment type<select value={service} onChange={(event) => {setService(event.target.value as Service); setResult(null);}}><option value="express">Express</option><option value="comprehensive">Comprehensive</option></select></label>
+          <label>Exact run ID<input value={runId} onChange={(event) => {setRunId(event.target.value); setResult(null);}} placeholder="express_run_… or comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+          <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
+          <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
+        </div></details>
       </form>
-      <p className={styles.securityNote}>The operator token remains only in this open page. It is not stored in the URL, browser storage, cookies, or build output.</p>
+      <p className={styles.securityNote}>The operator token stays only in this open page. It is not written to the URL, browser storage, cookies, or build output.</p>
       <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
     </section>
 
-    <section className={styles.panel}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><h2>Approve and receive the final report</h2><p>Review the PDF and evidence limitations first. The button records approval and downloads the accepted PDF in one controlled action.</p></div></div>
-      <div className={styles.statusGrid}><article className={styles.statusCard}><span>Review status</span><strong>{rawStatus ? rawStatus.replaceAll("_", " ") : "Not loaded"}</strong></article><article className={styles.statusCard}><span>Client delivery</span><strong>{deliveryAllowed ? "Authorized" : "Blocked"}</strong></article></div>
-      {!result ? <div className={styles.emptyState}>Load the report above, review its exact PDF and limitations, then approve it here.</div> : null}
-      <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />I reviewed the exact report, scorecard, evidence limitations, and delivery boundary for this run.</label>
-      <label>Approval note, optional<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional approval context. Required only for other decisions." /></label>
-      <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={!result || !confirmed || loading || deliveryAllowed} onClick={approveAndDownload}>{loading ? "Recording approval…" : deliveryAllowed ? "Report already approved" : "Approve and download final report"}</button>{deliveryAllowed ? <button type="button" disabled={loading} onClick={() => result && downloadApprovedPdf(result)}>Download approved final PDF again</button> : null}</div>
-      <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? "Approval is recorded for this exact run and the accepted report is available." : "Delivery remains blocked until the authorized reviewer approves this exact package."}</div>
-      <details className={styles.advanced}><summary>Other decisions</summary><div className={styles.decisionActions}><button type="button" disabled={!result || loading} onClick={() => recordOtherDecision("needs_more_evidence")}>Request more evidence</button><button className={styles.reject} type="button" disabled={!result || loading} onClick={() => recordOtherDecision("rejected")}>Reject delivery</button></div></details>
+    <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>FINAL DECISION</p><h2>Approve and receive the report</h2><p>One controlled action records approval and downloads the accepted PDF.</p></div></div>
+      <div className={styles.statusGrid}>
+        <article className={styles.statusCard}><span>Review</span><strong>{rawStatus ? rawStatus.replaceAll("_", " ") : "Waiting for secure access"}</strong></article>
+        <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>Client delivery</span><strong>{deliveryAllowed ? "Authorized" : "Blocked"}</strong></article>
+      </div>
+      {!result ? <div className={styles.emptyState}><strong>Nothing else to complete yet.</strong><span>Enter the reviewer and operator token above, then open the secure review.</span></div> : <>
+        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>I reviewed this exact report.</strong><small>I confirm the scorecard, evidence limitations, immutable run identity, and delivery boundary.</small></span></label>
+        <details className={styles.noteDetails}><summary>Add an optional approval note</summary><label>Approval note<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional approval context. A note is required only for other decisions." /></label></details>
+        <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={!confirmed || loading || deliveryAllowed} onClick={approveAndDownload}>{loading ? "Recording approval…" : deliveryAllowed ? "Approval already recorded" : "Approve and download final PDF"}</button>{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={() => downloadApprovedPdf(result)}>Download approved PDF again</button> : null}</div>
+        <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? "This exact run is approved and ready for controlled client delivery." : "Delivery remains blocked until you confirm and approve this exact package."}</div>
+        <details className={styles.otherDecisions}><summary>Need a different decision?</summary><p>Use these only when the package cannot be approved. A review note is required.</p><div className={styles.decisionActions}><button type="button" disabled={loading} onClick={() => recordOtherDecision("needs_more_evidence")}>Request more evidence</button><button className={styles.reject} type="button" disabled={loading} onClick={() => recordOtherDecision("rejected")}>Reject delivery</button></div></details>
+      </>}
     </section>
 
-    {result ? <section className={styles.panel}><details className={styles.record}><summary>Exact review record</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section> : null}
+    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>Technical review record</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section> : null}
   </main>;
 }
