@@ -162,6 +162,22 @@ def _normalize_module(module_id: str, raw: Any) -> dict[str, Any]:
     return module
 
 
+def _structured_record_count(modules: Mapping[str, Mapping[str, Any]]) -> int:
+    count = 0
+    for module in modules.values():
+        evidence = module.get("evidence")
+        if not isinstance(evidence, Mapping):
+            continue
+        for value in evidence.values():
+            if isinstance(value, list):
+                count += len(value)
+            elif isinstance(value, Mapping):
+                count += len(value)
+            elif _present(value):
+                count += 1
+    return count
+
+
 def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
     """Normalize the existing decision-grade intake schema for run persistence.
 
@@ -178,17 +194,30 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
         status: sum(module["status"] == status for module in modules.values())
         for status in ("complete", "partial", "not_assessed", "excluded")
     }
+    complete = [key for key, module in modules.items() if module["status"] == "complete"]
+    partial = [key for key, module in modules.items() if module["status"] == "partial"]
+    excluded = [key for key, module in modules.items() if module["status"] == "excluded"]
+    not_assessed = [key for key, module in modules.items() if module["status"] == "not_assessed"]
+    active = [*complete, *partial, *excluded]
     package = {
         "artifact_schema": VERSION,
-        "status": "complete" if not counts["partial"] and not counts["not_assessed"] else "review_limited",
+        "status": "complete" if not partial and not not_assessed else "review_limited",
         "module_count": len(modules),
         "status_counts": counts,
-        "complete_modules": [key for key, module in modules.items() if module["status"] == "complete"],
-        "partial_modules": [key for key, module in modules.items() if module["status"] == "partial"],
-        "not_assessed_modules": [key for key, module in modules.items() if module["status"] == "not_assessed"],
-        "excluded_modules": [key for key, module in modules.items() if module["status"] == "excluded"],
+        "complete_modules": complete,
+        "partial_modules": partial,
+        "not_assessed_modules": not_assessed,
+        "excluded_modules": excluded,
+        # Compatibility projection used by the bounded lifecycle response.
+        "provided_module_ids": active,
+        "human_statement_count": 0,
+        "attachment_reference_count": sum(
+            bool(modules[module_id].get("source_reference")) for module_id in active
+        ),
+        "structured_record_count": _structured_record_count(modules),
         "modules": modules,
         "repository_inference_allowed": False,
+        "repository_inference_prohibited": True,
         "directly_scored": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
