@@ -13,6 +13,24 @@ from nico.decision_grade_human_evidence_v1 import (
 )
 
 _MARKER = "__nico_decision_grade_human_evidence_v1__"
+_STRATEGIC_STAGE_KEYS = (
+    "deep_scanner_triage",
+    "functional_qa",
+    "platform_parity",
+    "deployment_and_infrastructure",
+    "architecture_and_data_flow",
+    "developer_delivery_process",
+    "stakeholder_and_business_alignment",
+    "requirements_traceability",
+    "historical_trends_and_change_failure",
+    "six_month_roadmap",
+    "staffing_sequencing_and_cost",
+    "risk_reduction_and_executive_briefing",
+    "final_comprehensive_report_generation",
+    "cross_format_truth_verification",
+    "human_review_request",
+)
+_PENDING_STAGE_STATES = {"", "pending", "queued", "not_started", "awaiting", "waiting"}
 
 
 def _markdown(ledger: dict[str, Any]) -> str:
@@ -76,6 +94,39 @@ def _html(ledger: dict[str, Any]) -> str:
     )
 
 
+def _stage_has_executed(value: Any) -> bool:
+    if not isinstance(value, dict) or not value:
+        return False
+    status = str(value.get("status") or value.get("stage_status") or "").strip().casefold().replace("-", "_")
+    if status in _PENDING_STAGE_STATES:
+        substantive_keys = {
+            key
+            for key, item in value.items()
+            if key not in {"status", "stage_status", "progress_percent", "current_stage"}
+            and item not in (None, "", [], {})
+        }
+        return bool(substantive_keys)
+    return True
+
+
+def _strategic_collection_started(identity: dict[str, Any], stage_results: dict[str, Any]) -> bool:
+    explicit_phase = str(
+        identity.get("report_phase")
+        or identity.get("generation_phase")
+        or identity.get("current_stage")
+        or ""
+    ).strip().casefold().replace("-", "_")
+    if explicit_phase in {
+        "strategic",
+        "final",
+        "final_comprehensive_report_generation",
+        "cross_format_truth_verification",
+        "human_review_request",
+    }:
+        return True
+    return any(_stage_has_executed(stage_results.get(key)) for key in _STRATEGIC_STAGE_KEYS)
+
+
 def _attach_contract(result: dict[str, Any], ledger: dict[str, Any]) -> None:
     raw = result.get("decision_grade_contract")
     if not isinstance(raw, dict):
@@ -119,28 +170,36 @@ def wrap_report_builder_with_human_evidence(delegate: Callable[..., dict[str, An
         stage_results = kwargs.get("stage_results") if isinstance(kwargs.get("stage_results"), dict) else {}
         ledger = build_human_evidence_ledger(identity=identity, stage_results=stage_results)
         exports = human_evidence_exports(ledger)
-        _attach_contract(result, ledger)
+        strategic_started = _strategic_collection_started(identity, stage_results)
+
         result["human_evidence"] = exports
         result["strategic_human_evidence"] = ledger
+        result["human_evidence_gate_deferred"] = not strategic_started
         result["human_review_required"] = True
         result["client_delivery_allowed"] = False
+        if strategic_started:
+            _attach_contract(result, ledger)
+
         package = result.get("report_package")
         if isinstance(package, dict):
             package["human_evidence"] = exports
             package["strategic_human_evidence"] = ledger
+            package["human_evidence_gate_deferred"] = not strategic_started
             package["qa_register_csv"] = exports["qa_register_csv"]
             package["parity_matrix_csv"] = exports["parity_matrix_csv"]
             package["stakeholder_decision_log_csv"] = exports["stakeholder_decision_log_csv"]
             package["human_evidence_intake_template_json"] = exports["intake_template_json"]
-            package["markdown"] = str(package.get("markdown") or "").rstrip() + "\n\n" + _markdown(ledger)
-            html = str(package.get("html") or "")
-            package["html"] = html.replace("</body>", _html(ledger) + "</body>") if "</body>" in html else html + _html(ledger)
+            if strategic_started:
+                package["markdown"] = str(package.get("markdown") or "").rstrip() + "\n\n" + _markdown(ledger)
+                html = str(package.get("html") or "")
+                package["html"] = html.replace("</body>", _html(ledger) + "</body>") if "</body>" in html else html + _html(ledger)
             package["human_review_required"] = True
             package["client_delivery_allowed"] = False
             canonical = package.get("json")
             if isinstance(canonical, dict):
                 canonical["strategic_human_evidence"] = ledger
                 canonical["human_evidence_hashes"] = exports["hashes"]
+                canonical["human_evidence_gate_deferred"] = not strategic_started
                 canonical["human_review_required"] = True
                 canonical["client_delivery_allowed"] = False
             quality = package.get("quality") if isinstance(package.get("quality"), dict) else {}
@@ -149,6 +208,8 @@ def wrap_report_builder_with_human_evidence(delegate: Callable[..., dict[str, An
                     "decision_grade_human_evidence_version": VERSION,
                     "human_evidence_ledger_present": True,
                     "human_evidence_repository_inference_allowed": False,
+                    "human_evidence_gate_deferred": not strategic_started,
+                    "human_evidence_gate_applied": strategic_started,
                     "human_evidence_incomplete_modules": len(ledger.get("incomplete_modules") or []),
                     "human_evidence_excluded_modules": len(ledger.get("excluded_modules") or []),
                     "human_evidence_client_delivery_allowed": False,
@@ -171,6 +232,8 @@ def install_decision_grade_human_evidence(report_module: Any) -> dict[str, Any]:
         "bound": report_module.build_comprehensive_report_package is wrapped,
         "module_count": 10,
         "repository_inference_allowed": False,
+        "core_report_gate_deferred": True,
+        "strategic_gate_applied_after_collection": True,
         "client_delivery_allowed": False,
     }
 
