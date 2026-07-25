@@ -43,6 +43,10 @@ from nico.decision_grade_acceptance_v1 import (
     VERSION as DECISION_GRADE_ACCEPTANCE_VERSION,
     install_decision_grade_acceptance_engine,
 )
+from nico.decision_grade_ci_reliability_v1 import (
+    VERSION as DECISION_GRADE_CI_RELIABILITY_VERSION,
+    wrap_report_builder_with_ci_reliability,
+)
 from nico.decision_grade_consistency_v1 import (
     VERSION as DECISION_GRADE_CONSISTENCY_VERSION,
     install_decision_grade_consistency_engine,
@@ -141,7 +145,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
     history_builder = wrap_report_builder_with_persisted_history(report_module.build_comprehensive_report_package)
     quality_builder = _quality_report_builder(history_builder)
     human_evidence_builder = wrap_report_builder_with_human_evidence(quality_builder)
-    build_comprehensive_report_package = wrap_report_builder(human_evidence_builder)
+    ci_reliability_builder = wrap_report_builder_with_ci_reliability(human_evidence_builder)
+    build_comprehensive_report_package = wrap_report_builder(ci_reliability_builder)
 
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -215,6 +220,12 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "human_evidence_client_delivery_allowed": False,
         "human_evidence_intake_template_generated": True,
         "human_evidence_csv_exports_generated": True,
+        "decision_grade_ci_reliability_version": DECISION_GRADE_CI_RELIABILITY_VERSION,
+        "decision_grade_ci_reliability_bound": True,
+        "ci_expected_cancellations_excluded": True,
+        "ci_unknown_non_success_counted_as_code_failure": False,
+        "ci_reliability_changes_technical_score": False,
+        "ci_reliability_client_delivery_allowed": False,
         "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
