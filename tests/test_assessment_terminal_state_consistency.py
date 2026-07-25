@@ -1,14 +1,12 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
+ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
 
 
 def test_non_terminal_exact_run_status_outage_remains_running() -> None:
     source = GUARD.read_text(encoding="utf-8")
-
     assert 'status: "temporarily_unreachable"' in source
     assert 'output.status = "running"' in source
     assert 'exact_run_terminal_evidence: false' in source
@@ -22,7 +20,6 @@ def test_non_terminal_exact_run_status_outage_remains_running() -> None:
 
 def test_exact_terminal_payload_is_returned_as_structured_success_for_page_state() -> None:
     source = GUARD.read_text(encoding="utf-8")
-
     assert 'function terminalResponse(' in source
     assert 'identity.runId === runId && TERMINAL_STATUSES.has(identity.status)' in source
     assert 'return terminalResponse(runId, response, payload, lastGoodByRun.get(runId));' in source
@@ -36,7 +33,6 @@ def test_exact_terminal_payload_is_returned_as_structured_success_for_page_state
 
 def test_terminal_projection_preserves_one_failed_stage_and_truthful_artifact_state() -> None:
     source = GUARD.read_text(encoding="utf-8")
-
     assert 'function normalizeTerminalProgress(' in source
     assert 'const {backendStage, uiStage} = terminalStages(output);' in source
     assert 'if (index === failedIndex)' in source
@@ -55,11 +51,11 @@ def test_terminal_projection_preserves_one_failed_stage_and_truthful_artifact_st
 
 
 def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_result() -> None:
-    workspace = WORKSPACE.read_text(encoding="utf-8")
+    controller = (ASSESSMENT / "useAssessmentRun.ts").read_text(encoding="utf-8")
+    model = (ASSESSMENT / "assessmentModel.ts").read_text(encoding="utf-8")
     guard = GUARD.read_text(encoding="utf-8")
-
-    assert 'current = await json(await fetch' in workspace
-    assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in workspace
+    assert 'current = await parseJson(await fetch' in controller
+    assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in model
     assert 'return jsonResponse(output);' in guard
     assert 'output.run_id = runId' in guard
     assert 'output.progress = normalizeTerminalProgress(' in guard
