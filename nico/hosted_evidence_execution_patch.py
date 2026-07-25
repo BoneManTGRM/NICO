@@ -85,10 +85,14 @@ def summarize_bandit_triage(triage: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _enrich_tool_payload(tool_payload: dict[str, Any], tool_name: str) -> dict[str, Any]:
     enriched = dict(tool_payload)
-    status = str(enriched.get("status") or "missing")
+    status = str(enriched.get("status") or "missing").lower()
     enriched.setdefault("current_run", True)
+    enriched.setdefault("execution_observed_for_this_report", True)
     enriched.setdefault("findings_count", _finding_count(enriched))
-    enriched.setdefault("verified_for_this_report", status in {"completed", "unavailable", "timeout", "failed"})
+    # A failed, timed-out, or unavailable analyzer is verified as an observed state,
+    # not verified technical evidence. Keeping these concepts separate prevents an
+    # unavailable tool from lifting assurance or being mistaken for completed proof.
+    enriched["verified_for_this_report"] = status == "completed"
     if status in {"unavailable", "timeout", "failed"}:
         reason = str(enriched.get("reason") or enriched.get("failure_reason") or enriched.get("stderr") or "no reason returned")
         enriched.setdefault("failure_or_unavailable_reason", reason[:2000])
@@ -141,7 +145,9 @@ def _patch_scanner_tool_payloads() -> None:
                         "returncode": payload.get("returncode"),
                         "findings_count": payload.get("findings_count", _finding_count(payload)),
                         "current_run": payload.get("current_run", True),
+                        "execution_observed_for_this_report": payload.get("execution_observed_for_this_report", True),
                         "verified_for_this_report": payload.get("verified_for_this_report", False),
+                        "full_history_verified": payload.get("full_history_verified", False),
                         "reason": payload.get("reason") or payload.get("failure_or_unavailable_reason") or "",
                     }
                 )
@@ -172,6 +178,7 @@ def _patch_runtime_guard_tool_records() -> None:
             guard["bandit_triage_summary"] = artifact.get("bandit_triage_summary") or {}
             guard["complexity_engine_attached"] = isinstance(artifact.get("complexity_engine"), dict)
             guard["score_lift_guardrail"] = "Dependency, secrets, static analysis, and velocity scores may only lift from completed current-run tools or approved formal triage."
+            guard["observed_failure_is_not_verified_evidence"] = True
         if artifact.get("bandit_triage") is not None:
             updated["bandit_triage"] = artifact.get("bandit_triage") or []
             updated["bandit_triage_summary"] = artifact.get("bandit_triage_summary") or summarize_bandit_triage([])
