@@ -20,10 +20,19 @@ from nico.comprehensive_express_quality_v7 import (
     reconcile_comprehensive_assessment,
 )
 from nico.comprehensive_premium_synthesis_v6 import VERSION as PREMIUM_VERSION
+from nico.decision_grade_backlog_v1 import (
+    VERSION as DECISION_GRADE_BACKLOG_VERSION,
+    generate_backlog_exports,
+)
 from nico.decision_grade_contract_v1 import (
     SCHEMA_VERSION as DECISION_GRADE_CONTRACT_VERSION,
     build_decision_grade_contract,
     contract_quality_summary,
+)
+from nico.decision_grade_delta_v1 import (
+    VERSION as DECISION_GRADE_DELTA_VERSION,
+    compare_contracts,
+    delta_markdown,
 )
 
 
@@ -71,6 +80,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     evidence_csv = _evidence_csv(stages)
 
     contract_error = None
+    decision_grade_contract = None
     try:
         decision_grade_contract = build_decision_grade_contract(
             identity={
@@ -115,6 +125,74 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
             "client_ready": False,
         }
 
+    backlog_error = None
+    delta_error = None
+    if decision_grade_contract is not None:
+        try:
+            backlog_exports = generate_backlog_exports(
+                decision_grade_contract,
+                report_id=required_identity["run_id"],
+            )
+        except Exception as exc:  # pragma: no cover - fail-closed export boundary
+            backlog_error = f"Decision-grade backlog export unavailable: {type(exc).__name__}"
+            backlog_exports = {
+                "schema_version": DECISION_GRADE_BACKLOG_VERSION,
+                "item_count": 0,
+                "json": {"schema_version": DECISION_GRADE_BACKLOG_VERSION, "status": "invalid", "reason": backlog_error, "items": []},
+                "markdown": "",
+                "json_text": "",
+                "github_issues": [],
+                "github_issues_json": "",
+                "jira_csv": "",
+                "linear_csv": "",
+                "hashes": {},
+                "external_issue_creation_allowed": False,
+            }
+        try:
+            previous_contract = identity.get("previous_decision_grade_contract") or identity.get("previous_contract")
+            previous_assessment = identity.get("previous_assessment") if isinstance(identity.get("previous_assessment"), dict) else None
+            historical_delta = compare_contracts(
+                previous_contract,
+                decision_grade_contract,
+                previous_assessment=previous_assessment,
+                current_assessment=assessment,
+            )
+            historical_delta_markdown = delta_markdown(historical_delta)
+        except Exception as exc:  # pragma: no cover - fail-closed delta boundary
+            delta_error = f"Historical delta unavailable: {type(exc).__name__}"
+            historical_delta = {
+                "schema_version": DECISION_GRADE_DELTA_VERSION,
+                "status": "invalid",
+                "comparable": False,
+                "reason": delta_error,
+                "synthetic_delta_generated": False,
+            }
+            historical_delta_markdown = delta_markdown(historical_delta)
+    else:
+        backlog_error = contract_error or "Decision-grade contract required for backlog export."
+        delta_error = contract_error or "Decision-grade contract required for historical comparison."
+        backlog_exports = {
+            "schema_version": DECISION_GRADE_BACKLOG_VERSION,
+            "item_count": 0,
+            "json": {"schema_version": DECISION_GRADE_BACKLOG_VERSION, "status": "invalid", "reason": backlog_error, "items": []},
+            "markdown": "",
+            "json_text": "",
+            "github_issues": [],
+            "github_issues_json": "",
+            "jira_csv": "",
+            "linear_csv": "",
+            "hashes": {},
+            "external_issue_creation_allowed": False,
+        }
+        historical_delta = {
+            "schema_version": DECISION_GRADE_DELTA_VERSION,
+            "status": "invalid",
+            "comparable": False,
+            "reason": delta_error,
+            "synthetic_delta_generated": False,
+        }
+        historical_delta_markdown = delta_markdown(historical_delta)
+
     canonical = {
         "service_id": "comprehensive",
         "identity": required_identity,
@@ -127,6 +205,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "staffing_plan": staffing,
         "limitation_metrics": limitations,
         "decision_grade_contract": contract_payload,
+        "backlog_export": backlog_exports["json"],
+        "historical_delta": historical_delta,
         "delivery_status": contract_summary["readiness_status"],
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -137,11 +217,14 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     filename = f"nico-comprehensive-assessment-{safe_repo}-{required_identity['run_id']}-DRAFT.pdf"
     static_section = next((item for item in assessment.get("sections") or [] if isinstance(item, dict) and item.get("id") == "static_analysis"), {})
     static_is_scored = isinstance(static_section.get("score_value"), (int, float)) and static_section.get("exclude_from_maturity") is not True
+    backlog_ids = [item.get("external_id") for item in backlog_exports["json"].get("items", []) if isinstance(item, dict)]
     quality = {
         "version": VERSION,
         "premium_synthesis_version": PREMIUM_VERSION,
         "express_quality_version": EXPRESS_QUALITY_VERSION,
         "decision_grade_contract_version": DECISION_GRADE_CONTRACT_VERSION,
+        "decision_grade_backlog_version": DECISION_GRADE_BACKLOG_VERSION,
+        "decision_grade_delta_version": DECISION_GRADE_DELTA_VERSION,
         "decision_grade_body": True,
         "appendix_contract_schema": VERSION,
         "full_evidence_appendix": True,
@@ -177,6 +260,12 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "decision_grade_validation_warning_count": contract_summary["validation_warning_count"],
         "p0_p1_traceability_complete": contract_summary["p0_p1_traceability_complete"],
         "monetary_claims_require_assumptions": contract_summary["monetary_claims_require_assumptions"],
+        "backlog_export_generated": backlog_error is None,
+        "backlog_item_count": backlog_exports["item_count"],
+        "backlog_items_unique": len(backlog_ids) == len(set(backlog_ids)),
+        "external_issue_creation_allowed": backlog_exports["external_issue_creation_allowed"],
+        "historical_delta_status": historical_delta.get("status"),
+        "historical_delta_generated_only_when_comparable": historical_delta.get("synthetic_delta_generated") is False,
         "client_ready": contract_summary["client_ready"],
         "final_pdf_page_count": page_count,
         "core_report_page_count": core_page_count,
@@ -208,6 +297,9 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         and quality["markdown_evidence_appendix"]
         and quality["markdown_human_review_acceptance_gate"]
         and quality["decision_grade_contract_serialized"]
+        and quality["backlog_export_generated"]
+        and quality["backlog_items_unique"]
+        and quality["historical_delta_generated_only_when_comparable"]
     )
     report_package = {
         "service_id": "comprehensive",
@@ -218,6 +310,16 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "decision_grade_contract": contract_payload,
         "findings_csv": findings_csv,
         "evidence_ledger_csv": evidence_csv,
+        "backlog_markdown": backlog_exports["markdown"],
+        "backlog_json": backlog_exports["json"],
+        "backlog_json_text": backlog_exports["json_text"],
+        "github_issues": backlog_exports["github_issues"],
+        "github_issues_json": backlog_exports["github_issues_json"],
+        "jira_csv": backlog_exports["jira_csv"],
+        "linear_csv": backlog_exports["linear_csv"],
+        "backlog_hashes": backlog_exports["hashes"],
+        "historical_delta": historical_delta,
+        "historical_delta_markdown": historical_delta_markdown,
         "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii") if pdf_bytes else "",
         "pdf_error": pdf_error,
         "pdf_filename": filename,
@@ -240,7 +342,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     }
     return {
         "status": "complete" if complete else "blocked",
-        "reason": "" if complete else (pdf_error or contract_error or "decision_grade_report_contract_failed"),
+        "reason": "" if complete else (pdf_error or contract_error or backlog_error or delta_error or "decision_grade_report_contract_failed"),
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "report_id": report_id,
@@ -249,6 +351,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "stage_summaries": stages,
         "canonical_truth_sha256": truth_sha,
         "decision_grade_contract": contract_payload,
+        "backlog_export": backlog_exports["json"],
+        "historical_delta": historical_delta,
         "delivery_status": contract_summary["readiness_status"],
         "report_quality_contract": quality,
         "report_package": report_package,
