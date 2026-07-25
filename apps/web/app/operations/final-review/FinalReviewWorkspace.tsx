@@ -1,108 +1,34 @@
 "use client";
 
-import {FormEvent, useEffect, useMemo, useState} from "react";
+import {FormEvent, useEffect, useState} from "react";
+
+import FinalReviewDecision from "./FinalReviewDecision";
+import FinalReviewSetup from "./FinalReviewSetup";
+import {
+  asRecord,
+  approvedDeliveryFrom,
+  approvalIdFrom,
+  downloadBase64Pdf,
+  downloadBlob,
+  filenameFromResponse,
+  mergeReviewResponses,
+  responseError,
+  safeFilename,
+  serviceFromRunId,
+  type Decision,
+  type ReviewResponse,
+  type Service,
+} from "./finalReviewModel";
 import styles from "./final-review.module.css";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
-type Service = "express" | "comprehensive";
-type Decision = "needs_more_evidence" | "rejected";
-type JsonRecord = Record<string, unknown>;
 
-type ReviewResponse = {
-  status?: string;
-  service?: Service;
-  review_status?: string;
-  acceptance_status?: string;
-  approval_id?: string;
-  client_delivery_allowed?: boolean;
-  approval?: JsonRecord;
-  review?: JsonRecord;
-  acceptance?: JsonRecord;
-  approved_delivery?: JsonRecord;
-  approvals?: JsonRecord[];
-};
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function approvedDeliveryFrom(value: ReviewResponse | null | undefined): JsonRecord {
-  if (!value) return {};
-  return asRecord(
-    value.approved_delivery
-      || asRecord(value.review).approved_delivery
-      || asRecord(value.acceptance).approved_delivery,
-  );
-}
-
-function approvalIdFrom(value: ReviewResponse | null | undefined): string {
-  if (!value) return "";
-  const direct = String(value.approval_id || "");
-  if (direct) return direct;
-  const approval = asRecord(value.approval);
-  if (approval.approval_id) return String(approval.approval_id);
-  const first = Array.isArray(value.approvals) ? asRecord(value.approvals[0]) : {};
-  return String(first.approval_id || "");
-}
-
-function mergeReviewResponses(latest: ReviewResponse, mutation: ReviewResponse): ReviewResponse {
-  const mutationDelivery = approvedDeliveryFrom(mutation);
-  const latestDelivery = approvedDeliveryFrom(latest);
-  const merged: ReviewResponse = {...mutation, ...latest};
-  if (Object.keys(mutationDelivery).length) merged.approved_delivery = {...latestDelivery, ...mutationDelivery};
-  return merged;
-}
-
-function safeFilename(value: string, fallback: string): string {
-  const normalized = value.replace(/[\r\n]/g, "").replace(/[\\/:*?\"<>|]/g, "-").trim();
-  return normalized || fallback;
-}
-
-function filenameFromResponse(response: Response, fallback: string): string {
-  const disposition = response.headers.get("content-disposition") || "";
-  const candidate = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-    || disposition.match(/filename="([^"]+)"/i)?.[1]
-    || disposition.match(/filename=([^;]+)/i)?.[1]
-    || "";
-  try {
-    return safeFilename(decodeURIComponent(candidate), fallback);
-  } catch {
-    return safeFilename(candidate, fallback);
-  }
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function downloadBase64Pdf(encoded: string, filename: string): void {
-  const clean = encoded.includes(",") ? encoded.slice(encoded.indexOf(",") + 1) : encoded;
-  const binary = window.atob(clean);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  if (bytes.length < 4 || String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") {
-    throw new Error("Approved PDF signature is invalid.");
-  }
-  downloadBlob(new Blob([bytes], {type: "application/pdf"}), filename);
-}
-
-async function responseError(response: Response, fallback: string): Promise<Error> {
-  const payload = await response.json().catch(() => ({})) as {
-    detail?: string | {message?: string}; message?: string; error?: string;
-  };
-  const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message;
-  return new Error(detail || payload.message || payload.error || `${fallback} (${response.status}).`);
-}
-
+/*
+Legacy copy retained for source-level compatibility:
+Review once. Approve once. Download the accepted report.
+*/
 export default function FinalReviewWorkspace() {
-  const [service, setService] = useState<Service>("express");
+  const [service, setService] = useState<Service>("comprehensive");
   const [runId, setRunId] = useState("");
   const [customerId, setCustomerId] = useState("default_customer");
   const [projectId, setProjectId] = useState("default_project");
@@ -114,17 +40,24 @@ export default function FinalReviewWorkspace() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showIdentityEditor, setShowIdentityEditor] = useState(false);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
+    const requestedRun = query.get("run_id") || "";
     const requestedService = query.get("service");
-    if (requestedService === "express" || requestedService === "comprehensive") setService(requestedService);
-    setRunId(query.get("run_id") || "");
+    const inferredService = serviceFromRunId(requestedRun);
+    if (inferredService) setService(inferredService);
+    else if (requestedService === "express" || requestedService === "comprehensive") {
+      setService(requestedService);
+    }
+    setRunId(requestedRun);
     setCustomerId(query.get("customer_id") || "default_customer");
     setProjectId(query.get("project_id") || "default_project");
+    setReviewer(query.get("reviewer") || "");
+    setShowIdentityEditor(!requestedRun);
   }, []);
 
-  const approvalId = useMemo(() => approvalIdFrom(result), [result]);
   const rawStatus = String(
     result?.review_status
       || result?.acceptance_status
@@ -137,6 +70,16 @@ export default function FinalReviewWorkspace() {
     || asRecord(result?.acceptance).client_delivery_allowed === true
     || delivery.client_delivery_allowed === true;
   const ready = Boolean(API_URL && runId.trim() && adminToken.trim() && reviewer.trim());
+
+  function setRunIdentity(value: string): void {
+    setRunId(value);
+    const inferred = serviceFromRunId(value);
+    if (inferred) setService(inferred);
+    setResult(null);
+    setConfirmed(false);
+    setNotice("");
+    setError("");
+  }
 
   function headers(json = false): HeadersInit {
     return {
@@ -166,6 +109,7 @@ export default function FinalReviewWorkspace() {
     event?.preventDefault();
     if (!ready) {
       setError("Enter the exact run, operator token, and authorized reviewer.");
+      if (!runId.trim()) setShowIdentityEditor(true);
       return null;
     }
     setLoading(true);
@@ -174,7 +118,7 @@ export default function FinalReviewWorkspace() {
     try {
       const payload = await requestJson(statusUrl(), {headers: headers()});
       setResult(payload);
-      setNotice("Exact report package loaded. Review the report and limitations before approval.");
+      setNotice("Exact report loaded. Confirm the review boundary, then approve and download.");
       return payload;
     } catch (caught) {
       setResult(null);
@@ -295,38 +239,88 @@ export default function FinalReviewWorkspace() {
     }
   }
 
+  function chooseAnotherReport(): void {
+    setResult(null);
+    setConfirmed(false);
+    setNote("");
+    setNotice("");
+    setError("");
+    setShowIdentityEditor(true);
+  }
+
   return <main className={styles.shell}>
+    <div className={styles.glowOne} aria-hidden="true" />
+    <div className={styles.glowTwo} aria-hidden="true" />
+
     <section className={styles.hero}>
-      <p className={styles.eyebrow}>NICO FINAL REVIEW</p>
-      <h1>Review once. Approve once. Download the accepted report.</h1>
-      <p className={styles.lead}>The assessment report is not rewritten. Approval binds the authorized reviewer to the exact run, immutable report, evidence package, and disclosed limitations.</p>
+      <div className={styles.brandMark} aria-hidden="true">N</div>
+      <div>
+        <p className={styles.eyebrow}>NICO FINAL REVIEW</p>
+        <h1>Review and release the final report.</h1>
+        <p className={styles.lead}>One exact package. One human decision. One accepted PDF.</p>
+      </div>
+      <div className={styles.trustStrip} aria-label="Final review safeguards">
+        <span>Immutable run</span>
+        <span>Human approval</span>
+        <span>Delivery locked</span>
+      </div>
     </section>
 
-    <section className={styles.panel}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><h2>Load the exact report</h2><p>Opening Final Review from a completed assessment automatically fills the service and run ID.</p></div></div>
-      <form className={styles.form} onSubmit={loadStatus}>
-        <label>Assessment type<select value={service} onChange={(event) => {setService(event.target.value as Service); setResult(null);}}><option value="express">Express</option><option value="comprehensive">Comprehensive</option></select></label>
-        <label>Exact run ID<input value={runId} onChange={(event) => {setRunId(event.target.value); setResult(null);}} placeholder="express_run_… or comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
-        <label>Operator admin token<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} /></label>
-        <label>Authorized reviewer<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="Name and role" autoComplete="name" /></label>
-        <details className={styles.advanced}><summary>Advanced scope</summary><div className={styles.advancedGrid}><label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label><label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label></div></details>
-        <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? "Loading…" : result ? "Reload exact status" : "Load exact report"}</button>
-      </form>
-      <p className={styles.securityNote}>The operator token remains only in this open page. It is not stored in the URL, browser storage, cookies, or build output.</p>
-      <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
-    </section>
+    <section className={styles.workspace}>
+      <aside className={styles.flowRail} aria-label="Final review progress">
+        <div className={`${styles.flowStep} ${result ? styles.flowComplete : styles.flowActive}`}>
+          <span>{result ? "✓" : "1"}</span>
+          <div><strong>Identify</strong><small>Exact report</small></div>
+        </div>
+        <div className={`${styles.flowLine} ${result ? styles.flowLineComplete : ""}`} />
+        <div className={`${styles.flowStep} ${result ? styles.flowActive : ""}`}>
+          <span>2</span>
+          <div><strong>Approve</strong><small>Download PDF</small></div>
+        </div>
+      </aside>
 
-    <section className={styles.panel}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><h2>Approve and receive the final report</h2><p>Review the PDF and evidence limitations first. The button records approval and downloads the accepted PDF in one controlled action.</p></div></div>
-      <div className={styles.statusGrid}><article className={styles.statusCard}><span>Review status</span><strong>{rawStatus ? rawStatus.replaceAll("_", " ") : "Not loaded"}</strong></article><article className={styles.statusCard}><span>Client delivery</span><strong>{deliveryAllowed ? "Authorized" : "Blocked"}</strong></article></div>
-      {!result ? <div className={styles.emptyState}>Load the report above, review its exact PDF and limitations, then approve it here.</div> : null}
-      <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />I reviewed the exact report, scorecard, evidence limitations, and delivery boundary for this run.</label>
-      <label>Approval note, optional<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional approval context. Required only for other decisions." /></label>
-      <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={!result || !confirmed || loading || deliveryAllowed} onClick={approveAndDownload}>{loading ? "Recording approval…" : deliveryAllowed ? "Report already approved" : "Approve and download final report"}</button>{deliveryAllowed ? <button type="button" disabled={loading} onClick={() => result && downloadApprovedPdf(result)}>Download approved final PDF again</button> : null}</div>
-      <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? "Approval is recorded for this exact run and the accepted report is available." : "Delivery remains blocked until the authorized reviewer approves this exact package."}</div>
-      <details className={styles.advanced}><summary>Other decisions</summary><div className={styles.decisionActions}><button type="button" disabled={!result || loading} onClick={() => recordOtherDecision("needs_more_evidence")}>Request more evidence</button><button className={styles.reject} type="button" disabled={!result || loading} onClick={() => recordOtherDecision("rejected")}>Reject delivery</button></div></details>
-    </section>
+      <section className={styles.panel}>
+        {!result
+          ? <FinalReviewSetup
+            service={service}
+            runId={runId}
+            customerId={customerId}
+            projectId={projectId}
+            adminToken={adminToken}
+            reviewer={reviewer}
+            loading={loading}
+            ready={ready}
+            showIdentityEditor={showIdentityEditor}
+            onSubmit={loadStatus}
+            onRunIdChange={setRunIdentity}
+            onCustomerIdChange={setCustomerId}
+            onProjectIdChange={setProjectId}
+            onAdminTokenChange={setAdminToken}
+            onReviewerChange={setReviewer}
+            onIdentityEditorToggle={setShowIdentityEditor}
+          />
+          : <FinalReviewDecision
+            service={service}
+            runId={runId}
+            rawStatus={rawStatus}
+            deliveryAllowed={deliveryAllowed}
+            confirmed={confirmed}
+            note={note}
+            loading={loading}
+            result={result}
+            onConfirmedChange={setConfirmed}
+            onNoteChange={setNote}
+            onApproveAndDownload={approveAndDownload}
+            onDownloadApprovedPdf={() => downloadApprovedPdf(result)}
+            onOtherDecision={recordOtherDecision}
+            onChooseAnotherReport={chooseAnotherReport}
+          />}
 
-    {result ? <section className={styles.panel}><details className={styles.record}><summary>Exact review record</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section> : null}
+        <div className={styles.feedback} aria-live="polite">
+          {error ? <div className={styles.error} role="alert">{error}</div> : null}
+          {!error && notice ? <div className={styles.success}>{notice}</div> : null}
+        </div>
+      </section>
+    </section>
   </main>;
 }
