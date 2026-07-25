@@ -47,6 +47,14 @@ def _build_pdf(
     h3 = ParagraphStyle("P6-H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.2, leading=13, textColor=colors.HexColor("#0f172a"), spaceBefore=5, spaceAfter=3)
     body = ParagraphStyle("P6-Body", parent=styles["BodyText"], fontSize=9, leading=12.8, textColor=colors.HexColor("#334155"), spaceAfter=5)
     small = ParagraphStyle("P6-Small", parent=body, fontSize=7.2, leading=9.5, textColor=colors.HexColor("#475569"))
+    table_header = ParagraphStyle(
+        "P6-TableHeader",
+        parent=small,
+        fontName="Helvetica-Bold",
+        fontSize=7.6,
+        leading=10,
+        textColor=colors.white,
+    )
     warning = ParagraphStyle("P6-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.8, borderPadding=8, spaceBefore=7, spaceAfter=9)
 
     class PremiumDoc(SimpleDocTemplate):
@@ -70,7 +78,10 @@ def _build_pdf(
         return [p(f"- {_text(item, 900)}", small) for item in list(values)[:limit] if _text(item)]
 
     def table(rows: list[list[Any]], widths: list[float], header: bool = True, font_size: float = 6.8) -> LongTable:
-        converted = [[p(cell, small) for cell in row] for row in rows]
+        converted: list[list[Paragraph]] = []
+        for row_index, row in enumerate(rows):
+            style = table_header if header and row_index == 0 else small
+            converted.append([p(cell, style) for cell in row])
         result = LongTable(converted, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT", splitByRow=1)
         commands: list[tuple[Any, ...]] = [
             ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#cbd5e1")),
@@ -87,6 +98,8 @@ def _build_pdf(
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
             ]
         result.setStyle(TableStyle(commands))
         return result
