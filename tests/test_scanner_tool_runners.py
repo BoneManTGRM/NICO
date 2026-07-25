@@ -68,6 +68,7 @@ def test_run_scanner_tool_marks_missing_executable_unavailable(monkeypatch, tmp_
 
     assert payload["status"] == "unavailable"
     assert payload["findings"] == []
+    assert payload["verified_for_this_report"] is False
 
 
 def test_run_scanner_tool_uses_safe_runner(monkeypatch, tmp_path: Path):
@@ -110,7 +111,7 @@ def test_run_scanner_tools_returns_normalized_payload(monkeypatch, tmp_path: Pat
         runner=fake_runner,
     )
 
-    assert payload["artifact_schema"] == "nico.scanner_worker.v1"
+    assert payload["artifact_schema"] == "nico.scanner_worker.v2"
     assert payload["normalized"]["static_tools_completed"] == ["bandit"]
     assert "semgrep" in payload["normalized"]["missing_static_tools"]
 
