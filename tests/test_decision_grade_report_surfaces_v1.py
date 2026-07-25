@@ -154,6 +154,73 @@ def _identity() -> dict[str, str]:
     }
 
 
+def _scanner_limitation_contract(*, with_structured_semgrep: bool = False):
+    stage_summaries: list[dict[str, object]] = []
+    if with_structured_semgrep:
+        stage_summaries = [
+            {
+                "stage": "scanner_execution",
+                "scanner_results": [
+                    {"tool": "semgrep", "status": "complete", "required": True, "category": "static"},
+                ],
+            }
+        ]
+    findings = [
+        {
+            "id": "bandit-unavailable",
+            "priority": "P1",
+            "category": "evidence",
+            "title": "bandit evidence unavailable",
+            "impact": "The affected control cannot reach verified assurance because the required analyzer did not complete.",
+            "confidence": "high",
+            "evidence": "Analyzer status=failed; bounded output could not be verified.",
+            "location": "Scanner execution boundary",
+            "recommendation": "Repair Bandit execution and rerun two exact-SHA evidence passes.",
+            "effort": "1-2 weeks",
+            "owner_role": "Product Quality Engineer",
+            "acceptance_criteria": "Bandit completes twice on one exact SHA.",
+        },
+        {
+            "id": "osv-incomplete",
+            "priority": "P2",
+            "category": "dependency",
+            "title": "OSV dependency scan did not produce a complete result",
+            "impact": "Dependency vulnerability conclusions remain review-limited.",
+            "confidence": "moderate",
+            "evidence": "tool=osv-scanner; status=incomplete",
+            "location": "Dependency scanner execution boundary",
+            "recommendation": "Repair OSV execution and retain structured exact-SHA output.",
+            "effort": "1 week",
+            "owner_role": "Senior Product Engineer",
+            "acceptance_criteria": "OSV completes with structured output.",
+        },
+    ]
+    return build_decision_grade_contract(
+        identity={
+            "run_id": "comprun_scanner_limitation_test",
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": COMMIT,
+            "assessment_type": "comprehensive",
+            "branch": "main",
+            "nico_version": "0.1.1",
+            "scanner_configuration_version": "test-v1",
+        },
+        assessment={
+            "technical_score": 82,
+            "canonical_evidence_adjusted_score": 71,
+            "findings_register": findings,
+            "sections": [],
+            "scoring_weights": [],
+        },
+        stage_summaries=stage_summaries,
+        roadmap=_roadmap(),
+        report_template_version="nico.comprehensive_decision_grade.v5",
+        pdf_page_count=12,
+        core_page_count=8,
+        generated_at="2026-07-25T12:00:00+00:00",
+    )
+
+
 def test_report_view_projects_stable_ids_cost_residual_scope_and_assumptions() -> None:
     view = build_report_view(_contract())
 
@@ -165,6 +232,34 @@ def test_report_view_projects_stable_ids_cost_residual_scope_and_assumptions() -
     assert view["scope_boundaries"]
     assert view["assumption_register"]
     assert len(view["how_to_use"]) == 7
+
+
+def test_evidence_health_uses_retained_findings_when_execution_records_are_missing() -> None:
+    view = build_report_view(_scanner_limitation_contract())
+    health = view["evidence_health"]
+
+    assert health["structured_execution_records_present"] is False
+    assert health["completed_scanners"] == []
+    assert health["required_scanner_failures"] == ["bandit"]
+    assert {item["scanner"] for item in health["finding_derived_scanner_limitations"]} == {
+        "bandit",
+        "osv-scanner",
+    }
+    assert "No scanner failure" not in health["confidence_effect"]
+    assert "Required scanner limitations are retained" in health["confidence_effect"]
+
+
+def test_evidence_health_combines_structured_completion_with_finding_limitations() -> None:
+    view = build_report_view(_scanner_limitation_contract(with_structured_semgrep=True))
+    health = view["evidence_health"]
+
+    assert health["structured_execution_records_present"] is True
+    assert health["completed_scanners"] == ["semgrep"]
+    assert health["required_scanner_failures"] == ["bandit"]
+    assert any(
+        item["scanner"] == "bandit" and item["source"] == "retained_finding"
+        for item in health["incomplete_scanners"]
+    )
 
 
 def test_markdown_and_html_use_exact_seven_item_executive_register() -> None:
