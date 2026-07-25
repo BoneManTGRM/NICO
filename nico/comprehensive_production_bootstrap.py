@@ -129,8 +129,8 @@ def install_comprehensive_production_bootstrap(
     the rest of NICO's production storage. SQLite is accepted only when explicitly
     enabled. When durable assessment storage is required, SQLite must live under a
     detected mounted volume or carry an explicit deployment acknowledgement. A writable
-    container filesystem is not treated as durable because replacement would otherwise
-    erase a partially completed run and produce ``comprehensive_run_not_found``.
+    container filesystem is not treated as deployment-surviving because replacement
+    would erase a partially completed run and produce ``comprehensive_run_not_found``.
 
     If no deployment-surviving adapter is available, routes remain mounted but fail
     closed with HTTP 503. Missing executors are never treated as passing evidence.
@@ -214,7 +214,6 @@ def install_comprehensive_production_bootstrap(
     app.state.comprehensive_capability_executors = executors
     state = dict(getattr(app.state, "comprehensive_runtime", {}) or {})
     adapter = str(state.get("persistence_adapter") or "unavailable")
-    durability_verified = adapter == "postgres" or (adapter == "sqlite" and survives_container_replacement)
     state.update(
         {
             "bootstrap_schema": VERSION,
@@ -222,8 +221,12 @@ def install_comprehensive_production_bootstrap(
             "configured": True,
             "storage_source": storage_source,
             "database_url_source": database_url_source or "",
-            "durability_verified": durability_verified,
-            "survives_container_replacement_verified": durability_verified,
+            # SQLite on a stable path survives process restart, but only Postgres or a
+            # proven mounted volume survives container replacement.
+            "durability_verified": adapter in {"postgres", "sqlite"},
+            "survives_container_replacement_verified": bool(
+                adapter == "postgres" or (adapter == "sqlite" and survives_container_replacement)
+            ),
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
