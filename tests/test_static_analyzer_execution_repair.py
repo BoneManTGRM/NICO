@@ -7,9 +7,9 @@ from pathlib import Path
 from nico.scanner_tool_runners import parse_tool_findings
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, run_command
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RUNNERS = ROOT / "nico" / "scanner_tool_runners.py"
+COMPAT = ROOT / "nico" / "scanner_complete_output_compat_v3.py"
 
 
 def test_worker_keeps_complete_stdout_file_while_bounding_preview(tmp_path: Path) -> None:
@@ -20,7 +20,6 @@ def test_worker_keeps_complete_stdout_file_while_bounding_preview(tmp_path: Path
         limits=WorkerLimits(timeout_seconds=30, max_output_chars=200),
         stdout_path=destination,
     )
-
     assert result.returncode == 0
     assert result.stdout_path == str(destination.resolve())
     assert result.output_truncated is True
@@ -52,17 +51,16 @@ def test_bandit_parser_reads_complete_json_not_truncated_preview(tmp_path: Path)
         stdout_bytes=destination.stat().st_size,
     )
 
-    parsed, complete, reason = parse_tool_findings("bandit", result)
+    parsed = parse_tool_findings("bandit", result)
 
-    assert complete is True
-    assert reason == ""
+    assert isinstance(parsed, list)
     assert len(parsed) == 250
     assert parsed[-1]["filename"] == "nico/module_249.py"
 
 
 def test_project_analyzers_use_exact_lockfile_and_local_binaries() -> None:
     source = RUNNERS.read_text(encoding="utf-8")
-
+    compat = COMPAT.read_text(encoding="utf-8")
     assert '"ci",' in source
     assert '"--ignore-scripts"' in source
     assert 'web_dir / "node_modules" / ".bin" / bin_name' in source
@@ -71,3 +69,5 @@ def test_project_analyzers_use_exact_lockfile_and_local_binaries() -> None:
     assert '"npx"' not in source
     assert "output_capture_complete" in source
     assert "returncode_valid" in source
+    assert "legacy_findings_list_contract" in compat
+    assert '"artifact_schema": "nico.scanner_worker.v1"' in compat
