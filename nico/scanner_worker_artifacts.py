@@ -54,19 +54,35 @@ def _finding_count_from_payload(tool_data: dict[str, Any], fallback_items: list[
     return len(fallback_items)
 
 
+def _nested_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _finding_severity(finding: Any) -> str:
+    if not isinstance(finding, dict):
+        return "unknown"
+    extra = _nested_dict(finding.get("extra"))
+    metadata = _nested_dict(extra.get("metadata"))
+    values = (
+        finding.get("severity"),
+        finding.get("level"),
+        finding.get("issue_severity"),
+        extra.get("severity"),
+        metadata.get("severity"),
+        metadata.get("impact"),
+        finding.get("confidence"),
+    )
+    for value in values:
+        text = str(value or "").strip().lower()
+        if text:
+            return text
+    return "unknown"
+
+
 def _severity_counts(findings: list[Any]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for finding in findings:
-        severity = "unknown"
-        if isinstance(finding, dict):
-            severity = str(
-                finding.get("severity")
-                or finding.get("level")
-                or finding.get("issue_severity")
-                or finding.get("confidence")
-                or "unknown"
-            ).lower()
-        counts[severity] += 1
+        counts[_finding_severity(finding)] += 1
     return dict(counts)
 
 
@@ -83,7 +99,8 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
 
     The worker is allowed to evolve its raw tool output, but hosted scoring should only
     consume this small normalized shape. Missing tools stay explicit instead of being
-    treated as clean evidence.
+    treated as clean evidence. Observed failure states remain separate from verified
+    completed evidence.
     """
     tools = _tool_payloads(payload)
     normalized_tools: dict[str, dict[str, Any]] = {}
@@ -91,31 +108,43 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
         tool_data = tools.get(tool) or {}
         findings = _finding_items(tool_data)
         status = str(tool_data.get("status") or ("completed" if tool_data else "unavailable")).lower()
+        completed = status in COMPLETED_STATUSES
         normalized_tools[tool] = {
             "status": status,
-            "completed": status in COMPLETED_STATUSES,
+            "completed": completed,
             "finding_count": _finding_count_from_payload(tool_data, findings),
             "severity_counts": _severity_counts(findings),
             "artifact_hash": tool_data.get("artifact_hash"),
             "execution_source": tool_data.get("execution_source"),
             "run_id": tool_data.get("run_id"),
             "generated_at": tool_data.get("generated_at") or tool_data.get("timestamp"),
+            "execution_observed_for_this_report": bool(tool_data.get("execution_observed_for_this_report", bool(tool_data))),
+            "verified_for_this_report": bool(tool_data.get("verified_for_this_report", completed)) and completed,
+            "scans_git_history": bool(tool_data.get("scans_git_history")),
+            "full_history_verified": bool(tool_data.get("full_history_verified")) and completed,
         }
 
     dependency_completed = _completed_tools(normalized_tools, DEPENDENCY_TOOLS)
     static_completed = _completed_tools(normalized_tools, STATIC_TOOLS)
     secret_completed = _completed_tools(normalized_tools, SECRET_TOOLS)
     coverage_completed = _completed_tools(normalized_tools, COVERAGE_TOOLS)
+    secret_history_completed = [
+        tool
+        for tool in SECRET_TOOLS
+        if normalized_tools[tool]["completed"] and normalized_tools[tool]["full_history_verified"]
+    ]
 
     return {
-        "artifact_schema": "nico.scanner_worker.v1",
+        "artifact_schema": "nico.scanner_worker.v2",
         "dependency_tools_completed": dependency_completed,
         "static_tools_completed": static_completed,
         "secret_tools_completed": secret_completed,
+        "secret_history_tools_completed": secret_history_completed,
         "coverage_tools_completed": coverage_completed,
         "missing_dependency_tools": [tool for tool in DEPENDENCY_TOOLS if tool not in dependency_completed],
         "missing_static_tools": [tool for tool in STATIC_TOOLS if tool not in static_completed],
         "missing_secret_tools": [tool for tool in SECRET_TOOLS if tool not in secret_completed],
+        "missing_secret_history_tools": [tool for tool in SECRET_TOOLS if tool not in secret_history_completed],
         "missing_coverage_tools": [tool for tool in COVERAGE_TOOLS if tool not in coverage_completed],
         "dependency_finding_count": _finding_count(normalized_tools, DEPENDENCY_TOOLS),
         "static_finding_count": _finding_count(normalized_tools, STATIC_TOOLS),
@@ -125,7 +154,10 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
         "dependency_evidence_complete": len(dependency_completed) == len(DEPENDENCY_TOOLS),
         "static_evidence_complete": len(static_completed) == len(STATIC_TOOLS),
         "secret_evidence_complete": len(secret_completed) == len(SECRET_TOOLS),
+        "secret_history_evidence_complete": len(secret_history_completed) == len(SECRET_TOOLS),
         "coverage_evidence_complete": len(coverage_completed) == len(COVERAGE_TOOLS),
+        "observed_failure_is_not_verified_evidence": True,
+        "nested_scanner_severity_normalized": True,
     }
 
 
@@ -141,6 +173,8 @@ def scanner_worker_evidence_notes(payload: dict[str, Any]) -> dict[str, list[str
         evidence.append("Scanner-worker static tools completed: " + ", ".join(normalized["static_tools_completed"]) + ".")
     if normalized["secret_tools_completed"]:
         evidence.append("Scanner-worker secret tools completed: " + ", ".join(normalized["secret_tools_completed"]) + ".")
+    if normalized["secret_history_tools_completed"]:
+        evidence.append("Scanner-worker full-history secret tools completed: " + ", ".join(normalized["secret_history_tools_completed"]) + ".")
     if normalized["coverage_tools_completed"]:
         evidence.append("Scanner-worker coverage tools completed: " + ", ".join(normalized["coverage_tools_completed"]) + ".")
 
@@ -159,6 +193,8 @@ def scanner_worker_evidence_notes(payload: dict[str, Any]) -> dict[str, list[str
         unavailable.append("Scanner-worker static tools unavailable: " + ", ".join(normalized["missing_static_tools"]) + ".")
     if normalized["missing_secret_tools"]:
         unavailable.append("Scanner-worker secret tools unavailable: " + ", ".join(normalized["missing_secret_tools"]) + ".")
+    if normalized["missing_secret_history_tools"]:
+        unavailable.append("Scanner-worker full-history secret tools unavailable: " + ", ".join(normalized["missing_secret_history_tools"]) + ".")
     if normalized["missing_coverage_tools"]:
         unavailable.append("Scanner-worker coverage tools unavailable: " + ", ".join(normalized["missing_coverage_tools"]) + ".")
 

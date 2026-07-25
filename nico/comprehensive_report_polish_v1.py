@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_report_polish.v1"
-_PATCH_MARKER = "_nico_comprehensive_report_polish_v1"
+VERSION = "nico.comprehensive_report_polish.v2"
+_PATCH_MARKER = "_nico_comprehensive_report_polish_v2"
+_TEMP_SNAPSHOT = re.compile(r"/tmp/nico-snapshot-scan-[^/\s]+/repo/?", re.I)
+_TIMING_NOISE = re.compile(r"\b\d+(?:\.\d+)?(?:ns|µs|us|ms)\b", re.I)
 
 
 def _clean_text(value: Any, limit: int = 1800) -> str:
@@ -15,6 +18,8 @@ def _clean_text(value: Any, limit: int = 1800) -> str:
         for character in raw
         if not unicodedata.category(character).startswith("C")
     )
+    safe = _TEMP_SNAPSHOT.sub("repository snapshot/", safe)
+    safe = _TIMING_NOISE.sub("", safe)
     normalized = " ".join(safe.split())
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
@@ -33,9 +38,22 @@ def _friendly_title(record: dict[str, Any]) -> str:
     title = _clean_text(record.get("title"), 420)
     lowered = title.casefold()
     location = _clean_text(record.get("location"), 520).casefold()
+    evidence = _clean_text(record.get("evidence"), 900).casefold()
 
     if "failed to create new os thread" in lowered or "newosproc" in lowered:
         return "OSV scanner worker resource limit prevented completion"
+    if "tool=osv-scanner" in evidence and any(
+        phrase in lowered
+        for phrase in (
+            "scanning dir",
+            "filesystem walk",
+            "failed resolution",
+            "dirs visited",
+            "inodes visited",
+            "extract calls",
+        )
+    ):
+        return "OSV dependency scan did not produce a complete result"
     if "tool failed without stdout" in lowered:
         return "Dependency analyzer failed without diagnostic output"
     if "dependabot-missing-cooldown" in lowered or "missing cooldown" in lowered:
@@ -57,16 +75,25 @@ def _sanitize_finding(record: dict[str, Any]) -> dict[str, Any]:
     title = _clean_text(output.get("title"), 420).casefold()
     unverified = "verified=false" in evidence.casefold()
     pattern_review = "potential dynamic execution pattern" in title
+    osv_incomplete = "osv dependency scan did not produce a complete result" in title
 
-    if unverified or pattern_review:
+    if unverified or pattern_review or osv_incomplete:
         output["priority"] = "P2"
         output["confidence"] = "moderate"
         output["impact"] = (
-            "The retained pattern is not a confirmed defect. Exact-source review is required before remediation or escalation."
+            "The retained analyzer record is not a confirmed defect. Exact-source or exact-dependency review is required before remediation or escalation."
         )
     if category == "static" and unverified:
         output["recommendation"] = (
             "Validate the grouped rule against the exact files and revision, then remediate confirmed instances or approve a bounded exception."
+        )
+    if osv_incomplete:
+        output["location"] = "Dependency scanner execution boundary"
+        output["recommendation"] = (
+            "Repair or replace the incomplete OSV execution, retain parseable exact-SHA output, and rerun before presenting a vulnerability conclusion."
+        )
+        output["acceptance_criteria"] = (
+            "The exact-SHA OSV scan completes with structured output and every candidate is resolved or explicitly dispositioned."
         )
     return output
 
@@ -116,6 +143,8 @@ def polish_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     output["comprehensive_report_polish"] = {
         "version": VERSION,
         "control_characters_removed": True,
+        "temporary_scanner_paths_removed": True,
+        "scanner_timing_noise_removed": True,
         "raw_scanner_failures_summarized": True,
         "unverified_candidates_not_p1": True,
         "equivalent_review_candidates_grouped": True,
@@ -147,6 +176,8 @@ def install_comprehensive_report_polish_v1() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "control_characters_removed": True,
+        "temporary_scanner_paths_removed": True,
+        "scanner_timing_noise_removed": True,
         "raw_scanner_failures_summarized": True,
         "unverified_candidates_not_p1": True,
         "equivalent_review_candidates_grouped": True,
