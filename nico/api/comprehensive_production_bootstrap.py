@@ -13,8 +13,9 @@ from nico.comprehensive_production_bootstrap import install_comprehensive_produc
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
+from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v7"
+VERSION = "nico.api.comprehensive_production_bootstrap.v8"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -53,8 +54,9 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the decision-grade native Comprehensive boundary.
 
     Compatibility and decision-grade report bindings are installed first. Native
-    providers are installed next. Core and final report execution-readiness wrappers
-    are then applied before the executor map is frozen.
+    providers are installed next. Scanner execution normalization and core/final
+    report execution-readiness wrappers are then applied before the executor map is
+    frozen.
 
     A valid report artifact can complete its execution stage while accurately retaining
     evidence gaps, validation issues, and pending human approval. Those conditions block
@@ -67,6 +69,9 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
     native_providers = install_native_comprehensive_providers(target)
+    scanner_execution_normalization = install_structured_scanner_executions(
+        __import__("nico.comprehensive_native_providers", fromlist=["_scan"])
+    )
     core_report_readiness = install_comprehensive_core_report_readiness(target)
     final_report_execution = install_comprehensive_final_report_execution(target)
     executors = build_production_capability_executors(target)
@@ -97,6 +102,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
+        and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
         and final_report_execution.get("bound") is True
         and len(native_providers) > 0
@@ -113,6 +119,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
+        "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
         "final_report_execution": final_report_execution,
         "native_provider_status": native_status,
@@ -120,6 +127,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "report_binding_before_provider_install": True,
+        "provider_install_before_scanner_execution_normalization": True,
+        "scanner_execution_normalization_before_executor_build": True,
         "provider_install_before_core_report_readiness": True,
         "provider_install_before_final_report_execution": True,
         "core_report_readiness_before_executor_build": True,
@@ -156,6 +165,8 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound") is not True:
+    raise RuntimeError("Structured scanner execution normalization was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["core_report_readiness"].get("bound") is not True:
     raise RuntimeError("Comprehensive core-report artifact readiness was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["final_report_execution"].get("bound") is not True:
