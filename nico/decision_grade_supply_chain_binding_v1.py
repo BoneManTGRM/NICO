@@ -3,13 +3,16 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
+from nico.decision_grade_accepted_edition_guard_v1 import (
+    guard_report_package_accepted_edition,
+)
 from nico.decision_grade_supply_chain_v2 import (
     VERSION as SUPPLY_CHAIN_VERSION,
     build_supply_chain_package,
 )
 
-VERSION = "nico.decision_grade_supply_chain_binding.v2"
-_MARKER = "__nico_decision_grade_supply_chain_binding_v2__"
+VERSION = "nico.decision_grade_supply_chain_binding.v3"
+_MARKER = "__nico_decision_grade_supply_chain_binding_v3__"
 
 
 def _source_files(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, str]:
@@ -48,10 +51,22 @@ def _identity(
 ) -> tuple[str, str]:
     identity = kwargs.get("identity")
     if not isinstance(identity, dict):
-        identity = result.get("identity") if isinstance(result.get("identity"), dict) else {}
+        identity = (
+            result.get("identity")
+            if isinstance(result.get("identity"), dict)
+            else {}
+        )
     package = result.get("report_package")
-    canonical = package.get("json") if isinstance(package, dict) and isinstance(package.get("json"), dict) else {}
-    canonical_identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
+    canonical = (
+        package.get("json")
+        if isinstance(package, dict) and isinstance(package.get("json"), dict)
+        else {}
+    )
+    canonical_identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), dict)
+        else {}
+    )
     repository = str(
         kwargs.get("repository")
         or identity.get("repository")
@@ -137,6 +152,7 @@ def wrap_report_builder_with_supply_chain(
             )
             package["report_quality_contract"] = quality
             package["quality"] = quality
+            guard_report_package_accepted_edition(package)
         return result
 
     setattr(wrapped, _MARKER, True)
