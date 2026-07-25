@@ -35,6 +35,10 @@ from nico.comprehensive_final_report_semantics_v47 import (
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
+from nico.decision_grade_history_store_v1 import (
+    VERSION as DECISION_GRADE_HISTORY_STORE_VERSION,
+    wrap_report_builder_with_persisted_history,
+)
 from nico.full_source_archive_profile_v1 import install_full_source_archive_profile_v1
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
@@ -110,7 +114,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
 
     evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
-    quality_builder = _quality_report_builder(report_module.build_comprehensive_report_package)
+    history_builder = wrap_report_builder_with_persisted_history(report_module.build_comprehensive_report_package)
+    quality_builder = _quality_report_builder(history_builder)
     build_comprehensive_report_package = wrap_report_builder(quality_builder)
 
     current_scanner = snapshot_evidence.scan_files
@@ -159,6 +164,10 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "control_specific_assurance": True,
         "blanket_incomplete_removed": True,
         "report_score_drift_blocks_package": True,
+        "decision_grade_history_store_version": DECISION_GRADE_HISTORY_STORE_VERSION,
+        "persisted_historical_comparison_bound": True,
+        "historical_comparison_uses_authorized_storage_scope": True,
+        "synthetic_historical_delta_allowed": False,
         "automatic_code_merge_allowed": False,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
