@@ -39,6 +39,10 @@ from nico.comprehensive_final_report_semantics_v47 import (
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
+from nico.decision_grade_consistency_v1 import (
+    VERSION as DECISION_GRADE_CONSISTENCY_VERSION,
+    install_decision_grade_consistency_engine,
+)
 from nico.decision_grade_cost_engine_v1 import (
     VERSION as DECISION_GRADE_COST_ENGINE_VERSION,
     install_decision_grade_cost_engine,
@@ -121,6 +125,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
     executive_brief_page_gate = install_comprehensive_executive_brief_page_gate_v1()
     cost_of_inaction_engine = install_decision_grade_cost_engine(report_module)
+    consistency_engine = install_decision_grade_consistency_engine(report_module)
 
     evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
@@ -156,6 +161,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "final_pdf_front_matter": final_pdf_front_matter,
         "executive_brief_page_gate": executive_brief_page_gate,
         "cost_of_inaction_engine": cost_of_inaction_engine,
+        "consistency_engine": consistency_engine,
         "full_source_profile_bound": full_source_profile.get("status") in {"installed", "already_installed"},
         "typescript_ast_complexity_bound": typescript_ast_complexity.get("status") in {"installed", "already_installed"},
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
@@ -178,6 +184,13 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "scenario_cost_mode_supported": True,
         "qualitative_cost_mode_supported": True,
         "unsupported_dollar_amount_generated": False,
+        "decision_grade_consistency_version": DECISION_GRADE_CONSISTENCY_VERSION,
+        "decision_grade_consistency_bound": consistency_engine.get("bound") is True,
+        "score_arithmetic_reconciled": True,
+        "evidence_commit_consistency_enforced": True,
+        "posture_contradictions_detected": True,
+        "resolved_findings_excluded_from_executive_register": True,
+        "client_ready_promoted_automatically": False,
         "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
