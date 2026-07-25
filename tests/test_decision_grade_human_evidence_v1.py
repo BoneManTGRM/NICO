@@ -200,7 +200,10 @@ def test_report_wrapper_attaches_machine_readable_and_rendered_surfaces() -> Non
         }
 
     wrapped = wrap_report_builder_with_human_evidence(delegate)
-    result = wrapped(identity=_identity(), stage_results={})
+    result = wrapped(
+        identity={**_identity(), "current_stage": "final_comprehensive_report_generation"},
+        stage_results={"final_comprehensive_report_generation": {"status": "running"}},
+    )
     package = result["report_package"]
 
     assert result["strategic_human_evidence"]["module_count"] == 10
