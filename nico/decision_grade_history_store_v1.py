@@ -4,7 +4,11 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Iterable
 
-from nico.decision_grade_contract_v1 import AssessmentType, DecisionGradeContract
+from nico.decision_grade_contract_v1 import (
+    SCHEMA_VERSION as DECISION_GRADE_CONTRACT_VERSION,
+    AssessmentType,
+    DecisionGradeContract,
+)
 from nico.storage import STORE, StorageAdapter
 
 VERSION = "nico.decision_grade_history_store.v1"
@@ -14,6 +18,10 @@ _MARKER = "__nico_decision_grade_history_store_v1__"
 def _text(value: Any, limit: int = 1000) -> str:
     normalized = " ".join(str(value or "").split())
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+
+
+def _schema_family(value: Any) -> str:
+    return _text(value, 180).split(".v", 1)[0]
 
 
 def _walk_dicts(value: Any, *, max_depth: int = 7) -> Iterable[dict[str, Any]]:
@@ -78,11 +86,13 @@ def find_previous_compatible_assessment(
     current_assessment_id: str,
     customer_id: str | None = None,
     project_id: str | None = None,
+    schema_family: str | None = None,
     store: StorageAdapter | None = None,
 ) -> dict[str, Any]:
     active = store or STORE
     normalized_repository = _text(repository, 500).casefold()
     normalized_type = AssessmentType(assessment_type)
+    expected_schema_family = _schema_family(schema_family or DECISION_GRADE_CONTRACT_VERSION)
     current_id = _text(current_assessment_id, 240)
     status = active.status()
     records = active.list("assessment_runs", customer_id=customer_id, project_id=project_id)
@@ -93,6 +103,7 @@ def find_previous_compatible_assessment(
         "missing_or_invalid_contract": 0,
         "repository_mismatch": 0,
         "assessment_type_mismatch": 0,
+        "schema_family_mismatch": 0,
     }
 
     for record in records:
@@ -103,7 +114,7 @@ def find_previous_compatible_assessment(
             rejected["current_assessment"] += 1
             continue
         workflow = _text(record.get("workflow"), 100).casefold()
-        if workflow and workflow != "full_assessment":
+        if workflow != "full_assessment":
             rejected["non_full_workflow"] += 1
             continue
         contract, assessment = _extract_contract(record)
@@ -115,6 +126,9 @@ def find_previous_compatible_assessment(
             continue
         if contract.identity.assessment_type != normalized_type:
             rejected["assessment_type_mismatch"] += 1
+            continue
+        if _schema_family(contract.schema_version) != expected_schema_family:
+            rejected["schema_family_mismatch"] += 1
             continue
         candidates.append((_chronology(record, contract), record, contract, assessment))
 
@@ -130,6 +144,7 @@ def find_previous_compatible_assessment(
         "schema_version": VERSION,
         "repository": repository,
         "assessment_type": normalized_type.value,
+        "expected_contract_schema_family": expected_schema_family,
         "current_assessment_id": current_id,
         "records_examined": len(records),
         "compatible_candidate_count": len(candidates),
@@ -155,6 +170,7 @@ def find_previous_compatible_assessment(
         "previous_assessment_id": contract.identity.assessment_id,
         "previous_commit_sha": contract.identity.assessed_commit_sha,
         "previous_completed_at": contract.identity.assessment_completed_at or contract.generated_at,
+        "previous_contract_schema_version": contract.schema_version,
         "record_id": _text(record.get("run_id") or record.get("id"), 240),
         "previous_decision_grade_contract": contract.model_dump(mode="json"),
         "previous_assessment": assessment,
