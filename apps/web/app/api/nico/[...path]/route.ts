@@ -13,6 +13,12 @@ const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|comprehensiv
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [0, 1_500, 4_000];
 
+type BackendResolution = {
+  backend: URL | null;
+  configuredCount: number;
+  conflict: boolean;
+};
+
 function jsonError(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
   return Response.json(
     {status: "error", detail: {code, message, ...extra}},
@@ -26,14 +32,13 @@ function jsonError(status: number, code: string, message: string, extra: Record<
   );
 }
 
-function configuredBackends(): URL[] {
+function configuredBackend(): BackendResolution {
   const candidates = [
     process.env.NICO_API_URL,
     process.env.NICO_BACKEND_URL,
     process.env.NEXT_PUBLIC_NICO_API_URL,
   ];
-  const seen = new Set<string>();
-  const output: URL[] = [];
+  const seen = new Map<string, URL>();
 
   for (const raw of candidates) {
     const configured = String(raw || "").trim();
@@ -43,15 +48,18 @@ function configuredBackends(): URL[] {
       if (url.username || url.password) continue;
       if (!["http:", "https:"].includes(url.protocol)) continue;
       if (process.env.NODE_ENV === "production" && url.protocol !== "https:") continue;
-      const key = url.href;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      output.push(url);
+      seen.set(url.href, url);
     } catch {
       // Invalid deployment values are ignored and reported through the bounded error below.
     }
   }
-  return output;
+
+  const values = [...seen.values()];
+  return {
+    backend: values.length === 1 ? values[0] : null,
+    configuredCount: values.length,
+    conflict: values.length > 1,
+  };
 }
 
 function assessmentRouteAllowed(method: string, path: string): boolean {
@@ -82,8 +90,17 @@ async function proxyNico(
     return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy.");
   }
 
-  const backends = configuredBackends();
-  if (!backends.length) {
+  const resolution = configuredBackend();
+  if (resolution.conflict) {
+    return jsonError(
+      503,
+      "assessment_backend_configuration_conflict",
+      "Multiple different assessment backend origins are configured. A run cannot safely fail over between independent stores; configure all NICO backend variables to the same canonical origin.",
+      {backend_candidate_count: resolution.configuredCount, retryable: false},
+    );
+  }
+  const backend = resolution.backend;
+  if (!backend) {
     return jsonError(503, "assessment_backend_not_configured", "The assessment backend URL is unavailable or unsafe for this deployment.");
   }
 
@@ -94,60 +111,59 @@ async function proxyNico(
   headers.set("X-Request-ID", requestId);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
   const shortRead = request.method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
+  const upstream = new URL(`${apiPath}${request.nextUrl.search}`, backend);
   let lastStatus: number | null = null;
   let lastFailure = "network_error";
 
-  for (const backend of backends) {
-    const upstream = new URL(`${apiPath}${request.nextUrl.search}`, backend);
-    for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
-      const delay = RETRY_DELAYS_MS[attempt];
-      if (delay) await wait(delay);
-      try {
-        const response = await fetch(upstream, {
-          method: request.method,
-          headers,
-          body,
-          cache: "no-store",
-          redirect: "manual",
-          signal: AbortSignal.timeout(shortRead ? 20_000 : 240_000),
-        });
-        lastStatus = response.status;
-        if (TRANSIENT_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length - 1) {
-          await response.arrayBuffer();
-          lastFailure = `upstream_${response.status}`;
-          continue;
-        }
-
-        const responseHeaders = new Headers({
-          "Cache-Control": "no-store",
-          "X-NICO-Proxy-Attempts": String(attempt + 1),
-          "X-Request-ID": requestId,
-        });
-        const responseContentType = response.headers.get("content-type");
-        if (responseContentType) responseHeaders.set("Content-Type", responseContentType);
-        const retryAfter = response.headers.get("retry-after");
-        if (retryAfter) responseHeaders.set("Retry-After", retryAfter);
-
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: responseHeaders,
-        });
-      } catch (error) {
-        lastFailure = error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "network_error";
-        if (attempt >= RETRY_DELAYS_MS.length - 1) break;
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (delay) await wait(delay);
+    try {
+      const response = await fetch(upstream, {
+        method: request.method,
+        headers,
+        body,
+        cache: "no-store",
+        redirect: "manual",
+        signal: AbortSignal.timeout(shortRead ? 20_000 : 240_000),
+      });
+      lastStatus = response.status;
+      if (TRANSIENT_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length - 1) {
+        await response.arrayBuffer();
+        lastFailure = `upstream_${response.status}`;
+        continue;
       }
+
+      const responseHeaders = new Headers({
+        "Cache-Control": "no-store",
+        "X-NICO-Proxy-Attempts": String(attempt + 1),
+        "X-NICO-Backend-Candidate-Count": "1",
+        "X-Request-ID": requestId,
+      });
+      const responseContentType = response.headers.get("content-type");
+      if (responseContentType) responseHeaders.set("Content-Type", responseContentType);
+      const retryAfter = response.headers.get("retry-after");
+      if (retryAfter) responseHeaders.set("Retry-After", retryAfter);
+
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+    } catch (error) {
+      lastFailure = error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "network_error";
+      if (attempt >= RETRY_DELAYS_MS.length - 1) break;
     }
   }
 
   return jsonError(
     502,
     "assessment_backend_unreachable",
-    "The assessment backend could not be reached after bounded cold-start retries.",
+    "The canonical assessment backend could not be reached after bounded cold-start retries.",
     {
       request_id: requestId,
-      attempts_per_backend: RETRY_DELAYS_MS.length,
-      backend_candidate_count: backends.length,
+      attempts: RETRY_DELAYS_MS.length,
+      backend_candidate_count: 1,
       last_upstream_status: lastStatus,
       failure_class: lastFailure,
       retryable: true,
