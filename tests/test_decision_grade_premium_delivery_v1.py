@@ -7,6 +7,10 @@ import zipfile
 
 from reportlab.pdfgen import canvas
 
+from nico.decision_grade_accepted_edition_guard_v1 import (
+    guard_report_package_accepted_edition,
+)
+from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 from nico.decision_grade_premium_delivery_v1 import (
     build_premium_delivery_package,
     wrap_report_builder_with_premium_delivery_package,
@@ -23,24 +27,17 @@ def _pdf() -> bytes:
     return buffer.getvalue()
 
 
-def _package(*, approved: bool = False) -> dict:
+def _package() -> dict:
     pdf = _pdf()
-    acceptance = {
-        "accepted_edition": approved,
-        "client_delivery_allowed": approved,
-        "review": {
-            "reviewer": "reviewer@example.com" if approved else "",
-            "decision": "approved" if approved else "pending",
-        },
-    }
     return {
         "report_id": "report-001",
+        "markdown": "# NICO report\n",
+        "html": "<html><body><h1>NICO report</h1></body></html>",
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
         "pdf_page_count": 4,
         "core_report_page_count": 2,
         "findings_csv": "finding_id,priority,title\nRISK-P1-001,P1,Example risk\n",
         "jira_csv": "Summary,Priority\nFix example,P1\n",
-        "accepted_edition": acceptance,
         "supply_chain_evidence": {
             "status": "complete",
             "sbom": {"bomFormat": "CycloneDX", "specVersion": "1.5"},
@@ -119,6 +116,34 @@ def _package(*, approved: bool = False) -> dict:
     }
 
 
+def _approved_package() -> dict:
+    package = _package()
+    identity = package["json"]["identity"]
+    package["accepted_edition"] = build_accepted_report_edition(
+        repository=identity["repository"],
+        commit_sha=identity["commit_sha"],
+        tree_sha="b" * 40,
+        run_id=identity["run_id"],
+        scanner_run_id="scanner-run-001",
+        evidence_bundle_hash="c" * 64,
+        report_language=identity["report_language"],
+        assessment_depth=identity["assessment_depth"],
+        artifacts={
+            "markdown": package["markdown"],
+            "html": package["html"],
+            "pdf": base64.b64decode(package["pdf_base64"]),
+            "json": package["json"],
+        },
+        reviewer="reviewer@example.com",
+        reviewer_role="Independent technical reviewer",
+        decision="approved",
+        decision_reason="The exact artifact set was accepted.",
+        decided_at="2026-07-25T23:30:00+00:00",
+    )
+    guard_report_package_accepted_edition(package)
+    return package
+
+
 def _archive(delivery: dict) -> zipfile.ZipFile:
     return zipfile.ZipFile(io.BytesIO(base64.b64decode(delivery["zip_base64"])))
 
@@ -140,15 +165,34 @@ def test_internal_review_package_contains_layered_premium_artifacts() -> None:
         assert "15_approval_record.json" in names
         manifest = json.loads(archive.read("11_evidence_manifest.json"))
         assert manifest["client_delivery_allowed"] is False
-        assert manifest["language_parity"]["status"] == "pending_translation_and_parity_verification"
+        assert (
+            manifest["language_parity"]["status"]
+            == "pending_translation_and_parity_verification"
+        )
 
 
 def test_approved_exact_edition_unlocks_complete_package_only() -> None:
-    delivery = build_premium_delivery_package(_package(approved=True))
+    delivery = build_premium_delivery_package(_approved_package())
 
     assert delivery["status"] == "approved_for_delivery"
     assert delivery["client_delivery_allowed"] is True
     assert "APPROVED.zip" in delivery["filename"]
+
+
+def test_fake_approval_is_blocked_before_delivery_packaging() -> None:
+    package = _package()
+    package["accepted_edition"] = {
+        "accepted_edition": True,
+        "client_delivery_allowed": True,
+        "delivery_status": "approved_for_delivery",
+        "review": {"decision": "approved", "reviewer": "fake"},
+    }
+    guard_report_package_accepted_edition(package)
+    delivery = build_premium_delivery_package(package)
+
+    assert package["accepted_edition_validation"]["status"] == "invalid"
+    assert delivery["client_delivery_allowed"] is False
+    assert delivery["status"] == "internal_review_ready"
 
 
 def test_delivery_archive_is_deterministic() -> None:
