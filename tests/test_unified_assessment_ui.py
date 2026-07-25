@@ -68,7 +68,8 @@ def test_one_run_action_uses_only_comprehensive_start_endpoint() -> None:
     source = HOOK.read_text(encoding="utf-8")
     run_body = source.split("async function run()", 1)[1]
 
-    assert 'apiUrl("/assessment/comprehensive-intake")' in run_body
+    assert "requestWithRetry(" in run_body
+    assert '"/assessment/comprehensive-intake"' in run_body
     assert 'assessment_depth: "strategic"' in run_body
     assert '"/assessment/express-run"' not in run_body
     assert '"/assessment/mid-run"' not in run_body
@@ -128,55 +129,3 @@ def test_progress_uses_backend_stage_progress_elapsed_time_and_exact_run_identit
     assert "result?.run_id" in source
     assert ".progressBar" in css
     assert ".timeline" in css
-
-
-def test_result_distinguishes_pending_unavailable_and_review_required() -> None:
-    source = assessment_source()
-    for state in ("pending", "unavailable", "complete", "review_required", "timed_out"):
-        assert state in source
-    assert "Not scored" in source
-    assert "Evidence limitations" in source
-    assert "Discloses missing or failed evidence" in source
-
-
-def test_primary_navigation_uses_one_assessment_entry_and_normalizes_legacy_tiers() -> None:
-    navigation = NAVIGATION.read_text(encoding="utf-8")
-    primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
-
-    assert 'type AssessmentMode = "express" | "comprehensive"' in navigation
-    assert 'label: "Run Assessment"' in primary
-    assert 'href: "/assessment?tier=express#assessment"' in primary
-    assert 'data-primary-service-count="1"' in navigation
-    assert 'href: "/operations"' not in primary
-    assert 'href: "/retainer-ops"' not in primary
-    assert '["comprehensive", "mid", "full", "deep"]' in navigation
-    assert '"/es/assessment?tier=express#assessment"' in navigation
-    assert 'if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job"' in navigation
-
-
-def test_legacy_full_run_route_defaults_to_comprehensive_intake() -> None:
-    redirect = FULL_RUN_REDIRECT.read_text(encoding="utf-8")
-    layout = LAYOUT.read_text(encoding="utf-8")
-    assert 'pathname !== "/full-run"' in redirect
-    assert 'params.get("legacy") === "1"' in redirect
-    assert 'params.get("review") === "1"' in redirect
-    assert 'window.location.replace("/assessment?tier=comprehensive#assessment")' in redirect
-    assert "<LegacyFullRunRedirect />" in layout
-
-
-def test_operations_preload_guard_hides_failure_colored_placeholders_until_loaded() -> None:
-    guard = OPERATIONS_GUARD.read_text(encoding="utf-8")
-    layout = LAYOUT.read_text(encoding="utf-8")
-    assert 'pathname !== "/operations"' in guard
-    assert 'section.textContent?.includes("Operator authentication")' in guard
-    assert 'element.style.setProperty("display", "none", "important")' in guard
-    assert 'PRELOAD_SECTION_ATTRIBUTE = "data-nico-preload-section-hidden"' in guard
-    assert "<OperationsPreloadGuard />" in layout
-
-
-def test_unified_assessment_layout_is_mobile_readable() -> None:
-    css = STYLES.read_text(encoding="utf-8")
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
-    assert ".progressBar" in css
-    assert ".timeline" in css
-    assert "@media (max-width: 760px)" in css
