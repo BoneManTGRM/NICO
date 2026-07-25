@@ -25,14 +25,26 @@ def test_mobile_report_cards_wrap_long_paths_and_use_compact_actions() -> None:
     assert "overflow-wrap: anywhere" in source
     assert "word-break: break-word" in source
     assert "grid-template-columns: minmax(0, 1fr) auto" in source
-    assert "max-width: 46vw" in source
+    assert "grid-template-columns: minmax(0, 1fr) minmax(116px, 37vw)" in source
+    assert "max-width: 220px" in source
+    assert "font-size: clamp(10px, 2.8vw, 12px)" in source
     assert "grid-template-columns: 1fr" in source
     assert "main.shell[data-assessment-service-count] .report-actions button" in source
+
+
+def test_mobile_status_pills_do_not_consume_half_the_result_card() -> None:
+    source = SOURCE.read_text(encoding="utf-8")
+
+    assert "max-width: 46vw" not in source
+    assert "minmax(110px, 36vw)" in source
+    assert "padding: 6px 8px" in source
+    assert "font-size: clamp(9.5px, 2.65vw, 11px)" in source
+    assert "justify-self: end" in source
 
 
 def test_polish_styles_apply_to_the_unified_single_assessment_shell() -> None:
     source = SOURCE.read_text(encoding="utf-8")
 
     assert "main.shell[data-assessment-service-count]" in source
-    assert "data-assessment-service-count=\"2\"" not in source
+    assert 'data-assessment-service-count="2"' not in source
     assert "ensurePolishStyles();" in source
