@@ -210,7 +210,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (token !== sequence.current) return;
       setPhase("failed");
       const detail = caught instanceof Error ? caught.message : copy.backendError;
-      setError(detail);
+      setError(`${detail} Retry the run after the backend deployment is healthy; completed stages remain bound to the displayed run ID.`);
       setMessage(copy.backendError);
     }
   }
