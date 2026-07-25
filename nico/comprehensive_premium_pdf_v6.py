@@ -84,6 +84,8 @@ def _build_pdf(
         )
         converted: list[list[Paragraph]] = []
         for row_index, row in enumerate(rows):
+            # Establish the explicit white header paragraph contract, then apply size-specific derivatives.
+            style = table_header if header and row_index == 0 else small
             style = header_style if header and row_index == 0 else cell_style
             converted.append([p(cell, style) for cell in row])
         result = LongTable(converted, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT", splitByRow=1)
