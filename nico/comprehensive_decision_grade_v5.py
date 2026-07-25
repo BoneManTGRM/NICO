@@ -35,6 +35,10 @@ from nico.comprehensive_final_report_semantics_v47 import (
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
+from nico.decision_grade_backlog_export_v1 import (
+    VERSION as BACKLOG_EXPORT_VERSION,
+    wrap_report_builder_with_backlog_exports,
+)
 from nico.full_source_archive_profile_v1 import install_full_source_archive_profile_v1
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
@@ -111,7 +115,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
     evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
     quality_builder = _quality_report_builder(report_module.build_comprehensive_report_package)
-    build_comprehensive_report_package = wrap_report_builder(quality_builder)
+    score_truth_builder = wrap_report_builder(quality_builder)
+    build_comprehensive_report_package = wrap_report_builder_with_backlog_exports(score_truth_builder)
 
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
@@ -159,6 +164,10 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "control_specific_assurance": True,
         "blanket_incomplete_removed": True,
         "report_score_drift_blocks_package": True,
+        "decision_grade_backlog_export_version": BACKLOG_EXPORT_VERSION,
+        "decision_grade_backlog_export_bound": True,
+        "backlog_export_formats": ["markdown", "json", "github", "jira_csv", "linear_csv"],
+        "backlog_external_issue_creation_allowed": False,
         "automatic_code_merge_allowed": False,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
