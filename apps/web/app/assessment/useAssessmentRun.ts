@@ -26,6 +26,29 @@ export type AssessmentRunController = {
   run: () => Promise<void>;
 };
 
+const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
+
+async function requestWithRetry(path: string, init: RequestInit, copy: ReturnType<typeof copyFor>): Promise<Result> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < CLIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+    const delay = CLIENT_RETRY_DELAYS_MS[attempt];
+    if (delay) await wait(delay);
+    try {
+      const response = await fetch(apiUrl(path), {...init, cache: "no-store"});
+      if (TRANSIENT_STATUS.has(response.status) && attempt < CLIENT_RETRY_DELAYS_MS.length - 1) {
+        await response.arrayBuffer();
+        continue;
+      }
+      return await parseJson(response, copy);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= CLIENT_RETRY_DELAYS_MS.length - 1) break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(copy.backendError);
+}
+
 export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const copy = copyFor(locale);
   const service: Service = "comprehensive";
@@ -62,7 +85,20 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
   const running = phase === "starting" || phase === "running";
 
+  async function recoverRun(runId: string): Promise<Result | null> {
+    try {
+      return await requestWithRetry(
+        `/assessment/comprehensive-run/${encodeURIComponent(runId)}`,
+        {method: "GET", headers: {Accept: "application/json"}},
+        copy,
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async function continueRun(initial: Result, scope: Scope, token: number): Promise<void> {
+    void scope;
     let current = initial;
     for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
       if (token !== sequence.current) return;
@@ -77,17 +113,28 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
       setPhase("running");
       setAttempt(count);
+      setError("");
       const currentStageId = String(current.current_stage || current.record?.current_stage || "");
       setMessage(`${copy.service.label}: ${copy.stageLabels[currentStageId] || currentStageId.replaceAll("_", " ") || copy.phases.running}.`);
       const runId = String(current.run_id || "");
       if (!runId) throw new Error(copy.runIdMissing);
 
-      current = await parseJson(await fetch(apiUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`), {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({max_stages: 1}),
-        cache: "no-store",
-      }), copy);
+      try {
+        current = await requestWithRetry(
+          `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`,
+          {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({max_stages: 1}),
+          },
+          copy,
+        );
+      } catch (error) {
+        const recovered = await recoverRun(runId);
+        if (!recovered) throw error;
+        current = recovered;
+        setMessage(`${copy.service.label}: recovered run state after a temporary backend interruption.`);
+      }
       await wait(POLL_INTERVAL_MS);
     }
     setResult(current);
@@ -130,19 +177,23 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
 
     try {
-      const data = await parseJson(await fetch(apiUrl("/assessment/comprehensive-intake"), {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(body),
-        cache: "no-store",
-      }), copy);
+      const data = await requestWithRetry(
+        "/assessment/comprehensive-intake",
+        {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        },
+        copy,
+      );
       if (token !== sequence.current) return;
       setResult(data);
       await continueRun(data, scope, token);
     } catch (caught) {
       if (token !== sequence.current) return;
       setPhase("failed");
-      setError(caught instanceof Error ? caught.message : copy.backendError);
+      const detail = caught instanceof Error ? caught.message : copy.backendError;
+      setError(`${detail} Retry the run after the backend deployment is healthy; completed stages remain bound to the displayed run ID.`);
       setMessage(copy.backendError);
     }
   }
