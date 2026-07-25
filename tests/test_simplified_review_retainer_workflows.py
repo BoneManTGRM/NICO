@@ -30,17 +30,31 @@ def test_completed_assessment_adds_exact_run_final_review_action() -> None:
 def test_final_review_is_one_controlled_approval_and_download_action() -> None:
     source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
 
-    assert "Review once. Approve once. Download the accepted report." in source
-    assert "Approve and download final report" in source
+    assert "Final review, without the friction." in source
+    assert "Approve and download final PDF" in source
     assert "await ensureReview(current)" in source
     assert '/approved`' in source
     assert "await downloadApprovedPdf(latest)" in source
-    assert "I reviewed the exact report, scorecard, evidence limitations" in source
+    assert "I reviewed this exact report." in source
+    assert "scorecard, evidence limitations, immutable run identity" in source
     assert "Request more evidence" in source
     assert "Reject delivery" in source
     assert 'type="password"' in source
     assert "localStorage" not in source
     assert "document.cookie" not in source
+
+
+def test_final_review_prioritizes_reviewer_and_token_over_advanced_identity() -> None:
+    source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+
+    reviewer = source.index("Authorized reviewer")
+    token = source.index("Operator admin token")
+    open_review = source.index("Open secure review")
+    advanced = source.index("Change report identity or scope")
+
+    assert reviewer < token < open_review < advanced
+    assert "The report identity is already attached" in source
+    assert "The operator token stays only in this open page" in source
 
 
 def test_retainer_workspace_requires_one_exact_baseline_and_explains_scope() -> None:
