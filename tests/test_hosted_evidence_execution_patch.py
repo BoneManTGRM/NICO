@@ -33,7 +33,7 @@ def test_bandit_triage_defaults_findings_to_blocking_until_approved():
     assert summary["static_lift_allowed"] is False
 
 
-def test_missing_scanner_tool_returns_verified_current_run_unavailable(tmp_path):
+def test_missing_scanner_tool_records_current_run_unavailable_without_verifying_evidence(tmp_path):
     spec = ScannerToolSpec("missing-test-tool", ("definitely-not-installed-nico-tool", "--version"), "static")
 
     result = run_scanner_tool(spec, _workspace(tmp_path))
@@ -41,12 +41,12 @@ def test_missing_scanner_tool_returns_verified_current_run_unavailable(tmp_path)
     assert result["tool"] == "missing-test-tool"
     assert result["status"] == "unavailable"
     assert result["current_run"] is True
-    assert result["verified_for_this_report"] is True
+    assert result["verified_for_this_report"] is False
     assert result["findings_count"] == 0
     assert "not installed" in result["reason"]
 
 
-def test_scanner_artifact_includes_tool_records_for_current_run(tmp_path):
+def test_scanner_artifact_distinguishes_observed_state_from_verified_evidence(tmp_path):
     spec = ScannerToolSpec("missing-test-tool", ("definitely-not-installed-nico-tool", "--version"), "static")
 
     artifact = run_scanner_tools(_workspace(tmp_path), specs=(spec,))
@@ -56,7 +56,7 @@ def test_scanner_artifact_includes_tool_records_for_current_run(tmp_path):
     assert record["tool"] == "missing-test-tool"
     assert record["status"] == "unavailable"
     assert record["current_run"] is True
-    assert record["verified_for_this_report"] is True
+    assert record["verified_for_this_report"] is False
 
 
 def test_empty_bandit_triage_allows_static_lift_only_when_zero_findings():
