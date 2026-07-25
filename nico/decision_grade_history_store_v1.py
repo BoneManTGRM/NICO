@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Iterable
+from functools import wraps
+from typing import Any, Callable, Iterable
 
 from nico.decision_grade_contract_v1 import AssessmentType, DecisionGradeContract
 from nico.storage import STORE, StorageAdapter
 
 VERSION = "nico.decision_grade_history_store.v1"
+_MARKER = "__nico_decision_grade_history_store_v1__"
 
 
 def _text(value: Any, limit: int = 1000) -> str:
@@ -188,8 +190,81 @@ def enrich_report_identity_with_history(
     return output, selection
 
 
+def _public_selection(selection: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(value)
+        for key, value in selection.items()
+        if key not in {"previous_decision_grade_contract", "previous_assessment"}
+    }
+
+
+def wrap_report_builder_with_persisted_history(
+    delegate: Callable[..., dict[str, Any]],
+    *,
+    store: StorageAdapter | None = None,
+) -> Callable[..., dict[str, Any]]:
+    if getattr(delegate, _MARKER, False):
+        return delegate
+
+    @wraps(delegate)
+    def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        positional = list(args)
+        identity = kwargs.get("identity")
+        identity_position: int | None = None
+        if not isinstance(identity, dict) and positional and isinstance(positional[0], dict):
+            identity = positional[0]
+            identity_position = 0
+        if not isinstance(identity, dict):
+            return delegate(*args, **kwargs)
+
+        try:
+            enriched, selection = enrich_report_identity_with_history(identity, store=store)
+        except Exception as exc:  # pragma: no cover - storage boundary
+            enriched = deepcopy(identity)
+            selection = {
+                "schema_version": VERSION,
+                "status": "history_store_unavailable",
+                "selected": False,
+                "reason": f"Persisted history lookup unavailable: {type(exc).__name__}",
+                "synthetic_history_generated": False,
+            }
+        if identity_position is None:
+            kwargs = {**kwargs, "identity": enriched}
+        else:
+            positional[identity_position] = enriched
+        result = delegate(*tuple(positional), **kwargs)
+        if not isinstance(result, dict):
+            return result
+
+        public = _public_selection(selection)
+        result["historical_comparison_selection"] = public
+        package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
+        package["historical_comparison_selection"] = public
+        result["report_package"] = package
+        quality = result.get("report_quality_contract") if isinstance(result.get("report_quality_contract"), dict) else {}
+        quality.update(
+            {
+                "decision_grade_history_store_version": VERSION,
+                "persisted_history_lookup_completed": selection.get("status") != "history_store_unavailable",
+                "previous_compatible_assessment_selected": selection.get("selected") is True,
+                "historical_comparison_synthetic": False,
+                "history_storage_adapter": selection.get("storage_adapter", "unknown"),
+                "history_durability_verified": bool(selection.get("durability_verified")),
+            }
+        )
+        result["report_quality_contract"] = quality
+        package_quality = package.get("report_quality_contract") if isinstance(package.get("report_quality_contract"), dict) else {}
+        package_quality.update(quality)
+        package["report_quality_contract"] = package_quality
+        return result
+
+    setattr(wrapped, _MARKER, True)
+    return wrapped
+
+
 __all__ = [
     "VERSION",
     "find_previous_compatible_assessment",
     "enrich_report_identity_with_history",
+    "wrap_report_builder_with_persisted_history",
 ]
