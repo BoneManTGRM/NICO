@@ -39,6 +39,10 @@ from nico.comprehensive_final_report_semantics_v47 import (
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
+from nico.decision_grade_cost_engine_v1 import (
+    VERSION as DECISION_GRADE_COST_ENGINE_VERSION,
+    install_decision_grade_cost_engine,
+)
 from nico.decision_grade_history_store_v1 import (
     VERSION as DECISION_GRADE_HISTORY_STORE_VERSION,
     wrap_report_builder_with_persisted_history,
@@ -116,6 +120,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
     executive_brief_page_gate = install_comprehensive_executive_brief_page_gate_v1()
+    cost_of_inaction_engine = install_decision_grade_cost_engine(report_module)
 
     evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
@@ -150,6 +155,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "code_remediation_outline": code_outline,
         "final_pdf_front_matter": final_pdf_front_matter,
         "executive_brief_page_gate": executive_brief_page_gate,
+        "cost_of_inaction_engine": cost_of_inaction_engine,
         "full_source_profile_bound": full_source_profile.get("status") in {"installed", "already_installed"},
         "typescript_ast_complexity_bound": typescript_ast_complexity.get("status") in {"installed", "already_installed"},
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
@@ -166,6 +172,12 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "executive_brief_what_this_means_required": True,
         "executive_brief_immutable_commit_value_required": True,
         "executive_brief_scorecard_separation_required": True,
+        "decision_grade_cost_engine_version": DECISION_GRADE_COST_ENGINE_VERSION,
+        "decision_grade_cost_engine_bound": cost_of_inaction_engine.get("bound") is True,
+        "client_input_cost_mode_supported": True,
+        "scenario_cost_mode_supported": True,
+        "qualitative_cost_mode_supported": True,
+        "unsupported_dollar_amount_generated": False,
         "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
