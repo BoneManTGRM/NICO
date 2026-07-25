@@ -102,17 +102,21 @@ def _runtime_persistence(request: Request) -> dict[str, Any]:
         runtime.get("durability_verified")
         or adapter in {"postgres", "sqlite"}
     )
-    replacement_safe = configured and bool(
-        runtime.get("survives_container_replacement_verified")
-        or adapter == "postgres"
-    )
-    return {
+    result: dict[str, Any] = {
         "recorded": configured,
         "durable": durable,
         "adapter": adapter,
         "storage_source": str(runtime.get("storage_source") or adapter),
-        "survives_container_replacement_verified": replacement_safe,
     }
+    if "survives_container_replacement_verified" in runtime:
+        result["survives_container_replacement_verified"] = configured and (
+            runtime.get("survives_container_replacement_verified") is True
+        )
+    elif configured and adapter == "postgres":
+        # Preserve legacy Postgres truth while avoiding an unsupported claim for
+        # older SQLite runtimes that never recorded a mounted-volume guarantee.
+        result["survives_container_replacement_verified"] = True
+    return result
 
 
 def _with_runtime_truth(request: Request, response: dict[str, Any]) -> dict[str, Any]:
