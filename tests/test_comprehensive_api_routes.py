@@ -136,6 +136,7 @@ def test_intake_preserves_explicit_exact_commit_as_first_class_snapshot_input(
         "durable": True,
         "adapter": "postgres",
         "storage_source": "DATABASE_URL",
+        "survives_container_replacement_verified": True,
     }
     assert body["human_review_required"] is True
     assert body["client_delivery_allowed"] is False
@@ -161,6 +162,7 @@ def test_active_durable_adapter_overrides_stale_false_legacy_flag(tmp_path: Path
         assert response.json()["persistence"]["recorded"] is True
         assert response.json()["persistence"]["durable"] is True
         assert response.json()["persistence"]["adapter"] == adapter
+        assert response.json()["persistence"]["survives_container_replacement_verified"] is (adapter == "postgres")
 
 
 def test_routes_fail_closed_without_runtime_controller() -> None:
@@ -174,6 +176,20 @@ def test_routes_fail_closed_without_runtime_controller() -> None:
     assert detail["human_review_required"] is True
     assert detail["client_delivery_allowed"] is False
     assert "temporarily unavailable" in detail["message"]
+
+
+def test_missing_run_reports_persistence_diagnostic_not_generic_404(tmp_path: Path) -> None:
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=_controller(tmp_path / "missing.db"))
+
+    response = TestClient(app).get("/assessment/comprehensive-run/comprun_lost_after_restart")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["code"] == "comprehensive_run_not_found"
+    assert detail["retryable"] is False
+    assert detail["persistence_diagnostic_required"] is True
+    assert "different backend deployment" in detail["message"]
 
 
 def test_routes_translate_validation_missing_and_conflict(tmp_path: Path) -> None:
