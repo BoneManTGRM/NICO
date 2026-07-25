@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from nico.comprehensive_score_truth_v1 import enforce_report_score_truth
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PDF_SOURCE = ROOT / "nico" / "comprehensive_premium_pdf_v6.py"
+
+
+def _package(*, canonical_score: int, stage_score: int) -> dict:
+    return {
+        "status": "complete",
+        "assessment": {
+            "maturity_signal": {
+                "score": canonical_score,
+                "presented_score": canonical_score,
+            }
+        },
+        "stage_summaries": [
+            {
+                "stage_id": "evidence_reconciliation_and_scoring",
+                "evidence": [f"technical_score: {stage_score}"],
+            },
+            {
+                "stage_id": "risk_reduction_and_executive_briefing",
+                "evidence": [f"technical_score: {stage_score}"],
+            },
+        ],
+        "report_quality_contract": {},
+        "report_package": {
+            "report_quality_contract": {},
+            "client_delivery_allowed": False,
+        },
+        "client_delivery_allowed": False,
+    }
+
+
+def test_report_blocks_when_appendix_score_disagrees_with_canonical_score() -> None:
+    result = enforce_report_score_truth(_package(canonical_score=85, stage_score=75))
+
+    assert result["status"] == "blocked"
+    assert result["reason"] == "canonical_score_truth_mismatch"
+    assert result["report_quality_contract"]["canonical_score_consistent_across_stages"] is False
+    assert result["report_quality_contract"]["canonical_score"] == 85
+    assert result["report_quality_contract"]["stage_reported_scores"] == [75]
+    assert result["client_delivery_allowed"] is False
+
+
+def test_report_accepts_one_score_across_cover_scorecard_and_appendix() -> None:
+    result = enforce_report_score_truth(_package(canonical_score=85, stage_score=85))
+
+    assert result["status"] == "complete"
+    assert result.get("reason") is None
+    assert result["report_quality_contract"]["canonical_score_consistent_across_stages"] is True
+    assert result["report_quality_contract"]["stage_reported_scores"] == [85]
+
+
+def test_pdf_tables_use_explicit_white_header_paragraphs() -> None:
+    source = PDF_SOURCE.read_text(encoding="utf-8")
+
+    assert '"P6-TableHeader"' in source
+    assert "textColor=colors.white" in source
+    assert "style = table_header if header and row_index == 0 else small" in source
+    assert '("TOPPADDING", (0, 0), (-1, 0), 6)' in source
+    assert '("BOTTOMPADDING", (0, 0), (-1, 0), 6)' in source
