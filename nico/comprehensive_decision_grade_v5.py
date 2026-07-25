@@ -63,6 +63,10 @@ from nico.decision_grade_human_evidence_binding_v1 import (
     VERSION as DECISION_GRADE_HUMAN_EVIDENCE_VERSION,
     wrap_report_builder_with_human_evidence,
 )
+from nico.decision_grade_scanner_execution_v1 import (
+    VERSION as DECISION_GRADE_SCANNER_EXECUTION_VERSION,
+    install_decision_grade_scanner_execution,
+)
 from nico.full_source_archive_profile_v1 import install_full_source_archive_profile_v1
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
@@ -136,6 +140,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
     executive_brief_page_gate = install_comprehensive_executive_brief_page_gate_v1()
+    scanner_execution = install_decision_grade_scanner_execution(report_module)
     cost_of_inaction_engine = install_decision_grade_cost_engine(report_module)
     acceptance_engine = install_decision_grade_acceptance_engine(report_module)
     consistency_engine = install_decision_grade_consistency_engine(report_module)
@@ -175,6 +180,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "code_remediation_outline": code_outline,
         "final_pdf_front_matter": final_pdf_front_matter,
         "executive_brief_page_gate": executive_brief_page_gate,
+        "scanner_execution": scanner_execution,
         "cost_of_inaction_engine": cost_of_inaction_engine,
         "acceptance_engine": acceptance_engine,
         "consistency_engine": consistency_engine,
@@ -194,6 +200,9 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "executive_brief_what_this_means_required": True,
         "executive_brief_immutable_commit_value_required": True,
         "executive_brief_scorecard_separation_required": True,
+        "decision_grade_scanner_execution_version": DECISION_GRADE_SCANNER_EXECUTION_VERSION,
+        "decision_grade_scanner_execution_bound": scanner_execution.get("bound") is True,
+        "structured_scanner_execution_records_generated": True,
         "decision_grade_cost_engine_version": DECISION_GRADE_COST_ENGINE_VERSION,
         "decision_grade_cost_engine_bound": cost_of_inaction_engine.get("bound") is True,
         "client_input_cost_mode_supported": True,
