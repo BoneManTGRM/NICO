@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from nico.scanner_artifact_provenance_v1 import install_scanner_artifact_provenance_v1
 from nico.scanner_complete_output_compat_v3 import install_scanner_complete_output_compat_v3
 
 # Install against the base runner before dependency, secret, static, heartbeat,
 # and execution-metadata wrappers capture their delegates.
 install_scanner_complete_output_compat_v3()
+install_scanner_artifact_provenance_v1()
 
 
 def _as_int(value: Any) -> int:
@@ -28,13 +30,44 @@ def _finding_count(payload: dict[str, Any]) -> int:
     return 0
 
 
+def _severity(finding: dict[str, Any]) -> str:
+    extra = finding.get("extra") if isinstance(finding.get("extra"), dict) else {}
+    metadata = extra.get("metadata") if isinstance(extra.get("metadata"), dict) else {}
+    return str(
+        finding.get("issue_severity")
+        or finding.get("severity")
+        or finding.get("level")
+        or extra.get("severity")
+        or metadata.get("severity")
+        or metadata.get("impact")
+        or "unknown"
+    ).lower()
+
+
+def _confidence(finding: dict[str, Any]) -> str:
+    return str(finding.get("issue_confidence") or finding.get("confidence") or "unknown").lower()
+
+
+def _verified(finding: dict[str, Any]) -> bool:
+    return finding.get("verified") is True or finding.get("human_verified") is True or finding.get("approved_by") not in {None, ""}
+
+
 def _bandit_triage_status(finding: dict[str, Any]) -> str:
-    severity = str(finding.get("issue_severity") or finding.get("severity") or "unknown").lower()
-    confidence = str(finding.get("issue_confidence") or finding.get("confidence") or "unknown").lower()
-    if severity in {"high", "medium"}:
+    severity = _severity(finding)
+    confidence = _confidence(finding)
+    if _verified(finding) and severity in {"critical", "high"} and confidence in {"high", "certain"}:
         return "blocker"
-    if confidence == "high":
+    if severity in {"low", "info", "informational", "warning"}:
+        return "informational"
+    return "needs-review"
+
+
+def _semgrep_triage_status(finding: dict[str, Any]) -> str:
+    severity = _severity(finding)
+    if _verified(finding) and severity in {"critical", "error", "high"}:
         return "blocker"
+    if severity in {"low", "info", "informational"}:
+        return "informational"
     return "needs-review"
 
 
@@ -52,18 +85,24 @@ def build_bandit_triage(findings: list[Any]) -> list[dict[str, Any]]:
     for index, raw in enumerate(findings, start=1):
         finding = raw if isinstance(raw, dict) else {"issue_text": str(raw)}
         status = _bandit_triage_status(finding)
+        reason = {
+            "blocker": "Verified high-severity and high-confidence Bandit finding.",
+            "informational": "Low-severity candidate retained for transparency; not a material defect without human verification.",
+            "needs-review": "Unverified Bandit candidate requires rule and exact-location review before material classification.",
+        }[status]
         triage.append(
             {
                 "finding_id": _bandit_finding_id(finding, index),
                 "rule_id": str(finding.get("test_id") or finding.get("test_name") or "unknown"),
                 "filename": str(finding.get("filename") or finding.get("file") or "unknown"),
                 "line_number": _as_int(finding.get("line_number") or finding.get("line")),
-                "severity": str(finding.get("issue_severity") or finding.get("severity") or "unknown"),
-                "confidence": str(finding.get("issue_confidence") or finding.get("confidence") or "unknown"),
+                "severity": _severity(finding),
+                "confidence": _confidence(finding),
+                "verified": _verified(finding),
                 "issue_text": str(finding.get("issue_text") or finding.get("message") or finding.get("text") or ""),
                 "triage_status": status,
-                "triage_reason": "Automatic current-run triage. Treat as blocking until manually approved or fixed." if status == "blocker" else "Automatic current-run triage. Needs human review before it can be treated as non-blocking.",
-                "approved_by": None,
+                "triage_reason": reason,
+                "approved_by": finding.get("approved_by"),
             }
         )
     return triage
@@ -75,11 +114,30 @@ def summarize_bandit_triage(triage: list[dict[str, Any]]) -> dict[str, Any]:
         "total_findings": len(triage),
         "blocker_count": counts.get("blocker", 0),
         "needs_review_count": counts.get("needs-review", 0),
+        "informational_count": counts.get("informational", 0),
         "accepted_risk_count": counts.get("accepted-risk", 0),
         "false_positive_count": counts.get("false-positive", 0),
         "fixed_count": counts.get("fixed", 0),
-        "static_lift_allowed": len(triage) == 0 or all(str(item.get("triage_status")) in {"accepted-risk", "false-positive", "fixed"} and item.get("approved_by") for item in triage),
-        "guardrail": "Bandit findings remain blocking until zero findings or approved finding-level triage exists.",
+        "static_lift_allowed": len(triage) == 0 or all(
+            str(item.get("triage_status")) in {"accepted-risk", "false-positive", "fixed", "informational"}
+            and (str(item.get("triage_status")) == "informational" or item.get("approved_by"))
+            for item in triage
+        ),
+        "guardrail": "Only human-verified critical/high findings may be material blockers; unverified medium/warning candidates require review.",
+    }
+
+
+def classify_semgrep_candidates(findings: list[Any]) -> dict[str, Any]:
+    counts = Counter(
+        _semgrep_triage_status(item if isinstance(item, dict) else {"message": str(item)})
+        for item in findings
+    )
+    return {
+        "raw_candidates": len(findings),
+        "verified_material": counts.get("blocker", 0),
+        "review_required": counts.get("needs-review", 0),
+        "informational_or_nonblocking": counts.get("informational", 0),
+        "candidate_volume_is_not_confirmed_defect_count": True,
     }
 
 
@@ -89,24 +147,24 @@ def _enrich_tool_payload(tool_payload: dict[str, Any], tool_name: str) -> dict[s
     enriched.setdefault("current_run", True)
     enriched.setdefault("execution_observed_for_this_report", True)
     enriched.setdefault("findings_count", _finding_count(enriched))
-    # A failed, timed-out, or unavailable analyzer is verified as an observed state,
-    # not verified technical evidence. Keeping these concepts separate prevents an
-    # unavailable tool from lifting assurance or being mistaken for completed proof.
     enriched["verified_for_this_report"] = status == "completed"
     if status in {"unavailable", "timeout", "failed"}:
         reason = str(enriched.get("reason") or enriched.get("failure_reason") or enriched.get("stderr") or "no reason returned")
         enriched.setdefault("failure_or_unavailable_reason", reason[:2000])
+        enriched["execution_failure_is_evidence_limitation"] = True
+    findings = enriched.get("findings") if isinstance(enriched.get("findings"), list) else []
     if tool_name == "bandit":
-        findings = enriched.get("findings") if isinstance(enriched.get("findings"), list) else []
         triage = build_bandit_triage(findings)
         enriched["bandit_triage"] = triage
         enriched["bandit_triage_summary"] = summarize_bandit_triage(triage)
+    if tool_name == "semgrep":
+        enriched["candidate_classification"] = classify_semgrep_candidates(findings)
     return enriched
 
 
 def _patch_scanner_tool_payloads() -> None:
-    from nico import scanner_tool_runners
     from nico import hosted_scanner_worker
+    from nico import scanner_tool_runners
 
     original_tool = getattr(scanner_tool_runners, "_nico_original_run_scanner_tool_execution_patch", None)
     if original_tool is None:
@@ -114,10 +172,7 @@ def _patch_scanner_tool_payloads() -> None:
         scanner_tool_runners._nico_original_run_scanner_tool_execution_patch = original_tool
 
     def run_scanner_tool_with_current_run_metadata(spec: Any, workspace: Any, *, runner: Any = None) -> dict[str, Any]:
-        if runner is None:
-            payload = original_tool(spec, workspace)
-        else:
-            payload = original_tool(spec, workspace, runner=runner)
+        payload = original_tool(spec, workspace) if runner is None else original_tool(spec, workspace, runner=runner)
         if isinstance(payload, dict):
             return _enrich_tool_payload(payload, str(getattr(spec, "name", payload.get("tool") or "unknown")))
         return payload
@@ -148,6 +203,13 @@ def _patch_scanner_tool_payloads() -> None:
                         "execution_observed_for_this_report": payload.get("execution_observed_for_this_report", True),
                         "verified_for_this_report": payload.get("verified_for_this_report", False),
                         "full_history_verified": payload.get("full_history_verified", False),
+                        "artifact_hash": payload.get("artifact_hash"),
+                        "application_commit_sha": payload.get("application_commit_sha"),
+                        "worker_image_digest": payload.get("worker_image_digest"),
+                        "worker_code_version": payload.get("worker_code_version"),
+                        "scanner_tool_version": payload.get("scanner_tool_version"),
+                        "scanner_contract_version": payload.get("scanner_contract_version"),
+                        "target_commit_sha": payload.get("target_commit_sha"),
                         "reason": payload.get("reason") or payload.get("failure_or_unavailable_reason") or "",
                     }
                 )
@@ -156,6 +218,9 @@ def _patch_scanner_tool_payloads() -> None:
         if isinstance(bandit, dict):
             artifact["bandit_triage"] = bandit.get("bandit_triage") or []
             artifact["bandit_triage_summary"] = bandit.get("bandit_triage_summary") or summarize_bandit_triage([])
+        semgrep = tools.get("semgrep") if isinstance(tools, dict) else None
+        if isinstance(semgrep, dict):
+            artifact["semgrep_candidate_classification"] = semgrep.get("candidate_classification") or classify_semgrep_candidates([])
         return artifact
 
     scanner_tool_runners.run_scanner_tools = run_scanner_tools_with_execution_metadata
@@ -176,12 +241,20 @@ def _patch_runtime_guard_tool_records() -> None:
         if isinstance(guard, dict):
             guard["tool_records"] = artifact.get("tool_records") or []
             guard["bandit_triage_summary"] = artifact.get("bandit_triage_summary") or {}
+            guard["semgrep_candidate_classification"] = artifact.get("semgrep_candidate_classification") or {}
+            guard["scanner_provenance"] = artifact.get("scanner_provenance") or {}
             guard["complexity_engine_attached"] = isinstance(artifact.get("complexity_engine"), dict)
-            guard["score_lift_guardrail"] = "Dependency, secrets, static analysis, and velocity scores may only lift from completed current-run tools or approved formal triage."
+            guard["score_lift_guardrail"] = "Technical scores may lift only from completed current-run tools or approved formal triage; execution failures constrain assurance only."
             guard["observed_failure_is_not_verified_evidence"] = True
+            guard["unverified_candidate_volume_is_not_material_count"] = True
         if artifact.get("bandit_triage") is not None:
             updated["bandit_triage"] = artifact.get("bandit_triage") or []
             updated["bandit_triage_summary"] = artifact.get("bandit_triage_summary") or summarize_bandit_triage([])
+        if artifact.get("semgrep_candidate_classification") is not None:
+            updated["semgrep_candidate_classification"] = artifact.get("semgrep_candidate_classification") or {}
+        if artifact.get("provenance_verified") is False:
+            updated["status"] = "blocked"
+            updated["reason"] = "scanner_worker_application_commit_mismatch"
         return updated
 
     hosted_full_evidence_runtime_v2._attach_raw_artifact = attach_raw_artifact_with_tool_records

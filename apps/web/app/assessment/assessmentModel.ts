@@ -5,19 +5,27 @@ export function scopeId(prefix: string, value: string, fallback: string): string
   return slug ? `${prefix}_${slug}` : fallback;
 }
 
+export function toneKey(status?: string): "green" | "yellow" | "red" | "gray" {
+  const value = String(status || "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (["green", "complete", "completed", "attached", "verified", "approved", "accepted", "review_required"].includes(value)) return "green";
+  if (["yellow", "partial", "pending", "running", "queued", "planned", "ready", "starting", "skipped", "review_limited"].includes(value)) return "yellow";
+  if (["red", "failed", "blocked", "error", "timed_out", "interrupted", "rejected", "critical"].includes(value)) return "red";
+  return "gray";
+}
+
 export function statusClass(status?: string): string {
-  const value = String(status || "").toLowerCase();
-  if (["green", "complete", "completed", "attached", "verified", "review_required"].includes(value)) return "status green";
-  if (["yellow", "pending", "running", "queued", "planned", "ready", "starting", "skipped", "review_limited"].includes(value)) return "status yellow";
-  if (["red", "failed", "blocked", "error", "unavailable", "timed_out", "interrupted", "rejected"].includes(value)) return "status red";
-  return "status gray";
+  return `status ${toneKey(status)}`;
+}
+
+export function scoreTone(score: number | null | undefined): "green" | "yellow" | "red" | "gray" {
+  if (typeof score !== "number" || !Number.isFinite(score)) return "gray";
+  if (score >= 80) return "green";
+  if (score >= 70) return "yellow";
+  return "red";
 }
 
 export function scoreClass(score: number | null | undefined): string {
-  if (typeof score !== "number" || !Number.isFinite(score)) return "status gray";
-  if (score >= 80) return "status green";
-  if (score >= 70) return "status yellow";
-  return "status red";
+  return `status ${scoreTone(score)}`;
 }
 
 export function compactIdentifier(value: string, lead = 12, tail = 8): string {
@@ -31,8 +39,10 @@ export function formatStatus(status: unknown, copy: Copy): string {
   const value = raw.toLowerCase().replace(/[\s-]+/g, "_");
   if (!value) return copy.notVerified;
   if (value.includes("review_limited") && value.includes("not_scored")) return copy.reviewLimitedNotScored;
-  if (["complete", "completed", "attached", "verified", "green"].includes(value)) return copy.phases.complete;
-  if (value === "review_limited") return copy.heroEyebrow.startsWith("EVALUACIÓN") ? "REVISIÓN LIMITADA" : "REVIEW LIMITED";
+  if (["complete", "completed", "attached", "green"].includes(value)) return copy.phases.complete;
+  if (["verified", "approved", "accepted"].includes(value)) return copy.verifiedLabel || "Verified";
+  if (value === "partial") return copy.partialLabel || "Partial";
+  if (value === "review_limited") return copy.reviewLimitedLabel || (copy.heroEyebrow.startsWith("EVALUACIÓN") ? "Revisión limitada" : "Review limited");
   if (["review_required", "human_review_required"].includes(value)) return copy.phases.review_required;
   if (["running", "starting", "in_progress"].includes(value)) return copy.phases.running;
   if (["pending", "queued", "planned", "ready", "not_started"].includes(value)) return copy.awaitingStage;
@@ -151,15 +161,15 @@ export function savePdf(encoded: string, filename: string): void {
 export function sectionPresentation(section: Section, copy: Copy) {
   const value = section.presented_score ?? section.score;
   const score = typeof value === "number" ? `${value}/100` : copy.notScored;
-  const assurance = String(section.assurance_label || section.presented_status || section.status || "unknown");
+  const assurance = String(section.assurance_status || section.assurance_label || section.presented_status || section.status || "unavailable");
   const risk = String(section.risk_disposition || "");
   return {
     score,
-    technicalClass: scoreClass(typeof value === "number" ? value : null),
+    technicalTone: scoreTone(typeof value === "number" ? value : null),
     assuranceLabel: formatStatus(assurance, copy),
-    assuranceClass: statusClass(assurance),
+    assuranceTone: toneKey(assurance),
     risk,
     riskLabel: risk ? formatStatus(risk, copy) : "",
-    riskClass: statusClass(risk),
+    riskTone: toneKey(risk),
   };
 }

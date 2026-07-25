@@ -111,7 +111,8 @@ def test_run_scanner_tools_returns_normalized_payload(monkeypatch, tmp_path: Pat
         runner=fake_runner,
     )
 
-    assert payload["artifact_schema"] == "nico.scanner_worker.v2"
+    assert payload["artifact_schema"] == "nico.scanner_worker.v3"
+    assert payload["scanner_contract_version"] == "nico.scanner_worker.v3"
     assert payload["normalized"]["static_tools_completed"] == ["bandit"]
     assert "semgrep" in payload["normalized"]["missing_static_tools"]
 

@@ -11,7 +11,7 @@ def _workspace(tmp_path: Path) -> WorkerWorkspace:
     return WorkerWorkspace(root=tmp_path)
 
 
-def test_bandit_triage_defaults_findings_to_blocking_until_approved():
+def test_bandit_triage_keeps_unverified_candidates_review_limited_until_approved():
     triage = build_bandit_triage(
         [
             {
@@ -27,9 +27,10 @@ def test_bandit_triage_defaults_findings_to_blocking_until_approved():
     summary = summarize_bandit_triage(triage)
 
     assert triage[0]["finding_id"] == "B608"
-    assert triage[0]["triage_status"] == "blocker"
+    assert triage[0]["triage_status"] == "needs-review"
     assert triage[0]["approved_by"] is None
-    assert summary["blocker_count"] == 1
+    assert summary["blocker_count"] == 0
+    assert summary["needs_review_count"] == 1
     assert summary["static_lift_allowed"] is False
 
 
