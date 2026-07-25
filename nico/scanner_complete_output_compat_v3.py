@@ -4,8 +4,78 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.scanner_complete_output_compat.v3"
-_PATCH_MARKER = "_nico_scanner_complete_output_compat_v3"
+VERSION = "nico.scanner_complete_output_compat.v4"
+_PATCH_MARKER = "_nico_scanner_complete_output_compat_v4"
+
+_GENERATED_EXCLUSIONS = (
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "coverage_html",
+)
+
+
+def _semgrep_finding(raw: Any) -> Any:
+    if not isinstance(raw, dict):
+        return raw
+    item = dict(raw)
+    extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+    metadata = extra.get("metadata") if isinstance(extra.get("metadata"), dict) else {}
+    start = item.get("start") if isinstance(item.get("start"), dict) else {}
+    end = item.get("end") if isinstance(item.get("end"), dict) else {}
+    severity = (
+        item.get("severity")
+        or extra.get("severity")
+        or metadata.get("severity")
+        or metadata.get("impact")
+        or "unknown"
+    )
+    item.setdefault("severity", str(severity).lower())
+    item.setdefault("rule_id", item.get("check_id") or metadata.get("id") or "unknown")
+    item.setdefault("message", extra.get("message") or metadata.get("message") or "Semgrep candidate requires review")
+    item.setdefault("file_path", item.get("path") or "")
+    item.setdefault("line", start.get("line"))
+    item.setdefault("column", start.get("col"))
+    item.setdefault("end_line", end.get("line"))
+    item.setdefault("end_column", end.get("col"))
+    item.setdefault("verified", False)
+    return item
+
+
+def _normalize_findings(tool_name: str, findings: Any) -> list[Any]:
+    values = findings if isinstance(findings, list) else list(findings or [])
+    if tool_name == "semgrep":
+        return [_semgrep_finding(item) for item in values]
+    return values
+
+
+def _without_gitleaks_head_scope(command: tuple[str, ...]) -> tuple[str, ...]:
+    output: list[str] = []
+    skip_next = False
+    for part in command:
+        if skip_next:
+            skip_next = False
+            continue
+        if part == "--log-opts":
+            skip_next = True
+            continue
+        output.append(part)
+    return tuple(output)
+
+
+def _effective_command(spec: Any, command: tuple[str, ...]) -> tuple[str, ...]:
+    if spec.name == "gitleaks":
+        # Default gitleaks detect behavior scans repository history. The previous
+        # compatibility command forced HEAD-only scope while still advertising
+        # history coverage, which incorrectly reduced secret assurance.
+        return _without_gitleaks_head_scope(command)
+    if spec.name == "bandit" and "-x" not in command and "--exclude" not in command:
+        return command + ("-x", ",".join(_GENERATED_EXCLUSIONS))
+    return command
 
 
 def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
@@ -21,14 +91,15 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
         parsed = complete_parser(tool_name, result)
         if isinstance(parsed, tuple) and len(parsed) == 3:
             findings = parsed[0]
-            return findings if isinstance(findings, list) else list(findings or [])
-        return parsed if isinstance(parsed, list) else list(parsed or [])
+            return _normalize_findings(tool_name, findings)
+        return _normalize_findings(tool_name, parsed)
 
-    def verified_unavailable(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    def observed_unavailable(*args: Any, **kwargs: Any) -> dict[str, Any]:
         payload = original_unavailable(*args, **kwargs)
         if isinstance(payload, dict):
             payload["current_run"] = True
-            payload["verified_for_this_report"] = True
+            payload["execution_observed_for_this_report"] = True
+            payload["verified_for_this_report"] = False
             payload.setdefault("findings_count", 0)
         return payload
 
@@ -39,24 +110,38 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
         runner: Callable[..., Any] = runners.run_command,
     ) -> dict[str, Any]:
         if spec.requires_project_commands and not runners.project_commands_allowed():
-            return verified_unavailable(
+            return observed_unavailable(
                 spec,
                 f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
             )
 
+        if spec.name == "eslint":
+            web_dir = workspace.repo_dir / "apps" / "web"
+            if not runners._has_eslint_config(web_dir):
+                return observed_unavailable(
+                    spec,
+                    "No ESLint configuration exists in apps/web; ESLint is not applicable to this snapshot and TypeScript remains independently evaluated.",
+                )
+
         preparation = runners.prepare_project_commands(workspace, runner=runner) if spec.requires_project_commands else None
         if spec.name == "osv-scanner" and shutil.which(spec.command[0]) is None:
-            return runners._osv_api_fallback_tool(spec, workspace.repo_dir)
+            payload = runners._osv_api_fallback_tool(spec, workspace.repo_dir)
+            if isinstance(payload, dict):
+                payload.setdefault("current_run", True)
+                payload.setdefault("execution_observed_for_this_report", True)
+                payload["verified_for_this_report"] = payload.get("status") == "completed"
+            return payload
 
         command, cwd, unavailable_reason = runners._resolve_command_and_cwd(spec, workspace, preparation)
         if command is None:
-            return verified_unavailable(
+            return observed_unavailable(
                 spec,
                 unavailable_reason or f"{spec.name} could not resolve a safe command",
                 preparation=preparation,
             )
+        command = _effective_command(spec, tuple(command))
         if not runners._command_available(command):
-            return verified_unavailable(spec, f"{command[0]} is not installed in the worker image", preparation=preparation)
+            return observed_unavailable(spec, f"{command[0]} is not installed in the worker image", preparation=preparation)
 
         output_path = workspace.root / "scanner-output" / f"{spec.name}.stdout"
         result = runner(
@@ -73,6 +158,7 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
             findings = parsed if isinstance(parsed, list) else list(parsed or [])
             capture_complete = not bool(getattr(result, "output_truncated", False))
             capture_reason = "" if capture_complete else "scanner output was truncated before parsing"
+        findings = _normalize_findings(spec.name, findings)
 
         returncode_valid = result.returncode in spec.valid_returncodes
         if result.timed_out:
@@ -88,6 +174,11 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
             status = "completed"
             execution_error = ""
 
+        full_history_verified = bool(
+            status == "completed"
+            and spec.scans_git_history
+            and spec.name in {"gitleaks", "trufflehog"}
+        )
         payload: dict[str, Any] = {
             "tool": spec.name,
             "status": status,
@@ -99,12 +190,15 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
             "output_capture_complete": bool(capture_complete),
             "stdout_bytes": result.stdout_bytes,
             "stderr_bytes": result.stderr_bytes,
-            "command_intent": " ".join(Path(part).name if index == 0 else part for index, part in enumerate(command[:5])),
-            "findings": findings if isinstance(findings, list) else list(findings or []),
+            "command_intent": " ".join(Path(part).name if index == 0 else part for index, part in enumerate(command[:8])),
+            "findings": findings,
+            "findings_count": len(findings),
             "stderr": result.stderr,
             "reason": execution_error,
             "scans_git_history": spec.scans_git_history,
+            "full_history_verified": full_history_verified,
             "verified_for_this_report": status == "completed",
+            "execution_observed_for_this_report": True,
             "current_run": True,
         }
         if preparation is not None:
@@ -147,7 +241,7 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
             None,
         )
         return {
-            "artifact_schema": "nico.scanner_worker.v1",
+            "artifact_schema": "nico.scanner_worker.v2",
             "tools": {item["tool"]: item for item in tool_results if isinstance(item, dict) and item.get("tool")},
             "normalized": normalized,
             "project_preparation": preparation or {"status": "not_required", "node_modules_ready": False},
@@ -158,7 +252,7 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
         }
 
     runners.parse_tool_findings = compatible_parse_tool_findings
-    runners._unavailable_tool = verified_unavailable
+    runners._unavailable_tool = observed_unavailable
     runners.run_scanner_tool = compatible_run_scanner_tool
     runners.run_scanner_tools = compatible_run_scanner_tools
     setattr(runners, _PATCH_MARKER, True)
@@ -168,7 +262,11 @@ def install_scanner_complete_output_compat_v3() -> dict[str, Any]:
         "legacy_findings_list_contract": True,
         "complete_capture_metadata_preserved": True,
         "wrapper_keyword_compatibility": True,
-        "unavailable_state_verified_for_current_run": True,
+        "unavailable_state_observed_not_verified": True,
+        "semgrep_nested_severity_normalized": True,
+        "gitleaks_full_history_restored": True,
+        "bandit_generated_paths_excluded": True,
+        "eslint_without_configuration_inapplicable": True,
     }
 
 
