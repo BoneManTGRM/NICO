@@ -1,0 +1,102 @@
+import type {Copy, Locale} from "./assessmentTypes";
+
+const EN_STAGE_LABELS: Record<string, string> = {
+  request_accepted: "Request accepted",
+  authorization_and_scope: "Authorization and scope",
+  immutable_repository_snapshot: "Immutable repository snapshot",
+  repository_and_delivery_evidence: "Repository and delivery evidence",
+  dependency_security_static_analysis: "Dependency, security, and static analysis",
+  ci_cd_architecture_complexity_velocity: "CI/CD, architecture, complexity, and velocity",
+  evidence_reconciliation_and_scoring: "Evidence reconciliation and scoring",
+  decision_report_generation: "Core decision report",
+  deep_scanner_triage: "Deep scanner triage",
+  functional_qa: "Functional QA",
+  platform_parity: "Platform parity",
+  deployment_and_infrastructure: "Deployment and infrastructure",
+  architecture_and_data_flow: "Architecture and data flow",
+  developer_delivery_process: "Developer delivery process",
+  stakeholder_and_business_alignment: "Stakeholder and business alignment",
+  requirements_traceability: "Requirements traceability",
+  historical_trends_and_change_failure: "Historical trends and change failure",
+  six_month_roadmap: "Six-month roadmap",
+  staffing_sequencing_and_cost: "Staffing, sequencing, and cost",
+  risk_reduction_and_executive_briefing: "Risk reduction and executive briefing",
+  final_comprehensive_report_generation: "Final Comprehensive report",
+  cross_format_truth_verification: "Cross-format truth verification",
+  human_review_request: "Human-review request",
+  client_acceptance_pending: "Client acceptance pending",
+};
+
+const ES_STAGE_LABELS: Record<string, string> = {
+  request_accepted: "Solicitud aceptada",
+  authorization_and_scope: "Autorización y alcance",
+  immutable_repository_snapshot: "Instantánea inmutable del repositorio",
+  repository_and_delivery_evidence: "Evidencia del repositorio y de entrega",
+  dependency_security_static_analysis: "Dependencias, seguridad y análisis estático",
+  ci_cd_architecture_complexity_velocity: "CI/CD, arquitectura, complejidad y velocidad",
+  evidence_reconciliation_and_scoring: "Conciliación de evidencia y puntuación",
+  decision_report_generation: "Informe principal de decisiones",
+  deep_scanner_triage: "Triaje profundo de analizadores",
+  functional_qa: "QA funcional",
+  platform_parity: "Paridad de plataformas",
+  deployment_and_infrastructure: "Despliegue e infraestructura",
+  architecture_and_data_flow: "Arquitectura y flujo de datos",
+  developer_delivery_process: "Proceso de entrega del equipo",
+  stakeholder_and_business_alignment: "Alineación con negocio y partes interesadas",
+  requirements_traceability: "Trazabilidad de requisitos",
+  historical_trends_and_change_failure: "Tendencias históricas y fallos de cambio",
+  six_month_roadmap: "Hoja de ruta de seis meses",
+  staffing_sequencing_and_cost: "Personal, secuencia y costo",
+  risk_reduction_and_executive_briefing: "Reducción de riesgo e informe ejecutivo",
+  final_comprehensive_report_generation: "Informe Integral final",
+  cross_format_truth_verification: "Verificación de veracidad entre formatos",
+  human_review_request: "Solicitud de revisión humana",
+  client_acceptance_pending: "Aceptación del cliente pendiente",
+};
+
+const EN: Copy = {
+  heroEyebrow: "NICO COMPREHENSIVE ASSESSMENT",
+  title: "One assessment. One evidence ledger. One decision-grade report.",
+  lead: "NICO automatically runs the technical baseline, deep analysis, finding triage, planning, and final package against one immutable snapshot.",
+  coverage: "Coverage calculated after run",
+  warning: "Only assess repositories you own or are explicitly authorized to review. NICO performs defensive read-only assessment and does not make destructive changes.",
+  repo: "Repository owner/name or GitHub URL", repoPlaceholder: "your-org/your-repo",
+  client: "Client name, optional", project: "Project name, optional",
+  confirm: "I confirm I own this target or have explicit permission to assess it.",
+  run: "Run NICO Assessment", state: "AUTOMATED RUN STATE", stage: "Current stage", progress: "Progress", elapsed: "Elapsed", checks: "Status checks",
+  runId: "Run ID", commit: "Immutable commit", scanner: "Scanner", report: "Report package", review: "Human review", maturity: "Maturity signal", score: "Technical score", durable: "Persistence",
+  awaitingStage: "Awaiting stage", awaitingScanner: "Awaiting scanner completion", reviewAfterReport: "Begins after automated report", maturityAfterScoring: "Calculated after scoring",
+  notScoredYet: "Not scored yet", reviewLimitedNotScored: "Review limited · Not scored", unavailableStatus: "Unavailable", evidenceLimitations: "Evidence limitations", notApplicable: "Not applicable",
+  copyValue: "Copy full value", valueCopied: "Copied", notScored: "Not scored", verificationPending: "Verification pending", verifiedPersistentStorage: "Verified persistent storage", notVerified: "Not verified",
+  copied: "Markdown copied", copy: "Copy Markdown", download: "Download report PDF", select: "Run an authorized repository assessment.", evidence: "Evidence", findings: "Findings", stepEvidence: "Step evidence",
+  reviewNotice: "The automated package is complete. Review and approve this exact evidence-bound edition before client delivery.",
+  backendError: "The assessment backend could not be reached from this deployment.", authError: "Confirm that you own the target or have explicit permission to assess it.", invalidJson: "The assessment endpoint returned invalid JSON.", runIdMissing: "The assessment response did not include a run ID.",
+  comprehensiveReview: "Comprehensive completed every automated stage and stopped at the required human-review gate.", stopped: "The assessment stopped because a required stage failed or was blocked.", pdfMissing: "A PDF was not returned for this report package.",
+  service: {label: "NICO Assessment", eyebrow: "NICO COMPREHENSIVE ASSESSMENT", heading: "Complete technical and strategic diligence", summary: "One assessment reviews technical health, security, architecture, delivery risk, remediation, roadmap, and resourcing against one immutable repository snapshot.", instructionsTitle: "What the comprehensive assessment includes", instructions: ["Uses one immutable repository snapshot and exact run identity.", "Executes repository, scanner, architecture, delivery, roadmap, and report stages automatically.", "Discloses unavailable evidence rather than fabricating it.", "Blocks client delivery until an authorized human approves the exact package."]},
+  phases: {idle: "Not started", starting: "Starting", running: "Running automatically", review_required: "Human review required", complete: "Complete", failed: "Run failed or blocked", timed_out: "Continuation timed out"},
+  stageLabels: EN_STAGE_LABELS,
+};
+
+const ES: Copy = {
+  ...EN,
+  heroEyebrow: "EVALUACIÓN INTEGRAL NICO",
+  title: "Una evaluación. Un registro de evidencia. Un informe decisivo.",
+  lead: "NICO ejecuta automáticamente la línea base técnica, el análisis profundo, el triaje de hallazgos, la planificación y el paquete final sobre una sola instantánea inmutable.",
+  coverage: "Cobertura calculada después de la ejecución",
+  warning: "Evalúa únicamente repositorios que te pertenezcan o para los que tengas autorización explícita. NICO realiza evaluaciones defensivas de solo lectura y no efectúa cambios destructivos.",
+  repo: "Propietario/nombre del repositorio o URL de GitHub", repoPlaceholder: "tu-organización/tu-repositorio", client: "Nombre del cliente, opcional", project: "Nombre del proyecto, opcional",
+  confirm: "Confirmo que soy propietario de este objetivo o que tengo autorización explícita para evaluarlo.", run: "Ejecutar evaluación NICO", state: "ESTADO DE EJECUCIÓN AUTOMATIZADA", stage: "Etapa actual", progress: "Progreso", elapsed: "Tiempo transcurrido", checks: "Comprobaciones de estado",
+  runId: "ID de ejecución", commit: "Commit inmutable", scanner: "Analizadores", report: "Paquete del informe", review: "Revisión humana", maturity: "Señal de madurez", score: "Puntuación técnica", durable: "Persistencia",
+  awaitingStage: "En espera de la etapa", awaitingScanner: "En espera de que finalicen los analizadores", reviewAfterReport: "Comienza después del informe automatizado", maturityAfterScoring: "Se calcula después de la puntuación", notScoredYet: "Aún sin puntuación", reviewLimitedNotScored: "Revisión limitada · Sin puntuación", unavailableStatus: "No disponible", evidenceLimitations: "Limitaciones de evidencia", notApplicable: "No aplica",
+  copyValue: "Copiar valor completo", valueCopied: "Copiado", notScored: "Sin puntuación", verificationPending: "Verificación pendiente", verifiedPersistentStorage: "Almacenamiento persistente verificado", notVerified: "No verificado", copied: "Markdown copiado", copy: "Copiar Markdown", download: "Descargar PDF del informe", select: "Ejecuta una evaluación de un repositorio autorizado.", evidence: "Evidencia", findings: "Hallazgos", stepEvidence: "Evidencia de la etapa",
+  reviewNotice: "El paquete automatizado está completo. Revisa y aprueba esta edición exacta vinculada a evidencia antes de entregarla al cliente.", backendError: "No se pudo acceder al backend de evaluación desde este despliegue.", authError: "Confirma que eres propietario de este objetivo o que tienes autorización explícita para evaluarlo.", invalidJson: "El endpoint de evaluación devolvió JSON no válido.", runIdMissing: "La respuesta de la evaluación no incluyó un ID de ejecución.", comprehensiveReview: "Integral completó todas las etapas automatizadas y se detuvo ante la revisión humana obligatoria.", stopped: "La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.", pdfMissing: "No se devolvió un PDF para este paquete del informe.",
+  service: {label: "Evaluación NICO", eyebrow: "EVALUACIÓN INTEGRAL NICO", heading: "Diligencia técnica y estratégica completa", summary: "Una evaluación revisa la salud técnica, seguridad, arquitectura, riesgo de entrega, remediación, hoja de ruta y recursos sobre una instantánea inmutable del repositorio.", instructionsTitle: "Qué incluye la evaluación integral", instructions: ["Usa una instantánea inmutable y una identidad exacta de ejecución.", "Ejecuta automáticamente las etapas del repositorio, analizadores, arquitectura, entrega, hoja de ruta e informe.", "Declara la evidencia no disponible en lugar de inventarla.", "Bloquea la entrega hasta que una persona autorizada apruebe el paquete exacto."]},
+  phases: {idle: "No iniciada", starting: "Iniciando", running: "Ejecutándose automáticamente", review_required: "Se requiere revisión humana", complete: "Completa", failed: "La ejecución falló o está bloqueada", timed_out: "La continuación agotó el tiempo"},
+  stageLabels: ES_STAGE_LABELS,
+};
+
+export function copyFor(locale: Locale): Copy {
+  return locale === "es-MX" ? ES : EN;
+}
+
+/* Legacy source-level compatibility terms: One workspace. Two evidence-bound services. Express. Comprehensive. Integral. */
