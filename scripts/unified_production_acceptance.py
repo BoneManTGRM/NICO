@@ -7,10 +7,15 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.report_identity.v1"
+VERSION = "nico.unified_production_acceptance.report_identity.v2"
 COMPREHENSIVE_REPORT_IDENTITIES = (
     ("NICO Comprehensive Technical Assessment",),
     ("NICO Comprehensive", "Decision-Grade Technical Assessment"),
+)
+LEGACY_DRAFT_PHRASES = (
+    "DRAFT - HUMAN REVIEW REQUIRED",
+    "DRAFT · HUMAN REVIEW REQUIRED",
+    "COMPLETE ONLY AS A DRAFT",
 )
 
 
@@ -24,6 +29,32 @@ def has_comprehensive_report_identity(value: Any) -> bool:
         all(_normalized(marker) in normalized for marker in identity)
         for identity in COMPREHENSIVE_REPORT_IDENTITIES
     )
+
+
+def validate_preapproval_delivery_posture(
+    markdown: str,
+    pdf_text: str,
+    payload: dict[str, Any],
+    assessment: dict[str, Any],
+) -> dict[str, bool]:
+    upper_markdown = markdown.upper()
+    upper_pdf = pdf_text.upper()
+    for stale in LEGACY_DRAFT_PHRASES:
+        assert stale not in upper_markdown, f"Comprehensive Markdown retained stale status: {stale}"
+        assert stale not in upper_pdf, f"Comprehensive PDF retained stale status: {stale}"
+
+    draft_only_label_present = "DRAFT ONLY" in upper_markdown or "DRAFT ONLY" in upper_pdf
+    if draft_only_label_present:
+        assert "PENDING HUMAN APPROVAL" in upper_markdown
+        assert "PENDING HUMAN APPROVAL" in upper_pdf
+        assert payload.get("client_delivery_allowed") is not True
+        assert assessment.get("client_delivery_allowed") is not True
+
+    return {
+        "stale_draft_language_absent": True,
+        "preapproval_delivery_posture_verified": True,
+        "draft_only_delivery_label_present": draft_only_label_present,
+    }
 
 
 def validate_report(service: str, payload: dict[str, Any], destination: Path) -> dict[str, Any]:
@@ -40,6 +71,11 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
     assert "NULL/100" not in markdown.upper()
 
     pdf = acceptance.pdf_evidence(encoded_pdf, destination)
+    delivery_posture = {
+        "stale_draft_language_absent": True,
+        "preapproval_delivery_posture_verified": True,
+        "draft_only_delivery_label_present": False,
+    }
     if service == "comprehensive":
         assert package.get("service_id") == "comprehensive"
         for format_name, content in (
@@ -67,19 +103,16 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
 
         upper_markdown = markdown.upper()
         upper_pdf = pdf["text"].upper()
-        for stale in (
-            "DRAFT ONLY",
-            "DRAFT - HUMAN REVIEW REQUIRED",
-            "DRAFT · HUMAN REVIEW REQUIRED",
-            "COMPLETE ONLY AS A DRAFT",
-        ):
-            assert stale not in upper_markdown, f"Comprehensive Markdown retained stale status: {stale}"
-            assert stale not in upper_pdf, f"Comprehensive PDF retained stale status: {stale}"
-
         assert "FINAL REPORT" in upper_markdown
         assert "FINAL REPORT" in upper_pdf
         assert "PENDING HUMAN APPROVAL" in upper_markdown
         assert "PENDING HUMAN APPROVAL" in upper_pdf
+        delivery_posture = validate_preapproval_delivery_posture(
+            markdown,
+            pdf["text"],
+            payload,
+            assessment,
+        )
         assert "\x7f" not in pdf["text"], "Comprehensive PDF contains a control-character glyph"
 
     maturity = acceptance.dict_value(assessment.get("maturity_signal"))
@@ -114,7 +147,7 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
             "page_count_informational_only": True,
             "required_sections_verified": True,
             "final_report_language_verified": True,
-            "stale_draft_language_absent": True,
+            **delivery_posture,
             "control_characters_absent": True,
             "canonical_report_identity_verified": True,
         },
