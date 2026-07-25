@@ -42,12 +42,12 @@ def test_score_assurance_and_risk_remain_separate() -> None:
     model = read("apps/web/app/assessment/assessmentModel.ts")
 
     assert "sectionPresentation(section, copy)" in workspace
-    assert "view.technicalClass" in workspace
-    assert "view.assuranceClass" in workspace
-    assert "view.riskClass" in workspace
+    assert "view.technicalTone" in workspace
+    assert "view.assuranceTone" in workspace
+    assert "view.riskTone" in workspace
     assert "assurance_label" in model
     assert "risk_disposition" in model
-    assert "scoreClass" in model
+    assert "scoreTone" in model
 
 
 def test_polling_and_human_review_boundary_live_in_hook() -> None:
