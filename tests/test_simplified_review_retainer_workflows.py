@@ -28,19 +28,57 @@ def test_completed_assessment_adds_exact_run_final_review_action() -> None:
 
 
 def test_final_review_is_one_controlled_approval_and_download_action() -> None:
-    source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+    workspace = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+    setup = _read("apps/web/app/operations/final-review/FinalReviewSetup.tsx")
+    decision = _read("apps/web/app/operations/final-review/FinalReviewDecision.tsx")
+    source = "\n".join((workspace, setup, decision))
 
-    assert "Review once. Approve once. Download the accepted report." in source
-    assert "Approve and download final report" in source
-    assert "await ensureReview(current)" in source
-    assert '/approved`' in source
-    assert "await downloadApprovedPdf(latest)" in source
-    assert "I reviewed the exact report, scorecard, evidence limitations" in source
-    assert "Request more evidence" in source
-    assert "Reject delivery" in source
-    assert 'type="password"' in source
+    assert "Review and release the final report." in workspace
+    assert "Approve and download final report" in decision
+    assert "await ensureReview(current)" in workspace
+    assert '/approved`' in workspace
+    assert "await downloadApprovedPdf(latest)" in workspace
+    assert "I reviewed the exact report, scorecard, evidence limitations" in decision
+    assert "Request more evidence" in decision
+    assert "Reject delivery" in decision
+    assert 'type="password"' in setup
     assert "localStorage" not in source
     assert "document.cookie" not in source
+
+
+def test_final_review_progressively_discloses_one_simple_mobile_flow() -> None:
+    workspace = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+    setup = _read("apps/web/app/operations/final-review/FinalReviewSetup.tsx")
+    decision = _read("apps/web/app/operations/final-review/FinalReviewDecision.tsx")
+    model = _read("apps/web/app/operations/final-review/finalReviewModel.ts")
+    styles = _read("apps/web/app/operations/final-review/final-review.module.css")
+
+    assert "!result" in workspace
+    assert "<FinalReviewSetup" in workspace
+    assert "<FinalReviewDecision" in workspace
+    assert "serviceFromRunId(requestedRun)" in workspace
+    assert 'normalized.startsWith("comprun_")' in model
+    assert 'normalized.startsWith("express_run_")' in model
+    assert "<select" not in setup
+    assert "Assessment type is detected from the run ID." in setup
+    assert "Use another report or advanced scope" in setup
+    assert "Add a note or choose another decision" in decision
+    assert "position: sticky" in styles
+    assert ".actionBar" in styles
+    assert "grid-template-columns: 190px minmax(0, 1fr)" in styles
+
+
+def test_final_review_polish_has_complete_english_and_mexican_spanish_copy() -> None:
+    locale = _read("apps/web/app/OperatorWorkspaceLocale.tsx")
+
+    assert '"Review and release the final report."' in locale
+    assert '"Revisa y libera el informe final."' in locale
+    assert '"One exact package. One human decision. One accepted PDF."' in locale
+    assert '"Un paquete exacto. Una decisión humana. Un PDF aceptado."' in locale
+    assert '"Use another report or advanced scope"' in locale
+    assert '"Usar otro informe o alcance avanzado"' in locale
+    assert '"Delivery stays locked until this exact package is approved."' in locale
+    assert '"La entrega permanece bloqueada hasta que se apruebe este paquete exacto."' in locale
 
 
 def test_retainer_workspace_requires_one_exact_baseline_and_explains_scope() -> None:
