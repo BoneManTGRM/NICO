@@ -24,6 +24,55 @@ def _module():
     return module
 
 
+class _MissingSelector:
+    @property
+    def first(self):
+        return self
+
+    def count(self) -> int:
+        return 0
+
+
+class _HiddenButtons:
+    def count(self) -> int:
+        return 2
+
+    def nth(self, index: int):
+        assert index in {0, 1}
+        return self
+
+    def is_hidden(self) -> bool:
+        return True
+
+
+class _HiddenSelector:
+    @property
+    def first(self):
+        return self
+
+    def count(self) -> int:
+        return 1
+
+    def get_attribute(self, name: str) -> str | None:
+        return "true" if name == "aria-hidden" else None
+
+    def is_hidden(self) -> bool:
+        return True
+
+    def locator(self, selector: str):
+        assert selector == "button"
+        return _HiddenButtons()
+
+
+class _Workspace:
+    def __init__(self, selector) -> None:
+        self.selector = selector
+
+    def locator(self, selector: str):
+        assert selector == '[aria-label="Assessment type"]'
+        return self.selector
+
+
 def test_report_identity_accepts_legacy_and_polished_titles() -> None:
     module = _module()
 
@@ -85,6 +134,34 @@ def test_legacy_draft_status_language_remains_rejected() -> None:
         )
 
 
+def test_retired_tier_selector_may_be_completely_removed() -> None:
+    module = _module()
+
+    evidence = module.verify_retired_tier_selector(
+        _Workspace(_MissingSelector()),
+        "en",
+    )
+
+    assert evidence == {
+        "legacy_selector_hidden": True,
+        "legacy_selector_removed": True,
+    }
+
+
+def test_retired_tier_selector_may_remain_fully_hidden() -> None:
+    module = _module()
+
+    evidence = module.verify_retired_tier_selector(
+        _Workspace(_HiddenSelector()),
+        "es-MX",
+    )
+
+    assert evidence == {
+        "legacy_selector_hidden": True,
+        "legacy_selector_removed": False,
+    }
+
+
 def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
@@ -95,10 +172,12 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     assert "Wait for exact frontend and backend deployments" in source
 
 
-def test_runner_patches_validation_before_unified_execution() -> None:
+def test_runner_patches_validation_and_selector_proof_before_execution() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 
     assert "acceptance.validate_report = validate_report" in source
+    assert "unified._verify_unified_language_parity = verify_unified_language_parity" in source
+    assert "legacy_selector_removed" in source
     assert "return unified.main(argv)" in source
     assert '"human_review_required": True' not in source
     assert '"client_delivery_allowed": True' not in source
