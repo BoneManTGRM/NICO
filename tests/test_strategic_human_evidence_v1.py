@@ -4,6 +4,7 @@ import pytest
 
 from nico.strategic_human_evidence_v1 import (
     MODULES,
+    decision_grade_stage_payload,
     human_evidence_module,
     normalize_strategic_human_evidence,
 )
@@ -12,47 +13,81 @@ from nico.strategic_human_evidence_v1 import (
 def test_missing_human_context_is_explicitly_not_assessed() -> None:
     package = normalize_strategic_human_evidence(None)
 
-    assert package["status"] == "not_assessed"
-    assert package["provided_module_ids"] == []
-    assert package["repository_inference_prohibited"] is True
+    assert package["status"] == "review_limited"
+    assert package["complete_modules"] == []
+    assert package["repository_inference_allowed"] is False
     assert package["status_counts"]["not_assessed"] == len(MODULES)
     assert len(package["human_evidence_sha256"]) == 64
 
 
-def test_explicit_statements_records_and_references_are_retained() -> None:
+def test_complete_functional_qa_matches_existing_decision_grade_schema() -> None:
     package = normalize_strategic_human_evidence(
         {
             "functional_qa": {
-                "statements": ["Checkout succeeded on the production-like environment."],
-                "records": [{"scenario": "checkout", "status": "passed"}],
-                "attachment_refs": ["evidence://qa/checkout-001"],
-                "supplied_by": "QA lead",
-                "captured_at": "2026-07-25T23:00:00Z",
+                "evidence": {
+                    "test_cases": [{"scenario": "checkout", "expected": "success"}],
+                    "observed_results": [{"scenario": "checkout", "actual": "success"}],
+                },
+                "reviewer": "QA lead",
+                "observed_at": "2026-07-25T23:00:00Z",
+                "source_reference": "evidence://qa/checkout-001",
             }
         }
     )
 
     qa = human_evidence_module(package, "functional_qa")
-    assert package["status"] == "provided"
-    assert package["provided_module_ids"] == ["functional_qa"]
-    assert qa["status"] == "provided"
-    assert qa["source_type"] == "mixed"
+    assert qa["status"] == "complete"
+    assert qa["assurance"] == "HUMAN EVIDENCE RETAINED · REVIEW REQUIRED"
     assert qa["directly_scored"] is False
-    assert qa["records"][0]["status"] == "passed"
+    assert qa["evidence"]["observed_results"][0]["actual"] == "success"
+    projected = decision_grade_stage_payload(package, ("functional_qa",))
+    assert projected["functional_qa"]["reviewer"] == "QA lead"
+    assert projected["functional_qa"]["test_cases"][0]["scenario"] == "checkout"
 
 
-def test_claimed_provided_status_without_content_fails_closed_to_not_assessed() -> None:
+def test_incomplete_claim_fails_closed_to_partial() -> None:
     package = normalize_strategic_human_evidence(
-        {"stakeholder_context": {"status": "provided"}}
+        {
+            "stakeholder_context": {
+                "evidence": {"objectives": ["Launch by October"]},
+                "reviewer": "Product owner",
+            }
+        }
     )
 
-    assert human_evidence_module(package, "stakeholder_context")["status"] == "not_assessed"
-    assert package["status"] == "not_assessed"
+    module = human_evidence_module(package, "stakeholder_context")
+    assert module["status"] == "partial"
+    assert "constraints" in module["missing_fields"]
+    assert "observed_at" in module["missing_metadata"]
+
+
+def test_explicit_exclusion_requires_rationale() -> None:
+    incomplete = normalize_strategic_human_evidence(
+        {"platform_parity": {"excluded": True}}
+    )
+    complete = normalize_strategic_human_evidence(
+        {
+            "platform_parity": {
+                "excluded": True,
+                "exclusion_rationale": "The product has no browser or native client surface.",
+            }
+        }
+    )
+
+    assert human_evidence_module(incomplete, "platform_parity")["status"] == "partial"
+    assert human_evidence_module(complete, "platform_parity")["status"] == "excluded"
 
 
 def test_normalization_is_idempotent() -> None:
     first = normalize_strategic_human_evidence(
-        {"accepted_risks": {"statements": ["Risk R-12 is accepted until Q4."]}}
+        {
+            "accepted_risks": {
+                "evidence": {"decisions": ["Risk R-12 is accepted until Q4."]},
+                "reviewer": "CTO",
+                "observed_at": "2026-07-25T23:05:00Z",
+                "source_reference": "decision://R-12",
+            }
+        }
     )
     second = normalize_strategic_human_evidence(first)
 
