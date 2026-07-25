@@ -35,7 +35,11 @@ def _finding_path(note: str) -> str:
 
 def _finding_rule(note: str) -> str:
     detail = _finding_parts(note)[2]
-    return detail.split(" — ", 1)[0].strip().casefold()
+    for separator in (" — ", " - "):
+        if separator in detail:
+            detail = detail.split(separator, 1)[0]
+            break
+    return detail.strip().casefold()
 
 
 def _is_cross_language_python_exec_hit(note: str) -> bool:
@@ -103,11 +107,15 @@ def wrap_scan_files(delegate: Callable[[dict[str, str]], dict[str, Any]]) -> Cal
         output = dict(result)
         risks = [str(item) for item in result.get("risks") or []]
         output["risks"] = [item for item in risks if _risk_note_is_executable(item, files, python_lines)]
+        previous = result.get("risk_pattern_filter") if isinstance(result.get("risk_pattern_filter"), dict) else {}
+        previous_raw = int(previous.get("raw_count") or len(risks))
+        previous_excluded = int(previous.get("excluded_language_or_literal_mismatches") or 0)
+        newly_excluded = len(risks) - len(output["risks"])
         output["risk_pattern_filter"] = {
             "version": PATCH_VERSION,
-            "raw_count": len(risks),
+            "raw_count": max(previous_raw, len(risks) + previous_excluded),
             "retained_count": len(output["risks"]),
-            "excluded_language_or_literal_mismatches": len(risks) - len(output["risks"]),
+            "excluded_language_or_literal_mismatches": previous_excluded + newly_excluded,
         }
         return output
 
