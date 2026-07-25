@@ -31,6 +31,7 @@ from nico.comprehensive_final_report_semantics_v47 import (
 )
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
+from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
@@ -85,21 +86,22 @@ def install_decision_grade_binding() -> dict[str, Any]:
     code_remediation = install_comprehensive_code_remediation_appendix_v1()
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
-    build_comprehensive_report_package = report_module.build_comprehensive_report_package
+    score_truth_provider = wrap_scoring_provider(canonical_scoring_provider)
+    build_comprehensive_report_package = wrap_report_builder(report_module.build_comprehensive_report_package)
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
     snapshot_evidence.scan_files = scanner_with_samples
     snapshot_evidence.collect_snapshot_repository_evidence = _collect_with_safe_samples
     providers.collect_snapshot_repository_evidence = _collect_with_safe_samples
-    providers.canonical_scoring_provider = canonical_scoring_provider
+    providers.canonical_scoring_provider = score_truth_provider
     providers.roadmap_provider = roadmap_provider
     providers.resourcing_provider = resourcing_provider
     providers.executive_briefing_provider = executive_briefing_provider
     providers.build_comprehensive_report_package = build_comprehensive_report_package
     return {
         "artifact_schema": VERSION,
-        "bound": providers.build_comprehensive_report_package is report_module.build_comprehensive_report_package,
-        "canonical_scoring_bound": providers.canonical_scoring_provider is canonical_scoring_provider,
+        "bound": providers.build_comprehensive_report_package is build_comprehensive_report_package,
+        "canonical_scoring_bound": providers.canonical_scoring_provider is score_truth_provider,
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
         "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
         "scanner_wrapper_composed": True,
@@ -123,6 +125,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "front_matter_pages_replaced_not_overlaid": final_pdf_front_matter.get("front_matter_pages_replaced_not_overlaid") is True,
         "unverified_candidates_not_p1": report_polish.get("unverified_candidates_not_p1") is True,
         "equivalent_review_candidates_grouped": report_polish.get("equivalent_review_candidates_grouped") is True,
+        "canonical_score_truth_reconciled": True,
+        "report_score_drift_blocks_package": True,
         "automatic_code_merge_allowed": False,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
