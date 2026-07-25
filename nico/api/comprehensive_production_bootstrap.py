@@ -6,13 +6,14 @@ from fastapi import FastAPI
 
 from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
+from nico.comprehensive_core_report_readiness_v1 import install_comprehensive_core_report_readiness
 from nico.comprehensive_native_providers import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v5"
+VERSION = "nico.api.comprehensive_production_bootstrap.v6"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -50,17 +51,19 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the decision-grade native Comprehensive boundary.
 
-    The compatibility appendix binding and then the decision-grade binding are
-    installed before native providers and before the executor map is built. The
-    decision-grade layer remains canonical while preserving the established
-    appendix bootstrap contract used by prior releases and regression tests.
-    Human review remains mandatory and client delivery remains blocked.
+    Compatibility and decision-grade report bindings are installed first. Native
+    providers are installed next, then the core-report artifact-readiness wrapper is
+    applied before the executor map is frozen. This permits a valid intermediate core
+    report to proceed as review-limited when a stricter final-package quality assertion
+    remains unresolved, while the final report provider and delivery gates remain
+    fail-closed. Human review remains mandatory and client delivery remains blocked.
     """
 
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
     native_providers = install_native_comprehensive_providers(target)
+    core_report_readiness = install_comprehensive_core_report_readiness(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(
         target,
@@ -89,6 +92,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
+        and core_report_readiness.get("bound") is True
+        and core_report_readiness.get("final_report_provider_unchanged") is True
         and len(native_providers) > 0
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
@@ -103,11 +108,14 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
+        "core_report_readiness": core_report_readiness,
         "native_provider_status": native_status,
         "capability_provider_status": provider_status,
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "report_binding_before_provider_install": True,
+        "provider_install_before_core_report_readiness": True,
+        "core_report_readiness_before_executor_build": True,
         "provider_install_before_executor_build": True,
         "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
         "human_review_required": True,
@@ -140,6 +148,10 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["core_report_readiness"].get("bound") is not True:
+    raise RuntimeError("Comprehensive core-report artifact readiness was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["core_report_readiness"].get("final_report_provider_unchanged") is not True:
+    raise RuntimeError("Comprehensive final-report provider must remain fail-closed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
     raise RuntimeError("Comprehensive production runtime did not install native providers")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:
