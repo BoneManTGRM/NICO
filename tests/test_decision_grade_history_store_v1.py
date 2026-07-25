@@ -125,7 +125,38 @@ def test_current_run_and_incompatible_records_are_rejected() -> None:
         "missing_or_invalid_contract": 1,
         "repository_mismatch": 1,
         "assessment_type_mismatch": 1,
+        "schema_family_mismatch": 0,
     }
+
+
+def test_newer_incompatible_schema_is_skipped_for_older_compatible_contract() -> None:
+    store = MemoryAdapter()
+    _put(store, "run-compatible", "2026-07-20T10:00:00Z")
+    contract, assessment = _contract("run-legacy", "2026-07-24T10:00:00Z")
+    raw = contract.model_dump(mode="json")
+    raw["schema_version"] = "legacy.other_contract.v1"
+    store.put(
+        "assessment_runs",
+        "run-legacy",
+        {
+            "run_id": "run-legacy",
+            "customer_id": "customer-1",
+            "project_id": "project-1",
+            "workflow": "full_assessment",
+            "status": "complete",
+            "response": {"decision_grade_contract": raw, "assessment": assessment},
+        },
+    )
+    selection = find_previous_compatible_assessment(
+        repository=REPOSITORY,
+        assessment_type="comprehensive",
+        current_assessment_id="run-current",
+        customer_id="customer-1",
+        project_id="project-1",
+        store=store,
+    )
+    assert selection["previous_assessment_id"] == "run-compatible"
+    assert selection["rejected_counts"]["schema_family_mismatch"] == 1
 
 
 def test_customer_and_project_scope_is_enforced() -> None:
