@@ -192,12 +192,7 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["legacy_report_binding"].get("bound") is not
     )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
-if (
-    COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get(
-        "canonical_scoring_bound"
-    )
-    is not True
-):
+if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
 if (
     COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound")
