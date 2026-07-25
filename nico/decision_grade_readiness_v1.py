@@ -93,10 +93,15 @@ def validate_report_readiness(package: DecisionGradeAssessment) -> ReadinessResu
         path = f"findings.{index}"
         if set(finding.evidence_ids) - evidence_ids:
             issues.append(issue("unknown_evidence_reference", f"{path}.evidence_ids", "Finding references unknown evidence."))
-        for criterion in finding.acceptance_criteria:
+        for criterion_index, criterion in enumerate(finding.acceptance_criteria):
+            criterion_path = f"{path}.acceptance_criteria.{criterion_index}"
             if criterion.criterion_id in acceptance_ids:
                 issues.append(issue("duplicate_acceptance_criterion_id", f"{path}.acceptance_criteria", "Acceptance criterion IDs must be unique."))
             acceptance_ids.add(criterion.criterion_id)
+            if criterion.target_commit_sha and criterion.target_commit_sha.casefold() != package.identity.commit_sha.casefold():
+                issues.append(issue("acceptance_commit_sha_mismatch", f"{criterion_path}.target_commit_sha", "Acceptance criteria must target the validation commit for this package."))
+            if set(criterion.required_evidence_ids) - evidence_ids:
+                issues.append(issue("unknown_acceptance_evidence", f"{criterion_path}.required_evidence_ids", "Acceptance criterion references unknown evidence."))
         if value(finding.priority) in {"P0", "P1"} and value(finding.status) == "open":
             required = {
                 "evidence": finding.evidence_ids,
@@ -157,6 +162,8 @@ def validate_report_readiness(package: DecisionGradeAssessment) -> ReadinessResu
         issues.append(issue("human_approval_required", "human_approval.approved", "Named human approval is required."))
     if approval.approved and not approval.reviewer:
         issues.append(issue("human_reviewer_missing", "human_approval.reviewer", "Approved package requires a named reviewer."))
+    if approval.approved and not package.report_artifact_digest:
+        issues.append(issue("report_artifact_digest_missing", "report_artifact_digest", "An approved package requires an immutable report artifact digest."))
     if approval.approved and package.report_artifact_digest and approval.approved_artifact_digest != package.report_artifact_digest:
         issues.append(issue("approval_digest_mismatch", "human_approval.approved_artifact_digest", "Approval does not match the exact artifact digest."))
 
@@ -166,7 +173,7 @@ def validate_report_readiness(package: DecisionGradeAssessment) -> ReadinessResu
             issues.append(issue("release_posture_contradiction", "decision_postures.release", "Release is approved while blockers remain."))
 
     errors = {item.code for item in issues if value(item.severity) == "error"}
-    if errors & {"commit_sha_mismatch", "score_arithmetic_mismatch", "release_posture_contradiction", "unsupported_benchmark", "approval_digest_mismatch"}:
+    if errors & {"commit_sha_mismatch", "acceptance_commit_sha_mismatch", "score_arithmetic_mismatch", "evidence_adjusted_exceeds_technical", "release_posture_contradiction", "unsupported_benchmark", "report_artifact_digest_missing", "approval_digest_mismatch"}:
         status = DeliveryStatus.DELIVERY_BLOCKED
     elif errors & {"required_scanner_incomplete", "unknown_evidence_reference"}:
         status = DeliveryStatus.EVIDENCE_INCOMPLETE
