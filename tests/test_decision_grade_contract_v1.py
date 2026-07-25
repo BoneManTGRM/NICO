@@ -19,7 +19,7 @@ SHA = "a" * 40
 def criterion() -> AcceptanceCriterion:
     return AcceptanceCriterion(
         criterion_id="AC-001", description="The CI workflow passes on the validation commit.",
-        validation_method="workflow status", target_commit_sha="b" * 40,
+        validation_method="workflow status", target_commit_sha=SHA,
         workflow_name="CI", passed=True,
     )
 
@@ -132,3 +132,24 @@ def test_builder_is_deterministic_and_fails_closed() -> None:
     second = build_decision_grade_contract(dict(reversed(list(payload.items()))))
     assert first["readiness"]["fingerprint"] == second["readiness"]["fingerprint"]
     assert first["readiness"]["delivery_status"] == DeliveryStatus.HUMAN_REVIEW_REQUIRED.value
+
+
+def test_acceptance_criterion_must_target_package_commit() -> None:
+    bad = criterion().model_copy(update={"target_commit_sha": "b" * 40})
+    risky = finding().model_copy(update={"acceptance_criteria": [bad]})
+    result = validate_report_readiness(ready_package().model_copy(update={"findings": [risky]}))
+    assert result.delivery_status == DeliveryStatus.DELIVERY_BLOCKED.value
+    assert "acceptance_commit_sha_mismatch" in {item.code for item in result.issues}
+
+
+def test_approved_package_requires_artifact_digest() -> None:
+    package = ready_package().model_copy(update={"report_artifact_digest": None})
+    result = validate_report_readiness(package)
+    assert result.delivery_status == DeliveryStatus.DELIVERY_BLOCKED.value
+    assert "report_artifact_digest_missing" in {item.code for item in result.issues}
+
+
+def test_evidence_adjusted_score_cannot_exceed_technical_score() -> None:
+    package = ready_package().model_copy(update={"evidence_adjusted_score": 90})
+    result = validate_report_readiness(package)
+    assert result.delivery_status == DeliveryStatus.DELIVERY_BLOCKED.value
