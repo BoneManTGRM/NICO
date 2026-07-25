@@ -2,35 +2,43 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
-STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment.module.css"
+ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
+WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
+HOOK = ASSESSMENT / "useAssessmentRun.ts"
+MODEL = ASSESSMENT / "assessmentModel.ts"
+COPY = ASSESSMENT / "assessmentCopy.ts"
+TYPES = ASSESSMENT / "assessmentTypes.ts"
+STYLES = ASSESSMENT / "assessment.module.css"
 NAVIGATION = ROOT / "apps" / "web" / "app" / "PrimaryNavigation.tsx"
 OPERATIONS_GUARD = ROOT / "apps" / "web" / "app" / "OperationsPreloadGuard.tsx"
 FULL_RUN_REDIRECT = ROOT / "apps" / "web" / "app" / "LegacyFullRunRedirect.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
 
-def _workspace() -> str:
+def workspace_source() -> str:
     return WORKSPACE.read_text(encoding="utf-8")
 
 
-def test_public_intake_has_exactly_two_native_assessment_services() -> None:
-    source = _workspace()
+def assessment_source() -> str:
+    return "\n".join(path.read_text(encoding="utf-8") for path in (WORKSPACE, HOOK, MODEL, COPY, TYPES))
+
+
+def test_public_intake_has_one_canonical_assessment() -> None:
+    source = workspace_source()
     rendered = source.split("return <main", 1)[1]
 
-    assert 'type Service = "express" | "comprehensive"' in source
-    assert 'data-assessment-service-count="2"' in rendered
-    assert '(["express", "comprehensive"] as Service[])' in rendered
-    assert 'aria-label="Assessment type"' in rendered
+    assert 'data-assessment-service-count="1"' in rendered
+    assert 'data-canonical-assessment="strategic"' in rendered
+    assert 'data-customer-facing-assessment="comprehensive"' in rendered
+    assert 'aria-label="Assessment type"' not in rendered
     assert '"/assessment/mid-run"' not in rendered
     assert '"/assessment/full-run"' not in rendered
 
 
 def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization() -> None:
-    source = _workspace()
-    rendered = source.split("return <main", 1)[1]
+    source = assessment_source()
+    rendered = workspace_source().split("return <main", 1)[1]
 
     for label in (
         "Repository owner/name or GitHub URL",
@@ -56,35 +64,31 @@ def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization()
     assert 'const [repository, setRepository] = useState("")' in source
 
 
-def test_one_run_action_uses_only_native_express_and_comprehensive_start_endpoints() -> None:
-    source = _workspace()
-    run_body = source.split("async function run()", 1)[1].split("async function copyMarkdown()", 1)[0]
+def test_one_run_action_uses_only_comprehensive_start_endpoint() -> None:
+    source = HOOK.read_text(encoding="utf-8")
+    run_body = source.split("async function run()", 1)[1]
 
-    assert '"/assessment/express-run"' in run_body
-    assert '"/assessment/comprehensive-intake"' in run_body
-    assert 'assessment_mode: "express"' in run_body
+    assert 'apiUrl("/assessment/comprehensive-intake")' in run_body
+    assert 'assessment_depth: "strategic"' in run_body
+    assert '"/assessment/express-run"' not in run_body
     assert '"/assessment/mid-run"' not in run_body
     assert '"/assessment/full-run"' not in run_body
 
 
-def test_each_service_continues_the_exact_same_run_automatically() -> None:
-    source = _workspace()
+def test_comprehensive_continues_the_exact_same_run_automatically() -> None:
+    source = HOOK.read_text(encoding="utf-8")
     continuation = source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
     assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in continuation
     assert 'const runId = String(current.run_id || "")' in continuation
-    assert "/assessment/express-run/${encodeURIComponent(runId)}/status" in continuation
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in continuation
     assert 'JSON.stringify({max_stages: 1})' in continuation
-    assert '"/assessment/express-run"' not in continuation
     assert '"/assessment/comprehensive-intake"' not in continuation
     assert "await wait(POLL_INTERVAL_MS)" in continuation
 
 
 def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_buttons() -> None:
-    source = _workspace()
-    rendered = source.split("return <main", 1)[1]
-
+    rendered = workspace_source().split("return <main", 1)[1]
     for forbidden in (
         "Check Mid status",
         "Refresh full-run status",
@@ -97,12 +101,12 @@ def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_button
 
 
 def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_mutation() -> None:
-    source = _workspace()
+    source = assessment_source()
 
-    assert 'value === "review_required"' in source
+    assert 'value === "review_required"' in source or 'value === "review_required"' in MODEL.read_text(encoding="utf-8")
     assert "stopped at the required human-review gate" in source
     assert "The final report is complete" in source
-    assert "approve it before client delivery" in source
+    assert "before client delivery" in source
     assert "no separate report rewrite is required" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
@@ -112,7 +116,7 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
 
 
 def test_progress_uses_backend_stage_progress_elapsed_time_and_exact_run_identity() -> None:
-    source = _workspace()
+    source = assessment_source()
     css = STYLES.read_text(encoding="utf-8")
 
     assert "progress_percent?: number" in source
@@ -127,12 +131,11 @@ def test_progress_uses_backend_stage_progress_elapsed_time_and_exact_run_identit
 
 
 def test_result_distinguishes_pending_unavailable_and_review_required() -> None:
-    source = _workspace()
-
+    source = assessment_source()
     for state in ("pending", "unavailable", "complete", "review_required", "timed_out"):
         assert state in source
     assert "Not scored" in source
-    assert "Unavailable or limited evidence" in source
+    assert "Evidence limitations" in source
     assert "Discloses missing or failed evidence" in source
 
 
@@ -154,7 +157,6 @@ def test_primary_navigation_uses_one_assessment_entry_and_normalizes_legacy_tier
 def test_legacy_full_run_route_defaults_to_comprehensive_intake() -> None:
     redirect = FULL_RUN_REDIRECT.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
-
     assert 'pathname !== "/full-run"' in redirect
     assert 'params.get("legacy") === "1"' in redirect
     assert 'params.get("review") === "1"' in redirect
@@ -165,7 +167,6 @@ def test_legacy_full_run_route_defaults_to_comprehensive_intake() -> None:
 def test_operations_preload_guard_hides_failure_colored_placeholders_until_loaded() -> None:
     guard = OPERATIONS_GUARD.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
-
     assert 'pathname !== "/operations"' in guard
     assert 'section.textContent?.includes("Operator authentication")' in guard
     assert 'element.style.setProperty("display", "none", "important")' in guard
@@ -175,7 +176,6 @@ def test_operations_preload_guard_hides_failure_colored_placeholders_until_loade
 
 def test_unified_assessment_layout_is_mobile_readable() -> None:
     css = STYLES.read_text(encoding="utf-8")
-
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in css
     assert ".progressBar" in css
     assert ".timeline" in css

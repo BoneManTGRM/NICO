@@ -2,19 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RESILIENCE = ROOT / "apps" / "web" / "app" / "AssessmentStatusResilience.tsx"
 SAVED_RUN_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentSavedMidRunGuard.tsx"
 OUTCOME_GUARD = ROOT / "apps" / "web" / "app" / "AssessmentStatusOutcomeGuard.tsx"
 LIVE_TRANSPORT = ROOT / "apps" / "web" / "app" / "AssessmentMidLiveStatusTransport.tsx"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
+ASSESSMENT_COPY = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentCopy.ts"
 
 
 def test_status_resilience_retries_only_exact_run_status_requests() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
-
     assert "STATUS_MAX_CONSECUTIVE_FAILURES = 8" in source
     assert "STATUS_RETRY_BASE_MS = 1500" in source
     assert "STATUS_RETRY_MAX_MS = 12000" in source
@@ -24,7 +22,6 @@ def test_status_resilience_retries_only_exact_run_status_requests() -> None:
     assert "for (let failure = 0; failure < STATUS_MAX_CONSECUTIVE_FAILURES" in source
     assert 'credentials: "same-origin"' in source
     assert "keepalive: true" in source
-
     status_section = source.split("if (!statusMatch", 1)[1]
     assert "originalFetch(nextInput" in status_section
     assert "START_PATH" not in status_section
@@ -33,7 +30,6 @@ def test_status_resilience_retries_only_exact_run_status_requests() -> None:
 
 def test_one_transport_or_json_failure_does_not_become_a_failed_assessment() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
-
     assert "if (response.ok && !payload)" in source
     assert "RETRYABLE_HTTP_STATUSES.has(response.status)" in source
     assert "await sleep(retryDelay(failure + 1))" in source
@@ -45,7 +41,6 @@ def test_one_transport_or_json_failure_does_not_become_a_failed_assessment() -> 
 
 def test_nonterminal_status_http_error_is_not_converted_into_a_failed_run() -> None:
     source = OUTCOME_GUARD.read_text(encoding="utf-8")
-
     assert "function recoveryResponse" in source
     assert "without exact-run terminal evidence" in source
     assert 'output.status = "running"' in source
@@ -58,7 +53,6 @@ def test_nonterminal_status_http_error_is_not_converted_into_a_failed_run() -> N
 
 def test_exact_terminal_status_response_is_normalized_before_the_page_consumes_it() -> None:
     source = OUTCOME_GUARD.read_text(encoding="utf-8")
-
     assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
     assert "function terminalResponse(" in source
     terminal_condition = "payload && identity.runId === runId && TERMINAL_STATUSES.has(identity.status)"
@@ -73,7 +67,6 @@ def test_exact_terminal_status_response_is_normalized_before_the_page_consumes_i
 
 def test_saved_mid_run_is_checked_before_any_new_legacy_start_request() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
-
     assert 'MID_ACTIVE_RUN_KEY = "nico.mid.active_run"' in source
     assert 'savedRunId.startsWith("midrun_")' in source
     assert "/live-status" in source
@@ -85,7 +78,6 @@ def test_saved_mid_run_is_checked_before_any_new_legacy_start_request() -> None:
 
 def test_saved_mid_guard_uses_live_read_then_canonical_terminal_handoff() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
-
     assert "function canonicalStatusBody" in source
     assert 'repository: String(body.repository || "")' in source
     assert 'customer_id: String(body.customer_id || "default_customer")' in source
@@ -100,7 +92,6 @@ def test_saved_mid_guard_uses_live_read_then_canonical_terminal_handoff() -> Non
 
 def test_terminal_saved_mid_run_is_preserved_then_replaced_in_the_same_click() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
-
     assert 'FAILURE_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
     assert "exactTerminalFailure" in source
     assert "exactTerminalSuccess" in source
@@ -113,7 +104,6 @@ def test_terminal_saved_mid_run_is_preserved_then_replaced_in_the_same_click() -
 
 def test_unreachable_saved_mid_run_still_blocks_duplicate_start() -> None:
     source = SAVED_RUN_GUARD.read_text(encoding="utf-8")
-
     assert "safeUnavailableResponse(savedRunId, body)" in source
     assert "did not create a duplicate assessment" in source
     assert "duplicate_start_allowed: false" in source
@@ -121,7 +111,6 @@ def test_unreachable_saved_mid_run_still_blocks_duplicate_start() -> None:
 
 def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
-
     assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
     assert "responseRunId === runId && TERMINAL_STATUSES.has(status)" in source
     assert "if (matchingTerminalEvidence(payload, runId)) return response" in source
@@ -129,21 +118,19 @@ def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
 
 def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_static() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
-    workspace = WORKSPACE.read_text(encoding="utf-8")
-
+    copy = ASSESSMENT_COPY.read_text(encoding="utf-8")
     assert "scannerProgress(payload" in source
     assert "scanner.progress_percent" in source
     assert "activeEvidence.scanner_progress_percent" in source
     assert "18 + (scanPercent * 0.43)" in source
     assert "Math.min(61" in source
     assert "scanner_progress_percent" in source
-    assert 'scanner_worker: "Scanner suite"' in workspace
+    assert 'scanner_worker: "Scanner suite"' in copy
 
 
 def test_legacy_live_transport_is_retained_for_operator_recovery_but_not_globally_mounted() -> None:
     layout = LAYOUT.read_text(encoding="utf-8")
     live = LIVE_TRANSPORT.read_text(encoding="utf-8")
-
     assert "AssessmentMidLiveStatusTransport" not in layout
     assert "AssessmentSavedMidRunGuard" not in layout
     assert "LIVE_RETRY_COUNT = 2" in live
