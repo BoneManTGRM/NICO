@@ -32,11 +32,8 @@ jobs:
       - name: Compile acceptance runner and verify bounded contract
         run: |
           set -euo pipefail
-          python -m py_compile \
-            scripts/two_service_live_acceptance.py \
-            scripts/two_service_live_acceptance_v2.py \
-            scripts/two_service_live_acceptance_v3.py \
-            scripts/unified_production_acceptance.py
+          python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py
+          python -m py_compile scripts/unified_production_acceptance.py
           python - <<'PY'
           from pathlib import Path
 
