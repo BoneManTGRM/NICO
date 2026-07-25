@@ -103,8 +103,8 @@ def _build_pdf(
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("TOPPADDING", (0, 0), (-1, 0), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
             ]
         result.setStyle(TableStyle(commands))
         return result
