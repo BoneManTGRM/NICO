@@ -85,6 +85,22 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
   const running = phase === "starting" || phase === "running";
 
+  async function verifyRuntimePersistence(): Promise<void> {
+    const diagnostics = await requestWithRetry(
+      "/diagnostics/comprehensive-runtime",
+      {method: "GET", headers: {Accept: "application/json"}},
+      copy,
+    );
+    const replacementSafe = diagnostics.survives_container_replacement_verified === true
+      || diagnostics.persistence?.survives_container_replacement_verified === true;
+    if (String(diagnostics.status || "").toLowerCase() !== "ready" || !replacementSafe) {
+      const reason = String(diagnostics.reason || "comprehensive_storage_not_container_replacement_safe");
+      throw new Error(
+        `Assessment storage is not ready to preserve this run through a backend restart (${reason}). Configure the production Postgres connection or a verified persistent volume before retrying.`,
+      );
+    }
+  }
+
   async function recoverRun(runId: string): Promise<Result | null> {
     try {
       return await requestWithRetry(
@@ -129,9 +145,9 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           },
           copy,
         );
-      } catch (error) {
+      } catch (requestError) {
         const recovered = await recoverRun(runId);
-        if (!recovered) throw error;
+        if (!recovered) throw requestError;
         current = recovered;
         setMessage(`${copy.service.label}: recovered run state after a temporary backend interruption.`);
       }
@@ -177,6 +193,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
 
     try {
+      await verifyRuntimePersistence();
       const data = await requestWithRetry(
         "/assessment/comprehensive-intake",
         {

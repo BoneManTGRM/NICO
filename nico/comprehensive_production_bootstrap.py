@@ -14,8 +14,10 @@ from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_run_store import ConnectionFactory
 from nico.comprehensive_runtime import configure_comprehensive_runtime
 from nico.comprehensive_stage_adapter import CapabilityExecutor
+from nico.durable_runtime_storage import _path as _durable_runtime_path
+from nico.durable_runtime_storage import _resolved_postgres_url
 
-VERSION = "nico.comprehensive_production_bootstrap.v2"
+VERSION = "nico.comprehensive_production_bootstrap.v3"
 
 
 def _required_capabilities() -> tuple[str, ...]:
@@ -40,14 +42,36 @@ def _env_true(name: str, default: bool = False) -> bool:
 
 
 def _sqlite_path() -> Path:
+    comprehensive_path = str(os.getenv("NICO_COMPREHENSIVE_SQLITE_PATH") or "").strip()
+    if comprehensive_path:
+        return Path(comprehensive_path).expanduser()
+    return _durable_runtime_path().expanduser()
+
+
+def _durable_volume_path() -> Path | None:
     configured = str(
-        os.getenv("NICO_COMPREHENSIVE_SQLITE_PATH")
-        or os.getenv("NICO_SQLITE_PATH")
-        or "/data/nico-runtime.sqlite3"
+        os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+        or os.getenv("NICO_DURABLE_VOLUME_PATH")
+        or ""
     ).strip()
-    if not configured:
-        raise RuntimeError("comprehensive_sqlite_path_required")
-    return Path(configured).expanduser()
+    return Path(configured).expanduser() if configured else None
+
+
+def _path_within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _sqlite_survives_container_replacement(path: Path) -> bool:
+    volume = _durable_volume_path()
+    if volume is not None and _path_within(path, volume):
+        return True
+    # Explicit acknowledgement is retained for non-Railway platforms whose mounted
+    # volume cannot be discovered automatically. It must be set by the deployer.
+    return _env_true("NICO_SQLITE_PERSISTENCE_CONFIRMED")
 
 
 def _sqlite_connection_factory(path: Path) -> ConnectionFactory:
@@ -83,6 +107,9 @@ def _blocked_state(*, reason: str, supplied: int) -> dict[str, Any]:
         "required_capability_count": len(_required_capabilities()),
         "supplied_capability_count": supplied,
         "persistence_adapter": "unavailable",
+        "storage_source": "unavailable",
+        "durability_verified": False,
+        "survives_container_replacement_verified": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -96,17 +123,17 @@ def install_comprehensive_production_bootstrap(
     connection_factory: ConnectionFactory | None = None,
     dialect: str | None = None,
 ) -> ComprehensiveApiController | None:
-    """Install or safely defer the native Comprehensive production runtime.
+    """Install the native Comprehensive production runtime with durable run identity.
 
-    Postgres remains the preferred production adapter. When ``DATABASE_URL`` is
-    absent, deployments may opt into the repository's durable SQLite contract by
-    setting ``NICO_ENABLE_SQLITE_DURABLE_STORAGE=true`` and mounting the configured
-    ``NICO_SQLITE_PATH`` on persistent storage. The Docker image already uses this
-    explicit contract with one web worker and ``/data`` as the durable location.
+    Postgres is preferred and is resolved from the same bounded private aliases used by
+    the rest of NICO's production storage. SQLite is accepted only when explicitly
+    enabled. When durable assessment storage is required, SQLite must live under a
+    detected mounted volume or carry an explicit deployment acknowledgement. A writable
+    container filesystem is not treated as deployment-surviving because replacement
+    would erase a partially completed run and produce ``comprehensive_run_not_found``.
 
-    If neither durable adapter is available, all native routes remain mounted but
-    fail closed with HTTP 503. Missing executors are never treated as passing
-    evidence, and client delivery remains blocked for every adapter.
+    If no deployment-surviving adapter is available, routes remain mounted but fail
+    closed with HTTP 503. Missing executors are never treated as passing evidence.
     """
 
     existing = getattr(app.state, "comprehensive_api_controller", None)
@@ -125,10 +152,17 @@ def install_comprehensive_production_bootstrap(
         )
         return None
 
-    resolved_url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
+    explicit_url = str(database_url or "").strip()
+    if explicit_url:
+        resolved_url = explicit_url
+        database_url_source = "explicit_database_url"
+    else:
+        resolved_url, database_url_source = _resolved_postgres_url()
+
     resolved_factory = connection_factory
     resolved_dialect = dialect
     storage_source = "explicit_connection_factory" if connection_factory is not None else "postgres"
+    survives_container_replacement = False
 
     if resolved_factory is None and not resolved_url:
         if not _env_true("NICO_ENABLE_SQLITE_DURABLE_STORAGE"):
@@ -138,10 +172,19 @@ def install_comprehensive_production_bootstrap(
                 supplied=len(executors),
             )
             return None
+        path = _sqlite_path()
+        survives_container_replacement = _sqlite_survives_container_replacement(path)
+        if _env_true("NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE") and not survives_container_replacement:
+            register_comprehensive_api_routes(app)
+            app.state.comprehensive_runtime = _blocked_state(
+                reason="comprehensive_sqlite_persistent_volume_required",
+                supplied=len(executors),
+            )
+            return None
         try:
-            resolved_factory = _sqlite_connection_factory(_sqlite_path())
+            resolved_factory = _sqlite_connection_factory(path)
             resolved_dialect = "sqlite"
-            storage_source = "configured_durable_sqlite"
+            storage_source = "mounted_durable_sqlite" if survives_container_replacement else "configured_durable_sqlite"
         except Exception:
             register_comprehensive_api_routes(app)
             app.state.comprehensive_runtime = _blocked_state(
@@ -149,6 +192,11 @@ def install_comprehensive_production_bootstrap(
                 supplied=len(executors),
             )
             return None
+    elif resolved_factory is None:
+        storage_source = f"postgres:{database_url_source or 'configured'}"
+        survives_container_replacement = True
+    else:
+        survives_container_replacement = str(resolved_dialect or "").strip().lower() == "postgres"
 
     try:
         controller = configure_comprehensive_runtime(
@@ -165,13 +213,20 @@ def install_comprehensive_production_bootstrap(
 
     app.state.comprehensive_capability_executors = executors
     state = dict(getattr(app.state, "comprehensive_runtime", {}) or {})
+    adapter = str(state.get("persistence_adapter") or "unavailable")
     state.update(
         {
             "bootstrap_schema": VERSION,
             "status": "ready",
             "configured": True,
             "storage_source": storage_source,
-            "durability_verified": state.get("persistence_adapter") in {"postgres", "sqlite"},
+            "database_url_source": database_url_source or "",
+            # SQLite on a stable path survives process restart, but only Postgres or a
+            # proven mounted volume survives container replacement.
+            "durability_verified": adapter in {"postgres", "sqlite"},
+            "survives_container_replacement_verified": bool(
+                adapter == "postgres" or (adapter == "sqlite" and survives_container_replacement)
+            ),
             "human_review_required": True,
             "client_delivery_allowed": False,
         }

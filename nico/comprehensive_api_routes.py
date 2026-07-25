@@ -11,7 +11,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v5"
+VERSION = "nico.comprehensive_api_routes.v6"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -26,6 +26,9 @@ _SAFE_RUNTIME_REASONS = {
     ),
     "comprehensive_sqlite_storage_unavailable": (
         "Comprehensive is temporarily unavailable because its configured durable storage could not be opened."
+    ),
+    "comprehensive_sqlite_persistent_volume_required": (
+        "Comprehensive is temporarily unavailable because SQLite is not attached to a deployment-surviving volume. Configure Postgres or a persistent volume before retrying."
     ),
     "comprehensive_database_url_required": (
         "Comprehensive is temporarily unavailable because its production database is not configured."
@@ -49,6 +52,7 @@ def _controller(request: Request) -> ComprehensiveApiController:
             status_code=503,
             detail={
                 "code": "comprehensive_service_not_configured",
+                "reason": reason or "runtime_not_ready",
                 "message": message,
                 "retryable": True,
                 "human_review_required": True,
@@ -60,7 +64,22 @@ def _controller(request: Request) -> ComprehensiveApiController:
 
 def _translate_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ComprehensiveRunNotFound):
-        return HTTPException(status_code=404, detail="comprehensive_run_not_found")
+        return HTTPException(
+            status_code=404,
+            detail={
+                "code": "comprehensive_run_not_found",
+                "message": (
+                    "The run ID is not present in the active durable store. This can indicate "
+                    "a replaced container without persistent storage or requests routed to a "
+                    "different backend deployment. Start a new run only after runtime diagnostics "
+                    "confirm deployment-surviving persistence."
+                ),
+                "retryable": False,
+                "persistence_diagnostic_required": True,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, ComprehensiveRunConflict):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, (TypeError, ValueError)):
@@ -79,18 +98,25 @@ def _runtime_persistence(request: Request) -> dict[str, Any]:
     runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
     adapter = str(runtime.get("persistence_adapter") or "unavailable")
     configured = runtime.get("configured") is True
-    # The active durable adapter is authoritative. Older deployments may retain a
-    # stale false durability flag even after Postgres or persistent SQLite opened.
     durable = configured and bool(
         runtime.get("durability_verified")
         or adapter in {"postgres", "sqlite"}
     )
-    return {
+    result: dict[str, Any] = {
         "recorded": configured,
         "durable": durable,
         "adapter": adapter,
         "storage_source": str(runtime.get("storage_source") or adapter),
     }
+    if "survives_container_replacement_verified" in runtime:
+        result["survives_container_replacement_verified"] = configured and (
+            runtime.get("survives_container_replacement_verified") is True
+        )
+    elif configured and adapter == "postgres":
+        # Preserve legacy Postgres truth while avoiding an unsupported claim for
+        # older SQLite runtimes that never recorded a mounted-volume guarantee.
+        result["survives_container_replacement_verified"] = True
+    return result
 
 
 def _with_runtime_truth(request: Request, response: dict[str, Any]) -> dict[str, Any]:
@@ -126,8 +152,6 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
                 payload.get("authorization_scope") or "authorized defensive repository assessment",
                 "authorization_scope",
             ),
-            # Preserve the explicit immutable release binding as a first-class field.
-            # The authorization marker remains a compatibility fallback only.
             "expected_commit_sha": requested_sha,
         }
     )

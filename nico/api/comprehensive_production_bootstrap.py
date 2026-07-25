@@ -15,7 +15,7 @@ from nico.comprehensive_report_appendix_v3 import install_native_provider_bindin
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v8"
+VERSION = "nico.api.comprehensive_production_bootstrap.v9"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -53,16 +53,10 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the decision-grade native Comprehensive boundary.
 
-    Compatibility and decision-grade report bindings are installed first. Native
-    providers are installed next. Scanner execution normalization and core/final
-    report execution-readiness wrappers are then applied before the executor map is
-    frozen.
-
-    A valid report artifact can complete its execution stage while accurately retaining
-    evidence gaps, validation issues, and pending human approval. Those conditions block
-    delivery; they do not mean that report generation itself failed. Missing or invalid
-    artifacts remain terminal failures. Human review remains mandatory and client
-    delivery remains blocked.
+    The run controller is considered production-ready only when its persistence adapter
+    is proven to survive container replacement. This prevents a partially completed run
+    from disappearing after a hosted worker restart and surfacing as
+    ``comprehensive_run_not_found``.
     """
 
     report_binding = install_native_provider_binding()
@@ -91,12 +85,14 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         getattr(target.state, "nico_native_comprehensive_provider_status", {}) or {}
     )
     missing_capabilities = list(provider_status.get("missing_capabilities") or [])
+    replacement_safe = runtime.get("survives_container_replacement_verified") is True
     ready = (
         controller is not None
         and runtime.get("configured") is True
         and runtime.get("status") == "ready"
         and runtime.get("client_delivery_allowed") is False
         and runtime.get("human_review_required") is True
+        and replacement_safe
         and legacy_report_binding.get("bound") is True
         and report_binding.get("bound") is True
         and report_binding.get("canonical_scoring_bound") is True
@@ -109,13 +105,23 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
     )
+    reason = str(runtime.get("reason") or "")
+    if not reason and not replacement_safe:
+        reason = "comprehensive_storage_not_container_replacement_safe"
+    if not reason and missing_capabilities:
+        reason = "comprehensive_native_providers_missing"
     status = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "status": "ready" if ready else "blocked",
         "configured": bool(runtime.get("configured")),
-        "reason": str(runtime.get("reason") or ("comprehensive_native_providers_missing" if missing_capabilities else "")),
+        "reason": reason,
         "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
+        "storage_source": str(runtime.get("storage_source") or "unavailable"),
+        "database_url_source": str(runtime.get("database_url_source") or ""),
+        "durability_verified": runtime.get("durability_verified") is True,
+        "survives_container_replacement_verified": replacement_safe,
+        "run_store_shared_across_workers": replacement_safe,
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
