@@ -47,6 +47,7 @@ def _build_pdf(
     h3 = ParagraphStyle("P6-H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.2, leading=13, textColor=colors.HexColor("#0f172a"), spaceBefore=5, spaceAfter=3)
     body = ParagraphStyle("P6-Body", parent=styles["BodyText"], fontSize=9, leading=12.8, textColor=colors.HexColor("#334155"), spaceAfter=5)
     small = ParagraphStyle("P6-Small", parent=body, fontSize=7.2, leading=9.5, textColor=colors.HexColor("#475569"))
+    table_header = ParagraphStyle("P6-TableHeader", parent=small, fontName="Helvetica-Bold", textColor=colors.white)
     warning = ParagraphStyle("P6-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.8, borderPadding=8, spaceBefore=7, spaceAfter=9)
 
     class PremiumDoc(SimpleDocTemplate):
@@ -65,7 +66,7 @@ def _build_pdf(
         return Paragraph(html.escape(_text(value)), style)
 
     def bullets(values: Iterable[Any], limit: int = 12) -> list[Paragraph]:
-        return [p(f"- {_text(item, 1200)}", small) for item in list(values)[:limit] if _text(item)]
+        return [p(f"- {_text(item, 900)}", small) for item in list(values)[:limit] if _text(item)]
 
     def table(rows: list[list[Any]], widths: list[float], header: bool = True, font_size: float = 6.8) -> LongTable:
         cell_style = ParagraphStyle(
@@ -77,11 +78,9 @@ def _build_pdf(
         )
         header_style = ParagraphStyle(
             f"P6-Header-{font_size}",
-            parent=cell_style,
-            fontName="Helvetica-Bold",
+            parent=table_header,
             fontSize=max(4.6, font_size),
             leading=max(font_size + 1.8, 6.5),
-            textColor=colors.white,
         )
         converted: list[list[Paragraph]] = []
         for row_index, row in enumerate(rows):
