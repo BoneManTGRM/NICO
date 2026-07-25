@@ -20,6 +20,9 @@ from nico.comprehensive_decision_grade_model_v5 import APPENDIX_HEADING, REVIEW_
 from nico.comprehensive_decision_grade_roadmap_v5 import (
     build_roadmap, executive_briefing_provider, resourcing_provider, roadmap_provider,
 )
+from nico.comprehensive_evidence_quality_v1 import (
+    normalize_assessment, wrap_evidence_quality_provider,
+)
 from nico.comprehensive_final_pdf_front_matter_v1 import (
     install_comprehensive_final_pdf_front_matter_v1,
 )
@@ -32,6 +35,8 @@ from nico.comprehensive_final_report_semantics_v47 import (
 from nico.comprehensive_report_clarity_v8 import install_comprehensive_report_clarity_v8
 from nico.comprehensive_report_polish_v1 import install_comprehensive_report_polish_v1
 from nico.comprehensive_score_truth_v1 import wrap_report_builder, wrap_scoring_provider
+from nico.full_source_archive_profile_v1 import install_full_source_archive_profile_v1
+from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
 _SCAN_DETAILS: ContextVar[dict[str, Any] | None] = ContextVar("nico_v5_scan_details", default=None)
 _ORIGINAL_COLLECT = snapshot_evidence.collect_snapshot_repository_evidence
@@ -39,13 +44,7 @@ _WRAPPER_MARKER = "__nico_decision_grade_safe_samples__"
 
 
 def _safe_sample_wrapper(delegate: Callable[[dict[str, str]], dict[str, Any]]) -> Callable[[dict[str, str]], dict[str, Any]]:
-    """Decorate the scanner currently installed by earlier calibration layers.
-
-    The installer must compose with later attachment/calibration wrappers rather than
-    restoring the function that happened to exist when this module was imported.
-    ``wraps`` deliberately preserves the delegate name and identity metadata expected
-    by the score-integrity and idempotency contracts.
-    """
+    """Decorate the scanner currently installed by earlier calibration layers."""
     if getattr(delegate, _WRAPPER_MARKER, False):
         return delegate
 
@@ -76,9 +75,31 @@ def _collect_with_safe_samples(*args: Any, **kwargs: Any):
         _SCAN_DETAILS.reset(token)
 
 
+def _quality_report_builder(delegate: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
+    @wraps(delegate)
+    def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = delegate(*args, **kwargs)
+        if not isinstance(result, dict):
+            return result
+        assessment = result.get("assessment")
+        if isinstance(assessment, dict):
+            normalized = normalize_assessment(assessment)
+            result["assessment"] = normalized
+            package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
+            package["technical_score"] = normalized.get("technical_score")
+            package["evidence_adjusted_score"] = normalized.get("canonical_evidence_adjusted_score")
+            package["canonical_evidence_adjusted_score"] = normalized.get("canonical_evidence_adjusted_score")
+            result["report_package"] = package
+        return result
+
+    return wrapped
+
+
 def install_decision_grade_binding() -> dict[str, Any]:
     global build_comprehensive_report_package
 
+    full_source_profile = install_full_source_archive_profile_v1()
+    typescript_ast_complexity = install_typescript_ast_complexity_v1()
     final_report_semantics = install_comprehensive_final_report_semantics_v47()
     final_report_filename = install_comprehensive_final_report_filename_v48()
     report_clarity = install_comprehensive_report_clarity_v8()
@@ -86,8 +107,12 @@ def install_decision_grade_binding() -> dict[str, Any]:
     code_remediation = install_comprehensive_code_remediation_appendix_v1()
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
-    score_truth_provider = wrap_scoring_provider(canonical_scoring_provider)
-    build_comprehensive_report_package = wrap_report_builder(report_module.build_comprehensive_report_package)
+
+    evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
+    score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
+    quality_builder = _quality_report_builder(report_module.build_comprehensive_report_package)
+    build_comprehensive_report_package = wrap_report_builder(quality_builder)
+
     current_scanner = snapshot_evidence.scan_files
     scanner_with_samples = _safe_sample_wrapper(current_scanner)
     snapshot_evidence.scan_files = scanner_with_samples
@@ -105,6 +130,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "repository_evidence_samples_bound": providers.collect_snapshot_repository_evidence is _collect_with_safe_samples,
         "scanner_wrapper_name": getattr(scanner_with_samples, "__name__", "scan_files"),
         "scanner_wrapper_composed": True,
+        "full_source_profile": full_source_profile,
+        "typescript_ast_complexity": typescript_ast_complexity,
         "final_report_semantics": final_report_semantics,
         "final_report_filename": final_report_filename,
         "report_clarity": report_clarity,
@@ -112,6 +139,8 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "code_remediation": code_remediation,
         "code_remediation_outline": code_outline,
         "final_pdf_front_matter": final_pdf_front_matter,
+        "full_source_profile_bound": full_source_profile.get("status") in {"installed", "already_installed"},
+        "typescript_ast_complexity_bound": typescript_ast_complexity.get("status") in {"installed", "already_installed"},
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
         "final_report_filename_bound": final_report_filename.get("bound") is True,
         "report_clarity_bound": report_clarity.get("status") in {"installed", "already_installed"},
@@ -126,6 +155,9 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "unverified_candidates_not_p1": report_polish.get("unverified_candidates_not_p1") is True,
         "equivalent_review_candidates_grouped": report_polish.get("equivalent_review_candidates_grouped") is True,
         "canonical_score_truth_reconciled": True,
+        "canonical_evidence_adjusted_score_immutable": True,
+        "control_specific_assurance": True,
+        "blanket_incomplete_removed": True,
         "report_score_drift_blocks_package": True,
         "automatic_code_merge_allowed": False,
         "report_finality": "final",
