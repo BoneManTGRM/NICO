@@ -159,10 +159,14 @@ def test_active_durable_adapter_overrides_stale_false_legacy_flag(tmp_path: Path
         payload["run_id"] = f"comprun_durable_{index}"
         response = TestClient(app).post("/assessment/comprehensive-run", json=payload)
         assert response.status_code == 200
-        assert response.json()["persistence"]["recorded"] is True
-        assert response.json()["persistence"]["durable"] is True
-        assert response.json()["persistence"]["adapter"] == adapter
-        assert response.json()["persistence"]["survives_container_replacement_verified"] is (adapter == "postgres")
+        persistence = response.json()["persistence"]
+        assert persistence["recorded"] is True
+        assert persistence["durable"] is True
+        assert persistence["adapter"] == adapter
+        if adapter == "postgres":
+            assert persistence["survives_container_replacement_verified"] is True
+        else:
+            assert "survives_container_replacement_verified" not in persistence
 
 
 def test_routes_fail_closed_without_runtime_controller() -> None:
