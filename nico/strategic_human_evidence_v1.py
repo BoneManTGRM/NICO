@@ -5,22 +5,18 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-VERSION = "nico.strategic_human_evidence.v1"
-_ALLOWED_STATUSES = {"provided", "not_assessed", "unavailable", "excluded"}
-_ALLOWED_SOURCE_TYPES = {"human_statement", "attached_evidence", "mixed", "none"}
+from nico.decision_grade_human_evidence_v1 import MODULE_DEFINITIONS
 
-MODULES: dict[str, str] = {
-    "stakeholder_context": "Stakeholder objectives, pain points, constraints, and desired state",
-    "functional_qa": "Functional QA scenarios and observed results",
-    "platform_parity": "Browser, device, platform, and native parity evidence",
-    "accessibility_ux": "Accessibility and user-experience observations",
-    "incident_history": "Production incidents, support events, and recovery evidence",
-    "release_goals": "Product goals, release deadlines, and acceptance criteria",
-    "requirements_compliance": "Regulatory, contractual, and requirements evidence",
-    "budget_staffing_constraints": "Budget, staffing, capacity, and operating constraints",
-    "architecture_decisions": "Known architecture decisions and decision rationale",
-    "accepted_risks": "Explicitly accepted risks and approval boundaries",
-    "support_pain_points": "Customer-support themes and recurring user pain points",
+VERSION = "nico.strategic_human_evidence.v2"
+_REQUIRED_METADATA = ("reviewer", "observed_at", "source_reference")
+
+MODULES: dict[str, dict[str, Any]] = {
+    str(definition["module_id"]): {
+        "label": str(definition["label"]),
+        "description": str(definition["description"]),
+        "required_fields": tuple(str(item) for item in definition["required_fields"]),
+    }
+    for definition in MODULE_DEFINITIONS
 }
 
 
@@ -29,39 +25,18 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
         return value
     if isinstance(value, str):
         return value.strip()[:4000]
-    if depth >= 4:
+    if depth >= 5:
         return str(value)[:4000]
     if isinstance(value, Mapping):
         output: dict[str, Any] = {}
         for index, (key, item) in enumerate(value.items()):
-            if index >= 100:
+            if index >= 120:
                 break
             output[str(key)[:160]] = _safe(item, depth=depth + 1)
         return output
     if isinstance(value, (list, tuple, set)):
-        return [_safe(item, depth=depth + 1) for item in list(value)[:100]]
+        return [_safe(item, depth=depth + 1) for item in list(value)[:120]]
     return str(value)[:4000]
-
-
-def _strings(value: Any, *, limit: int = 100) -> list[str]:
-    if isinstance(value, str):
-        values = [value]
-    elif isinstance(value, (list, tuple, set)):
-        values = list(value)
-    else:
-        values = []
-    output: list[str] = []
-    seen: set[str] = set()
-    for item in values:
-        text = " ".join(str(item or "").split())[:4000]
-        key = text.casefold()
-        if not text or key in seen:
-            continue
-        seen.add(key)
-        output.append(text)
-        if len(output) >= limit:
-            break
-    return output
 
 
 def _canonical_hash(value: Any) -> str:
@@ -74,94 +49,147 @@ def _canonical_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _normalize_module(module_id: str, raw: Any) -> dict[str, Any]:
-    source = dict(raw) if isinstance(raw, Mapping) else {}
-    statements = _strings(source.get("statements") or source.get("notes"))
-    attachment_refs = _strings(
-        source.get("attachment_refs") or source.get("evidence_refs")
-    )
-    records_raw = source.get("records")
-    records = (
-        [_safe(item) for item in list(records_raw)[:100]]
-        if isinstance(records_raw, (list, tuple))
-        else []
-    )
-    supplied_by = " ".join(str(source.get("supplied_by") or "").split())[:240]
-    captured_at = " ".join(str(source.get("captured_at") or "").split())[:120]
-    requested_status = str(source.get("status") or "").strip().casefold()
-    has_content = bool(statements or attachment_refs or records)
-    status = requested_status if requested_status in _ALLOWED_STATUSES else (
-        "provided" if has_content else "not_assessed"
-    )
-    if status == "provided" and not has_content:
-        status = "not_assessed"
+def _record(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
-    requested_source_type = str(source.get("source_type") or "").strip().casefold()
-    if requested_source_type in _ALLOWED_SOURCE_TYPES:
-        source_type = requested_source_type
-    elif statements and (attachment_refs or records):
-        source_type = "mixed"
-    elif attachment_refs or records:
-        source_type = "attached_evidence"
-    elif statements:
-        source_type = "human_statement"
+
+def _module_inputs(value: Any) -> dict[str, dict[str, Any]]:
+    source = _record(value)
+    modules = source.get("modules")
+    if isinstance(modules, Mapping):
+        return {
+            str(module_id): _record(payload)
+            for module_id, payload in modules.items()
+            if str(module_id) in MODULES
+        }
+    if isinstance(modules, list):
+        output: dict[str, dict[str, Any]] = {}
+        for item in modules:
+            if not isinstance(item, Mapping):
+                continue
+            module_id = str(item.get("module_id") or "")
+            if module_id in MODULES:
+                output[module_id] = dict(item)
+        return output
+    return {
+        str(module_id): _record(payload)
+        for module_id, payload in source.items()
+        if str(module_id) in MODULES
+    }
+
+
+def _present(value: Any) -> bool:
+    return value not in (None, "", [], {})
+
+
+def _normalize_module(module_id: str, raw: Any) -> dict[str, Any]:
+    definition = MODULES[module_id]
+    source = _record(raw)
+    evidence = _record(source.get("evidence"))
+    for field in definition["required_fields"]:
+        if field in source and field not in evidence:
+            evidence[field] = _safe(source[field])
+    evidence = {str(key): _safe(item) for key, item in evidence.items()}
+
+    reviewer = " ".join(str(source.get("reviewer") or "").split())[:240]
+    observed_at = " ".join(
+        str(source.get("observed_at") or source.get("captured_at") or "").split()
+    )[:120]
+    source_reference = " ".join(
+        str(
+            source.get("source_reference")
+            or source.get("attachment_reference")
+            or source.get("attachment_ref")
+            or ""
+        ).split()
+    )[:600]
+    excluded = source.get("excluded") is True or str(source.get("status") or "").casefold() in {
+        "excluded",
+        "out_of_scope",
+    }
+    exclusion_rationale = " ".join(
+        str(source.get("exclusion_rationale") or source.get("reason") or "").split()
+    )[:1200]
+
+    required_fields = list(definition["required_fields"])
+    present_fields = [field for field in required_fields if _present(evidence.get(field))]
+    missing_fields = [field for field in required_fields if field not in present_fields]
+    metadata = {
+        "reviewer": reviewer,
+        "observed_at": observed_at,
+        "source_reference": source_reference,
+    }
+    present_metadata = [field for field, item in metadata.items() if _present(item)]
+    missing_metadata = [field for field in _REQUIRED_METADATA if field not in present_metadata]
+    has_content = bool(evidence or present_metadata or exclusion_rationale)
+
+    if excluded and exclusion_rationale:
+        status = "excluded"
+        assurance = "EXCLUDED WITH RATIONALE"
+    elif has_content and not missing_fields and not missing_metadata:
+        status = "complete"
+        assurance = "HUMAN EVIDENCE RETAINED · REVIEW REQUIRED"
+    elif has_content:
+        status = "partial"
+        assurance = "REVIEW LIMITED"
+        if excluded and not exclusion_rationale:
+            missing_metadata.append("exclusion_rationale")
     else:
-        source_type = "none"
+        status = "not_assessed"
+        assurance = "NOT ASSESSED"
 
     module = {
         "module_id": module_id,
-        "label": MODULES[module_id],
+        "label": definition["label"],
+        "description": definition["description"],
         "status": status,
-        "source_type": source_type,
-        "statements": statements,
-        "records": records,
-        "attachment_refs": attachment_refs,
-        "supplied_by": supplied_by,
-        "captured_at": captured_at,
+        "assurance": assurance,
+        "required_fields": required_fields,
+        "present_fields": present_fields,
+        "missing_fields": missing_fields,
+        "required_metadata": list(_REQUIRED_METADATA),
+        "present_metadata": present_metadata,
+        "missing_metadata": sorted(set(missing_metadata)),
+        "evidence": evidence,
+        **metadata,
+        "excluded": excluded,
+        "exclusion_rationale": exclusion_rationale,
+        "human_observation_required": True,
+        "repository_inference_allowed": False,
         "directly_scored": False,
-        "requires_human_review": True,
     }
     module["module_sha256"] = _canonical_hash(module)
     return module
 
 
 def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
-    """Normalize explicit human evidence without inferring missing facts from code."""
+    """Normalize the existing decision-grade intake schema for run persistence.
 
-    source = dict(value) if isinstance(value, Mapping) else {}
-    if source.get("artifact_schema") == VERSION and isinstance(
-        source.get("modules"), Mapping
-    ):
-        source = dict(source["modules"])
+    This is a persistence and transport contract. It does not infer missing facts,
+    alter technical scores, or mark incomplete human evidence as complete.
+    """
+
+    inputs = _module_inputs(value)
     modules = {
-        module_id: _normalize_module(module_id, source.get(module_id))
+        module_id: _normalize_module(module_id, inputs.get(module_id))
         for module_id in MODULES
     }
-    status_counts = {
+    counts = {
         status: sum(module["status"] == status for module in modules.values())
-        for status in sorted(_ALLOWED_STATUSES)
+        for status in ("complete", "partial", "not_assessed", "excluded")
     }
-    provided_ids = [
-        module_id
-        for module_id, module in modules.items()
-        if module["status"] == "provided"
-    ]
     package = {
         "artifact_schema": VERSION,
-        "status": "provided" if provided_ids else "not_assessed",
+        "status": "complete" if not counts["partial"] and not counts["not_assessed"] else "review_limited",
+        "module_count": len(modules),
+        "status_counts": counts,
+        "complete_modules": [key for key, module in modules.items() if module["status"] == "complete"],
+        "partial_modules": [key for key, module in modules.items() if module["status"] == "partial"],
+        "not_assessed_modules": [key for key, module in modules.items() if module["status"] == "not_assessed"],
+        "excluded_modules": [key for key, module in modules.items() if module["status"] == "excluded"],
         "modules": modules,
-        "provided_module_ids": provided_ids,
-        "status_counts": status_counts,
-        "human_statement_count": sum(
-            len(module["statements"]) for module in modules.values()
-        ),
-        "attachment_reference_count": sum(
-            len(module["attachment_refs"]) for module in modules.values()
-        ),
-        "structured_record_count": sum(
-            len(module["records"]) for module in modules.values()
-        ),
-        "repository_inference_prohibited": True,
+        "repository_inference_allowed": False,
+        "directly_scored": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -178,9 +206,32 @@ def human_evidence_module(package: Any, module_id: str) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else _normalize_module(module_id, None)
 
 
+def decision_grade_stage_payload(package: Any, module_ids: tuple[str, ...]) -> dict[str, Any]:
+    """Project persisted evidence into the schema consumed by report synthesis."""
+
+    normalized = normalize_strategic_human_evidence(package)
+    output: dict[str, Any] = {}
+    for module_id in module_ids:
+        module = human_evidence_module(normalized, module_id)
+        if module["status"] == "not_assessed":
+            continue
+        output[module_id] = {
+            **dict(module.get("evidence") or {}),
+            "reviewer": module.get("reviewer") or "",
+            "observed_at": module.get("observed_at") or "",
+            "source_reference": module.get("source_reference") or "",
+            "status": module.get("status") or "partial",
+            "excluded": module.get("excluded") is True,
+            "exclusion_rationale": module.get("exclusion_rationale") or "",
+            "module_sha256": module.get("module_sha256") or "",
+        }
+    return output
+
+
 __all__ = [
     "MODULES",
     "VERSION",
+    "decision_grade_stage_payload",
     "human_evidence_module",
     "normalize_strategic_human_evidence",
 ]
