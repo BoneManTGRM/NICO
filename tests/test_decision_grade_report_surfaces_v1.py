@@ -182,14 +182,18 @@ def test_markdown_and_html_use_exact_seven_item_executive_register() -> None:
     rendered_html = _build_html(_identity(), assessment, [], roadmap, [], limitations, "2026-07-25T12:00:00+00:00")
 
     executive_ids = [item["finding_id"] for item in assessment["executive_risk_register"]]
-    eighth_id = assessment["decision_grade_findings_register"][7]["finding_id"]
+    overflow_id = next(
+        item["finding_id"]
+        for item in assessment["decision_grade_findings_register"]
+        if item["finding_id"] not in set(executive_ids)
+    )
     for finding_id in executive_ids:
         assert finding_id in markdown
         assert finding_id in rendered_html
     executive_markdown = markdown.split("## Executive Risk Register", 1)[1].split("## Detailed Findings Register", 1)[0]
     executive_html = rendered_html.split("<h2>Executive Risk Register</h2>", 1)[1].split("<h2>Detailed Findings Register</h2>", 1)[0]
-    assert eighth_id not in executive_markdown
-    assert eighth_id not in executive_html
+    assert overflow_id not in executive_markdown
+    assert overflow_id not in executive_html
     assert "Cost of inaction" in markdown
     assert "Residual risk" in markdown
     assert "Scope Boundary and Unassessed Risk" in markdown
