@@ -23,6 +23,10 @@ from nico.comprehensive_decision_grade_roadmap_v5 import (
 from nico.comprehensive_evidence_quality_v1 import (
     normalize_assessment, wrap_evidence_quality_provider,
 )
+from nico.comprehensive_executive_brief_page_gate_v1 import (
+    VERSION as EXECUTIVE_BRIEF_PAGE_GATE_VERSION,
+    install_comprehensive_executive_brief_page_gate_v1,
+)
 from nico.comprehensive_final_pdf_front_matter_v1 import (
     install_comprehensive_final_pdf_front_matter_v1,
 )
@@ -111,6 +115,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
     code_remediation = install_comprehensive_code_remediation_appendix_v1()
     code_outline = install_comprehensive_code_remediation_outline_v1()
     final_pdf_front_matter = install_comprehensive_final_pdf_front_matter_v1()
+    executive_brief_page_gate = install_comprehensive_executive_brief_page_gate_v1()
 
     evidence_quality_provider = wrap_evidence_quality_provider(canonical_scoring_provider)
     score_truth_provider = wrap_scoring_provider(evidence_quality_provider)
@@ -144,6 +149,7 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "code_remediation": code_remediation,
         "code_remediation_outline": code_outline,
         "final_pdf_front_matter": final_pdf_front_matter,
+        "executive_brief_page_gate": executive_brief_page_gate,
         "full_source_profile_bound": full_source_profile.get("status") in {"installed", "already_installed"},
         "typescript_ast_complexity_bound": typescript_ast_complexity.get("status") in {"installed", "already_installed"},
         "final_report_semantics_bound": final_report_semantics.get("bound") is True,
@@ -153,6 +159,13 @@ def install_decision_grade_binding() -> dict[str, Any]:
         "code_remediation_bound": code_remediation.get("status") in {"installed", "already_installed"},
         "code_remediation_outline_bound": code_outline.get("status") in {"installed", "already_installed"},
         "final_pdf_front_matter_bound": final_pdf_front_matter.get("status") in {"installed", "already_installed"},
+        "executive_brief_page_gate_bound": executive_brief_page_gate.get("status") in {"installed", "already_installed"},
+        "executive_brief_page_gate_version": EXECUTIVE_BRIEF_PAGE_GATE_VERSION,
+        "executive_brief_exactly_one_page_required": True,
+        "executive_brief_expected_page": 2,
+        "executive_brief_what_this_means_required": True,
+        "executive_brief_immutable_commit_value_required": True,
+        "executive_brief_scorecard_separation_required": True,
         "exact_location_code_remediation_plan": code_remediation.get("exact_location_code_plan") is True,
         "pdf_code_remediation_appendix": code_remediation.get("pdf_code_pages") is True,
         "pdf_outline_preserved_after_appendix": code_outline.get("base_outline_preserved") is True,
