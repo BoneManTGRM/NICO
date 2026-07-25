@@ -32,7 +32,8 @@ def test_public_workspace_is_one_comprehensive_assessment() -> None:
     assert 'data-customer-facing-assessment="comprehensive"' in workspace
     assert "aria-pressed" not in workspace
     assert 'const service: Service = "comprehensive"' in hook
-    assert 'apiUrl("/assessment/comprehensive-intake")' in hook
+    assert 'requestWithRetry(' in hook
+    assert '"/assessment/comprehensive-intake"' in hook
     assert 'assessment_depth: "strategic"' in hook
     assert 'report_language: locale' in hook
 
