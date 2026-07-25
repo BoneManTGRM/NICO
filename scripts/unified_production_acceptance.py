@@ -7,7 +7,7 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.report_identity.v2"
+VERSION = "nico.unified_production_acceptance.report_identity.v3"
 COMPREHENSIVE_REPORT_IDENTITIES = (
     ("NICO Comprehensive Technical Assessment",),
     ("NICO Comprehensive", "Decision-Grade Technical Assessment"),
@@ -17,6 +17,7 @@ LEGACY_DRAFT_PHRASES = (
     "DRAFT · HUMAN REVIEW REQUIRED",
     "COMPLETE ONLY AS A DRAFT",
 )
+RETIRED_TIER_SELECTOR = '[aria-label="Assessment type"]'
 
 
 def _normalized(value: Any) -> str:
@@ -55,6 +56,89 @@ def validate_preapproval_delivery_posture(
         "preapproval_delivery_posture_verified": True,
         "draft_only_delivery_label_present": draft_only_label_present,
     }
+
+
+def verify_retired_tier_selector(workspace: Any, locale: str) -> dict[str, bool]:
+    """Accept either complete removal or fully hidden legacy tier controls.
+
+    The public workspace now has one canonical Strategic assessment. Removing the old
+    Express/Comprehensive selector is stronger evidence than retaining a hidden copy.
+    Production acceptance must not wait for a node that intentionally no longer exists.
+    """
+
+    selector = workspace.locator(RETIRED_TIER_SELECTOR)
+    count = selector.count()
+    if count == 0:
+        return {
+            "legacy_selector_hidden": True,
+            "legacy_selector_removed": True,
+        }
+
+    assert count == 1, f"{locale} rendered {count} retired tier selectors"
+    choice_grid = selector.first
+    assert choice_grid.get_attribute("aria-hidden") == "true"
+    assert choice_grid.is_hidden(), f"{locale} exposed the retired tier selector"
+    buttons = choice_grid.locator("button")
+    assert buttons.count() == 2, f"{locale} retained an incomplete legacy tier control"
+    assert all(buttons.nth(index).is_hidden() for index in range(buttons.count()))
+    return {
+        "legacy_selector_hidden": True,
+        "legacy_selector_removed": False,
+    }
+
+
+def verify_unified_language_parity(browser: Any, config: Any) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    for locale, path in (
+        ("en", "/assessment?tier=comprehensive#assessment"),
+        ("es-MX", "/es/assessment?tier=comprehensive#assessment"),
+    ):
+        context = browser.new_context(viewport={"width": 390, "height": 844}, locale=locale)
+        page = context.new_page()
+        try:
+            page.goto(
+                config.frontend_origin + path,
+                wait_until="domcontentloaded",
+                timeout=config.navigation_timeout_ms,
+            )
+            workspace = page.locator(unified.UNIFIED_WORKSPACE_SELECTOR).first
+            workspace.wait_for(state="visible", timeout=config.navigation_timeout_ms)
+            selector_evidence = verify_retired_tier_selector(workspace, locale)
+
+            run_button = workspace.locator(unified.RUN_SELECTOR).first
+            run_button.wait_for(state="visible", timeout=config.navigation_timeout_ms)
+            run_label = acceptance.text(run_button.inner_text(), 120)
+            assert run_label == unified.PUBLIC_RUN_LABELS[locale], (
+                f"{locale} canonical run label was {run_label!r}, "
+                f"expected {unified.PUBLIC_RUN_LABELS[locale]!r}"
+            )
+            heading = acceptance.text(
+                workspace.locator("#assessment .section-head h2").first.inner_text(),
+                200,
+            )
+            assert heading == unified.PUBLIC_HEADINGS[locale], (
+                f"{locale} canonical heading was {heading!r}, "
+                f"expected {unified.PUBLIC_HEADINGS[locale]!r}"
+            )
+            tier = page.evaluate("() => new URL(window.location.href).searchParams.get('tier')")
+            assert tier == "comprehensive"
+
+            screenshot = config.screenshot_dir / f"parity-{locale}.png"
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(screenshot), full_page=True)
+            results[locale] = {
+                "public_assessment_count": 1,
+                "canonical_assessment": "strategic",
+                "execution_service": "comprehensive",
+                **selector_evidence,
+                "run_label": run_label,
+                "heading": heading,
+                "screenshot": screenshot.as_posix(),
+                "screenshot_sha256": acceptance.sha256(screenshot.read_bytes()),
+            }
+        finally:
+            context.close()
+    return results
 
 
 def validate_report(service: str, payload: dict[str, Any], destination: Path) -> dict[str, Any]:
@@ -158,6 +242,7 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
 
 def main(argv: list[str] | None = None) -> int:
     acceptance.validate_report = validate_report
+    unified._verify_unified_language_parity = verify_unified_language_parity
     return unified.main(argv)
 
 
