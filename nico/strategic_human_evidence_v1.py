@@ -129,6 +129,10 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
     """Normalize explicit human evidence without inferring missing facts from code."""
 
     source = dict(value) if isinstance(value, Mapping) else {}
+    if source.get("artifact_schema") == VERSION and isinstance(
+        source.get("modules"), Mapping
+    ):
+        source = dict(source["modules"])
     modules = {
         module_id: _normalize_module(module_id, source.get(module_id))
         for module_id in MODULES
@@ -166,12 +170,9 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
 
 
 def human_evidence_module(package: Any, module_id: str) -> dict[str, Any]:
-    normalized = (
-        package
-        if isinstance(package, Mapping)
-        and package.get("artifact_schema") == VERSION
-        else normalize_strategic_human_evidence(package)
-    )
+    if module_id not in MODULES:
+        raise KeyError(f"unknown_human_evidence_module:{module_id}")
+    normalized = normalize_strategic_human_evidence(package)
     modules = normalized.get("modules")
     value = modules.get(module_id) if isinstance(modules, Mapping) else None
     return dict(value) if isinstance(value, Mapping) else _normalize_module(module_id, None)
