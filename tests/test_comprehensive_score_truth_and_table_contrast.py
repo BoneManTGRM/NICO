@@ -4,7 +4,6 @@ from pathlib import Path
 
 from nico.comprehensive_score_truth_v1 import enforce_report_score_truth, reconcile_scoring_result
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PDF_SOURCE = ROOT / "nico" / "comprehensive_premium_pdf_v6.py"
 
@@ -46,7 +45,7 @@ def test_report_blocks_when_appendix_score_disagrees_with_canonical_score() -> N
     result = enforce_report_score_truth(_package(canonical_score=85, stage_score=75, adjusted_score=81))
 
     assert result["status"] == "blocked"
-    assert result["reason"] == "canonical_score_truth_mismatch"
+    assert result["reason"] == "canonical_technical_score_mismatch"
     assert result["report_quality_contract"]["canonical_score_consistent_across_stages"] is False
     assert result["report_quality_contract"]["canonical_score"] == 85
     assert result["report_quality_contract"]["evidence_adjusted_score"] == 81
