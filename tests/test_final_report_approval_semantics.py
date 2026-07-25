@@ -5,7 +5,6 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -13,17 +12,25 @@ def source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def assessment_source() -> str:
+    directory = ROOT / "apps" / "web" / "app" / "assessment"
+    return "\n".join(
+        (directory / name).read_text(encoding="utf-8")
+        for name in ("AssessmentWorkspace.tsx", "assessmentCopy.ts", "assessmentModel.ts")
+    )
+
+
 def pdf_text(data: bytes) -> str:
     return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
 
 
 def test_customer_workspace_uses_final_report_and_contextual_pending_states() -> None:
-    text = source("apps/web/app/assessment/AssessmentWorkspace.tsx")
+    text = assessment_source()
     assert "Download final PDF" in text
     assert "Download draft PDF" not in text
     assert "Recorded, not durable" not in text
     assert 'durable: "Persistence"' in text
-    assert 'value.includes("unavailable")' in text
+    assert 'includes("unavailable")' in text
     assert "running && scannerUnavailable ? copy.awaitingScanner" in text
     assert "running && (!maturityRawStatus || maturityUnavailable)" in text
     assert "no separate report rewrite is required" in text
@@ -37,7 +44,6 @@ def test_postgres_persistence_is_durable_when_available_even_with_false_legacy_f
 
 def test_express_cover_is_a_final_report_pending_approval() -> None:
     from nico.express_report_premium_polish_v42 import _cover_pdf
-
     result = {
         "repository": "BoneManTGRM/NICO",
         "commit_sha": "a" * 40,
@@ -63,7 +69,6 @@ def test_express_delivery_overlay_describes_approval_not_draft_state() -> None:
 def test_full_pdf_is_final_but_still_review_gated() -> None:
     from nico.full_assessment_pdf import build_full_assessment_pdf_base64
     import base64
-
     payload = {
         "repository": "BoneManTGRM/NICO",
         "run_id": "comprun_test",
