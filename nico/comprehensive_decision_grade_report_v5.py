@@ -20,6 +20,11 @@ from nico.comprehensive_express_quality_v7 import (
     reconcile_comprehensive_assessment,
 )
 from nico.comprehensive_premium_synthesis_v6 import VERSION as PREMIUM_VERSION
+from nico.decision_grade_contract_v1 import (
+    SCHEMA_VERSION as DECISION_GRADE_CONTRACT_VERSION,
+    build_decision_grade_contract,
+    contract_quality_summary,
+)
 
 
 def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -31,6 +36,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     assessment = reconcile_executive_risk_truth(
         reconcile_comprehensive_assessment(_decorate_assessment(base_report._assessment(stage_results)))
     )
+    all_executive_risks = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)]
+    assessment["executive_risk_register"] = all_executive_risks[:7]
+    assessment["executive_risk_overflow_count"] = max(0, len(all_executive_risks) - 7)
+    assessment["executive_risk_register_limit"] = 7
     stages = _stage_summaries(stage_results)
     limitations = _limitation_metrics(assessment, stages)
     assessment["limitation_metrics"] = {**dict(assessment.get("limitation_metrics") or {}), **limitations}
@@ -60,6 +69,52 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     executive_risks = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)]
     findings_csv = _findings_csv(findings)
     evidence_csv = _evidence_csv(stages)
+
+    contract_error = None
+    try:
+        decision_grade_contract = build_decision_grade_contract(
+            identity={
+                **required_identity,
+                "assessment_type": "comprehensive",
+                "branch": identity.get("branch") or "unknown",
+                "repository_url": identity.get("repository_url"),
+                "commit_timestamp": identity.get("commit_timestamp"),
+                "assessment_started_at": identity.get("assessment_started_at"),
+                "assessment_completed_at": generated_at,
+                "generation_duration_seconds": identity.get("generation_duration_seconds"),
+                "nico_version": identity.get("nico_version") or "0.1.1",
+                "scanner_configuration_version": identity.get("scanner_configuration_version") or "current",
+                "previous_comparable_assessment_id": identity.get("previous_comparable_assessment_id"),
+            },
+            assessment=assessment,
+            stage_summaries=stages,
+            roadmap=roadmap,
+            report_template_version=VERSION,
+            pdf_page_count=page_count,
+            core_page_count=core_page_count,
+            generated_at=generated_at,
+        )
+        contract_payload = decision_grade_contract.model_dump(mode="json")
+        contract_summary = contract_quality_summary(decision_grade_contract)
+    except Exception as exc:  # pragma: no cover - fail-closed contract boundary
+        contract_error = f"Decision-grade contract unavailable: {type(exc).__name__}"
+        contract_payload = {
+            "schema_version": DECISION_GRADE_CONTRACT_VERSION,
+            "status": "invalid",
+            "reason": contract_error,
+        }
+        contract_summary = {
+            "schema_version": DECISION_GRADE_CONTRACT_VERSION,
+            "readiness_status": "Delivery Blocked",
+            "validation_error_count": 1,
+            "validation_warning_count": 0,
+            "executive_risk_count": len(executive_risks),
+            "executive_risk_limit_met": len(executive_risks) <= 7,
+            "p0_p1_traceability_complete": False,
+            "monetary_claims_require_assumptions": False,
+            "client_ready": False,
+        }
+
     canonical = {
         "service_id": "comprehensive",
         "identity": required_identity,
@@ -71,6 +126,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "roadmap": roadmap,
         "staffing_plan": staffing,
         "limitation_metrics": limitations,
+        "decision_grade_contract": contract_payload,
+        "delivery_status": contract_summary["readiness_status"],
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -84,6 +141,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "version": VERSION,
         "premium_synthesis_version": PREMIUM_VERSION,
         "express_quality_version": EXPRESS_QUALITY_VERSION,
+        "decision_grade_contract_version": DECISION_GRADE_CONTRACT_VERSION,
         "decision_grade_body": True,
         "appendix_contract_schema": VERSION,
         "full_evidence_appendix": True,
@@ -104,13 +162,22 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "weighted_scoring_explicit": bool(assessment.get("scoring_weights")),
         "shared_control_truth_reconciled": bool(assessment.get("comprehensive_express_quality", {}).get("shared_control_truth_reconciled")),
         "executive_risk_truth_reconciled": bool(assessment.get("comprehensive_executive_risk_truth", {}).get("static_risk_wording_reconciled")),
-        "executive_risk_register_consolidated": len(executive_risks) <= 8,
+        "executive_risk_register_consolidated": len(executive_risks) <= 7,
+        "executive_risk_register_limit": 7,
+        "executive_risk_overflow_count": assessment.get("executive_risk_overflow_count", 0),
         "unverified_medium_candidates_not_p1": all(not (item.get("priority") == "P1" and "verified=false" in str(item.get("evidence")).casefold()) for item in findings),
         "secret_category_isolated": True,
         "named_architecture_hotspots": any(item.get("category") == "architecture" and item.get("location") for item in findings),
         "structured_findings_register": bool(findings) or not assessment.get("sections"),
         "executable_roadmap": bool(roadmap) and all(isinstance(item, dict) and item.get("work_packages") for item in roadmap),
         "limitation_accounting_explicit": all(key in limitations for key in ("stages_with_limitations", "individual_limitation_records", "score_affecting_records", "informational_records")),
+        "decision_grade_contract_serialized": contract_error is None,
+        "decision_grade_readiness_status": contract_summary["readiness_status"],
+        "decision_grade_validation_error_count": contract_summary["validation_error_count"],
+        "decision_grade_validation_warning_count": contract_summary["validation_warning_count"],
+        "p0_p1_traceability_complete": contract_summary["p0_p1_traceability_complete"],
+        "monetary_claims_require_assumptions": contract_summary["monetary_claims_require_assumptions"],
+        "client_ready": contract_summary["client_ready"],
         "final_pdf_page_count": page_count,
         "core_report_page_count": core_page_count,
         "pdf_page_count_matches_final_artifact": bool(pdf_bytes) and page_count > 0,
@@ -140,6 +207,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         and quality["semantic_html"]
         and quality["markdown_evidence_appendix"]
         and quality["markdown_human_review_acceptance_gate"]
+        and quality["decision_grade_contract_serialized"]
     )
     report_package = {
         "service_id": "comprehensive",
@@ -147,6 +215,7 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "markdown": markdown,
         "html": rendered_html,
         "json": canonical,
+        "decision_grade_contract": contract_payload,
         "findings_csv": findings_csv,
         "evidence_ledger_csv": evidence_csv,
         "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii") if pdf_bytes else "",
@@ -165,12 +234,13 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "evidence_appendix_present": True,
         "human_review_acceptance_gate_present": True,
         "report_quality_contract": quality,
+        "delivery_status": contract_summary["readiness_status"],
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
     return {
         "status": "complete" if complete else "blocked",
-        "reason": "" if complete else (pdf_error or "decision_grade_report_contract_failed"),
+        "reason": "" if complete else (pdf_error or contract_error or "decision_grade_report_contract_failed"),
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "report_id": report_id,
@@ -178,6 +248,8 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "assessment": assessment,
         "stage_summaries": stages,
         "canonical_truth_sha256": truth_sha,
+        "decision_grade_contract": contract_payload,
+        "delivery_status": contract_summary["readiness_status"],
         "report_quality_contract": quality,
         "report_package": report_package,
         "appendix_contract_schema": VERSION,
