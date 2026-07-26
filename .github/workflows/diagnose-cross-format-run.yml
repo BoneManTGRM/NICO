@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/diagnose-cross-format-run.yml"
-      - "scripts/diagnose_cross_format_run.py"
 
 permissions:
   contents: read
@@ -13,8 +12,17 @@ jobs:
   inspect:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - run: python -m pip install --disable-pip-version-check pypdf==6.6.0
-      - run: python scripts/diagnose_cross_format_run.py
+      - name: Read compact production truth
         env:
           RUN_ID: comprun_1d2f294b68be41c7be6a90cbd6ce1663
+        run: |
+          python - <<'PY'
+          import base64, html, json, os, re, urllib.request
+          rid=os.environ['RUN_ID']; url=f'https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/{rid}'
+          data=json.load(urllib.request.urlopen(url,timeout=60)); rec=data.get('record') or {}; stages=rec.get('stage_results') or {}; stage=stages.get('cross_format_truth_verification')
+          report=data.get('reports') or {}; md=str(report.get('markdown') or ''); ht=html.unescape(re.sub(r'<[^>]+>',' ',str(report.get('html') or ''))); pdf=str(report.get('pdf_base64') or '')
+          def near(text,label):
+              text=' '.join(text.split()); i=text.casefold().find(label.casefold()); return 'NOT_FOUND' if i<0 else text[i:i+240]
+          out={'status':data.get('status'),'stage':stage,'report_keys':sorted(report),'pdf_bytes':len(base64.b64decode(pdf)) if pdf else 0,'md_scores':sorted(set(re.findall(r'\b(?:100|[1-9]?\d)/100\b',md))),'md_technical':near(md,'Technical maturity'),'md_adjusted':near(md,'Evidence-Adjusted'),'md_delivery':near(md,'CLIENT DELIVERY'),'html_technical':near(ht,'Technical maturity'),'html_adjusted':near(ht,'Evidence-Adjusted')}
+          print(json.dumps(out,separators=(',',':'),sort_keys=True))
+          PY
