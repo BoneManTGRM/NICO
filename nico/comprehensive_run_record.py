@@ -10,6 +10,7 @@ from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.strategic_human_evidence_v1 import (
     VERSION as HUMAN_EVIDENCE_VERSION,
     normalize_strategic_human_evidence,
+    verify_strategic_human_evidence,
 )
 
 VERSION = "nico.comprehensive_run_record.v4"
@@ -35,12 +36,6 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _embedded_hash(payload: dict[str, Any], field: str) -> str:
-    canonical = deepcopy(payload)
-    canonical.pop(field, None)
-    return _canonical_hash(canonical)
 
 
 def create_comprehensive_run_record(
@@ -131,11 +126,7 @@ def _validate_record(
         else:
             if human_evidence.get("artifact_schema") != HUMAN_EVIDENCE_VERSION:
                 violations.append("human_evidence_schema_invalid")
-            claimed = str(human_evidence.get("human_evidence_sha256") or "")
-            if not claimed or claimed != _embedded_hash(
-                human_evidence,
-                "human_evidence_sha256",
-            ):
+            if not verify_strategic_human_evidence(human_evidence):
                 violations.append("human_evidence_hash_mismatch")
     completed = list(record.get("completed_stages") or [])
     if completed != list(COMPREHENSIVE_STAGES[: len(completed)]):
