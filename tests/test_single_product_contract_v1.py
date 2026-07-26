@@ -30,12 +30,24 @@ def test_canonical_customer_product_identity_is_singular() -> None:
 
 
 def test_public_product_documents_use_the_canonical_name_without_retired_tiers() -> None:
+    retired_public_phrases = {
+        phrase
+        for retired in RETIRED_PUBLIC_TIER_LABELS
+        for phrase in (
+            f"nico {retired}",
+            f"{retired} assessment",
+            f"run {retired}",
+            f"{retired} tier",
+        )
+    }
+    retired_public_phrases.add("express/mid/full")
+
     for path in PUBLIC_PRODUCT_DOCUMENTS:
         text = path.read_text(encoding="utf-8")
         lowered = text.lower()
         assert PRODUCT_NAME in text, f"{path} does not name the canonical product"
-        for retired in RETIRED_PUBLIC_TIER_LABELS:
-            assert retired not in lowered, f"{path} reintroduced retired public tier label {retired!r}"
+        for phrase in retired_public_phrases:
+            assert phrase not in lowered, f"{path} reintroduced retired public product phrase {phrase!r}"
 
 
 def test_maturity_targets_are_bounded_and_include_fail_closed_claim_support() -> None:
