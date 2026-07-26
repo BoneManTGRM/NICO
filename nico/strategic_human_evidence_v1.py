@@ -230,9 +230,7 @@ def verify_strategic_human_evidence(value: Any) -> bool:
 
     if not isinstance(value, Mapping):
         return False
-    source = _safe(dict(value))
-    if not isinstance(source, dict):
-        return False
+    source = dict(value)
     claimed = str(source.pop("human_evidence_sha256", "") or "")
     if not claimed or claimed != _canonical_hash(source):
         return False
@@ -242,9 +240,7 @@ def verify_strategic_human_evidence(value: Any) -> bool:
     for module_id, raw in modules.items():
         if not isinstance(raw, Mapping) or str(raw.get("module_id") or "") != str(module_id):
             return False
-        module = _safe(dict(raw))
-        if not isinstance(module, dict):
-            return False
+        module = dict(raw)
         module_claimed = str(module.pop("module_sha256", "") or "")
         if not module_claimed or module_claimed != _canonical_hash(module):
             return False
