@@ -17,11 +17,6 @@ const EXPECTED_COPY = {
   },
 } as const;
 
-const RETIRED_IDLE_ACTIONS = {
-  en: new Set(["Run NICO Assessment", "Run Comprehensive"]),
-  "es-MX": new Set(["Ejecutar evaluación NICO", "Ejecutar evaluación integral", "Ejecutar NICO"]),
-} as const;
-
 type Locale = keyof typeof EXPECTED_COPY;
 
 type Props = {
@@ -62,12 +57,12 @@ export default function AssessmentHydrationContract({locale, releaseSha, clientC
 
       // Next can settle sibling client chunks after an earlier effect has already
       // observed correct server copy. Keep this bounded observer alive so a later
-      // stale idle render is repaired too. Live progress labels are never replaced.
+      // stale idle render is repaired too. The authorization control is disabled
+      // for active runs, which prevents replacement of live progress labels.
       const runStateExists = Boolean(workspace.querySelector('[data-assessment-run-state="true"]'));
-      const actionIsIdleOrRetired = authorization?.checked !== true
-        || RETIRED_IDLE_ACTIONS[locale].has(originalAction);
-      if (!runStateExists) {
-        if (originalAction !== expected.action && actionIsIdleOrRetired) {
+      const idleEngagement = authorization?.disabled !== true;
+      if (!runStateExists && idleEngagement) {
+        if (originalAction !== expected.action) {
           replaceText(action, expected.action);
           action.setAttribute("aria-label", expected.action);
           repaired = true;
