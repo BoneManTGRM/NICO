@@ -51,9 +51,9 @@ def test_unified_assessment_retains_minimal_authorized_input_contract() -> None:
         "Repository owner/name or GitHub URL",
         "Client name, optional",
         "Project name, optional",
-        "I confirm I own this target or have explicit permission to assess it.",
+        "I confirm that NICO has permission from the client or repository owner to access and analyze this repository for this engagement.",
         'const service: Service = "comprehensive"',
-        'run: "Run NICO Assessment"',
+        'run: "Create engagement and capture repository snapshot"',
     ):
         assert required in source
     assert "Authorized by" not in source
