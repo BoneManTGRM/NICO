@@ -1,0 +1,139 @@
+name: Temporary Production Run Diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostic/cross-format-truth
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch bounded terminal-stage evidence
+        env:
+          RUN_ID: comprun_6caa0a45e3b2472eb9bc81c831f6471e
+          ORIGIN: https://app.nicoaudit.com
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          run_id = os.environ["RUN_ID"]
+          url = f"{os.environ['ORIGIN'].rstrip('/')}/api/nico/assessment/comprehensive-run/{run_id}"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/json",
+                  "Cache-Control": "no-store",
+                  "Pragma": "no-cache",
+                  "User-Agent": "nico-bounded-production-diagnostic",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=45) as response:
+              payload = json.loads(response.read().decode("utf-8"))
+
+          record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+          stages = payload.get("stage_results") if isinstance(payload.get("stage_results"), dict) else {}
+          if not stages:
+              stages = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+
+          def bounded_stage(stage_id):
+              stage = stages.get(stage_id) if isinstance(stages.get(stage_id), dict) else {}
+              evidence = stage.get("evidence") if isinstance(stage.get("evidence"), dict) else {}
+              quality = stage.get("report_quality_contract") if isinstance(stage.get("report_quality_contract"), dict) else {}
+              package = stage.get("report_package") if isinstance(stage.get("report_package"), dict) else {}
+              package_quality = package.get("report_quality_contract") if isinstance(package.get("report_quality_contract"), dict) else {}
+              return {
+                  "stage_id": stage_id,
+                  "status": stage.get("status"),
+                  "reason": stage.get("reason"),
+                  "summary": stage.get("summary"),
+                  "failed_checks": stage.get("failed_checks"),
+                  "checks": stage.get("checks"),
+                  "score_truth": stage.get("score_truth"),
+                  "final_report_input_score_truth": stage.get("final_report_input_score_truth"),
+                  "report_contract_status": stage.get("report_contract_status"),
+                  "report_contract_reason": stage.get("report_contract_reason"),
+                  "evidence": {
+                      key: evidence.get(key)
+                      for key in (
+                          "technical_score",
+                          "evidence_adjusted_score",
+                          "canonical_evidence_adjusted_score",
+                          "report_contract_status",
+                          "report_contract_reason",
+                          "final_report_input_score_truth",
+                      )
+                      if key in evidence
+                  },
+                  "quality": {
+                      key: quality.get(key, package_quality.get(key))
+                      for key in (
+                          "cross_format_contract_schema",
+                          "final_report_semantics_version",
+                          "canonical_score_truth_version",
+                          "report_finality",
+                          "approval_status",
+                          "delivery_status",
+                          "canonical_comprehensive_title_present",
+                          "final_report_language_present",
+                          "pending_human_approval_language_present",
+                          "stale_draft_language_absent",
+                      )
+                      if key in quality or key in package_quality
+                  },
+                  "package": {
+                      key: package.get(key)
+                      for key in (
+                          "service_id",
+                          "report_finality",
+                          "approval_status",
+                          "delivery_status",
+                          "human_review_required",
+                          "client_delivery_allowed",
+                          "technical_score",
+                          "evidence_adjusted_score",
+                          "canonical_evidence_adjusted_score",
+                          "pdf_page_count",
+                          "pdf_error",
+                      )
+                      if key in package
+                  },
+              }
+
+          output = {
+              "artifact_schema": "nico.temporary_production_run_diagnostic.v1",
+              "run_id": run_id,
+              "status": payload.get("status", record.get("status")),
+              "current_stage": payload.get("current_stage", record.get("current_stage")),
+              "revision": payload.get("revision", record.get("revision")),
+              "terminal": payload.get("terminal", record.get("terminal")),
+              "completed_stages": payload.get("completed_stages", record.get("completed_stages")),
+              "scoring": bounded_stage("evidence_reconciliation_and_scoring"),
+              "core_report": bounded_stage("decision_report_generation"),
+              "final_report": bounded_stage("final_comprehensive_report_generation"),
+              "cross_format": bounded_stage("cross_format_truth_verification"),
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+          }
+          Path("diagnostic").mkdir(exist_ok=True)
+          Path("diagnostic/production-run.json").write_text(
+              json.dumps(output, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(output, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload bounded diagnostic
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-run-diagnostic
+          path: diagnostic/production-run.json
+          retention-days: 7
