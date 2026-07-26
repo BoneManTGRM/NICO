@@ -1,6 +1,8 @@
 import type {Assessment, Copy, Evidence, Phase, ProgressItem, Report, Result, Section, Service, Stage} from "./assessmentTypes";
 
 const TRANSIENT_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const BROWSER_EVIDENCE_KEY_LIMIT = 24;
+const BROWSER_ARRAY_PREVIEW_LIMIT = 8;
 
 export class AssessmentApiError extends Error {
   readonly status: number;
@@ -95,6 +97,42 @@ export function evidenceRecord(value: Evidence | undefined): Record<string, unkn
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function compactBrowserValue(value: unknown): unknown {
+  if (value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    const primitives = value.slice(0, BROWSER_ARRAY_PREVIEW_LIMIT).filter((item) => item == null || ["string", "number", "boolean"].includes(typeof item));
+    return {
+      type: "array",
+      item_count: value.length,
+      preview: primitives,
+      preview_truncated: value.length > primitives.length,
+    };
+  }
+  if (typeof value === "object") {
+    return {
+      type: "object",
+      key_count: Object.keys(value as Record<string, unknown>).length,
+      keys: Object.keys(value as Record<string, unknown>).slice(0, BROWSER_ARRAY_PREVIEW_LIMIT),
+    };
+  }
+  return String(value);
+}
+
+export function browserEvidencePreview(value: Evidence | undefined): Record<string, unknown> | undefined {
+  const record = evidenceRecord(value);
+  const entries = Object.entries(record);
+  if (!entries.length) return undefined;
+  const preview: Record<string, unknown> = {};
+  for (const [key, item] of entries.slice(0, BROWSER_EVIDENCE_KEY_LIMIT)) preview[key] = compactBrowserValue(item);
+  preview._browser_rendering_boundary = {
+    bounded: entries.length > BROWSER_EVIDENCE_KEY_LIMIT || entries.some(([, item]) => item != null && typeof item === "object"),
+    top_level_key_count: entries.length,
+    keys_retained: Math.min(entries.length, BROWSER_EVIDENCE_KEY_LIMIT),
+    complete_evidence: "Retained in the canonical report and machine-readable assessment artifacts.",
+  };
+  return preview;
+}
+
 export function assessmentFor(_service: Service, result: Result | null): Assessment | null {
   if (!result) return null;
   return stage(result, "final_comprehensive_report_generation")?.assessment
@@ -129,7 +167,7 @@ export function progressFor(_service: Service, result: Result | null): ProgressI
       step: stepId,
       status: value.status,
       message: value.message || value.summary || (completed ? "✓" : undefined),
-      evidence: value.evidence && !Array.isArray(value.evidence) ? value.evidence : undefined,
+      evidence: browserEvidencePreview(value.evidence),
     };
   });
 }
