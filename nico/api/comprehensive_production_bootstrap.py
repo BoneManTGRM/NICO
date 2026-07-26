@@ -4,6 +4,9 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from nico.accepted_edition_report_identity_v1 import (
+    install_accepted_edition_report_identity,
+)
 from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_core_report_readiness_v1 import install_comprehensive_core_report_readiness
@@ -18,7 +21,7 @@ from nico.strategic_human_evidence_binding_v1 import (
     install_strategic_human_evidence_binding,
 )
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v10"
+VERSION = "nico.api.comprehensive_production_bootstrap.v11"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -62,13 +65,14 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     The run controller is considered production-ready only when its persistence adapter
     is proven to survive container replacement. Explicit human evidence is normalized,
     persisted with the canonical run, and bound into Strategic providers before the
-    executor map is frozen. Missing human context remains not assessed and is never
-    inferred from repository code.
+    executor map is frozen. The generated report also retains language and assessment
+    depth before any human review can approve the exact immutable edition.
     """
 
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
+    accepted_edition_report_identity = install_accepted_edition_report_identity()
     native_providers = install_native_comprehensive_providers(target)
     strategic_human_evidence = install_strategic_human_evidence_binding(target)
     scanner_execution_normalization = install_structured_scanner_executions(
@@ -106,6 +110,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
+        and accepted_edition_report_identity.get("bound") is True
         and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
@@ -117,6 +122,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     reason = str(runtime.get("reason") or "")
     if not reason and not replacement_safe:
         reason = "comprehensive_storage_not_container_replacement_safe"
+    if not reason and accepted_edition_report_identity.get("bound") is not True:
+        reason = "accepted_edition_report_identity_binding_incomplete"
     if not reason and strategic_human_evidence.get("bound") is not True:
         reason = "strategic_human_evidence_binding_incomplete"
     if not reason and missing_capabilities:
@@ -138,6 +145,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
+        "accepted_edition_report_identity": accepted_edition_report_identity,
         "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
@@ -146,6 +154,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "capability_provider_status": provider_status,
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
+        "report_binding_before_accepted_edition_identity": True,
+        "accepted_edition_identity_before_provider_install": True,
         "report_binding_before_provider_install": True,
         "provider_install_before_human_evidence_binding": True,
         "human_evidence_binding_before_executor_build": True,
@@ -156,6 +166,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "core_report_readiness_before_executor_build": True,
         "final_report_execution_before_executor_build": True,
         "provider_install_before_executor_build": True,
+        "review_route": "/assessment/comprehensive-run/{run_id}/review",
+        "review_regenerates_report": False,
         "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -194,6 +206,11 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
+if (
+    COMPREHENSIVE_PRODUCTION_RUNTIME["accepted_edition_report_identity"].get("bound")
+    is not True
+):
+    raise RuntimeError("Accepted-edition report identity binding was not installed")
 if (
     COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound")
     is not True
