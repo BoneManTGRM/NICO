@@ -14,6 +14,12 @@ from nico.comprehensive_final_report_semantics_v47 import (
 )
 
 
+_PRODUCTION_STALE_SENTENCE = (
+    "The automated assessment is complete only as a draft until the readiness "
+    "and human-approval conditions are satisfied."
+)
+
+
 def _stale_pdf() -> bytes:
     buffer = io.BytesIO()
     page = canvas.Canvas(buffer, pagesize=letter, invariant=1)
@@ -24,7 +30,7 @@ def _stale_pdf() -> bytes:
     page.drawString(42, 640, "DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED")
     page.drawString(42, 610, "Draft only")
     page.drawString(42, 580, "Not approved for client delivery")
-    page.drawString(42, 550, "The automated assessment is complete only as a draft.")
+    page.drawString(42, 550, _PRODUCTION_STALE_SENTENCE)
     page.drawString(42, 30, "NICO Comprehensive · comprun_test · DRAFT")
     page.save()
     return buffer.getvalue()
@@ -80,9 +86,11 @@ def test_pdf_rewrite_removes_stale_draft_language_and_adds_canonical_title() -> 
     assert contract["canonical_title_present"] is True
     assert contract["final_report_language_present"] is True
     assert contract["pending_approval_language_present"] is True
+    assert contract["content_stream_replacements"] >= 4
     assert "NICO Comprehensive Technical Assessment" in extracted
     assert "FINAL REPORT" in extracted
     assert "PENDING HUMAN APPROVAL" in extracted
+    assert "complete as a final report pending human approval" in extracted.casefold()
     assert "DRAFT" not in extracted.upper()
     assert "Draft only" not in extracted
     assert "Not approved for client delivery" not in extracted
@@ -106,6 +114,7 @@ def test_final_report_package_is_final_content_pending_approval_not_draft() -> N
     assert package["report_quality_contract"]["stale_draft_language_absent"] is True
     assert package["report_quality_contract"]["canonical_comprehensive_title_present"] is True
     assert package["report_quality_contract"]["report_finality"] == "final"
+    assert "complete only as a draft" not in extracted.casefold()
     assert "DRAFT" not in extracted.upper()
     assert len(package["pdf_sha256"]) == 64
     assert len(package["canonical_truth_sha256"]) == 64
