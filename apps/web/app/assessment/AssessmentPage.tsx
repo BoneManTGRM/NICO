@@ -1,5 +1,6 @@
 import AssessmentWorkspace from "./AssessmentWorkspace";
 import AssessmentRuntimeTruthRepair from "./AssessmentRuntimeTruthRepair";
+import AssessmentMetricDisplayV44 from "./AssessmentMetricDisplayV44";
 import AssessmentHydrationContract from "./AssessmentHydrationContract";
 import "./assessment-inline-readiness.css";
 
@@ -18,6 +19,7 @@ export default function AssessmentPage({locale = "en"}: {locale?: "en" | "es-MX"
   const exactReleaseSha = releaseSha();
   return <>
     <AssessmentRuntimeTruthRepair />
+    <AssessmentMetricDisplayV44 />
     <AssessmentHydrationContract
       locale={locale}
       releaseSha={exactReleaseSha}
