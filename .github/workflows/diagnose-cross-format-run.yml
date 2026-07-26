@@ -1,0 +1,54 @@
+name: Diagnose Cross-Format Run
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/diagnose-cross-format-run.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Read bounded production stage result
+        env:
+          RUN_ID: comprun_1d2f294b68be41c7be6a90cbd6ce1663
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          run_id = os.environ["RUN_ID"]
+          url = f"https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/{run_id}"
+          with urllib.request.urlopen(url, timeout=60) as response:
+              payload = json.load(response)
+          record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+          stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+          stage = stage_results.get("cross_format_truth_verification")
+          report = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
+          assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
+          print(json.dumps({
+              "http_status": 200,
+              "run_id": payload.get("run_id") or record.get("identity", {}).get("run_id"),
+              "status": payload.get("status") or record.get("status"),
+              "current_stage": payload.get("current_stage") or record.get("current_stage"),
+              "cross_format_truth_verification": stage,
+              "assessment_scores": {
+                  "technical_score": assessment.get("technical_score"),
+                  "evidence_adjusted_score": assessment.get("evidence_adjusted_score"),
+                  "canonical_evidence_adjusted_score": assessment.get("canonical_evidence_adjusted_score"),
+                  "maturity_signal": assessment.get("maturity_signal"),
+              },
+              "report_metadata": {
+                  key: report.get(key)
+                  for key in (
+                      "service_id", "report_id", "report_finality", "approval_status",
+                      "delivery_status", "human_review_required", "client_delivery_allowed",
+                      "report_language", "locale", "canonical_truth_sha256",
+                  )
+              },
+          }, indent=2, sort_keys=True))
+          PY
