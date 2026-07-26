@@ -1,5 +1,26 @@
 import type {Assessment, Copy, Evidence, Phase, ProgressItem, Report, Result, Section, Service, Stage} from "./assessmentTypes";
 
+const TRANSIENT_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+export class AssessmentApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly requestId: string;
+
+  constructor(
+    message: string,
+    options: {status: number; code?: string; retryable?: boolean; requestId?: string},
+  ) {
+    super(message);
+    this.name = "AssessmentApiError";
+    this.status = options.status;
+    this.code = String(options.code || "");
+    this.retryable = options.retryable ?? TRANSIENT_HTTP_STATUS.has(options.status);
+    this.requestId = String(options.requestId || "");
+  }
+}
+
 export function scopeId(prefix: string, value: string, fallback: string): string {
   const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 72);
   return slug ? `${prefix}_${slug}` : fallback;
@@ -8,7 +29,7 @@ export function scopeId(prefix: string, value: string, fallback: string): string
 export function toneKey(status?: string): "green" | "yellow" | "red" | "gray" {
   const value = String(status || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (["green", "complete", "completed", "attached", "verified", "approved", "accepted", "review_required"].includes(value)) return "green";
-  if (["yellow", "partial", "pending", "running", "queued", "planned", "ready", "starting", "skipped", "review_limited"].includes(value)) return "yellow";
+  if (["yellow", "partial", "pending", "running", "queued", "planned", "ready", "starting", "checking", "unavailable", "skipped", "review_limited"].includes(value)) return "yellow";
   if (["red", "failed", "blocked", "error", "timed_out", "interrupted", "rejected", "critical"].includes(value)) return "red";
   return "gray";
 }
@@ -44,7 +65,9 @@ export function formatStatus(status: unknown, copy: Copy): string {
   if (value === "partial") return copy.partialLabel || "Partial";
   if (value === "review_limited") return copy.reviewLimitedLabel || (copy.heroEyebrow.startsWith("EVALUACIÓN") ? "Revisión limitada" : "Review limited");
   if (["review_required", "human_review_required"].includes(value)) return copy.phases.review_required;
+  if (value === "checking") return copy.phases.checking;
   if (["running", "starting", "in_progress"].includes(value)) return copy.phases.running;
+  if (value === "unavailable") return copy.phases.unavailable;
   if (["pending", "queued", "planned", "ready", "not_started"].includes(value)) return copy.awaitingStage;
   if (["failed", "blocked", "error", "rejected", "interrupted"].includes(value)) return copy.phases.failed;
   if (["timed_out", "timeout"].includes(value)) return copy.phases.timed_out;
@@ -56,7 +79,7 @@ export function formatStatus(status: unknown, copy: Copy): string {
 export function persistenceStatus(persistence: Result["persistence"], phase: Phase, copy: Copy): string {
   const verified = persistence?.durable === true || persistence?.durability_verified === true;
   if (verified) return copy.verifiedPersistentStorage;
-  return ["review_required", "complete", "failed", "timed_out"].includes(phase) ? copy.notVerified : copy.verificationPending;
+  return ["review_required", "complete", "unavailable", "failed", "timed_out"].includes(phase) ? copy.notVerified : copy.verificationPending;
 }
 
 export function apiUrl(path: string): string {
@@ -126,15 +149,31 @@ export function scannerStatusFor(_service: Service, result: Result | null, runni
 }
 
 export async function parseJson(response: Response, copy: Copy): Promise<Result> {
-  let data: Result & {detail?: string | {message?: string; code?: string}; error?: string};
+  type ErrorDetail = {message?: unknown; code?: unknown; retryable?: unknown; request_id?: unknown};
+  let data: Result & {detail?: string | ErrorDetail; error?: string};
   try {
-    data = await response.json() as Result & {detail?: string | {message?: string; code?: string}; error?: string};
+    data = await response.json() as Result & {detail?: string | ErrorDetail; error?: string};
   } catch {
-    throw new Error(copy.invalidJson);
+    throw new AssessmentApiError(copy.invalidJson, {
+      status: response.status,
+      code: "assessment_invalid_json",
+      retryable: TRANSIENT_HTTP_STATUS.has(response.status),
+      requestId: response.headers.get("x-request-id") || "",
+    });
   }
   if (!response.ok) {
-    const detail = typeof data.detail === "string" ? data.detail : data.detail?.message || data.detail?.code;
-    throw new Error(detail || data.error || `${copy.backendError} (${response.status})`);
+    const detail = data.detail && typeof data.detail === "object" ? data.detail : {};
+    const message = typeof data.detail === "string"
+      ? data.detail
+      : String(detail.message || detail.code || data.error || `${copy.backendError} (${response.status})`);
+    throw new AssessmentApiError(message, {
+      status: response.status,
+      code: String(detail.code || data.error || "assessment_request_failed"),
+      retryable: typeof detail.retryable === "boolean"
+        ? detail.retryable
+        : TRANSIENT_HTTP_STATUS.has(response.status),
+      requestId: String(detail.request_id || response.headers.get("x-request-id") || ""),
+    });
   }
   return data;
 }
