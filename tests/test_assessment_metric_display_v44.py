@@ -6,11 +6,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "apps/web/app/assessment/AssessmentMetricDisplayV44.tsx"
 CSS = ROOT / "apps/web/app/assessment/assessment-metric-display-v44.css"
-PAGE = ROOT / "apps/web/app/assessment/page.tsx"
+ROUTE = ROOT / "apps/web/app/assessment/page.tsx"
+PAGE = ROOT / "apps/web/app/assessment/AssessmentPage.tsx"
 
 
-def test_metric_display_is_bound_on_both_assessment_locales() -> None:
+def test_metric_display_is_bound_through_the_canonical_page_for_both_locales() -> None:
+    route = ROUTE.read_text(encoding="utf-8").strip()
     source = PAGE.read_text(encoding="utf-8")
+    assert route == 'export {default} from "./AssessmentPage";'
     assert 'import AssessmentMetricDisplayV44 from "./AssessmentMetricDisplayV44"' in source
     assert "<AssessmentMetricDisplayV44 />" in source
 

@@ -2,7 +2,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
-ENGLISH_PAGE = ASSESSMENT / "page.tsx"
+ENGLISH_ROUTE = ASSESSMENT / "page.tsx"
+CANONICAL_PAGE = ASSESSMENT / "AssessmentPage.tsx"
 WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
 COPY = ASSESSMENT / "assessmentCopy.ts"
 HOOK = ASSESSMENT / "useAssessmentRun.ts"
@@ -22,10 +23,13 @@ def test_spanish_route_reuses_the_canonical_assessment_component_with_locale_pro
     assert "SpanishAssessmentLocalization" not in source
 
 
-def test_english_page_is_a_thin_wrapper_around_the_same_workspace() -> None:
-    source = ENGLISH_PAGE.read_text(encoding="utf-8")
-    assert 'import AssessmentWorkspace from "./AssessmentWorkspace"' in source
-    assert '<AssessmentWorkspace locale={locale} />' in source
+def test_english_route_is_a_thin_wrapper_around_the_single_canonical_page() -> None:
+    route = ENGLISH_ROUTE.read_text(encoding="utf-8").strip()
+    page = CANONICAL_PAGE.read_text(encoding="utf-8")
+    assert route == 'export {default} from "./AssessmentPage";'
+    assert 'import AssessmentWorkspace from "./AssessmentWorkspace"' in page
+    assert '<AssessmentWorkspace locale={locale} />' in page
+    assert "<AssessmentHydrationContract" in page
 
 
 def test_spanish_home_routes_to_the_same_unified_assessment_workflow() -> None:
