@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import base64
+import html
+import io
+import json
+import os
+import re
+import urllib.request
+
+from pypdf import PdfReader
+
+
+def compact(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def around(value: object, label: str, radius: int = 220) -> str:
+    text = compact(value)
+    index = text.casefold().find(label.casefold())
+    if index < 0:
+        return "LABEL_NOT_FOUND"
+    return text[index : index + radius]
+
+
+def main() -> None:
+    run_id = os.environ["RUN_ID"]
+    url = f"https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/{run_id}"
+    with urllib.request.urlopen(url, timeout=60) as response:
+        payload = json.load(response)
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+    stage = stage_results.get("cross_format_truth_verification")
+    report = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
+    assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
+    markdown = str(report.get("markdown") or "")
+    rendered_html = str(report.get("html") or "")
+    html_text = compact(html.unescape(re.sub(r"<[^>]+>", " ", rendered_html)))
+    encoded_pdf = str(report.get("pdf_base64") or "")
+    pdf = base64.b64decode(encoded_pdf, validate=True) if encoded_pdf else b""
+    pdf_text = ""
+    if pdf.startswith(b"%PDF"):
+        reader = PdfReader(io.BytesIO(pdf))
+        pdf_text = compact(" ".join((page.extract_text() or "") for page in reader.pages[:3]))
+    print(
+        json.dumps(
+            {
+                "status": payload.get("status") or record.get("status"),
+                "current_stage": payload.get("current_stage") or record.get("current_stage"),
+                "cross_format": stage,
+                "assessment": {
+                    "technical_score": assessment.get("technical_score"),
+                    "evidence_adjusted_score": assessment.get("evidence_adjusted_score"),
+                    "canonical_evidence_adjusted_score": assessment.get("canonical_evidence_adjusted_score"),
+                    "maturity_signal": assessment.get("maturity_signal"),
+                },
+                "report": {
+                    key: report.get(key)
+                    for key in (
+                        "service_id",
+                        "report_id",
+                        "report_finality",
+                        "approval_status",
+                        "delivery_status",
+                        "human_review_required",
+                        "client_delivery_allowed",
+                        "report_language",
+                        "locale",
+                        "canonical_truth_sha256",
+                        "pdf_error",
+                    )
+                },
+                "surfaces": {
+                    "markdown_scores": sorted(set(re.findall(r"\b(?:100|[1-9]?\d)/100\b", compact(markdown)))),
+                    "md_technical": around(markdown, "Technical maturity"),
+                    "md_adjusted": around(markdown, "Evidence-Adjusted"),
+                    "md_delivery": around(markdown, "CLIENT DELIVERY"),
+                    "html_technical": around(html_text, "Technical maturity"),
+                    "html_adjusted": around(html_text, "Evidence-Adjusted"),
+                    "pdf_technical": around(pdf_text, "TECHNICAL MATURITY"),
+                    "pdf_adjusted": around(pdf_text, "EVIDENCE-ADJUSTED"),
+                    "pdf_delivery": around(pdf_text, "PENDING HUMAN APPROVAL"),
+                },
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
