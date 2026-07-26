@@ -11,10 +11,7 @@ from nico.comprehensive_report_scanner_detection_v51 import (
     _scanner_truth,
     _text,
 )
-from nico.comprehensive_report_scanner_scoring_v51 import (
-    _normalize_assessment,
-    _scanner_execution_objects,
-)
+from nico.comprehensive_report_scanner_scoring_v51 import _normalize_assessment
 from nico.comprehensive_report_spanish_artifacts_v51 import _localize_package
 
 VERSION = "nico.comprehensive_report_finality.v51"
@@ -24,12 +21,13 @@ _SCANNER_TRUTH: ContextVar[dict[str, dict[str, Any]]] = ContextVar(
     "nico_comprehensive_scanner_truth", default={}
 )
 
+
 def install_comprehensive_report_finality_v51() -> dict[str, Any]:
+    from nico import comprehensive_cross_format_finality_v49 as cross_format
     from nico import comprehensive_decision_grade_report_v5 as report
     from nico import comprehensive_native_providers as providers
     from nico import comprehensive_report_package as base_report
     from nico import decision_grade_contract_v1 as contract_module
-    from nico import comprehensive_cross_format_finality_v49 as cross_format
 
     current = report.build_comprehensive_report_package
     if getattr(current, _PATCH_MARKER, False):
@@ -48,17 +46,30 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
 
     @wraps(original_contract_builder)
     def build_contract(*args: Any, **kwargs: Any) -> Any:
-        contract = original_contract_builder(*args, **kwargs)
         assessment = kwargs.get("assessment")
-        if not isinstance(assessment, dict) and len(args) > 1 and isinstance(args[1], dict):
-            assessment = args[1]
         records = assessment.get("scanner_execution_records") if isinstance(assessment, dict) else []
-        objects = _scanner_execution_objects(records if isinstance(records, list) else [])
-        if objects:
-            payload = contract.model_dump(mode="json")
-            payload["scanner_executions"] = [item.model_dump(mode="json") for item in objects]
-            contract = contract_module.DecisionGradeContract.model_validate(payload)
-        return contract
+        if isinstance(records, list) and records:
+            stage_summaries = deepcopy(kwargs.get("stage_summaries") or [])
+            stage_summaries.append(
+                {
+                    "stage": "comprehensive_report_scanner_reconciliation_v51",
+                    "scanner_results": [
+                        {
+                            "tool": record.get("scanner_name"),
+                            "status": record.get("status"),
+                            "required": bool(record.get("required")),
+                            "category": (record.get("evidence_categories_affected") or [None])[0],
+                            "failure_type": record.get("failure_type"),
+                            "error": record.get("failure_message"),
+                            "retry_count": int(record.get("retry_count") or 0),
+                        }
+                        for record in records
+                        if isinstance(record, dict) and record.get("scanner_name")
+                    ],
+                }
+            )
+            kwargs["stage_summaries"] = stage_summaries
+        return original_contract_builder(*args, **kwargs)
 
     report.build_decision_grade_contract = build_contract
     contract_module.build_decision_grade_contract = build_contract
@@ -68,7 +79,9 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
     @wraps(original_identity)
     def identity(context: dict[str, Any]) -> dict[str, str]:
         value = original_identity(context)
-        value["report_language"] = _locale(context.get("report_language") or context.get("language") or context.get("locale"))
+        value["report_language"] = _locale(
+            context.get("report_language") or context.get("language") or context.get("locale")
+        )
         return value
 
     providers._identity = identity
@@ -107,8 +120,14 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
             return True
         upper = _text(markdown).upper()
         return (
-            any(phrase in upper for phrase in ("ENTREGA AL CLIENTE BLOQUEADA", "ENTREGA AL CLIENTE NO AUTORIZADA"))
-            and any(phrase in upper for phrase in ("APROBACIÓN HUMANA PENDIENTE", "PENDIENTE DE REVISIÓN HUMANA"))
+            any(
+                phrase in upper
+                for phrase in ("ENTREGA AL CLIENTE BLOQUEADA", "ENTREGA AL CLIENTE NO AUTORIZADA")
+            )
+            and any(
+                phrase in upper
+                for phrase in ("APROBACIÓN HUMANA PENDIENTE", "PENDIENTE DE REVISIÓN HUMANA")
+            )
         )
 
     cross_format._delivery_boundary_present = delivery_boundary
