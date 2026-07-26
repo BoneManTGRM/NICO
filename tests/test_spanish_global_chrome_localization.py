@@ -11,9 +11,9 @@ HOSTED_UI = ROOT / "apps/web/app/GenericRepositoryExample.tsx"
 def test_canonical_spanish_routes_receive_the_spanish_workflow_callout() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     assert 'pathname.startsWith("/es")' in source
-    assert "inicia Express o Integral" in source
+    assert "Crea un encargo autorizado" in source
     assert "Mid o Full" not in source
-    assert '/es/assessment?tier=express#assessment' in source
+    assert '/es/assessment?tier=comprehensive#assessment' in source
 
 
 def test_hosted_ui_recognizes_es_assessment_and_es_mx_aliases() -> None:

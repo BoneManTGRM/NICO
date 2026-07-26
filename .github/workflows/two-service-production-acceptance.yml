@@ -41,6 +41,8 @@ jobs:
           reconnect = Path("scripts/two_service_live_acceptance_v2.py").read_text(encoding="utf-8")
           unified = Path("scripts/two_service_live_acceptance_v3.py").read_text(encoding="utf-8")
           production = Path("scripts/unified_production_acceptance.py").read_text(encoding="utf-8")
+          workspace = Path("apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+          controller = Path("apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
 
           assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in legacy
           assert 'passes=args.passes' in legacy
@@ -48,15 +50,7 @@ jobs:
           assert 'return f"{parsed.scheme}://{parsed.netloc}{path}"' in reconnect
           assert 'APIRequestContext: Invalid URL' in reconnect
 
-          assert 'UNIFIED_WORKSPACE_SELECTOR' in unified
-          assert 'data-assessment-service-count="1"' in unified
-          assert 'data-canonical-assessment="strategic"' in unified
-          assert '"public_assessment": "strategic"' in unified
-          assert '"services": ["comprehensive"]' in unified
-          assert '"one_public_assessment": True' in unified
-          assert '"legacy_tier_selector_hidden": True' in unified
-          assert '"Run NICO Assessment"' in unified
-          assert '"Ejecutar evaluación NICO"' in unified
+          assert 'LEGACY_WORKSPACE_SELECTOR' in unified
           assert 'runtime._wait_for_service_terminal = _wait_for_service_terminal' in unified
           assert 'runtime.run_service = _run_service_at_expected_commit' in unified
           assert 'UI_BACKEND_RECONCILIATION_SECONDS' in unified
@@ -66,10 +60,29 @@ jobs:
           assert '"comprehensive_depth_verified": True' in unified
           assert '"post_run_reconnect_identity_preserved": True' in unified
 
+          assert 'ASSESSMENT_WORKSPACE_SELECTOR' in production
+          assert 'data-workspace="assessment"' in production
+          assert 'data-engagement-type="comprehensive"' in production
+          assert 'data-canonical-assessment="strategic"' in production
+          assert 'ASSESSMENT_RUN_SELECTOR' in production
+          assert 'data-assessment-primary-action' in production
+          assert 'Create engagement and capture repository snapshot' in production
+          assert 'Crear encargo y capturar instantánea del repositorio' in production
+          assert 'install_unified_workspace_contract' in production
           assert 'COMPREHENSIVE_REPORT_IDENTITIES' in production
           assert 'has_comprehensive_report_identity' in production
           assert 'canonical_report_identity_verified' in production
           assert 'acceptance.validate_report = validate_report' in production
+
+          assert 'data-workspace="assessment"' in workspace
+          assert 'data-engagement-type="comprehensive"' in workspace
+          assert 'data-assessment-service-count' not in workspace
+          assert 'data-assessment-primary-action="true"' in workspace
+          assert 'data-assessment-authorization="true"' in workspace
+          assert 'issue ? <div' in workspace
+          assert 'setPhase("checking")' in controller
+          assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in controller
+          assert 'async function retry()' in controller
           PY
 
   live-production:
@@ -161,6 +174,60 @@ jobs:
               time.sleep(20)
           else:
               raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Verify production assessment readiness
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
+          url = origin + "/api/nico/diagnostics/comprehensive-runtime"
+          request = urllib.request.Request(
+              url,
+              headers={"Accept": "application/json", "User-Agent": "nico-production-readiness"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  status = response.status
+                  raw = response.read().decode("utf-8")
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+              raw = exc.read().decode("utf-8", errors="replace")
+          except Exception as exc:
+              raise SystemExit(f"Assessment readiness endpoint was unreachable: {type(exc).__name__}: {exc}") from exc
+
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"Assessment readiness returned invalid JSON (HTTP {status})") from exc
+
+          detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+          persistence = payload.get("persistence") if isinstance(payload.get("persistence"), dict) else {}
+          reason = str(payload.get("reason") or detail.get("code") or "unknown")
+          runtime_status = str(payload.get("status") or "unknown").lower()
+          replacement_safe = bool(
+              payload.get("survives_container_replacement_verified") is True
+              or persistence.get("survives_container_replacement_verified") is True
+          )
+          bounded = {
+              "http_status": status,
+              "runtime_status": runtime_status,
+              "reason": reason,
+              "persistence_adapter": payload.get("persistence_adapter") or persistence.get("adapter") or "unknown",
+              "storage_source": payload.get("storage_source") or "unknown",
+              "survives_container_replacement_verified": replacement_safe,
+          }
+          print("Assessment readiness:", json.dumps(bounded, sort_keys=True), flush=True)
+          if status < 200 or status >= 300 or runtime_status != "ready" or not replacement_safe:
+              raise SystemExit(
+                  "Production assessment is not safe to start. Configure Postgres or a verified persistent volume before rerunning acceptance: "
+                  + json.dumps(bounded, sort_keys=True)
+              )
           PY
 
       - name: Set up Python

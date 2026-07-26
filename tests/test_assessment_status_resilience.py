@@ -125,7 +125,7 @@ def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_stat
     assert "18 + (scanPercent * 0.43)" in source
     assert "Math.min(61" in source
     assert "scanner_progress_percent" in source
-    assert 'scanner_worker: "Scanner suite"' in copy
+    assert 'scanner_worker: "Evidence scanner suite"' in copy
 
 
 def test_legacy_live_transport_is_retained_for_operator_recovery_but_not_globally_mounted() -> None:

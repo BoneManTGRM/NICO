@@ -28,7 +28,9 @@ def test_public_intake_has_one_canonical_assessment() -> None:
     source = workspace_source()
     rendered = source.split("return <main", 1)[1]
 
-    assert 'data-assessment-service-count="1"' in rendered
+    assert 'data-workspace="assessment"' in rendered
+    assert 'data-engagement-type="comprehensive"' in rendered
+    assert 'data-assessment-service-count' not in rendered
     assert 'data-canonical-assessment="strategic"' in rendered
     assert 'data-customer-facing-assessment="comprehensive"' in rendered
     assert 'aria-label="Assessment type"' not in rendered
@@ -44,7 +46,7 @@ def test_normal_intake_asks_only_for_simple_repository_scope_and_authorization()
         "Repository owner/name or GitHub URL",
         "Client name, optional",
         "Project name, optional",
-        "I confirm I own this target or have explicit permission to assess it.",
+        "I confirm that NICO has permission from the client or repository owner to access and analyze this repository for this engagement.",
     ):
         assert label in source
 
@@ -105,10 +107,8 @@ def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_muta
     source = assessment_source()
 
     assert 'value === "review_required"' in source or 'value === "review_required"' in MODEL.read_text(encoding="utf-8")
-    assert "stopped at the required human-review gate" in source
-    assert "The final report is complete" in source
-    assert "before client delivery" in source
-    assert "no separate report rewrite is required" in source
+    assert "Technical analysis and report preparation are complete. The engagement is awaiting required human review." in source
+    assert "The NICO technical team must review and approve this exact evidence-bound edition before client delivery" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
     assert "/delivery/access" not in source

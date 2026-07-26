@@ -25,12 +25,14 @@ def test_workflow_banner_has_structural_english_and_mexican_spanish_parity() -> 
     assert "From repository evidence to an approval-ready report" in source
     assert "De la evidencia del repositorio a un informe listo para aprobación" in source
     assert 'title: "Run"' in source
-    assert 'title: "Ejecutar"' in source
+    assert 'title: "Iniciar"' in source
     assert 'title: "Verify"' in source
     assert 'title: "Verificar"' in source
     assert 'title: "Approve"' in source
     assert 'title: "Aprobar"' in source
     assert 'lang={spanish ? "es-MX" : undefined}' in source
+    assert 'pathname.startsWith("/assessment")' in source
+    assert 'pathname.startsWith("/es/assessment")' in source
     assert source.count("number: \"01\"") == 2
     assert source.count("number: \"02\"") == 2
     assert source.count("number: \"03\"") == 2

@@ -23,11 +23,13 @@ def test_workspace_delegates_copy_model_types_and_run_control() -> None:
     assert workspace.count("useState") <= 3
 
 
-def test_public_workspace_is_one_comprehensive_assessment() -> None:
+def test_public_workspace_is_one_semantic_comprehensive_engagement() -> None:
     workspace = read("apps/web/app/assessment/AssessmentWorkspace.tsx")
     hook = read("apps/web/app/assessment/useAssessmentRun.ts")
 
-    assert 'data-assessment-service-count="1"' in workspace
+    assert 'data-workspace="assessment"' in workspace
+    assert 'data-engagement-type="comprehensive"' in workspace
+    assert 'data-assessment-service-count' not in workspace
     assert 'data-canonical-assessment="strategic"' in workspace
     assert 'data-customer-facing-assessment="comprehensive"' in workspace
     assert "aria-pressed" not in workspace
@@ -57,7 +59,7 @@ def test_polling_and_human_review_boundary_live_in_hook() -> None:
     assert "MAX_POLL_ATTEMPTS" in hook
     assert "POLL_INTERVAL_MS" in hook
     assert "continueRun" in hook
-    assert 'setPhase("failed")' in hook
+    assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in hook
     assert "copy.comprehensiveReview" in hook
     assert "authorization_confirmed: true" in hook
     assert "authorized defensive repository assessment" in hook

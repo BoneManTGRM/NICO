@@ -31,9 +31,9 @@ def test_verified_persistence_requires_explicit_backend_proof() -> None:
     assert 'if (verified) return copy.verifiedPersistentStorage;' in text
 
 
-def test_not_verified_is_reserved_for_terminal_unproven_runs() -> None:
+def test_not_verified_is_reserved_for_terminal_or_unavailable_unproven_runs() -> None:
     text = source()
 
-    assert '["review_required", "complete", "failed", "timed_out"].includes(phase)' in text
+    assert '["review_required", "complete", "unavailable", "failed", "timed_out"].includes(phase)' in text
     assert '? copy.notVerified : copy.verificationPending' in text
     assert 'result.persistence?.durable ? copy.yes : result.persistence?.recorded ? copy.recorded : copy.notVerified' not in text

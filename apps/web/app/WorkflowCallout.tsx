@@ -20,7 +20,7 @@ const ENGLISH_COPY: WorkflowCopy = {
     {
       number: "01",
       title: "Run",
-      detail: "Choose Express for a fast evidence-bound baseline or Comprehensive for deeper technical and business-context analysis.",
+      detail: "Create an authorized assessment engagement and capture the exact repository state.",
     },
     {
       number: "02",
@@ -33,7 +33,7 @@ const ENGLISH_COPY: WorkflowCopy = {
       detail: "Use Final Review to accept the exact report package. NICO never authorizes client delivery automatically.",
     },
   ],
-  runLabel: "Run an assessment",
+  runLabel: "Create an engagement",
   reviewLabel: "Open Final Review",
   boundary: "Human review required · Client delivery remains blocked until the exact report and evidence snapshot are approved.",
 };
@@ -41,36 +41,38 @@ const ENGLISH_COPY: WorkflowCopy = {
 const SPANISH_COPY: WorkflowCopy = {
   eyebrow: "Flujo de evaluación",
   title: "De la evidencia del repositorio a un informe listo para aprobación",
-  summary: "Desde este espacio, inicia Express o Integral y mantén la evaluación, el paquete de evidencia, el informe y la decisión humana final vinculados al mismo estado inmutable del repositorio.",
+  summary: "Un espacio guiado mantiene la evaluación, la evidencia, el informe y la decisión humana vinculados a la misma instantánea inmutable.",
   steps: [
     {
       number: "01",
-      title: "Ejecutar",
-      detail: "Elige Express para una línea base rápida vinculada a evidencia o Integral para un análisis técnico y de contexto comercial más profundo.",
+      title: "Iniciar",
+      detail: "Crea un encargo autorizado y captura el estado exacto del repositorio.",
     },
     {
       number: "02",
       title: "Verificar",
-      detail: "Revisa la evidencia del commit exacto, las disposiciones de los analizadores, las limitaciones y la consistencia entre formatos.",
+      detail: "Revisa evidencia del commit exacto, analizadores, limitaciones y consistencia entre formatos.",
     },
     {
       number: "03",
       title: "Aprobar",
-      detail: "Usa Revisión final para aceptar el paquete exacto. NICO nunca autoriza automáticamente la entrega al cliente.",
+      detail: "Usa Revisión final para aceptar el paquete exacto. NICO nunca autoriza automáticamente la entrega.",
     },
   ],
-  runLabel: "Ejecutar una evaluación",
+  runLabel: "Crear un encargo",
   reviewLabel: "Abrir Revisión final",
-  boundary: "Revisión humana obligatoria · La entrega al cliente permanece bloqueada hasta aprobar el informe exacto y su evidencia.",
+  boundary: "Revisión humana obligatoria · La entrega permanece bloqueada hasta aprobar el informe exacto y su evidencia.",
 };
 
 export default function WorkflowCallout() {
   const pathname = usePathname();
+  if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return null;
+
   const spanish = pathname.startsWith("/es");
   const copy = spanish ? SPANISH_COPY : ENGLISH_COPY;
   const assessmentHref = spanish
-    ? "/es/assessment?tier=express#assessment"
-    : "/assessment?tier=express#assessment";
+    ? "/es/assessment?tier=comprehensive#assessment"
+    : "/assessment?tier=comprehensive#assessment";
 
   return (
     <section
