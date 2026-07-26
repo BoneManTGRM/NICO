@@ -11,13 +11,14 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v7"
+VERSION = "nico.comprehensive_api_routes.v8"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
     ("POST", "/assessment/comprehensive-run"),
     ("GET", "/assessment/comprehensive-run/{run_id}"),
     ("POST", "/assessment/comprehensive-run/{run_id}/continue"),
+    ("POST", "/assessment/comprehensive-run/{run_id}/review"),
 }
 
 _SAFE_RUNTIME_REASONS = {
@@ -121,12 +122,47 @@ def _with_runtime_truth(
     request: Request,
     response: dict[str, Any],
 ) -> dict[str, Any]:
+    delivery_allowed = response.get("client_delivery_allowed") is True
     return {
         **response,
         "persistence": _runtime_persistence(request),
         "human_review_required": True,
-        "client_delivery_allowed": False,
+        "client_delivery_allowed": delivery_allowed,
     }
+
+
+def _service(controller: ComprehensiveApiController) -> Any:
+    service = getattr(controller, "_service", None)
+    if service is None:
+        raise RuntimeError("comprehensive_review_service_unavailable")
+    return service
+
+
+def _review_projection(
+    response: dict[str, Any],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    allowed = record.get("client_delivery_allowed") is True
+    projected = {
+        **response,
+        "status": str(record.get("status") or response.get("status") or "unknown"),
+        "human_review_completed": record.get("human_review_completed") is True,
+        "client_delivery_allowed": allowed,
+        "delivery_status": "approved_for_delivery" if allowed else "blocked",
+    }
+    if isinstance(record.get("review_decision"), dict):
+        projected["review_decision"] = record["review_decision"]
+    if isinstance(record.get("accepted_edition"), dict):
+        projected["accepted_edition"] = record["accepted_edition"]
+    if isinstance(record.get("review_context"), dict):
+        projected["review_context"] = record["review_context"]
+    public_record = projected.get("record")
+    if isinstance(public_record, dict):
+        public_record["status"] = projected["status"]
+        public_record["human_review_completed"] = projected["human_review_completed"]
+        public_record["client_delivery_allowed"] = allowed
+        public_record["delivery_status"] = projected["delivery_status"]
+    return projected
 
 
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -274,9 +310,12 @@ def register_comprehensive_api_routes(
         request: Request,
     ) -> dict[str, Any]:
         try:
+            controller_value = _controller(request)
+            record = _service(controller_value).load(run_id)
+            response = controller_value._response(record, operation="status")
             return _with_runtime_truth(
                 request,
-                _controller(request).status(run_id),
+                _review_projection(response, record),
             )
         except HTTPException:
             raise
@@ -291,9 +330,55 @@ def register_comprehensive_api_routes(
         try:
             raw = await request.body()
             payload = await request.json() if raw else {}
+            controller_value = _controller(request)
+            response = controller_value.continue_run(run_id, payload)
+            record = _service(controller_value).load(run_id)
             return _with_runtime_truth(
                 request,
-                _controller(request).continue_run(run_id, payload),
+                _review_projection(response, record),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _translate_error(exc) from exc
+
+    @app.post("/assessment/comprehensive-run/{run_id}/review")
+    async def review_comprehensive(
+        run_id: str,
+        request: Request,
+    ) -> dict[str, Any]:
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise TypeError("request_body_must_be_object")
+            if (
+                payload.get("review_authorized") is not True
+                or payload.get("authorization_confirmed") is not True
+            ):
+                raise ValueError("explicit_review_authorization_required")
+            controller_value = _controller(request)
+            record = _service(controller_value).review(
+                run_id,
+                reviewer=_required(payload.get("reviewer"), "reviewer"),
+                reviewer_role=_required(
+                    payload.get("reviewer_role"),
+                    "reviewer_role",
+                ),
+                decision=_required(payload.get("decision"), "decision"),
+                decision_reason=_required(
+                    payload.get("decision_reason"),
+                    "decision_reason",
+                ),
+                decided_at=(
+                    str(payload.get("decided_at")).strip()
+                    if payload.get("decided_at")
+                    else None
+                ),
+            )
+            response = controller_value._response(record, operation="reviewed")
+            return _with_runtime_truth(
+                request,
+                _review_projection(response, record),
             )
         except HTTPException:
             raise

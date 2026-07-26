@@ -2,22 +2,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_review_decision_v1 import report_package_from_record
+from nico.decision_grade_accepted_edition_guard_v1 import (
+    current_report_artifact_digest,
+    current_report_artifact_digests,
+    validate_accepted_edition,
+)
 from nico.strategic_human_evidence_v1 import (
     VERSION as HUMAN_EVIDENCE_VERSION,
     normalize_strategic_human_evidence,
     verify_strategic_human_evidence,
 )
 
-VERSION = "nico.comprehensive_run_record.v4"
+VERSION = "nico.comprehensive_run_record.v5"
 LEGACY_VERSION = "nico.comprehensive_run_record.v2"
 TERMINAL_STATUSES = {"review_required", "approved", "rejected", "failed", "blocked"}
 ACTIVE_STAGE_STATUSES = {"queued", "running", "pending", "planned", "in_progress"}
 SUCCESS_STAGE_STATUSES = {"complete", "completed", "passed", "review_required"}
+_REVIEW_DECISIONS = {"approved", "rejected", "request_more_evidence"}
 
 
 def _required(value: Any, field: str) -> str:
@@ -27,7 +35,7 @@ def _required(value: Any, field: str) -> str:
     return normalized
 
 
-def _canonical_hash(payload: dict[str, Any]) -> str:
+def _canonical_hash(payload: Any) -> str:
     encoded = json.dumps(
         payload,
         sort_keys=True,
@@ -80,6 +88,7 @@ def create_comprehensive_run_record(
         "updated_at": created_at,
         "revision": 1,
         "human_review_required": True,
+        "human_review_completed": False,
         "client_delivery_allowed": False,
         "terminal": False,
     }
@@ -91,6 +100,78 @@ def _record_hash(record: dict[str, Any]) -> str:
     payload = deepcopy(record)
     payload.pop("integrity_sha256", None)
     return _canonical_hash(payload)
+
+
+def _manifest_hash_valid(candidate: Mapping[str, Any]) -> bool:
+    payload = deepcopy(dict(candidate))
+    claimed = str(payload.pop("accepted_edition_manifest_sha256", "") or "")
+    return bool(claimed and claimed == _canonical_hash(payload))
+
+
+def _certificate_hash_valid(review: Mapping[str, Any]) -> bool:
+    payload = deepcopy(dict(review))
+    claimed = str(payload.pop("approval_certificate_sha256", "") or "")
+    return bool(claimed and claimed == _canonical_hash(payload))
+
+
+def _review_manifest_errors(
+    record: Mapping[str, Any],
+    candidate: Any,
+) -> list[str]:
+    if not isinstance(candidate, Mapping):
+        return ["review_manifest_required"]
+    errors: list[str] = []
+    if list(candidate.get("validation_errors") or []):
+        errors.append("review_manifest_contains_validation_errors")
+    if not _manifest_hash_valid(candidate):
+        errors.append("review_manifest_hash_mismatch")
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    decision = str(review.get("decision") or "").casefold()
+    if decision not in _REVIEW_DECISIONS:
+        errors.append("review_decision_invalid")
+    if not _certificate_hash_valid(review):
+        errors.append("review_certificate_hash_mismatch")
+
+    package = report_package_from_record(record)
+    if not package:
+        errors.append("review_report_package_required")
+        return errors
+    expected_digests = current_report_artifact_digests(package)
+    expected_digest = current_report_artifact_digest(package)
+    if set(expected_digests) != {"markdown", "html", "pdf", "json"}:
+        errors.append("review_report_artifacts_incomplete")
+    if candidate.get("artifact_digests") != expected_digests:
+        errors.append("review_artifact_digests_mismatch")
+    if str(candidate.get("report_artifact_digest") or "") != expected_digest:
+        errors.append("review_report_digest_mismatch")
+    if str(review.get("report_artifact_digest") or "") != expected_digest:
+        errors.append("review_certificate_report_digest_mismatch")
+
+    identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    for field in (
+        "repository",
+        "commit_sha",
+        "run_id",
+        "report_language",
+        "assessment_depth",
+    ):
+        if str(candidate.get(field) or "") != str(identity.get(field) or ""):
+            errors.append(f"review_identity_mismatch:{field}")
+    for field in ("tree_sha", "scanner_run_id", "evidence_bundle_hash"):
+        if not str(candidate.get(field) or "").strip():
+            errors.append(f"review_identity_missing:{field}")
+
+    if decision == "approved":
+        validation = validate_accepted_edition(package, candidate)
+        errors.extend(str(item) for item in validation.get("validation_errors") or [])
+    else:
+        if candidate.get("accepted_edition") is not False:
+            errors.append("nonapproval_must_not_create_accepted_edition")
+        if candidate.get("client_delivery_allowed") is not False:
+            errors.append("nonapproval_must_block_delivery")
+        if str(candidate.get("delivery_status") or "") != "blocked":
+            errors.append("nonapproval_delivery_status_invalid")
+    return sorted(set(errors))
 
 
 def _validate_record(
@@ -117,8 +198,33 @@ def _validate_record(
         violations.append("service_id_must_be_comprehensive")
     if record.get("human_review_required") is not True:
         violations.append("human_review_required")
-    if record.get("client_delivery_allowed") is not False:
+
+    status = str(record.get("status") or "").lower()
+    delivery_allowed = record.get("client_delivery_allowed") is True
+    if status == "approved":
+        if not delivery_allowed:
+            violations.append("approved_run_must_allow_delivery")
+        if record.get("human_review_completed") is not True:
+            violations.append("approved_run_requires_completed_review")
+        review_errors = _review_manifest_errors(record, record.get("accepted_edition"))
+        violations.extend(f"accepted_edition:{item}" for item in review_errors)
+    elif delivery_allowed:
         violations.append("client_delivery_must_remain_blocked")
+
+    review_decision = record.get("review_decision")
+    if review_decision is not None:
+        review_errors = _review_manifest_errors(record, review_decision)
+        violations.extend(f"review_decision:{item}" for item in review_errors)
+        review = review_decision.get("review") if isinstance(review_decision, Mapping) else {}
+        decision = str(review.get("decision") or "").casefold()
+        expected_status = {
+            "approved": "approved",
+            "rejected": "rejected",
+            "request_more_evidence": "review_required",
+        }.get(decision)
+        if expected_status and status != expected_status:
+            violations.append("review_decision_status_mismatch")
+
     if require_strategic_context:
         human_evidence = record.get("human_evidence")
         if not isinstance(human_evidence, dict):
@@ -138,7 +244,7 @@ def _validate_record(
         violations.append("progress_must_match_completed_stages")
     if record.get("integrity_sha256") != _record_hash(record):
         violations.append("integrity_hash_mismatch")
-    terminal = str(record.get("status") or "").lower() in TERMINAL_STATUSES
+    terminal = status in TERMINAL_STATUSES
     if bool(record.get("terminal")) != terminal:
         violations.append("terminal_flag_mismatch")
     return violations
@@ -212,8 +318,70 @@ def apply_comprehensive_stage_result(
     updated["revision"] = int(updated.get("revision") or 0) + 1
     updated["terminal"] = updated["status"] in TERMINAL_STATUSES
     updated["human_review_required"] = True
+    updated["human_review_completed"] = False
     updated["client_delivery_allowed"] = False
     updated["integrity_sha256"] = _record_hash(updated)
+    return updated
+
+
+def apply_comprehensive_review_decision(
+    record: dict[str, Any],
+    *,
+    manifest: Mapping[str, Any],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    validation = validate_comprehensive_run_record(record)
+    if validation["status"] != "valid":
+        raise ValueError("invalid_run_record:" + ",".join(validation["violations"]))
+    if str(record.get("status") or "").lower() != "review_required":
+        raise ValueError("review_decision_requires_review_required_run")
+    if list(record.get("completed_stages") or []) != list(COMPREHENSIVE_STAGES):
+        raise ValueError("review_decision_requires_complete_stage_sequence")
+    errors = _review_manifest_errors(record, manifest)
+    if errors:
+        raise ValueError("invalid_review_manifest:" + ",".join(errors))
+
+    updated = deepcopy(record)
+    candidate = deepcopy(dict(manifest))
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    decision = str(review.get("decision") or "").casefold()
+    status = {
+        "approved": "approved",
+        "rejected": "rejected",
+        "request_more_evidence": "review_required",
+    }[decision]
+    history = [
+        deepcopy(dict(item))
+        for item in updated.get("review_history") or []
+        if isinstance(item, Mapping)
+    ]
+    history.append(candidate)
+    updated["review_history"] = history
+    updated["review_decision"] = candidate
+    if decision == "approved":
+        updated["accepted_edition"] = candidate
+    else:
+        updated.pop("accepted_edition", None)
+    package = report_package_from_record(updated)
+    updated["review_context"] = {
+        "report_id": str(package.get("report_id") or ""),
+        "pdf_filename": str(package.get("pdf_filename") or ""),
+        "report_regenerated_during_review": False,
+        "artifact_digest": str(candidate.get("report_artifact_digest") or ""),
+    }
+    updated["status"] = status
+    updated["terminal"] = True
+    updated["human_review_required"] = True
+    updated["human_review_completed"] = decision in {"approved", "rejected"}
+    updated["client_delivery_allowed"] = decision == "approved"
+    updated["updated_at"] = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
+    updated["revision"] = int(updated.get("revision") or 0) + 1
+    updated["integrity_sha256"] = _record_hash(updated)
+    final_validation = validate_comprehensive_run_record(updated)
+    if final_validation["status"] != "valid":
+        raise ValueError(
+            "invalid_reviewed_run_record:" + ",".join(final_validation["violations"])
+        )
     return updated
 
 
@@ -229,6 +397,7 @@ def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
         identity.setdefault("assessment_depth", "not_recorded")
         identity.setdefault("report_language", "not_recorded")
         restored["human_evidence"] = normalize_strategic_human_evidence(None)
+        restored.setdefault("human_review_completed", False)
         restored["artifact_schema"] = VERSION
         restored["integrity_sha256"] = _record_hash(restored)
         upgraded = validate_comprehensive_run_record(restored)
@@ -244,6 +413,7 @@ __all__ = [
     "SUCCESS_STAGE_STATUSES",
     "TERMINAL_STATUSES",
     "VERSION",
+    "apply_comprehensive_review_decision",
     "apply_comprehensive_stage_result",
     "create_comprehensive_run_record",
     "restore_comprehensive_run_record",
