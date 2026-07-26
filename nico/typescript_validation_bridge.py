@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import nico.assessment_score_integrity as score_integrity
 import nico.full_assessment_scorecard as scorecard
+from nico.comprehensive_report_finality_v51 import install_comprehensive_report_finality_v51
 
 TYPESCRIPT_VALIDATION_VERSION = "nico-typescript-validation-bridge-v1"
 _DELEGATE_STATIC_SECTION: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
@@ -102,7 +103,6 @@ def synchronize_mid_handler_aliases() -> dict[str, str]:
     an inner wrapper even while Full uses the final chain. Resolve both modules
     explicitly after the final evidence installer and synchronize their live aliases.
     """
-
     mid_handlers = import_module("nico.mid_assessment_handlers")
     snapshot_handlers = import_module("nico.snapshot_assessment_handlers")
     bindings = {
@@ -124,10 +124,12 @@ def install_typescript_validation_bridge() -> dict[str, Any]:
     score_integrity.calibrated_static_section = static_section_with_typescript_validation
     scorecard._nico_typescript_validation_bridge_installed = True
     mid_handler_bindings = synchronize_mid_handler_aliases()
+    comprehensive_report_finality = install_comprehensive_report_finality_v51()
     return {
         "status": "already_installed" if installed else "installed",
         "version": TYPESCRIPT_VALIDATION_VERSION,
         "mid_handler_bindings": mid_handler_bindings,
+        "comprehensive_report_finality": comprehensive_report_finality,
         "rule": "Successful CI-backed TypeScript validation is evidence of compilation/typecheck coverage but is never represented as exact-snapshot ESLint coverage.",
     }
 
