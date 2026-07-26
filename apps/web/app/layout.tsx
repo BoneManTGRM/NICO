@@ -1,4 +1,5 @@
 import type {ReactNode} from "react";
+import {Geist, Geist_Mono} from "next/font/google";
 import "../styles/globals.css";
 import "../styles/navigation.css";
 import "../styles/score-assurance.css";
@@ -32,6 +33,18 @@ import UnifiedAssessmentPublicGuard from "./UnifiedAssessmentPublicGuard";
 import WorkflowCallout from "./WorkflowCallout";
 import WorkspaceClarityRepair from "./WorkspaceClarityRepair";
 
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+  display: "swap",
+});
+
 /*
 Canonical public workflow:
 Assessment workflow: Run one unified NICO assessment from href="/assessment?tier=comprehensive#assessment".
@@ -50,12 +63,12 @@ These strings do not restore the retired public selector; UnifiedAssessmentPubli
 
 export const metadata = {
   title: "NICO",
-  description: "Evidence-bound technical and strategic assessment with exact-snapshot reporting and required human review.",
+  description: "Expert-led, evidence-bound technical assessment and engineering advisory.",
 };
 
 export default function RootLayout({children}: {children: ReactNode}) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="nico-app">
         <MidWorkspaceProvider>
           <AssessmentRunStateGuard />
