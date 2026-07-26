@@ -3,7 +3,7 @@ export const MAX_POLL_ATTEMPTS = 360;
 
 export type Locale = "en" | "es-MX";
 export type Service = "express" | "comprehensive";
-export type Phase = "idle" | "starting" | "running" | "review_required" | "complete" | "failed" | "timed_out";
+export type Phase = "idle" | "checking" | "starting" | "running" | "review_required" | "complete" | "unavailable" | "failed" | "timed_out";
 export type Evidence = Record<string, unknown> | string[];
 export type Report = Record<string, string | undefined>;
 export type Section = Record<string, unknown> & {id?: string; label?: string; score?: number | null; presented_score?: number | null; summary?: string; evidence?: string[]; findings?: string[]; unavailable?: string[]};
