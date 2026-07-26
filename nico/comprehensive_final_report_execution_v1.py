@@ -139,25 +139,17 @@ def wrap_final_report_provider(
 
 
 def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, Any]:
-    """Install the exact production report and cross-format truth providers.
+    """Bind final report execution and the current fail-closed verifier in production.
 
-    The v51 report/finality modules previously existed and passed isolated tests but were
-    not explicitly rebound into the already-created production provider registry. That
-    allowed production to execute the obsolete verifier. Install the current report
-    builder and verifier before freezing the executor map, then replace the registry
-    entries with those exact functions.
+    The report builder is left untouched. The current verifier is bound directly into
+    the production registry so importing the production app cannot mutate standalone
+    report-package behavior or legacy compatibility tests.
     """
 
-    from nico import comprehensive_native_providers as providers
     from nico.comprehensive_cross_format_finality_v49 import (
-        install_comprehensive_cross_format_finality_v49,
+        VERSION as CROSS_FORMAT_VERSION,
+        finality_aware_cross_format_verification_provider,
     )
-    from nico.comprehensive_report_finality_v51 import (
-        install_comprehensive_report_finality_v51,
-    )
-
-    report_finality = install_comprehensive_report_finality_v51()
-    cross_format_finality = install_comprehensive_cross_format_finality_v49()
 
     raw = getattr(target.state, PROVIDER_STATE_KEY, None)
     if not isinstance(raw, dict):
@@ -166,47 +158,44 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
             "version": VERSION,
             "bound": False,
             "reason": "comprehensive_provider_registry_unavailable",
-            "report_finality": report_finality,
-            "cross_format_finality": cross_format_finality,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
 
-    provider = providers.final_report_generation_provider
-    verifier = providers.cross_format_verification_provider
-    if not callable(provider) or not callable(verifier):
+    provider = raw.get("final_report_generation")
+    if not callable(provider):
         return {
             "status": "blocked",
             "version": VERSION,
             "bound": False,
-            "reason": "final_report_or_cross_format_provider_unavailable",
-            "report_finality": report_finality,
-            "cross_format_finality": cross_format_finality,
+            "reason": "final_report_provider_unavailable",
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
 
+    previous_verifier = raw.get("cross_format_verification")
     wrapped = wrap_final_report_provider(provider)
     raw["final_report_generation"] = wrapped
-    raw["cross_format_verification"] = verifier
+    raw["cross_format_verification"] = finality_aware_cross_format_verification_provider
     setattr(target.state, PROVIDER_STATE_KEY, raw)
 
     final_bound = raw.get("final_report_generation") is wrapped
-    verifier_bound = raw.get("cross_format_verification") is verifier
-    report_binding_ready = report_finality.get("bound") is True
-    verifier_binding_ready = cross_format_finality.get("bound") is True
-    bound = final_bound and verifier_bound and report_binding_ready and verifier_binding_ready
+    verifier_bound = (
+        raw.get("cross_format_verification")
+        is finality_aware_cross_format_verification_provider
+    )
+    changed = wrapped is not provider or previous_verifier is not finality_aware_cross_format_verification_provider
+    bound = final_bound and verifier_bound
     return {
-        "status": "installed" if bound else "blocked",
+        "status": "installed" if changed else "already_installed",
         "version": VERSION,
         "bound": bound,
         "final_report_provider_bound": final_bound,
         "cross_format_provider_bound": verifier_bound,
-        "report_finality": report_finality,
-        "cross_format_finality": cross_format_finality,
-        "cross_format_contract_schema": cross_format_finality.get("version"),
+        "cross_format_contract_schema": CROSS_FORMAT_VERSION,
         "canonical_score_parity_required": True,
         "failed_checks_exposed": True,
+        "global_report_builder_mutated": False,
         "valid_final_artifacts_complete_execution": True,
         "quality_and_evidence_issues_still_visible": True,
         "human_review_required": True,
