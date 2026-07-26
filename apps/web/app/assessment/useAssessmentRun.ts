@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useState} from "react";
 import {copyFor} from "./assessmentCopy";
-import {apiUrl, parseJson, scopeId, terminal, wait} from "./assessmentModel";
+import {AssessmentApiError, apiUrl, parseJson, scopeId, terminal, wait} from "./assessmentModel";
 import {
   compactStrategicHumanEvidence,
   type StrategicHumanEvidenceInput,
@@ -17,6 +17,16 @@ import {
   type Service,
 } from "./assessmentTypes";
 
+export type AssessmentRunIssue = {
+  kind: "configuration_blocked" | "service_unavailable" | "run_failed";
+  title: string;
+  message: string;
+  code: string;
+  requestId: string;
+  retryable: boolean;
+  runCreated: boolean;
+};
+
 export type AssessmentRunController = {
   service: Service;
   repository: string;
@@ -28,6 +38,7 @@ export type AssessmentRunController = {
   result: Result | null;
   message: string;
   error: string;
+  issue: AssessmentRunIssue | null;
   attempt: number;
   elapsed: number;
   running: boolean;
@@ -42,6 +53,18 @@ export type AssessmentRunController = {
 
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
+const PERSISTENCE_BLOCK_CODES = new Set([
+  "comprehensive_durable_storage_required",
+  "comprehensive_sqlite_persistent_volume_required",
+  "comprehensive_sqlite_storage_unavailable",
+  "comprehensive_storage_not_container_replacement_safe",
+]);
+const BACKEND_UNAVAILABLE_CODES = new Set([
+  "assessment_backend_not_configured",
+  "assessment_backend_configuration_conflict",
+  "assessment_backend_unreachable",
+  "assessment_invalid_json",
+]);
 
 async function requestWithRetry(
   path: string,
@@ -61,10 +84,72 @@ async function requestWithRetry(
       return await parseJson(response, copy);
     } catch (error) {
       lastError = error;
-      if (attempt >= CLIENT_RETRY_DELAYS_MS.length - 1) break;
+      const retryable = error instanceof AssessmentApiError ? error.retryable : true;
+      if (!retryable || attempt >= CLIENT_RETRY_DELAYS_MS.length - 1) break;
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(copy.backendError);
+  if (lastError instanceof AssessmentApiError) throw lastError;
+  if (lastError instanceof Error) {
+    throw new AssessmentApiError(lastError.message || copy.backendError, {
+      status: 0,
+      code: "assessment_network_error",
+      retryable: true,
+    });
+  }
+  throw new AssessmentApiError(copy.backendError, {
+    status: 0,
+    code: "assessment_network_error",
+    retryable: true,
+  });
+}
+
+function issueFor(
+  caught: unknown,
+  copy: ReturnType<typeof copyFor>,
+  runCreated: boolean,
+): AssessmentRunIssue {
+  const apiError = caught instanceof AssessmentApiError ? caught : null;
+  const code = String(apiError?.code || "assessment_request_failed");
+  const retryable = apiError?.retryable ?? true;
+  const requestId = String(apiError?.requestId || "");
+
+  if (PERSISTENCE_BLOCK_CODES.has(code)) {
+    return {
+      kind: "configuration_blocked",
+      title: copy.serviceUnavailableTitle,
+      message: copy.storageUnavailableMessage,
+      code,
+      requestId,
+      retryable: true,
+      runCreated,
+    };
+  }
+
+  if (
+    BACKEND_UNAVAILABLE_CODES.has(code)
+    || code === "assessment_network_error"
+    || (apiError?.status != null && TRANSIENT_STATUS.has(apiError.status))
+  ) {
+    return {
+      kind: "service_unavailable",
+      title: copy.serviceUnavailableTitle,
+      message: runCreated ? copy.runStatusUnavailableMessage : copy.serviceUnavailableMessage,
+      code,
+      requestId,
+      retryable,
+      runCreated,
+    };
+  }
+
+  return {
+    kind: "run_failed",
+    title: copy.runFailureTitle,
+    message: runCreated ? copy.runFailureAfterCreationMessage : copy.runCreationFailureMessage,
+    code,
+    requestId,
+    retryable,
+    runCreated,
+  };
 }
 
 export function useAssessmentRun(locale: Locale): AssessmentRunController {
@@ -79,6 +164,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const [result, setResult] = useState<Result | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [issue, setIssue] = useState<AssessmentRunIssue | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [started, setStarted] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -102,7 +188,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     return () => window.clearInterval(timer);
   }, [started, phase]);
 
-  const running = phase === "starting" || phase === "running";
+  const running = phase === "checking" || phase === "starting" || phase === "running";
 
   async function verifyRuntimePersistence(): Promise<void> {
     const diagnostics = await requestWithRetry(
@@ -114,9 +200,11 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       || diagnostics.persistence?.survives_container_replacement_verified === true;
     if (String(diagnostics.status || "").toLowerCase() !== "ready" || !replacementSafe) {
       const reason = String(diagnostics.reason || "comprehensive_storage_not_container_replacement_safe");
-      throw new Error(
-        `Assessment storage is not ready to preserve this run through a backend restart (${reason}). Configure the production Postgres connection or a verified persistent volume before retrying.`,
-      );
+      throw new AssessmentApiError("Assessment persistence is not ready.", {
+        status: 503,
+        code: reason,
+        retryable: true,
+      });
     }
   }
 
@@ -142,6 +230,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (stable) {
         setPhase(stable);
         setAttempt(count);
+        setStarted(null);
         setMessage(stable === "review_required" ? copy.comprehensiveReview : copy.stopped);
         return;
       }
@@ -149,10 +238,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       setPhase("running");
       setAttempt(count);
       setError("");
+      setIssue(null);
       const currentStageId = String(current.current_stage || current.record?.current_stage || "");
       setMessage(`${copy.service.label}: ${copy.stageLabels[currentStageId] || currentStageId.replaceAll("_", " ") || copy.phases.running}.`);
       const runId = String(current.run_id || "");
-      if (!runId) throw new Error(copy.runIdMissing);
+      if (!runId) throw new AssessmentApiError(copy.runIdMissing, {
+        status: 500,
+        code: "assessment_run_id_missing",
+        retryable: false,
+      });
 
       try {
         current = await requestWithRetry(
@@ -168,18 +262,20 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         const recovered = await recoverRun(runId);
         if (!recovered) throw requestError;
         current = recovered;
-        setMessage(`${copy.service.label}: recovered run state after a temporary backend interruption.`);
+        setMessage(`${copy.service.label}: ${copy.recoveredRunState}`);
       }
       await wait(POLL_INTERVAL_MS);
     }
     setResult(current);
     setPhase("timed_out");
+    setStarted(null);
     setMessage(copy.phases.timed_out);
   }
 
   async function run(): Promise<void> {
     if (!authorized) {
       setError(copy.authError);
+      setIssue(null);
       return;
     }
     const token = sequence.current + 1;
@@ -188,12 +284,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       customerId: scopeId("customer", client, "default_customer"),
       projectId: scopeId("project", project, "default_project"),
     };
-    setPhase("starting");
+    setPhase("checking");
     setResult(null);
     setError("");
-    setMessage(`${copy.phases.starting}: ${copy.service.label}`);
+    setIssue(null);
+    setMessage(copy.readinessCheckingMessage);
     setAttempt(0);
-    setStarted(Date.now());
+    setStarted(null);
     setElapsed(0);
 
     const body = {
@@ -212,8 +309,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       human_evidence: compactStrategicHumanEvidence(humanEvidence),
     };
 
+    let acceptedRun: Result | null = null;
     try {
       await verifyRuntimePersistence();
+      if (token !== sequence.current) return;
+      setPhase("starting");
+      setMessage(`${copy.phases.starting}: ${copy.service.label}`);
+      setStarted(Date.now());
       const data = await requestWithRetry(
         "/assessment/comprehensive-intake",
         {
@@ -223,15 +325,20 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         },
         copy,
       );
+      acceptedRun = data;
       if (token !== sequence.current) return;
       setResult(data);
       await continueRun(data, scope, token);
     } catch (caught) {
       if (token !== sequence.current) return;
-      setPhase("failed");
-      const detail = caught instanceof Error ? caught.message : copy.backendError;
-      setError(`${detail} Retry the run after the backend deployment is healthy; completed stages remain bound to the displayed run ID.`);
-      setMessage(copy.backendError);
+      const runCreated = Boolean(acceptedRun?.run_id);
+      const normalized = issueFor(caught, copy, runCreated);
+      setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable");
+      setStarted(null);
+      setIssue(normalized);
+      setError("");
+      setMessage("");
+      if (acceptedRun) setResult(acceptedRun);
     }
   }
 
@@ -246,6 +353,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     result,
     message,
     error,
+    issue,
     attempt,
     elapsed,
     running,
