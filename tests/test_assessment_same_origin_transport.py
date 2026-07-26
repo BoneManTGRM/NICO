@@ -81,7 +81,7 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
 
 
-def test_server_proxy_allows_only_native_lifecycle_and_bounded_diagnostic_routes() -> None:
+def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnostics() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL' in source
@@ -94,9 +94,12 @@ def test_server_proxy_allows_only_native_lifecycle_and_bounded_diagnostic_routes
     assert 'const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake"' in source
     assert 'const COMPREHENSIVE_STATUS = /^\\/assessment\\/comprehensive-run\\/[^/?#]+$/' in source
     assert 'const COMPREHENSIVE_CONTINUE = /^\\/assessment\\/comprehensive-run\\/[^/?#]+\\/continue$/' in source
+    assert 'const COMPREHENSIVE_REPORT_ARTIFACT' in source
+    assert '(?:markdown|html|json|pdf)' in source
+    assert 'COMPREHENSIVE_REPORT_ARTIFACT.test(path)' in source
     assert '(?:express-runtime|comprehensive-runtime)' in source
     assert '/assessment/github' not in source
-    assert 'Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy.' in source
+    assert 'Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy.' in source
     assert 'nico_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
     assert 'assessment_backend_unreachable' in source

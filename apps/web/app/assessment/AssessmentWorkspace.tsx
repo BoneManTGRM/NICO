@@ -6,6 +6,7 @@ import workspaceStyles from "./engagementWorkspace.module.css";
 import scoreStyles from "./scorecard.module.css";
 import {copyFor} from "./assessmentCopy";
 import {
+  apiUrl,
   assessmentFor,
   compactIdentifier,
   formatStatus,
@@ -53,6 +54,47 @@ function List({items, empty}: {items?: string[]; empty: string}) {
 function numeric(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function safeFilename(value: string, fallback: string): string {
+  const normalized = value.replace(/[\r\n]/g, "").replace(/[\\/:*?"<>|]/g, "-").trim();
+  return normalized || fallback;
+}
+
+function filenameFromResponse(response: Response, fallback: string): string {
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const quoted = disposition.match(/filename="([^"]+)"/i)?.[1];
+  const plain = disposition.match(/filename=([^;]+)/i)?.[1];
+  let candidate = encoded || quoted || plain || "";
+  try {
+    candidate = decodeURIComponent(candidate);
+  } catch {
+    // Preserve the server value when it is not URL encoded.
+  }
+  return safeFilename(candidate, fallback);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function artifactError(response: Response, fallback: string): Promise<Error> {
+  const payload = await response.json().catch(() => null) as {detail?: unknown; message?: unknown; error?: unknown} | null;
+  const detail = payload?.detail;
+  const message = typeof detail === "string"
+    ? detail
+    : detail && typeof detail === "object" && !Array.isArray(detail)
+      ? String((detail as Record<string, unknown>).message || (detail as Record<string, unknown>).code || "")
+      : "";
+  return new Error(message || String(payload?.message || payload?.error || fallback));
 }
 
 function ProgressTimeline({items, copy}: {items: ReturnType<typeof progressFor>; copy: Copy}) {
@@ -126,6 +168,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     retry,
   } = controller;
   const [copied, setCopied] = useState(false);
+  const [artifactAction, setArtifactAction] = useState<"markdown" | "pdf" | null>(null);
   const issueRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -153,7 +196,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const scannerRawStatus = scannerStatusFor(service, result, running);
   const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");
   const scannerStatus = running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);
-  const reportReady = Boolean(report?.markdown || report?.html || report?.pdf_base64);
+  const markdownAvailable = Boolean(report?.markdown || report?.markdown_available);
+  const pdfAvailable = Boolean(report?.pdf_base64 || report?.pdf_available);
+  const reportReady = Boolean(markdownAvailable || pdfAvailable || report?.html || report?.html_available || report?.json || report?.json_available || report?.report_id);
   const reportStatus = reportReady ? copy.phases.complete : running ? copy.awaitingScanner : copy.awaitingStage;
   const reviewStatus = phase === "review_required" ? copy.phases.review_required : running ? copy.reviewAfterReport : copy.awaitingStage;
   const maturityRawStatus = assessment?.maturity_signal?.level;
@@ -167,20 +212,70 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const stageHistoryLabel = locale === "es-MX"
     ? `Ver historial de etapas automatizadas (${progressItems.length})`
     : `View automated stage history (${progressItems.length})`;
+  const artifactStatus = artifactAction
+    ? locale === "es-MX" ? "Preparando el archivo…" : "Preparing file…"
+    : "";
 
   async function copyMarkdown(): Promise<void> {
-    if (!report?.markdown) return;
-    await navigator.clipboard.writeText(report.markdown);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    if (!markdownAvailable || artifactAction) return;
+    setArtifactAction("markdown");
+    setError("");
+    try {
+      let markdown = String(report?.markdown || "");
+      if (!markdown) {
+        const runId = String(result?.run_id || "").trim();
+        if (!runId) throw new Error(copy.runIdMissing);
+        const response = await fetch(
+          apiUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`),
+          {method: "GET", cache: "no-store", headers: {Accept: "text/markdown"}},
+        );
+        if (!response.ok) throw await artifactError(response, copy.pdfMissing);
+        markdown = await response.text();
+      }
+      if (!markdown.trim()) throw new Error(copy.pdfMissing);
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(copy.pdfMissing));
+    } finally {
+      setArtifactAction(null);
+    }
   }
 
-  function downloadPdf(): void {
-    if (!report?.pdf_base64) {
-      setError(String(report?.pdf_error || copy.pdfMissing));
-      return;
+  async function downloadPdf(): Promise<void> {
+    if (!pdfAvailable || artifactAction) return;
+    setArtifactAction("pdf");
+    setError("");
+    try {
+      if (report?.pdf_base64) {
+        savePdf(String(report.pdf_base64), String(report.pdf_filename || "nico-comprehensive-assessment.pdf"));
+        return;
+      }
+      const runId = String(result?.run_id || "").trim();
+      if (!runId) throw new Error(copy.runIdMissing);
+      const fallback = safeFilename(
+        String(report?.pdf_filename || ""),
+        `nico-comprehensive-${runId}-FINAL-PENDING-APPROVAL.pdf`,
+      );
+      const response = await fetch(
+        apiUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`),
+        {method: "GET", cache: "no-store", headers: {Accept: "application/pdf"}},
+      );
+      if (!response.ok) throw await artifactError(response, String(report?.pdf_error || copy.pdfMissing));
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length < 4 || String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") {
+        throw new Error(locale === "es-MX" ? "El PDF final no superó la validación de integridad." : "The final PDF failed integrity validation.");
+      }
+      downloadBlob(
+        new Blob([bytes], {type: "application/pdf"}),
+        filenameFromResponse(response, fallback),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(report?.pdf_error || copy.pdfMissing));
+    } finally {
+      setArtifactAction(null);
     }
-    savePdf(String(report.pdf_base64), String(report.pdf_filename || "nico-comprehensive-assessment.pdf"));
   }
 
   return <main
@@ -323,7 +418,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       {result ? <div className={workspaceStyles.resultArea} data-assessment-report-ready={reportReady ? "true" : "false"}>
         <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
         <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
-        <div className={`report-actions ${workspaceStyles.reportActionBar}`} data-assessment-report-actions="true" data-assessment-report-ready={reportReady ? "true" : "false"}><button type="button" disabled={!report?.markdown} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!report?.pdf_base64} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : null}</div>
+        <div className={`report-actions ${workspaceStyles.reportActionBar}`} data-assessment-report-actions="true" data-assessment-report-ready={reportReady ? "true" : "false"}><button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}</div>
         {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
         {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
         {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} /></details> : null}
