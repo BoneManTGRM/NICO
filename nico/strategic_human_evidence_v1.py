@@ -41,10 +41,11 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
 
 def _canonical_hash(value: Any) -> str:
     encoded = json.dumps(
-        _safe(value),
+        value,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
