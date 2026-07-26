@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "./assessment.module.css";
+import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
 import {
   STRATEGIC_EVIDENCE_DEFINITIONS,
@@ -96,7 +96,7 @@ export default function StrategicEvidenceForm({
               <b>{definition.label[locale]}</b>
               <small>{definition.description[locale]}</small>
             </span>
-            <span className={`status ${status === "complete" ? "green" : status === "partial" ? "yellow" : status === "excluded" ? "gray" : "gray"}`}>
+            <span className={`status ${status === "complete" ? "green" : status === "partial" ? "yellow" : "gray"}`}>
               {statusLabel(status, locale)}
             </span>
           </summary>
