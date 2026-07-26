@@ -9,6 +9,8 @@ const EXPRESS_STATUS = /^\/assessment\/express-run\/[^/?#]+\/status$/;
 const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake";
 const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
+const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
+const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|comprehensive-runtime)$/;
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [0, 1_500, 4_000];
@@ -67,7 +69,14 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "POST" && path === COMPREHENSIVE_INTAKE) return true;
   if (method === "GET" && COMPREHENSIVE_STATUS.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
+  if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
+  if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
   return false;
+}
+
+function protectedReviewRoute(method: string, path: string): boolean {
+  return (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
+    || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path));
 }
 
 function wait(ms: number): Promise<void> {
@@ -87,7 +96,7 @@ async function proxyNico(
   const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, authorized Strategic review delivery, and bounded runtime diagnostics are available through this proxy.");
   }
 
   const resolution = configuredBackend();
@@ -104,9 +113,13 @@ async function proxyNico(
     return jsonError(503, "assessment_backend_not_configured", "The assessment backend URL is unavailable or unsafe for this deployment.");
   }
 
-  const headers = new Headers({Accept: "application/json"});
+  const headers = new Headers({Accept: request.headers.get("accept") || "application/json"});
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("Content-Type", contentType);
+  if (protectedReviewRoute(request.method, apiPath)) {
+    const adminToken = request.headers.get("x-nico-admin-token");
+    if (adminToken) headers.set("X-NICO-Admin-Token", adminToken);
+  }
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   headers.set("X-Request-ID", requestId);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
@@ -140,10 +153,18 @@ async function proxyNico(
         "X-NICO-Backend-Candidate-Count": "1",
         "X-Request-ID": requestId,
       });
-      const responseContentType = response.headers.get("content-type");
-      if (responseContentType) responseHeaders.set("Content-Type", responseContentType);
-      const retryAfter = response.headers.get("retry-after");
-      if (retryAfter) responseHeaders.set("Retry-After", retryAfter);
+      for (const name of [
+        "content-type",
+        "content-disposition",
+        "retry-after",
+        "x-nico-run-id",
+        "x-nico-delivery-package-sha256",
+        "x-nico-accepted-edition-sha256",
+        "x-nico-delivery-certificate-sha256",
+      ]) {
+        const value = response.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
 
       return new Response(response.body, {
         status: response.status,
