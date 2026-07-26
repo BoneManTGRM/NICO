@@ -49,6 +49,7 @@ export type AssessmentRunController = {
   setHumanEvidence: (value: StrategicHumanEvidenceInput) => void;
   setError: (value: string) => void;
   run: () => Promise<void>;
+  retry: () => Promise<void>;
 };
 
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -190,6 +191,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
   const running = phase === "checking" || phase === "starting" || phase === "running";
 
+  function currentScope(): Scope {
+    return {
+      customerId: scopeId("customer", client, "default_customer"),
+      projectId: scopeId("project", project, "default_project"),
+    };
+  }
+
   async function verifyRuntimePersistence(): Promise<void> {
     const diagnostics = await requestWithRetry(
       "/diagnostics/comprehensive-runtime",
@@ -272,6 +280,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setMessage(copy.phases.timed_out);
   }
 
+  function applyIssue(caught: unknown, runCreated: boolean): void {
+    const normalized = issueFor(caught, copy, runCreated);
+    setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable");
+    setStarted(null);
+    setIssue(normalized);
+    setError("");
+    setMessage("");
+  }
+
   async function run(): Promise<void> {
     if (!authorized) {
       setError(copy.authError);
@@ -280,10 +297,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
     const token = sequence.current + 1;
     sequence.current = token;
-    const scope = {
-      customerId: scopeId("customer", client, "default_customer"),
-      projectId: scopeId("project", project, "default_project"),
-    };
+    const scope = currentScope();
     setPhase("checking");
     setResult(null);
     setError("");
@@ -332,13 +346,37 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     } catch (caught) {
       if (token !== sequence.current) return;
       const runCreated = Boolean(acceptedRun?.run_id);
-      const normalized = issueFor(caught, copy, runCreated);
-      setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable");
-      setStarted(null);
-      setIssue(normalized);
-      setError("");
-      setMessage("");
+      applyIssue(caught, runCreated);
       if (acceptedRun) setResult(acceptedRun);
+    }
+  }
+
+  async function retry(): Promise<void> {
+    const runId = String(result?.run_id || "").trim();
+    if (!runId) {
+      await run();
+      return;
+    }
+
+    const token = sequence.current + 1;
+    sequence.current = token;
+    setPhase("checking");
+    setIssue(null);
+    setError("");
+    setMessage(copy.readinessCheckingMessage);
+    setStarted(Date.now());
+    try {
+      const recovered = await requestWithRetry(
+        `/assessment/comprehensive-run/${encodeURIComponent(runId)}`,
+        {method: "GET", headers: {Accept: "application/json"}},
+        copy,
+      );
+      if (token !== sequence.current) return;
+      setResult(recovered);
+      await continueRun(recovered, currentScope(), token);
+    } catch (caught) {
+      if (token !== sequence.current) return;
+      applyIssue(caught, true);
     }
   }
 
@@ -364,6 +402,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setHumanEvidence,
     setError,
     run,
+    retry,
   };
 }
 
