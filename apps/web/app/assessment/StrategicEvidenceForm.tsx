@@ -12,37 +12,47 @@ import {
 
 const TEXT = {
   en: {
-    eyebrow: "OPTIONAL STRATEGIC EVIDENCE",
-    title: "Add the human evidence code cannot provide",
-    summary: "Use this intake for executed QA, platform observations, stakeholder context, incidents, objectives, constraints, compliance, staffing, and accepted risks. Missing modules remain Not assessed and are never inferred from repository code.",
-    included: "Include this module",
-    excluded: "Explicitly exclude from scope",
+    eyebrow: "OPTIONAL HUMAN EVIDENCE",
+    title: "Add context the repository cannot provide",
+    summary: "Include only the modules supported by observed, approved, or supplied evidence. Anything omitted remains Not assessed.",
+    open: "Add strategic evidence",
+    added: "modules added",
+    ready: "ready for review",
+    add: "Add evidence",
+    remove: "Remove module",
+    excluded: "Exclude from scope",
     exclusion: "Exclusion rationale",
-    reviewer: "Evidence reviewer or supplier",
+    reviewer: "Reviewer or evidence supplier",
     observed: "Observed or approved at",
     source: "Source reference",
-    onePerLine: "One structured item per line",
+    metadata: "Evidence source",
+    onePerLine: "One item per line",
     notAssessed: "Not assessed",
-    partial: "Partial — more evidence required",
-    complete: "Complete intake — human review required",
-    excludedStatus: "Excluded with rationale",
+    partial: "Needs evidence",
+    complete: "Ready for review",
+    excludedStatus: "Excluded",
     field: (name: string) => name.replaceAll("_", " "),
   },
   "es-MX": {
-    eyebrow: "EVIDENCIA ESTRATÉGICA OPCIONAL",
-    title: "Agrega la evidencia humana que el código no puede proporcionar",
-    summary: "Usa esta captura para QA ejecutado, observaciones de plataformas, contexto de interesados, incidentes, objetivos, restricciones, cumplimiento, personal y riesgos aceptados. Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio.",
-    included: "Incluir este módulo",
-    excluded: "Excluir explícitamente del alcance",
+    eyebrow: "EVIDENCIA HUMANA OPCIONAL",
+    title: "Agrega el contexto que el repositorio no puede proporcionar",
+    summary: "Incluye únicamente módulos respaldados por evidencia observada, aprobada o proporcionada. Lo omitido permanece como No evaluado.",
+    open: "Agregar evidencia estratégica",
+    added: "módulos agregados",
+    ready: "listos para revisión",
+    add: "Agregar evidencia",
+    remove: "Eliminar módulo",
+    excluded: "Excluir del alcance",
     exclusion: "Justificación de exclusión",
     reviewer: "Revisor o proveedor de evidencia",
     observed: "Fecha de observación o aprobación",
     source: "Referencia de la fuente",
-    onePerLine: "Un elemento estructurado por línea",
+    metadata: "Fuente de evidencia",
+    onePerLine: "Un elemento por línea",
     notAssessed: "No evaluado",
-    partial: "Parcial — se requiere más evidencia",
-    complete: "Captura completa — requiere revisión humana",
-    excludedStatus: "Excluido con justificación",
+    partial: "Falta evidencia",
+    complete: "Listo para revisión",
+    excludedStatus: "Excluido",
     field: (name: string) => name.replaceAll("_", " "),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
@@ -53,6 +63,13 @@ function statusLabel(status: ReturnType<typeof moduleCompleteness>, locale: Loca
   if (status === "partial") return copy.partial;
   if (status === "excluded") return copy.excludedStatus;
   return copy.notAssessed;
+}
+
+function statusTone(status: ReturnType<typeof moduleCompleteness>): string {
+  if (status === "complete") return styles.statusComplete;
+  if (status === "partial") return styles.statusPartial;
+  if (status === "excluded") return styles.statusExcluded;
+  return styles.statusEmpty;
 }
 
 export default function StrategicEvidenceForm({
@@ -67,6 +84,11 @@ export default function StrategicEvidenceForm({
   disabled?: boolean;
 }) {
   const copy = TEXT[locale] as typeof TEXT.en;
+  const addedCount = Object.keys(value).length;
+  const readyCount = STRATEGIC_EVIDENCE_DEFINITIONS.filter((definition) => {
+    const status = moduleCompleteness(definition, value[definition.moduleId]);
+    return status === "complete" || status === "excluded";
+  }).length;
 
   function setModule(
     moduleId: string,
@@ -78,121 +100,144 @@ export default function StrategicEvidenceForm({
     onChange(updated);
   }
 
-  return <section className={styles.strategicEvidence} aria-labelledby="strategic-evidence-title">
-    <div className={styles.strategicEvidenceHead}>
-      <div>
-        <p className="eyebrow">{copy.eyebrow}</p>
-        <h3 id="strategic-evidence-title">{copy.title}</h3>
-      </div>
-      <span className="status gray">
-        {Object.keys(value).length}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}
+  return <details className={styles.strategicEvidence}>
+    <summary className={styles.intakeSummary}>
+      <span className={styles.intakeIdentity}>
+        <span className="eyebrow">{copy.eyebrow}</span>
+        <strong>{copy.open}</strong>
+        <small>{copy.summary}</small>
       </span>
-    </div>
-    <p className="summary-box">{copy.summary}</p>
+      <span className={styles.intakeProgress} aria-label={`${addedCount} ${copy.added}; ${readyCount} ${copy.ready}`}>
+        <b>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</b>
+        <small>{readyCount} {copy.ready}</small>
+      </span>
+    </summary>
 
-    <div className={styles.evidenceModuleGrid}>
-      {STRATEGIC_EVIDENCE_DEFINITIONS.map((definition) => {
-        const module = value[definition.moduleId];
-        const status = moduleCompleteness(definition, module);
-        const tone = status === "complete" ? "green" : status === "partial" ? "yellow" : "gray";
-        return <details className={styles.evidenceModule} key={definition.moduleId}>
-          <summary>
-            <span>
-              <b>{definition.label[locale]}</b>
-              <small>{definition.description[locale]}</small>
-            </span>
-            <span className={`status ${tone}`}>{statusLabel(status, locale)}</span>
-          </summary>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={Boolean(module)}
-              disabled={disabled}
-              onChange={(event) => setModule(
-                definition.moduleId,
-                event.target.checked ? emptyStrategicEvidenceModule() : null,
-              )}
-            />
-            {copy.included}
-          </label>
-          {module ? <div className={styles.evidenceModuleBody}>
-            <div className="form-grid">
-              <label>{copy.reviewer}
-                <input
-                  value={module.reviewer}
+    <div className={styles.intakeBody}>
+      <div className={styles.intakeHeading}>
+        <h3>{copy.title}</h3>
+        <p>{copy.summary}</p>
+      </div>
+
+      <div className={styles.evidenceModuleGrid}>
+        {STRATEGIC_EVIDENCE_DEFINITIONS.map((definition) => {
+          const module = value[definition.moduleId];
+          const status = moduleCompleteness(definition, module);
+          return <details className={styles.evidenceModule} key={definition.moduleId}>
+            <summary>
+              <span className={styles.moduleIdentity}>
+                <b>{definition.label[locale]}</b>
+                <small>{definition.description[locale]}</small>
+              </span>
+              <span className={`${styles.moduleStatus} ${statusTone(status)}`}>{statusLabel(status, locale)}</span>
+            </summary>
+
+            <div className={styles.evidenceModuleBody}>
+              {!module ? <div className={styles.moduleEmptyState}>
+                <p>{definition.description[locale]}</p>
+                <button
+                  type="button"
+                  className={styles.addButton}
                   disabled={disabled}
-                  onChange={(event) => setModule(
-                    definition.moduleId,
-                    {...module, reviewer: event.target.value},
-                  )}
-                />
-              </label>
-              <label>{copy.observed}
-                <input
-                  type="datetime-local"
-                  value={module.observed_at}
-                  disabled={disabled}
-                  onChange={(event) => setModule(
-                    definition.moduleId,
-                    {...module, observed_at: event.target.value},
-                  )}
-                />
-              </label>
-              <label>{copy.source}
-                <input
-                  value={module.source_reference}
-                  disabled={disabled}
-                  placeholder="evidence://..."
-                  onChange={(event) => setModule(
-                    definition.moduleId,
-                    {...module, source_reference: event.target.value},
-                  )}
-                />
-              </label>
+                  onClick={() => setModule(definition.moduleId, emptyStrategicEvidenceModule())}
+                >
+                  {copy.add}
+                </button>
+              </div> : <>
+                <fieldset className={styles.metadataGroup} disabled={disabled}>
+                  <legend>{copy.metadata}</legend>
+                  <div className={styles.metadataGrid}>
+                    <label>{copy.reviewer}
+                      <input
+                        value={module.reviewer}
+                        onChange={(event) => setModule(
+                          definition.moduleId,
+                          {...module, reviewer: event.target.value},
+                        )}
+                      />
+                    </label>
+                    <label>{copy.observed}
+                      <input
+                        type="datetime-local"
+                        value={module.observed_at}
+                        onChange={(event) => setModule(
+                          definition.moduleId,
+                          {...module, observed_at: event.target.value},
+                        )}
+                      />
+                    </label>
+                    <label className={styles.sourceField}>{copy.source}
+                      <input
+                        value={module.source_reference}
+                        placeholder="evidence://..."
+                        onChange={(event) => setModule(
+                          definition.moduleId,
+                          {...module, source_reference: event.target.value},
+                        )}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+
+                {!module.excluded ? <div className={styles.evidenceFields}>
+                  {definition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+                    <span>{copy.field(field)}</span>
+                    <small>{copy.onePerLine}</small>
+                    <textarea
+                      rows={3}
+                      value={(module.evidence[field] || []).join("\n")}
+                      disabled={disabled}
+                      onChange={(event) => setModule(definition.moduleId, {
+                        ...module,
+                        evidence: {
+                          ...module.evidence,
+                          [field]: evidenceLines(event.target.value),
+                        },
+                      })}
+                    />
+                  </label>)}
+                </div> : null}
+
+                <div className={styles.moduleActions}>
+                  <label className={styles.excludeControl}>
+                    <input
+                      type="checkbox"
+                      checked={module.excluded}
+                      disabled={disabled}
+                      onChange={(event) => setModule(
+                        definition.moduleId,
+                        {...module, excluded: event.target.checked},
+                      )}
+                    />
+                    <span>{copy.excluded}</span>
+                  </label>
+                  <button
+                    type="button"
+                    className={styles.removeButton}
+                    disabled={disabled}
+                    onClick={() => setModule(definition.moduleId, null)}
+                  >
+                    {copy.remove}
+                  </button>
+                </div>
+
+                {module.excluded ? <label className={styles.evidenceTextareaLabel}>
+                  <span>{copy.exclusion}</span>
+                  <textarea
+                    rows={3}
+                    value={module.exclusion_rationale}
+                    disabled={disabled}
+                    onChange={(event) => setModule(
+                      definition.moduleId,
+                      {...module, exclusion_rationale: event.target.value},
+                    )}
+                  />
+                </label> : null}
+              </>}
             </div>
-            {definition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
-              <span>{copy.field(field)}</span>
-              <small>{copy.onePerLine}</small>
-              <textarea
-                rows={4}
-                value={(module.evidence[field] || []).join("\n")}
-                disabled={disabled || module.excluded}
-                onChange={(event) => setModule(definition.moduleId, {
-                  ...module,
-                  evidence: {
-                    ...module.evidence,
-                    [field]: evidenceLines(event.target.value),
-                  },
-                })}
-              />
-            </label>)}
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={module.excluded}
-                disabled={disabled}
-                onChange={(event) => setModule(
-                  definition.moduleId,
-                  {...module, excluded: event.target.checked},
-                )}
-              />
-              {copy.excluded}
-            </label>
-            {module.excluded ? <label className={styles.evidenceTextareaLabel}>
-              <span>{copy.exclusion}</span>
-              <textarea
-                rows={3}
-                value={module.exclusion_rationale}
-                disabled={disabled}
-                onChange={(event) => setModule(
-                  definition.moduleId,
-                  {...module, exclusion_rationale: event.target.value},
-                )}
-              />
-            </label> : null}
-          </div> : null}
-        </details>;
-      })}
+          </details>;
+        })}
+      </div>
     </div>
-  </section>;
+  </details>;
 }
