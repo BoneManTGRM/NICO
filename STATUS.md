@@ -4,7 +4,8 @@ This file records verified transformation progress. A feature is not complete me
 
 ## Current baseline
 
-- Baseline commit: `272f5ddde1e81e9f845eab0393f04a356b01d16f`
+- Initial transformation baseline: `272f5ddde1e81e9f845eab0393f04a356b01d16f`
+- Current verified default-branch commit: `8c4cde4ebbc4f701c632534d513955a02ecb8222`
 - Public product target: **NICO Comprehensive Technical Assessment**
 - Default branch: `main`
 - Production frontend: Vercel
@@ -18,7 +19,7 @@ This file records verified transformation progress. A feature is not complete me
 | Workstream | State | Verified boundary |
 |---|---|---|
 | Truth, governance, and measurement | In progress | Canonical product contract and transformation documents are being established. |
-| Production stability | In progress | Durable persistence, release identity, final report truth, and production acceptance controls exist; ongoing live proof is required after release changes. |
+| Production stability | In progress | Durable persistence, release identity, final report truth, and production acceptance controls exist. PR #867 repaired a false-negative terminal UI proof; post-merge live acceptance remains the release gate. |
 | Single-product consolidation | In progress | Public assessment workspace is Comprehensive, but obsolete terminology and compatibility paths remain. |
 | Canonical evidence platform | In progress | Exact run, repository, commit, scanner evidence, report, and approval identities exist; completeness and normalized provenance still require consolidation. |
 | Comprehensive analysis | In progress | Repository, scanner, scoring, roadmap, and strategic evidence stages exist; benchmarked automation and full normalized finding coverage are not yet proven. |
@@ -38,6 +39,19 @@ This file records verified transformation progress. A feature is not complete me
 5. Continuing assurance, Company Queue, and controlled remediation require production-grade workflows and benchmark evidence.
 6. Automation percentages are targets until measured by the benchmark contract in `METRICS.md`.
 
+## Completed update
+
+### Exact-release Comprehensive production acceptance repair
+
+- Pull request: #867
+- Merge commit: `8c4cde4ebbc4f701c632534d513955a02ecb8222`
+- Problem solved: live Comprehensive runs could finish correctly but fail release acceptance because the harness asserted retired UI labels and allowed a supplemental screenshot font timeout to override stronger structured proof.
+- Main implementation: current bilingual expert-review terminal phases, current UI evidence labels, exact UI run and commit assertions, retained analyzer/report/review/maturity evidence, and bounded non-fatal screenshot diagnostics.
+- Verification before merge: complete 2,982-test suite, frontend typecheck/build, Docker build, dependency audit, scanner installer, CodeQL, security audit, restart proof, resilience proof, unified acceptance contract, and golden demonstration all passed.
+- User-visible result: release acceptance now verifies the UI that clients actually see without weakening exact-run, report, persistence, human-review, or blocked-delivery requirements.
+- Maturity effect: improves release-proof correctness and reduces false-negative operational failures; no automation percentage is claimed from this repair alone.
+- Remaining limitation: exact post-merge production acceptance must still pass on the merged SHA before the release is fully verified.
+
 ## Current update
 
 ### Single-product transformation baseline
@@ -52,10 +66,11 @@ Implementation:
 - Add machine-tested maturity target declarations.
 - Add `MASTER_PLAN.md`, `STATUS.md`, `DECISIONS.md`, `METRICS.md`, and `RUNBOOK.md`.
 - Reconcile public architecture and status documentation with the single-product decision.
+- Carry the merged #867 production-acceptance proof and regression tests onto the branch before final validation.
 
 Required verification:
 
-- Complete repository CI.
+- Complete repository CI against the branch containing merged #867 behavior.
 - Frontend typecheck and production build.
 - Security workflows.
 - Product-identity contract tests.
