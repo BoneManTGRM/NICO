@@ -1,5 +1,6 @@
 "use client";
 
+import {useState} from "react";
 import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
 import {
@@ -14,45 +15,51 @@ const TEXT = {
   en: {
     eyebrow: "OPTIONAL HUMAN EVIDENCE",
     title: "Add context the repository cannot provide",
-    summary: "Include only the modules supported by observed, approved, or supplied evidence. Anything omitted remains Not assessed.",
-    open: "Add strategic evidence",
-    added: "modules added",
-    ready: "ready for review",
-    add: "Add evidence",
-    remove: "Remove module",
-    excluded: "Exclude from scope",
+    summary: "Add only the evidence available for this engagement. Missing modules remain Not assessed and are never inferred from repository code.",
+    modules: "Evidence modules",
+    chooseModule: "Choose an evidence module",
+    added: (count: number, total: number) => `${count} of ${total} modules added`,
+    selected: "Selected module",
     exclusion: "Exclusion rationale",
     reviewer: "Reviewer or evidence supplier",
     observed: "Observed or approved at",
     source: "Source reference",
-    metadata: "Evidence source",
-    onePerLine: "One item per line",
+    onePerLine: "One structured item per line",
     notAssessed: "Not assessed",
-    partial: "Needs evidence",
+    partial: "More evidence required",
     complete: "Ready for review",
-    excludedStatus: "Excluded",
+    excludedStatus: "Excluded with rationale",
+    addEvidence: "Add evidence",
+    excludeModule: "Exclude from scope",
+    includeInstead: "Include evidence instead",
+    removeModule: "Remove from intake",
+    emptyTitle: "No evidence added for this module",
+    emptyBody: "Add human-observed information when it is available, or exclude the module only when an explicit rationale exists.",
     field: (name: string) => name.replaceAll("_", " "),
   },
   "es-MX": {
     eyebrow: "EVIDENCIA HUMANA OPCIONAL",
     title: "Agrega el contexto que el repositorio no puede proporcionar",
-    summary: "Incluye únicamente módulos respaldados por evidencia observada, aprobada o proporcionada. Lo omitido permanece como No evaluado.",
-    open: "Agregar evidencia estratégica",
-    added: "módulos agregados",
-    ready: "listos para revisión",
-    add: "Agregar evidencia",
-    remove: "Eliminar módulo",
-    excluded: "Excluir del alcance",
+    summary: "Agrega únicamente la evidencia disponible para este encargo. Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio.",
+    modules: "Módulos de evidencia",
+    chooseModule: "Elige un módulo de evidencia",
+    added: (count: number, total: number) => `${count} de ${total} módulos agregados`,
+    selected: "Módulo seleccionado",
     exclusion: "Justificación de exclusión",
     reviewer: "Revisor o proveedor de evidencia",
     observed: "Fecha de observación o aprobación",
     source: "Referencia de la fuente",
-    metadata: "Fuente de evidencia",
-    onePerLine: "Un elemento por línea",
+    onePerLine: "Un elemento estructurado por línea",
     notAssessed: "No evaluado",
-    partial: "Falta evidencia",
+    partial: "Se requiere más evidencia",
     complete: "Listo para revisión",
-    excludedStatus: "Excluido",
+    excludedStatus: "Excluido con justificación",
+    addEvidence: "Agregar evidencia",
+    excludeModule: "Excluir del alcance",
+    includeInstead: "Incluir evidencia en su lugar",
+    removeModule: "Quitar de la captura",
+    emptyTitle: "No se agregó evidencia para este módulo",
+    emptyBody: "Agrega información observada por una persona cuando esté disponible, o excluye el módulo únicamente con una justificación explícita.",
     field: (name: string) => name.replaceAll("_", " "),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
@@ -65,7 +72,7 @@ function statusLabel(status: ReturnType<typeof moduleCompleteness>, locale: Loca
   return copy.notAssessed;
 }
 
-function statusTone(status: ReturnType<typeof moduleCompleteness>): string {
+function statusClass(status: ReturnType<typeof moduleCompleteness>): string {
   if (status === "complete") return styles.statusComplete;
   if (status === "partial") return styles.statusPartial;
   if (status === "excluded") return styles.statusExcluded;
@@ -84,11 +91,17 @@ export default function StrategicEvidenceForm({
   disabled?: boolean;
 }) {
   const copy = TEXT[locale] as typeof TEXT.en;
+  const [activeModuleId, setActiveModuleId] = useState(
+    STRATEGIC_EVIDENCE_DEFINITIONS[0]?.moduleId || "",
+  );
+  const activeDefinition = STRATEGIC_EVIDENCE_DEFINITIONS.find(
+    (definition) => definition.moduleId === activeModuleId,
+  ) || STRATEGIC_EVIDENCE_DEFINITIONS[0];
+  const activeModule = activeDefinition ? value[activeDefinition.moduleId] : undefined;
+  const activeStatus = activeDefinition
+    ? moduleCompleteness(activeDefinition, activeModule)
+    : "not_assessed";
   const addedCount = Object.keys(value).length;
-  const readyCount = STRATEGIC_EVIDENCE_DEFINITIONS.filter((definition) => {
-    const status = moduleCompleteness(definition, value[definition.moduleId]);
-    return status === "complete" || status === "excluded";
-  }).length;
 
   function setModule(
     moduleId: string,
@@ -100,144 +113,178 @@ export default function StrategicEvidenceForm({
     onChange(updated);
   }
 
-  return <details className={styles.strategicEvidence}>
-    <summary className={styles.intakeSummary}>
-      <span className={styles.intakeIdentity}>
-        <span className="eyebrow">{copy.eyebrow}</span>
-        <strong>{copy.open}</strong>
-        <small>{copy.summary}</small>
-      </span>
-      <span className={styles.intakeProgress} aria-label={`${addedCount} ${copy.added}; ${readyCount} ${copy.ready}`}>
-        <b>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</b>
-        <small>{readyCount} {copy.ready}</small>
-      </span>
-    </summary>
+  function addModule(excluded = false): void {
+    if (!activeDefinition) return;
+    setModule(activeDefinition.moduleId, {
+      ...emptyStrategicEvidenceModule(),
+      excluded,
+    });
+  }
 
-    <div className={styles.intakeBody}>
-      <div className={styles.intakeHeading}>
-        <h3>{copy.title}</h3>
+  if (!activeDefinition) return null;
+
+  return <section className={styles.strategicEvidence} aria-labelledby="strategic-evidence-title">
+    <div className={styles.strategicEvidenceHead}>
+      <div className={styles.headingCopy}>
+        <p className="eyebrow">{copy.eyebrow}</p>
+        <h3 id="strategic-evidence-title">{copy.title}</h3>
         <p>{copy.summary}</p>
       </div>
-
-      <div className={styles.evidenceModuleGrid}>
-        {STRATEGIC_EVIDENCE_DEFINITIONS.map((definition) => {
-          const module = value[definition.moduleId];
-          const status = moduleCompleteness(definition, module);
-          return <details className={styles.evidenceModule} key={definition.moduleId}>
-            <summary>
-              <span className={styles.moduleIdentity}>
-                <b>{definition.label[locale]}</b>
-                <small>{definition.description[locale]}</small>
-              </span>
-              <span className={`${styles.moduleStatus} ${statusTone(status)}`}>{statusLabel(status, locale)}</span>
-            </summary>
-
-            <div className={styles.evidenceModuleBody}>
-              {!module ? <div className={styles.moduleEmptyState}>
-                <p>{definition.description[locale]}</p>
-                <button
-                  type="button"
-                  className={styles.addButton}
-                  disabled={disabled}
-                  onClick={() => setModule(definition.moduleId, emptyStrategicEvidenceModule())}
-                >
-                  {copy.add}
-                </button>
-              </div> : <>
-                <fieldset className={styles.metadataGroup} disabled={disabled}>
-                  <legend>{copy.metadata}</legend>
-                  <div className={styles.metadataGrid}>
-                    <label>{copy.reviewer}
-                      <input
-                        value={module.reviewer}
-                        onChange={(event) => setModule(
-                          definition.moduleId,
-                          {...module, reviewer: event.target.value},
-                        )}
-                      />
-                    </label>
-                    <label>{copy.observed}
-                      <input
-                        type="datetime-local"
-                        value={module.observed_at}
-                        onChange={(event) => setModule(
-                          definition.moduleId,
-                          {...module, observed_at: event.target.value},
-                        )}
-                      />
-                    </label>
-                    <label className={styles.sourceField}>{copy.source}
-                      <input
-                        value={module.source_reference}
-                        placeholder="evidence://..."
-                        onChange={(event) => setModule(
-                          definition.moduleId,
-                          {...module, source_reference: event.target.value},
-                        )}
-                      />
-                    </label>
-                  </div>
-                </fieldset>
-
-                {!module.excluded ? <div className={styles.evidenceFields}>
-                  {definition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
-                    <span>{copy.field(field)}</span>
-                    <small>{copy.onePerLine}</small>
-                    <textarea
-                      rows={3}
-                      value={(module.evidence[field] || []).join("\n")}
-                      disabled={disabled}
-                      onChange={(event) => setModule(definition.moduleId, {
-                        ...module,
-                        evidence: {
-                          ...module.evidence,
-                          [field]: evidenceLines(event.target.value),
-                        },
-                      })}
-                    />
-                  </label>)}
-                </div> : null}
-
-                <div className={styles.moduleActions}>
-                  <label className={styles.excludeControl}>
-                    <input
-                      type="checkbox"
-                      checked={module.excluded}
-                      disabled={disabled}
-                      onChange={(event) => setModule(
-                        definition.moduleId,
-                        {...module, excluded: event.target.checked},
-                      )}
-                    />
-                    <span>{copy.excluded}</span>
-                  </label>
-                  <button
-                    type="button"
-                    className={styles.removeButton}
-                    disabled={disabled}
-                    onClick={() => setModule(definition.moduleId, null)}
-                  >
-                    {copy.remove}
-                  </button>
-                </div>
-
-                {module.excluded ? <label className={styles.evidenceTextareaLabel}>
-                  <span>{copy.exclusion}</span>
-                  <textarea
-                    rows={3}
-                    value={module.exclusion_rationale}
-                    disabled={disabled}
-                    onChange={(event) => setModule(
-                      definition.moduleId,
-                      {...module, exclusion_rationale: event.target.value},
-                    )}
-                  />
-                </label> : null}
-              </>}
-            </div>
-          </details>;
-        })}
+      <div className={styles.progressSummary} aria-label={copy.added(addedCount, STRATEGIC_EVIDENCE_DEFINITIONS.length)}>
+        <strong>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</strong>
+        <span>{copy.modules}</span>
       </div>
     </div>
-  </details>;
+
+    <label className={styles.mobileChooser}>
+      <span>{copy.chooseModule}</span>
+      <select
+        value={activeDefinition.moduleId}
+        disabled={disabled}
+        onChange={(event) => setActiveModuleId(event.target.value)}
+      >
+        {STRATEGIC_EVIDENCE_DEFINITIONS.map((definition) => (
+          <option value={definition.moduleId} key={definition.moduleId}>
+            {definition.label[locale]} — {statusLabel(moduleCompleteness(definition, value[definition.moduleId]), locale)}
+          </option>
+        ))}
+      </select>
+    </label>
+
+    <div className={styles.evidenceWorkspace}>
+      <nav className={styles.moduleList} aria-label={copy.modules}>
+        {STRATEGIC_EVIDENCE_DEFINITIONS.map((definition) => {
+          const status = moduleCompleteness(definition, value[definition.moduleId]);
+          const active = definition.moduleId === activeDefinition.moduleId;
+          return <button
+            type="button"
+            className={`${styles.moduleButton} ${active ? styles.moduleButtonActive : ""}`}
+            aria-pressed={active}
+            disabled={disabled}
+            onClick={() => setActiveModuleId(definition.moduleId)}
+            key={definition.moduleId}
+          >
+            <span className={`${styles.statusDot} ${statusClass(status)}`} aria-hidden="true" />
+            <span className={styles.moduleButtonCopy}>
+              <strong>{definition.label[locale]}</strong>
+              <small>{statusLabel(status, locale)}</small>
+            </span>
+          </button>;
+        })}
+      </nav>
+
+      <article className={styles.moduleEditor} aria-labelledby={`strategic-evidence-${activeDefinition.moduleId}`}>
+        <header className={styles.moduleEditorHead}>
+          <div>
+            <span className={styles.selectedLabel}>{copy.selected}</span>
+            <h4 id={`strategic-evidence-${activeDefinition.moduleId}`}>{activeDefinition.label[locale]}</h4>
+            <p>{activeDefinition.description[locale]}</p>
+          </div>
+          <span className={`${styles.statusBadge} ${statusClass(activeStatus)}`}>{statusLabel(activeStatus, locale)}</span>
+        </header>
+
+        {!activeModule ? <div className={styles.emptyModule}>
+          <div>
+            <strong>{copy.emptyTitle}</strong>
+            <p>{copy.emptyBody}</p>
+          </div>
+          <div className={styles.emptyActions}>
+            <button type="button" className={styles.primaryAction} disabled={disabled} onClick={() => addModule(false)}>
+              {copy.addEvidence}
+            </button>
+            <button type="button" className={styles.secondaryAction} disabled={disabled} onClick={() => addModule(true)}>
+              {copy.excludeModule}
+            </button>
+          </div>
+        </div> : <div className={styles.evidenceModuleBody}>
+          <div className={styles.metadataGrid}>
+            <label>{copy.reviewer}
+              <input
+                value={activeModule.reviewer}
+                disabled={disabled}
+                onChange={(event) => setModule(
+                  activeDefinition.moduleId,
+                  {...activeModule, reviewer: event.target.value},
+                )}
+              />
+            </label>
+            <label>{copy.observed}
+              <input
+                type="datetime-local"
+                value={activeModule.observed_at}
+                disabled={disabled}
+                onChange={(event) => setModule(
+                  activeDefinition.moduleId,
+                  {...activeModule, observed_at: event.target.value},
+                )}
+              />
+            </label>
+            <label>{copy.source}
+              <input
+                value={activeModule.source_reference}
+                disabled={disabled}
+                placeholder="evidence://..."
+                onChange={(event) => setModule(
+                  activeDefinition.moduleId,
+                  {...activeModule, source_reference: event.target.value},
+                )}
+              />
+            </label>
+          </div>
+
+          {activeModule.excluded ? <label className={styles.evidenceTextareaLabel}>
+            <span>{copy.exclusion}</span>
+            <textarea
+              rows={4}
+              value={activeModule.exclusion_rationale}
+              disabled={disabled}
+              onChange={(event) => setModule(
+                activeDefinition.moduleId,
+                {...activeModule, exclusion_rationale: event.target.value},
+              )}
+            />
+          </label> : <div className={styles.requiredEvidence}>
+            {activeDefinition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+              <span>{copy.field(field)}</span>
+              <small>{copy.onePerLine}</small>
+              <textarea
+                rows={4}
+                value={(activeModule.evidence[field] || []).join("\n")}
+                disabled={disabled}
+                onChange={(event) => setModule(activeDefinition.moduleId, {
+                  ...activeModule,
+                  evidence: {
+                    ...activeModule.evidence,
+                    [field]: evidenceLines(event.target.value),
+                  },
+                })}
+              />
+            </label>)}
+          </div>}
+
+          <footer className={styles.moduleActions}>
+            <button
+              type="button"
+              className={styles.secondaryAction}
+              disabled={disabled}
+              onClick={() => setModule(activeDefinition.moduleId, {
+                ...activeModule,
+                excluded: !activeModule.excluded,
+              })}
+            >
+              {activeModule.excluded ? copy.includeInstead : copy.excludeModule}
+            </button>
+            <button
+              type="button"
+              className={styles.removeAction}
+              disabled={disabled}
+              onClick={() => setModule(activeDefinition.moduleId, null)}
+            >
+              {copy.removeModule}
+            </button>
+          </footer>
+        </div>}
+      </article>
+    </div>
+  </section>;
 }
