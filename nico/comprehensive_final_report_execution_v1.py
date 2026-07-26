@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
@@ -9,8 +10,8 @@ from fastapi import FastAPI
 
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
-VERSION = "nico.comprehensive_final_report_execution.v3"
-_MARKER = "__nico_comprehensive_final_report_execution_v3__"
+VERSION = "nico.comprehensive_final_report_execution.v4"
+_MARKER = "__nico_comprehensive_final_report_execution_v4__"
 
 
 def _text(value: Any, limit: int = 1600) -> str:
@@ -31,6 +32,64 @@ def _decode_pdf(package: dict[str, Any]) -> bytes:
         return base64.b64decode(encoded, validate=True)
     except Exception:
         return b""
+
+
+def _pdf_is_parseable(package: dict[str, Any]) -> bool:
+    pdf = _decode_pdf(package)
+    if not pdf.startswith(b"%PDF"):
+        return False
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(pdf))
+        return bool(reader.pages)
+    except Exception:
+        return False
+
+
+def _apply_local_finality(result: dict[str, Any]) -> dict[str, Any]:
+    """Finalize the exact generated package without mutating global report builders.
+
+    Production report generation previously returned a valid PDF whose cover still said
+    "Draft only" even though the strict cross-format verifier required final-report,
+    pending-human-approval semantics. Apply the established semantic finalizer to this
+    one provider result only. Synthetic or malformed PDFs remain untouched so readiness
+    continues to fail closed at the existing artifact boundary.
+    """
+
+    package = _package(result)
+    if not _pdf_is_parseable(package):
+        output = dict(result)
+        output["local_finality"] = {
+            "status": "skipped",
+            "version": VERSION,
+            "reason": "generated_pdf_not_parseable",
+            "global_report_builder_mutated": False,
+        }
+        return output
+
+    from nico.comprehensive_final_report_semantics_v47 import (
+        VERSION as FINALITY_VERSION,
+        finalize_comprehensive_report_result,
+    )
+
+    output = finalize_comprehensive_report_result(result)
+    output["local_finality"] = {
+        "status": "complete"
+        if output.get("report_finality") == "final"
+        and output.get("approval_status") == "pending_human_approval"
+        and output.get("delivery_status") == "blocked_pending_human_approval"
+        else "blocked",
+        "version": VERSION,
+        "semantic_finality_version": FINALITY_VERSION,
+        "report_finality": output.get("report_finality"),
+        "approval_status": output.get("approval_status"),
+        "delivery_status": output.get("delivery_status"),
+        "global_report_builder_mutated": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+    return output
 
 
 def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -160,9 +219,13 @@ def wrap_final_report_provider(
     @wraps(provider)
     def wrapped(context: dict[str, Any]) -> dict[str, Any]:
         report_context, score_truth = _canonical_final_report_context(context)
-        result = provider(report_context)
-        if not isinstance(result, dict):
-            return result
+        provider_result = provider(report_context)
+        if not isinstance(provider_result, dict):
+            return provider_result
+
+        source_status = _text(provider_result.get("status") or "blocked", 80).lower()
+        source_reason = _text(provider_result.get("reason") or "")
+        result = _apply_local_finality(provider_result)
         result["final_report_input_score_truth"] = score_truth
         readiness = final_report_execution_readiness(result)
         result["final_report_execution_readiness"] = readiness
@@ -172,8 +235,8 @@ def wrap_final_report_provider(
         if readiness["artifacts_ready"] is not True:
             return result
 
-        original_status = readiness["original_status"]
-        original_reason = readiness["original_reason"] or "final_report_requires_human_review"
+        original_status = source_status or readiness["original_status"]
+        original_reason = source_reason or readiness["original_reason"] or "final_report_requires_human_review"
         output = dict(result)
         output.update(
             {
@@ -221,7 +284,7 @@ def wrap_final_report_provider(
 
 
 def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, Any]:
-    """Bind synchronized final report execution and fail-closed verification."""
+    """Bind synchronized local finality and fail-closed cross-format verification."""
 
     from nico.comprehensive_cross_format_finality_v49 import (
         VERSION as CROSS_FORMAT_VERSION,
@@ -272,6 +335,8 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
         "cross_format_contract_schema": CROSS_FORMAT_VERSION,
         "canonical_score_parity_required": True,
         "canonical_score_synchronized_before_render": True,
+        "local_finality_applied_after_render": True,
+        "pdf_finality_semantics_required": True,
         "failed_checks_exposed": True,
         "global_report_builder_mutated": False,
         "valid_final_artifacts_complete_execution": True,
@@ -283,6 +348,7 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
 
 __all__ = [
     "VERSION",
+    "_apply_local_finality",
     "_canonical_final_report_context",
     "final_report_execution_readiness",
     "install_comprehensive_final_report_execution",
