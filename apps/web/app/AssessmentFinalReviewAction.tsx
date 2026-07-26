@@ -3,18 +3,26 @@
 import {useEffect} from "react";
 
 const CONTEXT_PREFIX = "nico:review-context:";
+const SUCCESS_STATUSES = new Set(["complete", "completed", "passed", "verified", "review_required"]);
 
 type ReviewContext = {
   run_id: string;
   service: "express" | "comprehensive";
   customer_id: string;
   project_id: string;
+  review_ready: boolean;
+  cross_format_status: string;
+  cross_format_failed_checks: string[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function normalizedStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
 
 function serviceFrom(value: Record<string, unknown>): "express" | "comprehensive" {
@@ -24,14 +32,49 @@ function serviceFrom(value: Record<string, unknown>): "express" | "comprehensive
     : "express";
 }
 
+function stageResults(value: Record<string, unknown>): Record<string, unknown> {
+  const direct = asRecord(value.stage_results);
+  if (Object.keys(direct).length) return direct;
+  return asRecord(asRecord(value.record).stage_results);
+}
+
+export function finalReviewReadiness(value: Record<string, unknown>): {
+  ready: boolean;
+  status: string;
+  failedChecks: string[];
+} {
+  if (serviceFrom(value) !== "comprehensive") {
+    return {ready: true, status: "legacy", failedChecks: []};
+  }
+  const stage = asRecord(stageResults(value).cross_format_truth_verification);
+  const status = normalizedStatus(stage.status);
+  const failedChecks = Array.isArray(stage.failed_checks)
+    ? stage.failed_checks.map((item) => String(item)).filter(Boolean)
+    : [];
+  const passed = SUCCESS_STATUSES.has(status) && failedChecks.length === 0;
+  const runStatus = normalizedStatus(value.status || asRecord(value.record).status);
+  const reviewRequired = runStatus === "review_required" || runStatus === "approved";
+  const deliveryBlocked = value.client_delivery_allowed !== true
+    && asRecord(value.record).client_delivery_allowed !== true;
+  return {
+    ready: passed && reviewRequired && deliveryBlocked,
+    status: status || "missing",
+    failedChecks,
+  };
+}
+
 function storeContext(value: Record<string, unknown>): void {
   const runId = String(value.run_id || asRecord(value.record).run_id || "").trim();
   if (!runId) return;
+  const readiness = finalReviewReadiness(value);
   const context: ReviewContext = {
     run_id: runId,
     service: serviceFrom(value),
     customer_id: String(value.customer_id || asRecord(value.record).customer_id || "default_customer"),
     project_id: String(value.project_id || asRecord(value.record).project_id || "default_project"),
+    review_ready: readiness.ready,
+    cross_format_status: readiness.status,
+    cross_format_failed_checks: readiness.failedChecks,
   };
   try {
     window.sessionStorage.setItem(`${CONTEXT_PREFIX}${runId}`, JSON.stringify(context));
@@ -49,6 +92,11 @@ function contextFor(runId: string): ReviewContext {
         service: stored.service === "comprehensive" ? "comprehensive" : "express",
         customer_id: stored.customer_id || "default_customer",
         project_id: stored.project_id || "default_project",
+        review_ready: stored.review_ready === true,
+        cross_format_status: stored.cross_format_status || "missing",
+        cross_format_failed_checks: Array.isArray(stored.cross_format_failed_checks)
+          ? stored.cross_format_failed_checks.map((item) => String(item))
+          : [],
       };
     }
   } catch {
@@ -60,6 +108,9 @@ function contextFor(runId: string): ReviewContext {
     service: tier === "comprehensive" || runId.startsWith("comprun_") ? "comprehensive" : "express",
     customer_id: "default_customer",
     project_id: "default_project",
+    review_ready: false,
+    cross_format_status: "missing",
+    cross_format_failed_checks: [],
   };
 }
 
@@ -77,15 +128,31 @@ function reportExists(container: HTMLElement): boolean {
     .some((button) => !button.disabled && /markdown|pdf|informe/i.test(button.textContent || ""));
 }
 
+function removeReviewAction(actions: HTMLElement | null): void {
+  actions?.querySelector<HTMLElement>("[data-nico-final-review-action='true']")?.remove();
+}
+
 function installAction(): void {
   if (!window.location.pathname.startsWith("/assessment") && !window.location.pathname.startsWith("/es/assessment")) return;
   const actions = document.querySelector<HTMLElement>(".report-actions");
-  if (!actions || !reportExists(actions)) return;
   const runId = visibleRunId();
-  if (!runId) return;
+  if (!actions || !runId || !reportExists(actions)) {
+    removeReviewAction(actions);
+    return;
+  }
 
   const existing = actions.querySelector<HTMLAnchorElement>("[data-nico-final-review-action='true']");
   const context = contextFor(runId);
+  if (context.service === "comprehensive" && !context.review_ready) {
+    existing?.remove();
+    actions.dataset.nicoReviewGate = "blocked";
+    actions.dataset.nicoCrossFormatStatus = context.cross_format_status;
+    actions.dataset.nicoCrossFormatFailedChecks = context.cross_format_failed_checks.join(",");
+    return;
+  }
+
+  actions.dataset.nicoReviewGate = "ready";
+  delete actions.dataset.nicoCrossFormatFailedChecks;
   const spanish = window.location.pathname.startsWith("/es/") || document.documentElement.lang.toLowerCase().startsWith("es");
   const query = new URLSearchParams({
     service: context.service,
