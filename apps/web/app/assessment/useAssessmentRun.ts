@@ -52,8 +52,24 @@ export type AssessmentRunController = {
   retry: () => Promise<void>;
 };
 
+type PersistedRun = {
+  version: 1;
+  runId: string;
+  repository: string;
+  client: string;
+  project: string;
+  customerId: string;
+  projectId: string;
+  startedAt: number;
+  locale: Locale;
+};
+
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
+const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
+const ACTIVE_RUN_QUERY_KEY = "run_id";
+const BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection";
+const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const PERSISTENCE_BLOCK_CODES = new Set([
   "comprehensive_durable_storage_required",
   "comprehensive_sqlite_persistent_volume_required",
@@ -67,6 +83,13 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
   "assessment_invalid_json",
 ]);
 
+function browserHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  headers.set(BROWSER_PROJECTION_HEADER, BROWSER_PROJECTION_VALUE);
+  return headers;
+}
+
 async function requestWithRetry(
   path: string,
   init: RequestInit,
@@ -77,7 +100,11 @@ async function requestWithRetry(
     const delay = CLIENT_RETRY_DELAYS_MS[attempt];
     if (delay) await wait(delay);
     try {
-      const response = await fetch(apiUrl(path), {...init, cache: "no-store"});
+      const response = await fetch(apiUrl(path), {
+        ...init,
+        headers: browserHeaders(init.headers),
+        cache: "no-store",
+      });
       if (TRANSIENT_STATUS.has(response.status) && attempt < CLIENT_RETRY_DELAYS_MS.length - 1) {
         await response.arrayBuffer();
         continue;
@@ -153,6 +180,63 @@ function issueFor(
   };
 }
 
+function normalizePersistedRun(value: unknown): PersistedRun | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const runId = String(record.runId || "").trim();
+  if (!runId) return null;
+  const startedAt = Number(record.startedAt);
+  return {
+    version: 1,
+    runId,
+    repository: String(record.repository || ""),
+    client: String(record.client || ""),
+    project: String(record.project || ""),
+    customerId: String(record.customerId || "default_customer"),
+    projectId: String(record.projectId || "default_project"),
+    startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now(),
+    locale: record.locale === "es-MX" ? "es-MX" : "en",
+  };
+}
+
+function readPersistedRun(): PersistedRun | null {
+  if (typeof window === "undefined") return null;
+  let stored: PersistedRun | null = null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    stored = raw ? normalizePersistedRun(JSON.parse(raw)) : null;
+  } catch {
+    stored = null;
+  }
+  const urlRunId = new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
+  if (!urlRunId) return stored;
+  if (stored?.runId === urlRunId) return stored;
+  return {
+    version: 1,
+    runId: urlRunId,
+    repository: stored?.repository || "",
+    client: stored?.client || "",
+    project: stored?.project || "",
+    customerId: stored?.customerId || "default_customer",
+    projectId: stored?.projectId || "default_project",
+    startedAt: stored?.startedAt || Date.now(),
+    locale: stored?.locale || "en",
+  };
+}
+
+function writePersistedRun(value: PersistedRun): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // The URL remains the recovery source when browser storage is unavailable.
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set("tier", "comprehensive");
+  url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const copy = copyFor(locale);
   const service: Service = "comprehensive";
@@ -170,6 +254,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const [started, setStarted] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const sequence = useRef(0);
+  const bootstrapped = useRef(false);
+  const recoveryInFlight = useRef(false);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -178,7 +264,31 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       url.searchParams.set("tier", "comprehensive");
       window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
     }
-    return () => { sequence.current += 1; };
+
+    if (!bootstrapped.current) {
+      bootstrapped.current = true;
+      const persisted = readPersistedRun();
+      if (persisted) {
+        setRepository(persisted.repository);
+        setClient(persisted.client);
+        setProject(persisted.project);
+        setAuthorized(true);
+        void resumePersistedRun(persisted);
+      }
+    }
+
+    const restoreAfterPageResume = () => {
+      const persisted = readPersistedRun();
+      if (!persisted || recoveryInFlight.current) return;
+      void resumePersistedRun(persisted);
+    };
+    window.addEventListener("pageshow", restoreAfterPageResume);
+    window.addEventListener("online", restoreAfterPageResume);
+    return () => {
+      window.removeEventListener("pageshow", restoreAfterPageResume);
+      window.removeEventListener("online", restoreAfterPageResume);
+      sequence.current += 1;
+    };
   }, [locale]);
 
   useEffect(() => {
@@ -198,10 +308,33 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
   }
 
+  function persistedScope(value: PersistedRun): Scope {
+    return {
+      customerId: value.customerId || "default_customer",
+      projectId: value.projectId || "default_project",
+    };
+  }
+
+  function persistExactRun(runResult: Result, scope: Scope, startedAt: number): void {
+    const runId = String(runResult.run_id || "").trim();
+    if (!runId) return;
+    writePersistedRun({
+      version: 1,
+      runId,
+      repository: String(runResult.repository || repository || ""),
+      client,
+      project,
+      customerId: String(runResult.customer_id || scope.customerId || "default_customer"),
+      projectId: String(runResult.project_id || scope.projectId || "default_project"),
+      startedAt,
+      locale,
+    });
+  }
+
   async function verifyRuntimePersistence(): Promise<void> {
     const diagnostics = await requestWithRetry(
       "/diagnostics/comprehensive-runtime",
-      {method: "GET", headers: {Accept: "application/json"}},
+      {method: "GET"},
       copy,
     );
     const replacementSafe = diagnostics.survives_container_replacement_verified === true
@@ -220,7 +353,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     try {
       return await requestWithRetry(
         `/assessment/comprehensive-run/${encodeURIComponent(runId)}`,
-        {method: "GET", headers: {Accept: "application/json"}},
+        {method: "GET"},
         copy,
       );
     } catch {
@@ -228,11 +361,11 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
   }
 
-  async function continueRun(initial: Result, scope: Scope, token: number): Promise<void> {
-    void scope;
+  async function continueRun(initial: Result, scope: Scope, token: number, startedAt = Date.now()): Promise<void> {
     let current = initial;
     for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
       if (token !== sequence.current) return;
+      persistExactRun(current, scope, startedAt);
       setResult(current);
       const stable = terminal(service, current);
       if (stable) {
@@ -274,6 +407,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
       await wait(POLL_INTERVAL_MS);
     }
+    persistExactRun(current, scope, startedAt);
     setResult(current);
     setPhase("timed_out");
     setStarted(null);
@@ -287,6 +421,49 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setIssue(normalized);
     setError("");
     setMessage("");
+  }
+
+  async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
+    if (recoveryInFlight.current) return;
+    recoveryInFlight.current = true;
+    const token = sequence.current + 1;
+    sequence.current = token;
+    const scope = persistedScope(persisted);
+    setPhase("checking");
+    setIssue(null);
+    setError("");
+    setMessage(copy.readinessCheckingMessage);
+    setStarted(persisted.startedAt);
+    setResult({
+      run_id: persisted.runId,
+      repository: persisted.repository,
+      customer_id: persisted.customerId,
+      project_id: persisted.projectId,
+      status: "running",
+    });
+    try {
+      const recovered = await requestWithRetry(
+        `/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`,
+        {method: "GET"},
+        copy,
+      );
+      if (token !== sequence.current) return;
+      persistExactRun(recovered, scope, persisted.startedAt);
+      setResult(recovered);
+      const stable = terminal(service, recovered);
+      if (stable) {
+        setPhase(stable);
+        setStarted(null);
+        setMessage(stable === "review_required" ? copy.comprehensiveReview : copy.stopped);
+        return;
+      }
+      await continueRun(recovered, scope, token, persisted.startedAt);
+    } catch (caught) {
+      if (token !== sequence.current) return;
+      applyIssue(caught, true);
+    } finally {
+      recoveryInFlight.current = false;
+    }
   }
 
   async function run(): Promise<void> {
@@ -324,12 +501,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
 
     let acceptedRun: Result | null = null;
+    const startedAt = Date.now();
     try {
       await verifyRuntimePersistence();
       if (token !== sequence.current) return;
       setPhase("starting");
       setMessage(`${copy.phases.starting}: ${copy.service.label}`);
-      setStarted(Date.now());
+      setStarted(startedAt);
       const data = await requestWithRetry(
         "/assessment/comprehensive-intake",
         {
@@ -341,43 +519,38 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       );
       acceptedRun = data;
       if (token !== sequence.current) return;
+      persistExactRun(data, scope, startedAt);
       setResult(data);
-      await continueRun(data, scope, token);
+      await continueRun(data, scope, token, startedAt);
     } catch (caught) {
       if (token !== sequence.current) return;
       const runCreated = Boolean(acceptedRun?.run_id);
       applyIssue(caught, runCreated);
-      if (acceptedRun) setResult(acceptedRun);
+      if (acceptedRun) {
+        persistExactRun(acceptedRun, scope, startedAt);
+        setResult(acceptedRun);
+      }
     }
   }
 
   async function retry(): Promise<void> {
-    const runId = String(result?.run_id || "").trim();
+    const persisted = readPersistedRun();
+    const runId = String(result?.run_id || persisted?.runId || "").trim();
     if (!runId) {
       await run();
       return;
     }
-
-    const token = sequence.current + 1;
-    sequence.current = token;
-    setPhase("checking");
-    setIssue(null);
-    setError("");
-    setMessage(copy.readinessCheckingMessage);
-    setStarted(Date.now());
-    try {
-      const recovered = await requestWithRetry(
-        `/assessment/comprehensive-run/${encodeURIComponent(runId)}`,
-        {method: "GET", headers: {Accept: "application/json"}},
-        copy,
-      );
-      if (token !== sequence.current) return;
-      setResult(recovered);
-      await continueRun(recovered, currentScope(), token);
-    } catch (caught) {
-      if (token !== sequence.current) return;
-      applyIssue(caught, true);
-    }
+    await resumePersistedRun(persisted || {
+      version: 1,
+      runId,
+      repository,
+      client,
+      project,
+      customerId: currentScope().customerId,
+      projectId: currentScope().projectId,
+      startedAt: Date.now(),
+      locale,
+    });
   }
 
   return {
