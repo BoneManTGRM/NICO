@@ -158,6 +158,11 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const maturityRawStatus = assessment?.maturity_signal?.level;
   const maturityUnavailable = String(maturityRawStatus || "").toLowerCase().includes("unavailable");
   const maturityStatus = running && (!maturityRawStatus || maturityUnavailable) ? copy.maturityAfterScoring : formatStatus(maturityRawStatus || (running ? "pending" : "not_started"), copy);
+  const preflightIssue = issue && !issue.runCreated ? issue : null;
+  const runIssue = issue && issue.runCreated ? issue : null;
+  const showStatePanel = Boolean(result?.run_id)
+    || Boolean(runIssue)
+    || ["starting", "running", "review_required", "complete", "failed", "timed_out"].includes(phase);
 
   async function copyMarkdown(): Promise<void> {
     if (!report?.markdown) return;
@@ -180,6 +185,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     data-engagement-type="comprehensive"
     data-canonical-assessment="strategic"
     data-customer-facing-assessment="comprehensive"
+    data-assessment-copy-contract="expert-engagement-v2"
     data-assessment-locale={locale}
   >
     <section className={`hero ${workspaceStyles.hero}`}>
@@ -238,6 +244,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
             type="button"
             className={`primary-button ${workspaceStyles.primaryAction}`}
             data-assessment-primary-action="true"
+            data-assessment-action-copy="create-engagement-v2"
+            aria-label={copy.run}
             disabled={!authorized || !repository.trim() || running}
             onClick={run}
           >
@@ -245,10 +253,31 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           </button>
           <p className={workspaceStyles.actionNote}>{copy.preflightNote}</p>
         </div>
+
+        {preflightIssue ? <div
+          ref={issueRef}
+          className={`${workspaceStyles.issueCard} ${workspaceStyles.inlineIssueCard} ${preflightIssue.kind === "run_failed" ? workspaceStyles.issueFailed : ""}`}
+          data-assessment-no-run-issue="true"
+          role="alert"
+          tabIndex={-1}
+        >
+          <span className={workspaceStyles.issueAccent} aria-hidden="true" />
+          <div className={workspaceStyles.issueContent}>
+            <h3>{preflightIssue.title}</h3>
+            <p>{preflightIssue.message}</p>
+            {preflightIssue.retryable ? <div className={workspaceStyles.issueActions}>
+              <button type="button" className={workspaceStyles.retryButton} onClick={retry} disabled={running}>{copy.tryAgain}</button>
+            </div> : null}
+          </div>
+        </div> : phase === "checking" && message ? <p className={workspaceStyles.inlineStatus} role="status">{message}</p> : null}
       </div>
     </section>
 
-    <section className={`section panel ${workspaceStyles.panel} ${workspaceStyles.statePanel}`} aria-live="polite">
+    {showStatePanel ? <section
+      className={`section panel ${workspaceStyles.panel} ${workspaceStyles.statePanel}`}
+      data-assessment-run-state="true"
+      aria-live="polite"
+    >
       <div className={`section-head ${workspaceStyles.stateHeader}`}>
         <div>
           <p className="eyebrow">{copy.state}</p>
@@ -257,29 +286,25 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <span className={statusClass(phase)}>{copy.phases[phase]}</span>
       </div>
 
-      {issue ? <div
+      {/* issue ? <div legacy source contract; no-run issues now remain beside the action. */}
+      {runIssue ? <div
         ref={issueRef}
-        className={`${workspaceStyles.issueCard} ${issue.kind === "run_failed" ? workspaceStyles.issueFailed : ""}`}
+        className={`${workspaceStyles.issueCard} ${runIssue.kind === "run_failed" ? workspaceStyles.issueFailed : ""}`}
         role="alert"
         tabIndex={-1}
       >
         <span className={workspaceStyles.issueAccent} aria-hidden="true" />
         <div className={workspaceStyles.issueContent}>
-          <h3>{issue.title}</h3>
-          <p>{issue.message}</p>
-          <p className={workspaceStyles.issueMeta}>{issue.runCreated ? copy.exactRunPreserved : copy.noRunCreated}</p>
-          {issue.retryable ? <div className={workspaceStyles.issueActions}>
+          <h3>{runIssue.title}</h3>
+          <p>{runIssue.message}</p>
+          <p className={workspaceStyles.issueMeta}>{copy.exactRunPreserved}</p>
+          {runIssue.retryable ? <div className={workspaceStyles.issueActions}>
             <button type="button" className={workspaceStyles.retryButton} onClick={retry} disabled={running}>{copy.tryAgain}</button>
           </div> : null}
         </div>
       </div> : null}
 
-      {!issue && message ? <p className={workspaceStyles.stateMessage}>{message}</p> : null}
-
-      {!issue && phase === "idle" && !result ? <div className={workspaceStyles.emptyState}>
-        <p className={workspaceStyles.emptyIntro}>{copy.select}</p>
-        <ol className={workspaceStyles.lifecycle}>{copy.lifecyclePreview.map((item: string) => <li key={item}>{item}</li>)}</ol>
-      </div> : null}
+      {!runIssue && message ? <p className={workspaceStyles.stateMessage}>{message}</p> : null}
 
       {running && phase !== "checking" ? <>
         <div className={styles.progressMeta}>
@@ -301,7 +326,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
         {assessment?.unavailable_data_notes?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({assessment.unavailable_data_notes.length})</summary><List items={assessment.unavailable_data_notes} empty={copy.notVerified} /></details> : null}
       </div> : null}
-    </section>
+    </section> : null}
   </main>;
 }
 
