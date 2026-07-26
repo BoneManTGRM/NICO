@@ -1,0 +1,76 @@
+/* Terminal assessment results must expand with their content on mobile.
+   The shared panel style intentionally clips decorative surfaces, but a completed
+   assessment is an unbounded document surface and must not hide report controls. */
+
+main[data-workspace="assessment"] section[data-assessment-run-state="true"],
+main[data-workspace="assessment"] section[data-assessment-run-state="true"] > div,
+main[data-workspace="assessment"] [data-assessment-report-ready] {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  contain: none;
+}
+
+main[data-workspace="assessment"] [data-assessment-report-actions="true"] {
+  position: relative;
+  z-index: 2;
+  margin: 18px 0 4px;
+}
+
+main[data-workspace="assessment"] [data-assessment-report-actions="true"][data-assessment-report-ready="true"] {
+  border-color: rgba(103, 232, 249, 0.5);
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.72), rgba(15, 23, 42, 0.9));
+  box-shadow: 0 16px 40px rgba(8, 145, 178, 0.18), inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+main[data-workspace="assessment"] details[class*="stageHistory"] {
+  margin: 18px 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.34);
+}
+
+main[data-workspace="assessment"] details[class*="stageHistory"] > summary {
+  padding: 15px 17px;
+  cursor: pointer;
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+main[data-workspace="assessment"] details[class*="stageHistory"][open] > summary {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+main[data-workspace="assessment"] details[class*="stageHistory"] > div {
+  margin: 16px;
+}
+
+@media (max-width: 760px) {
+  main[data-workspace="assessment"] section[data-assessment-run-state="true"] {
+    overflow: visible !important;
+    padding-bottom: 28px;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"] {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    padding: 14px;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"] button,
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"] a {
+    width: 100%;
+    min-height: 50px;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-report-ready="true"] .target-grid,
+  main[data-workspace="assessment"] [data-assessment-report-ready="true"] .results-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  main[data-workspace="assessment"] details[class*="stageHistory"] > div {
+    margin: 12px;
+  }
+}
