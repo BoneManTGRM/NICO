@@ -226,16 +226,29 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
 
 
 def verify_strategic_human_evidence(value: Any) -> bool:
-    """Verify that a persisted package is canonical and bound to its embedded digest."""
+    """Verify the top-level package and every embedded module digest after storage."""
 
     if not isinstance(value, Mapping):
         return False
-    source = dict(value)
-    claimed = str(source.get("human_evidence_sha256") or "")
-    if not claimed:
+    source = _safe(dict(value))
+    if not isinstance(source, dict):
         return False
-    normalized = normalize_strategic_human_evidence(source)
-    return source == normalized and claimed == normalized["human_evidence_sha256"]
+    claimed = str(source.pop("human_evidence_sha256", "") or "")
+    if not claimed or claimed != _canonical_hash(source):
+        return False
+    modules = source.get("modules")
+    if not isinstance(modules, Mapping) or set(modules) != set(MODULES):
+        return False
+    for module_id, raw in modules.items():
+        if not isinstance(raw, Mapping) or str(raw.get("module_id") or "") != str(module_id):
+            return False
+        module = _safe(dict(raw))
+        if not isinstance(module, dict):
+            return False
+        module_claimed = str(module.pop("module_sha256", "") or "")
+        if not module_claimed or module_claimed != _canonical_hash(module):
+            return False
+    return True
 
 
 def human_evidence_module(package: Any, module_id: str) -> dict[str, Any]:
