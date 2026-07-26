@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from typing import Any
 
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.report_identity.v4"
+VERSION = "nico.unified_production_acceptance.hydrated_release_identity.v5"
 ASSESSMENT_WORKSPACE_SELECTOR = (
     'main[data-workspace="assessment"]'
     '[data-engagement-type="comprehensive"]'
@@ -15,6 +17,8 @@ ASSESSMENT_WORKSPACE_SELECTOR = (
 )
 ASSESSMENT_RUN_SELECTOR = '[data-assessment-primary-action="true"]'
 ASSESSMENT_AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
+CLIENT_COPY_CONTRACT = "expert-engagement-hydrated-v1"
+HYDRATION_TIMEOUT_SECONDS = 30.0
 PUBLIC_RUN_LABELS = {
     "en": "Create engagement and capture repository snapshot",
     "es-MX": "Crear encargo y capturar instantánea del repositorio",
@@ -97,22 +101,96 @@ def verify_retired_tier_selector(workspace: Any, locale: str) -> dict[str, bool]
     }
 
 
+def hydrated_workspace_matches(snapshot: dict[str, Any], *, locale: str, expected_sha: str) -> bool:
+    return bool(
+        snapshot.get("hydrated") == "true"
+        and snapshot.get("client_copy_contract") == CLIENT_COPY_CONTRACT
+        and snapshot.get("client_release_sha") == expected_sha
+        and snapshot.get("client_copy_verified") == "true"
+        and snapshot.get("observed_action") == PUBLIC_RUN_LABELS[locale]
+        and snapshot.get("observed_heading") == PUBLIC_HEADINGS[locale]
+    )
+
+
+def _hydrated_workspace_snapshot(page: Any) -> dict[str, str]:
+    value = page.evaluate(
+        """selector => {
+          const workspace = document.querySelector(selector);
+          const action = workspace?.querySelector('[data-assessment-primary-action="true"]');
+          const heading = workspace?.querySelector('#assessment .section-head h2');
+          const compact = value => String(value || '').replace(/\s+/g, ' ').trim();
+          return {
+            hydrated: workspace?.getAttribute('data-assessment-hydrated') || 'missing',
+            client_copy_contract: workspace?.getAttribute('data-assessment-client-copy-contract') || 'missing',
+            client_release_sha: workspace?.getAttribute('data-assessment-client-release-sha') || 'missing',
+            client_copy_verified: workspace?.getAttribute('data-assessment-client-copy-verified') || 'missing',
+            observed_action: compact(action?.textContent),
+            observed_heading: compact(heading?.textContent),
+            source_copy_contract: workspace?.getAttribute('data-assessment-copy-contract') || 'missing',
+            page_url: window.location.href,
+          };
+        }""",
+        ASSESSMENT_WORKSPACE_SELECTOR,
+    )
+    if not isinstance(value, dict):
+        return {"error": "hydrated_workspace_snapshot_not_object"}
+    return {str(key): str(item or "") for key, item in value.items()}
+
+
+def wait_for_hydrated_workspace(page: Any, *, locale: str, expected_sha: str) -> dict[str, str]:
+    deadline = time.monotonic() + HYDRATION_TIMEOUT_SECONDS
+    last: dict[str, str] = {}
+    while time.monotonic() < deadline:
+        last = _hydrated_workspace_snapshot(page)
+        if hydrated_workspace_matches(last, locale=locale, expected_sha=expected_sha):
+            return last
+        page.wait_for_timeout(250)
+    raise AssertionError(
+        f"{locale} hydrated frontend release contract did not converge: "
+        + json.dumps(
+            {
+                "expected_sha": expected_sha,
+                "expected_client_copy_contract": CLIENT_COPY_CONTRACT,
+                "expected_action": PUBLIC_RUN_LABELS[locale],
+                "expected_heading": PUBLIC_HEADINGS[locale],
+                "observed": last,
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def verify_unified_language_parity(browser: Any, config: Any) -> dict[str, Any]:
     results: dict[str, Any] = {}
     for locale, path in (
-        ("en", "/assessment?tier=comprehensive#assessment"),
-        ("es-MX", "/es/assessment?tier=comprehensive#assessment"),
+        ("en", "/assessment?tier=comprehensive"),
+        ("es-MX", "/es/assessment?tier=comprehensive"),
     ):
-        context = browser.new_context(viewport={"width": 390, "height": 844}, locale=locale)
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            locale=locale,
+            service_workers="block",
+            extra_http_headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "CDN-Cache-Control": "no-store",
+                "Vercel-CDN-Cache-Control": "no-store",
+            },
+        )
         page = context.new_page()
         try:
             page.goto(
-                config.frontend_origin + path,
+                config.frontend_origin + path + f"&nico_browser_probe={time.time_ns()}#assessment",
                 wait_until="domcontentloaded",
                 timeout=config.navigation_timeout_ms,
             )
             workspace = page.locator(ASSESSMENT_WORKSPACE_SELECTOR).first
             workspace.wait_for(state="visible", timeout=config.navigation_timeout_ms)
+            hydration_evidence = wait_for_hydrated_workspace(
+                page,
+                locale=locale,
+                expected_sha=config.expected_sha,
+            )
             selector_evidence = verify_retired_tier_selector(workspace, locale)
 
             run_button = workspace.locator(ASSESSMENT_RUN_SELECTOR).first
@@ -141,6 +219,8 @@ def verify_unified_language_parity(browser: Any, config: Any) -> dict[str, Any]:
                 "canonical_assessment": "strategic",
                 "execution_service": "comprehensive",
                 **selector_evidence,
+                "hydrated_release_verified": True,
+                "hydration": hydration_evidence,
                 "run_label": run_label,
                 "heading": heading,
                 "screenshot": screenshot.as_posix(),
