@@ -225,6 +225,19 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
     return package
 
 
+def verify_strategic_human_evidence(value: Any) -> bool:
+    """Verify that a persisted package is canonical and bound to its embedded digest."""
+
+    if not isinstance(value, Mapping):
+        return False
+    source = dict(value)
+    claimed = str(source.get("human_evidence_sha256") or "")
+    if not claimed:
+        return False
+    normalized = normalize_strategic_human_evidence(source)
+    return source == normalized and claimed == normalized["human_evidence_sha256"]
+
+
 def human_evidence_module(package: Any, module_id: str) -> dict[str, Any]:
     if module_id not in MODULES:
         raise KeyError(f"unknown_human_evidence_module:{module_id}")
@@ -262,4 +275,5 @@ __all__ = [
     "decision_grade_stage_payload",
     "human_evidence_module",
     "normalize_strategic_human_evidence",
+    "verify_strategic_human_evidence",
 ]
