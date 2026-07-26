@@ -121,7 +121,7 @@ def _normalize_module(module_id: str, raw: Any) -> dict[str, Any]:
     }
     present_metadata = [field for field, item in metadata.items() if _present(item)]
     missing_metadata = [field for field in _REQUIRED_METADATA if field not in present_metadata]
-    has_content = bool(evidence or present_metadata or exclusion_rationale)
+    has_content = bool(evidence or present_metadata or exclusion_rationale or excluded)
 
     if excluded and exclusion_rationale:
         status = "excluded"
@@ -208,7 +208,6 @@ def normalize_strategic_human_evidence(value: Any) -> dict[str, Any]:
         "partial_modules": partial,
         "not_assessed_modules": not_assessed,
         "excluded_modules": excluded,
-        # Compatibility projection used by the bounded lifecycle response.
         "provided_module_ids": active,
         "human_statement_count": 0,
         "attachment_reference_count": sum(
