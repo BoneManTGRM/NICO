@@ -38,9 +38,11 @@ def test_shared_catalog_contains_one_comprehensive_assessment() -> None:
     rendered = WORKSPACE.read_text(encoding="utf-8").split("return <main", 1)[1]
 
     assert 'const service: Service = "comprehensive"' in source
-    assert 'data-assessment-service-count="1"' in rendered
+    assert 'data-workspace="assessment"' in rendered
+    assert 'data-engagement-type="comprehensive"' in rendered
+    assert 'data-assessment-service-count' not in rendered
     assert 'data-customer-facing-assessment="comprehensive"' in rendered
-    assert 'EVALUACIÓN INTEGRAL NICO' in source
+    assert 'EVALUACIÓN TÉCNICA Y ASESORÍA DE INGENIERÍA' in source
     assert 'EVALUACIÓN INTERMEDIA' not in source
     assert 'EVALUACIÓN COMPLETA' not in source
 
@@ -48,13 +50,13 @@ def test_shared_catalog_contains_one_comprehensive_assessment() -> None:
 def test_spanish_catalog_covers_primary_assessment_controls() -> None:
     source = shared_source()
     required = (
-        "EVALUACIÓN INTEGRAL NICO",
-        "Ejecutar evaluación NICO",
+        "EVALUACIÓN TÉCNICA Y ASESORÍA DE INGENIERÍA",
+        "Crear encargo y capturar instantánea del repositorio",
         "Propietario/nombre del repositorio o URL de GitHub",
-        "Se requiere revisión humana",
+        "Se requiere revisión experta",
         "Descargar PDF final",
-        "El informe final está completo",
-        "no es necesario rehacer el informe",
+        "El análisis automatizado terminó.",
+        "debe revisar y aprobar esta edición exacta",
     )
     for text in required:
         assert text in source
