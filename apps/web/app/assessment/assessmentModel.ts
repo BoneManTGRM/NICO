@@ -122,12 +122,16 @@ export function terminal(_service: Service, result: Result): Phase | null {
 
 export function progressFor(_service: Service, result: Result | null): ProgressItem[] {
   if (!result) return [];
-  return Object.entries(result.record?.stage_results || {}).map(([stepId, value]) => ({
-    step: stepId,
-    status: value.status,
-    message: value.message || value.summary,
-    evidence: value.evidence && !Array.isArray(value.evidence) ? value.evidence : undefined,
-  }));
+  return Object.entries(result.record?.stage_results || {}).map(([stepId, value]) => {
+    const normalizedStatus = String(value.status || "").toLowerCase().replace(/[\s-]+/g, "_");
+    const completed = ["complete", "completed", "success", "passed", "verified"].includes(normalizedStatus);
+    return {
+      step: stepId,
+      status: value.status,
+      message: value.message || value.summary || (completed ? "✓" : undefined),
+      evidence: value.evidence && !Array.isArray(value.evidence) ? value.evidence : undefined,
+    };
+  });
 }
 
 export function progressPercent(phase: Phase, result: Result | null, running: boolean): number {
