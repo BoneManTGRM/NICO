@@ -50,6 +50,7 @@ COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && python -c "import psycopg; assert psycopg.pq.__impl__ == 'binary', psycopg.pq.__impl__" \
     && pip install --no-cache-dir coverage \
     && python -m venv "$NICO_SEMGREP_HOME" \
     && "$NICO_SEMGREP_HOME/bin/python" -m pip install --upgrade pip \
