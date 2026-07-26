@@ -153,7 +153,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const scannerRawStatus = scannerStatusFor(service, result, running);
   const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");
   const scannerStatus = running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);
-  const reportStatus = report?.markdown || report?.html || report?.pdf_base64 ? copy.phases.complete : running ? copy.awaitingScanner : copy.awaitingStage;
+  const reportReady = Boolean(report?.markdown || report?.html || report?.pdf_base64);
+  const reportStatus = reportReady ? copy.phases.complete : running ? copy.awaitingScanner : copy.awaitingStage;
   const reviewStatus = phase === "review_required" ? copy.phases.review_required : running ? copy.reviewAfterReport : copy.awaitingStage;
   const maturityRawStatus = assessment?.maturity_signal?.level;
   const maturityUnavailable = String(maturityRawStatus || "").toLowerCase().includes("unavailable");
@@ -163,6 +164,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const showStatePanel = Boolean(result?.run_id)
     || Boolean(runIssue)
     || ["starting", "running", "review_required", "complete", "failed", "timed_out"].includes(phase);
+  const stageHistoryLabel = locale === "es-MX"
+    ? `Ver historial de etapas automatizadas (${progressItems.length})`
+    : `View automated stage history (${progressItems.length})`;
 
   async function copyMarkdown(): Promise<void> {
     if (!report?.markdown) return;
@@ -173,10 +177,10 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
 
   function downloadPdf(): void {
     if (!report?.pdf_base64) {
-      setError(report?.pdf_error || copy.pdfMissing);
+      setError(String(report?.pdf_error || copy.pdfMissing));
       return;
     }
-    savePdf(report.pdf_base64, report.pdf_filename || "nico-comprehensive-assessment.pdf");
+    savePdf(String(report.pdf_base64), String(report.pdf_filename || "nico-comprehensive-assessment.pdf"));
   }
 
   return <main
@@ -316,14 +320,14 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <div className={styles.progressBar} role="progressbar" aria-label={`${copy.stageLabels[stageId] || stageId || copy.phases[phase]} ${copy.progress}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{width: `${Math.max(2, Math.min(100, percent))}%`}} /></div>
       </> : null}
 
-      {result ? <div className={workspaceStyles.resultArea}>
+      {result ? <div className={workspaceStyles.resultArea} data-assessment-report-ready={reportReady ? "true" : "false"}>
         <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
         <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
-        {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
-        <ProgressTimeline items={progressItems} copy={copy} />
-        <Scorecard sections={assessment?.sections} copy={copy} />
-        <div className={`report-actions ${workspaceStyles.reportActionBar}`}><button type="button" disabled={!report?.markdown} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!report?.pdf_base64} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : null}</div>
+        <div className={`report-actions ${workspaceStyles.reportActionBar}`} data-assessment-report-actions="true" data-assessment-report-ready={reportReady ? "true" : "false"}><button type="button" disabled={!report?.markdown} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!report?.pdf_base64} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : null}</div>
         {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
+        {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
+        {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} /></details> : null}
+        <Scorecard sections={assessment?.sections} copy={copy} />
         {assessment?.unavailable_data_notes?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({assessment.unavailable_data_notes.length})</summary><List items={assessment.unavailable_data_notes} empty={copy.notVerified} /></details> : null}
       </div> : null}
     </section> : null}
