@@ -21,6 +21,7 @@ type ReviewResponse = {
   review?: JsonRecord;
   acceptance?: JsonRecord;
   approved_delivery?: JsonRecord;
+  approved_delivery_package?: JsonRecord;
   approvals?: JsonRecord[];
   reports?: JsonRecord;
   accepted_edition?: JsonRecord;
@@ -57,9 +58,9 @@ const COPY = {
     exactRunId: "Exact run ID",
     customerId: "Customer ID",
     projectId: "Project ID",
-    canonicalSecurity: "The reviewer identity and role are persisted in the approval certificate. No secret is stored in the URL or browser storage.",
+    canonicalSecurity: "The reviewer identity and role are persisted in the approval certificate. The operator token stays only in this open page. No secret is stored in the URL or browser storage.",
     legacySecurity: "The operator token stays only in this open page. It is not written to the URL, browser storage, cookies, or build output.",
-    enterReviewer: "Enter the exact run ID, authorized reviewer, and reviewer role.",
+    enterReviewer: "Enter the exact run ID, operator token, authorized reviewer, and reviewer role.",
     enterLegacy: "Enter the operator token and authorized reviewer for this exact run.",
     loaded: "The immutable review package is loaded. Confirm it below when ready.",
     loadFailed: "Unable to load final review.",
@@ -82,7 +83,8 @@ const COPY = {
     alreadyApproved: "Approval already recorded",
     approveDownload: "Approve and download final PDF",
     downloadAgain: "Download approved PDF again",
-    readyDelivery: "This exact immutable edition is approved for controlled client delivery.",
+    downloadPackage: "Download approved delivery package",
+    readyDelivery: "This exact immutable edition and its certified delivery package are approved for controlled client delivery.",
     blockedDelivery: "Delivery remains blocked until a valid approval certificate matches the current artifact set.",
     otherDecision: "Need a different decision?",
     otherDecisionLead: "Use these only when the package cannot be approved. A clear decision reason is required.",
@@ -91,17 +93,21 @@ const COPY = {
     reportDigest: "Report artifact digest",
     certificateDigest: "Approval certificate",
     manifestDigest: "Accepted-edition manifest",
+    packageDigest: "Delivery package digest",
+    deliveryCertificateDigest: "Delivery authorization certificate",
     notIssued: "Not issued",
     technicalRecord: "Technical review record",
     confirmFirst: "Confirm that you reviewed the exact report and its disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
     approvedNotice: "Approval recorded. The accepted final report was downloaded.",
-    evidenceNotice: "More evidence requested. Delivery remains blocked.",
+    evidenceNotice: "More evidence requested. Delivery remains blocked. Start a new assessment with the requested evidence; this unchanged report cannot later be approved.",
     rejectedNotice: "Report rejected. Delivery remains blocked.",
     approvalFailed: "Unable to approve and download the final report.",
     decisionFailed: "Unable to record the review decision.",
     pdfMissing: "The reviewed response did not contain the exact PDF artifact.",
     invalidPdf: "The approved PDF failed browser integrity validation.",
+    packageMissing: "The approved delivery package is unavailable for this exact run.",
+    invalidPackage: "The approved delivery package failed ZIP integrity validation.",
     defaultApprovalReason: "Authorized reviewer confirmed the exact immutable report, scorecard, disclosed evidence limitations, artifact identity, and delivery boundary.",
   },
   "es-MX": {
@@ -131,9 +137,9 @@ const COPY = {
     exactRunId: "ID de ejecución exacta",
     customerId: "ID del cliente",
     projectId: "ID del proyecto",
-    canonicalSecurity: "La identidad y función del revisor se conservan en el certificado de aprobación. Ningún secreto se guarda en la URL ni en el almacenamiento del navegador.",
+    canonicalSecurity: "La identidad y función del revisor se conservan en el certificado de aprobación. El token del operador permanece únicamente en esta página abierta. Ningún secreto se guarda en la URL ni en el almacenamiento del navegador.",
     legacySecurity: "El token del operador permanece únicamente en esta página abierta. No se escribe en la URL, almacenamiento, cookies ni compilación.",
-    enterReviewer: "Ingresa el ID de ejecución exacta, el revisor autorizado y su función.",
+    enterReviewer: "Ingresa el ID de ejecución exacta, el token del operador, el revisor autorizado y su función.",
     enterLegacy: "Ingresa el token del operador y el revisor autorizado para esta ejecución exacta.",
     loaded: "El paquete inmutable de revisión está cargado. Confírmalo abajo cuando estés listo.",
     loadFailed: "No fue posible cargar la revisión final.",
@@ -156,7 +162,8 @@ const COPY = {
     alreadyApproved: "Aprobación ya registrada",
     approveDownload: "Aprobar y descargar PDF final",
     downloadAgain: "Descargar nuevamente el PDF aprobado",
-    readyDelivery: "Esta edición inmutable exacta está aprobada para entrega controlada al cliente.",
+    downloadPackage: "Descargar paquete de entrega aprobado",
+    readyDelivery: "Esta edición inmutable exacta y su paquete de entrega certificado están aprobados para entrega controlada al cliente.",
     blockedDelivery: "La entrega permanece bloqueada hasta que un certificado válido coincida con el conjunto actual de artefactos.",
     otherDecision: "¿Necesitas una decisión diferente?",
     otherDecisionLead: "Usa estas opciones únicamente cuando el paquete no pueda aprobarse. Se requiere una razón clara.",
@@ -165,17 +172,21 @@ const COPY = {
     reportDigest: "Hash de artefactos del informe",
     certificateDigest: "Certificado de aprobación",
     manifestDigest: "Manifiesto de edición aceptada",
+    packageDigest: "Hash del paquete de entrega",
+    deliveryCertificateDigest: "Certificado de autorización de entrega",
     notIssued: "No emitido",
     technicalRecord: "Registro técnico de revisión",
     confirmFirst: "Confirma que revisaste el informe exacto y sus limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
     approvedNotice: "Aprobación registrada. Se descargó el informe final aceptado.",
-    evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada.",
+    evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada. Inicia una nueva evaluación con la evidencia solicitada; este informe sin cambios no podrá aprobarse después.",
     rejectedNotice: "Informe rechazado. La entrega permanece bloqueada.",
     approvalFailed: "No fue posible aprobar y descargar el informe final.",
     decisionFailed: "No fue posible registrar la decisión de revisión.",
     pdfMissing: "La respuesta revisada no contiene el artefacto PDF exacto.",
     invalidPdf: "El PDF aprobado no superó la validación de integridad del navegador.",
+    packageMissing: "El paquete de entrega aprobado no está disponible para esta ejecución exacta.",
+    invalidPackage: "El paquete de entrega aprobado no superó la validación de integridad ZIP.",
     defaultApprovalReason: "El revisor autorizado confirmó el informe inmutable exacto, la puntuación, las limitaciones de evidencia declaradas, la identidad del artefacto y el límite de entrega.",
   },
 } as const;
@@ -191,6 +202,10 @@ function approvedDeliveryFrom(value: ReviewResponse | null | undefined): JsonRec
       || asRecord(value.review).approved_delivery
       || asRecord(value.acceptance).approved_delivery,
   );
+}
+
+function approvedPackageFrom(value: ReviewResponse | null | undefined): JsonRecord {
+  return asRecord(value?.approved_delivery_package);
 }
 
 function acceptedEditionFrom(value: ReviewResponse | null | undefined): JsonRecord {
@@ -315,6 +330,8 @@ export default function FinalReviewWorkspace() {
   const edition = useMemo(() => acceptedEditionFrom(result), [result]);
   const certificate = useMemo(() => reviewCertificateFrom(result), [result]);
   const report = useMemo(() => reportFrom(result), [result]);
+  const approvedPackage = useMemo(() => approvedPackageFrom(result), [result]);
+  const deliveryCertificate = asRecord(approvedPackage.certificate);
   const rawStatus = String(
     certificate.decision
       || result?.review_status
@@ -326,9 +343,10 @@ export default function FinalReviewWorkspace() {
   const delivery = approvedDeliveryFrom(result);
   const deliveryAllowed = result?.client_delivery_allowed === true
     || asRecord(result?.acceptance).client_delivery_allowed === true
-    || delivery.client_delivery_allowed === true;
+    || delivery.client_delivery_allowed === true
+    || approvedPackage.client_delivery_allowed === true;
   const ready = canonical
-    ? Boolean(runId.trim() && reviewer.trim() && reviewerRole.trim())
+    ? Boolean(runId.trim() && adminToken.trim() && reviewer.trim() && reviewerRole.trim())
     : Boolean(LEGACY_API_URL && runId.trim() && adminToken.trim() && reviewer.trim());
   const identityReady = Boolean(runId.trim());
   const reportDigest = String(
@@ -338,10 +356,22 @@ export default function FinalReviewWorkspace() {
   );
   const certificateDigest = String(certificate.approval_certificate_sha256 || "");
   const manifestDigest = String(edition.accepted_edition_manifest_sha256 || "");
+  const packageDigest = String(approvedPackage.zip_sha256 || "");
+  const deliveryCertificateDigest = String(
+    deliveryCertificate.delivery_authorization_certificate_sha256 || "",
+  );
 
   function legacyHeaders(json = false): HeadersInit {
     return {
       "X-NICO-Admin-Token": adminToken.trim(),
+      ...(json ? {"Content-Type": "application/json"} : {}),
+    };
+  }
+
+  function canonicalHeaders(json = false): HeadersInit {
+    return {
+      "X-NICO-Admin-Token": adminToken.trim(),
+      Accept: "application/json",
       ...(json ? {"Content-Type": "application/json"} : {}),
     };
   }
@@ -369,6 +399,10 @@ export default function FinalReviewWorkspace() {
     return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review`);
   }
 
+  function canonicalDeliveryUrl(): string {
+    return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/approved-delivery-package`);
+  }
+
   async function requestJson(url: string, options: RequestInit = {}): Promise<ReviewResponse> {
     const response = await fetch(url, {cache: "no-store", ...options});
     if (!response.ok) throw await responseError(response, copy.loadFailed);
@@ -390,7 +424,7 @@ export default function FinalReviewWorkspace() {
     setNotice("");
     try {
       const payload = canonical
-        ? await requestJson(canonicalStatusUrl(), {headers: {Accept: "application/json"}})
+        ? await requestJson(canonicalStatusUrl(), {headers: canonicalHeaders()})
         : await requestJson(legacyStatusUrl(), {headers: legacyHeaders()});
       setResult(payload);
       setNotice(copy.loaded);
@@ -442,6 +476,26 @@ export default function FinalReviewWorkspace() {
     );
   }
 
+  async function downloadCanonicalPackage(): Promise<void> {
+    const response = await fetch(canonicalDeliveryUrl(), {
+      cache: "no-store",
+      headers: {
+        ...canonicalHeaders(),
+        Accept: "application/zip",
+      },
+    });
+    if (!response.ok) throw await responseError(response, copy.packageMissing);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+      throw new Error(copy.invalidPackage);
+    }
+    const fallback = `nico-strategic-delivery-${runId.trim()}-APPROVED.zip`;
+    downloadBlob(
+      new Blob([bytes], {type: "application/zip"}),
+      filenameFromResponse(response, fallback),
+    );
+  }
+
   async function downloadLegacyPdf(source: ReviewResponse): Promise<void> {
     const approved = approvedDeliveryFrom(source);
     const fallback = `nico-${service}-${runId.trim()}-approved-final-report.pdf`;
@@ -474,7 +528,7 @@ export default function FinalReviewWorkspace() {
       canonicalReviewUrl(),
       {
         method: "POST",
-        headers: {"Content-Type": "application/json", Accept: "application/json"},
+        headers: canonicalHeaders(true),
         body: JSON.stringify({
           review_authorized: true,
           authorization_confirmed: true,
@@ -571,6 +625,16 @@ export default function FinalReviewWorkspace() {
     }
   }
 
+  async function downloadApprovedPackage(): Promise<void> {
+    try {
+      setError("");
+      if (!canonical || !deliveryAllowed) throw new Error(copy.packageMissing);
+      await downloadCanonicalPackage();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.packageMissing);
+    }
+  }
+
   return <main className={styles.shell} data-review-contract={canonical ? "accepted-edition-v2" : "legacy-operator-review"}>
     <section className={styles.hero}>
       <div className={styles.heroGlow} aria-hidden="true" />
@@ -588,9 +652,8 @@ export default function FinalReviewWorkspace() {
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
         <label className={styles.reviewerField}>{copy.reviewer}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder={copy.reviewerPlaceholder} autoComplete="name" /></label>
-        {canonical
-          ? <label className={styles.tokenField}>{copy.reviewerRole}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} placeholder={copy.reviewerRolePlaceholder} autoComplete="organization-title" /></label>
-          : <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="off" spellCheck={false} /></label>}
+        {canonical ? <label className={styles.tokenField}>{copy.reviewerRole}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} placeholder={copy.reviewerRolePlaceholder} autoComplete="organization-title" /></label> : null}
+        <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="off" spellCheck={false} /></label>
         <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.advanced}</summary><div className={styles.advancedGrid}>
           <label>{copy.assessmentType}<select value={service} onChange={(event) => {setService(event.target.value as Service); setResult(null); setConfirmed(false);}}><option value="comprehensive">Strategic</option><option value="express">Express</option></select></label>
@@ -612,14 +675,16 @@ export default function FinalReviewWorkspace() {
         <article className={styles.statusCard}><span>{copy.reportDigest}</span><strong title={reportDigest}>{reportDigest ? compactDigest(reportDigest) : copy.notIssued}</strong></article>
         <article className={styles.statusCard}><span>{copy.certificateDigest}</span><strong title={certificateDigest}>{certificateDigest ? compactDigest(certificateDigest) : copy.notIssued}</strong></article>
         <article className={styles.statusCard}><span>{copy.manifestDigest}</span><strong title={manifestDigest}>{manifestDigest ? compactDigest(manifestDigest) : copy.notIssued}</strong></article>
+        <article className={styles.statusCard}><span>{copy.packageDigest}</span><strong title={packageDigest}>{packageDigest ? compactDigest(packageDigest) : copy.notIssued}</strong></article>
+        <article className={styles.statusCard}><span>{copy.deliveryCertificateDigest}</span><strong title={deliveryCertificateDigest}>{deliveryCertificateDigest ? compactDigest(deliveryCertificateDigest) : copy.notIssued}</strong></article>
         <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
       </div> : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
         <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
-        <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={!confirmed || loading || deliveryAllowed} onClick={approveAndDownload}>{loading ? copy.recording : deliveryAllowed ? copy.alreadyApproved : copy.approveDownload}</button>{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadApprovedAgain}>{copy.downloadAgain}</button> : null}</div>
+        <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={!confirmed || loading || deliveryAllowed} onClick={approveAndDownload}>{loading ? copy.recording : deliveryAllowed ? copy.alreadyApproved : copy.approveDownload}</button>{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadApprovedAgain}>{copy.downloadAgain}</button> : null}{canonical && deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadApprovedPackage}>{copy.downloadPackage}</button> : null}</div>
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : copy.blockedDelivery}</div>
-        <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
+        <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || deliveryAllowed} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || deliveryAllowed} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}
     </section>
 
