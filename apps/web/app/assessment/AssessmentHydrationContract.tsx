@@ -4,6 +4,7 @@ import {useEffect} from "react";
 
 const WORKSPACE_SELECTOR = 'main[data-workspace="assessment"][data-engagement-type="comprehensive"][data-canonical-assessment="strategic"]';
 const ACTION_SELECTOR = '[data-assessment-primary-action="true"]';
+const AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]';
 
 const EXPECTED_COPY = {
   en: {
@@ -51,13 +52,16 @@ export default function AssessmentHydrationContract({locale, releaseSha, clientC
       const expected = EXPECTED_COPY[locale];
       const originalAction = compact(action.textContent);
       const originalHeading = compact(heading.textContent);
+      const authorization = workspace.querySelector<HTMLInputElement>(AUTHORIZATION_SELECTOR);
       let repaired = false;
 
-      // The exact server release can occasionally be paired with a stale client
-      // chunk during a deployment transition. Repair only the idle engagement copy
-      // before any run state exists; never overwrite live progress labels.
+      // Next can settle sibling client chunks after an earlier effect has already
+      // observed correct server copy. Keep this bounded observer alive so a later
+      // stale idle render is repaired too. The authorization control is disabled
+      // for active runs, which prevents replacement of live progress labels.
       const runStateExists = Boolean(workspace.querySelector('[data-assessment-run-state="true"]'));
-      if (!runStateExists) {
+      const idleEngagement = authorization?.disabled !== true;
+      if (!runStateExists && idleEngagement) {
         if (originalAction !== expected.action) {
           replaceText(action, expected.action);
           action.setAttribute("aria-label", expected.action);
@@ -83,12 +87,7 @@ export default function AssessmentHydrationContract({locale, releaseSha, clientC
       workspace.dataset.assessmentClientObservedAction = observedAction || "missing";
       workspace.dataset.assessmentClientObservedHeading = observedHeading || "missing";
 
-      if (verified) {
-        observer?.disconnect();
-        observer = null;
-        return true;
-      }
-      return false;
+      return verified;
     };
 
     const retry = (): void => {
