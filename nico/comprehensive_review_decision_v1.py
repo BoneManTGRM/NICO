@@ -110,7 +110,7 @@ def build_reviewed_edition(
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
     except Exception:
         pdf = b""
-    manifest = build_accepted_report_edition(
+    return build_accepted_report_edition(
         repository=str(identity.get("repository") or ""),
         commit_sha=str(identity.get("commit_sha") or ""),
         tree_sha=_tree_sha(record),
@@ -131,11 +131,6 @@ def build_reviewed_edition(
         decision_reason=decision_reason,
         decided_at=decided_at,
     )
-    manifest["review_binding_schema"] = VERSION
-    manifest["report_id"] = str(package.get("report_id") or "")
-    manifest["report_pdf_filename"] = str(package.get("pdf_filename") or "")
-    manifest["report_regenerated_during_review"] = False
-    return manifest
 
 
 __all__ = ["VERSION", "build_reviewed_edition", "report_package_from_record"]
