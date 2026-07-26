@@ -17,7 +17,19 @@ from nico.comprehensive_stage_adapter import CapabilityExecutor
 from nico.durable_runtime_storage import _path as _durable_runtime_path
 from nico.durable_runtime_storage import _resolved_postgres_url
 
-VERSION = "nico.comprehensive_production_bootstrap.v3"
+VERSION = "nico.comprehensive_production_bootstrap.v4"
+
+_EPHEMERAL_FILESYSTEM_TYPES = {
+    "autofs",
+    "devtmpfs",
+    "overlay",
+    "proc",
+    "ramfs",
+    "securityfs",
+    "squashfs",
+    "sysfs",
+    "tmpfs",
+}
 
 
 def _required_capabilities() -> tuple[str, ...]:
@@ -65,13 +77,78 @@ def _path_within(path: Path, parent: Path) -> bool:
         return False
 
 
+def _decode_mount_field(value: str) -> str:
+    return (
+        value.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+    )
+
+
+def _mounted_filesystems() -> tuple[tuple[Path, str], ...]:
+    """Return bounded Linux mount evidence without depending on platform variables.
+
+    Railway normally exposes ``RAILWAY_VOLUME_MOUNT_PATH``. Some deployment paths can
+    retain the mounted filesystem while omitting that convenience variable. Linux
+    mountinfo provides an independent, local proof that the SQLite file is below a
+    non-root, non-ephemeral mount. Merely being writable is never considered proof.
+    """
+
+    try:
+        lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return ()
+
+    output: list[tuple[Path, str]] = []
+    for line in lines:
+        fields = line.split()
+        try:
+            separator = fields.index("-")
+            mount_field = fields[4]
+            filesystem_type = fields[separator + 1].strip().lower()
+        except (ValueError, IndexError):
+            continue
+        mount_text = _decode_mount_field(mount_field).strip()
+        if not mount_text.startswith("/"):
+            continue
+        output.append((Path(mount_text), filesystem_type))
+    return tuple(output)
+
+
+def _detected_durable_mount(path: Path) -> Path | None:
+    candidates: list[Path] = []
+    for mount_path, filesystem_type in _mounted_filesystems():
+        if mount_path == Path("/"):
+            continue
+        if filesystem_type in _EPHEMERAL_FILESYSTEM_TYPES:
+            continue
+        if _path_within(path, mount_path):
+            candidates.append(mount_path)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: len(item.resolve().parts))
+
+
+def _sqlite_persistence_proof(path: Path) -> tuple[bool, str]:
+    configured_volume = _durable_volume_path()
+    if configured_volume is not None and _path_within(path, configured_volume):
+        return True, "configured_volume"
+
+    detected_mount = _detected_durable_mount(path)
+    if detected_mount is not None:
+        return True, "detected_non_ephemeral_mount"
+
+    # Explicit acknowledgement is retained for non-Linux or non-Railway platforms whose
+    # mounted volume cannot be discovered automatically. It must be set by the deployer.
+    if _env_true("NICO_SQLITE_PERSISTENCE_CONFIRMED"):
+        return True, "operator_confirmation"
+    return False, "unverified_container_filesystem"
+
+
 def _sqlite_survives_container_replacement(path: Path) -> bool:
-    volume = _durable_volume_path()
-    if volume is not None and _path_within(path, volume):
-        return True
-    # Explicit acknowledgement is retained for non-Railway platforms whose mounted
-    # volume cannot be discovered automatically. It must be set by the deployer.
-    return _env_true("NICO_SQLITE_PERSISTENCE_CONFIRMED")
+    verified, _ = _sqlite_persistence_proof(path)
+    return verified
 
 
 def _sqlite_connection_factory(path: Path) -> ConnectionFactory:
@@ -128,9 +205,10 @@ def install_comprehensive_production_bootstrap(
     Postgres is preferred and is resolved from the same bounded private aliases used by
     the rest of NICO's production storage. SQLite is accepted only when explicitly
     enabled. When durable assessment storage is required, SQLite must live under a
-    detected mounted volume or carry an explicit deployment acknowledgement. A writable
-    container filesystem is not treated as deployment-surviving because replacement
-    would erase a partially completed run and produce ``comprehensive_run_not_found``.
+    configured mounted volume, a detected non-ephemeral Linux mount, or carry an explicit
+    deployment acknowledgement. A writable container filesystem is not treated as
+    deployment-surviving because replacement would erase a partially completed run and
+    produce ``comprehensive_run_not_found``.
 
     If no deployment-surviving adapter is available, routes remain mounted but fail
     closed with HTTP 503. Missing executors are never treated as passing evidence.
@@ -163,6 +241,7 @@ def install_comprehensive_production_bootstrap(
     resolved_dialect = dialect
     storage_source = "explicit_connection_factory" if connection_factory is not None else "postgres"
     survives_container_replacement = False
+    persistence_proof_source = ""
 
     if resolved_factory is None and not resolved_url:
         if not _env_true("NICO_ENABLE_SQLITE_DURABLE_STORAGE"):
@@ -173,18 +252,26 @@ def install_comprehensive_production_bootstrap(
             )
             return None
         path = _sqlite_path()
-        survives_container_replacement = _sqlite_survives_container_replacement(path)
+        survives_container_replacement, persistence_proof_source = _sqlite_persistence_proof(path)
         if _env_true("NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE") and not survives_container_replacement:
             register_comprehensive_api_routes(app)
-            app.state.comprehensive_runtime = _blocked_state(
+            blocked = _blocked_state(
                 reason="comprehensive_sqlite_persistent_volume_required",
                 supplied=len(executors),
             )
+            blocked["persistence_proof_source"] = persistence_proof_source
+            app.state.comprehensive_runtime = blocked
             return None
         try:
             resolved_factory = _sqlite_connection_factory(path)
             resolved_dialect = "sqlite"
-            storage_source = "mounted_durable_sqlite" if survives_container_replacement else "configured_durable_sqlite"
+            storage_source = (
+                "operator_confirmed_durable_sqlite"
+                if persistence_proof_source == "operator_confirmation"
+                else "mounted_durable_sqlite"
+                if survives_container_replacement
+                else "configured_durable_sqlite"
+            )
         except Exception:
             register_comprehensive_api_routes(app)
             app.state.comprehensive_runtime = _blocked_state(
@@ -195,8 +282,10 @@ def install_comprehensive_production_bootstrap(
     elif resolved_factory is None:
         storage_source = f"postgres:{database_url_source or 'configured'}"
         survives_container_replacement = True
+        persistence_proof_source = "postgres"
     else:
         survives_container_replacement = str(resolved_dialect or "").strip().lower() == "postgres"
+        persistence_proof_source = "explicit_postgres_factory" if survives_container_replacement else "explicit_connection_factory"
 
     try:
         controller = configure_comprehensive_runtime(
@@ -221,6 +310,7 @@ def install_comprehensive_production_bootstrap(
             "configured": True,
             "storage_source": storage_source,
             "database_url_source": database_url_source or "",
+            "persistence_proof_source": persistence_proof_source,
             # SQLite on a stable path survives process restart, but only Postgres or a
             # proven mounted volume survives container replacement.
             "durability_verified": adapter in {"postgres", "sqlite"},

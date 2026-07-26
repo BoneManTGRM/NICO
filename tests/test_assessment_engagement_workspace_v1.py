@@ -9,6 +9,7 @@ CONTROLLER = ROOT / "apps" / "web" / "app" / "assessment" / "useAssessmentRun.ts
 COPY = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentCopy.ts"
 TYPES = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentTypes.ts"
 STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "engagementWorkspace.module.css"
+INLINE_STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment-inline-readiness.css"
 
 
 def test_workspace_uses_semantic_engagement_identity() -> None:
@@ -27,11 +28,14 @@ def test_readiness_failure_is_one_authoritative_safe_notice() -> None:
     controller = CONTROLLER.read_text(encoding="utf-8")
     copy = COPY.read_text(encoding="utf-8")
 
-    assert "issue ? <div" in workspace
+    assert "const preflightIssue = issue && !issue.runCreated ? issue : null" in workspace
+    assert "const runIssue = issue && issue.runCreated ? issue : null" in workspace
+    assert 'data-assessment-no-run-issue="true"' in workspace
     assert 'role="alert"' in workspace
     assert "issueRef.current?.focus()" in workspace
-    assert "issue.kind === \"run_failed\"" in workspace
-    assert "setPhase(normalized.kind === \"run_failed\" ? \"failed\" : \"unavailable\")" in controller
+    assert 'preflightIssue.kind === "run_failed"' in workspace
+    assert "{showStatePanel ? <section" in workspace
+    assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in controller
     assert 'setPhase("checking")' in controller
     assert 'kind: "configuration_blocked"' in controller
     assert "No assessment was created and no repository processing began" in copy
@@ -61,6 +65,7 @@ def test_phases_distinguish_readiness_from_run_failure() -> None:
 
 def test_mobile_design_keeps_errors_compact_and_actions_reachable() -> None:
     source = STYLES.read_text(encoding="utf-8")
+    inline = INLINE_STYLES.read_text(encoding="utf-8")
 
     assert "@media (max-width: 430px)" in source
     assert ".issueContent" in source
@@ -68,3 +73,5 @@ def test_mobile_design_keeps_errors_compact_and_actions_reachable() -> None:
     assert "min-height: 44px" in source
     assert ".lifecycle" in source
     assert "grid-template-columns: 1fr" in source
+    assert '[data-assessment-no-run-issue="true"]' in inline
+    assert "box-shadow: none" in inline

@@ -23,7 +23,10 @@ def test_preflight_block_is_one_typed_unavailable_state_without_a_false_run() ->
     assert 'data-workspace="assessment"' in workspace
     assert 'data-engagement-type="comprehensive"' in workspace
     assert 'data-assessment-primary-action="true"' in workspace
-    assert 'issue.runCreated ? copy.exactRunPreserved : copy.noRunCreated' in workspace
+    assert "const preflightIssue = issue && !issue.runCreated ? issue : null" in workspace
+    assert "const runIssue = issue && issue.runCreated ? issue : null" in workspace
+    assert 'data-assessment-no-run-issue="true"' in workspace
+    assert "preflightIssue.message" in workspace
     assert 'role="alert"' in workspace
 
 
