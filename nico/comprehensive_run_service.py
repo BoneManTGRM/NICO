@@ -4,23 +4,24 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
+    apply_comprehensive_review_decision,
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
 )
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
 
-VERSION = "nico.comprehensive_run_service.v2"
+VERSION = "nico.comprehensive_run_service.v3"
 
 
 class ComprehensiveRunService:
     """Restart-safe orchestration over the canonical Comprehensive run record.
 
-    Each completed stage is persisted separately. A process interruption can resume
-    from the exact next required stage without creating a second run or changing the
-    repository snapshot. Human review and client delivery boundaries remain encoded
-    in the persisted record rather than inferred by callers.
+    Each completed stage and each explicit human review decision is persisted through
+    the same optimistic-concurrency store. Approval binds the exact existing artifacts;
+    it never reruns report generation or changes the assessed commit.
     """
 
     def __init__(
@@ -88,6 +89,32 @@ class ComprehensiveRunService:
 
     def run_to_review(self, run_id: str) -> dict[str, Any]:
         return self.resume(run_id, max_stages=None)
+
+    def review(
+        self,
+        run_id: str,
+        *,
+        reviewer: str,
+        reviewer_role: str,
+        decision: str,
+        decision_reason: str,
+        decided_at: str | None = None,
+    ) -> dict[str, Any]:
+        record = self._store.load(run_id)
+        previous_revision = int(record["revision"])
+        manifest = build_reviewed_edition(
+            record,
+            reviewer=reviewer,
+            reviewer_role=reviewer_role,
+            decision=decision,
+            decision_reason=decision_reason,
+            decided_at=decided_at,
+        )
+        updated = apply_comprehensive_review_decision(
+            record,
+            manifest=manifest,
+        )
+        return self._store.save(updated, expected_revision=previous_revision)
 
     def _run_next_stage(self, record: dict[str, Any]) -> dict[str, Any]:
         completed = list(record.get("completed_stages") or [])
