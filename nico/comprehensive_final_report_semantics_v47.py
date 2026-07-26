@@ -17,6 +17,10 @@ _STALE_RE = re.compile(
     r"\bDRAFT\b|DRAFT ONLY|COMPLETE ONLY AS A DRAFT|NOT APPROVED FOR CLIENT DELIVERY",
     re.IGNORECASE,
 )
+_EXTENDED_DRAFT_SENTENCE_RE = re.compile(
+    r"\bcomplete\s+only\s+as\s+a\s+draft\b",
+    re.IGNORECASE,
+)
 
 _VALUE_REPLACEMENTS = (
     ("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED", _FINAL_STATUS),
@@ -59,6 +63,10 @@ def _clean_string(value: str) -> str:
     output = value
     for previous, replacement in _VALUE_REPLACEMENTS:
         output = output.replace(previous, replacement)
+    output = _EXTENDED_DRAFT_SENTENCE_RE.sub(
+        "complete as a final report pending human approval",
+        output,
+    )
     output = output.replace("-DRAFT.pdf", "-FINAL-PENDING-APPROVAL.pdf")
     output = output.replace("-draft.pdf", "-final-pending-approval.pdf")
     return output
@@ -80,7 +88,10 @@ def _replace_pdf_string(value: str) -> str:
     output = value
     for previous, replacement in _PDF_REPLACEMENTS:
         output = output.replace(previous, replacement)
-    return output
+    return _EXTENDED_DRAFT_SENTENCE_RE.sub(
+        "complete as a final report pending human approval",
+        output,
+    )
 
 
 def _rewrite_pdf_content_streams(reader: Any) -> int:
