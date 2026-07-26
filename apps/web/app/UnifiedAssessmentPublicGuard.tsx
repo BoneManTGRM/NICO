@@ -4,6 +4,7 @@ import {useEffect} from "react";
 import {usePathname} from "next/navigation";
 
 const TIER_EVENT = "nico:assessment-tier-selected";
+const CANONICAL_COPY_CONTRACT = "expert-engagement-v2";
 
 function normalized(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -34,6 +35,11 @@ function rewriteAssessmentCopy(main: HTMLElement, spanish: boolean): void {
   if (main.dataset.assessmentServiceCount !== "1") main.dataset.assessmentServiceCount = "1";
   if (main.dataset.canonicalAssessment !== "strategic") main.dataset.canonicalAssessment = "strategic";
   if (main.dataset.customerFacingAssessment !== "comprehensive") main.dataset.customerFacingAssessment = "comprehensive";
+
+  // The canonical React workspace owns its client-facing copy. This guard remains
+  // responsible for tier selection and navigation boundaries, but must not replace
+  // hydrated headings or actions after the release-copy contract has been verified.
+  if (main.dataset.assessmentCopyContract === CANONICAL_COPY_CONTRACT) return;
 
   const hero = main.querySelector<HTMLElement>(".hero");
   setText(hero?.querySelector<HTMLElement>(".eyebrow"), spanish ? "EVALUACIÓN INTEGRAL NICO" : "NICO COMPREHENSIVE ASSESSMENT");
