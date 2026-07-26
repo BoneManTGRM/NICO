@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance.py"
 CANONICAL_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance_v3.py"
+PRODUCTION_SCRIPT = ROOT / "scripts" / "unified_production_acceptance.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "two-service-production-acceptance.yml"
 
 
@@ -93,14 +94,25 @@ def test_report_and_assessment_extractors_use_native_comprehensive_stage() -> No
     assert module.assessment_payload("comprehensive", payload)["maturity_signal"]["score"] == 90
 
 
-def test_canonical_live_proof_matches_unified_public_assessment() -> None:
-    source = CANONICAL_SCRIPT.read_text(encoding="utf-8")
+def test_canonical_live_proof_matches_semantic_engagement_workspace() -> None:
+    legacy_source = CANONICAL_SCRIPT.read_text(encoding="utf-8")
+    production = PRODUCTION_SCRIPT.read_text(encoding="utf-8")
+
+    assert "LEGACY_WORKSPACE_SELECTOR" in legacy_source
+    for required in (
+        'data-workspace="assessment"',
+        'data-engagement-type="comprehensive"',
+        'data-canonical-assessment="strategic"',
+        'data-assessment-primary-action',
+        'data-assessment-authorization',
+        "Create engagement and capture repository snapshot",
+        "Crear encargo y capturar instantánea del repositorio",
+        "install_unified_workspace_contract",
+        "unified._ExpectedCommitPage.get_by_role = _canonical_get_by_role",
+    ):
+        assert required in production
 
     for required in (
-        'data-assessment-service-count=\"1\"',
-        'data-canonical-assessment=\"strategic\"',
-        '"Run NICO Assessment"',
-        '"Ejecutar evaluación NICO"',
         '"public_assessment": "strategic"',
         '"services": ["comprehensive"]',
         '"one_public_assessment": True',
@@ -112,7 +124,7 @@ def test_canonical_live_proof_matches_unified_public_assessment() -> None:
         '"client_delivery_blocked": True',
         'assert all(item["service"] == "comprehensive" for item in runs)',
     ):
-        assert required in source
+        assert required in legacy_source
 
 
 def test_legacy_report_validation_keeps_depth_and_review_boundaries() -> None:
@@ -128,7 +140,7 @@ def test_legacy_report_validation_keeps_depth_and_review_boundaries() -> None:
         assert required in source
 
 
-def test_post_merge_workflow_waits_for_deployments_and_validates_unified_proof() -> None:
+def test_post_merge_workflow_waits_for_deployments_and_preflights_readiness() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request:" in source
@@ -136,6 +148,10 @@ def test_post_merge_workflow_waits_for_deployments_and_validates_unified_proof()
     assert "- main" in source
     assert "statuses: write" in source
     assert "Wait for exact frontend and backend deployments" in source
+    assert "Verify production assessment readiness" in source
+    assert "/api/nico/diagnostics/comprehensive-runtime" in source
+    assert "survives_container_replacement_verified" in source
+    assert "Production assessment is not safe to start" in source
     assert "--passes 2" in source
     assert "NICO Two-Service Production Acceptance" in source
     assert 'payload["artifact_schema"] == "nico.unified_live_acceptance.v1"' in source
