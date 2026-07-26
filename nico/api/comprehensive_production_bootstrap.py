@@ -14,8 +14,11 @@ from nico.comprehensive_production_capabilities import build_production_capabili
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
+from nico.strategic_human_evidence_binding_v1 import (
+    install_strategic_human_evidence_binding,
+)
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v9"
+VERSION = "nico.api.comprehensive_production_bootstrap.v10"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -25,7 +28,8 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
         1
         for route in target.routes
         if str(getattr(route, "path", "")) == path
-        and expected in {str(item).upper() for item in (getattr(route, "methods", set()) or set())}
+        and expected
+        in {str(item).upper() for item in (getattr(route, "methods", set()) or set())}
     )
 
 
@@ -34,7 +38,9 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
         return
 
     def runtime_diagnostics() -> dict[str, Any]:
-        status = dict(getattr(target.state, "nico_comprehensive_production_runtime", {}) or {})
+        status = dict(
+            getattr(target.state, "nico_comprehensive_production_runtime", {}) or {}
+        )
         status.setdefault("artifact_schema", VERSION)
         status.setdefault("service_id", "comprehensive")
         status["human_review_required"] = True
@@ -54,15 +60,17 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     """Mount the decision-grade native Comprehensive boundary.
 
     The run controller is considered production-ready only when its persistence adapter
-    is proven to survive container replacement. This prevents a partially completed run
-    from disappearing after a hosted worker restart and surfacing as
-    ``comprehensive_run_not_found``.
+    is proven to survive container replacement. Explicit human evidence is normalized,
+    persisted with the canonical run, and bound into Strategic providers before the
+    executor map is frozen. Missing human context remains not assessed and is never
+    inferred from repository code.
     """
 
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
     native_providers = install_native_comprehensive_providers(target)
+    strategic_human_evidence = install_strategic_human_evidence_binding(target)
     scanner_execution_normalization = install_structured_scanner_executions(
         __import__("nico.comprehensive_native_providers", fromlist=["_scan"])
     )
@@ -98,6 +106,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
+        and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
         and final_report_execution.get("bound") is True
@@ -108,6 +117,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     reason = str(runtime.get("reason") or "")
     if not reason and not replacement_safe:
         reason = "comprehensive_storage_not_container_replacement_safe"
+    if not reason and strategic_human_evidence.get("bound") is not True:
+        reason = "strategic_human_evidence_binding_incomplete"
     if not reason and missing_capabilities:
         reason = "comprehensive_native_providers_missing"
     status = {
@@ -116,7 +127,9 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "status": "ready" if ready else "blocked",
         "configured": bool(runtime.get("configured")),
         "reason": reason,
-        "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
+        "persistence_adapter": str(
+            runtime.get("persistence_adapter") or "unavailable"
+        ),
         "storage_source": str(runtime.get("storage_source") or "unavailable"),
         "database_url_source": str(runtime.get("database_url_source") or ""),
         "durability_verified": runtime.get("durability_verified") is True,
@@ -125,6 +138,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
+        "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
         "final_report_execution": final_report_execution,
@@ -133,6 +147,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "report_binding_before_provider_install": True,
+        "provider_install_before_human_evidence_binding": True,
+        "human_evidence_binding_before_executor_build": True,
         "provider_install_before_scanner_execution_normalization": True,
         "scanner_execution_normalization_before_executor_build": True,
         "provider_install_before_core_report_readiness": True,
@@ -158,20 +174,35 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
 app = production_app
 COMPREHENSIVE_PRODUCTION_RUNTIME = install_comprehensive_on_production_app(app)
 
-if any(count != 1 for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].values()):
+if any(
+    count != 1
+    for count in COMPREHENSIVE_PRODUCTION_RUNTIME["route_counts"].values()
+):
     raise RuntimeError(
         "Comprehensive production routes are missing or duplicated: "
         f"{COMPREHENSIVE_PRODUCTION_RUNTIME['route_counts']}"
     )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:
-    raise RuntimeError("Comprehensive runtime diagnostics route must be registered exactly once")
+    raise RuntimeError(
+        "Comprehensive runtime diagnostics route must be registered exactly once"
+    )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["legacy_report_binding"].get("bound") is not True:
-    raise RuntimeError("Legacy Comprehensive appendix compatibility binding was not installed")
+    raise RuntimeError(
+        "Legacy Comprehensive appendix compatibility binding was not installed"
+    )
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive report binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
-if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound") is not True:
+if (
+    COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound")
+    is not True
+):
+    raise RuntimeError("Strategic human-evidence binding was not installed")
+if (
+    COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound")
+    is not True
+):
     raise RuntimeError("Structured scanner execution normalization was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["core_report_readiness"].get("bound") is not True:
     raise RuntimeError("Comprehensive core-report artifact readiness was not installed")

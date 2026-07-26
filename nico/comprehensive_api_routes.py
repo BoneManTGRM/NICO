@@ -11,7 +11,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v6"
+VERSION = "nico.comprehensive_api_routes.v7"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -113,13 +113,14 @@ def _runtime_persistence(request: Request) -> dict[str, Any]:
             runtime.get("survives_container_replacement_verified") is True
         )
     elif configured and adapter == "postgres":
-        # Preserve legacy Postgres truth while avoiding an unsupported claim for
-        # older SQLite runtimes that never recorded a mounted-volume guarantee.
         result["survives_container_replacement_verified"] = True
     return result
 
 
-def _with_runtime_truth(request: Request, response: dict[str, Any]) -> dict[str, Any]:
+def _with_runtime_truth(
+    request: Request,
+    response: dict[str, Any],
+) -> dict[str, Any]:
     return {
         **response,
         "persistence": _runtime_persistence(request),
@@ -131,12 +132,31 @@ def _with_runtime_truth(request: Request, response: dict[str, Any]) -> dict[str,
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("request_body_must_be_object")
-    if payload.get("authorized") is not True or payload.get("authorization_confirmed") is not True:
+    if (
+        payload.get("authorized") is not True
+        or payload.get("authorization_confirmed") is not True
+    ):
         raise ValueError("explicit_authorization_required")
 
-    repository = normalize_repository(_required(payload.get("repository"), "repository"))
-    customer_id = _required(payload.get("customer_id") or "default_customer", "customer_id")
-    project_id = _required(payload.get("project_id") or "default_project", "project_id")
+    repository = normalize_repository(
+        _required(payload.get("repository"), "repository")
+    )
+    customer_id = _required(
+        payload.get("customer_id") or "default_customer",
+        "customer_id",
+    )
+    project_id = _required(
+        payload.get("project_id") or "default_project",
+        "project_id",
+    )
+    assessment_depth = _required(
+        payload.get("assessment_depth") or "strategic",
+        "assessment_depth",
+    )
+    report_language = _required(
+        payload.get("report_language") or "en",
+        "report_language",
+    )
     requested_sha = expected_commit_sha(payload)
     run_id = f"comprun_{uuid4().hex}"
     evidence_ledger_id = f"ledger_comprehensive_{uuid4().hex}"
@@ -147,19 +167,33 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             "customer_id": customer_id,
             "project_id": project_id,
             "authorized": True,
-            "authorized_by": _required(payload.get("authorized_by") or "public_assessment_requester", "authorized_by"),
+            "authorized_by": _required(
+                payload.get("authorized_by") or "public_assessment_requester",
+                "authorized_by",
+            ),
             "authorization_scope": _required(
-                payload.get("authorization_scope") or "authorized defensive repository assessment",
+                payload.get("authorization_scope")
+                or "authorized defensive repository assessment",
                 "authorization_scope",
             ),
             "expected_commit_sha": requested_sha,
         }
     )
-    if snapshot.get("status") != "attached" or not str(snapshot.get("commit_sha") or "").strip():
-        notes = [str(item) for item in snapshot.get("unavailable_data_notes") or [] if str(item).strip()]
+    if snapshot.get("status") != "attached" or not str(
+        snapshot.get("commit_sha") or ""
+    ).strip():
+        notes = [
+            str(item)
+            for item in snapshot.get("unavailable_data_notes") or []
+            if str(item).strip()
+        ]
         reason = notes[0] if notes else "repository_snapshot_unavailable"
         raise ValueError(f"repository_snapshot_unavailable:{reason}")
-    if requested_sha and str(snapshot.get("commit_sha") or "").strip().lower() != requested_sha:
+    if (
+        requested_sha
+        and str(snapshot.get("commit_sha") or "").strip().lower()
+        != requested_sha
+    ):
         raise ValueError("repository_snapshot_commit_mismatch")
 
     response = _controller(request).start(
@@ -170,6 +204,9 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             "evidence_ledger_id": evidence_ledger_id,
             "customer_id": customer_id,
             "project_id": project_id,
+            "assessment_depth": assessment_depth,
+            "report_language": report_language,
+            "human_evidence": payload.get("human_evidence"),
             "authorized": True,
             "authorization_confirmed": True,
         }
@@ -222,23 +259,35 @@ def register_comprehensive_api_routes(
     async def start_comprehensive(request: Request) -> dict[str, Any]:
         try:
             payload = await request.json()
-            return _with_runtime_truth(request, _controller(request).start(payload))
+            return _with_runtime_truth(
+                request,
+                _controller(request).start(payload),
+            )
         except HTTPException:
             raise
         except Exception as exc:
             raise _translate_error(exc) from exc
 
     @app.get("/assessment/comprehensive-run/{run_id}")
-    async def get_comprehensive(run_id: str, request: Request) -> dict[str, Any]:
+    async def get_comprehensive(
+        run_id: str,
+        request: Request,
+    ) -> dict[str, Any]:
         try:
-            return _with_runtime_truth(request, _controller(request).status(run_id))
+            return _with_runtime_truth(
+                request,
+                _controller(request).status(run_id),
+            )
         except HTTPException:
             raise
         except Exception as exc:
             raise _translate_error(exc) from exc
 
     @app.post("/assessment/comprehensive-run/{run_id}/continue")
-    async def continue_comprehensive(run_id: str, request: Request) -> dict[str, Any]:
+    async def continue_comprehensive(
+        run_id: str,
+        request: Request,
+    ) -> dict[str, Any]:
         try:
             raw = await request.body()
             payload = await request.json() if raw else {}
