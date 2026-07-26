@@ -13,7 +13,7 @@ LAYOUT = Path("apps/web/app/layout.tsx")
 
 def _load_final_execution():
     spec = importlib.util.spec_from_file_location(
-        "test_comprehensive_final_report_execution_v3",
+        "test_comprehensive_final_report_execution_v4",
         FINAL_EXECUTION,
     )
     assert spec and spec.loader
@@ -59,13 +59,16 @@ def _context() -> dict[str, Any]:
 def test_production_registry_binds_current_report_and_cross_format_providers() -> None:
     source = FINAL_EXECUTION.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.comprehensive_final_report_execution.v3"' in source
+    assert 'VERSION = "nico.comprehensive_final_report_execution.v4"' in source
     assert "finality_aware_cross_format_verification_provider" in source
+    assert "finalize_comprehensive_report_result" in source
     assert 'raw["final_report_generation"] = wrapped' in source
     assert 'raw["cross_format_verification"] = finality_aware_cross_format_verification_provider' in source
     assert '"cross_format_provider_bound": verifier_bound' in source
     assert '"canonical_score_parity_required": True' in source
     assert '"canonical_score_synchronized_before_render": True' in source
+    assert '"local_finality_applied_after_render": True' in source
+    assert '"pdf_finality_semantics_required": True' in source
     assert '"failed_checks_exposed": True' in source
     assert '"global_report_builder_mutated": False' in source
     assert "install_comprehensive_report_finality_v51" not in source
@@ -129,6 +132,7 @@ def test_final_report_provider_receives_synchronized_scores_before_render() -> N
     assert observed["final_report_input_score_truth"]["status"] == "complete"
     assert result["final_report_input_score_truth"]["technical_score"] == 85
     assert result["final_report_input_score_truth"]["canonical_evidence_adjusted_score"] == 74
+    assert result["local_finality"]["status"] == "skipped"
 
 
 def test_comprehensive_review_action_fails_closed_until_cross_format_passes() -> None:
