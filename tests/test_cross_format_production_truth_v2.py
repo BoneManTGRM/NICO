@@ -12,13 +12,15 @@ def test_production_registry_binds_current_report_and_cross_format_providers() -
     source = FINAL_EXECUTION.read_text(encoding="utf-8")
 
     assert 'VERSION = "nico.comprehensive_final_report_execution.v2"' in source
-    assert "install_comprehensive_report_finality_v51()" in source
-    assert "install_comprehensive_cross_format_finality_v49()" in source
+    assert "finality_aware_cross_format_verification_provider" in source
     assert 'raw["final_report_generation"] = wrapped' in source
-    assert 'raw["cross_format_verification"] = verifier' in source
+    assert 'raw["cross_format_verification"] = finality_aware_cross_format_verification_provider' in source
     assert '"cross_format_provider_bound": verifier_bound' in source
     assert '"canonical_score_parity_required": True' in source
     assert '"failed_checks_exposed": True' in source
+    assert '"global_report_builder_mutated": False' in source
+    assert "install_comprehensive_report_finality_v51" not in source
+    assert "install_comprehensive_cross_format_finality_v49" not in source
 
 
 def test_comprehensive_review_action_fails_closed_until_cross_format_passes() -> None:
