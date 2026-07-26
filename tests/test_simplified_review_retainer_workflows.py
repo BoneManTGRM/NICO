@@ -27,34 +27,62 @@ def test_completed_assessment_adds_exact_run_final_review_action() -> None:
     assert "admin" not in source.lower().split("sessionstorage")[0][-100:]
 
 
+def test_final_review_uses_canonical_accepted_edition_api_for_strategic() -> None:
+    source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+
+    assert 'data-review-contract={canonical ? "accepted-edition-v2"' in source
+    assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review" in source
+    assert "review_authorized: true" in source
+    assert "authorization_confirmed: true" in source
+    assert "reviewer_role: reviewerRole.trim()" in source
+    assert 'decision,\n          decision_reason: reason' in source
+    assert 'await submitCanonicalDecision("approved")' in source
+    assert "await downloadCanonicalPdf(reviewed)" in source
+    assert "report_artifact_digest" in source
+    assert "approval_certificate_sha256" in source
+    assert "accepted_edition_manifest_sha256" in source
+
+
 def test_final_review_is_one_controlled_approval_and_download_action() -> None:
     source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
 
     assert "Final review, without the friction." in source
     assert "Approve and download final PDF" in source
-    assert "await ensureReview(current)" in source
-    assert '/approved`' in source
-    assert "await downloadApprovedPdf(latest)" in source
     assert "I reviewed this exact report." in source
-    assert "scorecard, evidence limitations, immutable run identity" in source
+    assert "scorecard, evidence limitations, immutable run identity, artifact digest" in source
     assert "Request more evidence" in source
     assert "Reject delivery" in source
-    assert 'type="password"' in source
+    assert 'recordOtherDecision("request_more_evidence")' in source
+    assert 'recordOtherDecision("rejected")' in source
     assert "localStorage" not in source
     assert "document.cookie" not in source
 
 
-def test_final_review_prioritizes_reviewer_and_token_over_advanced_identity() -> None:
+def test_final_review_prioritizes_reviewer_role_and_exact_run_identity() -> None:
     source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
 
     reviewer = source.index("Authorized reviewer")
-    token = source.index("Operator admin token")
-    open_review = source.index("Open secure review")
+    role = source.index("Reviewer role")
+    open_review = source.index("Open review")
     advanced = source.index("Change report identity or scope")
 
-    assert reviewer < token < open_review < advanced
+    assert reviewer < role < open_review < advanced
     assert "The report identity is already attached" in source
-    assert "The operator token stays only in this open page" in source
+    assert "No secret is stored in the URL or browser storage" in source
+    assert "Operator admin token" in source
+    assert 'type="password"' in source
+
+
+def test_final_review_has_mexican_spanish_accepted_edition_parity() -> None:
+    source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
+
+    assert "ACEPTACIÓN CONTROLADA DE NICO" in source
+    assert "Aprobar y descargar PDF final" in source
+    assert "Solicitar más evidencia" in source
+    assert "Rechazar entrega" in source
+    assert "Certificado de aprobación" in source
+    assert 'query.get("lang") === "es-MX"' in source
+    assert "document.documentElement.lang = requestedLocale" in source
 
 
 def test_retainer_workspace_requires_one_exact_baseline_and_explains_scope() -> None:
