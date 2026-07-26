@@ -14,6 +14,7 @@ import AssessmentExpressRecoveryGuard from "./AssessmentExpressRecoveryGuard";
 import AssessmentFailureEvidencePanel from "./AssessmentFailureEvidencePanel";
 import AssessmentFailureResponseBridge from "./AssessmentFailureResponseBridge";
 import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
+import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
@@ -89,6 +90,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <RetainerAutoEvidenceLauncher />
           <WorkspaceClarityRepair />
           <UnifiedAssessmentPublicGuard />
+          <AssessmentFinalReviewAction />
           <PrimaryNavigation />
           <WorkflowCallout />
           <GenericRepositoryExample />
