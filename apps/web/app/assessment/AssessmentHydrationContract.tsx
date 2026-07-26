@@ -28,6 +28,11 @@ function compact(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function replaceText(node: HTMLElement, value: string): void {
+  if (compact(node.textContent) === value) return;
+  node.replaceChildren(document.createTextNode(value));
+}
+
 export default function AssessmentHydrationContract({locale, releaseSha, clientCopyContract}: Props) {
   useEffect(() => {
     let cancelled = false;
@@ -41,15 +46,40 @@ export default function AssessmentHydrationContract({locale, releaseSha, clientC
 
       const action = workspace.querySelector<HTMLElement>(ACTION_SELECTOR);
       const heading = workspace.querySelector<HTMLElement>("#assessment .section-head h2");
-      const observedAction = compact(action?.textContent);
-      const observedHeading = compact(heading?.textContent);
+      if (!action || !heading) return false;
+
       const expected = EXPECTED_COPY[locale];
+      const originalAction = compact(action.textContent);
+      const originalHeading = compact(heading.textContent);
+      let repaired = false;
+
+      // The exact server release can occasionally be paired with a stale client
+      // chunk during a deployment transition. Repair only the idle engagement copy
+      // before any run state exists; never overwrite live progress labels.
+      const runStateExists = Boolean(workspace.querySelector('[data-assessment-run-state="true"]'));
+      if (!runStateExists) {
+        if (originalAction !== expected.action) {
+          replaceText(action, expected.action);
+          action.setAttribute("aria-label", expected.action);
+          repaired = true;
+        }
+        if (originalHeading !== expected.heading) {
+          replaceText(heading, expected.heading);
+          repaired = true;
+        }
+      }
+
+      const observedAction = compact(action.textContent);
+      const observedHeading = compact(heading.textContent);
       const verified = observedAction === expected.action && observedHeading === expected.heading;
 
       workspace.dataset.assessmentHydrated = "true";
       workspace.dataset.assessmentClientCopyContract = clientCopyContract;
       workspace.dataset.assessmentClientReleaseSha = compact(releaseSha) || "unknown";
       workspace.dataset.assessmentClientCopyVerified = verified ? "true" : "false";
+      workspace.dataset.assessmentClientCopyRepaired = repaired ? "true" : "false";
+      workspace.dataset.assessmentClientOriginalAction = originalAction || "missing";
+      workspace.dataset.assessmentClientOriginalHeading = originalHeading || "missing";
       workspace.dataset.assessmentClientObservedAction = observedAction || "missing";
       workspace.dataset.assessmentClientObservedHeading = observedHeading || "missing";
 
