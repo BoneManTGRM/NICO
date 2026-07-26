@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/diagnose-cross-format-run.yml"
+      - "scripts/diagnose_cross_format_run.py"
 
 permissions:
   contents: read
@@ -12,85 +13,8 @@ jobs:
   inspect:
     runs-on: ubuntu-24.04
     steps:
-      - name: Install PDF text reader
-        run: python -m pip install --disable-pip-version-check pypdf==6.6.0
-      - name: Read bounded production stage and artifact surfaces
+      - uses: actions/checkout@v7
+      - run: python -m pip install --disable-pip-version-check pypdf==6.6.0
+      - run: python scripts/diagnose_cross_format_run.py
         env:
           RUN_ID: comprun_1d2f294b68be41c7be6a90cbd6ce1663
-        run: |
-          python - <<'PY'
-          import base64
-          import html
-          import io
-          import json
-          import os
-          import re
-          import urllib.request
-
-          from pypdf import PdfReader
-
-          def compact(value):
-              return " ".join(str(value or "").split())
-
-          def around(value, label, radius=260):
-              text = compact(value)
-              index = text.casefold().find(label.casefold())
-              if index < 0:
-                  return "LABEL NOT FOUND"
-              return text[max(0, index - 40):index + radius]
-
-          run_id = os.environ["RUN_ID"]
-          url = f"https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/{run_id}"
-          with urllib.request.urlopen(url, timeout=60) as response:
-              payload = json.load(response)
-          record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
-          stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
-          stage = stage_results.get("cross_format_truth_verification")
-          report = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
-          assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
-          markdown = str(report.get("markdown") or "")
-          rendered_html = str(report.get("html") or "")
-          html_text = compact(html.unescape(re.sub(r"<[^>]+>", " ", rendered_html)))
-          encoded_pdf = str(report.get("pdf_base64") or "")
-          pdf = base64.b64decode(encoded_pdf, validate=True) if encoded_pdf else b""
-          pdf_text = ""
-          if pdf.startswith(b"%PDF"):
-              reader = PdfReader(io.BytesIO(pdf))
-              pdf_text = compact(" ".join((page.extract_text() or "") for page in reader.pages[:3]))
-          score_tokens = sorted(set(re.findall(r"\b(?:100|[1-9]?\d)/100\b", compact(markdown))))
-          print(json.dumps({
-              "http_status": 200,
-              "run_id": payload.get("run_id") or record.get("identity", {}).get("run_id"),
-              "status": payload.get("status") or record.get("status"),
-              "current_stage": payload.get("current_stage") or record.get("current_stage"),
-              "cross_format_truth_verification": stage,
-              "assessment_scores": {
-                  "technical_score": assessment.get("technical_score"),
-                  "evidence_adjusted_score": assessment.get("evidence_adjusted_score"),
-                  "canonical_evidence_adjusted_score": assessment.get("canonical_evidence_adjusted_score"),
-                  "maturity_signal": assessment.get("maturity_signal"),
-              },
-              "report_metadata": {
-                  key: report.get(key)
-                  for key in (
-                      "service_id", "report_id", "report_finality", "approval_status",
-                      "delivery_status", "human_review_required", "client_delivery_allowed",
-                      "report_language", "locale", "canonical_truth_sha256", "pdf_error",
-                  )
-              },
-              "surface_diagnostics": {
-                  "markdown_length": len(markdown),
-                  "html_length": len(rendered_html),
-                  "pdf_length": len(pdf),
-                  "markdown_score_tokens": score_tokens,
-                  "markdown_technical": around(markdown, "Technical maturity"),
-                  "markdown_adjusted": around(markdown, "Evidence-Adjusted"),
-                  "markdown_delivery": around(markdown, "CLIENT DELIVERY"),
-                  "html_technical": around(html_text, "Technical maturity"),
-                  "html_adjusted": around(html_text, "Evidence-Adjusted"),
-                  "pdf_technical": around(pdf_text, "TECHNICAL MATURITY"),
-                  "pdf_adjusted": around(pdf_text, "EVIDENCE-ADJUSTED"),
-                  "pdf_delivery": around(pdf_text, "PENDING HUMAN APPROVAL"),
-              },
-          }, indent=2, sort_keys=True))
-          PY
