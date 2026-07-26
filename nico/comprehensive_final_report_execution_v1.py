@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
@@ -8,8 +9,8 @@ from fastapi import FastAPI
 
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
-VERSION = "nico.comprehensive_final_report_execution.v2"
-_MARKER = "__nico_comprehensive_final_report_execution_v2__"
+VERSION = "nico.comprehensive_final_report_execution.v3"
+_MARKER = "__nico_comprehensive_final_report_execution_v3__"
 
 
 def _text(value: Any, limit: int = 1600) -> str:
@@ -30,6 +31,83 @@ def _decode_pdf(package: dict[str, Any]) -> bytes:
         return base64.b64decode(encoded, validate=True)
     except Exception:
         return b""
+
+
+def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Copy canonical score truth into the final report input without global mutation.
+
+    Earlier report layers can legitimately retain an Evidence-Adjusted score that differs
+    from technical maturity. The final package must receive one synchronized assessment
+    before Markdown, HTML, JSON, and PDF are rendered. Applying this at the production
+    provider boundary avoids process-global monkey patches while guaranteeing that every
+    final format starts from the same score pair.
+    """
+
+    from nico.comprehensive_cross_format_finality_v49 import (
+        synchronize_comprehensive_score_truth,
+    )
+
+    output = dict(context)
+    source_stages = context.get("prior_stage_results")
+    if not isinstance(source_stages, dict):
+        return output, {
+            "status": "unavailable",
+            "reason": "prior_stage_results_unavailable",
+        }
+
+    stages = deepcopy(source_stages)
+    scoring = stages.get("evidence_reconciliation_and_scoring")
+    if not isinstance(scoring, dict):
+        output["prior_stage_results"] = stages
+        return output, {
+            "status": "unavailable",
+            "reason": "canonical_scoring_stage_unavailable",
+        }
+
+    assessment = scoring.get("assessment")
+    if not isinstance(assessment, dict):
+        output["prior_stage_results"] = stages
+        return output, {
+            "status": "unavailable",
+            "reason": "canonical_scoring_assessment_unavailable",
+        }
+
+    synchronized = synchronize_comprehensive_score_truth(assessment)
+    scoring["assessment"] = synchronized
+    maturity = (
+        synchronized.get("maturity_signal")
+        if isinstance(synchronized.get("maturity_signal"), dict)
+        else {}
+    )
+    technical = synchronized.get("technical_score", maturity.get("technical_score"))
+    adjusted = synchronized.get(
+        "canonical_evidence_adjusted_score",
+        maturity.get("canonical_evidence_adjusted_score"),
+    )
+    evidence = scoring.get("evidence") if isinstance(scoring.get("evidence"), dict) else {}
+    evidence.update(
+        {
+            "technical_score": technical,
+            "evidence_adjusted_score": adjusted,
+            "canonical_evidence_adjusted_score": adjusted,
+            "final_report_input_scores_synchronized": True,
+        }
+    )
+    scoring["evidence"] = evidence
+    scoring["canonical_evidence_adjusted_score"] = adjusted
+    stages["evidence_reconciliation_and_scoring"] = scoring
+    output["prior_stage_results"] = stages
+    truth = {
+        "status": "complete" if technical is not None and adjusted is not None else "incomplete",
+        "version": VERSION,
+        "technical_score": technical,
+        "canonical_evidence_adjusted_score": adjusted,
+        "technical_presented_score": maturity.get("presented_score"),
+        "input_assessment_synchronized": True,
+        "global_report_builder_mutated": False,
+    }
+    output["final_report_input_score_truth"] = truth
+    return output, truth
 
 
 def final_report_execution_readiness(result: dict[str, Any]) -> dict[str, Any]:
@@ -81,9 +159,11 @@ def wrap_final_report_provider(
 
     @wraps(provider)
     def wrapped(context: dict[str, Any]) -> dict[str, Any]:
-        result = provider(context)
+        report_context, score_truth = _canonical_final_report_context(context)
+        result = provider(report_context)
         if not isinstance(result, dict):
             return result
+        result["final_report_input_score_truth"] = score_truth
         readiness = final_report_execution_readiness(result)
         result["final_report_execution_readiness"] = readiness
         status = str(result.get("status") or "").strip().lower()
@@ -110,6 +190,7 @@ def wrap_final_report_provider(
                 "final_package": True,
                 "human_review_required": True,
                 "client_delivery_allowed": False,
+                "final_report_input_score_truth": score_truth,
                 "final_report_execution_readiness": {
                     **readiness,
                     "status": "generated_review_required",
@@ -129,6 +210,7 @@ def wrap_final_report_provider(
                 "final_package": True,
                 "human_review_required": True,
                 "client_delivery_allowed": False,
+                "final_report_input_score_truth": score_truth,
             }
         )
         output["evidence"] = evidence
@@ -139,12 +221,7 @@ def wrap_final_report_provider(
 
 
 def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, Any]:
-    """Bind final report execution and the current fail-closed verifier in production.
-
-    The report builder is left untouched. The current verifier is bound directly into
-    the production registry so importing the production app cannot mutate standalone
-    report-package behavior or legacy compatibility tests.
-    """
+    """Bind synchronized final report execution and fail-closed verification."""
 
     from nico.comprehensive_cross_format_finality_v49 import (
         VERSION as CROSS_FORMAT_VERSION,
@@ -194,6 +271,7 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
         "cross_format_provider_bound": verifier_bound,
         "cross_format_contract_schema": CROSS_FORMAT_VERSION,
         "canonical_score_parity_required": True,
+        "canonical_score_synchronized_before_render": True,
         "failed_checks_exposed": True,
         "global_report_builder_mutated": False,
         "valid_final_artifacts_complete_execution": True,
@@ -205,6 +283,7 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
 
 __all__ = [
     "VERSION",
+    "_canonical_final_report_context",
     "final_report_execution_readiness",
     "install_comprehensive_final_report_execution",
     "wrap_final_report_provider",
