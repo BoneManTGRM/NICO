@@ -12,7 +12,7 @@ import two_service_live_acceptance_v3_impl as _impl
 # Preserve the historical module surface used by tests and production wrappers.
 runtime = _impl.runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v13"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v11"
 CURRENT_REVIEW_TERMINAL_PHASES = {
     "Expert review required",
     "Se requiere revisión experta",
