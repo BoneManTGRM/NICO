@@ -1,118 +1,159 @@
 # NICO Project Status
 
-This file is the canonical maturity map and completion roadmap for the current repository. A feature is not considered production-proven merely because code or unit tests exist.
+This file is the canonical maturity map for the repository. A feature is not production-proven merely because code or unit tests exist.
+
+The only customer-facing assessment product is the **NICO Comprehensive Technical Assessment**.
 
 ## Status definitions
 
-- **Stable**: canonical path, regression-covered, and expected to remain compatible.
-- **Operational**: implemented and used, but production proof or usability work remains.
-- **Experimental**: evidence of implementation exists, but contracts may change or coverage is incomplete.
-- **Legacy**: retained only for compatibility, migration, recovery, or operator-only access.
-- **Planned**: accepted work that is not complete.
+- **Stable** — canonical path, regression-covered, and expected to remain compatible.
+- **Operational** — implemented and used, but continuing production proof or usability work remains.
+- **Experimental** — implementation evidence exists, but contracts, coverage, security, or operating proof remain incomplete.
+- **Compatibility** — retained for migration, recovery, stored-data mapping, or operator-only access; not a separate product.
+- **Planned** — accepted work that is not complete.
 
 ## Current maturity map
 
 | Area | Status | Current boundary |
 |---|---|---|
-| Defensive authorization and prohibited-action policy | Stable | Explicit permission remains mandatory. Production-impacting changes require human approval. |
-| Local-first scanning and SQLite-backed repair memory | Stable | Local paths remain the lowest-dependency operating mode. |
-| Unified Express/Mid/Full assessment intake | Operational | Canonical start path. Continued production E2E proof is required for every deployment change. |
-| Express assessment | Operational | Produces an evidence-bound draft; human review remains required. |
-| Mid assessment orchestration | Operational | Exact-run continuation, report preparation, and review request exist. Full-cycle production fixtures need expansion. |
-| Full assessment orchestration | Operational | Repository evidence, scanner continuation, scoring, reports, and review request exist. Optional evidence may remain unavailable and must be disclosed. |
-| Scanner worker | Operational | Real subprocess execution exists for supported tools. Requested tools execute or are disclosed as unavailable, failed, or timed out; production proof should continue. |
-| RYE/TGRM repair planning | Operational | Repair prioritization and report-only code candidates exist. Suggested code is never applied automatically and remains unverified until the exact tests pass and a human approves implementation. Public validation and calibration remain separate work. |
-| Drift, baseline, verification, and repair memory | Operational | Core workflows exist; long-running and real-world fixture coverage should expand. |
-| Draft report generation | Operational | Representative synthetic golden fixtures and a deterministic recorded demonstration exist. Report-path consolidation remains work. |
-| Human review and approved artifacts | Operational | Explicit review and separately generated approved artifacts exist. Cross-module E2E proof is protected by regression coverage. |
-| Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Postgres restart and same-ID recovery are exercised in CI; production restart drills remain recurring operator evidence. |
-| Operations readiness, events, and alerts | Operational | Semantic readiness and bounded telemetry-degradation proof exist. Unauthenticated evidence remains neutral until loaded; live production evidence history should improve. |
-| Retainer workflows | Experimental | Backend and operator surfaces exist; product contract and real-client fixtures are still developing. |
-| Hosted SaaS multi-tenancy | Experimental | Scope and storage controls exist in parts; a complete commercial tenancy and billing product is not claimed. |
-| Automatic production repair | Planned | NICO prepares report-only repair candidates, tests, and rollback guidance. It does not autonomously edit, commit, push, deploy, or change client repositories. |
-| Legacy Full/Mid/Start Job routes | Legacy | Normal assessment starts route through the unified assessment page. Advanced review and recovery surfaces remain separate. |
-| CLI and local service architecture | Stable | Canonical configuration, scanning, governance, persistence, scoring, repair planning, drift, reporting, verification, and memory run through extracted modules. `nico.cli` remains only as a compatibility facade. |
+| Defensive authorization and prohibited-action policy | Stable | Explicit permission remains mandatory. Protected production-impacting changes require human approval. |
+| Local-first scanning and local persistence | Stable | Authorized local paths remain the lowest-dependency operating mode. |
+| NICO Comprehensive assessment orchestration | Operational | The canonical customer path captures an immutable repository snapshot, runs the configured evidence pipeline, prepares artifacts, verifies cross-format truth, and stops at expert review. Exact-release production proof remains required after relevant changes. |
+| Analyzer worker | Operational | Supported tools execute through controlled subprocesses or return explicit unavailable, failed, partial, malformed, or timed-out states. Production reliability and benchmark breadth must continue improving. |
+| Evidence provenance and immutable run identity | Operational | Repository, commit, run, scanner, report, approval, and artifact identities exist. Canonical normalization and completeness rules remain a transformation workstream. |
+| Technical scoring and assurance | Operational | Technical maturity, evidence assurance, and evidence-adjusted readiness are separated in the current Comprehensive package. Broader benchmark calibration remains incomplete. |
+| Finding correlation and remediation planning | Operational | Repair candidates, prioritization, acceptance criteria, verification, and rollback guidance exist in parts. Complete normalized finding coverage and measured preparation automation remain unproven. |
+| Decision-grade report generation | Operational | Canonical Markdown, HTML, JSON, and PDF generation and cross-format verification exist. Executive-presentation generation and complete canonical-package consolidation remain to prove. |
+| Independent quality review | Experimental | Cross-format and truth gates exist, but a complete logically independent adversarial review across all material claims and recommendations is not yet production-proven. |
+| Human review and approved editions | Operational | Required review, approval decisions, separately identified approved artifacts, and delivery blocking exist. Real-client operating evidence must continue. |
+| Controlled delivery, receipts, and acknowledgments | Operational | Integrity-bound delivery controls exist. Production operating drills and customer usability evidence remain recurring requirements. |
+| Operations readiness, events, and alerts | Operational | Exact deployment identity, persistence readiness, and bounded operational evidence exist. Company Queue and complete exception-based operations are not yet implemented. |
+| Guided client intake and scope validation | Experimental | Authorization, repository, client, project, and strategic evidence intake exist. Access validation, scope completeness, evidence requests, and engagement complexity require consolidation. |
+| Company Queue | Planned | One internal workspace for engagement state, blockers, reviewers, report readiness, remediation, continuing assurance, commercial milestones, and next actions is not production-proven. |
+| Controlled code remediation | Planned | NICO prepares repair candidates and verification guidance. Branch, patch, test, draft-pull-request, reviewer-packet, and post-merge verification automation are not production-proven. |
+| Continuing assurance | Experimental | Baseline, drift, repair memory, and monitoring components exist in parts. A commercial material-delta workflow and escalation policy are not production-proven. |
+| Hosted multi-tenancy | Experimental | Tenant and scope controls exist in parts. Complete commercial tenant isolation, role, retention, deletion, and cross-tenant proof are not claimed. |
+| Production backup, restore, and rollback | Planned | Repository restart and resilience tests exist. Railway Postgres backup, isolated restore, rollback, and measured recovery time remain to prove. |
+| Benchmark and maturity measurement | Experimental | Synthetic golden fixtures and reproducibility checks exist. The complete corpus, automatic denominators, and three consecutive target-level runs remain incomplete. |
+| Compatibility routes and storage values | Compatibility | Historical values may remain temporarily for migration and recovery. They must map into the same Comprehensive run, evidence ledger, score model, report package, and approval boundary. |
+| CLI and local service architecture | Stable | Canonical configuration, scanning, governance, persistence, scoring, repair planning, drift, reporting, verification, and memory run through extracted modules. The compatibility facade must not duplicate implementations. |
 
 ## Current release truth
 
-A release is considered deployable only when repository CI and the configured frontend/backend deployment checks pass for the intended commit. Deployment success does not prove an assessment run is correct; an authorized production smoke assessment is still required.
+A release is deployable only when required repository CI, security analysis, frontend build, and configured frontend/backend deployment checks pass for the intended commit.
 
-The latest verified deployed main commit is `7101df90e04f02780ef34763ae9c98d1e40ecc8e` (`Remove contradicted test-absence evidence from final report (#468)`). Its configured Vercel and Railway deployment checks passed. Authorized production run `express_run_fae863e57088494d8c4000e1e5521257` completed with Senior 92/100, aligned visible and detailed section scores, no missing release-readiness signals, the contradicted standalone no-test claim absent, the bounded-sample metric preserved, human review required, and `client_ready: false`. The verification workflow's substantive assessment step passed; its temporary assertion expected a positive cleanup count even though the fresh report was already clean, and that assertion was corrected and successfully reverified in workflow run `29413945233` with exact Express run `express_run_a1a93d3a93ef49b7a81129eed86ca6a5`. Historical workflow failures remain historical evidence and are not rewritten.
+Deployment success does not prove assessment correctness. Release-sensitive changes require exact deployment identity and retained production acceptance evidence, including two consecutive distinct Comprehensive run IDs, the expected immutable repository baseline, completed required stages, generated artifacts, passing cross-format verification, expert review required, and client delivery blocked before approval.
+
+The baseline used by the current transformation branch is `272f5ddde1e81e9f845eab0393f04a356b01d16f`.
 
 ## Claims NICO does not make
 
 NICO does not claim:
 
-- guaranteed vulnerability discovery
-- certification or compliance attestation
-- that unavailable scanners passed
-- that a score proves security
-- that generated repairs or code candidates are safe to implement without exact-context review and tests
-- that a draft report is approved or client-ready
-- that synthetic fixtures are live production evidence
-- that Reparodynamics is an independently validated academic discipline
+- guaranteed vulnerability discovery;
+- certification or compliance attestation;
+- that unavailable analyzers passed;
+- that a score proves security;
+- that generated repairs are safe without exact-context review and tests;
+- that an unapproved report is client-ready;
+- that synthetic fixtures are live production evidence;
+- that feature existence proves a maturity target;
+- that Reparodynamics is independently validated academic science.
 
-## Completion roadmap
+## Transformation roadmap
 
-Completed major workstreams: **11 of 12**.
+### 0. Truth, governance, and measurement — in progress
 
-- [x] Canonical architecture, operator guide, maturity map, and documentation index.
-- [x] Truthful README, security policy, contribution guidance, and repository templates.
-- [ ] Deployed browser/API E2E proof for unified Express, Mid, and Full with exact-run identity and no duplicate starts.
-- [x] Full-run metadata and route truth audit, including removal of stale Express/Mid wording.
-- [x] External scanner contract: every requested tool executes or is explicitly unavailable, failed, or timed out.
-- [x] Scanner result parsing and severity truth rather than exit-code-only approximation.
-- [x] CLI/service modularization across configuration, scanning, scoring, repair, drift, reporting, verification, and persistence.
-- [x] Packaging and one-command local development, including supported `nico` and `nico-api` entry points.
-- [x] Cross-module E2E coverage for assessment, report, review, approved artifact, controlled delivery, receipt, and acknowledgment.
-- [x] Restart, durable-storage, recovery, observability, and graceful-degradation proof.
-- [x] Additional representative golden fixtures and recorded evidence-bound demonstrations with no fabricated live claims.
-- [x] Public maturity boundaries for stable, operational, experimental, legacy, and planned areas.
+- [x] Establish one customer-facing product decision.
+- [x] Add repository-level transformation plan, status, decisions, metrics, and runbook documents on the transformation branch.
+- [x] Add a machine-readable product and maturity-target contract on the transformation branch.
+- [ ] Merge and verify the single-product baseline.
+- [ ] Establish the complete versioned benchmark corpus and automatic metric output.
 
-## Remaining execution order
+### 1. Production stability — in progress
 
-1. Execute and retain authorized deployed Express, Mid, and Full browser/API E2E proof.
-2. Review the evidence package, reconcile exact frontend/backend commits and run identities, and record precisely what passed, failed, timed out, or remained unavailable.
+- [x] Select Railway Postgres as the production persistence contract.
+- [x] Add exact frontend and backend deployment identity checks.
+- [x] Add production readiness and durable-storage gates.
+- [x] Add cross-format finality and expert-review boundaries.
+- [ ] Maintain two consecutive live Comprehensive passes for every release-sensitive change.
+- [ ] Prove production backup, isolated restore, rollback, and recovery time.
+- [ ] Complete a first authorized external GitHub production pilot.
 
-The remaining core work is one controlled production-proof workstream, plus any defect corrections uncovered by that proof. Provider expansion remains blocked until the final roadmap item is completed.
+### 2. Single-product consolidation — in progress
 
-## CLI/service modularization completion evidence
+- [x] Present one customer-facing assessment workspace.
+- [ ] Replace remaining public and internal product-tier terminology.
+- [ ] Consolidate API, persistence, report, analytics, and acceptance metadata around one customer-facing identity.
+- [ ] Bound all compatibility aliases and prove they cannot create competing scorecards or reports.
 
-The completed modularization workstream is bounded to the local CLI and service architecture:
+### 3. Canonical evidence platform — in progress
 
-- `nico.cli_entrypoint` is the canonical parser and dispatcher.
-- Runtime paths are resolved by `nico.local_runtime_config` without database or network work in that module body.
-- Local scanning, governance, SQLite persistence, scoring and repair planning, reporting, verification, and memory are implemented in narrow extracted modules.
-- `nico.cli` is a compatibility facade that preserves legacy imports and constructor behavior without duplicating scanner, schema, report, verification, memory, or parser implementations.
-- Package entrypoint, full test suite, integrity, CodeQL, audit, remediation, resilience, Postgres restart, and recorded-golden workflows passed for the facade conversion.
-- Main commit `3ca12001cea9ce3e17e5c5d23c904edd624d932b` passed the configured Vercel and Railway deployment checks.
+- [x] Preserve immutable repository and run identities in core workflows.
+- [x] Record explicit analyzer non-success states.
+- [ ] Complete one normalized evidence schema for tool manifests, raw artifacts, parsed evidence, completeness, checksums, retries, and audit history.
+- [ ] Make required-versus-optional evidence policy explicit and machine-tested.
+- [ ] Prove idempotent reruns and duplicate protection across all stages.
 
-This completion does not prove a live assessment, approve or apply a repair, authorize production changes, or permit client delivery.
+### 4. Comprehensive analysis and remediation intelligence — in progress
 
-## Resilience completion evidence
+- [x] Produce technical, security, architecture, delivery, quality, maturity, roadmap, staffing, and business-context analysis in the current workflow.
+- [ ] Complete the canonical finding model.
+- [ ] Complete duplicate, root-cause, contradiction, and cross-category correlation.
+- [ ] Generate implementation-ready remediation plans for at least 95% of material benchmark findings.
 
-The completed resilience workstream is bounded to repository and ephemeral-CI proof:
+### 5. Decision-grade delivery — in progress
 
-- `.github/workflows/postgres-restart-proof.yml` exercises NICO's real Postgres adapter and proves critical assessment, scanner, evidence, report, approval, and audit records survive fresh adapter instances with tenant and run identity preserved.
-- `.github/workflows/resilience-proof.yml` exercises stale scanner reconciliation, persisted `recovery_required` state, explicit same-ID resume, duplicate-resume idempotency, memory-fallback blocking, and bounded redacted telemetry degradation.
-- `scripts/postgres_restart_proof.py` and `scripts/build_resilience_proof.py` emit synthetic, non-live evidence artifacts without database URLs, credentials, automatic repair authority, approval, or client-delivery authority.
-- Scanner recovery remains operator-controlled; no automatic resume or production-impacting action is authorized by these proofs.
+- [x] Generate evidence-bound Markdown, HTML, JSON, and PDF artifacts.
+- [x] Block review when known cross-format truth checks fail.
+- [ ] Generate executive brief, engineering backlog, and executive presentation from the same canonical model.
+- [ ] Complete independent adversarial review with auditable changes.
+- [ ] Prove 100% material-claim evidence classification.
 
-This completion does not claim that Railway restarted, a production backup was restored, or a live client assessment recovered after an outage. Those remain recurring production-operations drills rather than repository completion blockers.
+### 6. Lean company operations — planned
 
-## Golden-fixture completion evidence
+- [ ] Complete guided intake, access validation, scope completeness, evidence requests, and workload classification.
+- [ ] Build Company Queue.
+- [ ] Route only ambiguous, high-impact, low-confidence, conflicting, protected, or incomplete items to human reviewers.
+- [ ] Automatically calculate and prepare the next safe action.
 
-The completed golden-fixture workstream is bounded to synthetic, non-live evidence:
+### 7. Controlled remediation — planned
 
-- `tests/fixtures/golden/manifest.json` governs unavailable-evidence, complete-evidence, and mixed-risk repair scenarios.
-- Every fixture remains review-required, unapproved, non-client-ready, non-certifying, and delivery-blocked.
-- `.github/workflows/recorded-golden-demonstration.yml` builds the suite twice, requires byte-for-byte reproducibility, and uploads bounded JSON and Markdown artifacts.
-- `scripts/build_golden_demonstration.py` fails closed on unsafe paths, coverage drift, duplicate identities, live claims, weakened review or delivery boundaries, certification claims, and automatic production-change permission.
+- [ ] Generate remediation specifications and regression-risk classification.
+- [ ] Create branches, code changes, tests, and draft pull requests for eligible findings.
+- [ ] Generate reviewer packets and post-merge verification evidence.
+- [ ] Enforce protected-change human approval.
 
-This completion does not count as deployed browser/API E2E proof or live production evidence.
+### 8. Continuing assurance — planned
 
-## Phase 2 gate
+- [ ] Establish approved versioned baselines.
+- [ ] Detect material repository, dependency, vulnerability, secret, CI, test, architecture, infrastructure, permission, score, and verification changes.
+- [ ] Produce targeted delta reports and reopen invalidated closures.
+- [ ] Escalate only material changes or defensibility failures.
 
-Repository-provider expansion remains deferred until the completion roadmap above is finished and production-proven. The intended order is provider-neutral contract, GitHub parity adapter, GitLab, Bitbucket, Azure DevOps, Gitea/Forgejo, then generic Git.
+### 9. Security, recovery, and scale — in progress
 
-This document is the authoritative tracker. GitHub issues are reserved for actionable defects or bounded implementation work rather than long-lived roadmap bookkeeping.
+- [ ] Complete tenant isolation and role-based authorization proof.
+- [ ] Complete retention and deletion workflows.
+- [ ] Complete production backup/restore/rollback evidence.
+- [ ] Test large repositories, large artifacts, concurrent assessments, slow tools, failures, timeouts, and resumable recovery.
+
+### 10. Maturity proof — planned
+
+- [ ] Run the versioned benchmark from clean environments.
+- [ ] Produce metrics automatically.
+- [ ] Meet each target on three consecutive complete runs.
+- [ ] Resolve all Critical and High benchmark regressions.
+- [ ] Verify human-time targets on representative engagements.
+
+## Next execution order
+
+1. Merge and verify the single-product transformation baseline.
+2. Consolidate runtime product identity and bounded compatibility mappings.
+3. Complete canonical evidence and finding schemas.
+4. Implement Company Queue and exception-based human review.
+5. Complete canonical delivery package and adversarial quality review.
+6. Implement controlled remediation and continuing assurance.
+7. Complete production recovery, tenancy, scale, external-pilot, and repeated benchmark proof.
+
+This document is authoritative for maturity state. `MASTER_PLAN.md` defines the dependency order, `STATUS.md` records verified progress, and `METRICS.md` defines how target claims are measured.

@@ -45,12 +45,12 @@ def test_readme_states_current_provider_and_package_scope_truthfully() -> None:
     source = README.read_text(encoding="utf-8")
 
     assert "## Repository-provider scope" in source
-    assert "current hosted remote-repository integration is **GitHub-native**" in source
-    assert "does not currently claim native GitLab" in source
+    assert "current hosted remote-repository integration is GitHub-native" in source
+    assert "does not currently claim native hosted integration for other repository providers" in source
     assert "Provider expansion remains deferred" in source
-    assert "## Package installation and quick start" in source
+    assert "## Package installation and local start" in source
     assert 'python -m pip install -e ".[dev,scanners]"' in source
-    assert "publication to a public package index is a separate release" in source
+    assert "Publication to a public package index is a separate release" in source
     assert "docs/SELF_HOSTING.md" in source
     assert "docs/SCANNERS.md" in source
     assert "docs/SAMPLES.md" in source
