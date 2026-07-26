@@ -176,7 +176,6 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
     setattr(build_package, _PATCH_MARKER, True)
     setattr(build_package, "_nico_previous", current)
     report.build_comprehensive_report_package = build_package
-    base_report.build_comprehensive_report_package = build_package
     providers.build_comprehensive_report_package = build_package
 
     original_delivery_boundary = cross_format._delivery_boundary_present
