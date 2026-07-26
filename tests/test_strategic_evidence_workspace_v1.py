@@ -22,33 +22,37 @@ def test_workspace_exposes_exact_canonical_human_evidence_schema() -> None:
         assert f"requiredFields: [{exact_fields}]" in source
 
 
-def test_intake_is_bilingual_fail_closed_and_progressively_disclosed() -> None:
+def test_intake_is_bilingual_fail_closed_and_uses_one_focused_editor() -> None:
     source = FORM.read_text(encoding="utf-8")
 
     assert "OPTIONAL HUMAN EVIDENCE" in source
     assert "EVIDENCIA HUMANA OPCIONAL" in source
-    assert "Anything omitted remains Not assessed" in source
-    assert "permanece como No evaluado" in source
+    assert "Missing modules remain Not assessed and are never inferred from repository code" in source
+    assert "Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio" in source
     assert "moduleCompleteness" in source
     assert "exclusion_rationale" in source
     assert "evidenceLines(event.target.value)" in source
-    assert "<details className={styles.strategicEvidence}>" in source
+    assert "moduleList" in source
+    assert "moduleEditor" in source
+    assert "mobileChooser" in source
     assert "Add evidence" in source
-    assert "Remove module" in source
+    assert "Remove from intake" in source
     assert "Include this module" not in source
     assert "summary-box" not in source
+    assert "<details className={styles.strategicEvidence}>" not in source
 
 
 def test_intake_has_compact_mobile_controls() -> None:
     source = STYLES.read_text(encoding="utf-8")
 
     assert "@media (max-width: 720px)" in source
-    assert ".intakeIdentity small" in source
-    assert "display: none" in source
-    assert ".addButton" in source
-    assert "min-height: 44px" in source
+    assert ".mobileChooser" in source
+    assert ".moduleList {\n    display: none;" in source
+    assert ".primaryAction" in source
+    assert "min-height: 46px" in source
     assert ".metadataGrid" in source
-    assert "grid-template-columns: 1fr" in source
+    assert ".requiredEvidence" in source
+    assert "grid-template-columns: minmax(0, 1fr)" in source
 
 
 def test_controller_sends_compacted_evidence_on_same_canonical_run() -> None:
