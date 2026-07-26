@@ -23,7 +23,11 @@ def _record(*, terminal: bool) -> dict:
             "status": "complete",
             "summary": "Decision-grade report generated.",
             "assessment": {
-                "maturity_signal": {"level": "Senior", "score": 86, "presented_score": 86},
+                "maturity_signal": {
+                    "level": "Senior",
+                    "score": 86,
+                    "presented_score": 86,
+                },
                 "sections": [
                     {
                         "id": "architecture",
@@ -53,7 +57,7 @@ def _record(*, terminal: bool) -> dict:
         },
     }
     return {
-        "artifact_schema": "nico.comprehensive_run_record.v1",
+        "artifact_schema": "nico.comprehensive_run_record.v4",
         "service_id": "comprehensive",
         "identity": {
             "run_id": "comprun_projection_001",
@@ -62,9 +66,30 @@ def _record(*, terminal: bool) -> dict:
             "evidence_ledger_id": "ledger_projection_001",
             "customer_id": "customer_projection",
             "project_id": "project_projection",
+            "assessment_depth": "strategic",
+            "report_language": "en",
+        },
+        "human_evidence": {
+            "artifact_schema": "nico.strategic_human_evidence.v2",
+            "status": "review_limited",
+            "provided_module_ids": [],
+            "status_counts": {
+                "complete": 0,
+                "partial": 0,
+                "not_assessed": 10,
+                "excluded": 0,
+            },
+            "human_statement_count": 0,
+            "attachment_reference_count": 0,
+            "structured_record_count": 0,
+            "human_evidence_sha256": "d" * 64,
         },
         "status": status,
-        "current_stage": "human_review_request" if terminal else "cross_format_truth_verification",
+        "current_stage": (
+            "human_review_request"
+            if terminal
+            else "cross_format_truth_verification"
+        ),
         "completed_stages": completed,
         "stage_results": stage_results,
         "blockers": [],
@@ -78,13 +103,20 @@ def _record(*, terminal: bool) -> dict:
 
 
 def test_active_response_omits_generated_report_and_large_stage_payloads() -> None:
-    response = ComprehensiveApiController._response(_record(terminal=False), operation="continued")
+    response = ComprehensiveApiController._response(
+        _record(terminal=False),
+        operation="continued",
+    )
 
     assert response["artifact_schema"] == VERSION
     assert response["terminal"] is False
+    assert response["assessment_depth"] == "strategic"
+    assert response["report_language"] == "en"
     assert "reports" not in response
     assert "assessment" not in response
-    stage = response["record"]["stage_results"]["final_comprehensive_report_generation"]
+    stage = response["record"]["stage_results"][
+        "final_comprehensive_report_generation"
+    ]
     assert "report_package" not in stage
     assert "assessment" not in stage
     assert "scanner_outputs" not in stage
@@ -95,17 +127,24 @@ def test_active_response_omits_generated_report_and_large_stage_payloads() -> No
 
 
 def test_terminal_response_attaches_one_report_package_outside_projected_record() -> None:
-    response = ComprehensiveApiController._response(_record(terminal=True), operation="status")
+    response = ComprehensiveApiController._response(
+        _record(terminal=True),
+        operation="status",
+    )
 
     assert response["terminal"] is True
     assert response["status"] == "review_required"
     assert response["reports"]["service_id"] == "comprehensive"
     assert response["reports"]["pdf_base64"] == "x" * (2 * 1024 * 1024)
-    assert response["reports"]["json"] == {"canonical_truth_sha256": "a" * 64}
+    assert response["reports"]["json"] == {
+        "canonical_truth_sha256": "a" * 64
+    }
     assert response["assessment"]["maturity_signal"]["presented_score"] == 86
     assert response["assessment"]["sections"][0]["label"] == "Architecture"
     assert len(response["assessment"]["sections"][0]["evidence"][0]) <= 4_001
-    stage = response["record"]["stage_results"]["final_comprehensive_report_generation"]
+    stage = response["record"]["stage_results"][
+        "final_comprehensive_report_generation"
+    ]
     assert "report_package" not in stage
     assert "assessment" not in stage
     assert response["response_projection"]["terminal_report_attached"] is True
