@@ -38,7 +38,10 @@ def test_frontend_retries_and_recovers_existing_run_state() -> None:
     assert "async function recoverRun" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in source
     assert "const recovered = await recoverRun(runId)" in source
-    assert "completed stages remain bound to the displayed run ID" in source
+    assert "async function retry()" in source
+    assert "setResult(recovered)" in source
+    assert "await continueRun(recovered, currentScope(), token)" in source
+    assert "runStatusUnavailableMessage" in source
 
 
 def test_retry_logic_does_not_bypass_authorization_or_proxy_allowlist() -> None:
