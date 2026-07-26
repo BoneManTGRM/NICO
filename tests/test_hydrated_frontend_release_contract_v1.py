@@ -7,8 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
+ROUTE = ROOT / "apps" / "web" / "app" / "assessment" / "page.tsx"
 PAGE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentPage.tsx"
 SENTINEL = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentHydrationContract.tsx"
+SPANISH_ROUTE = ROOT / "apps" / "web" / "app" / "es" / "assessment" / "page.tsx"
 ACCEPTANCE = SCRIPTS / "unified_production_acceptance.py"
 
 
@@ -20,6 +22,17 @@ def load_acceptance_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_live_routes_use_the_single_canonical_hydrated_assessment_page() -> None:
+    route = ROUTE.read_text(encoding="utf-8").strip()
+    spanish_route = SPANISH_ROUTE.read_text(encoding="utf-8")
+
+    assert route == 'export {default} from "./AssessmentPage";'
+    assert "AssessmentWorkspace" not in route
+    assert "AssessmentMetricDisplayV44" not in route
+    assert 'import AssessmentPage from "../../assessment/page"' in spanish_route
+    assert '<AssessmentPage locale="es-MX" />' in spanish_route
 
 
 def test_assessment_page_binds_client_hydration_to_server_release_sha() -> None:
