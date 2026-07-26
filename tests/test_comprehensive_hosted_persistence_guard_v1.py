@@ -69,6 +69,7 @@ def test_required_sqlite_without_persistent_volume_fails_before_creating_doomed_
     monkeypatch.delenv("RAILWAY_VOLUME_MOUNT_PATH", raising=False)
     monkeypatch.delenv("NICO_DURABLE_VOLUME_PATH", raising=False)
     monkeypatch.delenv("NICO_SQLITE_PERSISTENCE_CONFIRMED", raising=False)
+    monkeypatch.setattr(bootstrap, "_mounted_filesystems", lambda: ())
 
     app = FastAPI()
     controller = bootstrap.install_comprehensive_production_bootstrap(
@@ -78,6 +79,7 @@ def test_required_sqlite_without_persistent_volume_fails_before_creating_doomed_
 
     assert controller is None
     assert app.state.comprehensive_runtime["reason"] == "comprehensive_sqlite_persistent_volume_required"
+    assert app.state.comprehensive_runtime["persistence_proof_source"] == "unverified_container_filesystem"
     response = TestClient(app).post("/assessment/comprehensive-run", json=_payload("comprun_doomed"))
     assert response.status_code == 503
     assert "persistent volume" in response.json()["detail"]["message"].lower()
@@ -100,6 +102,7 @@ def test_railway_volume_path_preserves_same_run_after_backend_replacement(
     first_runtime = first.state.comprehensive_runtime
     assert first_runtime["persistence_adapter"] == "sqlite"
     assert first_runtime["storage_source"] == "mounted_durable_sqlite"
+    assert first_runtime["persistence_proof_source"] == "configured_volume"
     assert first_runtime["survives_container_replacement_verified"] is True
 
     first_client = TestClient(first)
@@ -122,6 +125,57 @@ def test_railway_volume_path_preserves_same_run_after_backend_replacement(
     assert restored.json()["revision"] == advanced["revision"]
     assert restored.json()["integrity_sha256"] == advanced["integrity_sha256"]
     assert restored.json()["persistence"]["survives_container_replacement_verified"] is True
+
+
+def test_detected_non_ephemeral_mount_is_accepted_when_platform_variable_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _clear_postgres_aliases(monkeypatch)
+    volume = tmp_path / "mounted-volume"
+    database_path = volume / "nico-runtime.sqlite3"
+    monkeypatch.setenv("NICO_ENABLE_SQLITE_DURABLE_STORAGE", "true")
+    monkeypatch.setenv("NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE", "true")
+    monkeypatch.setenv("NICO_SQLITE_PATH", str(database_path))
+    monkeypatch.delenv("RAILWAY_VOLUME_MOUNT_PATH", raising=False)
+    monkeypatch.delenv("NICO_DURABLE_VOLUME_PATH", raising=False)
+    monkeypatch.delenv("NICO_SQLITE_PERSISTENCE_CONFIRMED", raising=False)
+    monkeypatch.setattr(
+        bootstrap,
+        "_mounted_filesystems",
+        lambda: ((volume, "ext4"), (Path("/"), "overlay")),
+    )
+
+    app = FastAPI()
+    controller = bootstrap.install_comprehensive_production_bootstrap(
+        app,
+        capability_executors=_executors(),
+    )
+
+    assert controller is not None
+    runtime = app.state.comprehensive_runtime
+    assert runtime["persistence_adapter"] == "sqlite"
+    assert runtime["storage_source"] == "mounted_durable_sqlite"
+    assert runtime["persistence_proof_source"] == "detected_non_ephemeral_mount"
+    assert runtime["survives_container_replacement_verified"] is True
+
+
+def test_ephemeral_mount_types_never_claim_container_replacement_durability(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "data" / "nico-runtime.sqlite3"
+    monkeypatch.setattr(
+        bootstrap,
+        "_mounted_filesystems",
+        lambda: ((tmp_path / "data", "tmpfs"), (Path("/"), "overlay")),
+    )
+
+    assert bootstrap._detected_durable_mount(database_path) is None
+    assert bootstrap._sqlite_persistence_proof(database_path) == (
+        False,
+        "unverified_container_filesystem",
+    )
 
 
 def test_comprehensive_bootstrap_uses_private_postgres_alias_resolution(
@@ -158,5 +212,6 @@ def test_comprehensive_bootstrap_uses_private_postgres_alias_resolution(
     runtime = app.state.comprehensive_runtime
     assert runtime["database_url_source"] == "RAILWAY_DATABASE_URL"
     assert runtime["storage_source"] == "postgres:RAILWAY_DATABASE_URL"
+    assert runtime["persistence_proof_source"] == "postgres"
     assert runtime["survives_container_replacement_verified"] is True
     assert "secret" not in str(runtime)
