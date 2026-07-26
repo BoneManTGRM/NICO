@@ -6,6 +6,9 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any
 
+from nico.comprehensive_report_package import (
+    build_comprehensive_report_package as _NATIVE_V2_REPORT_PACKAGE,
+)
 from nico.comprehensive_report_scanner_detection_v51 import (
     _extract_report_language,
     _locale,
@@ -32,6 +35,7 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
 
     current = report.build_comprehensive_report_package
     if getattr(current, _PATCH_MARKER, False):
+        base_report.build_comprehensive_report_package = _NATIVE_V2_REPORT_PACKAGE
         return {"status": "already_installed", "version": VERSION, "bound": True}
 
     original_reconcile = report.reconcile_comprehensive_assessment
@@ -177,6 +181,7 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
     setattr(build_package, "_nico_previous", current)
     report.build_comprehensive_report_package = build_package
     providers.build_comprehensive_report_package = build_package
+    base_report.build_comprehensive_report_package = _NATIVE_V2_REPORT_PACKAGE
 
     original_delivery_boundary = cross_format._delivery_boundary_present
 
@@ -207,6 +212,7 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
         "bounded_static_analysis_score": True,
         "canonical_score_parity": True,
         "cross_format_finality_semantics": True,
+        "legacy_v2_report_package_isolated": True,
         "spanish_client_artifacts": True,
         "spanish_cross_format_finality": True,
         "human_review_required": True,
