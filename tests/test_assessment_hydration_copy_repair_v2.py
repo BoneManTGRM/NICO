@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 SENTINEL = Path("apps/web/app/assessment/AssessmentHydrationContract.tsx")
+PAGE = Path("apps/web/app/assessment/AssessmentPage.tsx")
 
 
 def test_hydration_contract_repairs_stale_idle_copy_without_touching_live_progress() -> None:
@@ -12,12 +13,22 @@ def test_hydration_contract_repairs_stale_idle_copy_without_touching_live_progre
     assert "function replaceText" in source
     assert 'workspace.querySelector(\'[data-assessment-run-state="true"]\')' in source
     assert "if (!runStateExists)" in source
+    assert "actionIsIdleOrRetired" in source
     assert "replaceText(action, expected.action)" in source
     assert 'action.setAttribute("aria-label", expected.action)' in source
     assert "replaceText(heading, expected.heading)" in source
     assert 'workspace.dataset.assessmentClientCopyRepaired = repaired ? "true" : "false"' in source
     assert "workspace.dataset.assessmentClientOriginalAction" in source
     assert "workspace.dataset.assessmentClientOriginalHeading" in source
+
+
+def test_hydration_contract_observes_late_client_settling_and_runs_after_workspace() -> None:
+    source = SENTINEL.read_text(encoding="utf-8")
+    page = PAGE.read_text(encoding="utf-8")
+
+    assert "observer.observe(document.documentElement" in source
+    assert "observer?.disconnect();\n        observer = null" not in source
+    assert page.index("<AssessmentWorkspace") < page.index("<AssessmentHydrationContract")
 
 
 def test_hydration_contract_keeps_bilingual_authoritative_copy() -> None:
