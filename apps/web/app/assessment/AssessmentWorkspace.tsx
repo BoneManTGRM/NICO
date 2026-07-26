@@ -19,6 +19,7 @@ import {
   statusClass,
 } from "./assessmentModel";
 import type {Copy, Locale} from "./assessmentTypes";
+import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {useAssessmentRun} from "./useAssessmentRun";
 
 function IdentifierValue({value, fallback, copy}: {value?: string; fallback: string; copy: Copy}) {
@@ -99,7 +100,28 @@ function Scorecard({sections, copy}: {sections: NonNullable<ReturnType<typeof as
 export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) {
   const copy = copyFor(locale);
   const controller = useAssessmentRun(locale);
-  const {service, repository, client, project, authorized, phase, result, message, error, attempt, elapsed, running, setRepository, setClient, setProject, setAuthorized, setError, run} = controller;
+  const {
+    service,
+    repository,
+    client,
+    project,
+    authorized,
+    humanEvidence,
+    phase,
+    result,
+    message,
+    error,
+    attempt,
+    elapsed,
+    running,
+    setRepository,
+    setClient,
+    setProject,
+    setAuthorized,
+    setHumanEvidence,
+    setError,
+    run,
+  } = controller;
   const [copied, setCopied] = useState(false);
 
   const serviceCopy = copy.service;
@@ -157,6 +179,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <label>{copy.client}<input value={client} onChange={(event) => setClient(event.target.value)} disabled={running} /></label>
         <label>{copy.project}<input value={project} onChange={(event) => setProject(event.target.value)} disabled={running} /></label>
       </div>
+      <StrategicEvidenceForm
+        locale={locale}
+        value={humanEvidence}
+        onChange={setHumanEvidence}
+        disabled={running}
+      />
       <label className="check-row"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} disabled={running} />{copy.confirm}</label>
       <button type="button" className="primary-button" disabled={!authorized || !repository.trim() || running} onClick={run}>{running ? copy.phases.running : copy.run}</button>
       {error ? <p className="error-box">{error}</p> : null}

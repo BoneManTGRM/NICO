@@ -3,7 +3,19 @@
 import {useEffect, useRef, useState} from "react";
 import {copyFor} from "./assessmentCopy";
 import {apiUrl, parseJson, scopeId, terminal, wait} from "./assessmentModel";
-import {MAX_POLL_ATTEMPTS, POLL_INTERVAL_MS, type Locale, type Phase, type Result, type Scope, type Service} from "./assessmentTypes";
+import {
+  compactStrategicHumanEvidence,
+  type StrategicHumanEvidenceInput,
+} from "./strategicEvidence";
+import {
+  MAX_POLL_ATTEMPTS,
+  POLL_INTERVAL_MS,
+  type Locale,
+  type Phase,
+  type Result,
+  type Scope,
+  type Service,
+} from "./assessmentTypes";
 
 export type AssessmentRunController = {
   service: Service;
@@ -11,6 +23,7 @@ export type AssessmentRunController = {
   client: string;
   project: string;
   authorized: boolean;
+  humanEvidence: StrategicHumanEvidenceInput;
   phase: Phase;
   result: Result | null;
   message: string;
@@ -22,6 +35,7 @@ export type AssessmentRunController = {
   setClient: (value: string) => void;
   setProject: (value: string) => void;
   setAuthorized: (value: boolean) => void;
+  setHumanEvidence: (value: StrategicHumanEvidenceInput) => void;
   setError: (value: string) => void;
   run: () => Promise<void>;
 };
@@ -29,7 +43,11 @@ export type AssessmentRunController = {
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
 
-async function requestWithRetry(path: string, init: RequestInit, copy: ReturnType<typeof copyFor>): Promise<Result> {
+async function requestWithRetry(
+  path: string,
+  init: RequestInit,
+  copy: ReturnType<typeof copyFor>,
+): Promise<Result> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < CLIENT_RETRY_DELAYS_MS.length; attempt += 1) {
     const delay = CLIENT_RETRY_DELAYS_MS[attempt];
@@ -56,6 +74,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const [client, setClient] = useState("");
   const [project, setProject] = useState("");
   const [authorized, setAuthorized] = useState(false);
+  const [humanEvidence, setHumanEvidence] = useState<StrategicHumanEvidenceInput>({});
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<Result | null>(null);
   const [message, setMessage] = useState("");
@@ -190,6 +209,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       timeframe_days: 180,
       assessment_depth: "strategic",
       report_language: locale,
+      human_evidence: compactStrategicHumanEvidence(humanEvidence),
     };
 
     try {
@@ -215,7 +235,28 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
   }
 
-  return {service, repository, client, project, authorized, phase, result, message, error, attempt, elapsed, running, setRepository, setClient, setProject, setAuthorized, setError, run};
+  return {
+    service,
+    repository,
+    client,
+    project,
+    authorized,
+    humanEvidence,
+    phase,
+    result,
+    message,
+    error,
+    attempt,
+    elapsed,
+    running,
+    setRepository,
+    setClient,
+    setProject,
+    setAuthorized,
+    setHumanEvidence,
+    setError,
+    run,
+  };
 }
 
 /* Compatibility routes remain implementation details: Express, Comprehensive, /assessment/express-run, /assessment/comprehensive-intake. */
