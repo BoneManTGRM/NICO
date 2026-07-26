@@ -133,12 +133,49 @@ export function browserEvidencePreview(value: Evidence | undefined): Record<stri
   return preview;
 }
 
+function assessmentRecord(value: unknown): Assessment | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Assessment : null;
+}
+
+function canonicalReportAssessment(result: Result): Assessment | null {
+  for (const id of ["final_comprehensive_report_generation", "risk_reduction_and_executive_briefing", "decision_report_generation"]) {
+    const value = stage(result, id);
+    const report = value?.report_package || value?.reports;
+    const canonical = report?.json;
+    if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) continue;
+    const assessment = assessmentRecord((canonical as Record<string, unknown>).assessment);
+    if (assessment) return assessment;
+  }
+  const directCanonical = result.reports?.json;
+  if (directCanonical && typeof directCanonical === "object" && !Array.isArray(directCanonical)) {
+    return assessmentRecord((directCanonical as Record<string, unknown>).assessment);
+  }
+  return null;
+}
+
+function assessmentCompleteness(value: Assessment): number {
+  const maturity = value.maturity_signal;
+  const score = maturity?.presented_score ?? maturity?.score;
+  const sections = Array.isArray(value.sections) ? value.sections.length : 0;
+  return (typeof score === "number" && Number.isFinite(score) ? 1000 : 0)
+    + sections * 10
+    + (value.executive_summary ? 5 : 0)
+    + (value.evidence_coverage ? 3 : 0)
+    + (Array.isArray(value.unavailable_data_notes) ? value.unavailable_data_notes.length : 0);
+}
+
 export function assessmentFor(_service: Service, result: Result | null): Assessment | null {
   if (!result) return null;
-  return stage(result, "final_comprehensive_report_generation")?.assessment
-    || stage(result, "evidence_reconciliation_and_scoring")?.assessment
-    || result.assessment
-    || null;
+  const candidates = [
+    canonicalReportAssessment(result),
+    stage(result, "final_comprehensive_report_generation")?.assessment || null,
+    stage(result, "evidence_reconciliation_and_scoring")?.assessment || null,
+    result.assessment || null,
+  ].filter((value): value is Assessment => Boolean(value));
+  if (!candidates.length) return null;
+  return candidates.reduce((best, candidate) => (
+    assessmentCompleteness(candidate) > assessmentCompleteness(best) ? candidate : best
+  ));
 }
 
 export function reportFor(_service: Service, result: Result | null): Report | null {

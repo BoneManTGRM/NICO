@@ -8,10 +8,14 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LEGACY_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance.py"
-CANONICAL_SCRIPT = ROOT / "scripts" / "two_service_live_acceptance_v3.py"
-PRODUCTION_SCRIPT = ROOT / "scripts" / "unified_production_acceptance.py"
+SCRIPTS = ROOT / "scripts"
+LEGACY_SCRIPT = SCRIPTS / "two_service_live_acceptance.py"
+CANONICAL_SCRIPT = SCRIPTS / "two_service_live_acceptance_v3.py"
+PRODUCTION_SCRIPT = SCRIPTS / "unified_production_acceptance.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "two-service-production-acceptance.yml"
+WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
+MODEL = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentModel.ts"
+TERMINAL_CSS = ROOT / "apps" / "web" / "styles" / "assessment-terminal-mobile.css"
 
 
 def _module():
@@ -21,6 +25,21 @@ def _module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _production_module():
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        for name in (
+            "unified_production_acceptance",
+            "two_service_live_acceptance_v3",
+            "two_service_live_acceptance_v2",
+            "two_service_live_acceptance",
+        ):
+            sys.modules.pop(name, None)
+        return __import__("unified_production_acceptance")
+    finally:
+        sys.path.remove(str(SCRIPTS))
 
 
 def test_legacy_runner_retains_backend_tier_compatibility() -> None:
@@ -94,6 +113,57 @@ def test_report_and_assessment_extractors_use_native_comprehensive_stage() -> No
     assert module.assessment_payload("comprehensive", payload)["maturity_signal"]["score"] == 90
 
 
+def test_production_acceptance_prefers_canonical_report_assessment() -> None:
+    module = _production_module()
+    payload = {
+        "record": {
+            "stage_results": {
+                "evidence_reconciliation_and_scoring": {
+                    "assessment": {"maturity_signal": {"level": "Strong", "score": 84}},
+                },
+                "final_comprehensive_report_generation": {
+                    "assessment": {"status": "complete"},
+                    "report_package": {
+                        "service_id": "comprehensive",
+                        "json": {
+                            "assessment": {
+                                "maturity_signal": {"level": "Strong", "score": 86},
+                                "sections": [{"id": "code_audit", "score": 92}],
+                            }
+                        },
+                    },
+                },
+            }
+        }
+    }
+
+    selected = module.canonical_assessment_payload("comprehensive", payload)
+
+    assert selected["maturity_signal"]["score"] == 86
+    assert selected["sections"][0]["id"] == "code_audit"
+
+
+def test_terminal_mobile_workspace_surfaces_report_before_long_history() -> None:
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+    model = MODEL.read_text(encoding="utf-8")
+    css = TERMINAL_CSS.read_text(encoding="utf-8")
+    production = PRODUCTION_SCRIPT.read_text(encoding="utf-8")
+
+    action_index = workspace.index('data-assessment-report-actions="true"')
+    history_index = workspace.index("stageHistoryLabel")
+    assert action_index < workspace.rindex("<ProgressTimeline")
+    assert action_index < workspace.rindex("<Scorecard")
+    assert history_index < workspace.rindex("<ProgressTimeline")
+    assert 'data-assessment-report-ready={reportReady ? "true" : "false"}' in workspace
+    assert "canonicalReportAssessment" in model
+    assert "assessmentCompleteness" in model
+    assert 'overflow: visible !important' in css
+    assert 'data-assessment-report-actions="true"' in css
+    assert "canonical_assessment_payload" in production
+    assert "report_actions_visible" in production
+    assert "canonical_score_verified" in production
+
+
 def test_canonical_live_proof_matches_semantic_engagement_workspace() -> None:
     legacy_source = CANONICAL_SCRIPT.read_text(encoding="utf-8")
     production = PRODUCTION_SCRIPT.read_text(encoding="utf-8")
@@ -109,6 +179,8 @@ def test_canonical_live_proof_matches_semantic_engagement_workspace() -> None:
         "Crear encargo y capturar instantánea del repositorio",
         "install_unified_workspace_contract",
         "unified._ExpectedCommitPage.get_by_role = _canonical_get_by_role",
+        "acceptance.assessment_payload = canonical_assessment_payload",
+        "acceptance.ui_state = canonical_ui_state",
     ):
         assert required in production
 
