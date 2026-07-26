@@ -47,9 +47,13 @@ def test_retry_resumes_exact_run_instead_of_creating_duplicate() -> None:
     source = CONTROLLER.read_text(encoding="utf-8")
 
     assert "async function retry()" in source
-    assert 'const runId = String(result?.run_id || "").trim()' in source
-    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in source
-    assert "await continueRun(recovered, currentScope(), token)" in source
+    assert "const persisted = readPersistedRun()" in source
+    assert 'const runId = String(result?.run_id || persisted?.runId || "").trim()' in source
+    assert "await resumePersistedRun(persisted ||" in source
+    assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in source
+    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
+    assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in source
+    assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in source
     retry_body = source.split("async function retry()", 1)[1]
     retry_body = retry_body.split("return {", 1)[0]
     assert '"/assessment/comprehensive-intake"' not in retry_body
