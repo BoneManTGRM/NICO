@@ -12,8 +12,8 @@ def test_hydration_contract_repairs_stale_idle_copy_without_touching_live_progre
 
     assert "function replaceText" in source
     assert 'workspace.querySelector(\'[data-assessment-run-state="true"]\')' in source
-    assert "if (!runStateExists)" in source
-    assert "actionIsIdleOrRetired" in source
+    assert "idleEngagement = authorization?.disabled !== true" in source
+    assert "if (!runStateExists && idleEngagement)" in source
     assert "replaceText(action, expected.action)" in source
     assert 'action.setAttribute("aria-label", expected.action)' in source
     assert "replaceText(heading, expected.heading)" in source
