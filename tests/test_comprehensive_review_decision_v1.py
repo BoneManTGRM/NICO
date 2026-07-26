@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import io
 from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
+from pypdf import PdfWriter
 
+from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
@@ -15,6 +18,15 @@ from nico.comprehensive_run_record import (
     validate_comprehensive_run_record,
 )
 from nico.comprehensive_run_service import ComprehensiveRunService
+
+
+def _valid_pdf() -> bytes:
+    writer = PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=612, height=792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 def _review_ready_record() -> dict:
@@ -35,8 +47,12 @@ def _review_ready_record() -> dict:
         "report_id": "report-review-1",
         "markdown": "# Immutable report\n",
         "html": "<html><body>Immutable report</body></html>",
-        "pdf_base64": base64.b64encode(b"%PDF-1.7 immutable-review").decode("ascii"),
+        "pdf_base64": base64.b64encode(_valid_pdf()).decode("ascii"),
         "pdf_filename": "nico-review.pdf",
+        "pdf_page_count": 3,
+        "core_report_page_count": 2,
+        "findings_csv": "finding_id,title\nF-1,Example finding\n",
+        "jira_csv": "summary,priority\nExample remediation,P1\n",
         "canonical_truth_sha256": "d" * 64,
         "json": {
             "identity": {
@@ -47,6 +63,12 @@ def _review_ready_record() -> dict:
                 "assessment_depth": "strategic",
             },
             "canonical_truth_sha256": "d" * 64,
+            "findings_register": [
+                {"finding_id": "F-1", "title": "Example finding", "priority": "P1"}
+            ],
+            "executive_risk_register": [],
+            "roadmap": [],
+            "staffing_plan": [],
         },
     }
     for stage_id in COMPREHENSIVE_STAGES:
@@ -160,7 +182,7 @@ class _MemoryStore:
         return deepcopy(record)
 
 
-def test_service_persists_the_review_with_one_revision_advance() -> None:
+def test_service_persists_review_and_certified_delivery_with_one_revision() -> None:
     record = _review_ready_record()
     store = _MemoryStore(record)
     service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
@@ -177,3 +199,35 @@ def test_service_persists_the_review_with_one_revision_advance() -> None:
     assert approved["revision"] == record["revision"] + 1
     assert store.record["status"] == "approved"
     assert store.record["client_delivery_allowed"] is True
+    delivery = store.record["approved_delivery_package"]
+    assert delivery["status"] == "approved_for_delivery"
+    assert delivery["client_delivery_allowed"] is True
+    assert validate_approved_delivery_package(store.record, delivery)["status"] == "valid"
+
+
+def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request() -> None:
+    record = _review_ready_record()
+    store = _MemoryStore(record)
+    service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
+
+    service.review(
+        record["identity"]["run_id"],
+        reviewer="reviewer@example.com",
+        reviewer_role="Principal Engineering Reviewer",
+        decision="request_more_evidence",
+        decision_reason="Executed QA evidence is still missing.",
+        decided_at="2026-07-26T01:15:00+00:00",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="approval_requires_new_evidence_bound_report_after_request_more_evidence",
+    ):
+        service.review(
+            record["identity"]["run_id"],
+            reviewer="reviewer@example.com",
+            reviewer_role="Principal Engineering Reviewer",
+            decision="approved",
+            decision_reason="Approve unchanged report.",
+            decided_at="2026-07-26T01:20:00+00:00",
+        )
