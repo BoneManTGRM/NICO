@@ -38,9 +38,11 @@ def test_frontend_retries_and_recovers_existing_run_state() -> None:
     assert "async function recoverRun" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in source
     assert "const recovered = await recoverRun(runId)" in source
-    assert "async function retry()" in source
+    assert "async function resumePersistedRun" in source
     assert "setResult(recovered)" in source
-    assert "await continueRun(recovered, currentScope(), token)" in source
+    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
+    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
+    assert 'window.addEventListener("online", restoreAfterPageResume)' in source
     assert "runStatusUnavailableMessage" in source
 
 
