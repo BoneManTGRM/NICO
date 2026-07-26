@@ -9,7 +9,7 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.hydrated_release_identity.v5"
+VERSION = "nico.unified_production_acceptance.canonical_terminal_rendering.v6"
 ASSESSMENT_WORKSPACE_SELECTOR = (
     'main[data-workspace="assessment"]'
     '[data-engagement-type="comprehensive"]'
@@ -48,6 +48,75 @@ def has_comprehensive_report_identity(value: Any) -> bool:
     return any(
         all(_normalized(marker) in normalized for marker in identity)
         for identity in COMPREHENSIVE_REPORT_IDENTITIES
+    )
+
+
+def _assessment_candidate(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _candidate_completeness(value: dict[str, Any]) -> int:
+    maturity = acceptance.dict_value(value.get("maturity_signal"))
+    score = maturity.get("presented_score", maturity.get("score"))
+    sections = value.get("sections") if isinstance(value.get("sections"), list) else []
+    return (
+        (1000 if isinstance(score, (int, float)) and not isinstance(score, bool) else 0)
+        + len(sections) * 10
+        + (5 if acceptance.first_text(value.get("executive_summary")) else 0)
+        + (3 if isinstance(value.get("evidence_coverage"), dict) else 0)
+    )
+
+
+def canonical_assessment_payload(service: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Use the canonical report assessment instead of a lightweight terminal shell."""
+
+    package = acceptance.report_package(service, payload)
+    canonical = acceptance.dict_value(package.get("json"))
+    stages = acceptance.stage_results(payload)
+    candidates = [
+        _assessment_candidate(canonical.get("assessment")),
+        _assessment_candidate(acceptance.dict_value(stages.get("final_comprehensive_report_generation")).get("assessment")),
+        _assessment_candidate(acceptance.dict_value(stages.get("evidence_reconciliation_and_scoring")).get("assessment")),
+        _assessment_candidate(payload.get("assessment")),
+        payload if service == "express" and isinstance(payload.get("sections"), list) else {},
+    ]
+    populated = [item for item in candidates if item]
+    return max(populated, key=_candidate_completeness) if populated else {}
+
+
+def canonical_ui_state(page: Any) -> dict[str, str]:
+    """Capture mobile terminal state and report-control visibility."""
+
+    section = page.locator('section[aria-live="polite"]').first
+    return section.evaluate(
+        """section => {
+          const header = section.querySelector('.section-head');
+          const phase = header?.querySelector('span')?.textContent?.trim() || '';
+          const message = section.querySelector(':scope > p')?.textContent?.trim() || '';
+          const articles = Array.from(section.querySelectorAll('article'));
+          const find = labels => {
+            const wanted = new Set(labels);
+            const article = articles.find(item => wanted.has(item.querySelector('b')?.textContent?.trim() || ''));
+            return article?.querySelector('span')?.textContent?.trim() || '';
+          };
+          const actions = section.querySelector('[data-assessment-report-actions="true"]');
+          const pdf = Array.from(actions?.querySelectorAll('button') || []).find(button => /pdf|informe/i.test(button.textContent || ''));
+          const rect = actions?.getBoundingClientRect();
+          return {
+            phase_label: phase,
+            message,
+            run_id: find(['Run ID']),
+            commit_sha: find(['Immutable commit']),
+            scanner: find(['Scanner', 'Evidence scanners']),
+            report: find(['Report', 'Assessment package']),
+            review: find(['Human review', 'Expert review']),
+            score: find(['Technical score', 'Technical maturity']),
+            report_actions_present: actions ? 'true' : 'false',
+            report_actions_visible: actions && rect && rect.width > 0 && rect.height > 0 ? 'true' : 'false',
+            pdf_action_enabled: pdf && !pdf.disabled ? 'true' : 'false',
+            page_url: window.location.href,
+          };
+        }"""
     )
 
 
@@ -241,8 +310,8 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
     assert markdown.strip(), f"{service} Markdown report is missing"
     assert rendered_html.strip().lower().startswith("<!doctype html"), f"{service} HTML report is invalid"
     assert encoded_pdf, f"{service} PDF report is missing"
-    assert "NONE/100" not in markdown.upper()
-    assert "NULL/100" not in markdown.upper()
+    assert "NONE/100" not in markdown.upper(), f"{service} Markdown contains NONE/100"
+    assert "NULL/100" not in markdown.upper(), f"{service} Markdown contains NULL/100"
 
     pdf = acceptance.pdf_evidence(encoded_pdf, destination)
     delivery_posture = {
@@ -291,10 +360,13 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
 
     maturity = acceptance.dict_value(assessment.get("maturity_signal"))
     score = maturity.get("presented_score", maturity.get("score"))
-    score_label = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
-    assert score_label in markdown
-    assert score_label in rendered_html
-    assert score_label in pdf["text"]
+    assert isinstance(score, (int, float)) and not isinstance(score, bool), (
+        f"{service} canonical assessment did not expose a numeric maturity score"
+    )
+    score_label = f"{int(score)}/100"
+    assert score_label in markdown, f"{service} Markdown omitted canonical score {score_label}"
+    assert score_label in rendered_html, f"{service} HTML omitted canonical score {score_label}"
+    assert score_label in pdf["text"], f"{service} PDF omitted canonical score {score_label}"
 
     section_evidence = acceptance.section_parity(assessment, markdown, rendered_html, pdf["text"])
     truth_values = {
@@ -324,6 +396,7 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
             **delivery_posture,
             "control_characters_absent": True,
             "canonical_report_identity_verified": True,
+            "canonical_score_verified": True,
         },
         "markdown_sha256": acceptance.sha256(markdown.encode("utf-8")),
         "html_sha256": acceptance.sha256(rendered_html.encode("utf-8")),
@@ -357,6 +430,8 @@ def install_unified_workspace_contract() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     install_unified_workspace_contract()
+    acceptance.assessment_payload = canonical_assessment_payload
+    acceptance.ui_state = canonical_ui_state
     acceptance.validate_report = validate_report
     unified._verify_unified_language_parity = verify_unified_language_parity
     return unified.main(argv)
