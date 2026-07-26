@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import base64
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 
+from nico.admin_security import require_admin_write
 from nico.comprehensive_api_controller import ComprehensiveApiController
+from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
 from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v8"
+VERSION = "nico.comprehensive_api_routes.v9"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -19,6 +22,7 @@ COMPREHENSIVE_API_ROUTES = {
     ("GET", "/assessment/comprehensive-run/{run_id}"),
     ("POST", "/assessment/comprehensive-run/{run_id}/continue"),
     ("POST", "/assessment/comprehensive-run/{run_id}/review"),
+    ("GET", "/assessment/comprehensive-run/{run_id}/approved-delivery-package"),
 }
 
 _SAFE_RUNTIME_REASONS = {
@@ -95,6 +99,22 @@ def _required(value: Any, field: str) -> str:
     return normalized
 
 
+def _authorize_review(token: str) -> None:
+    allowed, status = require_admin_write(token)
+    if allowed:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "strategic_review_admin_authentication_required",
+            "message": "Operator admin authentication is required for Strategic review and approved delivery access.",
+            "admin_write": status,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+    )
+
+
 def _runtime_persistence(request: Request) -> dict[str, Any]:
     runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
     adapter = str(runtime.get("persistence_adapter") or "unavailable")
@@ -138,6 +158,28 @@ def _service(controller: ComprehensiveApiController) -> Any:
     return service
 
 
+def _approved_delivery_projection(record: dict[str, Any]) -> dict[str, Any]:
+    candidate = record.get("approved_delivery_package")
+    if not isinstance(candidate, dict):
+        return {}
+    certificate = (
+        candidate.get("certificate")
+        if isinstance(candidate.get("certificate"), dict)
+        else {}
+    )
+    return {
+        "artifact_schema": str(candidate.get("artifact_schema") or ""),
+        "status": str(candidate.get("status") or ""),
+        "filename": str(candidate.get("filename") or ""),
+        "zip_sha256": str(candidate.get("zip_sha256") or ""),
+        "zip_size_bytes": int(candidate.get("zip_size_bytes") or 0),
+        "artifact_count": int(candidate.get("artifact_count") or 0),
+        "certificate": certificate,
+        "human_review_required": True,
+        "client_delivery_allowed": candidate.get("client_delivery_allowed") is True,
+    }
+
+
 def _review_projection(
     response: dict[str, Any],
     record: dict[str, Any],
@@ -156,6 +198,9 @@ def _review_projection(
         projected["accepted_edition"] = record["accepted_edition"]
     if isinstance(record.get("review_context"), dict):
         projected["review_context"] = record["review_context"]
+    delivery_projection = _approved_delivery_projection(record)
+    if delivery_projection:
+        projected["approved_delivery_package"] = delivery_projection
     public_record = projected.get("record")
     if isinstance(public_record, dict):
         public_record["status"] = projected["status"]
@@ -163,6 +208,77 @@ def _review_projection(
         public_record["client_delivery_allowed"] = allowed
         public_record["delivery_status"] = projected["delivery_status"]
     return projected
+
+
+def _approved_delivery_response(record: dict[str, Any]) -> Response:
+    candidate = record.get("approved_delivery_package")
+    validation = validate_approved_delivery_package(record, candidate)
+    if validation["status"] != "valid":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_delivery_package_unavailable",
+                "message": "The approved delivery package is missing or failed immutable-package validation.",
+                "validation_errors": validation["validation_errors"],
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
+    if record.get("status") != "approved" or record.get("client_delivery_allowed") is not True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_delivery_package_not_authorized",
+                "message": "This exact run is not approved for client delivery.",
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
+    assert isinstance(candidate, dict)
+    try:
+        archive = base64.b64decode(str(candidate.get("zip_base64") or ""), validate=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_delivery_package_invalid",
+                "message": "The approved delivery package failed base64 integrity validation.",
+            },
+        ) from exc
+    if not archive.startswith(b"PK"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_delivery_package_invalid",
+                "message": "The approved delivery package failed ZIP integrity validation.",
+            },
+        )
+    filename = str(
+        candidate.get("filename")
+        or f"nico-strategic-delivery-{record['identity']['run_id']}-APPROVED.zip"
+    )
+    filename = filename.replace("\r", "").replace("\n", "").replace('"', "'")
+    certificate = (
+        candidate.get("certificate")
+        if isinstance(candidate.get("certificate"), dict)
+        else {}
+    )
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private, max-age=0",
+            "X-NICO-Run-ID": str(record["identity"]["run_id"]),
+            "X-NICO-Delivery-Package-SHA256": str(candidate.get("zip_sha256") or ""),
+            "X-NICO-Accepted-Edition-SHA256": str(
+                certificate.get("accepted_edition_manifest_sha256") or ""
+            ),
+            "X-NICO-Delivery-Certificate-SHA256": str(
+                certificate.get("delivery_authorization_certificate_sha256") or ""
+            ),
+        },
+    )
 
 
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -346,8 +462,10 @@ def register_comprehensive_api_routes(
     async def review_comprehensive(
         run_id: str,
         request: Request,
+        x_nico_admin_token: str = Header(default=""),
     ) -> dict[str, Any]:
         try:
+            _authorize_review(x_nico_admin_token)
             payload = await request.json()
             if not isinstance(payload, dict):
                 raise TypeError("request_body_must_be_object")
@@ -380,6 +498,22 @@ def register_comprehensive_api_routes(
                 request,
                 _review_projection(response, record),
             )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _translate_error(exc) from exc
+
+    @app.get("/assessment/comprehensive-run/{run_id}/approved-delivery-package")
+    async def approved_delivery_package(
+        run_id: str,
+        request: Request,
+        x_nico_admin_token: str = Header(default=""),
+    ) -> Response:
+        try:
+            _authorize_review(x_nico_admin_token)
+            controller_value = _controller(request)
+            record = _service(controller_value).load(run_id)
+            return _approved_delivery_response(record)
         except HTTPException:
             raise
         except Exception as exc:

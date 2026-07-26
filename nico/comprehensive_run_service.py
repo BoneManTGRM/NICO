@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_approved_delivery_v1 import attach_approved_delivery_package
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
@@ -13,7 +14,7 @@ from nico.comprehensive_run_record import (
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
 
-VERSION = "nico.comprehensive_run_service.v3"
+VERSION = "nico.comprehensive_run_service.v4"
 
 
 class ComprehensiveRunService:
@@ -21,7 +22,8 @@ class ComprehensiveRunService:
 
     Each completed stage and each explicit human review decision is persisted through
     the same optimistic-concurrency store. Approval binds the exact existing artifacts;
-    it never reruns report generation or changes the assessed commit.
+    it never reruns report generation or changes the assessed commit. An approved
+    delivery archive is generated only after the accepted-edition manifest validates.
     """
 
     def __init__(
@@ -114,6 +116,8 @@ class ComprehensiveRunService:
             record,
             manifest=manifest,
         )
+        if str(decision or "").strip().casefold() == "approved":
+            updated = attach_approved_delivery_package(updated, manifest)
         return self._store.save(updated, expected_revision=previous_revision)
 
     def _run_next_stage(self, record: dict[str, Any]) -> dict[str, Any]:
