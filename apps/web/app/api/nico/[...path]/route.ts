@@ -11,7 +11,10 @@ const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
+const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
 const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|comprehensive-runtime)$/;
+const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";
+const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [0, 1_500, 4_000];
 
@@ -71,6 +74,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
+  if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
   return false;
 }
 
@@ -96,7 +100,7 @@ async function proxyNico(
   const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes and bounded runtime diagnostics are available through this proxy. Authorized Strategic review and delivery are limited to their exact protected routes.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized Strategic review and delivery are limited to their exact protected routes.");
   }
 
   const resolution = configuredBackend();
@@ -116,6 +120,10 @@ async function proxyNico(
   const headers = new Headers({Accept: request.headers.get("accept") || "application/json"});
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("Content-Type", contentType);
+  const browserProjection = request.headers.get(BROWSER_PROJECTION_HEADER)?.trim().toLowerCase();
+  if (browserProjection === BROWSER_PROJECTION_VALUE) {
+    headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE);
+  }
   if (protectedReviewRoute(request.method, apiPath)) {
     const adminToken = request.headers.get("x-nico-admin-token");
     if (adminToken) headers.set("X-NICO-Admin-Token", adminToken);
@@ -158,6 +166,11 @@ async function proxyNico(
         "content-disposition",
         "retry-after",
         "x-nico-run-id",
+        "x-nico-report-id",
+        "x-nico-artifact-sha256",
+        "x-nico-canonical-truth-sha256",
+        "x-nico-human-review-required",
+        "x-nico-client-delivery-allowed",
         "x-nico-delivery-package-sha256",
         "x-nico-accepted-edition-sha256",
         "x-nico-delivery-certificate-sha256",
