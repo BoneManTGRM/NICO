@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
 WORKSPACE = ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx"
+PROXY = ROOT / "apps/web/app/api/nico/[...path]/route.ts"
 BACKEND = ROOT / "nico/comprehensive_mobile_recovery_v1.py"
 INIT = ROOT / "nico/__init__.py"
 
@@ -52,6 +53,19 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
     assert "disabled={!pdfAvailable || artifactAction !== null}" in source
     assert "disabled={!markdownAvailable || artifactAction !== null}" in source
+
+
+def test_same_origin_proxy_allows_artifacts_and_forwards_bounded_projection() -> None:
+    source = PROXY.read_text(encoding="utf-8")
+
+    assert "COMPREHENSIVE_REPORT_ARTIFACT" in source
+    assert "(?:markdown|html|json|pdf)" in source
+    assert "COMPREHENSIVE_REPORT_ARTIFACT.test(path)" in source
+    assert 'BROWSER_PROJECTION_HEADER = "x-nico-browser-projection"' in source
+    assert 'BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in source
+    assert 'headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE)' in source
+    assert '"x-nico-artifact-sha256"' in source
+    assert '"x-nico-canonical-truth-sha256"' in source
 
 
 def test_backend_streams_exact_run_artifacts_and_keeps_browser_terminal_response_bounded() -> None:
