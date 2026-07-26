@@ -7,7 +7,22 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.report_identity.v3"
+VERSION = "nico.unified_production_acceptance.report_identity.v4"
+ASSESSMENT_WORKSPACE_SELECTOR = (
+    'main[data-workspace="assessment"]'
+    '[data-engagement-type="comprehensive"]'
+    '[data-canonical-assessment="strategic"]'
+)
+ASSESSMENT_RUN_SELECTOR = '[data-assessment-primary-action="true"]'
+ASSESSMENT_AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
+PUBLIC_RUN_LABELS = {
+    "en": "Create engagement and capture repository snapshot",
+    "es-MX": "Crear encargo y capturar instantánea del repositorio",
+}
+PUBLIC_HEADINGS = {
+    "en": "Create assessment engagement",
+    "es-MX": "Crear encargo de evaluación",
+}
 COMPREHENSIVE_REPORT_IDENTITIES = (
     ("NICO Comprehensive Technical Assessment",),
     ("NICO Comprehensive", "Decision-Grade Technical Assessment"),
@@ -59,12 +74,7 @@ def validate_preapproval_delivery_posture(
 
 
 def verify_retired_tier_selector(workspace: Any, locale: str) -> dict[str, bool]:
-    """Accept either complete removal or fully hidden legacy tier controls.
-
-    The public workspace now has one canonical Strategic assessment. Removing the old
-    Express/Comprehensive selector is stronger evidence than retaining a hidden copy.
-    Production acceptance must not wait for a node that intentionally no longer exists.
-    """
+    """Accept complete removal or fully hidden legacy tier controls."""
 
     selector = workspace.locator(RETIRED_TIER_SELECTOR)
     count = selector.count()
@@ -101,24 +111,24 @@ def verify_unified_language_parity(browser: Any, config: Any) -> dict[str, Any]:
                 wait_until="domcontentloaded",
                 timeout=config.navigation_timeout_ms,
             )
-            workspace = page.locator(unified.UNIFIED_WORKSPACE_SELECTOR).first
+            workspace = page.locator(ASSESSMENT_WORKSPACE_SELECTOR).first
             workspace.wait_for(state="visible", timeout=config.navigation_timeout_ms)
             selector_evidence = verify_retired_tier_selector(workspace, locale)
 
-            run_button = workspace.locator(unified.RUN_SELECTOR).first
+            run_button = workspace.locator(ASSESSMENT_RUN_SELECTOR).first
             run_button.wait_for(state="visible", timeout=config.navigation_timeout_ms)
-            run_label = acceptance.text(run_button.inner_text(), 120)
-            assert run_label == unified.PUBLIC_RUN_LABELS[locale], (
+            run_label = acceptance.text(run_button.inner_text(), 160)
+            assert run_label == PUBLIC_RUN_LABELS[locale], (
                 f"{locale} canonical run label was {run_label!r}, "
-                f"expected {unified.PUBLIC_RUN_LABELS[locale]!r}"
+                f"expected {PUBLIC_RUN_LABELS[locale]!r}"
             )
             heading = acceptance.text(
                 workspace.locator("#assessment .section-head h2").first.inner_text(),
                 200,
             )
-            assert heading == unified.PUBLIC_HEADINGS[locale], (
+            assert heading == PUBLIC_HEADINGS[locale], (
                 f"{locale} canonical heading was {heading!r}, "
-                f"expected {unified.PUBLIC_HEADINGS[locale]!r}"
+                f"expected {PUBLIC_HEADINGS[locale]!r}"
             )
             tier = page.evaluate("() => new URL(window.location.href).searchParams.get('tier')")
             assert tier == "comprehensive"
@@ -240,7 +250,33 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
     }
 
 
+def _canonical_get_by_role(self: Any, role: str, *args: Any, **kwargs: Any) -> Any:
+    normalized_role = str(role).lower()
+    name = kwargs.get("name")
+    if normalized_role == "button" and name == "Comprehensive":
+        return unified._CanonicalServiceLocator()
+    if normalized_role == "button" and name in {
+        "Run Comprehensive",
+        "Run NICO Assessment",
+        PUBLIC_RUN_LABELS["en"],
+    }:
+        return self._page.locator(ASSESSMENT_RUN_SELECTOR).first
+    if normalized_role == "checkbox":
+        locator = self._page.locator(ASSESSMENT_AUTHORIZATION_SELECTOR).first
+        return unified._StableFormLocator(locator, self._page)
+    return self._page.get_by_role(role, *args, **kwargs)
+
+
+def install_unified_workspace_contract() -> None:
+    unified.UNIFIED_WORKSPACE_SELECTOR = ASSESSMENT_WORKSPACE_SELECTOR
+    unified.RUN_SELECTOR = ASSESSMENT_RUN_SELECTOR
+    unified.PUBLIC_RUN_LABELS = PUBLIC_RUN_LABELS
+    unified.PUBLIC_HEADINGS = PUBLIC_HEADINGS
+    unified._ExpectedCommitPage.get_by_role = _canonical_get_by_role
+
+
 def main(argv: list[str] | None = None) -> int:
+    install_unified_workspace_contract()
     acceptance.validate_report = validate_report
     unified._verify_unified_language_parity = verify_unified_language_parity
     return unified.main(argv)
