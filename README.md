@@ -2,95 +2,113 @@
 
 [![NICO CI](https://github.com/BoneManTGRM/NICO/actions/workflows/nico-ci.yml/badge.svg)](https://github.com/BoneManTGRM/NICO/actions/workflows/nico-ci.yml)
 
-NICO is an authorized, repair-first defensive cybersecurity and technical-assessment platform for repository evidence collection, drift detection, repair planning, verification, reporting, and repair memory.
+NICO is an authorized, repair-first defensive cybersecurity and technical-assessment platform. Its flagship customer product is the **NICO Comprehensive Technical Assessment**.
 
-NICO is not a basic scanner wrapper. Its core workflow binds an authorized target to an exact run, collects available evidence, executes supported defensive scanners, distinguishes unavailable or failed evidence, produces evidence-bound scoring and repair candidates, prepares reports, and stops at required human review before approval or client delivery.
+NICO binds an authorized target to an immutable repository snapshot, collects available evidence, runs supported defensive analyzers, distinguishes unavailable or failed evidence, produces evidence-bound scoring and remediation plans, prepares a decision-grade delivery package, and stops at required expert review before approval or client delivery.
+
+NICO is not a basic scanner wrapper, a certification authority, or an autonomous production-change system.
+
+## Current product model
+
+NICO exposes one customer-facing assessment quality standard. Engagement scope and price may vary with repository count, system complexity, infrastructure breadth, integrations, compliance exposure, stakeholder work, and required review, but the report-quality standard does not vary.
+
+Internal scope classifications are:
+
+- small;
+- standard;
+- complex;
+- enterprise.
+
+These classifications estimate workload and review depth. They do not create lower-quality customer products.
 
 ## Current status
 
-- Repository CI, security analysis, and deployment checks are required before release changes are merged.
-- The canonical hosted assessment start is the unified Express, Mid, and Full page under `/assessment`.
+- The canonical hosted assessment start is `/assessment`.
 - Vercel provides the Next.js frontend and Railway provides the FastAPI backend in the current hosted deployment model.
-- A successful deployment does not prove an assessment result. Authorized production smoke runs and evidence review remain required.
-- The completion roadmap remains authoritative; operational code is not automatically production-proven or stable.
+- Railway Postgres is the selected production persistence contract.
+- A successful deployment does not prove an assessment result. Exact-release production acceptance and retained evidence remain required.
+- Automated analysis stops at expert review. Client delivery remains blocked until the exact evidence-bound edition is approved.
+- Runtime features are not described as mature until production behavior and repeatable benchmarks prove them.
 
 See:
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — canonical architecture and truth contracts
-- [`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md) — operating, recovery, review, and delivery procedures
-- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — stable, operational, experimental, legacy, and planned maturity
-- [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) — Docker, storage, frontend, and upgrade guidance
-- [`docs/SCANNERS.md`](docs/SCANNERS.md) — supported tools, pinned versions, outcomes, and update policy
-- [`docs/SAMPLES.md`](docs/SAMPLES.md) — synthetic fixtures and workflow-generated sample outputs
-- [`docs/README.md`](docs/README.md) — documentation map
+- [`MASTER_PLAN.md`](MASTER_PLAN.md) — dependency-ordered transformation plan;
+- [`STATUS.md`](STATUS.md) — verified progress and current blockers;
+- [`DECISIONS.md`](DECISIONS.md) — product and architecture decisions;
+- [`METRICS.md`](METRICS.md) — maturity targets, denominators, and benchmark rules;
+- [`RUNBOOK.md`](RUNBOOK.md) — release, rollback, recovery, and incident procedures;
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — canonical architecture and truth contracts;
+- [`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md) — operating, review, and delivery procedures;
+- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — repository maturity map;
+- [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) — Docker, storage, frontend, and upgrade guidance;
+- [`docs/SCANNERS.md`](docs/SCANNERS.md) — supported tools, pinned versions, outcomes, and update policy;
+- [`docs/SAMPLES.md`](docs/SAMPLES.md) — synthetic fixtures and generated sample outputs.
 
 ## Repository-provider scope
 
-The current hosted remote-repository integration is **GitHub-native**. Hosted evidence collection understands GitHub repositories, commits, pull requests, Actions runs, contents, and GitHub authorization. NICO does not currently claim native GitLab merge-request/pipeline support, Bitbucket pull-request/pipeline support, Azure DevOps repository/build support, Gitea/Forgejo integration, or a generic provider-neutral hosted contract.
+The current hosted remote-repository integration is GitHub-native. Hosted evidence collection understands GitHub repositories, commits, pull requests, Actions runs, contents, and GitHub authorization.
 
-Separate local-first inputs are supported:
+NICO does not currently claim native hosted integration for other repository providers. Provider expansion remains deferred until the Comprehensive workflow, recovery proof, external pilot, security hardening, and maturity benchmarks are complete.
 
-- authorized local folders;
-- authorized archives;
-- authorized GitHub repositories;
-- passive-only authorized URLs.
+Separate authorized local-first inputs may include:
 
-Local and archive support must not be described as native GitLab, Bitbucket, Azure DevOps, or other provider integration. Provider expansion remains deferred until the unified Express, Mid, and Full deployed production-proof workstream is complete.
+- local folders;
+- archives;
+- GitHub repositories;
+- passive-only local or staging URLs.
+
+Local and archive support must not be described as native integration with another hosted provider.
 
 ## Core capabilities
 
-- **Local-first defensive scanning** — scans authorized local repositories and synthetic fixtures without requiring a hosted service.
-- **No-server assessment mode** — assesses authorized local folders, GitHub repositories, archives, and passive-only local or staging URLs.
-- **Unified assessment tiers** — Express, Mid, and Full share one normal intake while preserving different evidence-depth contracts.
-- **Real external scanner execution** — the controlled worker executes supported tools when binaries and required manifests are available and returns explicit unavailable, failed, and timed-out states otherwise.
-- **Built-in defensive checks** — identifies secret-exposure patterns, unsafe application-security markers, dependency risks, suspicious logs, identity-risk events, and AI-agent permission drift.
-- **Exact-run evidence binding** — preserves repository, customer, project, run, scan, report, approval, and artifact identities.
-- **Drift detection** — compares current evidence against stored baselines and records new or changed risk categories.
-- **RYE repair scoring** — prioritizes findings using risk, exploitability, blast radius, verification availability, urgency, confidence, and recurrence memory.
-- **TGRM repair candidates** — produces minimal, moderate, and strong repair options with verification and rollback guidance.
-- **Verification workflow** — records scan and repair verification without treating a suggested repair as deployed.
-- **Repair memory** — stores scans, findings, drift, repairs, verification, reports, policy, and audit history through the configured storage adapter.
-- **Evidence-bound reporting** — produces structured JSON, Markdown, HTML, owner, developer, reparodynamic, compliance-oriented, and assessment reports where supported.
-- **Human review and approved artifacts** — automated work stops at review; approval creates a separate integrity-bound artifact.
+- **Authorized evidence collection** — confirms scope and repository permission before processing.
+- **Immutable assessment identity** — binds repository, commit, tree, customer, project, run, scan, report, approval, and artifact identities.
+- **Real defensive analyzers** — executes supported tools when binaries and manifests are available and records explicit unavailable, failed, partial, malformed, and timed-out states otherwise.
+- **Evidence normalization** — retains provenance, tool versions, configurations, checksums, coverage, and limitations.
+- **Evidence-bound scoring** — separates technical maturity, evidence assurance, confidence, risk, and business consequence.
+- **Finding correlation** — groups duplicates and related root causes rather than inflating value with repeated findings.
+- **Remediation planning** — produces prioritized actions, dependencies, acceptance criteria, verification steps, rollback guidance, and residual risk.
+- **Decision-grade reporting** — generates structured JSON, Markdown, HTML, PDF, roadmaps, and supporting artifacts from canonical assessment data where implemented.
+- **Cross-format truth checks** — blocks review or delivery when identity, score, severity, count, finality, evidence, or delivery state disagrees.
+- **Human review and approved artifacts** — requires technical review and creates a separately identified approved edition.
 - **Controlled delivery** — supports expiring access, receipts, acknowledgments, and revocation for verified approved artifacts.
-- **Governance policy** — keeps allowed, approval-required, and blocked actions explicit.
-- **Operations and release readiness** — verifies deployment identity, durable storage, scanner execution, required routes, event health, alerts, and truth guards.
+- **Drift and repair memory** — stores baselines, findings, reports, approvals, delivery evidence, remediation, verification, and audit history through the configured storage adapter.
+- **Operations readiness** — verifies deployment identity, durable storage, analyzer capability, required routes, queues, events, alerts, and truth guards.
 
 ## Evidence and claim rules
 
-NICO follows these rules:
-
 1. Missing evidence is not passing evidence.
-2. A queued or running scanner is not complete.
-3. An unavailable tool is disclosed and receives no completion credit.
+2. A queued or running analyzer is not complete.
+3. An unavailable tool receives no completion credit.
 4. A score is an evidence signal, not a certification.
-5. A generated PDF is not automatically approved or client-ready.
-6. Synthetic fixtures must be labeled synthetic.
+5. A generated artifact is not automatically approved or client-ready.
+6. Synthetic fixtures must remain labeled synthetic.
 7. Live claims must remain traceable to live evidence.
-8. Reparodynamics is an emerging framework used by this project; NICO does not represent it as independently validated academic science.
+8. Material factual claims must be evidence-backed or explicitly classified as inference, limitation, or client-provided context.
+9. Reparodynamics is an emerging framework used by this project; NICO does not represent it as independently validated academic science.
 
 ## Safety boundary
 
 NICO is defensive-only software intended for systems the operator owns or is explicitly authorized to assess.
 
-NICO does **not** perform or authorize:
+NICO does not perform or authorize:
 
-- unauthorized scanning
-- exploitation
-- credential theft
-- phishing
-- malware
-- stealth or evasion
-- persistence
-- destructive actions
-- authentication bypass
-- offensive attack automation
+- unauthorized scanning;
+- exploitation;
+- credential theft;
+- phishing;
+- malware;
+- stealth or evasion;
+- persistence;
+- destructive actions;
+- authentication bypass;
+- offensive attack automation.
 
-Production-impacting actions such as credential rotation, account disablement, data deletion, infrastructure deletion, DNS changes, broad firewall changes, production deployments, major dependency upgrades, or architecture rewrites require explicit human approval.
+Authentication, authorization, cryptography, secret handling, tenant isolation, destructive migrations, production infrastructure, billing, legal or compliance representations, production client code, material deletion, and unclear rollback require explicit human approval before merge or deployment.
 
-## Package installation and quick start
+## Package installation and local start
 
-NICO is a Python package with supported `nico` and `nico-api` console entry points. The repository is package-ready for local installation; publication to a public package index is a separate release and trust decision and is not claimed here.
+NICO is a Python package with supported `nico` and `nico-api` console entry points. Publication to a public package index is a separate release and trust decision and is not claimed here.
 
 ```bash
 python -m pip install --upgrade pip
@@ -109,9 +127,9 @@ python run_local.py
 
 The test lab contains synthetic evidence and must not be described as a live client assessment.
 
-## No-server authorized assessment
+## Authorized no-server assessment
 
-These commands do not require Railway, Vercel, Render, Fly.io, or `app.nicoaudit.com`:
+These commands do not require the hosted frontend or backend:
 
 ```bash
 python -m nico assess local /path/to/project --authorized
@@ -152,7 +170,7 @@ Open:
 http://localhost:3000
 ```
 
-The frontend is an active operator application, not merely a placeholder foundation. The unified assessment flow, operations views, recovery, review, approval, delivery, diagnostics, and Retainer surfaces are at different maturity levels; see `docs/PROJECT_STATUS.md`.
+The frontend is an active operator application. Assessment intake, review, approval, delivery, diagnostics, recovery, and operations surfaces have different maturity levels; see `docs/PROJECT_STATUS.md`.
 
 ## Self-hosted Docker Compose
 
@@ -160,68 +178,36 @@ The frontend is an active operator application, not merely a placeholder foundat
 docker compose up --build
 ```
 
-The Compose deployment uses the fail-closed production bootstrap and a named `/data` volume. It is intended for a single-host operator deployment, not automatic horizontal scaling. See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) before changing storage, worker count, project-command execution, or frontend exposure.
+The Compose deployment uses fail-closed production bootstrap and a named `/data` volume. It is intended for a single-host operator deployment, not automatic horizontal scaling. See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) before changing storage, worker count, project-command execution, or frontend exposure.
 
 ## Hosted deployment
 
 Deploy the frontend and backend separately:
 
-- Frontend: Vercel or another compatible Next.js host using `apps/web`
-- Backend: a Python host running `nico.api.production_bootstrap:app`
-- Frontend environment: `NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST`
-- Backend environment: `NICO_CORS_ORIGINS=https://YOUR-NICO-FRONTEND-HOST`
+- Frontend: Vercel or another compatible Next.js host using `apps/web`.
+- Backend: a Python host running `nico.api.production_bootstrap:app`.
+- Frontend environment: `NEXT_PUBLIC_NICO_API_URL=https://YOUR-NICO-API-HOST`.
+- Backend environment: `NICO_CORS_ORIGINS=https://YOUR-NICO-FRONTEND-HOST`.
 
-The hosted app is optional. Local-first assessment remains a supported operating mode.
-
-See [`docs/SAFARI_HOSTED_APP.md`](docs/SAFARI_HOSTED_APP.md) and [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md).
+The hosted app is optional. Local-first assessment remains supported.
 
 ## Hosted readiness and release integrity
 
 Operator surfaces include:
 
-- `/diagnostics` — read-only diagnostics
-- `/scanner-runtime` — deployed scanner availability
-- `/release-readiness` — release and output-contract checks
-- `/operations/readiness` — fail-closed semantic readiness
-- frontend `/api/deployment` — frontend deployment identity
+- `/diagnostics` — read-only diagnostics;
+- `/scanner-runtime` — deployed analyzer availability;
+- `/release-readiness` — release and output-contract checks;
+- `/operations/readiness` — fail-closed semantic readiness;
+- frontend `/api/release` — exact frontend deployment identity.
 
-Run the backend checks after deployment or environment changes:
+After deployment or environment changes, verify operations readiness and then run the configured production acceptance workflow for the intended `main` SHA.
 
-```bash
-python scripts/check_operations_readiness.py https://YOUR-NICO-API-HOST
-python scripts/check_hosted_readiness.py https://YOUR-NICO-API-HOST
-```
-
-Then run the GitHub Actions **Production Release Gate** for the intended `main` SHA and production Vercel and Railway origins.
-
-HTTP reachability alone does not establish release integrity. The release gate must verify exact-SHA CI, deployment alignment, required routes, storage, scanners, and truth guards. None of these controls approves a report or replaces human review.
-
-Relevant documents:
-
-- [`docs/hosted-readiness-runbook.md`](docs/hosted-readiness-runbook.md)
-- [`docs/OPERATIONS_READINESS.md`](docs/OPERATIONS_READINESS.md)
-- [`docs/PRODUCTION_RELEASE_GATE.md`](docs/PRODUCTION_RELEASE_GATE.md)
+HTTP reachability alone does not establish release integrity. Release proof must verify exact-SHA CI, deployment alignment, required routes, storage, analyzers, truth guards, two distinct run identities, report generation, expert review requirement, and blocked client delivery.
 
 ## Samples and fixtures
 
 NICO includes synthetic golden fixtures and workflows that generate evidence-bound sample outputs. They are not live client assessments or certifications. See [`docs/SAMPLES.md`](docs/SAMPLES.md).
-
-## CLI commands
-
-```bash
-python -m nico scan <local-path>
-python -m nico scan-test-lab
-python -m nico scan-drift-demo
-python -m nico assess local <path> --authorized
-python -m nico assess github <owner/repo> --authorized
-python -m nico assess archive <archive-path> --authorized
-python -m nico assess url <url> --passive-only --authorized
-python -m nico assess report latest --format markdown
-python -m nico report latest
-python -m nico verify latest
-python -m nico memory
-python -m nico policy show
-```
 
 ## Contributing and security
 
@@ -229,18 +215,12 @@ python -m nico policy show
 - [`SECURITY.md`](SECURITY.md)
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 
-Do not open a public issue containing credentials, private client data, raw scanner secrets, delivery tokens, or practical exploitation details.
+Do not open a public issue containing credentials, private client data, raw secret findings, delivery tokens, or practical exploitation details.
 
 ## License
 
 NICO uses a dual-license model:
 
-- `LICENSE` — source-available non-commercial license
-- `COMMERCIAL_LICENSE.md` — commercial license template
-- `docs/commercial-license-order-form.md` — commercial scope and terms template
-- `docs/commercial-licensing-workflow.md` — commercial licensing workflow
-- `docs/license-faq.md` — plain-language licensing FAQ
-
-Commercial use is not allowed under the default non-commercial license. A separate written commercial license, order form, or agreement is required for business, government, client-facing, managed-service, hosted-service, consulting, paid-report, or other revenue-generating use.
-
-Because the default license restricts commercial use, this repository is source-available and is not represented as open-source software.
+- `LICENSE` — source-available non-commercial license;
+- `COMMERCIAL_LICENSE.md` — commercial license template;
+- `docs/commercial-license-order-form.md` — commercial scope and terms template.
