@@ -30,7 +30,7 @@ def _pdf() -> bytes:
     return buffer.getvalue()
 
 
-def _context(*, delivery_status: str = "blocked_pending_human_approval") -> dict:
+def _package(*, delivery_status: str = "blocked_pending_human_approval") -> dict:
     markdown = (
         "# NICO Comprehensive Technical Assessment\n\n"
         "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED\n\n"
@@ -38,7 +38,7 @@ def _context(*, delivery_status: str = "blocked_pending_human_approval") -> dict
         f"Repository: {REPOSITORY}\n"
         f"Immutable commit SHA: {COMMIT_SHA}\n"
     )
-    package = {
+    return {
         "service_id": "comprehensive",
         "report_finality": "final",
         "approval_status": "pending_human_approval",
@@ -50,6 +50,15 @@ def _context(*, delivery_status: str = "blocked_pending_human_approval") -> dict
         "pdf_base64": base64.b64encode(_pdf()).decode("ascii"),
         "canonical_truth_sha256": "b" * 64,
     }
+
+
+def _context(*, package: dict | None = None, nested: bool = False) -> dict:
+    report_package = package or _package()
+    final_result = {
+        "status": "complete",
+        "report_package": report_package,
+    }
+    final_stage = {"result": final_result} if nested else final_result
     return {
         "run_id": RUN_ID,
         "repository": REPOSITORY,
@@ -58,10 +67,7 @@ def _context(*, delivery_status: str = "blocked_pending_human_approval") -> dict
         "customer_id": "customer_cross_format_v49",
         "project_id": "project_cross_format_v49",
         "prior_stage_results": {
-            "final_comprehensive_report_generation": {
-                "status": "complete",
-                "report_package": package,
-            }
+            "final_comprehensive_report_generation": final_stage,
         },
     }
 
@@ -75,15 +81,49 @@ def test_current_final_report_boundary_passes_without_legacy_draft_phrase() -> N
     assert result["cross_format_contract_schema"] == VERSION
     assert result["failed_checks"] == []
     assert result["checks"]["final_delivery_boundary_present_in_markdown"] is True
-    assert "CLIENT DELIVERY NOT AUTHORIZED" not in _context()["prior_stage_results"]["final_comprehensive_report_generation"]["report_package"]["markdown"]
+    assert result["report_package_source"] == "stage.report_package"
+    assert "CLIENT DELIVERY NOT AUTHORIZED" not in _package()["markdown"]
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
+
+
+def test_execution_wrapper_envelope_does_not_hide_the_generated_report_package() -> None:
+    install_comprehensive_cross_format_finality_v49()
+    result = providers.cross_format_verification_provider(_context(nested=True))
+
+    assert result["status"] == "complete"
+    assert result["failed_checks"] == []
+    assert result["report_package_source"] == "stage.result.report_package"
+    assert result["checks"]["pdf_available"] is True
+
+
+def test_finality_metadata_can_be_read_from_canonical_truth() -> None:
+    package = _package()
+    canonical = {
+        key: package.pop(key)
+        for key in (
+            "service_id",
+            "report_finality",
+            "approval_status",
+            "delivery_status",
+            "human_review_required",
+            "client_delivery_allowed",
+        )
+    }
+    package["json"] = canonical
+    install_comprehensive_cross_format_finality_v49()
+    result = providers.cross_format_verification_provider(_context(package=package, nested=True))
+
+    assert result["status"] == "complete"
+    assert result["failed_checks"] == []
+    assert result["checks"]["report_finality_is_final"] is True
+    assert result["checks"]["delivery_status_is_blocked"] is True
 
 
 def test_structured_delivery_drift_fails_closed_and_exposes_exact_check() -> None:
     install_comprehensive_cross_format_finality_v49()
     result = providers.cross_format_verification_provider(
-        _context(delivery_status="delivery_allowed")
+        _context(package=_package(delivery_status="delivery_allowed"))
     )
 
     assert result["status"] == "blocked"
