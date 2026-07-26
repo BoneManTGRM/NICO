@@ -133,31 +133,94 @@ export function browserEvidencePreview(value: Evidence | undefined): Record<stri
   return preview;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function numericScore(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.min(100, Math.round(value)));
+  }
+  return null;
+}
+
+export function technicalScoreForAssessment(value: Assessment | null | undefined): number | null {
+  if (!value) return null;
+  const maturity = objectRecord(value.maturity_signal) || {};
+  const scorecard = objectRecord(value.scorecard) || objectRecord(value.executive_scorecard) || {};
+  return numericScore(
+    value.technical_score,
+    value.canonical_technical_score,
+    maturity.technical_score,
+    maturity.presented_score,
+    maturity.score,
+    scorecard.technical_score,
+    scorecard.technical_maturity,
+    scorecard.overall_score,
+  );
+}
+
+export function evidenceAdjustedScoreForAssessment(value: Assessment | null | undefined): number | null {
+  if (!value) return null;
+  const maturity = objectRecord(value.maturity_signal) || {};
+  const scorecard = objectRecord(value.scorecard) || objectRecord(value.executive_scorecard) || {};
+  return numericScore(
+    value.canonical_evidence_adjusted_score,
+    value.evidence_adjusted_score,
+    maturity.canonical_evidence_adjusted_score,
+    maturity.evidence_adjusted_score,
+    scorecard.evidence_adjusted_score,
+    scorecard.evidence_adjusted_readiness,
+  );
+}
+
 function assessmentRecord(value: unknown): Assessment | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Assessment : null;
+  const record = objectRecord(value);
+  if (!record) return null;
+  const output = {...record} as Assessment;
+  const maturity = {...(objectRecord(output.maturity_signal) || {})};
+  const technical = technicalScoreForAssessment(output);
+  const adjusted = evidenceAdjustedScoreForAssessment(output);
+  if (technical != null) {
+    maturity.score = technical;
+    maturity.presented_score = technical;
+    maturity.technical_score = technical;
+    output.technical_score = technical;
+  }
+  if (adjusted != null) {
+    maturity.evidence_adjusted_score = adjusted;
+    output.evidence_adjusted_score = adjusted;
+  }
+  if (Object.keys(maturity).length) output.maturity_signal = maturity;
+  return output;
 }
 
 function canonicalReportAssessment(result: Result): Assessment | null {
   for (const id of ["final_comprehensive_report_generation", "risk_reduction_and_executive_briefing", "decision_report_generation"]) {
     const value = stage(result, id);
     const report = value?.report_package || value?.reports;
-    const canonical = report?.json;
-    if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) continue;
-    const assessment = assessmentRecord((canonical as Record<string, unknown>).assessment);
+    const canonical = objectRecord(report?.json);
+    if (!canonical) continue;
+    const assessment = assessmentRecord(canonical.assessment) || assessmentRecord(canonical);
     if (assessment) return assessment;
   }
-  const directCanonical = result.reports?.json;
-  if (directCanonical && typeof directCanonical === "object" && !Array.isArray(directCanonical)) {
-    return assessmentRecord((directCanonical as Record<string, unknown>).assessment);
-  }
-  return null;
+  const directCanonical = objectRecord(result.reports?.json);
+  return directCanonical ? assessmentRecord(directCanonical.assessment) || assessmentRecord(directCanonical) : null;
 }
 
 function assessmentCompleteness(value: Assessment): number {
-  const maturity = value.maturity_signal;
-  const score = maturity?.presented_score ?? maturity?.score;
+  const score = technicalScoreForAssessment(value);
+  const adjusted = evidenceAdjustedScoreForAssessment(value);
   const sections = Array.isArray(value.sections) ? value.sections.length : 0;
-  return (typeof score === "number" && Number.isFinite(score) ? 1000 : 0)
+  return (score != null ? 1000 : 0)
+    + (adjusted != null ? 100 : 0)
     + sections * 10
     + (value.executive_summary ? 5 : 0)
     + (value.evidence_coverage ? 3 : 0)
@@ -168,9 +231,10 @@ export function assessmentFor(_service: Service, result: Result | null): Assessm
   if (!result) return null;
   const candidates = [
     canonicalReportAssessment(result),
-    stage(result, "final_comprehensive_report_generation")?.assessment || null,
-    stage(result, "evidence_reconciliation_and_scoring")?.assessment || null,
-    result.assessment || null,
+    assessmentRecord(stage(result, "final_comprehensive_report_generation")?.assessment),
+    assessmentRecord(stage(result, "evidence_reconciliation_and_scoring")?.assessment),
+    assessmentRecord(result.assessment),
+    assessmentRecord(result),
   ].filter((value): value is Assessment => Boolean(value));
   if (!candidates.length) return null;
   return candidates.reduce((best, candidate) => (
