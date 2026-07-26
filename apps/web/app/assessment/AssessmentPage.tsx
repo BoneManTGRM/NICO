@@ -1,5 +1,6 @@
 import AssessmentWorkspace from "./AssessmentWorkspace";
 import AssessmentRuntimeTruthRepair from "./AssessmentRuntimeTruthRepair";
+import AssessmentHydrationContract from "./AssessmentHydrationContract";
 import "./assessment-inline-readiness.css";
 
 export const ASSESSMENT_CLIENT_COPY_CONTRACT = "expert-engagement-hydrated-v1";
@@ -14,12 +15,14 @@ function releaseSha(): string {
 }
 
 export default function AssessmentPage({locale = "en"}: {locale?: "en" | "es-MX"}) {
+  const exactReleaseSha = releaseSha();
   return <>
     <AssessmentRuntimeTruthRepair />
-    <AssessmentWorkspace
+    <AssessmentHydrationContract
       locale={locale}
-      releaseSha={releaseSha()}
+      releaseSha={exactReleaseSha}
       clientCopyContract={ASSESSMENT_CLIENT_COPY_CONTRACT}
     />
+    <AssessmentWorkspace locale={locale} />
   </>;
 }
