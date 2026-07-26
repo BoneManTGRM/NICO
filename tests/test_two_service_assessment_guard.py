@@ -13,7 +13,9 @@ def test_public_workspace_has_one_canonical_comprehensive_assessment() -> None:
     source = WORKSPACE.read_text(encoding="utf-8")
     rendered = source.split("return <main", 1)[1]
 
-    assert 'data-assessment-service-count="1"' in rendered
+    assert 'data-workspace="assessment"' in rendered
+    assert 'data-engagement-type="comprehensive"' in rendered
+    assert 'data-assessment-service-count' not in rendered
     assert 'data-canonical-assessment="strategic"' in rendered
     assert 'data-customer-facing-assessment="comprehensive"' in rendered
     assert '(["express", "comprehensive"] as Service[])' not in rendered
