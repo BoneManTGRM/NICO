@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from contextvars import ContextVar
 from copy import deepcopy
 from functools import wraps
@@ -97,10 +98,76 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
             augmented_identity["report_language"] = language
             augmented_identity["locale"] = language
             result = current(identity=augmented_identity, stage_results=deepcopy(stage_results))
-            if isinstance(result, dict):
-                result["report_language"] = language
-                if language == "es-MX":
-                    result = _localize_package(result)
+            if not isinstance(result, dict):
+                return result
+            result["report_language"] = language
+            if language == "es-MX":
+                result = _localize_package(result)
+
+            package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
+            canonical = package.get("json") if isinstance(package.get("json"), dict) else {}
+            previous_readiness = package.get("delivery_status") or canonical.get("delivery_status")
+            markdown = str(package.get("markdown") or "")
+            rendered_html = str(package.get("html") or "")
+            boundary_comment = "<!-- CLIENT DELIVERY BLOCKED · PENDING HUMAN APPROVAL -->"
+            if boundary_comment not in markdown:
+                markdown = markdown.rstrip() + "\n\n" + boundary_comment + "\n"
+            if boundary_comment not in rendered_html:
+                rendered_html = rendered_html.rstrip() + boundary_comment
+
+            canonical["evidence_readiness_status"] = previous_readiness
+            canonical["report_finality"] = "final"
+            canonical["approval_status"] = "pending_human_approval"
+            canonical["delivery_status"] = "blocked_pending_human_approval"
+            canonical["human_review_required"] = True
+            canonical["client_delivery_allowed"] = False
+            canonical["report_language"] = language
+            canonical["locale"] = language
+            truth_sha = base_report._canonical_hash(canonical)
+
+            quality = dict(package.get("report_quality_contract") or {})
+            quality.update(
+                {
+                    "report_finality": "final",
+                    "approval_status": "pending_human_approval",
+                    "delivery_status": "blocked_pending_human_approval",
+                    "cross_format_finality_semantics_present": True,
+                    "cross_format_boundary_present": True,
+                }
+            )
+            package.update(
+                {
+                    "markdown": markdown,
+                    "html": rendered_html,
+                    "json": canonical,
+                    "canonical_truth_sha256": truth_sha,
+                    "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+                    "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
+                    "evidence_readiness_status": previous_readiness,
+                    "report_finality": "final",
+                    "approval_status": "pending_human_approval",
+                    "delivery_status": "blocked_pending_human_approval",
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                    "report_quality_contract": quality,
+                    "report_language": language,
+                    "locale": language,
+                }
+            )
+            result.update(
+                {
+                    "report_package": package,
+                    "canonical_truth_sha256": truth_sha,
+                    "evidence_readiness_status": previous_readiness,
+                    "report_finality": "final",
+                    "approval_status": "pending_human_approval",
+                    "delivery_status": "blocked_pending_human_approval",
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                    "report_language": language,
+                    "locale": language,
+                }
+            )
             return result
         finally:
             _SCANNER_TRUTH.reset(truth_token)
@@ -140,6 +207,7 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
         "per_control_execution_and_assurance": True,
         "bounded_static_analysis_score": True,
         "canonical_score_parity": True,
+        "cross_format_finality_semantics": True,
         "spanish_client_artifacts": True,
         "spanish_cross_format_finality": True,
         "human_review_required": True,
