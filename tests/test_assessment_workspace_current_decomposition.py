@@ -20,7 +20,10 @@ def test_workspace_delegates_copy_model_types_and_run_control() -> None:
     assert "async function run()" not in workspace
     assert "const EN:" not in workspace
     assert "const ES:" not in workspace
-    assert workspace.count("useState") <= 3
+    assert workspace.count("useState") <= 4
+    assert 'artifactAction' in workspace
+    assert 'on_demand_exact_run' not in workspace
+    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`' in workspace
 
 
 def test_public_workspace_is_one_semantic_comprehensive_engagement() -> None:
