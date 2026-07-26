@@ -41,6 +41,8 @@ def wrap_report_builder_with_accepted_edition_identity(
         ]
         truth_sha = base_report._canonical_hash(canonical)
         package["canonical_truth_sha256"] = truth_sha
+        package["human_review_required"] = True
+        package["client_delivery_allowed"] = False
         result["canonical_truth_sha256"] = truth_sha
         quality = package.get("report_quality_contract")
         if not isinstance(quality, dict):
