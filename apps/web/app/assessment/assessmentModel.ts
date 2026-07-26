@@ -3,6 +3,8 @@ import type {Assessment, Copy, Evidence, Phase, ProgressItem, Report, Result, Se
 const TRANSIENT_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const BROWSER_EVIDENCE_KEY_LIMIT = 24;
 const BROWSER_ARRAY_PREVIEW_LIMIT = 8;
+const TECHNICAL_SCORE_LABEL = /(?:weighted\s+technical\s+maturity|technical\s+maturity|technical\s+score)[^0-9]{0,120}([0-9]{1,3})\s*\/\s*100/i;
+const ADJUSTED_SCORE_LABEL = /(?:evidence[-\s]+adjusted(?:\s+readiness|\s+score)?)[^0-9]{0,120}([0-9]{1,3})\s*\/\s*100/i;
 
 export class AssessmentApiError extends Error {
   readonly status: number;
@@ -101,19 +103,10 @@ function compactBrowserValue(value: unknown): unknown {
   if (value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) {
     const primitives = value.slice(0, BROWSER_ARRAY_PREVIEW_LIMIT).filter((item) => item == null || ["string", "number", "boolean"].includes(typeof item));
-    return {
-      type: "array",
-      item_count: value.length,
-      preview: primitives,
-      preview_truncated: value.length > primitives.length,
-    };
+    return {type: "array", item_count: value.length, preview: primitives, preview_truncated: value.length > primitives.length};
   }
   if (typeof value === "object") {
-    return {
-      type: "object",
-      key_count: Object.keys(value as Record<string, unknown>).length,
-      keys: Object.keys(value as Record<string, unknown>).slice(0, BROWSER_ARRAY_PREVIEW_LIMIT),
-    };
+    return {type: "object", key_count: Object.keys(value as Record<string, unknown>).length, keys: Object.keys(value as Record<string, unknown>).slice(0, BROWSER_ARRAY_PREVIEW_LIMIT)};
   }
   return String(value);
 }
@@ -151,34 +144,30 @@ function numericScore(...values: unknown[]): number | null {
   return null;
 }
 
+function labeledScore(report: Report | null | undefined, pattern: RegExp): number | null {
+  if (!report) return null;
+  for (const value of [report.markdown, report.html]) {
+    if (typeof value !== "string") continue;
+    const match = pattern.exec(value.replace(/<[^>]+>/g, " "));
+    if (!match) continue;
+    const score = Number(match[1]);
+    if (Number.isFinite(score) && score >= 0 && score <= 100) return Math.round(score);
+  }
+  return null;
+}
+
 export function technicalScoreForAssessment(value: Assessment | null | undefined): number | null {
   if (!value) return null;
   const maturity = objectRecord(value.maturity_signal) || {};
   const scorecard = objectRecord(value.scorecard) || objectRecord(value.executive_scorecard) || {};
-  return numericScore(
-    value.technical_score,
-    value.canonical_technical_score,
-    maturity.technical_score,
-    maturity.presented_score,
-    maturity.score,
-    scorecard.technical_score,
-    scorecard.technical_maturity,
-    scorecard.overall_score,
-  );
+  return numericScore(value.technical_score, value.canonical_technical_score, maturity.technical_score, maturity.presented_score, maturity.score, scorecard.technical_score, scorecard.technical_maturity, scorecard.overall_score);
 }
 
 export function evidenceAdjustedScoreForAssessment(value: Assessment | null | undefined): number | null {
   if (!value) return null;
   const maturity = objectRecord(value.maturity_signal) || {};
   const scorecard = objectRecord(value.scorecard) || objectRecord(value.executive_scorecard) || {};
-  return numericScore(
-    value.canonical_evidence_adjusted_score,
-    value.evidence_adjusted_score,
-    maturity.canonical_evidence_adjusted_score,
-    maturity.evidence_adjusted_score,
-    scorecard.evidence_adjusted_score,
-    scorecard.evidence_adjusted_readiness,
-  );
+  return numericScore(value.canonical_evidence_adjusted_score, value.evidence_adjusted_score, maturity.canonical_evidence_adjusted_score, maturity.evidence_adjusted_score, scorecard.evidence_adjusted_score, scorecard.evidence_adjusted_readiness);
 }
 
 function assessmentRecord(value: unknown): Assessment | null {
@@ -192,6 +181,7 @@ function assessmentRecord(value: unknown): Assessment | null {
     maturity.score = technical;
     maturity.presented_score = technical;
     maturity.technical_score = technical;
+    if (!maturity.level) maturity.level = "complete";
     output.technical_score = technical;
   }
   if (adjusted != null) {
@@ -219,27 +209,7 @@ function assessmentCompleteness(value: Assessment): number {
   const score = technicalScoreForAssessment(value);
   const adjusted = evidenceAdjustedScoreForAssessment(value);
   const sections = Array.isArray(value.sections) ? value.sections.length : 0;
-  return (score != null ? 1000 : 0)
-    + (adjusted != null ? 100 : 0)
-    + sections * 10
-    + (value.executive_summary ? 5 : 0)
-    + (value.evidence_coverage ? 3 : 0)
-    + (Array.isArray(value.unavailable_data_notes) ? value.unavailable_data_notes.length : 0);
-}
-
-export function assessmentFor(_service: Service, result: Result | null): Assessment | null {
-  if (!result) return null;
-  const candidates = [
-    canonicalReportAssessment(result),
-    assessmentRecord(stage(result, "final_comprehensive_report_generation")?.assessment),
-    assessmentRecord(stage(result, "evidence_reconciliation_and_scoring")?.assessment),
-    assessmentRecord(result.assessment),
-    assessmentRecord(result),
-  ].filter((value): value is Assessment => Boolean(value));
-  if (!candidates.length) return null;
-  return candidates.reduce((best, candidate) => (
-    assessmentCompleteness(candidate) > assessmentCompleteness(best) ? candidate : best
-  ));
+  return (score != null ? 1000 : 0) + (adjusted != null ? 100 : 0) + sections * 10 + (value.executive_summary ? 5 : 0) + (value.evidence_coverage ? 3 : 0) + (Array.isArray(value.unavailable_data_notes) ? value.unavailable_data_notes.length : 0);
 }
 
 export function reportFor(_service: Service, result: Result | null): Report | null {
@@ -250,6 +220,33 @@ export function reportFor(_service: Service, result: Result | null): Report | nu
     if (report) return report;
   }
   return result.reports || null;
+}
+
+export function assessmentFor(service: Service, result: Result | null): Assessment | null {
+  if (!result) return null;
+  const candidates = [canonicalReportAssessment(result), assessmentRecord(stage(result, "final_comprehensive_report_generation")?.assessment), assessmentRecord(stage(result, "evidence_reconciliation_and_scoring")?.assessment), assessmentRecord(result.assessment), assessmentRecord(result)].filter((value): value is Assessment => Boolean(value));
+  let selected = candidates.length ? candidates.reduce((best, candidate) => assessmentCompleteness(candidate) > assessmentCompleteness(best) ? candidate : best) : {} as Assessment;
+  const report = reportFor(service, result);
+  const technical = technicalScoreForAssessment(selected) ?? labeledScore(report, TECHNICAL_SCORE_LABEL);
+  const adjusted = evidenceAdjustedScoreForAssessment(selected) ?? labeledScore(report, ADJUSTED_SCORE_LABEL);
+  if (technical == null && adjusted == null && !candidates.length) return null;
+  if (technical != null || adjusted != null) {
+    selected = {...selected};
+    const maturity = {...(objectRecord(selected.maturity_signal) || {})};
+    if (technical != null) {
+      selected.technical_score = technical;
+      maturity.score = technical;
+      maturity.presented_score = technical;
+      maturity.technical_score = technical;
+      if (!maturity.level) maturity.level = "complete";
+    }
+    if (adjusted != null) {
+      selected.evidence_adjusted_score = adjusted;
+      maturity.evidence_adjusted_score = adjusted;
+    }
+    selected.maturity_signal = maturity;
+  }
+  return selected;
 }
 
 export function terminal(_service: Service, result: Result): Phase | null {
@@ -264,12 +261,7 @@ export function progressFor(_service: Service, result: Result | null): ProgressI
   return Object.entries(result.record?.stage_results || {}).map(([stepId, value]) => {
     const normalizedStatus = String(value.status || "").toLowerCase().replace(/[\s-]+/g, "_");
     const completed = ["complete", "completed", "success", "passed", "verified"].includes(normalizedStatus);
-    return {
-      step: stepId,
-      status: value.status,
-      message: value.message || value.summary || (completed ? "✓" : undefined),
-      evidence: browserEvidencePreview(value.evidence),
-    };
+    return {step: stepId, status: value.status, message: value.message || value.summary || (completed ? "✓" : undefined), evidence: browserEvidencePreview(value.evidence)};
   });
 }
 
@@ -286,44 +278,23 @@ export function immutableCommitFor(result: Result | null): string {
 }
 
 export function scannerStatusFor(_service: Service, result: Result | null, running: boolean): unknown {
-  return stage(result, "dependency_security_static_analysis")?.status
-    || stage(result, "deep_scanner_triage")?.status
-    || (running ? "running" : "pending");
+  return stage(result, "dependency_security_static_analysis")?.status || stage(result, "deep_scanner_triage")?.status || (running ? "running" : "pending");
 }
 
 export async function parseJson(response: Response, copy: Copy): Promise<Result> {
   type ErrorDetail = {message?: unknown; code?: unknown; retryable?: unknown; request_id?: unknown};
   let data: Result & {detail?: string | ErrorDetail; error?: string};
-  try {
-    data = await response.json() as Result & {detail?: string | ErrorDetail; error?: string};
-  } catch {
-    throw new AssessmentApiError(copy.invalidJson, {
-      status: response.status,
-      code: "assessment_invalid_json",
-      retryable: TRANSIENT_HTTP_STATUS.has(response.status),
-      requestId: response.headers.get("x-request-id") || "",
-    });
-  }
+  try { data = await response.json() as Result & {detail?: string | ErrorDetail; error?: string}; }
+  catch { throw new AssessmentApiError(copy.invalidJson, {status: response.status, code: "assessment_invalid_json", retryable: TRANSIENT_HTTP_STATUS.has(response.status), requestId: response.headers.get("x-request-id") || ""}); }
   if (!response.ok) {
     const detail = data.detail && typeof data.detail === "object" ? data.detail : {};
-    const message = typeof data.detail === "string"
-      ? data.detail
-      : String(detail.message || detail.code || data.error || `${copy.backendError} (${response.status})`);
-    throw new AssessmentApiError(message, {
-      status: response.status,
-      code: String(detail.code || data.error || "assessment_request_failed"),
-      retryable: typeof detail.retryable === "boolean"
-        ? detail.retryable
-        : TRANSIENT_HTTP_STATUS.has(response.status),
-      requestId: String(detail.request_id || response.headers.get("x-request-id") || ""),
-    });
+    const message = typeof data.detail === "string" ? data.detail : String(detail.message || detail.code || data.error || `${copy.backendError} (${response.status})`);
+    throw new AssessmentApiError(message, {status: response.status, code: String(detail.code || data.error || "assessment_request_failed"), retryable: typeof detail.retryable === "boolean" ? detail.retryable : TRANSIENT_HTTP_STATUS.has(response.status), requestId: String(detail.request_id || response.headers.get("x-request-id") || "")});
   }
   return data;
 }
 
-export async function wait(ms: number): Promise<void> {
-  await new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+export async function wait(ms: number): Promise<void> { await new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
 export function savePdf(encoded: string, filename: string): void {
   const binary = window.atob(encoded);
@@ -345,13 +316,5 @@ export function sectionPresentation(section: Section, copy: Copy) {
   const score = typeof value === "number" ? `${value}/100` : copy.notScored;
   const assurance = String(section.assurance_status || section.assurance_label || section.presented_status || section.status || "unavailable");
   const risk = String(section.risk_disposition || "");
-  return {
-    score,
-    technicalTone: scoreTone(typeof value === "number" ? value : null),
-    assuranceLabel: formatStatus(assurance, copy),
-    assuranceTone: toneKey(assurance),
-    risk,
-    riskLabel: risk ? formatStatus(risk, copy) : "",
-    riskTone: toneKey(risk),
-  };
+  return {score, technicalTone: scoreTone(typeof value === "number" ? value : null), assuranceLabel: formatStatus(assurance, copy), assuranceTone: toneKey(assurance), risk, riskLabel: risk ? formatStatus(risk, copy) : "", riskTone: toneKey(risk)};
 }
