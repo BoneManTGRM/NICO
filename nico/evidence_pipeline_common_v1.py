@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -124,19 +125,52 @@ def _nearest_lock_root(project_dir: Path, repo_dir: Path) -> Path | None:
         current = current.parent
 
 
+def _read_package_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _package_script(project_dir: Path, script_name: str = "lint") -> str:
+    scripts = _read_package_json(project_dir / "package.json").get("scripts")
+    if not isinstance(scripts, dict):
+        return ""
+    return str(scripts.get(script_name) or "").strip()
+
+
+def _script_executes(script: str, executable: str) -> bool:
+    return bool(re.search(rf"(^|[;&|\s])(?:npx\s+)?{re.escape(executable)}(?:[\s;&|]|$)", script or ""))
+
+
+def _call_runner(runner: Callable[..., Any], args: tuple[str, ...], **kwargs: Any) -> Any:
+    try:
+        parameters = inspect.signature(runner).parameters.values()
+    except (TypeError, ValueError):
+        return runner(args, **kwargs)
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+        return runner(args, **kwargs)
+    accepted = {parameter.name for parameter in parameters}
+    return runner(args, **{key: value for key, value in kwargs.items() if key in accepted})
+
+
 def _eslint_config_exists(project_dir: Path) -> bool:
     return any((project_dir / name).is_file() for name in _ESLINT_CONFIG_NAMES)
 
 
-def _select_node_project(repo_dir: Path, tool_name: str) -> tuple[Path, Path] | None:
+def _select_node_project(repo_dir: Path, tool_name: str) -> tuple[Path, Path | None] | None:
     for project_dir in _package_dirs(repo_dir):
-        if tool_name == "typescript" and not (project_dir / "tsconfig.json").is_file():
+        lint_script = _package_script(project_dir)
+        if tool_name == "typescript":
+            if not (project_dir / "tsconfig.json").is_file() and not _script_executes(lint_script, "tsc"):
+                continue
+        elif tool_name == "eslint":
+            if not _eslint_config_exists(project_dir) and not lint_script:
+                continue
+        else:
             continue
-        if tool_name == "eslint" and not _eslint_config_exists(project_dir):
-            continue
-        lock_root = _nearest_lock_root(project_dir, repo_dir)
-        if lock_root is not None:
-            return project_dir, lock_root
+        return project_dir, _nearest_lock_root(project_dir, repo_dir)
     return None
 
 
@@ -179,7 +213,9 @@ def _prepare_node_project(
             "npm is not installed in the worker image.",
         )
     output_path = workspace.root / "scanner-output" / f"npm-ci-{hashlib.sha256(str(lock_root).encode()).hexdigest()[:12]}.stdout"
-    result = runner(
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result = _call_runner(
+        runner,
         (
             npm,
             "ci",
@@ -290,4 +326,5 @@ __all__ = [
     "VERSION", "_REQUIRED_REPEATABILITY_TOOLS", "_exact_sha", "_immutable_sha",
     "_select_node_project", "_not_applicable", "_prepare_node_project",
     "_effective_command", "_raw_output_record", "_skip_generated",
+    "_call_runner", "_package_script", "_script_executes", "_eslint_config_exists",
 ]
