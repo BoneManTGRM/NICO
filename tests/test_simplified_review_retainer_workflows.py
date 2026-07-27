@@ -46,7 +46,7 @@ def test_final_review_uses_canonical_accepted_edition_api_for_strategic() -> Non
 def test_final_review_is_one_controlled_approval_and_download_action() -> None:
     source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
 
-    assert "Final review, without the friction." in source
+    assert "Internal final review and client-ready authorization." in source
     assert "Approve and download final PDF" in source
     assert "I reviewed this exact report." in source
     assert "scorecard, evidence limitations, immutable run identity, artifact digest" in source
@@ -76,7 +76,7 @@ def test_final_review_prioritizes_reviewer_role_and_exact_run_identity() -> None
 def test_final_review_has_mexican_spanish_accepted_edition_parity() -> None:
     source = _read("apps/web/app/operations/final-review/FinalReviewWorkspace.tsx")
 
-    assert "ACEPTACIÓN CONTROLADA DE NICO" in source
+    assert "CONTROL INTERNO DE CALIDAD NICO" in source
     assert "Aprobar y descargar PDF final" in source
     assert "Solicitar más evidencia" in source
     assert "Rechazar entrega" in source

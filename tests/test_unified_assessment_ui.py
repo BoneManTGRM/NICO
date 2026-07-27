@@ -103,12 +103,13 @@ def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_button
         assert forbidden not in rendered
 
 
-def test_autonomous_flow_stops_at_human_review_without_approval_or_delivery_mutation() -> None:
+def test_autonomous_flow_stops_at_internal_review_without_approval_or_delivery_mutation() -> None:
     source = assessment_source()
 
     assert 'value === "review_required"' in source or 'value === "review_required"' in MODEL.read_text(encoding="utf-8")
-    assert "Technical analysis and report preparation are complete. The engagement is awaiting required human review." in source
-    assert "The NICO technical team must review and approve this exact evidence-bound edition before client delivery" in source
+    assert "Technical analysis and report preparation are complete. The engagement is awaiting internal technical review." in source
+    assert "An authorized NICO reviewer must approve this exact evidence-bound edition before it becomes client-ready" in source
+    assert "data-assessment-internal-review" in source
     assert "/approval/request" not in source
     assert "/approved" not in source
     assert "/delivery/access" not in source

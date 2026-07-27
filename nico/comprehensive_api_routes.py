@@ -107,7 +107,7 @@ def _authorize_review(token: str) -> None:
         status_code=403,
         detail={
             "code": "strategic_review_admin_authentication_required",
-            "message": "Operator admin authentication is required for Strategic review and approved delivery access.",
+            "message": "Operator admin authentication is required for Comprehensive internal review and approved delivery access.",
             "admin_write": status,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -255,7 +255,7 @@ def _approved_delivery_response(record: dict[str, Any]) -> Response:
         )
     filename = str(
         candidate.get("filename")
-        or f"nico-strategic-delivery-{record['identity']['run_id']}-APPROVED.zip"
+        or f"nico-comprehensive-delivery-{record['identity']['run_id']}-APPROVED.zip"
     )
     filename = filename.replace("\r", "").replace("\n", "").replace('"', "'")
     certificate = (

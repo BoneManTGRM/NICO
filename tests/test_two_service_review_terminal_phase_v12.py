@@ -27,24 +27,28 @@ def _module():
     return module
 
 
-def test_current_bilingual_review_required_copy_is_terminal() -> None:
+def test_current_bilingual_review_copy_and_legacy_terminal_aliases() -> None:
     module = _module()
     copy_source = COPY.read_text(encoding="utf-8")
-    expected = {
+    current = {
+        "Internal review required",
+        "Revisión interna requerida",
+    }
+    historical_aliases = {
         "Expert review required",
         "Se requiere revisión experta",
     }
 
     installed = module.install_current_review_terminal_phases()
 
-    assert expected <= installed
+    assert historical_aliases <= installed
     assert {
         "Complete",
         "Human review required",
         "Run failed or blocked",
         "Continuation timed out",
     } <= installed
-    for label in expected:
+    for label in current:
         assert label in copy_source
 
 

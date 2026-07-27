@@ -32,15 +32,15 @@ type ReviewResponse = {
 
 const COPY = {
   en: {
-    eyebrow: "NICO CONTROLLED ACCEPTANCE",
-    title: "Final review, without the friction.",
-    lead: "Review the exact immutable Strategic report, confirm its evidence boundary, and authorize only the artifact set you actually examined.",
+    eyebrow: "NICO INTERNAL QUALITY GATE",
+    title: "Internal final review and client-ready authorization.",
+    lead: "Review the exact immutable Comprehensive report, confirm its evidence boundary, and authorize only the artifact set your team actually examined.",
     assessment: "Assessment",
     exactRun: "Exact run",
     identity: "Identity",
     bound: "Bound",
     missing: "Missing",
-    directRun: "Open this page from a completed assessment",
+    directRun: "Open this page from a completed Comprehensive assessment",
     secureAccess: "SECURE ACCESS",
     identifyReviewer: "Identify the authorized reviewer",
     identityAttached: "The report identity is already attached when this page is opened from a completed run.",
@@ -68,7 +68,7 @@ const COPY = {
     approveHeading: "Approve the exact accepted edition",
     approveLead: "One controlled action records the certificate and downloads the same PDF that was reviewed.",
     review: "Review",
-    delivery: "Client delivery",
+    delivery: "Client-ready",
     authorized: "Authorized",
     blocked: "Blocked",
     waiting: "Waiting for secure access",
@@ -84,8 +84,8 @@ const COPY = {
     approveDownload: "Approve and download final PDF",
     downloadAgain: "Download approved PDF again",
     downloadPackage: "Download approved delivery package",
-    readyDelivery: "This exact immutable edition and its certified delivery package are approved for controlled client delivery.",
-    blockedDelivery: "Delivery remains blocked until a valid approval certificate matches the current artifact set.",
+    readyDelivery: "This exact immutable edition and its certified delivery package are approved and client-ready.",
+    blockedDelivery: "Client-ready release remains blocked until a valid internal approval certificate matches the current artifact set.",
     otherDecision: "Need a different decision?",
     otherDecisionLead: "Use these only when the package cannot be approved. A clear decision reason is required.",
     requestEvidence: "Request more evidence",
@@ -111,9 +111,9 @@ const COPY = {
     defaultApprovalReason: "Authorized reviewer confirmed the exact immutable report, scorecard, disclosed evidence limitations, artifact identity, and delivery boundary.",
   },
   "es-MX": {
-    eyebrow: "ACEPTACIÓN CONTROLADA DE NICO",
-    title: "Revisión final, sin fricción.",
-    lead: "Revisa el informe Estratégico inmutable exacto, confirma su límite de evidencia y autoriza únicamente el conjunto de artefactos que examinaste.",
+    eyebrow: "CONTROL INTERNO DE CALIDAD NICO",
+    title: "Revisión final interna y autorización para el cliente.",
+    lead: "Revisa el informe Comprensivo inmutable exacto, confirma su límite de evidencia y autoriza únicamente el conjunto de artefactos que examinó tu equipo.",
     assessment: "Evaluación",
     exactRun: "Ejecución exacta",
     identity: "Identidad",
@@ -147,7 +147,7 @@ const COPY = {
     approveHeading: "Aprueba la edición aceptada exacta",
     approveLead: "Una acción controlada registra el certificado y descarga el mismo PDF que fue revisado.",
     review: "Revisión",
-    delivery: "Entrega al cliente",
+    delivery: "Lista para el cliente",
     authorized: "Autorizada",
     blocked: "Bloqueada",
     waiting: "Esperando acceso seguro",
@@ -489,7 +489,7 @@ export default function FinalReviewWorkspace() {
     if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
       throw new Error(copy.invalidPackage);
     }
-    const fallback = `nico-strategic-delivery-${runId.trim()}-APPROVED.zip`;
+    const fallback = `nico-comprehensive-delivery-${runId.trim()}-APPROVED.zip`;
     downloadBlob(
       new Blob([bytes], {type: "application/zip"}),
       filenameFromResponse(response, fallback),

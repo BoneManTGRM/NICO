@@ -155,14 +155,14 @@ def _build_pdf(
         p(f"Run ID: {_text(identity.get('run_id'))}", subtitle),
         p(f"Generated: {generated_at}", subtitle),
         Spacer(1, .3 * inch),
-        p(f"{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT DELIVERY NOT AUTHORIZED WITHOUT EXACT-PACKAGE APPROVAL", warning),
+        p(f"{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT-READY RELEASE REQUIRES INTERNAL EXACT-PACKAGE APPROVAL", warning),
         PageBreak(),
         p("Executive Decision Brief", h1),
         p(
             f"NICO assessed {_text(identity.get('repository'))} at immutable commit {_text(identity.get('commit_sha'))}. "
             + (f"Weighted technical maturity is {maturity.get('score_band_label')} ({score_value}/100). " if isinstance(score_value, int) else "Technical maturity is not scored. ")
             + (f"Evidence-Adjusted readiness is {int(adjusted)}/100. " if isinstance(adjusted, (int, float)) else "Evidence-Adjusted readiness is not scored. ")
-            + f"{limitations.get('individual_limitation_records', 0)} distinct evidence limitation record(s) remain. Technical score, evidence assurance, and client-delivery authorization are independent; an authorized human must approve the exact package.",
+            + f"{limitations.get('individual_limitation_records', 0)} distinct evidence limitation record(s) remain. Technical score, evidence assurance, and client-delivery authorization are independent; an authorized internal reviewer must approve the exact package before client release.",
             body,
         ),
         p("Decision dashboard", h2),
@@ -172,7 +172,7 @@ def _build_pdf(
             ["Evidence-Adjusted", f"{int(adjusted)}/100" if isinstance(adjusted, (int, float)) else "NOT SCORED", "Evidence completeness constrains the technical signal"],
             ["Operate", (postures.get("operate") or {}).get("status") or "Conditional", "; ".join((postures.get("operate") or {}).get("conditions") or [])],
             ["Release", (postures.get("release") or {}).get("status") or "Conditional", "; ".join((postures.get("release") or {}).get("conditions") or [])],
-            ["Client delivery", assessment.get("delivery_status") or "Human Review Required", (postures.get("client_delivery") or {}).get("required_next_action") or "Exact-package approval required"],
+            ["Client delivery", assessment.get("delivery_status") or "Human Review Required", (postures.get("client_delivery") or {}).get("required_next_action") or "Internal exact-package approval required"],
         ], [1.35 * inch, 1.55 * inch, 4.55 * inch]),
         p("Top priority decisions", h2),
         *bullets([f"{item.get('title')} [{item.get('finding_id') or item.get('id')}]" for item in executive[:3]] or ["Complete exact-package human review."], 3),
@@ -346,7 +346,7 @@ def _build_pdf(
         "Disposition every P1 against its binary acceptance criteria and residual-risk statement.",
         "Validate business context, assumptions, roadmap, staffing, effort, and any financial scenario inputs.",
         "Approve or reject the exact immutable report package before delivery.",
-    ], 10), p(f"{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT DELIVERY NOT AUTHORIZED WITHOUT EXACT-PACKAGE APPROVAL", warning)]
+    ], 10), p(f"{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT-READY RELEASE REQUIRES INTERNAL EXACT-PACKAGE APPROVAL", warning)]
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return buffer.getvalue()
