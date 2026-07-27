@@ -41,6 +41,7 @@ def test_current_bilingual_review_copy_and_legacy_terminal_aliases() -> None:
 
     installed = module.install_current_review_terminal_phases()
 
+    assert current <= installed
     assert historical_aliases <= installed
     assert {
         "Complete",
