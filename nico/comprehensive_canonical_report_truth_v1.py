@@ -216,9 +216,13 @@ def apply_canonical_score_truth(assessment: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_filename(value: Any) -> str:
     filename = str(value or "nico-comprehensive-assessment-FINAL-PENDING-APPROVAL.pdf")
-    filename = _FINAL_SUFFIX_RE.sub("-FINAL-PENDING-APPROVAL.pdf", filename)
-    filename = _DRAFT_SUFFIX_RE.sub("-FINAL-PENDING-APPROVAL.pdf", filename)
-    return filename
+    if _FINAL_SUFFIX_RE.search(filename):
+        return _FINAL_SUFFIX_RE.sub("-FINAL-PENDING-APPROVAL.pdf", filename)
+    if re.search(r"-DRAFT\.pdf$", filename, re.IGNORECASE):
+        return re.sub(r"-DRAFT\.pdf$", "-FINAL-PENDING-APPROVAL.pdf", filename, flags=re.IGNORECASE)
+    if filename.casefold().endswith(".pdf"):
+        return filename[:-4] + "-FINAL-PENDING-APPROVAL.pdf"
+    return filename + "-FINAL-PENDING-APPROVAL.pdf"
 
 
 def _replace_pdf_text(pdf_bytes: bytes) -> bytes:
