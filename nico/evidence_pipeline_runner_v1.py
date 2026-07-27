@@ -87,7 +87,7 @@ def _build_scanner_runner() -> tuple[Callable[..., dict[str, Any]], Callable[...
         preparation: Any = None,
     ) -> dict[str, Any]:
         project = _select_node_project(workspace.repo_dir, spec.name) if spec.name in {"eslint", "typescript"} else None
-        if project is not None and preparation is None:
+        if project is not None and project[1] is not None and preparation is None:
             preparation = _prepare_node_project(runners, workspace, project[1], runner=runner)
         return _run_tool(runners, spec, workspace, runner=runner, project=project, preparation=preparation)
 
@@ -104,7 +104,7 @@ def _build_scanner_runner() -> tuple[Callable[..., dict[str, Any]], Callable[...
         for spec in specs:
             project = _select_node_project(workspace.repo_dir, spec.name) if spec.name in {"eslint", "typescript"} else None
             preparation = None
-            if project is not None:
+            if project is not None and project[1] is not None:
                 lock_root = project[1]
                 if lock_root not in preparation_cache:
                     preparation_cache[lock_root] = _prepare_node_project(runners, workspace, lock_root, runner=runner)
