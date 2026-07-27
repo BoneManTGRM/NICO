@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: phase5-apply-verified-completion
+  cancel-in-progress: true
+
 jobs:
   apply:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
@@ -20,8 +24,20 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
 
+      - name: Verify completion payload integrity
+        run: python scripts/diagnose_phase5_payload.py
+
       - name: Apply locally verified Phase 5 files
         run: python scripts/apply_phase5_completion_payload.py
+
+      - name: Remove temporary completion machinery
+        run: |
+          rm -f \
+            scripts/diagnose_phase5_payload.py \
+            scripts/apply_phase5_completion_payload.py \
+            .github/workflows/phase5-source-export.yml \
+            .github/workflows/phase5-pin-workflow-actions.yml \
+            tmp-delete-me3.txt
 
       - name: Commit exact verified completion
         run: |
