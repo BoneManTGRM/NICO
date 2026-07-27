@@ -320,14 +320,6 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     >{internalReview.approved ? copy.openReviewRecord : copy.openInternalReview}</a>
     : null;
 
-  const reviewAction = result?.run_id && (phase === "review_required" || internalReview.completed)
-    ? <a
-      className={workspaceStyles.internalReviewAction}
-      data-assessment-internal-review="true"
-      href={internalReviewHref}
-    >{internalReview.approved ? copy.openReviewRecord : copy.openInternalReview}</a>
-    : null;
-
   const reportActions = <div
     className={`report-actions ${workspaceStyles.reportActionBar}`}
     data-assessment-report-actions="true"
