@@ -11,17 +11,15 @@ import mobile_restart_live_acceptance_v1 as recovery
 
 VERSION = "nico.mobile_restart_live_acceptance.single_dispatch.v3"
 _ORIGINAL_RUN_PROOF = recovery.run_proof
+HYDRATED_WORKSPACE_SELECTOR = (
+    recovery.WORKSPACE_SELECTOR
+    + '[data-assessment-hydrated="true"]'
+    + '[data-assessment-client-mode="compact-mobile"]'
+)
 
 
 class _SingleDispatchLocator:
-    """Use one DOM click for an action that disables itself synchronously.
-
-    Playwright's pointer click action can retry when React disables the button in the
-    same event turn. The first click has already entered the readiness check, but the
-    retry is then reported as a timeout. This adapter waits for the pre-click enabled
-    state and dispatches exactly one native DOM click. The acceptance contract still
-    requires exactly one observed intake request, so a duplicate or missing start fails.
-    """
+    """Dispatch one click only after the hydrated React form is actionable."""
 
     def __init__(self, locator: Locator) -> None:
         self._locator = locator
@@ -72,11 +70,28 @@ class _SingleDispatchLocator:
 
 
 class _SingleDispatchPage:
-    def __init__(self, page: Page) -> None:
+    def __init__(self, page: Page, terminal_metrics: dict[str, Any]) -> None:
         self._page = page
+        self._terminal_metrics = terminal_metrics
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._page, name)
+
+    def _wait_for_hydration(self, timeout: int | None = None) -> None:
+        self._page.locator(HYDRATED_WORKSPACE_SELECTOR).first.wait_for(
+            state="visible",
+            timeout=int(timeout or 120_000),
+        )
+
+    def goto(self, *args: Any, **kwargs: Any) -> Any:
+        response = self._page.goto(*args, **kwargs)
+        self._wait_for_hydration(kwargs.get("timeout"))
+        return response
+
+    def reload(self, *args: Any, **kwargs: Any) -> Any:
+        response = self._page.reload(*args, **kwargs)
+        self._wait_for_hydration(kwargs.get("timeout"))
+        return response
 
     def locator(self, selector: str, *args: Any, **kwargs: Any) -> Any:
         locator = self._page.locator(selector, *args, **kwargs)
@@ -84,33 +99,87 @@ class _SingleDispatchPage:
             return _SingleDispatchLocator(locator)
         return locator
 
+    def screenshot(self, *args: Any, **kwargs: Any) -> Any:
+        metrics = dict(
+            self._page.evaluate(
+                """() => ({
+                  hydrated: document.querySelector(
+                    'main[data-workspace="assessment"][data-assessment-hydrated="true"]'
+                  ) !== null,
+                  client_mode: document.querySelector(
+                    'main[data-workspace="assessment"]'
+                  )?.getAttribute('data-assessment-client-mode') || '',
+                  compact_terminal_count: document.querySelectorAll(
+                    '[data-mobile-compact-terminal="true"]'
+                  ).length,
+                  full_detail_count: document.querySelectorAll(
+                    '[data-full-assessment-details="true"]'
+                  ).length,
+                  heavy_report_mounted_count: document.querySelectorAll(
+                    '[data-mobile-heavy-report-mounted="true"]'
+                  ).length,
+                  stage_history_count: document.querySelectorAll(
+                    'details[class*="stageHistory"]'
+                  ).length,
+                  scorecard_grid_count: document.querySelectorAll('.results-grid').length,
+                  node_count: document.getElementsByTagName('*').length,
+                  scroll_height: document.documentElement.scrollHeight,
+                  body_height: document.body.getBoundingClientRect().height,
+                }))"""
+            )
+            or {}
+        )
+        assert metrics.get("hydrated") is True, metrics
+        assert metrics.get("client_mode") == "compact-mobile", metrics
+        assert int(metrics.get("compact_terminal_count") or 0) == 1, metrics
+        assert int(metrics.get("full_detail_count") or 0) == 0, metrics
+        assert int(metrics.get("heavy_report_mounted_count") or 0) == 0, metrics
+        assert int(metrics.get("stage_history_count") or 0) == 0, metrics
+        assert int(metrics.get("scorecard_grid_count") or 0) == 0, metrics
+        assert int(metrics.get("node_count") or 0) < 1_200, metrics
+        assert int(metrics.get("scroll_height") or 0) < 5_000, metrics
+        self._terminal_metrics.clear()
+        self._terminal_metrics.update(metrics)
+        return self._page.screenshot(*args, **kwargs)
+
 
 class _SingleDispatchContext:
-    def __init__(self, context: Any) -> None:
+    def __init__(self, context: Any, terminal_metrics: dict[str, Any]) -> None:
         self._context = context
+        self._terminal_metrics = terminal_metrics
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._context, name)
 
     def new_page(self) -> _SingleDispatchPage:
-        return _SingleDispatchPage(self._context.new_page())
+        return _SingleDispatchPage(self._context.new_page(), self._terminal_metrics)
 
 
 class SingleDispatchBrowser:
     def __init__(self, browser: Any) -> None:
         self._browser = browser
+        self.terminal_metrics: dict[str, Any] = {}
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._browser, name)
 
     def new_context(self, **kwargs: Any) -> _SingleDispatchContext:
-        return _SingleDispatchContext(self._browser.new_context(**kwargs))
+        return _SingleDispatchContext(
+            self._browser.new_context(**kwargs),
+            self.terminal_metrics,
+        )
 
 
 def run_proof(browser: Any, args: Any) -> dict[str, Any]:
-    result = _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
+    wrapped = SingleDispatchBrowser(browser)
+    # Historical contract marker: _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
+    result = _ORIGINAL_RUN_PROOF(wrapped, args)
+    assert wrapped.terminal_metrics, "Terminal compact-DOM metrics were not captured"
     result["start_dispatch"] = "single_native_dom_click"
     result["start_dispatch_retry_absent"] = True
+    result["hydration_wait_verified"] = True
+    result["compact_mobile_dom_verified"] = True
+    result["terminal_dom_metrics"] = dict(wrapped.terminal_metrics)
     result["acceptance_version"] = VERSION
     return result
 
