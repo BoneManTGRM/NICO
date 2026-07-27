@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -244,12 +246,43 @@ def _raw_output_record(result: Any) -> dict[str, Any] | None:
         digest = _file_sha256(path)
     except OSError:
         return None
+
+    configured_root = str(os.getenv("NICO_SCANNER_ARTIFACT_DIR") or "").strip()
+    archive_root = (
+        Path(configured_root).expanduser()
+        if configured_root
+        else Path(tempfile.gettempdir()) / "nico-scanner-artifacts"
+    )
+    archive_path = archive_root / f"{digest}-{path.name}.gz"
+    retained = False
+    archive_sha256 = ""
+    archive_bytes = 0
+    retention_error = ""
+    try:
+        archive_root.mkdir(parents=True, exist_ok=True)
+        if not archive_path.exists():
+            with path.open("rb") as source, gzip.open(archive_path, "wb", compresslevel=6) as destination:
+                shutil.copyfileobj(source, destination, length=1024 * 1024)
+        archive_sha256 = _file_sha256(archive_path)
+        archive_bytes = archive_path.stat().st_size
+        retained = True
+    except OSError as exc:
+        retention_error = type(exc).__name__
+
     return {
         "filename": path.name,
         "sha256": digest,
         "bytes": size,
         "capture_complete": True,
         "retained_as_structured_findings": True,
+        "raw_archive_retained": retained,
+        "raw_archive_filename": archive_path.name if retained else None,
+        "raw_archive_path": str(archive_path) if retained else None,
+        "raw_archive_sha256": archive_sha256 or None,
+        "raw_archive_bytes": archive_bytes,
+        "retention_scope": "configured_artifact_directory" if configured_root else "process_filesystem",
+        "durability_verified": bool(configured_root and retained),
+        "retention_error": retention_error,
     }
 
 
