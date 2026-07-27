@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.webkit.v2"
-OPTIONAL_EVIDENCE_SELECTOR = 'section[aria-labelledby="strategic-evidence-title"]'
+VERSION = "nico.mobile_restart_live_acceptance.webkit.v3"
+OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
 
@@ -98,19 +97,25 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
 
         paint_boundary = optional.evaluate(
             """section => {
-              const chooser = section.querySelector(':scope > label');
-              const workspace = section.querySelector(':scope > div:nth-of-type(2)');
               const style = getComputedStyle(section);
+              const controls = section.querySelectorAll('input, textarea, select, button');
+              const richNodes = section.querySelectorAll(
+                '[class*="evidenceWorkspace"], [class*="moduleList"], [class*="moduleEditor"], [class*="mobileChooser"]'
+              );
               return {
-                chooser_display: chooser ? getComputedStyle(chooser).display : 'missing',
-                editor_display: workspace ? getComputedStyle(workspace).display : 'missing',
+                editor_mounted: section.getAttribute('data-evidence-editor-mounted') || '',
+                interactive_control_count: controls.length,
+                rich_editor_node_count: richNodes.length,
+                mobile_note_present: Boolean(section.querySelector('[data-mobile-evidence-note="true"]')),
                 section_height: section.getBoundingClientRect().height,
                 section_overflow: style.overflow,
               };
             }"""
         )
-        assert paint_boundary.get("chooser_display") == "none", paint_boundary
-        assert paint_boundary.get("editor_display") == "none", paint_boundary
+        assert paint_boundary.get("editor_mounted") == "false", paint_boundary
+        assert int(paint_boundary.get("interactive_control_count") or 0) == 0, paint_boundary
+        assert int(paint_boundary.get("rich_editor_node_count") or 0) == 0, paint_boundary
+        assert paint_boundary.get("mobile_note_present") is True, paint_boundary
         assert float(paint_boundary.get("section_height") or 0) < 520, paint_boundary
 
         document_metrics = page.evaluate(
@@ -120,10 +125,17 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
               viewport_height: window.innerHeight,
               viewport_width: window.innerWidth,
               node_count: document.getElementsByTagName('*').length,
+              evidence_control_count: document.querySelectorAll(
+                'section[aria-labelledby="strategic-evidence-title"] input, '
+                + 'section[aria-labelledby="strategic-evidence-title"] textarea, '
+                + 'section[aria-labelledby="strategic-evidence-title"] select, '
+                + 'section[aria-labelledby="strategic-evidence-title"] button'
+              ).length,
             })"""
         )
         assert int(document_metrics.get("scroll_height") or 0) < 6_000, document_metrics
-        assert int(document_metrics.get("node_count") or 0) < 2_500, document_metrics
+        assert int(document_metrics.get("node_count") or 0) < 2_000, document_metrics
+        assert int(document_metrics.get("evidence_control_count") or 0) == 0, document_metrics
 
         page.screenshot(path=str(top_path), full_page=False, timeout=15_000, animations="disabled")
 
@@ -145,7 +157,8 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
             "status": "passed",
             "browser_engine": "webkit",
             "mobile_emulation": "iPhone 390x844 @3x touch",
-            "optional_evidence_editor_suppressed": True,
+            "optional_evidence_editor_unmounted": True,
+            "optional_evidence_controls_allocated": 0,
             "authorization_reachable": True,
             "assessment_action_reachable": True,
             "ancestor_clipping_absent": True,
@@ -165,7 +178,6 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = recovery.parse_args(argv)
-    failure: dict[str, Any] | None = None
     try:
         with sync_playwright() as playwright:
             raw_browser = playwright.webkit.launch(headless=True)
