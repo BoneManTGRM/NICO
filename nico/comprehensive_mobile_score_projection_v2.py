@@ -50,6 +50,12 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
 
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
+
+    # This installer is intentionally last in nico.__init__. Bind the evidence-pipeline
+    # repair here so no earlier compatibility layer can recapture a stale scanner delegate.
+    from nico.evidence_pipeline_repair_v1 import install_evidence_pipeline_repair_v1
+
+    evidence_pipeline_repair = install_evidence_pipeline_repair_v1()
     _INSTALLED = True
     return {
         "status": "installed",
@@ -58,6 +64,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "full_report_embedded": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "evidence_pipeline_repair": evidence_pipeline_repair,
     }
 
 
