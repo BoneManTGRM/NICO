@@ -17,11 +17,12 @@ from nico.comprehensive_production_capabilities import build_production_capabili
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
+from nico.frozen_sha_scanner_evidence_v1 import install_frozen_sha_scanner_evidence_v1
 from nico.strategic_human_evidence_binding_v1 import (
     install_strategic_human_evidence_binding,
 )
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v11"
+VERSION = "nico.api.comprehensive_production_bootstrap.v12"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -65,19 +66,24 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     The run controller is considered production-ready only when its persistence adapter
     is proven to survive container replacement. Explicit human evidence is normalized,
     persisted with the canonical run, and bound into Strategic providers before the
-    executor map is frozen. The generated report also retains language and assessment
-    depth before any human review can approve the exact immutable edition.
+    executor map is frozen. Required scanner evidence is installed before provider
+    registration so failed, partial, shallow, or non-repeatable tools cannot enter scoring.
+    The generated report also retains language and assessment depth before any human
+    review can approve the exact immutable edition.
     """
 
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
     accepted_edition_report_identity = install_accepted_edition_report_identity()
+    provider_module = __import__(
+        "nico.comprehensive_native_providers",
+        fromlist=["scanner_suite_provider"],
+    )
+    scanner_evidence_pipeline = install_frozen_sha_scanner_evidence_v1(provider_module)
     native_providers = install_native_comprehensive_providers(target)
     strategic_human_evidence = install_strategic_human_evidence_binding(target)
-    scanner_execution_normalization = install_structured_scanner_executions(
-        __import__("nico.comprehensive_native_providers", fromlist=["_scan"])
-    )
+    scanner_execution_normalization = install_structured_scanner_executions(provider_module)
     core_report_readiness = install_comprehensive_core_report_readiness(target)
     final_report_execution = install_comprehensive_final_report_execution(target)
     executors = build_production_capability_executors(target)
@@ -111,6 +117,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
         and accepted_edition_report_identity.get("bound") is True
+        and scanner_evidence_pipeline.get("bound") is True
         and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
@@ -124,6 +131,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         reason = "comprehensive_storage_not_container_replacement_safe"
     if not reason and accepted_edition_report_identity.get("bound") is not True:
         reason = "accepted_edition_report_identity_binding_incomplete"
+    if not reason and scanner_evidence_pipeline.get("bound") is not True:
+        reason = "frozen_sha_scanner_evidence_binding_incomplete"
     if not reason and strategic_human_evidence.get("bound") is not True:
         reason = "strategic_human_evidence_binding_incomplete"
     if not reason and missing_capabilities:
@@ -146,6 +155,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
         "accepted_edition_report_identity": accepted_edition_report_identity,
+        "scanner_evidence_pipeline": scanner_evidence_pipeline,
         "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
@@ -156,6 +166,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "missing_capabilities": missing_capabilities,
         "report_binding_before_accepted_edition_identity": True,
         "accepted_edition_identity_before_provider_install": True,
+        "scanner_evidence_before_provider_install": True,
         "report_binding_before_provider_install": True,
         "provider_install_before_human_evidence_binding": True,
         "human_evidence_binding_before_executor_build": True,
@@ -211,6 +222,8 @@ if (
     is not True
 ):
     raise RuntimeError("Accepted-edition report identity binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_evidence_pipeline"].get("bound") is not True:
+    raise RuntimeError("Fail-closed frozen-SHA scanner evidence pipeline was not installed")
 if (
     COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound")
     is not True
@@ -236,12 +249,3 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["human_review_required"] is not True:
     raise RuntimeError("Comprehensive production runtime must require human review")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["client_delivery_allowed"] is not False:
     raise RuntimeError("Comprehensive production runtime must block client delivery")
-
-
-__all__ = [
-    "app",
-    "COMPREHENSIVE_PRODUCTION_RUNTIME",
-    "COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE",
-    "VERSION",
-    "install_comprehensive_on_production_app",
-]
