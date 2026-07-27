@@ -104,7 +104,7 @@ def _read_terminal_metrics(page: Page) -> dict[str, Any]:
               node_count: document.getElementsByTagName('*').length,
               scroll_height: document.documentElement.scrollHeight,
               body_height: document.body.getBoundingClientRect().height,
-            }))"""
+            })"""
         )
         or {}
     )
