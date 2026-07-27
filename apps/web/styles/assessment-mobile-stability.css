@@ -70,15 +70,14 @@
     background: #080f1e !important;
   }
 
-  /* Human evidence is optional and is the largest intake paint surface. Keep its
-     identity and count visible, but do not mount its editor as part of the phone
-     assessment path. It remains available from the full desktop workspace. */
-  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"] > label,
-  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"] > div:nth-of-type(2) {
+  /* Legacy safety net only. The React component now returns a compact boundary
+     before allocating any editor controls. These rules protect stale clients. */
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]:not([data-mobile-evidence-boundary="true"]) > label,
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]:not([data-mobile-evidence-boundary="true"]) > div:nth-of-type(2) {
     display: none !important;
   }
 
-  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]::after {
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]:not([data-mobile-evidence-boundary="true"])::after {
     display: block;
     margin-top: 14px;
     padding-top: 14px;
@@ -89,12 +88,17 @@
     line-height: 1.5;
   }
 
-  html[lang^="es"] main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]::after {
+  html[lang^="es"] main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]:not([data-mobile-evidence-boundary="true"])::after {
     content: "La captura de evidencia opcional está desactivada en la vista móvil estable. La evaluación del repositorio puede continuar sin ella; usa la vista de escritorio cuando sea necesario adjuntar evidencia humana.";
   }
 
+  main[data-workspace="assessment"] section[data-mobile-evidence-boundary="true"]::after {
+    content: none !important;
+    display: none !important;
+  }
+
   /* The live status cards above this section already expose the active stage and
-     progress. Avoid mounting a growing 23-stage evidence timeline on a phone. */
+     progress. Avoid painting a growing 23-stage evidence timeline on a phone. */
   main[data-workspace="assessment"] details[class*="stageHistory"] {
     display: none !important;
   }
