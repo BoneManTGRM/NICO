@@ -2,6 +2,10 @@ name: Phase 5 Apply Verified Completion
 
 on:
   pull_request:
+    paths:
+      - ".github/workflows/phase5-source-export.yml"
+      - "scripts/apply_phase5_completion_payload.py"
+      - "scripts/diagnose_phase5_payload.py"
   workflow_dispatch:
 
 permissions:
@@ -9,7 +13,7 @@ permissions:
 
 concurrency:
   group: phase5-apply-verified-completion
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   apply:
