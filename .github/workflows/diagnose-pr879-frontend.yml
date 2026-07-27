@@ -7,14 +7,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnose:
+    if: "!contains(github.event.head_commit.message, 'Record PR 879 compiler diagnostics')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: feature/internal-review-and-evidence-truth
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -32,11 +35,13 @@ jobs:
           cat ../../pr879-typescript.log
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
-      - name: Upload diagnostics
-        uses: actions/upload-artifact@v7
-        with:
-          name: pr879-typescript-diagnostics
-          path: pr879-typescript.log
-          retention-days: 1
+      - name: Commit diagnostics to branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pr879-typescript.log
+          git commit -m "Record PR 879 compiler diagnostics" || exit 0
+          git push origin HEAD:feature/internal-review-and-evidence-truth
       - name: Fail when TypeScript failed
         run: test "${{ steps.typescript.outputs.exit_code }}" = "0"
