@@ -1,5 +1,6 @@
 name: Frozen SHA Scanner Evidence Proof
 
+# Direct validation retrigger after scanner fingerprint stabilization.
 on:
   pull_request:
     branches:
