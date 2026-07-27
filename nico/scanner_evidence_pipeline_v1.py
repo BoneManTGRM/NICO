@@ -421,6 +421,7 @@ def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Calla
     if binary is None:
         return _unavailable(spec, "bandit is not installed in the worker image.", source="canonical_bandit_csv")
     raw = workspace.root / "scanner-raw" / "bandit.csv"
+    raw.parent.mkdir(parents=True, exist_ok=True)
     log = workspace.root / "scanner-output" / "bandit.log"
     command = (binary, "-r", ".", "-f", "csv", "-o", str(raw), "-x", ",".join(sorted(GENERATED_DIRS)))
     result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000)), stdout_path=log)
@@ -656,6 +657,7 @@ def _run_gitleaks(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Cal
         return _unavailable(spec, "gitleaks is not installed in the worker image.", source="canonical_gitleaks")
     history = _history_metadata(workspace)
     raw = workspace.root / "scanner-raw" / "gitleaks.json"
+    raw.parent.mkdir(parents=True, exist_ok=True)
     log = workspace.root / "scanner-output" / "gitleaks.log"
     command = (binary, "detect", "--source", ".", "--report-format", "json", "--report-path", str(raw), "--no-banner", "--redact")
     result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000)), stdout_path=log)
