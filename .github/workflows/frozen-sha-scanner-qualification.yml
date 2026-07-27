@@ -1,0 +1,129 @@
+name: Frozen SHA Scanner Qualification
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "nico/frozen_sha_scanner_evidence_v1.py"
+      - "nico/api/comprehensive_production_bootstrap.py"
+      - "scripts/frozen_sha_scanner_qualification.py"
+      - "tests/test_frozen_sha_scanner_evidence_v1.py"
+  push:
+    branches:
+      - main
+    paths:
+      - "nico/frozen_sha_scanner_evidence_v1.py"
+      - "nico/api/comprehensive_production_bootstrap.py"
+      - "scripts/frozen_sha_scanner_qualification.py"
+      - "tests/test_frozen_sha_scanner_evidence_v1.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Two clean passes at 8ed5457
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FROZEN_SHA: 8ed545766fb4c5054798a02ea17ece0fe7bcab64
+      NICO_SCANNER_ARTIFACT_ROOT: ${{ runner.temp }}/nico-frozen-sha-scanner-artifacts
+      NICO_SCANNER_MAX_RETAINED_OUTPUT_BYTES: "268435456"
+      NICO_SCANNER_NODE_HEAP_MB: "4096"
+      NICO_SCANNER_INSTALL_DIR: ${{ runner.temp }}/nico-scanners
+      NICO_SCANNER_INSTALL_STRICT: "true"
+      NICO_SEMGREP_HOME: ${{ runner.temp }}/nico-semgrep
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout scanner implementation
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Install Python application and scanners
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m venv "$NICO_SEMGREP_HOME"
+          "$NICO_SEMGREP_HOME/bin/python" -m pip install --upgrade pip
+          "$NICO_SEMGREP_HOME/bin/pip" install semgrep==1.170.0
+          mkdir -p "$RUNNER_TEMP/nico-tools-bin"
+          ln -s "$NICO_SEMGREP_HOME/bin/semgrep" "$RUNNER_TEMP/nico-tools-bin/semgrep"
+          echo "$RUNNER_TEMP/nico-tools-bin" >> "$GITHUB_PATH"
+
+      - name: Install pinned history and dependency scanner binaries
+        run: |
+          mkdir -p "$NICO_SCANNER_INSTALL_DIR"
+          python scripts/install_hosted_scanner_binaries.py
+          echo "$NICO_SCANNER_INSTALL_DIR" >> "$GITHUB_PATH"
+
+      - name: Install scanner-owned ESLint runtime
+        run: |
+          npm install -g \
+            eslint@9 \
+            @eslint/js@9 \
+            @typescript-eslint/parser@8 \
+            @typescript-eslint/eslint-plugin@8 \
+            typescript@5.6.3 \
+            --no-audit --no-fund
+          echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
+          eslint --version
+          tsc --version
+
+      - name: Verify required scanner executables
+        run: |
+          for tool in pip-audit bandit semgrep osv-scanner gitleaks trufflehog eslint tsc npm git; do
+            command -v "$tool"
+          done
+
+      - name: Run two-pass exact-SHA qualification
+        run: |
+          python scripts/frozen_sha_scanner_qualification.py \
+            --repository BoneManTGRM/NICO \
+            --commit-sha "$FROZEN_SHA" \
+            --artifact-root "$NICO_SCANNER_ARTIFACT_ROOT" \
+            --output frozen-sha-scanner-qualification.json
+
+      - name: Validate qualification manifest independently
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          expected = "8ed545766fb4c5054798a02ea17ece0fe7bcab64"
+          payload = json.loads(Path("frozen-sha-scanner-qualification.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "qualified", payload
+          assert payload["expected_commit_sha"] == expected
+          assert payload["actual_commit_sha"] == expected
+          assert payload["snapshot_match"] is True
+          assert payload["full_history_verified"] is True
+          assert payload["required_tools_complete"] is True
+          assert payload["repeatability"]["status"] == "verified"
+          assert payload["repeatability"]["equivalent"] is True
+          assert payload["artifact_retention"]["raw_outputs_retained"] is True
+          assert payload["artifact_retention"]["manifest_sha256"]
+          PY
+
+      - name: Upload complete scanner evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frozen-sha-scanner-evidence-8ed5457
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            frozen-sha-scanner-qualification.json
+            ${{ runner.temp }}/nico-frozen-sha-scanner-artifacts/**
