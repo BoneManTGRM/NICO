@@ -1,24 +1,22 @@
 name: Apply compact mobile proof selector patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/mobile-proof-compact-identity-selector
+      - main
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: >-
-      !contains(github.event.head_commit.message, 'Apply compact mobile proof selector') &&
-      !contains(github.event.head_commit.message, 'Remove compact mobile proof patcher')
+    if: github.head_ref == 'fix/mobile-proof-compact-identity-selector'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repair branch
         uses: actions/checkout@v7
         with:
-          ref: fix/mobile-proof-compact-identity-selector
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
       - name: Apply exact proof repair
@@ -41,4 +39,4 @@ jobs:
             tests/test_mobile_restart_compact_identity_contract_v1.py
           git diff --cached --quiet && exit 0
           git commit -m "Apply compact mobile proof selector"
-          git push origin HEAD:fix/mobile-proof-compact-identity-selector
+          git push origin HEAD:${{ github.head_ref }}
