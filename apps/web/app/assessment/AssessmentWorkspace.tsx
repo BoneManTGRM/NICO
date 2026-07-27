@@ -429,6 +429,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <span className={statusClass(phase)}>{copy.phases[phase]}</span>
       </div>
 
+      {/* issue ? <div legacy source contract; run-created issues remain in the exact-run panel. */}
       {runIssue ? <div
         ref={issueRef}
         className={`${workspaceStyles.issueCard} ${runIssue.kind === "run_failed" ? workspaceStyles.issueFailed : ""}`}
