@@ -44,22 +44,8 @@ jobs:
           test -f ../../audit-results/npm-audit-results.json || echo '{"status":"npm audit unavailable"}' > ../../audit-results/npm-audit-results.json
 
       - name: Lint frontend
-        id: lint
-        continue-on-error: true
         working-directory: apps/web
-        shell: bash
-        run: npm run lint 2>&1 | tee ../../frontend-typescript-diagnostics.log
-
-      - name: Upload TypeScript diagnostics
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: frontend-typescript-diagnostics
-          path: frontend-typescript-diagnostics.log
-
-      - name: Enforce frontend lint
-        if: steps.lint.outcome != 'success'
-        run: exit 1
+        run: npm run lint
 
       - name: Build frontend
         working-directory: apps/web
