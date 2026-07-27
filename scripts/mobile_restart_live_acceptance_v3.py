@@ -11,6 +11,7 @@ import mobile_restart_live_acceptance_v1 as recovery
 
 VERSION = "nico.mobile_restart_live_acceptance.single_dispatch.v3"
 _ORIGINAL_RUN_PROOF = recovery.run_proof
+_ORIGINAL_UI_STATE = recovery._ui_state
 HYDRATED_WORKSPACE_SELECTOR = (
     recovery.WORKSPACE_SELECTOR
     + '[data-assessment-hydrated="true"]'
@@ -71,8 +72,46 @@ class _SingleDispatchLocator:
         assert dispatched is True, f"Assessment start action was not dispatched: {last}"
 
 
+def _read_terminal_metrics(page: Page) -> dict[str, Any]:
+    return dict(
+        page.evaluate(
+            """() => ({
+              hydrated: document.querySelector(
+                'main[data-workspace="assessment"][data-assessment-hydrated="true"]'
+              ) !== null,
+              client_mode: document.querySelector(
+                'main[data-workspace="assessment"]'
+              )?.getAttribute('data-assessment-client-mode') || '',
+              compact_terminal_count: document.querySelectorAll(
+                '[data-mobile-compact-terminal="true"]'
+              ).length,
+              full_detail_count: document.querySelectorAll(
+                '[data-full-assessment-details="true"]'
+              ).length,
+              heavy_report_mounted_count: document.querySelectorAll(
+                '[data-mobile-heavy-report-mounted="true"]'
+              ).length,
+              stage_history_count: document.querySelectorAll(
+                'details[class*="stageHistory"]'
+              ).length,
+              scorecard_grid_count: document.querySelectorAll('.results-grid').length,
+              evidence_metric_count: document.querySelectorAll(
+                '[data-assessment-evidence-metrics="true"] article'
+              ).length,
+              internal_review_action_count: document.querySelectorAll(
+                '[data-assessment-internal-review="true"]'
+              ).length,
+              node_count: document.getElementsByTagName('*').length,
+              scroll_height: document.documentElement.scrollHeight,
+              body_height: document.body.getBoundingClientRect().height,
+            }))"""
+        )
+        or {}
+    )
+
+
 def _validate_terminal_metrics(metrics: dict[str, Any]) -> None:
-    """Fail closed on the compact mobile DOM after supplemental capture completes."""
+    """Fail closed on the compact mobile DOM after deterministic capture."""
 
     assert metrics.get("hydrated") is True, metrics
     assert metrics.get("client_mode") == "compact-mobile", metrics
@@ -101,6 +140,12 @@ class _SingleDispatchPage:
             timeout=int(timeout or 120_000),
         )
 
+    def capture_terminal_metrics(self) -> dict[str, Any]:
+        metrics = _read_terminal_metrics(self._page)
+        self._terminal_metrics.clear()
+        self._terminal_metrics.update(metrics)
+        return metrics
+
     def goto(self, *args: Any, **kwargs: Any) -> Any:
         response = self._page.goto(*args, **kwargs)
         self._wait_for_hydration(kwargs.get("timeout"))
@@ -118,46 +163,7 @@ class _SingleDispatchPage:
         return locator
 
     def screenshot(self, *args: Any, **kwargs: Any) -> Any:
-        metrics = dict(
-            self._page.evaluate(
-                """() => ({
-                  hydrated: document.querySelector(
-                    'main[data-workspace="assessment"][data-assessment-hydrated="true"]'
-                  ) !== null,
-                  client_mode: document.querySelector(
-                    'main[data-workspace="assessment"]'
-                  )?.getAttribute('data-assessment-client-mode') || '',
-                  compact_terminal_count: document.querySelectorAll(
-                    '[data-mobile-compact-terminal="true"]'
-                  ).length,
-                  full_detail_count: document.querySelectorAll(
-                    '[data-full-assessment-details="true"]'
-                  ).length,
-                  heavy_report_mounted_count: document.querySelectorAll(
-                    '[data-mobile-heavy-report-mounted="true"]'
-                  ).length,
-                  stage_history_count: document.querySelectorAll(
-                    'details[class*="stageHistory"]'
-                  ).length,
-                  scorecard_grid_count: document.querySelectorAll('.results-grid').length,
-                  evidence_metric_count: document.querySelectorAll(
-                    '[data-assessment-evidence-metrics="true"] article'
-                  ).length,
-                  internal_review_action_count: document.querySelectorAll(
-                    '[data-assessment-internal-review="true"]'
-                  ).length,
-                  node_count: document.getElementsByTagName('*').length,
-                  scroll_height: document.documentElement.scrollHeight,
-                  body_height: document.body.getBoundingClientRect().height,
-                }))"""
-            )
-            or {}
-        )
-        # The base recovery proof treats screenshots as supplemental. Persist the
-        # measurements here, then validate after that proof returns so violations
-        # cannot be swallowed as screenshot-only errors.
-        self._terminal_metrics.clear()
-        self._terminal_metrics.update(metrics)
+        self.capture_terminal_metrics()
         return self._page.screenshot(*args, **kwargs)
 
 
@@ -190,8 +196,20 @@ class SingleDispatchBrowser:
 
 def run_proof(browser: Any, args: Any) -> dict[str, Any]:
     wrapped = SingleDispatchBrowser(browser)
-    # Historical contract marker: _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
-    result = _ORIGINAL_RUN_PROOF(wrapped, args)
+
+    def capture_on_terminal(page: Any) -> dict[str, str]:
+        state = _ORIGINAL_UI_STATE(page)
+        if state.get("phase") in recovery.TERMINAL_PHASES and hasattr(page, "capture_terminal_metrics"):
+            page.capture_terminal_metrics()
+        return state
+
+    recovery._ui_state = capture_on_terminal
+    try:
+        # Historical contract marker: _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
+        result = _ORIGINAL_RUN_PROOF(wrapped, args)
+    finally:
+        recovery._ui_state = _ORIGINAL_UI_STATE
+
     assert wrapped.terminal_metrics, "Terminal compact-DOM metrics were not captured"
     _validate_terminal_metrics(wrapped.terminal_metrics)
     result["start_dispatch"] = "single_native_dom_click"
