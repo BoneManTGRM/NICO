@@ -135,10 +135,10 @@ def test_markdown_contains_real_scanner_ci_and_complexity_delta() -> None:
     assert complexity_change["after"] == 12
     assert complexity_change["delta"] == -82
     assert complexity_change["evidence"]["method"] == "python_ast"
-    assert "Verified Change Since Phase 5 Baseline" in markdown
+    assert markdown.count("Verified Change Since Phase 5 Baseline") == 1
     assert "bandit, eslint, gitleaks, osv-scanner" in markdown
     assert "Workflow outcome classes:" in markdown
-    assert "_build_complexity" in markdown and "'after': 12" in markdown
+    assert "| complexity | _build_complexity | 94 | 12 | -82 |" in markdown
     assert "old-bandit" not in markdown
     assert "Technical maturity" in markdown and "85/100" in markdown
     assert reconciled["maturity_signal"]["presented_score"] == 85
