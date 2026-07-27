@@ -188,8 +188,95 @@ export function reportFor(_service: Service, result: Result | null): Report | nu
   return result.reports || null;
 }
 
+
+type CompletionMetric = {
+  label: string;
+  completed: number | null;
+  total: number | null;
+  percent: number | null;
+  definition: string;
+};
+
+export type EvidenceCompletionView = {
+  automatable: CompletionMetric;
+  disposition: CompletionMetric;
+  analyzers: CompletionMetric;
+  overall: CompletionMetric & {gapPercent: number | null};
+};
+
+function completionMetric(value: unknown, fallbackLabel: string): CompletionMetric {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const percent = typeof record.percent === "number" && Number.isFinite(record.percent)
+    ? Math.max(0, Math.min(100, Math.round(record.percent)))
+    : null;
+  return {
+    label: String(record.label || fallbackLabel),
+    completed: typeof record.completed === "number" ? record.completed : null,
+    total: typeof record.total === "number" ? record.total : null,
+    percent,
+    definition: String(record.definition || ""),
+  };
+}
+
+export function evidenceCompletionFor(assessment: Assessment | null): EvidenceCompletionView | null {
+  if (!assessment) return null;
+  const contract = assessment.evidence_completion_contract;
+  if (!contract || typeof contract !== "object" || Array.isArray(contract)) return null;
+  const record = contract as Record<string, unknown>;
+  const overall = completionMetric(record.overall_engagement_evidence, "Overall engagement evidence");
+  const overallRecord = record.overall_engagement_evidence && typeof record.overall_engagement_evidence === "object"
+    ? record.overall_engagement_evidence as Record<string, unknown>
+    : {};
+  return {
+    automatable: completionMetric(record.automatable_repository_evidence, "Automatable repository evidence processed"),
+    disposition: completionMetric(record.required_evidence_disposition, "Required evidence disposition"),
+    analyzers: completionMetric(record.analyzer_completion, "Successful analyzer completion"),
+    overall: {
+      ...overall,
+      gapPercent: typeof overallRecord.gap_percent === "number" ? overallRecord.gap_percent : null,
+    },
+  };
+}
+
+export type InternalReviewState = {
+  approved: boolean;
+  completed: boolean;
+  deliveryAllowed: boolean;
+  status: string;
+};
+
+export function internalReviewStateFor(result: Result | null): InternalReviewState {
+  const record = result?.record && typeof result.record === "object" ? result.record as Record<string, unknown> : {};
+  const status = String(result?.status || record.status || "").toLowerCase();
+  const deliveryAllowed = result?.client_delivery_allowed === true || record.client_delivery_allowed === true;
+  const completed = result?.human_review_completed === true || record.human_review_completed === true || status === "approved" || status === "rejected";
+  return {
+    approved: status === "approved" && deliveryAllowed,
+    completed,
+    deliveryAllowed,
+    status,
+  };
+}
+
+export function internalReviewHrefFor(result: Result | null, locale: string): string {
+  const record = result?.record && typeof result.record === "object" ? result.record as Record<string, unknown> : {};
+  const identity = record.identity && typeof record.identity === "object" && !Array.isArray(record.identity)
+    ? record.identity as Record<string, unknown>
+    : {};
+  const params = new URLSearchParams({
+    service: "comprehensive",
+    run_id: String(result?.run_id || identity.run_id || ""),
+    customer_id: String(result?.customer_id || identity.customer_id || "default_customer"),
+    project_id: String(result?.project_id || identity.project_id || "default_project"),
+    lang: locale === "es-MX" ? "es-MX" : "en",
+  });
+  return `/operations/final-review?${params.toString()}`;
+}
+
 export function terminal(_service: Service, result: Result): Phase | null {
   const value = String(result.status || result.record?.status || "").toLowerCase();
+  const deliveryAllowed = result.client_delivery_allowed === true || result.record?.client_delivery_allowed === true;
+  if (value === "approved" && deliveryAllowed) return "complete";
   if (["failed", "blocked", "error", "rejected", "interrupted"].includes(value)) return "failed";
   if (value === "review_required" || (["complete", "completed"].includes(value) && result.human_review_required !== false)) return "review_required";
   return null;

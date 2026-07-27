@@ -171,7 +171,7 @@ def _front_matter_overlay(
     risks = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)]
     top_risks = [_text(item.get("title"), 150) for item in risks[:3]]
     if not top_risks:
-        top_risks = ["Complete exact-package human review", "Resolve retained evidence limitations", "Approve the six-month execution sequence"]
+        top_risks = ["Complete exact-package internal review", "Resolve retained evidence limitations", "Approve the six-month execution sequence"]
 
     # Page 1 - premium cover aligned with the Express visual standard.
     page.setFillColor(navy)
@@ -198,8 +198,8 @@ def _front_matter_overlay(
     cards = [
         ("TECHNICAL MATURITY", technical_display, cyan),
         ("EVIDENCE-ADJUSTED", adjusted_display, teal),
-        ("REVIEW POSTURE", "Required", colors.HexColor("#fbbf24")),
-        ("DELIVERY", "Draft only", colors.HexColor("#f472b6")),
+        ("INTERNAL REVIEW", "Required", colors.HexColor("#fbbf24")),
+        ("CLIENT-READY", "No", colors.HexColor("#f472b6")),
     ]
     card_y = 552
     card_w = 124
@@ -234,7 +234,7 @@ def _front_matter_overlay(
     page.drawString(42, 401, "Executive posture")
     summary = assessment.get("executive_summary") or (
         f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
-        "The package adds deeper architecture, exact-location findings, roadmap, staffing, and evidence traceability to the Express baseline."
+        "The assessment combines architecture, exact-location findings, roadmap, staffing, and evidence traceability in one Comprehensive package."
     )
     _draw_wrapped(page, summary, 42, 378, 528, font_size=8.4, leading=12, color=muted, max_lines=5)
 
@@ -255,12 +255,12 @@ def _front_matter_overlay(
 
     page.setFillColor(muted)
     page.setFont("Helvetica", 7)
-    page.drawString(42, 68, "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED")
+    page.drawString(42, 68, "READ-ONLY · IMMUTABLE SNAPSHOT · INTERNAL REVIEW REQUIRED")
     page.setFillColor(cyan)
     page.setFont("Helvetica-Bold", 7)
     page.drawRightString(570, 68, "POWERED BY REPARODYNAMICS")
     page.setFillColor(colors.HexColor("#fb7185"))
-    page.drawString(42, 51, "Not approved for client delivery")
+    page.drawString(42, 51, "Client-ready after internal approval")
     page.setFillColor(white)
     page.drawRightString(570, 51, f"Page 1 of {final_page_count}")
     page.showPage()

@@ -10,6 +10,9 @@ import {
   apiUrl,
   assessmentFor,
   compactIdentifier,
+  evidenceCompletionFor,
+  internalReviewHrefFor,
+  internalReviewStateFor,
   formatStatus,
   immutableCommitFor,
   persistenceStatus,
@@ -193,9 +196,13 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const stageId = String(result?.current_stage || result?.record?.current_stage || activeProgress?.step || "");
   const percent = progressPercent(phase, result, running);
   const coverage = assessment?.evidence_coverage;
-  const coverageLabel = coverage?.calculated && Number.isFinite(Number(coverage.percent))
-    ? `${coverage.label || copy.evidence}: ${Math.max(0, Math.min(100, Number(coverage.percent)))}%`
-    : copy.coverage;
+  const evidenceCompletion = evidenceCompletionFor(assessment);
+  const primaryCoverage = evidenceCompletion?.automatable.percent;
+  const coverageLabel = primaryCoverage != null
+    ? `${copy.automatableEvidence}: ${primaryCoverage}%`
+    : coverage?.calculated && Number.isFinite(Number(coverage.percent))
+      ? `${coverage.label || copy.evidence}: ${Math.max(0, Math.min(100, Number(coverage.percent)))}%`
+      : copy.coverage;
   const assessmentRecord = assessment as Record<string, unknown> | null;
   const maturityRecord = assessment?.maturity_signal as Record<string, unknown> | undefined;
   const technicalValue = numeric(assessmentRecord?.technical_score ?? maturityRecord?.technical_score ?? maturityRecord?.score);
@@ -210,7 +217,14 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const pdfAvailable = Boolean(report?.pdf_base64 || report?.pdf_available);
   const reportReady = Boolean(markdownAvailable || pdfAvailable || report?.html || report?.html_available || report?.json || report?.json_available || report?.report_id);
   const reportStatus = reportReady ? copy.phases.complete : running ? copy.awaitingScanner : copy.awaitingStage;
-  const reviewStatus = phase === "review_required" ? copy.phases.review_required : running ? copy.reviewAfterReport : copy.awaitingStage;
+  const internalReview = internalReviewStateFor(result);
+  const reviewStatus = internalReview.approved
+    ? copy.internalReviewApproved
+    : phase === "review_required"
+      ? copy.internalReviewRequired
+      : running ? copy.reviewAfterReport : copy.awaitingStage;
+  const clientReadyStatus = internalReview.approved ? copy.clientReadyYes : copy.clientReadyNo;
+  const internalReviewHref = internalReviewHrefFor(result, locale);
   const maturityRawStatus = assessment?.maturity_signal?.level;
   const maturityUnavailable = String(maturityRawStatus || "").toLowerCase().includes("unavailable");
   const maturityStatus = running && (!maturityRawStatus || maturityUnavailable) ? copy.maturityAfterScoring : formatStatus(maturityRawStatus || (running ? "pending" : "not_started"), copy);
@@ -298,13 +312,21 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     }
   }
 
+  const reviewAction = result?.run_id && (phase === "review_required" || internalReview.completed)
+    ? <a
+      className={workspaceStyles.internalReviewAction}
+      data-assessment-internal-review="true"
+      href={internalReviewHref}
+    >{internalReview.approved ? copy.openReviewRecord : copy.openInternalReview}</a>
+    : null;
+
   const reportActions = <div
     className={`report-actions ${workspaceStyles.reportActionBar}`}
     data-assessment-report-actions="true"
     data-assessment-report-ready={reportReady ? "true" : "false"}
   >
     <button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button>
-    <button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{copy.download}</button>
+    <button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{internalReview.approved ? copy.downloadApprovedPdf : copy.downloadReviewPdf}</button>
     {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
   </div>;
 
@@ -337,6 +359,13 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         </div>
         <span className="status gray">{coverageLabel}</span>
       </div>
+      {evidenceCompletion ? <div className={workspaceStyles.evidenceMetricGrid} data-assessment-evidence-metrics="true">
+        {[evidenceCompletion.automatable, evidenceCompletion.disposition, evidenceCompletion.analyzers, evidenceCompletion.overall].map((metric) => <article key={metric.label} title={metric.definition}>
+          <b>{metric.label}</b>
+          <span>{metric.percent == null ? copy.notVerified : `${metric.percent}%`}</span>
+          {metric.completed != null && metric.total != null ? <small>{metric.completed}/{metric.total}</small> : null}
+        </article>)}
+      </div> : null}
       {!compactMobile ? <>
         <p className={workspaceStyles.sectionSummary}>{serviceCopy.summary}</p>
         <details className="help-details"><summary>{serviceCopy.instructionsTitle}</summary><ul>{serviceCopy.instructions.map((item: string) => <li key={item}>{item}</li>)}</ul></details>
@@ -468,11 +497,13 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <div className={mobileStyles.compactStatusGrid}>
             <article><b>{copy.report}</b><span>{reportStatus}</span></article>
             <article><b>{copy.review}</b><span>{reviewStatus}</span></article>
+            <article><b>{copy.clientReady}</b><span>{clientReadyStatus}</span></article>
             <article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article>
             <article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article>
             <article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article>
           </div>
           {reportActions}
+          {reviewAction}
           {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
           {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
           <details className={mobileStyles.compactIdentity}>
@@ -483,8 +514,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           </details>
         </div> : <div data-full-assessment-details="true">
           <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
-          <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
+          <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.clientReady}</b><span>{clientReadyStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
           {reportActions}
+          {reviewAction}
           {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
           {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
           {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
