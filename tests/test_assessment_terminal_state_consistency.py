@@ -54,7 +54,8 @@ def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_r
     controller = (ASSESSMENT / "useAssessmentRun.ts").read_text(encoding="utf-8")
     model = (ASSESSMENT / "assessmentModel.ts").read_text(encoding="utf-8")
     guard = GUARD.read_text(encoding="utf-8")
-    assert 'current = await requestWithRetry(' in controller
+    assert 'const continued = await requestWithRetry(' in controller
+    assert 'current = preserveRunIdentity(continued' in controller
     assert 'const stable = terminal(service, current)' in controller
     assert 'setResult(current)' in controller
     assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in model
