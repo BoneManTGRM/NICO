@@ -9,7 +9,6 @@ on:
       - "nico/api/comprehensive_production_bootstrap.py"
       - "scripts/frozen_sha_scanner_qualification.py"
       - "tests/test_frozen_sha_scanner_evidence_v1.py"
-      - ".github/workflows/frozen-sha-scanner-qualification.yml"
   push:
     branches:
       - main
@@ -18,7 +17,6 @@ on:
       - "nico/api/comprehensive_production_bootstrap.py"
       - "scripts/frozen_sha_scanner_qualification.py"
       - "tests/test_frozen_sha_scanner_evidence_v1.py"
-      - ".github/workflows/frozen-sha-scanner-qualification.yml"
   workflow_dispatch:
 
 permissions:
