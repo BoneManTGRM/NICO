@@ -5,7 +5,7 @@ from nico.ci_history_classification_v1 import install_ci_history_classification_
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
-from nico.phase5_report_truth_v1 import install_phase5_report_truth_v1
+from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -13,14 +13,14 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v10"
+VERSION = "nico.api.terminal_authority_bootstrap.v11"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
 CI_HISTORY_CLASSIFICATION = install_ci_history_classification_v1()
 WORKFLOW_SUPPLY_CHAIN_POLICY = install_workflow_supply_chain_policy_v1()
-PHASE5_REPORT_TRUTH = install_phase5_report_truth_v1()
+PHASE5_REPORT_TRUTH = install_phase5_report_truth_v2()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
@@ -126,6 +126,10 @@ if PHASE5_REPORT_TRUTH.get("scores_change_only_from_retained_evidence") is not T
     raise RuntimeError("Phase 5 can change report scores without retained evidence")
 if PHASE5_REPORT_TRUTH.get("unchanged_risks_remain_visible") is not True:
     raise RuntimeError("Phase 5 can cosmetically hide unchanged risks")
+if PHASE5_REPORT_TRUTH.get("scanner_status_aliases_normalized") is not True:
+    raise RuntimeError("Phase 5 does not normalize production scanner status aliases")
+if PHASE5_REPORT_TRUTH.get("nested_exact_commit_discovery") is not True:
+    raise RuntimeError("Phase 5 cannot discover the exact commit inside retained stage evidence")
 if PHASE5_REPORT_TRUTH.get("human_review_required") is not True:
     raise RuntimeError("Phase 5 report truth must preserve human review")
 if PHASE5_REPORT_TRUTH.get("client_delivery_allowed") is not False:
