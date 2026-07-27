@@ -9,7 +9,14 @@ TARGET = "a" * 40
 def _assessment() -> dict:
     return {
         "sections": [
-            {"id": "static_analysis", "label": "Static", "score": 79, "evidence": [], "findings": [], "unavailable": []},
+            {
+                "id": "static_analysis",
+                "label": "Static",
+                "score": 79,
+                "evidence": [],
+                "findings": ["Failed static tools: bandit"],
+                "unavailable": ["bandit evidence unavailable"],
+            },
             {"id": "dependency_health", "label": "Dependency", "score": 92, "evidence": [], "findings": [], "unavailable": []},
             {"id": "secrets_review", "label": "Secrets", "score": 93, "evidence": [], "findings": [], "unavailable": []},
         ],
@@ -21,6 +28,7 @@ def _complete_bandit() -> dict:
     return {
         "tool": "bandit",
         "status": "complete",
+        "category": "static",
         "verified_for_this_report": True,
         "output_capture_complete": True,
         "raw_artifact_capture_complete": True,
@@ -34,7 +42,7 @@ def _complete_bandit() -> dict:
 
 
 def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> None:
-    install_phase5_report_truth_v2()
+    install = install_phase5_report_truth_v2()
     stages = {
         "deep_scanner_triage": {
             "nested": {
@@ -48,11 +56,16 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
 
     result = reconcile_phase5_report_truth(_assessment(), stages)
     record = result["evidence_health_summary"]["scanner_records"]["bandit"]
+    static = next(item for item in result["sections"] if item["id"] == "static_analysis")
 
+    assert install["stale_scanner_failure_text_removed_only_after_proof"] is True
     assert record["status"] == "completed"
     assert record["execution_complete"] is True
     assert record["target_commit_sha"] == TARGET
     assert "bandit" in result["evidence_health_summary"]["completed_scanners"]
+    assert static["findings"] == []
+    assert static["unavailable"] == []
+    assert static["scanner_execution_status"] == "complete_exact_sha"
 
 
 def test_v2_propagates_plain_stage_commit_to_nested_tool_record() -> None:
@@ -78,16 +91,19 @@ def test_v2_does_not_upgrade_legacy_complete_without_proof_fields() -> None:
     stages = {
         "deep_scanner_triage": {
             "target_commit_sha": TARGET,
-            "scanner_results": [{"tool": "bandit", "status": "complete", "findings": []}],
+            "scanner_results": [{"tool": "bandit", "status": "complete", "category": "static", "findings": []}],
         }
     }
 
     result = reconcile_phase5_report_truth(_assessment(), stages)
     record = result["evidence_health_summary"]["scanner_records"]["bandit"]
+    static = next(item for item in result["sections"] if item["id"] == "static_analysis")
 
     assert record["status"] == "completed"
     assert record["execution_complete"] is False
     assert "bandit" not in result["evidence_health_summary"]["completed_scanners"]
+    assert "Failed static tools: bandit" in static["findings"]
+    assert "bandit evidence unavailable" in static["unavailable"]
 
 
 def test_v2_missing_scanner_record_is_not_reported_as_an_improvement() -> None:
