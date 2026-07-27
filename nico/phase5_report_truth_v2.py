@@ -79,6 +79,22 @@ def _find_tracked_complexity(value: Any) -> dict[str, dict[str, Any]]:
     return {}
 
 
+def _find_ci_summary(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if value.get("schema") == "nico.ci_history_summary.v1":
+            return value
+        for child in value.values():
+            found = _find_ci_summary(child)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_ci_summary(child)
+            if found is not None:
+                return found
+    return None
+
+
 def _context_from_mapping_v2(value: dict[str, Any], inherited: dict[str, str]) -> dict[str, str]:
     context = _ORIGINAL_CONTEXT_FROM_MAPPING(value, inherited)
     commit = base._sha(value.get("commit_sha"))
@@ -225,6 +241,39 @@ def _remove_stale_scanner_status_text(assessment: dict[str, Any]) -> None:
             )
 
 
+def _ensure_ci_classification_visible(assessment: dict[str, Any], stage_results: dict[str, Any]) -> None:
+    summary = _find_ci_summary(stage_results)
+    if not isinstance(summary, dict):
+        return
+    historical = summary.get("historical_reliability")
+    historical = historical if isinstance(historical, dict) else {}
+    counts = historical.get("classified_counts")
+    counts = counts if isinstance(counts, dict) else {}
+    classification_line = "Workflow outcome classes: " + "; ".join(
+        f"{key}={value}" for key, value in sorted(counts.items())
+    )
+    if classification_line.endswith(": "):
+        classification_line += "No classified workflow outcomes retained."
+
+    sections = [item for item in assessment.get("sections") or [] if isinstance(item, dict)]
+    ci_section = next((item for item in sections if item.get("id") == "ci_cd"), None)
+    if ci_section is not None:
+        evidence = [str(item) for item in ci_section.get("evidence") or []]
+        if not any(item.startswith("Workflow outcome classes:") for item in evidence):
+            evidence.append(classification_line)
+        ci_section["evidence"] = evidence
+        ci_section["historical_reliability_classified"] = True
+
+    phase5_section = next((item for item in sections if item.get("id") == "phase5_verified_outcomes"), None)
+    if phase5_section is not None:
+        evidence = [str(item) for item in phase5_section.get("evidence") or []]
+        if not any(item.startswith("Workflow outcome classes:") for item in evidence):
+            evidence.append(classification_line)
+        phase5_section["evidence"] = evidence
+
+    assessment["ci_history_classification"] = deepcopy(summary)
+
+
 def reconcile_phase5_report_truth(
     assessment: dict[str, Any],
     stage_results: dict[str, Any],
@@ -240,6 +289,7 @@ def reconcile_phase5_report_truth(
         enriched = {"phase5_exact_identity": {"commit_sha": target_commit}, **deepcopy(stage_results)}
         result = _ORIGINAL_RECONCILE(assessment_input, enriched)
     _remove_stale_scanner_status_text(result)
+    _ensure_ci_classification_visible(result, stage_results)
     return result
 
 
@@ -260,6 +310,7 @@ def install_phase5_report_truth_v2() -> dict[str, Any]:
             "only_observed_exact_sha_scanner_deltas_rendered": True,
             "stale_scanner_failure_text_removed_only_after_proof": True,
             "exact_tracked_complexity_metrics_rendered": True,
+            "classified_ci_outcomes_always_visible": True,
         }
     )
     return result
