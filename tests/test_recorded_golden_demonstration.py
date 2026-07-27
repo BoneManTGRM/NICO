@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -139,7 +140,7 @@ def test_workflow_builds_twice_compares_and_uploads_recorded_artifacts() -> None
     assert source.count("scripts/build_golden_demonstration.py") == 2
     assert "cmp first/golden-demonstration.json second/golden-demonstration.json" in source
     assert "cmp first/golden-demonstration.md second/golden-demonstration.md" in source
-    assert "actions/upload-artifact@v7" in source
+    assert re.search(r"uses:\s*actions/upload-artifact@[0-9a-f]{40}\s*#\s*v7", source)
     assert "audit-results/golden-demonstration.json" in source
     assert "audit-results/golden-demonstration.md" in source
     assert "permissions:\n  contents: read" in source
