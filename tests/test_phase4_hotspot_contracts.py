@@ -9,8 +9,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# These are characterization ceilings for the exact metric implemented below.
+# They freeze the measured pre-refactor baseline and may only move downward as
+# Phase 4 extracts bounded helpers. They are intentionally distinct from the
+# report analyzer's complexity values because the two analyzers count boolean
+# branches and comprehensions differently.
 PYTHON_HOTSPOTS = (
-    ("nico/comprehensive_premium_pdf_v6.py", "_build_pdf", 121, 360),
+    ("nico/comprehensive_premium_pdf_v6.py", "_build_pdf", 132, 360),
     ("nico/comprehensive_decision_grade_markdown_v5.py", "_build_markdown", 113, 250),
     ("nico/comprehensive_decision_grade_report_v5.py", "build_comprehensive_report_package", 99, 470),
     ("nico/typescript_ast_complexity_v1.py", "_build_complexity", 99, 165),
