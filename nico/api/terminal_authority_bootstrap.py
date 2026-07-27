@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
+from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -8,15 +9,28 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v5"
+VERSION = "nico.api.terminal_authority_bootstrap.v6"
+SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
+app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
 app.state.nico_exact_scanner_checkout_reconciliation = EXACT_SCANNER_CHECKOUT_RECONCILIATION
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
+
+if SCANNER_EVIDENCE_PIPELINE.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(f"Scanner evidence pipeline did not install: {SCANNER_EVIDENCE_PIPELINE}")
+if SCANNER_EVIDENCE_PIPELINE.get("full_output_capture") is not True:
+    raise RuntimeError("Scanner evidence pipeline does not retain complete file-backed output")
+if SCANNER_EVIDENCE_PIPELINE.get("durable_redacted_raw_artifacts") is not True:
+    raise RuntimeError("Scanner evidence pipeline does not retain redacted raw artifacts durably")
+if SCANNER_EVIDENCE_PIPELINE.get("frozen_sha_determinism_supported") is not True:
+    raise RuntimeError("Scanner evidence pipeline cannot prove repeated execution on an immutable SHA")
+if SCANNER_EVIDENCE_PIPELINE.get("public_scanner_tool_api_unchanged") is not True:
+    raise RuntimeError("Scanner evidence pipeline unexpectedly replaced the public scanner API")
 
 if EXACT_COMMIT_BINDING.get("status") != "installed":
     raise RuntimeError(f"Exact commit binding did not install: {EXACT_COMMIT_BINDING}")
@@ -79,6 +93,7 @@ if EXPRESS_FAILURE_STAGE_TRUTH.get("client_delivery_allowed") is not False:
 
 __all__ = [
     "app",
+    "SCANNER_EVIDENCE_PIPELINE",
     "EXACT_COMMIT_BINDING",
     "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
     "EXPRESS_TERMINAL_AUTHORITY",
