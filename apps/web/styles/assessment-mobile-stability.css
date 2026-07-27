@@ -121,4 +121,23 @@
     position: relative;
     z-index: 1;
   }
+
+  /* Terminal interactions must not become Safari scroll anchors. */
+  main[data-workspace="assessment"] [data-assessment-run-state="true"],
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"],
+  main[data-workspace="assessment"] [data-assessment-terminal-actions="true"] {
+    overflow-anchor: none !important;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-terminal-actions="true"] button {
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid rgba(103, 232, 249, 0.52);
+    border-radius: 12px;
+    background: #082f49;
+    color: #cffafe;
+    font: inherit;
+    font-weight: 700;
+  }
+
 }
