@@ -71,6 +71,22 @@ class _SingleDispatchLocator:
         assert dispatched is True, f"Assessment start action was not dispatched: {last}"
 
 
+def _validate_terminal_metrics(metrics: dict[str, Any]) -> None:
+    """Fail closed on the compact mobile DOM after supplemental capture completes."""
+
+    assert metrics.get("hydrated") is True, metrics
+    assert metrics.get("client_mode") == "compact-mobile", metrics
+    assert int(metrics.get("compact_terminal_count") or 0) == 1, metrics
+    assert int(metrics.get("full_detail_count") or 0) == 0, metrics
+    assert int(metrics.get("heavy_report_mounted_count") or 0) == 0, metrics
+    assert int(metrics.get("stage_history_count") or 0) == 0, metrics
+    assert int(metrics.get("scorecard_grid_count") or 0) == 0, metrics
+    assert int(metrics.get("evidence_metric_count") or 0) <= 4, metrics
+    assert int(metrics.get("internal_review_action_count") or 0) <= 1, metrics
+    assert int(metrics.get("node_count") or 0) < MAX_COMPACT_NODE_COUNT, metrics
+    assert int(metrics.get("scroll_height") or 0) < MAX_COMPACT_SCROLL_HEIGHT, metrics
+
+
 class _SingleDispatchPage:
     def __init__(self, page: Page, terminal_metrics: dict[str, Any]) -> None:
         self._page = page
@@ -137,20 +153,11 @@ class _SingleDispatchPage:
             )
             or {}
         )
-        # Retain the facts before validation so failures remain diagnosable.
+        # The base recovery proof treats screenshots as supplemental. Persist the
+        # measurements here, then validate after that proof returns so violations
+        # cannot be swallowed as screenshot-only errors.
         self._terminal_metrics.clear()
         self._terminal_metrics.update(metrics)
-        assert metrics.get("hydrated") is True, metrics
-        assert metrics.get("client_mode") == "compact-mobile", metrics
-        assert int(metrics.get("compact_terminal_count") or 0) == 1, metrics
-        assert int(metrics.get("full_detail_count") or 0) == 0, metrics
-        assert int(metrics.get("heavy_report_mounted_count") or 0) == 0, metrics
-        assert int(metrics.get("stage_history_count") or 0) == 0, metrics
-        assert int(metrics.get("scorecard_grid_count") or 0) == 0, metrics
-        assert int(metrics.get("evidence_metric_count") or 0) <= 4, metrics
-        assert int(metrics.get("internal_review_action_count") or 0) <= 1, metrics
-        assert int(metrics.get("node_count") or 0) < MAX_COMPACT_NODE_COUNT, metrics
-        assert int(metrics.get("scroll_height") or 0) < MAX_COMPACT_SCROLL_HEIGHT, metrics
         return self._page.screenshot(*args, **kwargs)
 
 
@@ -186,6 +193,7 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
     # Historical contract marker: _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
     result = _ORIGINAL_RUN_PROOF(wrapped, args)
     assert wrapped.terminal_metrics, "Terminal compact-DOM metrics were not captured"
+    _validate_terminal_metrics(wrapped.terminal_metrics)
     result["start_dispatch"] = "single_native_dom_click"
     result["start_dispatch_retry_absent"] = True
     result["hydration_wait_verified"] = True
