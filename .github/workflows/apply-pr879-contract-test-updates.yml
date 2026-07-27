@@ -1,0 +1,44 @@
+name: Apply PR 879 contract test updates
+
+on:
+  push:
+    branches:
+      - feature/internal-review-and-evidence-truth
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      !contains(github.event.head_commit.message, 'Align review terminology contracts') &&
+      !contains(github.event.head_commit.message, 'Remove PR 879 contract updater')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/internal-review-and-evidence-truth
+          fetch-depth: 0
+      - name: Apply exact source and test updates
+        run: python scripts/apply_pr879_contract_test_updates.py
+      - name: Verify targeted tests
+        run: |
+          python -m pytest -q \
+            tests/test_final_report_approval_semantics.py \
+            tests/test_simplified_review_retainer_workflows.py \
+            tests/test_two_service_review_terminal_phase_v12.py \
+            tests/test_unified_assessment_ui.py \
+            tests/test_web_spanish_assessment_parity.py
+      - name: Commit aligned contracts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/two_service_live_acceptance_v3.py \
+            tests/test_final_report_approval_semantics.py \
+            tests/test_simplified_review_retainer_workflows.py \
+            tests/test_two_service_review_terminal_phase_v12.py \
+            tests/test_unified_assessment_ui.py \
+            tests/test_web_spanish_assessment_parity.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Align review terminology contracts"
+          git push origin HEAD:feature/internal-review-and-evidence-truth
