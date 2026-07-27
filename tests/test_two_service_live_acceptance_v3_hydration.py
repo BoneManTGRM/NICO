@@ -141,7 +141,7 @@ def test_hidden_comprehensive_tier_is_treated_as_already_selected() -> None:
 
 def test_acceptance_repair_contract_is_installed() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
-    assert 'VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v11"' in source
+    assert 'VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v12"' in source
     assert "FORM_HYDRATION_TIMEOUT_MS" in source
     assert "LEGACY_WORKSPACE_SELECTOR" in source
     assert "UNIFIED_WORKSPACE_SELECTOR" in source
