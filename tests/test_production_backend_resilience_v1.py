@@ -37,8 +37,10 @@ def test_frontend_retries_and_recovers_existing_run_state() -> None:
     assert "const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000]" in source
     assert "async function recoverRun" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in source
-    assert "const recovered = await recoverRun(runId)" in source
+    assert "const recovered = await recoverRun(runId, {" in source
+    assert "return preserveRunIdentity(recovered" in source
     assert "async function resumePersistedRun" in source
+    assert "const recovered = preserveRunIdentity(recoveredResponse" in source
     assert "setResult(recovered)" in source
     assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
     assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
