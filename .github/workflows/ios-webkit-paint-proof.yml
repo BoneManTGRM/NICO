@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - name: Compile and verify WebKit single-dispatch proof
+      - name: Compile and verify WebKit unmount proof
         run: |
           set -euo pipefail
           python -m py_compile \
@@ -37,14 +37,20 @@ jobs:
             scripts/mobile_restart_live_acceptance_v4.py
           python - <<'PY'
           from pathlib import Path
-          proof = Path("scripts/mobile_restart_live_acceptance_v4.py").read_text(encoding="utf-8")
+          proof = Path("scripts/mobile_restart_live_acceptance_v2.py").read_text(encoding="utf-8")
           dispatch = Path("scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
+          component = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
           css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
-          assert 'nico.mobile_restart_live_acceptance.webkit_single_dispatch.v4' in proof
-          assert 'webkit.recovery.run_proof = single_dispatch.run_proof' in proof
+          assert 'nico.mobile_restart_live_acceptance.webkit.v3' in proof
+          assert 'data-mobile-evidence-boundary="true"' in proof
+          assert 'interactive_control_count' in proof
+          assert 'rich_editor_node_count' in proof
+          assert 'optional_evidence_editor_unmounted' in proof
           assert 'single_native_dom_click' in dispatch
-          assert 'section[aria-labelledby="strategic-evidence-title"] > div:nth-of-type(2)' in css
-          assert 'overflow: visible !important' in css
+          assert 'useRichEvidenceEditor' in component
+          assert 'data-evidence-editor-mounted="false"' in component
+          assert 'data-mobile-evidence-note="true"' in component
+          assert ':not([data-mobile-evidence-boundary="true"])' in css
           PY
 
   live-production:
@@ -76,7 +82,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for exact-SHA iPhone WebKit single-dispatch proof",
+              "description": "Waiting for exact-SHA iPhone WebKit editor-unmount proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -105,7 +111,7 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-ios-webkit-single-dispatch-proof",
+                      "User-Agent": "nico-ios-webkit-editor-unmount-proof",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -183,12 +189,16 @@ jobs:
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == "${{ github.sha }}"
           assert payload["browser_engine"] == "webkit"
-          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v2"
+          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v3"
           assert payload["start_dispatch"] == "single_native_dom_click"
           assert payload["start_dispatch_retry_absent"] is True
           assert payload["webkit_intake_paint_stability_verified"] is True
           intake = payload["webkit_intake_paint"]
-          assert intake["optional_evidence_editor_suppressed"] is True
+          assert intake["optional_evidence_editor_unmounted"] is True
+          assert intake["optional_evidence_controls_allocated"] == 0
+          assert intake["paint_boundary"]["editor_mounted"] == "false"
+          assert intake["paint_boundary"]["interactive_control_count"] == 0
+          assert intake["paint_boundary"]["rich_editor_node_count"] == 0
           assert intake["authorization_reachable"] is True
           assert intake["assessment_action_reachable"] is True
           assert intake["ancestor_clipping_absent"] is True
@@ -211,7 +221,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "WebKit painted mobile intake and recovered one scored exact run",
+              "description": "WebKit allocated zero evidence controls and recovered one scored run",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -231,7 +241,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "WebKit paint or single-dispatch recovery proof failed",
+              "description": "WebKit editor-unmount or recovery proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
