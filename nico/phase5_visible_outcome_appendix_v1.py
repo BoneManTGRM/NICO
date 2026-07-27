@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 VERSION = "nico.phase5_visible_outcome_appendix.v1"
 _PATCH_MARKER = "_nico_phase5_visible_outcome_appendix_v1"
-HEADING = "Verified Change Since Phase 5 Baseline"
+HEADING = "Phase 5 Verified Before/After Delta"
 
 
 def _outcomes(assessment: dict[str, Any]) -> dict[str, Any]:
