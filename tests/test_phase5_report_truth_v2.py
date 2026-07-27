@@ -6,9 +6,8 @@ from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2, reconcil
 TARGET = "a" * 40
 
 
-def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> None:
-    install_phase5_report_truth_v2()
-    assessment = {
+def _assessment() -> dict:
+    return {
         "sections": [
             {"id": "static_analysis", "label": "Static", "score": 79, "evidence": [], "findings": [], "unavailable": []},
             {"id": "dependency_health", "label": "Dependency", "score": 92, "evidence": [], "findings": [], "unavailable": []},
@@ -16,6 +15,10 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
         ],
         "findings_register": [],
     }
+
+
+def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> None:
+    install_phase5_report_truth_v2()
     bandit = {
         "tool": "bandit",
         "status": "complete",
@@ -40,7 +43,7 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
         }
     }
 
-    result = reconcile_phase5_report_truth(assessment, stages)
+    result = reconcile_phase5_report_truth(_assessment(), stages)
     record = result["evidence_health_summary"]["scanner_records"]["bandit"]
 
     assert record["status"] == "completed"
@@ -51,12 +54,6 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
 
 def test_v2_does_not_upgrade_legacy_complete_without_proof_fields() -> None:
     install_phase5_report_truth_v2()
-    assessment = {
-        "sections": [
-            {"id": "static_analysis", "label": "Static", "score": 79, "evidence": [], "findings": [], "unavailable": []},
-        ],
-        "findings_register": [],
-    }
     stages = {
         "deep_scanner_triage": {
             "target_commit_sha": TARGET,
@@ -64,9 +61,28 @@ def test_v2_does_not_upgrade_legacy_complete_without_proof_fields() -> None:
         }
     }
 
-    result = reconcile_phase5_report_truth(assessment, stages)
+    result = reconcile_phase5_report_truth(_assessment(), stages)
     record = result["evidence_health_summary"]["scanner_records"]["bandit"]
 
     assert record["status"] == "completed"
     assert record["execution_complete"] is False
     assert "bandit" not in result["evidence_health_summary"]["completed_scanners"]
+
+
+def test_v2_missing_scanner_record_is_not_reported_as_an_improvement() -> None:
+    install = install_phase5_report_truth_v2()
+    result = reconcile_phase5_report_truth(
+        _assessment(),
+        {"evidence_reconciliation_and_scoring": {"commit_sha": TARGET}},
+    )
+    outcomes = result["phase5_verified_outcomes"]
+
+    assert install["missing_scanner_records_are_not_changes"] is True
+    assert outcomes["scanner_status_changes"] == {}
+    assert set(outcomes["unobserved_baseline_scanners"]) == {
+        "bandit",
+        "eslint",
+        "gitleaks",
+        "osv-scanner",
+    }
+    assert outcomes["missing_scanner_records_count_as_changes"] is False
