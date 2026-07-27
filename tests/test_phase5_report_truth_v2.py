@@ -17,9 +17,8 @@ def _assessment() -> dict:
     }
 
 
-def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> None:
-    install_phase5_report_truth_v2()
-    bandit = {
+def _complete_bandit() -> dict:
+    return {
         "tool": "bandit",
         "status": "complete",
         "verified_for_this_report": True,
@@ -32,12 +31,16 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
         "deterministic_fingerprint": "fingerprint",
         "findings": [],
     }
+
+
+def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> None:
+    install_phase5_report_truth_v2()
     stages = {
         "deep_scanner_triage": {
             "nested": {
                 "scanner_artifact": {
                     "target_commit_sha": TARGET,
-                    "tools": {"bandit": bandit},
+                    "tools": {"bandit": _complete_bandit()},
                 }
             }
         }
@@ -50,6 +53,24 @@ def test_v2_accepts_complete_status_only_when_proof_fields_are_retained() -> Non
     assert record["execution_complete"] is True
     assert record["target_commit_sha"] == TARGET
     assert "bandit" in result["evidence_health_summary"]["completed_scanners"]
+
+
+def test_v2_propagates_plain_stage_commit_to_nested_tool_record() -> None:
+    install = install_phase5_report_truth_v2()
+    stages = {
+        "deep_scanner_triage": {
+            "commit_sha": TARGET,
+            "scanner_artifact": {"tools": {"bandit": _complete_bandit()}},
+        }
+    }
+
+    result = reconcile_phase5_report_truth(_assessment(), stages)
+    record = result["evidence_health_summary"]["scanner_records"]["bandit"]
+
+    assert install["plain_stage_commit_propagation"] is True
+    assert record["target_commit_sha"] == TARGET
+    assert record["exact_commit_match"] is True
+    assert record["execution_complete"] is True
 
 
 def test_v2_does_not_upgrade_legacy_complete_without_proof_fields() -> None:
