@@ -5,6 +5,7 @@ from typing import Any, Iterable
 from nico.scanner_evidence_pipeline_v1 import REQUIRED_EVIDENCE_TOOLS
 
 VERSION = "nico.scanner_evidence_qualification.v1"
+_PATCH_MARKER = "_nico_scanner_evidence_qualification_v1"
 
 
 def _tool_blockers(name: str, payload: dict[str, Any], retained: dict[str, Any]) -> list[str]:
@@ -97,6 +98,7 @@ def qualify_scanner_evidence(
     artifact["scanner_evidence_ready"] = ready
     if not ready:
         artifact["human_review_required"] = True
+        artifact["client_delivery_allowed"] = False
         artifact["worker_execution_state"] = "partial"
     return result
 
@@ -122,4 +124,35 @@ def compare_frozen_runs(first: dict[str, Any], second: dict[str, Any]) -> dict[s
     }
 
 
-__all__ = ["VERSION", "qualify_scanner_evidence", "compare_frozen_runs"]
+def install_scanner_evidence_qualification_v1() -> dict[str, Any]:
+    from nico import hosted_scanner_worker
+
+    if getattr(hosted_scanner_worker, _PATCH_MARKER, False):
+        return {"status": "already_installed", "version": VERSION}
+    original = hosted_scanner_worker.run_hosted_scanner_worker
+
+    def qualified_worker(payload: dict[str, Any]) -> dict[str, Any]:
+        artifact = original(payload)
+        if isinstance(artifact, dict):
+            qualify_scanner_evidence(artifact)
+        return artifact
+
+    hosted_scanner_worker.run_hosted_scanner_worker = qualified_worker
+    setattr(hosted_scanner_worker, _PATCH_MARKER, True)
+    return {
+        "status": "installed",
+        "version": VERSION,
+        "blocking_tool_diagnostics": True,
+        "retained_artifact_integrity_required": True,
+        "exact_commit_provenance_required": True,
+        "missing_evidence_is_not_clean": True,
+        "client_delivery_blocked_when_incomplete": True,
+    }
+
+
+__all__ = [
+    "VERSION",
+    "qualify_scanner_evidence",
+    "compare_frozen_runs",
+    "install_scanner_evidence_qualification_v1",
+]
