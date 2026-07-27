@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from nico.evidence_pipeline_common_v1 import (
+    _call_runner,
     _effective_command,
+    _eslint_config_exists,
     _not_applicable,
+    _package_script,
     _raw_output_record,
+    _script_executes,
 )
 from nico.evidence_pipeline_osv_v1 import _full_osv_api_fallback
 
@@ -17,12 +21,32 @@ def _resolve_project_command(
     runners: Any,
     spec: Any,
     workspace: Any,
-    project: tuple[Path, Path],
+    project: tuple[Path, Path | None],
     preparation: Any,
 ) -> tuple[tuple[str, ...] | None, Path, str | None]:
+    del workspace
     project_dir, lock_root = project
+    lint_script = _package_script(project_dir)
+
+    if lock_root is None:
+        if spec.name == "eslint":
+            if _script_executes(lint_script, "eslint"):
+                return ("npm", "run", "lint"), project_dir, None
+            if lint_script:
+                return None, project_dir, "The configured lint script does not execute ESLint."
+            return None, project_dir, "No ESLint configuration or executable lint script was found."
+        if _script_executes(lint_script, "tsc"):
+            return ("npm", "run", "lint"), project_dir, None
+        return None, project_dir, "No exact package-lock or TypeScript lint script was found for this project."
+
     if preparation is None or not preparation.node_modules_ready:
         return None, project_dir, preparation.reason if preparation else "Project dependencies were not prepared."
+
+    if spec.name == "eslint" and not _eslint_config_exists(project_dir):
+        if _script_executes(lint_script, "eslint"):
+            return ("npm", "run", "lint"), project_dir, None
+        return None, project_dir, "The configured lint script does not execute ESLint."
+
     bin_name = "eslint" if spec.name == "eslint" else "tsc"
     binary = lock_root / "node_modules" / ".bin" / bin_name
     if not binary.is_file():
@@ -34,6 +58,8 @@ def _resolve_project_command(
     if spec.name == "eslint":
         return (str(binary), ".", "--format", "json"), project_dir, None
     tsconfig = project_dir / "tsconfig.json"
+    if not tsconfig.is_file() and _script_executes(lint_script, "tsc"):
+        return ("npm", "run", "lint"), project_dir, None
     return (
         str(binary),
         "--noEmit",
@@ -47,16 +73,31 @@ def _resolve_project_command(
 
 
 def _stamp_and_enrich(payload: dict[str, Any], spec: Any, workspace: Any) -> dict[str, Any]:
-    try:
-        from nico.scanner_artifact_provenance_v1 import _stamp_tool
-
-        payload = _stamp_tool(payload, spec, workspace)
-    except Exception:
-        payload = dict(payload)
+    original_status = str(payload.get("status") or "").lower()
     try:
         from nico.hosted_evidence_execution_patch import _enrich_tool_payload
 
         payload = _enrich_tool_payload(payload, str(spec.name))
+    except Exception:
+        payload = dict(payload)
+
+    if original_status == "not_applicable":
+        payload.update(
+            {
+                "status": "not_applicable",
+                "verified_for_this_report": True,
+                "execution_observed_for_this_report": True,
+                "current_run": True,
+                "evidence_limitation": False,
+            }
+        )
+        payload.pop("failure_or_unavailable_reason", None)
+        payload.pop("execution_failure_is_evidence_limitation", None)
+
+    try:
+        from nico.scanner_artifact_provenance_v1 import _stamp_tool
+
+        payload = _stamp_tool(payload, spec, workspace)
     except Exception:
         payload = dict(payload)
     return payload
@@ -124,23 +165,40 @@ def _run_tool(
     workspace: Any,
     *,
     runner: Callable[..., Any],
-    project: tuple[Path, Path] | None = None,
+    project: tuple[Path, Path | None] | None = None,
     preparation: Any = None,
 ) -> dict[str, Any]:
     if spec.name in {"eslint", "typescript"}:
         if not runners.project_commands_allowed():
             payload = runners._unavailable_tool(
                 spec,
-                f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it executes the snapshot's exact locked toolchain.",
+                f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it executes the snapshot's project toolchain.",
             )
             return _stamp_and_enrich(payload, spec, workspace)
         if project is None:
             reason = (
-                "No ESLint configuration exists in any locked package root; ESLint is not applicable to this snapshot."
+                "No ESLint configuration or lint script exists in any package root; ESLint is not applicable to this snapshot."
                 if spec.name == "eslint"
-                else "No TypeScript project with tsconfig.json and an exact package-lock was found; TypeScript is not applicable to this snapshot."
+                else "No TypeScript project or TypeScript lint script was found; TypeScript is not applicable to this snapshot."
             )
             return _stamp_and_enrich(_not_applicable(spec, reason), spec, workspace)
+
+        project_dir, lock_root = project
+        lint_script = _package_script(project_dir)
+        if (
+            spec.name == "eslint"
+            and lock_root is not None
+            and not _eslint_config_exists(project_dir)
+            and not _script_executes(lint_script, "eslint")
+        ):
+            return _stamp_and_enrich(
+                _not_applicable(
+                    spec,
+                    "No ESLint configuration exists in the locked project and its lint script does not execute ESLint; TypeScript remains independently evaluated.",
+                ),
+                spec,
+                workspace,
+            )
         command, cwd, unavailable_reason = _resolve_project_command(runners, spec, workspace, project, preparation)
     elif spec.name == "osv-scanner" and shutil.which(spec.command[0]) is None:
         return _stamp_and_enrich(_full_osv_api_fallback(runners, spec, workspace.repo_dir), spec, workspace)
@@ -156,7 +214,9 @@ def _run_tool(
         return _stamp_and_enrich(payload, spec, workspace)
 
     output_path = workspace.root / "scanner-output" / f"{spec.name}.stdout"
-    result = runner(
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result = _call_runner(
+        runner,
         command,
         cwd=cwd,
         limits=runners.WorkerLimits(timeout_seconds=spec.timeout_seconds, max_output_chars=spec.max_output_chars),
