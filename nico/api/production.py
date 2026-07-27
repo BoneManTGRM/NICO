@@ -17,6 +17,9 @@ from nico.backup_restore_readiness import (
 )
 from nico.builtin_static_code_context import install_builtin_static_code_context
 from nico.correlation_header_exposure import install_correlation_header_exposure
+from nico.comprehensive_canonical_report_truth_v1 import (
+    install_comprehensive_canonical_report_truth_v1,
+)
 from nico.dependency_scanner_triage import install_dependency_scanner_triage
 from nico.exact_snapshot_full_history_checkout import install_exact_snapshot_full_history_checkout
 from nico.exact_snapshot_secret_history import install_exact_snapshot_secret_history
@@ -77,6 +80,7 @@ ASSESSMENT_SECRET_HISTORY_TRIAGE = install_secret_history_triage()
 ASSESSMENT_TYPESCRIPT_VALIDATION = install_typescript_validation_bridge()
 ASSESSMENT_MID_REPORT_PRESENTATION = install_mid_report_presentation()
 ASSESSMENT_MID_REVIEW_ENFORCEMENT = install_mid_review_enforcement_compat()
+ASSESSMENT_COMPREHENSIVE_CANONICAL_TRUTH = install_comprehensive_canonical_report_truth_v1()
 RETAINER_AUTO_EVIDENCE = install_retainer_auto_evidence(app)
 OPERATIONS_OBSERVABILITY = install_operational_observability(app)
 OPERATIONS_ALERTING = install_operational_alert_routes(app)
@@ -257,6 +261,7 @@ __all__ = [
     "ASSESSMENT_TYPESCRIPT_COMPLEXITY_SYNTAX",
     "ASSESSMENT_SCORE_COMPATIBILITY",
     "ASSESSMENT_BUILTIN_STATIC_CONTEXT",
+    "ASSESSMENT_COMPREHENSIVE_CANONICAL_TRUTH",
     "ASSESSMENT_STATIC_TRIAGE",
     "ASSESSMENT_FULL_HISTORY_CHECKOUT",
     "ASSESSMENT_SECRET_HISTORY",
