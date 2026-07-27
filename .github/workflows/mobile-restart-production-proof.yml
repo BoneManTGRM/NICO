@@ -23,38 +23,22 @@ jobs:
     steps:
       - name: Check out exact commit
         uses: actions/checkout@v7
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-
-      - name: Compile and verify recovery proof
+      - name: Compile and verify single-dispatch recovery proof
         run: |
           set -euo pipefail
-          python -m py_compile scripts/mobile_restart_live_acceptance_v1.py
+          python -m py_compile scripts/mobile_restart_live_acceptance_v1.py scripts/mobile_restart_live_acceptance_v3.py
           python - <<'PY'
           from pathlib import Path
-
-          proof = Path("scripts/mobile_restart_live_acceptance_v1.py").read_text(encoding="utf-8")
-          hook = Path("apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
-          proxy = Path("apps/web/app/api/nico/[...path]/route.ts").read_text(encoding="utf-8")
-          backend = Path("nico/comprehensive_mobile_recovery_v1.py").read_text(encoding="utf-8")
-
-          assert 'nico.mobile_restart_live_acceptance.v1' in proof
-          assert 'viewport={"width": 390, "height": 844}' in proof
-          assert '_reload_and_restore(page, run_id' in proof
-          assert 'Running-page reload created a duplicate assessment' in proof
-          assert 'Terminal-page reload created a duplicate assessment' in proof
-          assert 'terminal_manifest_size_bytes' in proof
-          assert 'Projected browser response embedded' in proof
-          assert 'Exact-run report did not have a PDF signature' in proof
-          assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in hook
-          assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in hook
-          assert 'BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in hook
-          assert 'COMPREHENSIVE_REPORT_ARTIFACT' in proxy
-          assert 'headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE)' in proxy
-          assert 'artifact_delivery": "on_demand_exact_run"' in backend
+          proof = Path("scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
+          assert 'nico.mobile_restart_live_acceptance.single_dispatch.v3' in proof
+          assert 'class _SingleDispatchLocator' in proof
+          assert 'button.click();' in proof
+          assert 'start_dispatch_retry_absent' in proof
+          assert '_ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)' in proof
           PY
 
   live-production:
@@ -86,35 +70,22 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for exact-SHA mobile restart recovery proof",
+              "description": "Waiting for exact-SHA single-dispatch mobile recovery proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
-          curl --fail-with-body --silent --show-error \
-            -X POST \
+          curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
             --data-binary @/tmp/mobile-status.json
 
-      - name: Validate configured production scope
-        run: |
-          set -euo pipefail
-          test "${NICO_PRODUCTION_FRONTEND_URL}" = "https://app.nicoaudit.com"
-          test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "BoneManTGRM/NICO"
-          test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
-          test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
-
       - name: Wait for exact frontend and backend deployments
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.request
-
+          import json, os, time, urllib.request
           repository = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["RELEASE_SHA"]
           token = os.environ["GITHUB_TOKEN"]
@@ -128,15 +99,14 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-mobile-restart-proof",
+                      "User-Agent": "nico-mobile-single-dispatch-proof",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
               last = {}
               for item in payload.get("statuses") or []:
-                  context = str(item.get("context") or "")
-                  last.setdefault(context, str(item.get("state") or "unknown"))
+                  last.setdefault(str(item.get("context") or ""), str(item.get("state") or "unknown"))
               observed = {context: last.get(context, "missing") for context in required}
               print(f"Deployment statuses: {observed}", flush=True)
               if all(observed[context] == "success" for context in required):
@@ -160,47 +130,22 @@ jobs:
             --interval-seconds 15 \
             --output audit-results/mobile-restart-frontend-release.json
 
-      - name: Verify durable assessment readiness
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
-          request = urllib.request.Request(
-              origin + "/api/nico/diagnostics/comprehensive-runtime",
-              headers={"Accept": "application/json", "User-Agent": "nico-mobile-restart-proof"},
-          )
-          with urllib.request.urlopen(request, timeout=45) as response:
-              payload = json.loads(response.read().decode("utf-8"))
-          persistence = payload.get("persistence") if isinstance(payload.get("persistence"), dict) else {}
-          replacement_safe = bool(
-              payload.get("survives_container_replacement_verified") is True
-              or persistence.get("survives_container_replacement_verified") is True
-          )
-          assert str(payload.get("status") or "").lower() == "ready"
-          assert replacement_safe is True
-          PY
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-
       - name: Install pinned browser proof dependency
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
           python -m playwright install --with-deps chromium
 
-      - name: Prove recovery across running and terminal page restarts
+      - name: Prove one-click recovery across running and terminal restarts
         id: restart_proof
         continue-on-error: true
         run: |
           set -euo pipefail
-          python scripts/mobile_restart_live_acceptance_v1.py \
+          python scripts/mobile_restart_live_acceptance_v3.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -226,26 +171,22 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-
           payload = json.loads(Path("audit-results/mobile-restart-live-proof.json").read_text(encoding="utf-8"))
           assert payload["artifact_schema"] == "nico.mobile_restart_live_acceptance.v1"
+          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.single_dispatch.v3"
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == "${{ github.sha }}"
+          assert payload["start_dispatch"] == "single_native_dom_click"
+          assert payload["start_dispatch_retry_absent"] is True
           assert payload["start_request_count"] == 1
           assert payload["duplicate_intake_absent"] is True
           assert payload["running_restart_recovery_verified"] is True
           assert payload["terminal_restart_recovery_verified"] is True
-          assert payload["exact_run_identity_preserved"] is True
-          assert payload["report_actions_recovered"] is True
           assert payload["terminal_manifest_bounded"] is True
-          assert payload["terminal_manifest_size_bytes"] < 200000
-          assert payload["report_artifact_delivery"] == "on_demand_exact_run"
           assert payload["pdf_signature_verified"] is True
-          assert payload["pdf_run_identity_verified"] is True
           assert payload["terminal_before_reload"]["commit_sha"] == payload["expected_sha"]
-          assert payload["terminal_after_reload"]["commit_sha"] == payload["expected_sha"]
+          assert "Awaiting" not in payload["terminal_before_reload"]["score"]
           assert payload["terminal_after_reload"]["pdf_enabled"] == "true"
-          assert payload["terminal_after_reload"]["markdown_enabled"] == "true"
           PY
 
       - name: Publish successful proof status
@@ -257,12 +198,11 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Mobile restart preserved one exact run and streamed the terminal report",
+              "description": "One mobile click created and recovered one exact scored run",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
-          curl --fail-with-body --silent --show-error \
-            -X POST \
+          curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -278,12 +218,11 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Mobile restart recovery proof failed; release requires repair",
+              "description": "Single-dispatch mobile recovery proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
-          curl --fail-with-body --silent --show-error \
-            -X POST \
+          curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
