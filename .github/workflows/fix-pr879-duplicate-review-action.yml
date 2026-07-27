@@ -1,0 +1,32 @@
+name: Fix PR 879 duplicate review action
+
+on:
+  push:
+    branches:
+      - feature/internal-review-and-evidence-truth
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      !contains(github.event.head_commit.message, 'Fix duplicate internal review action') &&
+      !contains(github.event.head_commit.message, 'Remove PR 879 repair machinery')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/internal-review-and-evidence-truth
+      - name: Repair duplicate declaration
+        run: python scripts/fix_pr879_duplicate_review_action.py
+      - name: Verify exact source shape
+        run: |
+          test "$(grep -c 'const reviewAction = result' apps/web/app/assessment/AssessmentWorkspace.tsx)" = "1"
+      - name: Commit repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/app/assessment/AssessmentWorkspace.tsx
+          git commit -m "Fix duplicate internal review action"
+          git push origin HEAD:feature/internal-review-and-evidence-truth
