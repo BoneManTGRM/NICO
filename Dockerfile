@@ -6,6 +6,9 @@ ENV PIP_NO_CACHE_DIR=1
 ENV NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true
 ENV NICO_ALLOW_PROJECT_COMMANDS=true
 ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
+ENV NICO_NODE_OPTIONS=--max-old-space-size=2048
+ENV NICO_MAX_SCANNER_PARSE_BYTES=268435456
+ENV NICO_SCANNER_RAW_ARTIFACT_ROOT=/data/scanner-artifacts
 ARG NICO_SCANNER_INSTALL_STRICT=false
 ARG NICO_SEMGREP_VERSION=1.170.0
 ENV NICO_SCANNER_INSTALL_STRICT=${NICO_SCANNER_INSTALL_STRICT}
@@ -21,6 +24,8 @@ ENV NICO_HISTORY_TOOL_TIMEOUT_SECONDS=600
 ENV NICO_WEB_WORKERS=1
 ENV NICO_SEMGREP_HOME=/opt/nico-tools/semgrep
 ENV NODE_PATH=/usr/local/lib/node_modules
+ENV NICO_ESLINT_MODULE_ROOT=/usr/local/lib/node_modules
+ENV NICO_ESLINT_PARSER_ENTRY=/usr/local/lib/node_modules/@typescript-eslint/parser/dist/index.js
 
 WORKDIR /app
 
@@ -34,7 +39,7 @@ RUN apt-get update \
         unzip \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin nico \
-    && mkdir -p /data/reports /opt/nico-tools \
+    && mkdir -p /data/reports /data/scanner-artifacts /opt/nico-tools \
     && chown -R nico:nico /data
 
 RUN npm install -g eslint typescript --no-audit --no-fund \
@@ -44,7 +49,7 @@ RUN npm install -g eslint typescript --no-audit --no-fund \
         @typescript-eslint/eslint-plugin@8 \
         --no-audit --no-fund \
     && eslint --version \
-    && node -e "require('@typescript-eslint/parser'); require('@eslint/js')"
+    && node -e "const parser=require.resolve('@typescript-eslint/parser'); if (!parser.endsWith('.js')) process.exit(1); require('@eslint/js')"
 
 COPY requirements.txt ./
 COPY scripts/install_hosted_scanner_binaries.py ./scripts/install_hosted_scanner_binaries.py
