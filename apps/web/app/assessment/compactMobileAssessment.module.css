@@ -1,0 +1,86 @@
+.mobileEvidenceBoundary {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 14px;
+  background: #08111f;
+}
+
+.mobileEvidenceBoundary strong {
+  color: #e0f2fe;
+  font-size: 15px;
+}
+
+.mobileEvidenceBoundary p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compactTerminal {
+  display: grid;
+  gap: 14px;
+  contain: layout paint style;
+  content-visibility: visible;
+  overflow-anchor: none;
+}
+
+.compactStatusGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.compactStatusGrid article {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: #0b1324;
+  box-shadow: none;
+}
+
+.compactStatusGrid b {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.compactStatusGrid span {
+  color: #b8c4d8;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.compactIdentity {
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: #08111f;
+}
+
+.compactIdentity summary {
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.compactIdentity p {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+}
+
+.compactIdentity code,
+.compactIdentity span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #94a3b8;
+}
+
+@media (min-width: 640px) {
+  .compactStatusGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
