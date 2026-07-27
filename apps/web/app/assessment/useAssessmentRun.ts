@@ -50,6 +50,7 @@ export type AssessmentRunController = {
   setError: (value: string) => void;
   run: () => Promise<void>;
   retry: () => Promise<void>;
+  startNew: () => void;
 };
 
 type PersistedRun = {
@@ -199,15 +200,19 @@ function normalizePersistedRun(value: unknown): PersistedRun | null {
   };
 }
 
-function readPersistedRun(): PersistedRun | null {
+function readStoredRun(): PersistedRun | null {
   if (typeof window === "undefined") return null;
-  let stored: PersistedRun | null = null;
   try {
     const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
-    stored = raw ? normalizePersistedRun(JSON.parse(raw)) : null;
+    return raw ? normalizePersistedRun(JSON.parse(raw)) : null;
   } catch {
-    stored = null;
+    return null;
   }
+}
+
+function readPersistedRun(): PersistedRun | null {
+  if (typeof window === "undefined") return null;
+  const stored = readStoredRun();
   const urlRunId = new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
   if (!urlRunId) return stored;
   if (stored?.runId === urlRunId) return stored;
@@ -222,6 +227,20 @@ function readPersistedRun(): PersistedRun | null {
     startedAt: stored?.startedAt || Date.now(),
     locale: stored?.locale || "en",
   };
+}
+
+function clearPersistedRun(preserveExplicitUrl = false): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+  } catch {
+    // URL cleanup remains the authoritative escape from a stale active job.
+  }
+  if (preserveExplicitUrl) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("tier", "comprehensive");
+  url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 function writePersistedRun(value: PersistedRun): void {
@@ -278,7 +297,9 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
 
     const restoreAfterPageResume = () => {
-      const persisted = readPersistedRun();
+      // Only unfinished work remains active. Explicit terminal URLs can still be
+      // reloaded, but Safari resume events must not restart completed reports.
+      const persisted = readStoredRun();
       if (!persisted || recoveryInFlight.current) return;
       void resumePersistedRun(persisted);
     };
@@ -369,6 +390,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       setResult(current);
       const stable = terminal(service, current);
       if (stable) {
+        clearPersistedRun(true);
         setPhase(stable);
         setAttempt(count);
         setStarted(null);
@@ -452,6 +474,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       setResult(recovered);
       const stable = terminal(service, recovered);
       if (stable) {
+        clearPersistedRun(true);
         setPhase(stable);
         setStarted(null);
         setMessage(stable === "review_required" ? copy.comprehensiveReview : copy.stopped);
@@ -467,6 +490,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function run(): Promise<void> {
+    clearPersistedRun(false);
     if (!authorized) {
       setError(copy.authError);
       setIssue(null);
@@ -533,6 +557,26 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
   }
 
+  function startNew(): void {
+    sequence.current += 1;
+    recoveryInFlight.current = false;
+    clearPersistedRun(false);
+    setRepository("");
+    setClient("");
+    setProject("");
+    setAuthorized(false);
+    setHumanEvidence({});
+    setPhase("idle");
+    setResult(null);
+    setMessage("");
+    setError("");
+    setIssue(null);
+    setAttempt(0);
+    setStarted(null);
+    setElapsed(0);
+    window.requestAnimationFrame(() => window.scrollTo({top: 0, behavior: "auto"}));
+  }
+
   async function retry(): Promise<void> {
     const persisted = readPersistedRun();
     const runId = String(result?.run_id || persisted?.runId || "").trim();
@@ -576,6 +620,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setError,
     run,
     retry,
+    startNew,
   };
 }
 

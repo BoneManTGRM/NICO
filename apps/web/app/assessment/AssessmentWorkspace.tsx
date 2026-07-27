@@ -75,6 +75,12 @@ function filenameFromResponse(response: Response, fallback: string): string {
   return safeFilename(candidate, fallback);
 }
 
+function restoreArtifactScroll(scrollTop: number): void {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => window.scrollTo({top: scrollTop, behavior: "auto"}));
+  });
+}
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -166,6 +172,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setError,
     run,
     retry,
+    startNew,
   } = controller;
   const [copied, setCopied] = useState(false);
   const [artifactAction, setArtifactAction] = useState<"markdown" | "pdf" | null>(null);
@@ -215,9 +222,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const artifactStatus = artifactAction
     ? locale === "es-MX" ? "Preparando el archivo…" : "Preparing file…"
     : "";
+  const terminalView = ["review_required", "complete", "failed", "timed_out"].includes(phase);
 
   async function copyMarkdown(): Promise<void> {
     if (!markdownAvailable || artifactAction) return;
+    const scrollTop = window.scrollY;
+    (document.activeElement as HTMLElement | null)?.blur();
     setArtifactAction("markdown");
     setError("");
     try {
@@ -240,11 +250,14 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       setError(caught instanceof Error ? caught.message : String(copy.pdfMissing));
     } finally {
       setArtifactAction(null);
+      restoreArtifactScroll(scrollTop);
     }
   }
 
   async function downloadPdf(): Promise<void> {
     if (!pdfAvailable || artifactAction) return;
+    const scrollTop = window.scrollY;
+    (document.activeElement as HTMLElement | null)?.blur();
     setArtifactAction("pdf");
     setError("");
     try {
@@ -275,6 +288,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       setError(caught instanceof Error ? caught.message : String(report?.pdf_error || copy.pdfMissing));
     } finally {
       setArtifactAction(null);
+      restoreArtifactScroll(scrollTop);
     }
   }
 
@@ -419,6 +433,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
         <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
         <div className={`report-actions ${workspaceStyles.reportActionBar}`} data-assessment-report-actions="true" data-assessment-report-ready={reportReady ? "true" : "false"}><button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}</div>
+        {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
         {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
         {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
         {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} /></details> : null}

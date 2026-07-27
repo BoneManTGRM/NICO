@@ -141,12 +141,15 @@ def _start_count(requests: list[dict[str, str]]) -> int:
     )
 
 
-def _reload_and_restore(page: Page, run_id: str, timeout_ms: int) -> dict[str, Any]:
+def _reload_and_restore(page: Page, run_id: str, timeout_ms: int, *, expect_active_storage: bool) -> dict[str, Any]:
     page.reload(wait_until="domcontentloaded", timeout=timeout_ms)
     page.locator(WORKSPACE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
     state = _wait_for_same_run_ui(page, run_id, min(120.0, timeout_ms / 1000.0))
     stored = _stored_run(page)
-    assert stored.get("run_id") == run_id
+    if expect_active_storage:
+        assert stored.get("run_id") == run_id
+    else:
+        assert not stored.get("run_id"), f"Terminal run remained active in localStorage: {stored}"
     assert stored.get("url_run_id") == run_id
     return {"ui": state, "stored": stored}
 
@@ -231,7 +234,7 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         run_id, initial_stored = _wait_for_run_id(page, 180.0)
         assert _start_count(requests) == 1
 
-        running_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms)
+        running_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=True)
         assert _start_count(requests) == 1, "Running-page reload created a duplicate assessment"
 
         terminal_before_reload = _wait_for_terminal(page, run_id, args.timeout_seconds)
@@ -243,7 +246,10 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         assert "Awaiting" not in terminal_before_reload.get("score", "")
         assert "Not scored" not in terminal_before_reload.get("score", "")
 
-        terminal_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms)
+        terminal_storage = _stored_run(page)
+        assert not terminal_storage.get("run_id"), terminal_storage
+        assert terminal_storage.get("url_run_id") == run_id
+        terminal_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=False)
         terminal_after_reload = _wait_for_terminal(page, run_id, 120.0)
         assert _start_count(requests) == 1, "Terminal-page reload created a duplicate assessment"
         assert terminal_after_reload.get("commit_sha") == args.expected_sha
@@ -251,6 +257,20 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         assert terminal_after_reload.get("markdown_enabled") == "true"
         assert terminal_after_reload.get("pdf_enabled") == "true"
 
+        actions = page.locator(REPORT_ACTIONS_SELECTOR).first
+        actions.scroll_into_view_if_needed(timeout=args.navigation_timeout_ms)
+        page.wait_for_timeout(250)
+        scroll_before_resume = float(page.evaluate("() => window.scrollY"))
+        status_before = sum(1 for item in requests if item.get("method") == "GET" and item.get("path", "").endswith(run_id))
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+        page.wait_for_timeout(750)
+        scroll_after_resume = float(page.evaluate("() => window.scrollY"))
+        terminal_after_pageshow = _ui_state(page)
+        status_after = sum(1 for item in requests if item.get("method") == "GET" and item.get("path", "").endswith(run_id))
+        assert terminal_after_pageshow.get("run_id") == run_id
+        assert terminal_after_pageshow.get("phase") in TERMINAL_PHASES
+        assert abs(scroll_after_resume - scroll_before_resume) <= 2
+        assert status_after == status_before, "Terminal pageshow restarted exact-run recovery"
         artifacts = _verify_manifest_and_pdf(page, args.frontend_url.rstrip("/"), run_id)
         screenshot_path = args.output.with_suffix(".png")
         screenshot_error = ""
@@ -278,6 +298,11 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
             "terminal_after_reload": terminal_after_reload,
             "running_restart_recovery_verified": True,
             "terminal_restart_recovery_verified": True,
+            "terminal_run_removed_from_active_storage": True,
+            "terminal_pageshow_recovery_absent": True,
+            "terminal_scroll_position_preserved": True,
+            "terminal_storage": terminal_storage,
+            "terminal_after_pageshow": terminal_after_pageshow,
             "exact_run_identity_preserved": True,
             "report_actions_recovered": True,
             **artifacts,
