@@ -468,6 +468,9 @@ def finalize_canonical_report_truth(result: dict[str, Any]) -> dict[str, Any]:
     if output.get("status") == "complete" and not evidence_invariant_passed:
         output["status"] = "blocked"
         output["reason"] = "canonical_evidence_completion_invariant_failed"
+    if output.get("status") == "complete" and not evidence_invariant_passed:
+        output["status"] = "blocked"
+        output["reason"] = "canonical_evidence_completion_invariant_failed"
     return output
 
 
