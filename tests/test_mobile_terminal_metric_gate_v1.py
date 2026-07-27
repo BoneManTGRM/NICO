@@ -6,9 +6,12 @@ PROOF = (ROOT / "scripts/mobile_restart_live_acceptance_v3.py").read_text(encodi
 
 def test_metrics_are_retained_before_supplemental_render_attempt() -> None:
     screenshot = PROOF.split("def screenshot(", 1)[1].split("class _SingleDispatchContext", 1)[0]
-    assert "self._terminal_metrics.update(metrics)" in screenshot
+    capture = PROOF.split("def capture_terminal_metrics(", 1)[1].split("def goto(", 1)[0]
+
+    assert "self.capture_terminal_metrics()" in screenshot
     assert "return self._page.screenshot" in screenshot
-    assert screenshot.index("self._terminal_metrics.update(metrics)") < screenshot.index("return self._page.screenshot")
+    assert screenshot.index("self.capture_terminal_metrics()") < screenshot.index("return self._page.screenshot")
+    assert "self._terminal_metrics.update(metrics)" in capture
     assert "assert metrics.get" not in screenshot
 
 
