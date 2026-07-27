@@ -12,6 +12,16 @@ VERSION = "nico.typescript_ast_complexity.v1"
 _PATCH_MARKER = "_nico_typescript_ast_complexity_v1"
 AST_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "typescript_ast_metrics.cjs"
 AST_TIMEOUT_SECONDS = 180
+TRACKED_FUNCTION_NAMES = {
+    "_build_markdown",
+    "_build_pdf",
+    "_build_complexity",
+    "build_comprehensive_report_package",
+    "AssessmentWorkspace",
+    "FinalReviewWorkspace",
+    "FullRunPage",
+    "Page",
+}
 
 
 def _run_typescript_ast(files: dict[str, str]) -> dict[str, Any]:
@@ -119,6 +129,33 @@ def _function_metrics(analyses: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _tracked_function_metrics(functions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    tracked: dict[str, dict[str, Any]] = {}
+    for item in functions:
+        name = str(item.get("name") or "")
+        if name not in TRACKED_FUNCTION_NAMES:
+            continue
+        candidate = {
+            "name": name,
+            "path": item.get("path"),
+            "line": item.get("line"),
+            "cyclomatic_complexity": int(item.get("cyclomatic_complexity") or 0),
+            "cognitive_complexity": (
+                int(item.get("cognitive_complexity") or 0)
+                if item.get("cognitive_complexity") is not None
+                else None
+            ),
+            "loc": int(item.get("loc") or 0),
+            "max_nesting": int(item.get("max_nesting") or 0),
+            "grade": item.get("grade"),
+            "method": item.get("method"),
+        }
+        existing = tracked.get(name)
+        if existing is None or candidate["cyclomatic_complexity"] > int(existing.get("cyclomatic_complexity") or 0):
+            tracked[name] = candidate
+    return dict(sorted(tracked.items()))
+
+
 def _hotspot_score(item: dict[str, Any]) -> float:
     complexity = int(item.get("cyclomatic_complexity") or 0)
     cognitive_value = int(item.get("cognitive_complexity") or 0)
@@ -207,6 +244,7 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
     nesting = metrics["nesting"]
     grades = metrics["grades"]
     hotspots = _build_hotspots(functions)
+    tracked = _tracked_function_metrics(functions)
     coupled, fan_outs, internal_fan_outs, fan_ins = _build_coupling(analyses)
 
     eligible_count = len(source_files)
@@ -230,6 +268,8 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "source_parse_limitations": len(parse_notes),
         "total_source_loc": sum(int(item.get("source_loc") or 0) for item in analyses),
         "functions_measured": len(functions),
+        "tracked_function_metrics": tracked,
+        "tracked_function_metrics_are_exact_sha": True,
         "average_cyclomatic_complexity": _safe_average(complexities),
         "median_cyclomatic_complexity": _safe_median(complexities),
         "p90_cyclomatic_complexity": base._percentile(complexities, 0.90),
@@ -297,6 +337,7 @@ def install_typescript_ast_complexity_v1() -> dict[str, Any]:
         "import_cycles_and_scc": True,
         "duplication": True,
         "explicit_source_coverage": True,
+        "tracked_function_metrics": True,
     }
 
 
