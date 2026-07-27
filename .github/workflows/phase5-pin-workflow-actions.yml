@@ -1,0 +1,82 @@
+name: Phase 5 Pin Workflow Actions
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase5-pin-workflow-actions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the pull-request branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replace mutable GitHub Action references
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.github/workflows')
+          replacements = {
+              'actions/checkout@v7': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+              'actions/setup-python@v7': 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7',
+              'actions/setup-node@v7': 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7',
+              'actions/upload-artifact@v7': 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+              'actions/configure-pages@v6': 'actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6',
+              'actions/upload-pages-artifact@v5': 'actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5',
+              'actions/deploy-pages@v5': 'actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5',
+          }
+          for path in sorted(root.glob('*.y*ml')):
+              text = path.read_text(encoding='utf-8')
+              updated = text
+              for source, target in replacements.items():
+                  updated = updated.replace(source, target)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+
+          uses = re.compile(r'^\s*uses:\s*([^\s#]+)', re.MULTILINE)
+          immutable = re.compile(r'^[^/@]+/[^/@]+(?:/[^@]+)?@[0-9a-f]{40}$')
+          mutable = []
+          for path in sorted(root.glob('*.y*ml')):
+              for line_number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                  match = uses.match(line)
+                  if not match:
+                      continue
+                  reference = match.group(1)
+                  if reference.startswith('./'):
+                      continue
+                  if not immutable.fullmatch(reference):
+                      mutable.append(f'{path}:{line_number}: {reference}')
+          if mutable:
+              raise SystemExit('Mutable action references remain:\n' + '\n'.join(mutable))
+          PY
+
+      - name: Commit immutable workflow references when needed
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          if git diff --quiet -- .github/workflows; then
+            echo "All workflow references are already immutable."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows
+          git commit -m "Pin remaining workflow actions to immutable SHAs"
+          git push origin "HEAD:${BRANCH}"
