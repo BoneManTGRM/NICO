@@ -1,6 +1,6 @@
 "use client";
 
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
 import {
@@ -35,6 +35,7 @@ const TEXT = {
     removeModule: "Remove from intake",
     emptyTitle: "No evidence added for this module",
     emptyBody: "Add human-observed information when it is available, or exclude the module only when an explicit rationale exists.",
+    mobileStable: "The optional evidence editor is not loaded on phones or touch-first devices. The repository assessment can continue without it. Use the desktop workspace only when human evidence must be attached.",
     field: (name: string) => name.replaceAll("_", " "),
   },
   "es-MX": {
@@ -60,6 +61,7 @@ const TEXT = {
     removeModule: "Quitar de la captura",
     emptyTitle: "No se agregó evidencia para este módulo",
     emptyBody: "Agrega información observada por una persona cuando esté disponible, o excluye el módulo únicamente con una justificación explícita.",
+    mobileStable: "El editor de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. La evaluación del repositorio puede continuar sin él. Usa la vista de escritorio únicamente cuando sea necesario adjuntar evidencia humana.",
     field: (name: string) => name.replaceAll("_", " "),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
@@ -79,6 +81,23 @@ function statusClass(status: ReturnType<typeof moduleCompleteness>): string {
   return styles.statusEmpty;
 }
 
+function useRichEvidenceEditor(): boolean {
+  // Fail closed during SSR and the first client paint. This prevents Safari from
+  // allocating the editor before the device class is known. Only a wide,
+  // fine-pointer desktop may mount the interactive evidence workspace.
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1025px) and (pointer: fine)");
+    const synchronize = () => setEnabled(query.matches);
+    synchronize();
+    query.addEventListener?.("change", synchronize);
+    return () => query.removeEventListener?.("change", synchronize);
+  }, []);
+
+  return enabled;
+}
+
 export default function StrategicEvidenceForm({
   locale,
   value,
@@ -91,9 +110,34 @@ export default function StrategicEvidenceForm({
   disabled?: boolean;
 }) {
   const copy = TEXT[locale] as typeof TEXT.en;
+  const richEditorEnabled = useRichEvidenceEditor();
   const [activeModuleId, setActiveModuleId] = useState(
     STRATEGIC_EVIDENCE_DEFINITIONS[0]?.moduleId || "",
   );
+  const addedCount = Object.keys(value).length;
+
+  if (!richEditorEnabled) {
+    return <section
+      className={styles.strategicEvidence}
+      aria-labelledby="strategic-evidence-title"
+      data-mobile-evidence-boundary="true"
+      data-evidence-editor-mounted="false"
+    >
+      <div className={styles.strategicEvidenceHead}>
+        <div className={styles.headingCopy}>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h3 id="strategic-evidence-title">{copy.title}</h3>
+          <p>{copy.summary}</p>
+        </div>
+        <div className={styles.progressSummary} aria-label={copy.added(addedCount, STRATEGIC_EVIDENCE_DEFINITIONS.length)}>
+          <strong>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</strong>
+          <span>{copy.modules}</span>
+        </div>
+      </div>
+      <p className="muted" data-mobile-evidence-note="true">{copy.mobileStable}</p>
+    </section>;
+  }
+
   const activeDefinition = STRATEGIC_EVIDENCE_DEFINITIONS.find(
     (definition) => definition.moduleId === activeModuleId,
   ) || STRATEGIC_EVIDENCE_DEFINITIONS[0];
@@ -101,7 +145,6 @@ export default function StrategicEvidenceForm({
   const activeStatus = activeDefinition
     ? moduleCompleteness(activeDefinition, activeModule)
     : "not_assessed";
-  const addedCount = Object.keys(value).length;
 
   function setModule(
     moduleId: string,
@@ -123,7 +166,11 @@ export default function StrategicEvidenceForm({
 
   if (!activeDefinition) return null;
 
-  return <section className={styles.strategicEvidence} aria-labelledby="strategic-evidence-title">
+  return <section
+    className={styles.strategicEvidence}
+    aria-labelledby="strategic-evidence-title"
+    data-evidence-editor-mounted="true"
+  >
     <div className={styles.strategicEvidenceHead}>
       <div className={styles.headingCopy}>
         <p className="eyebrow">{copy.eyebrow}</p>
