@@ -1,0 +1,261 @@
+name: iOS WebKit Paint Proof
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ios-webkit-paint-proof-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Validate iOS stability contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Compile and verify mobile stability boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/mobile_restart_live_acceptance_v1.py scripts/mobile_restart_live_acceptance_v2.py
+          python -m py_compile nico/comprehensive_mobile_score_projection_v2.py
+          python - <<'PY'
+          from pathlib import Path
+
+          layout = Path("apps/web/app/layout.tsx").read_text(encoding="utf-8")
+          css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
+          proof = Path("scripts/mobile_restart_live_acceptance_v2.py").read_text(encoding="utf-8")
+          score = Path("nico/comprehensive_mobile_score_projection_v2.py").read_text(encoding="utf-8")
+          package = Path("nico/__init__.py").read_text(encoding="utf-8")
+
+          assert 'import "../styles/assessment-mobile-stability.css"' in layout
+          assert 'section[aria-labelledby="strategic-evidence-title"] > div:nth-of-type(2)' in css
+          assert 'details[class*="stageHistory"]' in css
+          assert '[data-assessment-report-ready="true"] .results-grid' in css
+          assert 'overflow: visible !important' in css
+          assert 'backdrop-filter: none !important' in css
+          assert 'playwright.webkit.launch' in proof
+          assert 'optional_evidence_editor_suppressed' in proof
+          assert 'ancestor_clipping_absent' in proof
+          assert 'page_crash_absent' in proof
+          assert 'report.json.assessment' in score
+          assert 'install_comprehensive_mobile_score_projection_v2()' in package
+          PY
+
+  live-production:
+    name: Prove iPhone WebKit intake and exact-run recovery
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production-smoke
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
+      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
+      NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.sha }}
+      STATUS_CONTEXT: NICO iOS WebKit Paint Proof
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Publish pending proof status
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/ios-status.json
+          import json, os
+          print(json.dumps({
+              "state": "pending",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Waiting for exact-SHA iPhone WebKit paint and recovery proof",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/ios-status.json
+
+      - name: Wait for exact frontend and backend deployments
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required = {"Vercel", os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]}
+          deadline = time.time() + 30 * 60
+          last = {}
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-ios-webkit-proof",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last = {}
+              for item in payload.get("statuses") or []:
+                  context = str(item.get("context") or "")
+                  last.setdefault(context, str(item.get("state") or "unknown"))
+              observed = {context: last.get(context, "missing") for context in required}
+              print(f"Deployment statuses: {observed}", flush=True)
+              if all(observed[context] == "success" for context in required):
+                  break
+              if any(observed[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(f"Deployment failed for exact SHA {sha}: {observed}")
+              time.sleep(20)
+          else:
+              raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Verify exact frontend release identity
+        run: |
+          set -euo pipefail
+          python scripts/production_frontend_release_identity.py \
+            --origin "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --expected-ui-contract "expert-engagement-v2" \
+            --expected-deployment-environment "production" \
+            --timeout-seconds 900 \
+            --interval-seconds 15 \
+            --output audit-results/ios-webkit-frontend-release.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned WebKit proof dependency
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
+          python -m playwright install --with-deps webkit
+
+      - name: Prove iPhone WebKit paint and exact-run recovery
+        id: ios_proof
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python scripts/mobile_restart_live_acceptance_v2.py \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --output audit-results/ios-webkit-live-proof.json
+
+      - name: Upload immutable iOS proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-webkit-paint-proof-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            audit-results/ios-webkit-frontend-release.json
+            audit-results/ios-webkit-live-proof.json
+            audit-results/ios-webkit-live-proof.png
+            audit-results/ios-webkit-live-proof-intake-top.png
+            audit-results/ios-webkit-live-proof-intake-bottom.png
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Require passing iOS evidence contract
+        if: always()
+        run: |
+          set -euo pipefail
+          test "${{ steps.ios_proof.outcome }}" = "success"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("audit-results/ios-webkit-live-proof.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "passed"
+          assert payload["expected_sha"] == "${{ github.sha }}"
+          assert payload["browser_engine"] == "webkit"
+          assert payload["webkit_intake_paint_stability_verified"] is True
+          intake = payload["webkit_intake_paint"]
+          assert intake["optional_evidence_editor_suppressed"] is True
+          assert intake["authorization_reachable"] is True
+          assert intake["assessment_action_reachable"] is True
+          assert intake["ancestor_clipping_absent"] is True
+          assert intake["page_crash_absent"] is True
+          assert payload["start_request_count"] == 1
+          assert payload["duplicate_intake_absent"] is True
+          assert payload["running_restart_recovery_verified"] is True
+          assert payload["terminal_restart_recovery_verified"] is True
+          assert payload["terminal_manifest_bounded"] is True
+          assert payload["terminal_before_reload"]["commit_sha"] == payload["expected_sha"]
+          assert "Awaiting" not in payload["terminal_before_reload"]["score"]
+          assert payload["terminal_after_reload"]["pdf_enabled"] == "true"
+          PY
+
+      - name: Publish successful iOS proof status
+        if: success()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/ios-status.json
+          import json, os
+          print(json.dumps({
+              "state": "success",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "iPhone WebKit painted intake, recovered one run, and exposed the scored report",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/ios-status.json
+
+      - name: Publish failed iOS proof status
+        if: failure()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/ios-status.json
+          import json, os
+          print(json.dumps({
+              "state": "failure",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "iPhone WebKit paint or exact-run recovery proof failed",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/ios-status.json

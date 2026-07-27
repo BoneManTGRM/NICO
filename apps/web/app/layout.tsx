@@ -8,6 +8,7 @@ import "../styles/professional-polish.css";
 import "../styles/site-polish-v2.css";
 import "../styles/workflow-simplification.css";
 import "../styles/assessment-terminal-mobile.css";
+import "../styles/assessment-mobile-stability.css";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";

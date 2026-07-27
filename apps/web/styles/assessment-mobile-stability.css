@@ -1,0 +1,120 @@
+/*
+ * Mobile assessment stability boundary.
+ *
+ * iOS WebKit has repeatedly terminated or stopped painting the assessment page
+ * while large translucent surfaces, optional evidence editors, stage histories,
+ * and scorecards are mounted together. The phone workspace is intentionally a
+ * lightweight intake, progress, recovery, and report-download surface. Canonical
+ * evidence and report detail remain in the exact-run artifacts and desktop UI.
+ */
+
+@media (max-width: 760px) {
+  html,
+  body,
+  body.nico-app {
+    min-height: 100%;
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #030712 !important;
+  }
+
+  body.nico-app,
+  body.nico-app * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  .global-nav {
+    position: relative;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #020617 !important;
+  }
+
+  main[data-workspace="assessment"],
+  main[data-workspace="assessment"] > section,
+  main[data-workspace="assessment"] section#assessment,
+  main[data-workspace="assessment"] section#assessment > div,
+  main[data-workspace="assessment"] [class*="formSurface"] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    contain: none !important;
+    content-visibility: visible !important;
+    transform: none !important;
+    filter: none !important;
+    will-change: auto !important;
+  }
+
+  main[data-workspace="assessment"] [class*="hero"],
+  main[data-workspace="assessment"] [class*="panel"],
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"],
+  main[data-workspace="assessment"] [class*="moduleEditor"],
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+  }
+
+  main[data-workspace="assessment"] [class*="hero"] {
+    background: #07101f !important;
+  }
+
+  main[data-workspace="assessment"] [class*="panel"],
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"] {
+    background: #080f1e !important;
+  }
+
+  /* Human evidence is optional and is the largest intake paint surface. Keep its
+     identity and count visible, but do not mount its editor as part of the phone
+     assessment path. It remains available from the full desktop workspace. */
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"] > label,
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"] > div:nth-of-type(2) {
+    display: none !important;
+  }
+
+  main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]::after {
+    display: block;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    color: #94a3b8;
+    content: "Optional evidence entry is disabled in the mobile stability view. The repository assessment can continue without it; use the desktop workspace when human evidence must be attached.";
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  html[lang^="es"] main[data-workspace="assessment"] section[aria-labelledby="strategic-evidence-title"]::after {
+    content: "La captura de evidencia opcional está desactivada en la vista móvil estable. La evaluación del repositorio puede continuar sin ella; usa la vista de escritorio cuando sea necesario adjuntar evidencia humana.";
+  }
+
+  /* The live status cards above this section already expose the active stage and
+     progress. Avoid mounting a growing 23-stage evidence timeline on a phone. */
+  main[data-workspace="assessment"] details[class*="stageHistory"] {
+    display: none !important;
+  }
+
+  /* Mobile is the operational monitor and artifact-delivery surface. Detailed
+     scorecards remain in the exact-run PDF/JSON and desktop workspace. */
+  main[data-workspace="assessment"] [data-assessment-report-ready="true"] .results-grid {
+    display: none !important;
+  }
+
+  main[data-workspace="assessment"] .help-details,
+  main[data-workspace="assessment"] article,
+  main[data-workspace="assessment"] [class*="moduleEditor"] {
+    box-shadow: none !important;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-primary-action="true"],
+  main[data-workspace="assessment"] [data-assessment-authorization="true"],
+  main[data-workspace="assessment"] [data-assessment-report-actions="true"] {
+    position: relative;
+    z-index: 1;
+  }
+}
