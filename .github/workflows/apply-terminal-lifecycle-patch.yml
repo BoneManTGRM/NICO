@@ -1,0 +1,43 @@
+name: Apply terminal lifecycle patch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/terminal-run-lifecycle-and-scroll-stability'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply exact lifecycle repair
+        run: python scripts/apply_terminal_lifecycle_patch.py
+
+      - name: Verify patched source contracts
+        run: |
+          python -m py_compile scripts/mobile_restart_live_acceptance_v1.py
+          python -m py_compile tests/test_terminal_run_lifecycle_and_scroll_v1.py
+          grep -q 'function startNew(): void' apps/web/app/assessment/useAssessmentRun.ts
+          grep -q 'data-assessment-terminal-actions="true"' apps/web/app/assessment/AssessmentWorkspace.tsx
+
+      - name: Commit implementation to the PR branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/app/assessment/useAssessmentRun.ts \
+            apps/web/app/assessment/AssessmentWorkspace.tsx \
+            apps/web/styles/assessment-mobile-stability.css \
+            scripts/mobile_restart_live_acceptance_v1.py \
+            tests/test_terminal_run_lifecycle_and_scroll_v1.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Apply terminal lifecycle and scroll stability"
+          git push origin HEAD:${{ github.head_ref }}
