@@ -24,7 +24,13 @@ REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
 ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
-TERMINAL_PHASES = {"Expert review required", "Se requiere revisión experta"}
+TERMINAL_PHASES = {
+    "Internal review required",
+    "Revisión interna requerida",
+    # Historical labels remain accepted for exact-run compatibility with older deployments.
+    "Expert review required",
+    "Se requiere revisión experta",
+}
 
 
 def _bounded(value: Any, limit: int = 500) -> str:
@@ -49,12 +55,15 @@ def _ui_state(page: Page) -> dict[str, str]:
               markdown_enabled: 'false', pdf_enabled: 'false', page_url: window.location.href,
             };
           }
-          const articles = Array.from(section.querySelectorAll('article'));
+          // The compact iPhone result tree stores technical identity inside
+          // <details><p> rows while desktop scorecards use <article> rows.
+          const rows = Array.from(section.querySelectorAll('article, details p'));
           const find = labels => {
-            const article = articles.find(item => labels.includes(compact(item.querySelector('b')?.textContent)));
-            const code = article?.querySelector('code');
-            return compact(code?.getAttribute('title') || code?.textContent || article?.querySelector('span')?.textContent);
+            const row = rows.find(item => labels.includes(compact(item.querySelector('b')?.textContent)));
+            const code = row?.querySelector('code');
+            return compact(code?.getAttribute('title') || code?.textContent || row?.querySelector('span')?.textContent);
           };
+          const headerRunId = compact(section.querySelector('.section-head h2')?.getAttribute('title'));
           const actions = section.querySelector('[data-assessment-report-actions="true"]');
           const buttons = Array.from(actions?.querySelectorAll('button') || []);
           const markdown = buttons.find(button => /markdown/i.test(button.textContent || ''));
@@ -62,10 +71,10 @@ def _ui_state(page: Page) -> dict[str, str]:
           const rect = actions?.getBoundingClientRect();
           return {
             phase: compact(section.querySelector('.section-head span')?.textContent),
-            run_id: find(['Run ID', 'ID de ejecución']),
+            run_id: find(['Run ID', 'ID de ejecución']) || headerRunId,
             commit_sha: find(['Exact commit', 'Immutable commit', 'Commit exacto', 'Commit inmutable']),
             report: find(['Assessment package', 'Report', 'Paquete de evaluación', 'Informe']),
-            review: find(['Expert review', 'Human review', 'Revisión experta', 'Revisión humana']),
+            review: find(['Internal review', 'Expert review', 'Human review', 'Revisión interna', 'Revisión experta', 'Revisión humana']),
             score: find(['Technical maturity', 'Technical score', 'Madurez técnica', 'Puntuación técnica']),
             report_actions_present: actions ? 'true' : 'false',
             report_actions_visible: actions && rect && rect.width > 0 && rect.height > 0 ? 'true' : 'false',
