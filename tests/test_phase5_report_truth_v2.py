@@ -103,7 +103,9 @@ def test_v2_does_not_upgrade_legacy_complete_without_proof_fields() -> None:
     assert record["execution_complete"] is False
     assert "bandit" not in result["evidence_health_summary"]["completed_scanners"]
     assert "Failed static tools: bandit" in static["findings"]
-    assert "bandit evidence unavailable" in static["unavailable"]
+    assert static["unavailable"] == [
+        "bandit exact-SHA evidence remains completed: completion requirements were not met"
+    ]
 
 
 def test_v2_missing_scanner_record_is_not_reported_as_an_improvement() -> None:
