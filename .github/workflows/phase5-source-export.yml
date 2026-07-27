@@ -21,6 +21,7 @@ jobs:
       - name: Create exact-source archive
         run: |
           set -euo pipefail
+          archive="/tmp/phase5-exact-source-${GITHUB_SHA}.tar.gz"
           tar \
             --exclude=.git \
             --exclude=node_modules \
@@ -28,8 +29,9 @@ jobs:
             --exclude=.venv \
             --exclude=venv \
             --exclude='__pycache__' \
-            -czf phase5-exact-source-${GITHUB_SHA}.tar.gz .
-          sha256sum phase5-exact-source-${GITHUB_SHA}.tar.gz > phase5-exact-source-${GITHUB_SHA}.sha256
+            -czf "$archive" .
+          cp "$archive" "phase5-exact-source-${GITHUB_SHA}.tar.gz"
+          sha256sum "phase5-exact-source-${GITHUB_SHA}.tar.gz" > "phase5-exact-source-${GITHUB_SHA}.sha256"
 
       - name: Upload exact source archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
