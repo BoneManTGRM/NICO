@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import io
 
-from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -85,12 +84,15 @@ def test_scores_are_derived_as_87_and_85_from_the_control_evidence() -> None:
 
 def test_complexity_and_evidence_limitations_are_not_misrepresented_as_p1_defects() -> None:
     result = apply_canonical_score_truth(_assessment())
-    findings = result["findings_register"]
+    findings = {item["title"]: item for item in result["findings_register"]}
 
-    assert findings[0]["priority"] == "P2"
-    assert findings[1]["priority"] == "P2"
-    assert findings[1]["release_blocker"] is True
-    assert "not proof of a severe client-system defect" in findings[1]["impact"]
+    complexity = findings["Complexity hotspot: build_report"]
+    evidence = findings["bandit evidence unavailable"]
+    assert complexity["priority"] == "P2"
+    assert evidence["priority"] == "P2"
+    assert evidence["release_blocker"] is True
+    assert evidence["assessment_blocker"] is True
+    assert "not proof of a severe client-system defect" in evidence["impact"]
 
 
 def test_final_report_normalizes_filename_and_blocks_cross_format_score_drift() -> None:
