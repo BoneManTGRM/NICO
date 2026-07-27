@@ -5,6 +5,7 @@ from nico.ci_history_classification_v1 import install_ci_history_classification_
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
+from nico.phase5_report_truth_v1 import install_phase5_report_truth_v1
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -12,13 +13,14 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v9"
+VERSION = "nico.api.terminal_authority_bootstrap.v10"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
 CI_HISTORY_CLASSIFICATION = install_ci_history_classification_v1()
 WORKFLOW_SUPPLY_CHAIN_POLICY = install_workflow_supply_chain_policy_v1()
+PHASE5_REPORT_TRUTH = install_phase5_report_truth_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
@@ -27,6 +29,7 @@ app.state.nico_exact_scanner_checkout_reconciliation = EXACT_SCANNER_CHECKOUT_RE
 app.state.nico_scanner_evidence_qualification = SCANNER_EVIDENCE_QUALIFICATION
 app.state.nico_ci_history_classification = CI_HISTORY_CLASSIFICATION
 app.state.nico_workflow_supply_chain_policy = WORKFLOW_SUPPLY_CHAIN_POLICY
+app.state.nico_phase5_report_truth = PHASE5_REPORT_TRUTH
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -109,6 +112,25 @@ if WORKFLOW_SUPPLY_CHAIN_POLICY.get("dependabot_cooldown_required") is not True:
 if WORKFLOW_SUPPLY_CHAIN_POLICY.get("dependabot_grouping_required") is not True:
     raise RuntimeError("Dependabot grouping is not required")
 
+if PHASE5_REPORT_TRUTH.get("status") != "installed":
+    raise RuntimeError(f"Phase 5 report truth did not install: {PHASE5_REPORT_TRUTH}")
+if PHASE5_REPORT_TRUTH.get("executable_code_risk_scan") is not True:
+    raise RuntimeError("Phase 5 does not distinguish executable code from scanner configuration literals")
+if PHASE5_REPORT_TRUTH.get("scanner_report_reconciliation") is not True:
+    raise RuntimeError("Phase 5 does not reconcile report scanner status to retained exact-SHA artifacts")
+if PHASE5_REPORT_TRUTH.get("ci_history_report_integration") is not True:
+    raise RuntimeError("Phase 5 does not expose classified CI history in the report")
+if PHASE5_REPORT_TRUTH.get("baseline_delta_section") is not True:
+    raise RuntimeError("Phase 5 does not render a verified baseline delta section")
+if PHASE5_REPORT_TRUTH.get("scores_change_only_from_retained_evidence") is not True:
+    raise RuntimeError("Phase 5 can change report scores without retained evidence")
+if PHASE5_REPORT_TRUTH.get("unchanged_risks_remain_visible") is not True:
+    raise RuntimeError("Phase 5 can cosmetically hide unchanged risks")
+if PHASE5_REPORT_TRUTH.get("human_review_required") is not True:
+    raise RuntimeError("Phase 5 report truth must preserve human review")
+if PHASE5_REPORT_TRUTH.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Phase 5 report truth must block unapproved client delivery")
+
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
 if EXPRESS_TERMINAL_AUTHORITY.get("compact_terminal_precedes_rich_record") is not True:
@@ -145,6 +167,7 @@ __all__ = [
     "SCANNER_EVIDENCE_QUALIFICATION",
     "CI_HISTORY_CLASSIFICATION",
     "WORKFLOW_SUPPLY_CHAIN_POLICY",
+    "PHASE5_REPORT_TRUTH",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",
