@@ -20,6 +20,15 @@ _STATUS_ALIASES = {
     "timed_out": "timeout",
     "incomplete": "partial",
 }
+_STALE_STATUS_MARKERS = (
+    "failed",
+    "partial",
+    "unavailable",
+    "incomplete",
+    "did not produce",
+    "not complete",
+    "execution coverage",
+)
 
 
 def _find_commit(value: Any) -> str:
@@ -136,15 +145,69 @@ def _phase5_outcomes_evidence_only(
     }
 
 
+def _remove_stale_scanner_status_text(assessment: dict[str, Any]) -> None:
+    health = assessment.get("evidence_health_summary")
+    if not isinstance(health, dict):
+        return
+    records = health.get("scanner_records")
+    if not isinstance(records, dict):
+        return
+    completed = {
+        tool
+        for tool, record in records.items()
+        if isinstance(record, dict) and record.get("execution_complete") is True
+    }
+    if not completed:
+        return
+
+    for section in assessment.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for field in ("evidence", "findings", "unavailable"):
+            values = section.get(field)
+            if not isinstance(values, list):
+                continue
+            retained: list[Any] = []
+            for value in values:
+                text = base._text(value).casefold()
+                stale = any(tool in text for tool in completed) and any(
+                    marker in text for marker in _STALE_STATUS_MARKERS
+                )
+                if not stale:
+                    retained.append(value)
+            section[field] = retained
+
+        category = {
+            "dependency_health": "dependency",
+            "static_analysis": "static",
+            "secrets_review": "secret",
+        }.get(str(section.get("id") or ""))
+        if not category:
+            continue
+        category_records = [
+            record
+            for record in records.values()
+            if isinstance(record, dict) and record.get("category") == category
+        ]
+        if category_records and all(record.get("execution_complete") is True for record in category_records):
+            section["scanner_execution_status"] = "complete_exact_sha"
+            section.setdefault("evidence", []).append(
+                "All observed required scanners in this control completed with retained exact-SHA artifacts."
+            )
+
+
 def reconcile_phase5_report_truth(
     assessment: dict[str, Any],
     stage_results: dict[str, Any],
 ) -> dict[str, Any]:
     target_commit = _find_commit(stage_results)
     if not target_commit:
-        return _ORIGINAL_RECONCILE(assessment, stage_results)
-    enriched = {"phase5_exact_identity": {"commit_sha": target_commit}, **deepcopy(stage_results)}
-    return _ORIGINAL_RECONCILE(assessment, enriched)
+        result = _ORIGINAL_RECONCILE(assessment, stage_results)
+    else:
+        enriched = {"phase5_exact_identity": {"commit_sha": target_commit}, **deepcopy(stage_results)}
+        result = _ORIGINAL_RECONCILE(assessment, enriched)
+    _remove_stale_scanner_status_text(result)
+    return result
 
 
 def install_phase5_report_truth_v2() -> dict[str, Any]:
@@ -162,6 +225,7 @@ def install_phase5_report_truth_v2() -> dict[str, Any]:
             "plain_stage_commit_propagation": True,
             "missing_scanner_records_are_not_changes": True,
             "only_observed_exact_sha_scanner_deltas_rendered": True,
+            "stale_scanner_failure_text_removed_only_after_proof": True,
         }
     )
     return result
