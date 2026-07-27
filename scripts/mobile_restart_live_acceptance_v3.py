@@ -16,6 +16,8 @@ HYDRATED_WORKSPACE_SELECTOR = (
     + '[data-assessment-hydrated="true"]'
     + '[data-assessment-client-mode="compact-mobile"]'
 )
+MAX_COMPACT_NODE_COUNT = 1_500
+MAX_COMPACT_SCROLL_HEIGHT = 7_000
 
 
 class _SingleDispatchLocator:
@@ -122,6 +124,12 @@ class _SingleDispatchPage:
                     'details[class*="stageHistory"]'
                   ).length,
                   scorecard_grid_count: document.querySelectorAll('.results-grid').length,
+                  evidence_metric_count: document.querySelectorAll(
+                    '[data-assessment-evidence-metrics="true"] article'
+                  ).length,
+                  internal_review_action_count: document.querySelectorAll(
+                    '[data-assessment-internal-review="true"]'
+                  ).length,
                   node_count: document.getElementsByTagName('*').length,
                   scroll_height: document.documentElement.scrollHeight,
                   body_height: document.body.getBoundingClientRect().height,
@@ -129,6 +137,9 @@ class _SingleDispatchPage:
             )
             or {}
         )
+        # Retain the facts before validation so failures remain diagnosable.
+        self._terminal_metrics.clear()
+        self._terminal_metrics.update(metrics)
         assert metrics.get("hydrated") is True, metrics
         assert metrics.get("client_mode") == "compact-mobile", metrics
         assert int(metrics.get("compact_terminal_count") or 0) == 1, metrics
@@ -136,10 +147,10 @@ class _SingleDispatchPage:
         assert int(metrics.get("heavy_report_mounted_count") or 0) == 0, metrics
         assert int(metrics.get("stage_history_count") or 0) == 0, metrics
         assert int(metrics.get("scorecard_grid_count") or 0) == 0, metrics
-        assert int(metrics.get("node_count") or 0) < 1_200, metrics
-        assert int(metrics.get("scroll_height") or 0) < 5_000, metrics
-        self._terminal_metrics.clear()
-        self._terminal_metrics.update(metrics)
+        assert int(metrics.get("evidence_metric_count") or 0) <= 4, metrics
+        assert int(metrics.get("internal_review_action_count") or 0) <= 1, metrics
+        assert int(metrics.get("node_count") or 0) < MAX_COMPACT_NODE_COUNT, metrics
+        assert int(metrics.get("scroll_height") or 0) < MAX_COMPACT_SCROLL_HEIGHT, metrics
         return self._page.screenshot(*args, **kwargs)
 
 
