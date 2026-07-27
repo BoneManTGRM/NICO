@@ -1,0 +1,42 @@
+name: Diagnose PR 879 frontend
+
+on:
+  push:
+    branches:
+      - feature/internal-review-and-evidence-truth
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm install
+      - name: Capture TypeScript diagnostics
+        id: typescript
+        working-directory: apps/web
+        shell: bash
+        run: |
+          set +e
+          npm run lint > ../../pr879-typescript.log 2>&1
+          code=$?
+          cat ../../pr879-typescript.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr879-typescript-diagnostics
+          path: pr879-typescript.log
+          retention-days: 1
+      - name: Fail when TypeScript failed
+        run: test "${{ steps.typescript.outputs.exit_code }}" = "0"
