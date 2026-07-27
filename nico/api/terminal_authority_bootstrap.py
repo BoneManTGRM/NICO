@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
+from nico.ci_history_classification_v1 import install_ci_history_classification_v1
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
 from nico.exact_commit_binding import install_exact_commit_binding
@@ -10,17 +11,19 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v7"
+VERSION = "nico.api.terminal_authority_bootstrap.v8"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
+CI_HISTORY_CLASSIFICATION = install_ci_history_classification_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
 app.state.nico_exact_scanner_checkout_reconciliation = EXACT_SCANNER_CHECKOUT_RECONCILIATION
 app.state.nico_scanner_evidence_qualification = SCANNER_EVIDENCE_QUALIFICATION
+app.state.nico_ci_history_classification = CI_HISTORY_CLASSIFICATION
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -79,6 +82,19 @@ if SCANNER_EVIDENCE_QUALIFICATION.get("missing_evidence_is_not_clean") is not Tr
 if SCANNER_EVIDENCE_QUALIFICATION.get("client_delivery_blocked_when_incomplete") is not True:
     raise RuntimeError("Scanner evidence qualification does not block incomplete client delivery")
 
+if CI_HISTORY_CLASSIFICATION.get("status") != "installed":
+    raise RuntimeError(f"CI history classification did not install: {CI_HISTORY_CLASSIFICATION}")
+if CI_HISTORY_CLASSIFICATION.get("deterministic_classification") is not True:
+    raise RuntimeError("CI history outcomes are not classified deterministically")
+if CI_HISTORY_CLASSIFICATION.get("historical_and_current_health_separated") is not True:
+    raise RuntimeError("Historical workflow reliability is not separated from current branch health")
+if CI_HISTORY_CLASSIFICATION.get("unknown_metadata_fails_closed") is not True:
+    raise RuntimeError("Unknown CI metadata does not fail closed for review")
+if CI_HISTORY_CLASSIFICATION.get("cancellations_excluded_from_failure_rate") is not True:
+    raise RuntimeError("Expected cancellations can still inflate the genuine failure rate")
+if CI_HISTORY_CLASSIFICATION.get("provenance_retained") is not True:
+    raise RuntimeError("CI history classification does not retain run provenance")
+
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
 if EXPRESS_TERMINAL_AUTHORITY.get("compact_terminal_precedes_rich_record") is not True:
@@ -113,6 +129,7 @@ __all__ = [
     "EXACT_COMMIT_BINDING",
     "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
     "SCANNER_EVIDENCE_QUALIFICATION",
+    "CI_HISTORY_CLASSIFICATION",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",
