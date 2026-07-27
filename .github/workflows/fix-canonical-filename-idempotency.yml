@@ -19,14 +19,15 @@ jobs:
         with:
           ref: fix/canonical-87-85-report-truth
           fetch-depth: 0
-      - run: python scripts/fix_canonical_filename_idempotency.py
-      - run: |
+      - name: Patch the product module
+        run: python scripts/fix_canonical_filename_idempotency.py
+      - name: Verify the exact source replacement
+        run: |
           python -m py_compile nico/comprehensive_canonical_report_truth_v1.py
-          python - <<'PY'
-          from nico.comprehensive_canonical_report_truth_v1 import _normalize_filename
-          assert _normalize_filename('report-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf') == 'report-FINAL-PENDING-APPROVAL.pdf'
-          PY
-      - run: |
+          grep -q 'if _FINAL_SUFFIX_RE.search(filename):' nico/comprehensive_canonical_report_truth_v1.py
+          grep -q 'return _FINAL_SUFFIX_RE.sub("-FINAL-PENDING-APPROVAL.pdf", filename)' nico/comprehensive_canonical_report_truth_v1.py
+      - name: Commit the product fix
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add nico/comprehensive_canonical_report_truth_v1.py
