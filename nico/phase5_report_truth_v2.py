@@ -59,8 +59,7 @@ def _normalized_scanner_record_v2(
     original_status = str(payload.get("status") or "").strip().casefold()
     normalized_payload["status"] = _STATUS_ALIASES.get(original_status, original_status)
 
-    # Current structured execution records may use `complete` but preserve the
-    # underlying canonical proof fields. Never infer proof fields from status alone.
+    # Status aliases are normalized, but proof fields are never inferred from status.
     record = _ORIGINAL_NORMALIZED_SCANNER_RECORD(
         tool,
         normalized_payload,
@@ -70,6 +69,62 @@ def _normalized_scanner_record_v2(
     )
     record["source_status"] = original_status or "unknown"
     return record
+
+
+def _phase5_outcomes_evidence_only(
+    assessment: dict[str, Any],
+    scanners: dict[str, dict[str, Any]],
+    ci_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current_scanners = {
+        tool: record["status"] if not record["execution_complete"] else "completed"
+        for tool, record in sorted(scanners.items())
+    }
+    scanner_changes = {
+        tool: {"before": before, "after": current_scanners[tool]}
+        for tool, before in base.BASELINE["scanner_statuses"].items()
+        if tool in current_scanners and current_scanners[tool] != before
+    }
+    unobserved = sorted(tool for tool in base.BASELINE["scanner_statuses"] if tool not in current_scanners)
+
+    current_complexity = base._complexity_snapshot(assessment)
+    complexity_changes = {
+        name: {
+            "before": before,
+            "after": current_complexity[name],
+            "delta": current_complexity[name] - before,
+        }
+        for name, before in base.BASELINE["complexity"].items()
+        if name in current_complexity and current_complexity[name] != before
+    }
+    tls_open = any(
+        "tls_verify_disabled" in base._text(item.get("title")).casefold()
+        for item in assessment.get("findings_register") or []
+        if isinstance(item, dict)
+    )
+    health = assessment.get("evidence_health_summary")
+    current_commit = health.get("target_commit_sha") if isinstance(health, dict) else ""
+    return {
+        "schema": VERSION,
+        "baseline_commit_sha": base.BASELINE["commit_sha"],
+        "current_commit_sha": current_commit,
+        "scanner_status_changes": scanner_changes,
+        "current_scanner_statuses": current_scanners,
+        "unobserved_baseline_scanners": unobserved,
+        "missing_scanner_records_count_as_changes": False,
+        "ci_history_classification_visible": ci_summary is not None,
+        "tls_verify_disabled_finding_open": tls_open,
+        "complexity_changes": complexity_changes,
+        "unchanged_complexity_hotspots": sorted(
+            name
+            for name, before in base.BASELINE["complexity"].items()
+            if current_complexity.get(name) == before
+        ),
+        "truth_rule": (
+            "Only exact-SHA retained evidence changes report outcomes; missing records are not improvements, "
+            "and unchanged risks remain visible."
+        ),
+    }
 
 
 def reconcile_phase5_report_truth(
@@ -85,6 +140,7 @@ def reconcile_phase5_report_truth(
 
 def install_phase5_report_truth_v2() -> dict[str, Any]:
     base._normalized_scanner_record = _normalized_scanner_record_v2
+    base._phase5_outcomes = _phase5_outcomes_evidence_only
     base.reconcile_phase5_report_truth = reconcile_phase5_report_truth
     result = dict(base.install_phase5_report_truth_v1())
     result.update(
@@ -93,6 +149,8 @@ def install_phase5_report_truth_v2() -> dict[str, Any]:
             "version": VERSION,
             "scanner_status_aliases_normalized": True,
             "nested_exact_commit_discovery": True,
+            "missing_scanner_records_are_not_changes": True,
+            "only_observed_exact_sha_scanner_deltas_rendered": True,
         }
     )
     return result
