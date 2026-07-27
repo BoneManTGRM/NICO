@@ -3,6 +3,7 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import styles from "./assessment.module.css";
 import workspaceStyles from "./engagementWorkspace.module.css";
+import mobileStyles from "./compactMobileAssessment.module.css";
 import scoreStyles from "./scorecard.module.css";
 import {copyFor} from "./assessmentCopy";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./assessmentModel";
 import type {Copy, Locale} from "./assessmentTypes";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
+import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
 
 function IdentifierValue({value, fallback, copy}: {value?: string; fallback: string; copy: Copy}) {
@@ -148,6 +150,7 @@ function Scorecard({sections, copy}: {sections: NonNullable<ReturnType<typeof as
 
 export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) {
   const copy = copyFor(locale);
+  const {hydrated, compactMobile} = useAssessmentClientMode();
   const controller = useAssessmentRun(locale);
   const {
     service,
@@ -223,6 +226,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     ? locale === "es-MX" ? "Preparando el archivo…" : "Preparing file…"
     : "";
   const terminalView = ["review_required", "complete", "failed", "timed_out"].includes(phase);
+  const mobileEvidenceNote = locale === "es-MX"
+    ? "La evidencia humana opcional se agrega desde la vista de escritorio. La evaluación del repositorio puede continuar sin ella."
+    : "Optional human evidence is added from the desktop workspace. The repository assessment can continue without it.";
 
   async function copyMarkdown(): Promise<void> {
     if (!markdownAvailable || artifactAction) return;
@@ -292,6 +298,16 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     }
   }
 
+  const reportActions = <div
+    className={`report-actions ${workspaceStyles.reportActionBar}`}
+    data-assessment-report-actions="true"
+    data-assessment-report-ready={reportReady ? "true" : "false"}
+  >
+    <button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button>
+    <button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{copy.download}</button>
+    {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
+  </div>;
+
   return <main
     className={`shell ${workspaceStyles.workspace}`}
     data-workspace="assessment"
@@ -300,12 +316,16 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     data-customer-facing-assessment="comprehensive"
     data-assessment-copy-contract="expert-engagement-v2"
     data-assessment-locale={locale}
+    data-assessment-hydrated={hydrated ? "true" : "false"}
+    data-assessment-client-mode={compactMobile ? "compact-mobile" : "full"}
   >
     <section className={`hero ${workspaceStyles.hero}`}>
       <p className="eyebrow">{copy.heroEyebrow}</p>
       <h1>{copy.title}</h1>
-      <p className={workspaceStyles.heroLead}>{copy.lead}</p>
-      <ul className={workspaceStyles.trustRow}>{copy.trustIndicators.map((item: string) => <li key={item}>{item}</li>)}</ul>
+      {!compactMobile ? <>
+        <p className={workspaceStyles.heroLead}>{copy.lead}</p>
+        <ul className={workspaceStyles.trustRow}>{copy.trustIndicators.map((item: string) => <li key={item}>{item}</li>)}</ul>
+      </> : null}
       <p className={workspaceStyles.heroBoundary}>{copy.heroBoundary}</p>
     </section>
 
@@ -317,8 +337,10 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         </div>
         <span className="status gray">{coverageLabel}</span>
       </div>
-      <p className={workspaceStyles.sectionSummary}>{serviceCopy.summary}</p>
-      <details className="help-details"><summary>{serviceCopy.instructionsTitle}</summary><ul>{serviceCopy.instructions.map((item: string) => <li key={item}>{item}</li>)}</ul></details>
+      {!compactMobile ? <>
+        <p className={workspaceStyles.sectionSummary}>{serviceCopy.summary}</p>
+        <details className="help-details"><summary>{serviceCopy.instructionsTitle}</summary><ul>{serviceCopy.instructions.map((item: string) => <li key={item}>{item}</li>)}</ul></details>
+      </> : null}
       <p className={workspaceStyles.scopeNotice}>{copy.warning}</p>
 
       <div className={workspaceStyles.formSurface}>
@@ -330,12 +352,20 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <label className={workspaceStyles.secondaryField}>{copy.project}<input value={project} onChange={(event) => setProject(event.target.value)} disabled={running} /></label>
         </div>
 
-        <StrategicEvidenceForm
+        {compactMobile ? <section
+          className={mobileStyles.mobileEvidenceBoundary}
+          aria-label={locale === "es-MX" ? "Evidencia humana opcional" : "Optional human evidence"}
+          data-mobile-evidence-boundary="true"
+          data-evidence-editor-mounted="false"
+        >
+          <strong>{locale === "es-MX" ? "Evidencia humana opcional" : "Optional human evidence"}</strong>
+          <p data-mobile-evidence-note="true">{mobileEvidenceNote}</p>
+        </section> : <StrategicEvidenceForm
           locale={locale}
           value={humanEvidence}
           onChange={setHumanEvidence}
           disabled={running}
-        />
+        />}
 
         <label className={workspaceStyles.authorizationPanel}>
           <input
@@ -364,7 +394,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           >
             {running ? copy.phases[phase] : copy.run}
           </button>
-          <p className={workspaceStyles.actionNote}>{copy.preflightNote}</p>
+          {!compactMobile ? <p className={workspaceStyles.actionNote}>{copy.preflightNote}</p> : null}
         </div>
 
         {preflightIssue ? <div
@@ -399,7 +429,6 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <span className={statusClass(phase)}>{copy.phases[phase]}</span>
       </div>
 
-      {/* issue ? <div legacy source contract; no-run issues now remain beside the action. */}
       {runIssue ? <div
         ref={issueRef}
         className={`${workspaceStyles.issueCard} ${runIssue.kind === "run_failed" ? workspaceStyles.issueFailed : ""}`}
@@ -424,21 +453,44 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <span><b>{copy.stage}</b>{copy.stageLabels[stageId] || stageId.replaceAll("_", " ") || copy.phases[phase]}</span>
           <span><b>{copy.progress}</b>{Math.round(percent)}%</span>
           <span><b>{copy.elapsed}</b>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
-          <span><b>{copy.checks}</b>{attempt}</span>
+          {!compactMobile ? <span><b>{copy.checks}</b>{attempt}</span> : null}
         </div>
         <div className={styles.progressBar} role="progressbar" aria-label={`${copy.stageLabels[stageId] || stageId || copy.phases[phase]} ${copy.progress}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{width: `${Math.max(2, Math.min(100, percent))}%`}} /></div>
       </> : null}
 
       {result ? <div className={workspaceStyles.resultArea} data-assessment-report-ready={reportReady ? "true" : "false"}>
-        <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
-        <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
-        <div className={`report-actions ${workspaceStyles.reportActionBar}`} data-assessment-report-actions="true" data-assessment-report-ready={reportReady ? "true" : "false"}><button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button><button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{copy.download}</button>{copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}</div>
-        {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
-        {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
-        {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
-        {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} /></details> : null}
-        <Scorecard sections={assessment?.sections} copy={copy} />
-        {assessment?.unavailable_data_notes?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({assessment.unavailable_data_notes.length})</summary><List items={assessment.unavailable_data_notes} empty={copy.notVerified} /></details> : null}
+        {compactMobile ? <div
+          className={mobileStyles.compactTerminal}
+          data-mobile-compact-terminal="true"
+          data-mobile-heavy-report-mounted="false"
+        >
+          <div className={mobileStyles.compactStatusGrid}>
+            <article><b>{copy.report}</b><span>{reportStatus}</span></article>
+            <article><b>{copy.review}</b><span>{reviewStatus}</span></article>
+            <article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article>
+            <article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article>
+            <article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article>
+          </div>
+          {reportActions}
+          {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
+          {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
+          <details className={mobileStyles.compactIdentity}>
+            <summary>{locale === "es-MX" ? "Identidad técnica" : "Technical identity"}</summary>
+            <p><b>{copy.runId}</b><code title={String(result.run_id || "")}>{compactIdentifier(String(result.run_id || ""), 18, 8)}</code></p>
+            <p><b>{copy.commit}</b><code title={immutableCommit}>{compactIdentifier(immutableCommit, 18, 8)}</code></p>
+            <p><b>{copy.scanner}</b><span>{scannerStatus}</span></p>
+          </details>
+        </div> : <div data-full-assessment-details="true">
+          <div className="grid four target-grid"><article><b>{copy.runId}</b><IdentifierValue value={result.run_id} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.commit}</b><IdentifierValue value={immutableCommit} fallback={copy.notVerified} copy={copy} /></article><article><b>{copy.scanner}</b><span>{scannerStatus}</span></article><article><b>{copy.report}</b><span>{reportStatus}</span></article></div>
+          <div className="grid four target-grid"><article><b>{copy.review}</b><span>{reviewStatus}</span></article><article><b>{copy.technicalMaturityLabel || copy.maturity}</b><span>{technicalValue == null ? maturityStatus : `${maturityStatus} · ${technicalLabel}`}</span></article><article><b>{copy.evidenceAdjustedLabel || "Evidence-adjusted"}</b><span>{adjustedLabel}</span></article><article><b>{copy.durable}</b><span>{persistenceStatus(result.persistence, phase, copy)}</span></article></div>
+          {reportActions}
+          {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
+          {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
+          {assessment?.executive_summary ? <p className="summary-box">{assessment.executive_summary}</p> : null}
+          {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} /></details> : null}
+          <Scorecard sections={assessment?.sections} copy={copy} />
+          {assessment?.unavailable_data_notes?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({assessment.unavailable_data_notes.length})</summary><List items={assessment.unavailable_data_notes} empty={copy.notVerified} /></details> : null}
+        </div>}
       </div> : null}
     </section> : null}
   </main>;
