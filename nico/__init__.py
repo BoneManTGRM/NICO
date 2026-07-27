@@ -98,6 +98,7 @@ from nico.express_pdf_renderer_truth_v21 import install_express_pdf_renderer_tru
 from nico.express_live_renderer_binding_v22 import install_express_live_renderer_binding_v22
 from nico.runtime_deployment_commit_resolution import install_runtime_deployment_commit_resolution
 from nico.comprehensive_mobile_recovery_v1 import install_comprehensive_mobile_recovery_v1
+from nico.comprehensive_mobile_score_projection_v2 import install_comprehensive_mobile_score_projection_v2
 
 install_comprehensive_mobile_recovery_v1()
 install_runtime_deployment_commit_resolution()
@@ -210,5 +211,8 @@ install_express_final_gate_checkpoint_patch()
 # Bind the canonical Express completion and safe-response transport last.
 install_express_backend_completion_transport()
 install_express_run_record_integrity()
+# Resolve the compact terminal assessment only after every report and score
+# installer has finished rebinding canonical report output.
+install_comprehensive_mobile_score_projection_v2()
 
 __version__ = "0.1.0"
