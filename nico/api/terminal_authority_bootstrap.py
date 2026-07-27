@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
+from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -9,15 +10,17 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v6"
+VERSION = "nico.api.terminal_authority_bootstrap.v7"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
+SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
 app.state.nico_exact_commit_binding = EXACT_COMMIT_BINDING
 app.state.nico_exact_scanner_checkout_reconciliation = EXACT_SCANNER_CHECKOUT_RECONCILIATION
+app.state.nico_scanner_evidence_qualification = SCANNER_EVIDENCE_QUALIFICATION
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -63,6 +66,19 @@ if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("human_review_required") is not Tru
 if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("client_delivery_allowed") is not False:
     raise RuntimeError("Exact scanner reconciliation must block client delivery")
 
+if SCANNER_EVIDENCE_QUALIFICATION.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(f"Scanner evidence qualification did not install: {SCANNER_EVIDENCE_QUALIFICATION}")
+if SCANNER_EVIDENCE_QUALIFICATION.get("blocking_tool_diagnostics") is not True:
+    raise RuntimeError("Scanner evidence qualification does not expose blocking-tool diagnostics")
+if SCANNER_EVIDENCE_QUALIFICATION.get("retained_artifact_integrity_required") is not True:
+    raise RuntimeError("Scanner evidence qualification does not require retained artifact integrity")
+if SCANNER_EVIDENCE_QUALIFICATION.get("exact_commit_provenance_required") is not True:
+    raise RuntimeError("Scanner evidence qualification does not require exact-commit provenance")
+if SCANNER_EVIDENCE_QUALIFICATION.get("missing_evidence_is_not_clean") is not True:
+    raise RuntimeError("Scanner evidence qualification can still represent missing evidence as clean")
+if SCANNER_EVIDENCE_QUALIFICATION.get("client_delivery_blocked_when_incomplete") is not True:
+    raise RuntimeError("Scanner evidence qualification does not block incomplete client delivery")
+
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
 if EXPRESS_TERMINAL_AUTHORITY.get("compact_terminal_precedes_rich_record") is not True:
@@ -96,6 +112,7 @@ __all__ = [
     "SCANNER_EVIDENCE_PIPELINE",
     "EXACT_COMMIT_BINDING",
     "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
+    "SCANNER_EVIDENCE_QUALIFICATION",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",
