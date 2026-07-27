@@ -6,7 +6,7 @@ HYDRATION = (ROOT / "apps/web/app/assessment/AssessmentHydrationContract.tsx").r
 
 
 def test_mobile_proof_waits_for_the_canonical_hydration_marker() -> None:
-    assert "data.assessmentHydrated" in HYDRATION
+    assert "workspace.dataset.assessmentHydrated" in HYDRATION
     assert "dataset.assessmentHydrated === 'true'" in PROOF
     assert "def _wait_for_hydration" in PROOF
     assert "self._wait_for_hydration(timeout_ms)" in PROOF
