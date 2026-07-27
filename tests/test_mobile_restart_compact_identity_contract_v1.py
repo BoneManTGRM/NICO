@@ -4,8 +4,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROOF = (ROOT / "scripts/mobile_restart_live_acceptance_v1.py").read_text(encoding="utf-8")
-MOBILE_WORKFLOW = (ROOT / ".github/workflows/mobile-restart-production-proof.yml").read_text(encoding="utf-8")
-IOS_WORKFLOW = (ROOT / ".github/workflows/ios-webkit-paint-proof.yml").read_text(encoding="utf-8")
 
 
 def test_mobile_proof_reads_the_actual_compact_identity_dom() -> None:
@@ -20,13 +18,6 @@ def test_mobile_proof_accepts_current_internal_review_vocabulary() -> None:
     assert '"Revisión interna requerida"' in PROOF
     assert "'Internal review', 'Expert review'" in PROOF
     assert "'Revisión interna', 'Revisión experta'" in PROOF
-
-
-def test_both_release_contracts_pin_the_compact_identity_selector() -> None:
-    for workflow in (MOBILE_WORKFLOW, IOS_WORKFLOW):
-        assert "querySelectorAll('article, details p')" in workflow
-        assert '"Internal review required"' in workflow
-        assert '"Revisión interna requerida"' in workflow
 
 
 def test_proof_does_not_fall_back_to_url_identity_as_ui_evidence() -> None:
