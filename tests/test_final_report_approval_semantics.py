@@ -33,7 +33,8 @@ def test_customer_workspace_uses_final_report_and_contextual_pending_states() ->
     assert 'includes("unavailable")' in text
     assert "running && scannerUnavailable ? copy.awaitingScanner" in text
     assert "running && (!maturityRawStatus || maturityUnavailable)" in text
-    assert "The NICO technical team must review and approve this exact evidence-bound edition before client delivery" in text
+    assert "An authorized NICO reviewer must approve this exact evidence-bound edition before it becomes client-ready" in text
+    assert "Open internal review" in text
 
 
 def test_postgres_persistence_is_durable_when_available_even_with_false_legacy_flag() -> None:
