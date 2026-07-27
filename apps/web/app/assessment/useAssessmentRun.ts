@@ -181,6 +181,60 @@ function issueFor(
   };
 }
 
+type RunIdentityFallback = {
+  runId: string;
+  repository?: string;
+  customerId?: string;
+  projectId?: string;
+  commitSha?: string;
+  evidenceLedgerId?: string;
+};
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function preserveRunIdentity(value: Result, fallback: RunIdentityFallback): Result {
+  const record = objectRecord(value.record);
+  const identity = objectRecord(record.identity);
+  const runId = String(value.run_id || identity.run_id || fallback.runId || "").trim();
+  const repository = String(value.repository || identity.repository || fallback.repository || "").trim();
+  const customerId = String(value.customer_id || identity.customer_id || fallback.customerId || "default_customer").trim();
+  const projectId = String(value.project_id || identity.project_id || fallback.projectId || "default_project").trim();
+  const commitSha = String(
+    value.commit_sha
+      || identity.commit_sha
+      || value.repository_snapshot?.commit_sha
+      || fallback.commitSha
+      || "",
+  ).trim();
+  const evidenceLedgerId = String(value.evidence_ledger_id || identity.evidence_ledger_id || fallback.evidenceLedgerId || "").trim();
+
+  return {
+    ...value,
+    ...(runId ? {run_id: runId} : {}),
+    ...(repository ? {repository} : {}),
+    ...(customerId ? {customer_id: customerId} : {}),
+    ...(projectId ? {project_id: projectId} : {}),
+    ...(commitSha ? {commit_sha: commitSha} : {}),
+    ...(evidenceLedgerId ? {evidence_ledger_id: evidenceLedgerId} : {}),
+    record: {
+      ...record,
+      identity: {
+        ...identity,
+        ...(runId ? {run_id: runId} : {}),
+        ...(repository ? {repository} : {}),
+        ...(customerId ? {customer_id: customerId} : {}),
+        ...(projectId ? {project_id: projectId} : {}),
+        ...(commitSha ? {commit_sha: commitSha} : {}),
+        ...(evidenceLedgerId ? {evidence_ledger_id: evidenceLedgerId} : {}),
+      },
+    },
+  };
+}
+
 function normalizePersistedRun(value: unknown): PersistedRun | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -370,20 +424,35 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
   }
 
-  async function recoverRun(runId: string): Promise<Result | null> {
+  async function recoverRun(runId: string, fallback: Partial<RunIdentityFallback> = {}): Promise<Result | null> {
     try {
-      return await requestWithRetry(
+      const recovered = await requestWithRetry(
         `/assessment/comprehensive-run/${encodeURIComponent(runId)}`,
         {method: "GET"},
         copy,
       );
+      return preserveRunIdentity(recovered, {
+        runId,
+        repository: fallback.repository,
+        customerId: fallback.customerId,
+        projectId: fallback.projectId,
+        commitSha: fallback.commitSha,
+        evidenceLedgerId: fallback.evidenceLedgerId,
+      });
     } catch {
       return null;
     }
   }
 
   async function continueRun(initial: Result, scope: Scope, token: number, startedAt = Date.now()): Promise<void> {
-    let current = initial;
+    let current = preserveRunIdentity(initial, {
+      runId: String(initial.run_id || initial.record?.identity?.run_id || ""),
+      repository: initial.repository,
+      customerId: initial.customer_id || scope.customerId,
+      projectId: initial.project_id || scope.projectId,
+      commitSha: initial.commit_sha || initial.repository_snapshot?.commit_sha,
+      evidenceLedgerId: initial.evidence_ledger_id,
+    });
     for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
       if (token !== sequence.current) return;
       persistExactRun(current, scope, startedAt);
@@ -412,7 +481,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       });
 
       try {
-        current = await requestWithRetry(
+        const continued = await requestWithRetry(
           `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`,
           {
             method: "POST",
@@ -421,8 +490,22 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           },
           copy,
         );
+        current = preserveRunIdentity(continued, {
+          runId,
+          repository: current.repository,
+          customerId: current.customer_id || scope.customerId,
+          projectId: current.project_id || scope.projectId,
+          commitSha: current.commit_sha || current.repository_snapshot?.commit_sha,
+          evidenceLedgerId: current.evidence_ledger_id,
+        });
       } catch (requestError) {
-        const recovered = await recoverRun(runId);
+        const recovered = await recoverRun(runId, {
+          repository: current.repository,
+          customerId: current.customer_id || scope.customerId,
+          projectId: current.project_id || scope.projectId,
+          commitSha: current.commit_sha || current.repository_snapshot?.commit_sha,
+          evidenceLedgerId: current.evidence_ledger_id,
+        });
         if (!recovered) throw requestError;
         current = recovered;
         setMessage(`${copy.service.label}: ${copy.recoveredRunState}`);
@@ -464,11 +547,17 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       status: "running",
     });
     try {
-      const recovered = await requestWithRetry(
+      const recoveredResponse = await requestWithRetry(
         `/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`,
         {method: "GET"},
         copy,
       );
+      const recovered = preserveRunIdentity(recoveredResponse, {
+        runId: persisted.runId,
+        repository: persisted.repository,
+        customerId: persisted.customerId,
+        projectId: persisted.projectId,
+      });
       if (token !== sequence.current) return;
       persistExactRun(recovered, scope, persisted.startedAt);
       setResult(recovered);
