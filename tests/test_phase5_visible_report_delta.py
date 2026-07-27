@@ -27,7 +27,7 @@ def _completed(tool: str, category: str) -> dict:
     }
 
 
-def test_markdown_contains_real_scanner_and_ci_delta() -> None:
+def test_markdown_contains_real_scanner_ci_and_complexity_delta() -> None:
     install_phase5_report_truth_v2()
     from nico import comprehensive_report_package as base_report
     from nico.comprehensive_decision_grade_markdown_v5 import (
@@ -47,7 +47,13 @@ def test_markdown_contains_real_scanner_and_ci_delta() -> None:
             {"id": "ci_cd", "label": "CI/CD Analysis", "score": 78, "evidence": [], "findings": ["14 historical workflow runs were non-successful"], "unavailable": []},
         ],
         "findings_register": [
-            {"finding_id": "old-bandit", "category": "evidence", "title": "bandit evidence unavailable"}
+            {"finding_id": "old-bandit", "category": "evidence", "title": "bandit evidence unavailable"},
+            {
+                "finding_id": "old-complexity",
+                "category": "architecture",
+                "title": "Complexity hotspot: _build_complexity",
+                "evidence": "cyclomatic_complexity=94; loc=144",
+            },
         ],
         "decision_postures": {},
         "how_to_use_report": [],
@@ -85,6 +91,22 @@ def test_markdown_contains_real_scanner_and_ci_delta() -> None:
         "ci_cd_architecture_complexity_velocity": {
             "commit_sha": TARGET,
             "workflow_evidence": {"classified_history": ci_summary},
+            "complexity_evidence": {
+                "tracked_function_metrics_are_exact_sha": True,
+                "tracked_function_metrics": {
+                    "_build_complexity": {
+                        "name": "_build_complexity",
+                        "path": "nico/typescript_ast_complexity_v1.py",
+                        "line": 226,
+                        "cyclomatic_complexity": 12,
+                        "cognitive_complexity": 10,
+                        "loc": 55,
+                        "max_nesting": 2,
+                        "grade": "B",
+                        "method": "python_ast",
+                    }
+                },
+            },
         },
     }
 
@@ -108,9 +130,15 @@ def test_markdown_contains_real_scanner_and_ci_delta() -> None:
         "2026-07-27T00:00:00Z",
     )
 
+    complexity_change = reconciled["phase5_verified_outcomes"]["complexity_changes"]["_build_complexity"]
+    assert complexity_change["before"] == 94
+    assert complexity_change["after"] == 12
+    assert complexity_change["delta"] == -82
+    assert complexity_change["evidence"]["method"] == "python_ast"
     assert "Verified Change Since Phase 5 Baseline" in markdown
     assert "bandit, eslint, gitleaks, osv-scanner" in markdown
     assert "Workflow outcome classes:" in markdown
+    assert "_build_complexity" in markdown and "'after': 12" in markdown
     assert "old-bandit" not in markdown
     assert "Technical maturity" in markdown and "85/100" in markdown
     assert reconciled["maturity_signal"]["presented_score"] == 85
