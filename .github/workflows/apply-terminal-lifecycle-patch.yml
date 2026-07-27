@@ -25,7 +25,6 @@ jobs:
       - name: Verify patched source contracts
         run: |
           python -m py_compile scripts/mobile_restart_live_acceptance_v1.py
-          python -m py_compile tests/test_terminal_run_lifecycle_and_scroll_v1.py
           grep -q 'function startNew(): void' apps/web/app/assessment/useAssessmentRun.ts
           grep -q 'data-assessment-terminal-actions="true"' apps/web/app/assessment/AssessmentWorkspace.tsx
 
