@@ -8,6 +8,7 @@ from nico import phase5_report_truth_v1 as base
 VERSION = "nico.phase5_report_truth.v2"
 _ORIGINAL_NORMALIZED_SCANNER_RECORD = base._normalized_scanner_record
 _ORIGINAL_RECONCILE = base.reconcile_phase5_report_truth
+_ORIGINAL_CONTEXT_FROM_MAPPING = base._context_from_mapping
 _STATUS_ALIASES = {
     "complete": "completed",
     "completed": "completed",
@@ -45,6 +46,14 @@ def _find_commit(value: Any) -> str:
             if commit:
                 return commit
     return ""
+
+
+def _context_from_mapping_v2(value: dict[str, Any], inherited: dict[str, str]) -> dict[str, str]:
+    context = _ORIGINAL_CONTEXT_FROM_MAPPING(value, inherited)
+    commit = base._sha(value.get("commit_sha"))
+    if commit:
+        context["commit_sha"] = commit
+    return context
 
 
 def _normalized_scanner_record_v2(
@@ -139,6 +148,7 @@ def reconcile_phase5_report_truth(
 
 
 def install_phase5_report_truth_v2() -> dict[str, Any]:
+    base._context_from_mapping = _context_from_mapping_v2
     base._normalized_scanner_record = _normalized_scanner_record_v2
     base._phase5_outcomes = _phase5_outcomes_evidence_only
     base.reconcile_phase5_report_truth = reconcile_phase5_report_truth
@@ -149,6 +159,7 @@ def install_phase5_report_truth_v2() -> dict[str, Any]:
             "version": VERSION,
             "scanner_status_aliases_normalized": True,
             "nested_exact_commit_discovery": True,
+            "plain_stage_commit_propagation": True,
             "missing_scanner_records_are_not_changes": True,
             "only_observed_exact_sha_scanner_deltas_rendered": True,
         }
