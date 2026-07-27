@@ -38,6 +38,9 @@ class _SingleDispatchLocator:
             last = dict(
                 self._locator.evaluate(
                     """button => {
+                      const workspace = button.closest('main[data-workspace="assessment"]');
+                      const authorization = workspace?.querySelector('[data-assessment-authorization="true"]');
+                      const repository = workspace?.querySelector('input[type="text"]');
                       const rect = button.getBoundingClientRect();
                       return {
                         connected: button.isConnected,
@@ -45,13 +48,17 @@ class _SingleDispatchLocator:
                         width: rect.width,
                         height: rect.height,
                         label: String(button.textContent || '').trim(),
+                        hydrated: workspace?.dataset.assessmentHydrated || '',
+                        authorization_checked: Boolean(authorization?.checked),
+                        repository_value: String(repository?.value || ''),
                       };
                     }"""
                 )
                 or {}
             )
             if (
-                last.get("connected") is True
+                last.get("hydrated") == "true"
+                and last.get("connected") is True
                 and last.get("disabled") is False
                 and float(last.get("width") or 0) > 0
                 and float(last.get("height") or 0) > 0
@@ -74,9 +81,27 @@ class _SingleDispatchLocator:
 class _SingleDispatchPage:
     def __init__(self, page: Page) -> None:
         self._page = page
+        self._hydration_verified = False
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._page, name)
+
+    def _wait_for_hydration(self, timeout_ms: int = 30_000) -> None:
+        if self._hydration_verified:
+            return
+        workspace = self._page.locator(recovery.WORKSPACE_SELECTOR).first
+        workspace.wait_for(state="visible", timeout=timeout_ms)
+        self._page.wait_for_function(
+            "selector => document.querySelector(selector)?.dataset.assessmentHydrated === 'true'",
+            arg=recovery.WORKSPACE_SELECTOR,
+            timeout=timeout_ms,
+        )
+        self._hydration_verified = True
+
+    def get_by_label(self, text: Any, *args: Any, **kwargs: Any) -> Locator:
+        timeout_ms = int(kwargs.pop("timeout", 30_000))
+        self._wait_for_hydration(timeout_ms)
+        return self._page.get_by_label(text, *args, **kwargs)
 
     def locator(self, selector: str, *args: Any, **kwargs: Any) -> Any:
         locator = self._page.locator(selector, *args, **kwargs)
@@ -111,6 +136,7 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
     result = _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
     result["start_dispatch"] = "single_native_dom_click"
     result["start_dispatch_retry_absent"] = True
+    result["client_hydration_wait_verified"] = True
     result["acceptance_version"] = VERSION
     return result
 
