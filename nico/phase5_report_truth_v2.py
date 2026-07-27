@@ -57,6 +57,28 @@ def _find_commit(value: Any) -> str:
     return ""
 
 
+def _find_tracked_complexity(value: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(value, dict):
+        metrics = value.get("tracked_function_metrics")
+        exact = value.get("tracked_function_metrics_are_exact_sha")
+        if isinstance(metrics, dict) and exact is True:
+            return {
+                str(name): dict(item)
+                for name, item in metrics.items()
+                if isinstance(item, dict) and item.get("cyclomatic_complexity") is not None
+            }
+        for child in value.values():
+            found = _find_tracked_complexity(child)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_tracked_complexity(child)
+            if found:
+                return found
+    return {}
+
+
 def _context_from_mapping_v2(value: dict[str, Any], inherited: dict[str, str]) -> dict[str, str]:
     context = _ORIGINAL_CONTEXT_FROM_MAPPING(value, inherited)
     commit = base._sha(value.get("commit_sha"))
@@ -105,12 +127,18 @@ def _phase5_outcomes_evidence_only(
     }
     unobserved = sorted(tool for tool in base.BASELINE["scanner_statuses"] if tool not in current_scanners)
 
+    tracked = assessment.get("phase5_tracked_complexity_metrics")
+    tracked = tracked if isinstance(tracked, dict) else {}
     current_complexity = base._complexity_snapshot(assessment)
+    for name, item in tracked.items():
+        if isinstance(item, dict) and item.get("cyclomatic_complexity") is not None:
+            current_complexity[str(name)] = int(item["cyclomatic_complexity"])
     complexity_changes = {
         name: {
             "before": before,
             "after": current_complexity[name],
             "delta": current_complexity[name] - before,
+            "evidence": tracked.get(name) if isinstance(tracked.get(name), dict) else None,
         }
         for name, before in base.BASELINE["complexity"].items()
         if name in current_complexity and current_complexity[name] != before
@@ -133,6 +161,7 @@ def _phase5_outcomes_evidence_only(
         "ci_history_classification_visible": ci_summary is not None,
         "tls_verify_disabled_finding_open": tls_open,
         "complexity_changes": complexity_changes,
+        "tracked_complexity_metrics_retained": bool(tracked),
         "unchanged_complexity_hotspots": sorted(
             name
             for name, before in base.BASELINE["complexity"].items()
@@ -201,11 +230,15 @@ def reconcile_phase5_report_truth(
     stage_results: dict[str, Any],
 ) -> dict[str, Any]:
     target_commit = _find_commit(stage_results)
+    tracked = _find_tracked_complexity(stage_results)
+    assessment_input = deepcopy(assessment)
+    if tracked:
+        assessment_input["phase5_tracked_complexity_metrics"] = tracked
     if not target_commit:
-        result = _ORIGINAL_RECONCILE(assessment, stage_results)
+        result = _ORIGINAL_RECONCILE(assessment_input, stage_results)
     else:
         enriched = {"phase5_exact_identity": {"commit_sha": target_commit}, **deepcopy(stage_results)}
-        result = _ORIGINAL_RECONCILE(assessment, enriched)
+        result = _ORIGINAL_RECONCILE(assessment_input, enriched)
     _remove_stale_scanner_status_text(result)
     return result
 
@@ -226,6 +259,7 @@ def install_phase5_report_truth_v2() -> dict[str, Any]:
             "missing_scanner_records_are_not_changes": True,
             "only_observed_exact_sha_scanner_deltas_rendered": True,
             "stale_scanner_failure_text_removed_only_after_proof": True,
+            "exact_tracked_complexity_metrics_rendered": True,
         }
     )
     return result
