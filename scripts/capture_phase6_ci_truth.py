@@ -34,11 +34,9 @@ def _retry_delay(error: urllib.error.HTTPError, attempt: int) -> float:
     retry_after = str(error.headers.get("Retry-After") or "").strip()
     if retry_after.isdigit():
         return min(120.0, max(1.0, float(retry_after)))
-
     reset = str(error.headers.get("X-RateLimit-Reset") or "").strip()
     if reset.isdigit():
         return min(120.0, max(1.0, float(reset) - time.time() + 1.0))
-
     return min(60.0, float(2 ** min(attempt, 5)))
 
 
@@ -90,15 +88,49 @@ def _api(repository: str, path: str, token: str, **query: Any) -> dict[str, Any]
     return _request(f"{base}{resource}{suffix}", token)
 
 
+def _run_matches_sha(run: dict[str, Any], sha: str) -> bool:
+    target = sha.casefold()
+    if str(run.get("head_sha") or "").casefold() == target:
+        return True
+    for pull in run.get("pull_requests") or []:
+        if not isinstance(pull, dict):
+            continue
+        head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+        if str(head.get("sha") or "").casefold() == target:
+            return True
+    return False
+
+
 def _runs_for_sha(repository: str, sha: str, token: str) -> list[dict[str, Any]]:
-    runs: list[dict[str, Any]] = []
+    """Return workflow runs associated with an immutable application SHA.
+
+    GitHub pull-request runs can expose a synthetic merge SHA as ``head_sha`` even
+    though their pull-request metadata points at the immutable PR head. Querying
+    only ``actions/runs?head_sha=<sha>`` therefore misses valid exact-source runs.
+    We combine the direct query with a bounded recent-run scan and accept a run
+    only when either its real head SHA or its PR-head metadata matches exactly.
+    """
+    by_id: dict[int, dict[str, Any]] = {}
+
     for page in range(1, 4):
         payload = _api(repository, "actions/runs", token, head_sha=sha, per_page=100, page=page)
         page_runs = [dict(item) for item in payload.get("workflow_runs") or [] if isinstance(item, dict)]
-        runs.extend(page_runs)
+        for run in page_runs:
+            if _run_matches_sha(run, sha):
+                by_id[int(run.get("id") or 0)] = run
         if len(page_runs) < 100:
             break
-    return runs
+
+    for page in range(1, 6):
+        payload = _api(repository, "actions/runs", token, per_page=100, page=page)
+        page_runs = [dict(item) for item in payload.get("workflow_runs") or [] if isinstance(item, dict)]
+        for run in page_runs:
+            if _run_matches_sha(run, sha):
+                by_id[int(run.get("id") or 0)] = run
+        if len(page_runs) < 100:
+            break
+
+    return [run for run_id, run in by_id.items() if run_id]
 
 
 def _run_authority(item: dict[str, Any]) -> tuple[int, str, int, int]:
@@ -129,13 +161,7 @@ def _latest_by_name(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 def _project(name: str, run: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(run, dict):
-        return {
-            "name": name,
-            "status": "not_observed",
-            "conclusion": None,
-            "run_id": None,
-            "url": None,
-        }
+        return {"name": name, "status": "not_observed", "conclusion": None, "run_id": None, "url": None}
     return {
         "name": name,
         "status": str(run.get("status") or "unknown"),
@@ -148,7 +174,7 @@ def _project(name: str, run: dict[str, Any] | None) -> dict[str, Any]:
         "created_at": run.get("created_at"),
         "updated_at": run.get("updated_at"),
         "url": run.get("html_url"),
-        "authority_rule": "successful exact-SHA completion, then active exact-SHA run, then failed exact-SHA run; newest record breaks ties",
+        "authority_rule": "successful exact-source completion, then active exact-source run, then failed exact-source run; newest record breaks ties",
     }
 
 
@@ -175,7 +201,7 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
     missing = [name for name, item in checks.items() if item["status"] == "not_observed"]
     green = not pending and not failed and not missing
     return {
-        "schema": "nico.phase6.required_checks.v3",
+        "schema": "nico.phase6.required_checks.v4",
         "commit_sha": sha,
         "all_required_checks_green": green,
         "required_checks_green": green,
@@ -186,37 +212,19 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
         "pending": pending,
         "failed": failed,
         "missing": missing,
-        "duplicate_exact_sha_run_summary": _duplicate_run_summary(runs),
-        "successful_exact_sha_run_is_authoritative_over_duplicate_failed_or_active_runs": True,
+        "duplicate_exact_source_run_summary": _duplicate_run_summary(runs),
+        "pull_request_merge_sha_does_not_hide_exact_pr_head_runs": True,
+        "successful_exact_source_run_is_authoritative_over_duplicate_failed_or_active_runs": True,
         "active_or_queued_runs_are_not_failures": True,
     }
 
 
 def _write_snapshot(path: Path, repository: str, assessed: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema": "nico.phase6.ci_truth_pending.v3",
-                "repository": repository,
-                "assessed_commit": assessed,
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps({"schema": "nico.phase6.ci_truth_pending.v4", "repository": repository, "assessed_commit": assessed}, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _wait_for_assessed_commit(
-    repository: str,
-    target_sha: str,
-    token: str,
-    *,
-    output_path: Path,
-    wait_seconds: int,
-    poll_seconds: int,
-) -> dict[str, Any]:
+def _wait_for_assessed_commit(repository: str, target_sha: str, token: str, *, output_path: Path, wait_seconds: int, poll_seconds: int) -> dict[str, Any]:
     deadline = time.monotonic() + max(0, wait_seconds)
     while True:
         assessed = _snapshot(repository, target_sha, token)
@@ -250,21 +258,14 @@ def main() -> int:
         raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required")
     repository = args.repository.strip()
     target_sha = args.target_sha.strip().lower()
-    assessed = _wait_for_assessed_commit(
-        repository,
-        target_sha,
-        token,
-        output_path=args.output,
-        wait_seconds=args.wait_seconds,
-        poll_seconds=args.poll_seconds,
-    )
+    assessed = _wait_for_assessed_commit(repository, target_sha, token, output_path=args.output, wait_seconds=args.wait_seconds, poll_seconds=args.poll_seconds)
 
     repository_payload = _api(repository, "", token)
     default_branch = str(repository_payload.get("default_branch") or "main")
     branch_payload = _api(repository, f"branches/{urllib.parse.quote(default_branch, safe='')}", token)
     default_sha = str(((branch_payload.get("commit") or {}).get("sha")) or "").lower()
     default_health = _snapshot(repository, default_sha, token) if default_sha else {
-        "schema": "nico.phase6.required_checks.v3",
+        "schema": "nico.phase6.required_checks.v4",
         "commit_sha": "",
         "status": "not_observed",
         "all_required_checks_green": None,
@@ -277,14 +278,15 @@ def main() -> int:
         "missing": list(REQUIRED_WORKFLOWS),
     }
     output = {
-        "schema": "nico.phase6.ci_truth_capture.v3",
+        "schema": "nico.phase6.ci_truth_capture.v4",
         "repository": repository,
         "assessed_commit": assessed,
         "current_default_branch": {**default_health, "branch": default_branch},
         "required_workflows": list(REQUIRED_WORKFLOWS),
         "historical_reliability_source": "separate bounded workflow-runs capture",
         "historical_failures_do_not_override_assessed_commit": True,
-        "duplicate_failed_or_active_exact_sha_runs_do_not_override_a_successful_required_check": True,
+        "duplicate_failed_or_active_exact_source_runs_do_not_override_a_successful_required_check": True,
+        "pull_request_merge_sha_does_not_hide_exact_pr_head_runs": True,
         "active_or_queued_runs_are_not_historical_failures": True,
         "api_transport_retries_enabled": True,
     }
