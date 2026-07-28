@@ -139,12 +139,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set +e
           python scripts/capture_phase6_ci_truth.py \
             --repository "$GITHUB_REPOSITORY" \
             --target-sha "$TARGET_SHA" \
             --output phase6-ci-truth.json \
-            --wait-seconds 300 \
-            --poll-seconds 15
+            --wait-seconds 900 \
+            --poll-seconds 20
+          capture_rc=$?
+          set -e
+          python - "$capture_rc" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          capture_rc = int(sys.argv[1])
+          path = Path("phase6-ci-truth.json")
+          if not path.exists():
+              raise SystemExit(capture_rc or 1)
+          truth = json.loads(path.read_text(encoding="utf-8"))
+          assessed = truth.get("assessed_commit") or {}
+          if assessed.get("all_required_checks_green") is not True:
+              raise SystemExit(
+                  f"Assessed-commit checks are not green: rc={capture_rc} "
+                  f"failed={assessed.get('failed')} pending={assessed.get('pending')} missing={assessed.get('missing')}"
+              )
+          print("Authoritative exact-SHA CI snapshot is green.")
+          PY
 
       - name: Build exact-SHA Phase 6 final Comprehensive package
         working-directory: runner
