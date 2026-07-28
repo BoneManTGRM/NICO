@@ -26,45 +26,46 @@ jobs:
           from pathlib import Path
 
           path = Path("nico/phase6_canonical_truth_v2.py")
-          text = path.read_text(encoding="utf-8")
-          import_marker = "from nico import phase6_final_remediation_v1 as phase6\n"
-          import_addition = import_marker + "from nico.phase6_sql_dispositions_v1 import disposition_for, source_review_coverage\n"
-          if "from nico.phase6_sql_dispositions_v1 import" not in text:
-              if text.count(import_marker) != 1:
-                  raise SystemExit("Phase 6 SQL import marker missing")
-              text = text.replace(import_marker, import_addition, 1)
+          lines = path.read_text(encoding="utf-8").splitlines()
 
-          old = '''    if path in phase6._SQL_DISPOSITIONS and phase6._is_sql_message(analyzer_message):
-              disposition = deepcopy(phase6._SQL_DISPOSITIONS[path])
-              item["disposition"] = disposition
-              item["status"] = "bounded_exception"
-              item["executive_title"] = "Source-reviewed SQL construction"
-              item["technical_summary"] = disposition["rationale"]
-              item["recommendation"] = disposition["verification"]
-          '''
-          new = '''    disposition = disposition_for(path, analyzer_message)
-          if disposition:
-              item["disposition"] = disposition
-              item["status"] = "approved_nonblocking"
-              item["priority"] = "P3"
-              item["executive_title"] = "Source-reviewed SQL construction"
-              item["title"] = "Source-reviewed SQL construction"
-              item["technical_summary"] = disposition["rationale"]
-              item["recommendation"] = disposition["verification"]
-          '''
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit("Phase 6 SQL disposition block missing")
+          import_line = "from nico.phase6_sql_dispositions_v1 import disposition_for, source_review_coverage"
+          if import_line not in lines:
+              marker = "from nico import phase6_final_remediation_v1 as phase6"
+              index = lines.index(marker)
+              lines.insert(index + 1, import_line)
 
-          marker = '    output["canonical_assessment_model"] = VERSION\n'
-          addition = '    output["sql_source_review_coverage"] = source_review_coverage()\n' + marker
-          if 'output["sql_source_review_coverage"]' not in text:
-              if text.count(marker) != 1:
-                  raise SystemExit("Canonical assessment marker missing")
-              text = text.replace(marker, addition, 1)
+          start = next(
+              index
+              for index, line in enumerate(lines)
+              if line.strip().startswith("if path in phase6._SQL_DISPOSITIONS")
+          )
+          end = start + 1
+          while end < len(lines) and (
+              lines[end].startswith("        ")
+              or not lines[end].strip()
+          ):
+              if not lines[end].strip():
+                  break
+              end += 1
+          lines[start:end] = [
+              "    disposition = disposition_for(path, analyzer_message)",
+              "    if disposition:",
+              "        item[\"disposition\"] = disposition",
+              "        item[\"status\"] = \"approved_nonblocking\"",
+              "        item[\"priority\"] = \"P3\"",
+              "        item[\"executive_title\"] = \"Source-reviewed SQL construction\"",
+              "        item[\"title\"] = \"Source-reviewed SQL construction\"",
+              "        item[\"technical_summary\"] = disposition[\"rationale\"]",
+              "        item[\"recommendation\"] = disposition[\"verification\"]",
+          ]
 
-          path.write_text(text, encoding="utf-8")
+          coverage_line = '    output["sql_source_review_coverage"] = source_review_coverage()'
+          if coverage_line not in lines:
+              marker = '    output["canonical_assessment_model"] = VERSION'
+              index = lines.index(marker)
+              lines.insert(index, coverage_line)
+
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
           rm -f .github/workflows/phase6-wire-sql-dispositions.yml
           python -m py_compile nico/phase6_sql_dispositions_v1.py nico/phase6_canonical_truth_v2.py
