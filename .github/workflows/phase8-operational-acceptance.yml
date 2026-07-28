@@ -51,24 +51,30 @@ jobs:
           rm -rf phase8-evidence
           python scripts/phase8_live_evidence.py
           cp phase8-evidence/phase8-operational-manifest.json phase8-pass-two.json
-      - name: Verify both passes bind to the same immutable revision
+      - name: Verify both complete bilingual passes
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
+
           one = json.loads(Path('phase8-pass-one.json').read_text())
           two = json.loads(Path('phase8-pass-two.json').read_text())
           expected = os.environ['PHASE8_REVISION']
-          assert one['immutable_revision'] == expected, (one['immutable_revision'], expected)
-          assert two['immutable_revision'] == expected, (two['immutable_revision'], expected)
+          required_surfaces = {'json', 'markdown', 'html', 'pdf', 'csv'}
+
+          for payload in (one, two):
+              assert payload['immutable_revision'] == expected
+              assert payload['scanner_ledger']['valid'] is True
+              assert payload['report_quality']['valid'] is True
+              assert set(payload['packages']) == {'en', 'es'}
+              assert all(payload['packages'][lang]['valid'] is True for lang in ('en', 'es'))
+              assert all(set(payload['artifact_inventory'][lang]) == required_surfaces for lang in ('en', 'es'))
+              assert payload['pdf_review']['reviewed_languages'] == ['en', 'es']
+              assert payload['pdf_review']['human_approval_required'] is True
+              assert payload['client_delivery_allowed'] is False
+
           assert one['truth'] == two['truth']
-          assert one['scanner_ledger']['valid'] is True
-          assert two['scanner_ledger']['valid'] is True
-          assert one['package']['valid'] is True
-          assert two['package']['valid'] is True
-          assert one['pdf_review']['human_approval_required'] is True
-          assert one['client_delivery_allowed'] is False
           print({'revision': expected, 'pass_one': one['manifest_sha256'], 'pass_two': two['manifest_sha256']})
           PY
       - name: Upload retained Phase 8 evidence
