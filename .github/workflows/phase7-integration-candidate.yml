@@ -1,0 +1,122 @@
+name: Phase 7 Integration Candidate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrated-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out umbrella branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch bounded Phase 7 implementation heads
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            phase-7a/truth-dedup-decision-quality \
+            phase-7b/scanner-ci-evidence-reliability \
+            phase-7c/provider-platform-foundation
+
+      - name: Build unmerged integration candidate
+        run: |
+          set -euo pipefail
+          git config user.name phase7-integration-bot
+          git config user.email phase7-integration-bot@users.noreply.github.com
+          git merge --no-ff --no-edit origin/phase-7a/truth-dedup-decision-quality
+          git merge --no-ff --no-edit origin/phase-7b/scanner-ci-evidence-reliability
+          git merge --no-ff --no-edit origin/phase-7c/provider-platform-foundation
+          git rev-parse HEAD | tee phase7-integrated-candidate-sha.txt
+          git log -1 --pretty=fuller > phase7-integrated-candidate-commit.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+          npm ci
+
+      - name: Run integrated Python tests
+        run: |
+          set -euo pipefail
+          pytest -q --junitxml=phase7-integrated-pytest.xml
+
+      - name: Run frontend typecheck and production build
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm run build
+
+      - name: Verify provider support disclosures fail closed
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from nico.provider_platform_contract_v1 import ProviderKind
+          from nico.provider_support_policy_v1 import provider_disclosure
+          for provider in ProviderKind:
+              disclosure = provider_disclosure(provider)
+              assert disclosure['provider'] == provider.value
+              if provider is not ProviderKind.GITHUB:
+                  assert disclosure['client_claim_allowed'] is False
+          PY
+
+      - name: Write integration evidence manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          files = [
+              pathlib.Path('phase7-integrated-candidate-sha.txt'),
+              pathlib.Path('phase7-integrated-candidate-commit.txt'),
+              pathlib.Path('phase7-integrated-pytest.xml'),
+          ]
+          evidence = []
+          for path in files:
+              data = path.read_bytes()
+              evidence.append({'path': str(path), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)})
+          manifest = {
+              'schema': 'nico.phase7.integration-candidate.v1',
+              'candidate_sha': pathlib.Path('phase7-integrated-candidate-sha.txt').read_text().strip(),
+              'source_heads': {
+                  'umbrella': subprocess.check_output(['git','rev-parse','HEAD^1'], text=True).strip(),
+                  'phase7a': subprocess.check_output(['git','rev-parse','origin/phase-7a/truth-dedup-decision-quality'], text=True).strip(),
+                  'phase7b': subprocess.check_output(['git','rev-parse','origin/phase-7b/scanner-ci-evidence-reliability'], text=True).strip(),
+                  'phase7c': subprocess.check_output(['git','rev-parse','origin/phase-7c/provider-platform-foundation'], text=True).strip(),
+              },
+              'evidence': evidence,
+              'merge_performed': False,
+              'production_provider_scope': ['github'],
+          }
+          pathlib.Path('phase7-integration-manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Upload integrated candidate evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: phase7-integration-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            phase7-integrated-candidate-sha.txt
+            phase7-integrated-candidate-commit.txt
+            phase7-integrated-pytest.xml
+            phase7-integration-manifest.json
+          if-no-files-found: error
+          retention-days: 90
