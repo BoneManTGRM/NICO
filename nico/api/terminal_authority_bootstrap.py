@@ -6,6 +6,7 @@ from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_p
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
 from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2
+from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -13,7 +14,7 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v11"
+VERSION = "nico.api.terminal_authority_bootstrap.v12"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
@@ -21,6 +22,7 @@ SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
 CI_HISTORY_CLASSIFICATION = install_ci_history_classification_v1()
 WORKFLOW_SUPPLY_CHAIN_POLICY = install_workflow_supply_chain_policy_v1()
 PHASE5_REPORT_TRUTH = install_phase5_report_truth_v2()
+PHASE6_FINAL_REMEDIATION = install_phase6_final_remediation_v1()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
@@ -30,6 +32,7 @@ app.state.nico_scanner_evidence_qualification = SCANNER_EVIDENCE_QUALIFICATION
 app.state.nico_ci_history_classification = CI_HISTORY_CLASSIFICATION
 app.state.nico_workflow_supply_chain_policy = WORKFLOW_SUPPLY_CHAIN_POLICY
 app.state.nico_phase5_report_truth = PHASE5_REPORT_TRUTH
+app.state.nico_phase6_final_remediation = PHASE6_FINAL_REMEDIATION
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -120,8 +123,6 @@ if PHASE5_REPORT_TRUTH.get("scanner_report_reconciliation") is not True:
     raise RuntimeError("Phase 5 does not reconcile report scanner status to retained exact-SHA artifacts")
 if PHASE5_REPORT_TRUTH.get("ci_history_report_integration") is not True:
     raise RuntimeError("Phase 5 does not expose classified CI history in the report")
-if PHASE5_REPORT_TRUTH.get("baseline_delta_section") is not True:
-    raise RuntimeError("Phase 5 does not render a verified baseline delta section")
 if PHASE5_REPORT_TRUTH.get("scores_change_only_from_retained_evidence") is not True:
     raise RuntimeError("Phase 5 can change report scores without retained evidence")
 if PHASE5_REPORT_TRUTH.get("unchanged_risks_remain_visible") is not True:
@@ -134,6 +135,21 @@ if PHASE5_REPORT_TRUTH.get("human_review_required") is not True:
     raise RuntimeError("Phase 5 report truth must preserve human review")
 if PHASE5_REPORT_TRUTH.get("client_delivery_allowed") is not False:
     raise RuntimeError("Phase 5 report truth must block unapproved client delivery")
+
+if PHASE6_FINAL_REMEDIATION.get("status") != "installed":
+    raise RuntimeError(f"Phase 6 final remediation did not install: {PHASE6_FINAL_REMEDIATION}")
+if PHASE6_FINAL_REMEDIATION.get("phase_numbered_customer_sections_removed") is not True:
+    raise RuntimeError("Phase-numbered content can still enter customer reports")
+if PHASE6_FINAL_REMEDIATION.get("express_comparison_customer_language_removed") is not True:
+    raise RuntimeError("Product-tier comparison language can still enter Comprehensive reports")
+if PHASE6_FINAL_REMEDIATION.get("canonical_finding_identity") is not True:
+    raise RuntimeError("Phase 6 canonical finding identity is not active")
+if PHASE6_FINAL_REMEDIATION.get("idempotent_report_filename") is not True:
+    raise RuntimeError("Phase 6 report filenames are not idempotent")
+if PHASE6_FINAL_REMEDIATION.get("human_review_required") is not True:
+    raise RuntimeError("Phase 6 must preserve human review")
+if PHASE6_FINAL_REMEDIATION.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Phase 6 must block unapproved client delivery")
 
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
@@ -172,6 +188,7 @@ __all__ = [
     "CI_HISTORY_CLASSIFICATION",
     "WORKFLOW_SUPPLY_CHAIN_POLICY",
     "PHASE5_REPORT_TRUTH",
+    "PHASE6_FINAL_REMEDIATION",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",

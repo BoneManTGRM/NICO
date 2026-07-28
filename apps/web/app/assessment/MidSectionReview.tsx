@@ -316,7 +316,7 @@ export default function MidSectionReview({payload}: Props) {
   const attentionCount = technical.filter((section) => tone(section) !== "healthy").length;
   const repository = displayText(payload.repository || assessment.repository, "Repository assessment");
   const runId = cleanText(payload.run_id || assessment.run_id);
-  const expressNote = displayText(scoreContract.express_comparison_note, "Express is a faster baseline. Mid uses an immutable snapshot, scanner evidence, and seven fixed technical weights, so the scores are not directly interchangeable.");
+  const methodologyNote = displayText(scoreContract.score_methodology_note, "Technical score and evidence readiness are independent measures. This view uses an immutable snapshot, retained scanner evidence, and seven fixed technical weights.");
 
   function toggle(key: string) {
     setExpanded((current) => {
@@ -376,7 +376,7 @@ export default function MidSectionReview({payload}: Props) {
 
     <details className={styles.scoreDetails}>
       <summary><span><b>Score explanation</b><small>Current {score == null ? "pending" : `${Math.round(score)}/100`} · verified-fix scenario {projected == null ? "unavailable" : `${projected}/100`}</small></span><span aria-hidden="true">+</span></summary>
-      <p>{expressNote}</p>
+      <p>{methodologyNote}</p>
       <div className={styles.weightTable} role="table" aria-label="Weighted technical score">
         <div className={styles.weightHead} role="row"><b>Control</b><b>Score</b><b>Weight</b><b>Points</b></div>
         {rows.map((row) => <div role="row" key={row.section_id}><span>{row.label}</span><span>{Math.round(row.score)}</span><span>{row.weight}%</span><span>{row.weighted_points.toFixed(2)}</span></div>)}

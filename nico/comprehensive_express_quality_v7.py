@@ -70,7 +70,7 @@ def reconcile_comprehensive_assessment(assessment: dict[str, Any]) -> dict[str, 
     output["executive_summary"] = (
         f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
         f"Weighted technical maturity is {technical_text}; independently evidence-adjusted readiness is {adjusted_text}. "
-        "The Comprehensive package retains the Express technical-health baseline and adds exact-location findings, deeper architecture evidence, "
+        "The Comprehensive package combines shared technical-health evidence with exact-location findings, deeper architecture evidence, "
         "a six-month execution roadmap, staffing sequence, and a full evidence appendix. Human review and exact-package approval remain mandatory."
     )
     output["comprehensive_express_quality"] = {
@@ -173,7 +173,7 @@ def _front_matter_overlay(
     if not top_risks:
         top_risks = ["Complete exact-package internal review", "Resolve retained evidence limitations", "Approve the six-month execution sequence"]
 
-    # Page 1 - premium cover aligned with the Express visual standard.
+    # Page 1 - premium evidence-bound Comprehensive cover.
     page.setFillColor(navy)
     page.rect(0, 0, width, height, stroke=0, fill=1)
     page.setFillColor(cyan)
@@ -265,7 +265,7 @@ def _front_matter_overlay(
     page.drawRightString(570, 51, f"Page 1 of {final_page_count}")
     page.showPage()
 
-    # Page 2 - executive decision brief and scope expansion.
+    # Page 2 - executive decision brief and assessment coverage.
     page.setFillColor(white)
     page.rect(0, 0, width, height, stroke=0, fill=1)
     page.setFillColor(ink)
@@ -316,7 +316,7 @@ def _front_matter_overlay(
 
     page.setFillColor(colors.HexColor("#075985"))
     page.setFont("Helvetica-Bold", 16)
-    page.drawString(42, y, "Why this is broader than Express")
+    page.drawString(42, y, "Assessment Coverage")
     y -= 17
     scope_cards = [
         ("DEEPER EVIDENCE", "Exact-location technical findings and full evidence traceability."),

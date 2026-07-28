@@ -477,7 +477,7 @@ def _quality_contract(assessment: dict[str, Any], findings: list[dict[str, Any]]
         and f"Final PDF pages: {page_count}" in front_matter_text,
         "express_quality_front_matter": all(
             token in front_matter_text
-            for token in ("NICO COMPREHENSIVE", "TECHNICAL MATURITY", "Why this is broader than Express")
+            for token in ("NICO COMPREHENSIVE", "TECHNICAL MATURITY", "Assessment Coverage")
         ),
         "semantic_html": "<table>" in rendered_html and "<h2>Evidence Appendix</h2>" in rendered_html,
         "markdown_evidence_appendix": APPENDIX_HEADING in markdown,
