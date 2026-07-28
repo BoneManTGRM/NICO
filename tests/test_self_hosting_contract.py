@@ -30,9 +30,9 @@ def test_compose_uses_fail_closed_production_bootstrap_and_verified_named_volume
 def test_hosted_binary_scanners_use_explicit_release_tags_not_latest_resolution() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 
-    assert '"default_tag": "v2.4.0"' in source
+    assert '"default_tag": "v2.3.8"' in source
     assert '"default_tag": "v8.30.1"' in source
-    assert '"default_tag": "v3.95.9"' in source
+    assert '"default_tag": "v3.95.0"' in source
     assert '"NICO_OSV_SCANNER_VERSION"' in source
     assert '"NICO_GITLEAKS_VERSION"' in source
     assert '"NICO_TRUFFLEHOG_VERSION"' in source
