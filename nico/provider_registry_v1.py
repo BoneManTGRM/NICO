@@ -1,11 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
-from nico.provider_adapters_v1 import AzureDevOpsAdapter, BitbucketCloudAdapter, GiteaAdapter, ForgejoAdapter, GitHubAdapter, GitLabAdapter
-from nico.provider_platform_contract_v1 import ProviderContractViolation, ProviderKind, SourceControlProvider, validate_provider
-
-AdapterFactory = Callable[[Mapping[str, Any]], SourceControlProvider]
+from nico.provider_adapters_v1 import (
+    AzureDevOpsAdapter,
+    BitbucketCloudAdapter,
+    ForgejoAdapter,
+    GiteaAdapter,
+    GitHubAdapter,
+    GitLabAdapter,
+)
+from nico.provider_platform_contract_v1 import (
+    ProviderCapabilitySet,
+    ProviderContractViolation,
+    ProviderKind,
+    SourceControlProvider,
+    validate_provider,
+)
 
 
 _FACTORIES: dict[ProviderKind, type] = {
@@ -30,7 +41,18 @@ def build_provider(kind: str | ProviderKind, config: Mapping[str, Any]) -> Sourc
     factory = _FACTORIES.get(provider_kind)
     if factory is None:
         raise ProviderContractViolation(f"No production adapter registered for {provider_kind.value}")
-    adapter = factory(config)
+    fixture = config.get("fixture") if isinstance(config.get("fixture"), Mapping) else config
+    raw_capabilities = config.get("capabilities") or {}
+    try:
+        capabilities = (
+            raw_capabilities
+            if isinstance(raw_capabilities, ProviderCapabilitySet)
+            else ProviderCapabilitySet(**dict(raw_capabilities))
+        )
+    except TypeError as exc:
+        raise ProviderContractViolation(f"Invalid capability configuration for {provider_kind.value}") from exc
+    adapter = factory(fixture, capabilities)
+    adapter.authenticate()
     validate_provider(adapter)
     return adapter
 
