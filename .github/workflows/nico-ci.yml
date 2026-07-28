@@ -7,9 +7,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  checks: read
-  pull-requests: read
 
 jobs:
   test:
@@ -135,15 +132,3 @@ jobs:
       with:
         name: audit-results
         path: audit-results/
-
-  phase6-final-proof:
-    name: Phase 6 exact-SHA final proof
-    if: github.event_name == 'pull_request' && github.head_ref == 'phase-6/report-deduplication-security-remediation'
-    uses: ./.github/workflows/frozen-sha-scanner-proof.yml
-    with:
-      target_sha: ${{ github.event.pull_request.head.sha }}
-    permissions:
-      contents: read
-      actions: read
-      checks: read
-      pull-requests: read
