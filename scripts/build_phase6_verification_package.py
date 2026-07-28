@@ -106,10 +106,14 @@ def _pulls(path: Path | None) -> list[dict[str, Any]]:
 
 def _repository_path(value: Any) -> str:
     raw = str(value or "").replace("\\", "/")
+    lowered = raw.casefold()
+    candidates: list[tuple[int, str]] = []
     for root in (".github/", "apps/", "config/", "docs/", "nico/", "scripts/", "tests/"):
-        index = raw.casefold().find(root.casefold())
+        index = lowered.rfind(root.casefold())
         if index >= 0:
-            return raw[index:]
+            candidates.append((index, raw[index:]))
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
     return raw.lstrip("./")
 
 

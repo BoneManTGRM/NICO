@@ -747,7 +747,6 @@ def _patch_scanner_precedence() -> None:
                     bool(item.get("raw_artifact_retention_complete")),
                     bool(item.get("verified_artifact_hash")),
                     bool(item.get("execution_complete")),
-                    bool(item.get("current_run")),
                     str(item.get("observed_at") or ""),
                     str(item.get("source_path") or ""),
                 ),
