@@ -14,7 +14,8 @@ from nico.comprehensive_decision_grade_markdown_v5 import (
     _build_markdown, _decorate_assessment, _limitation_metrics,
     _roadmap_from_stages, _staffing_from_stages, _stage_summaries,
 )
-from nico.comprehensive_decision_grade_html_v5 import _build_html, _evidence_csv, _findings_csv
+from nico.comprehensive_decision_grade_html_v5 import _build_html
+from nico.comprehensive_decision_grade_csv_v6 import _evidence_csv, _findings_csv
 from nico.comprehensive_executive_risk_truth_v7 import reconcile_executive_risk_truth
 from nico.comprehensive_express_quality_v7 import (
     VERSION as EXPRESS_QUALITY_VERSION,
