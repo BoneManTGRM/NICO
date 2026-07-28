@@ -1,0 +1,35 @@
+name: Phase 6 Cleanup Generated Files
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-cleanup-generated-files.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Restore generated metadata and remove temporary workflows
+        run: |
+          git checkout 2056ceed71b517b61bb21c0ba8fda522e1ae8940 -- nico_cyber_defense.egg-info
+          rm -f .github/workflows/phase6-repo-inventory.yml
+          rm -f .github/workflows/phase6-cleanup-generated-files.yml
+          git add -A
+          git diff --cached --check
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: clean generated metadata and temporary workflows"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
