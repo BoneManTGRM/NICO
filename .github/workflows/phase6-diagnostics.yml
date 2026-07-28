@@ -21,32 +21,33 @@ jobs:
       - name: Install Python runtime quietly
         run: |
           set -e
+          mkdir -p diagnostics
           install_step() {
             label="$1"; shift
-            if ! "$@" >"/tmp/${label}.log" 2>&1; then
-              mkdir -p diagnostics
-              cp "/tmp/${label}.log" "diagnostics/install-${label}.txt"
+            if ! "$@" >"diagnostics/install-${label}.txt" 2>&1; then
+              echo "install_${label}=1" >> diagnostics/status.txt
               exit 1
             fi
+            echo "install_${label}=0" >> diagnostics/status.txt
           }
-          install_step pip-upgrade python -m pip install --upgrade pip
+          : > diagnostics/status.txt
+          install_step pip_upgrade python -m pip install --upgrade pip
           install_step pytest pip install pytest
           install_step requirements pip install -r requirements.txt
           install_step editable pip install --no-deps -e .
-          mkdir -p diagnostics
-          echo "install=0" > diagnostics/status.txt
       - name: Capture CLI diagnostic
         if: always()
         run: |
           set +e
+          mkdir -p diagnostics
           python -m nico --help > diagnostics/cli.txt 2>&1
-          rc=$?
-          echo "cli=$rc" >> diagnostics/status.txt
+          echo "cli=$?" >> diagnostics/status.txt
           exit 0
       - name: Capture production import diagnostic
         if: always()
         run: |
           set +e
+          mkdir -p diagnostics
           python - <<'PY' > diagnostics/production-import.txt 2>&1
           import traceback
           try:
@@ -54,8 +55,8 @@ jobs:
               from nico.api.production import app
               from nico.api_runner import main as api_main
               scripts = {item.name: item.value for item in entry_points(group="console_scripts")}
-              assert scripts.get("nico") == "nico.__main__:main"
-              assert scripts.get("nico-api") == "nico.api_runner:main"
+              assert scripts.get("nico") == "nico.__main__:main", scripts.get("nico")
+              assert scripts.get("nico-api") == "nico.api_runner:main", scripts.get("nico-api")
               assert app is not None
               assert callable(api_main)
               print("production import and entry points: PASS")
@@ -63,30 +64,29 @@ jobs:
               traceback.print_exc()
               raise
           PY
-          rc=$?
-          echo "production_import=$rc" >> diagnostics/status.txt
+          echo "production_import=$?" >> diagnostics/status.txt
           exit 0
       - name: Capture Phase 6 behavior tests
         if: always()
         run: |
           set +e
+          mkdir -p diagnostics
           python -m pytest tests/test_phase6_final_remediation.py tests/test_phase6_report_integrity_contracts.py -q --tb=short > diagnostics/phase6-tests.txt 2>&1
-          rc=$?
-          echo "phase6_tests=$rc" >> diagnostics/status.txt
+          echo "phase6_tests=$?" >> diagnostics/status.txt
           exit 0
       - name: Capture compile diagnostic
         if: always()
         run: |
           set +e
+          mkdir -p diagnostics
           python -m py_compile nico/phase6_final_remediation_v1.py nico/phase6_pdf_layout_v1.py nico/api/terminal_authority_bootstrap.py > diagnostics/compile.txt 2>&1
-          rc=$?
-          echo "compile=$rc" >> diagnostics/status.txt
+          echo "compile=$?" >> diagnostics/status.txt
           exit 0
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase6-diagnostics
+          name: phase6-diagnostics-${{ github.sha }}
           path: diagnostics/
           if-no-files-found: error
       - name: Enforce diagnostic status
