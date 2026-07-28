@@ -1,0 +1,78 @@
+name: Phase 6 Wire SQL Dispositions
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-wire-sql-dispositions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Wire source-reviewed SQL dispositions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("nico/phase6_canonical_truth_v2.py")
+          text = path.read_text(encoding="utf-8")
+          import_marker = "from nico import phase6_final_remediation_v1 as phase6\n"
+          import_addition = import_marker + "from nico.phase6_sql_dispositions_v1 import disposition_for, source_review_coverage\n"
+          if "from nico.phase6_sql_dispositions_v1 import" not in text:
+              if text.count(import_marker) != 1:
+                  raise SystemExit("Phase 6 SQL import marker missing")
+              text = text.replace(import_marker, import_addition, 1)
+
+          old = '''    if path in phase6._SQL_DISPOSITIONS and phase6._is_sql_message(analyzer_message):
+              disposition = deepcopy(phase6._SQL_DISPOSITIONS[path])
+              item["disposition"] = disposition
+              item["status"] = "bounded_exception"
+              item["executive_title"] = "Source-reviewed SQL construction"
+              item["technical_summary"] = disposition["rationale"]
+              item["recommendation"] = disposition["verification"]
+          '''
+          new = '''    disposition = disposition_for(path, analyzer_message)
+          if disposition:
+              item["disposition"] = disposition
+              item["status"] = "approved_nonblocking"
+              item["priority"] = "P3"
+              item["executive_title"] = "Source-reviewed SQL construction"
+              item["title"] = "Source-reviewed SQL construction"
+              item["technical_summary"] = disposition["rationale"]
+              item["recommendation"] = disposition["verification"]
+          '''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit("Phase 6 SQL disposition block missing")
+
+          marker = '    output["canonical_assessment_model"] = VERSION\n'
+          addition = '    output["sql_source_review_coverage"] = source_review_coverage()\n' + marker
+          if 'output["sql_source_review_coverage"]' not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit("Canonical assessment marker missing")
+              text = text.replace(marker, addition, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          rm -f .github/workflows/phase6-wire-sql-dispositions.yml
+          python -m py_compile nico/phase6_sql_dispositions_v1.py nico/phase6_canonical_truth_v2.py
+          git add -A
+          git diff --cached --check
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: wire source-reviewed SQL dispositions"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
