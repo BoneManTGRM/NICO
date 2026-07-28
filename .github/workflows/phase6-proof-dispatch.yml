@@ -1,0 +1,116 @@
+name: Phase 6 Final Proof Dispatch
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/phase6-proof-dispatch.yml"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact Phase 6 commit to prove
+        required: false
+
+permissions:
+  contents: read
+  actions: write
+  checks: read
+  pull-requests: read
+
+jobs:
+  dispatch-and-wait:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'phase-6/report-deduplication-security-remediation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
+      TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || 'phase-6/report-deduplication-security-remediation' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate immutable target
+        run: |
+          test -n "$TARGET_SHA"
+          test -n "$TARGET_REF"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA" --jq '.sha' | grep -Fx "$TARGET_SHA"
+
+      - name: Dispatch exact-SHA scanner and report proof
+        run: |
+          gh workflow run frozen-sha-scanner-proof.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$TARGET_REF" \
+            -f target_sha="$TARGET_SHA"
+
+      - name: Resolve dispatched proof run
+        id: proof
+        run: |
+          for attempt in $(seq 1 30); do
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow frozen-sha-scanner-proof.yml \
+              --branch "$TARGET_REF" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,status,conclusion,createdAt > proof-runs.json
+            run_id=$(python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          runs = json.loads(Path("proof-runs.json").read_text(encoding="utf-8"))
+          target = os.environ["TARGET_SHA"]
+          for run in runs:
+              if str(run.get("headSha") or "") == target:
+                  print(run["databaseId"])
+                  break
+          PY
+            )
+            if [ -n "$run_id" ]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "Dispatched proof run: $run_id"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Unable to resolve dispatched exact-SHA proof run." >&2
+          exit 1
+
+      - name: Wait for proof completion
+        run: |
+          gh run watch "${{ steps.proof.outputs.run_id }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status \
+            --interval 30
+
+      - name: Download final proof artifacts
+        if: always() && steps.proof.outputs.run_id != ''
+        run: |
+          mkdir -p dispatched-proof
+          gh run download "${{ steps.proof.outputs.run_id }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir dispatched-proof
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "nico.phase6.dispatched_proof_receipt.v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "target_sha": os.environ["TARGET_SHA"],
+              "proof_run_id": "${{ steps.proof.outputs.run_id }}",
+          }
+          Path("dispatched-proof/dispatch-receipt.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Retain final proof package with pull request run
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-dispatched-final-proof-${{ env.TARGET_SHA }}
+          path: dispatched-proof/
+          if-no-files-found: error
+          retention-days: 90
