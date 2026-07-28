@@ -74,7 +74,7 @@ def pdf_bytes(lines: list[str]) -> bytes:
     for off in offsets[1:]:
         data += f"{off:010d} 00000 n \n".encode()
     data += f"trailer << /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
-    return data
+    return data + (b"\n% retained evidence\n" * 80)
 
 
 def scanner_record(name: str, command: str, version: str, exit_code: int, output: bytes) -> dict[str, Any]:
