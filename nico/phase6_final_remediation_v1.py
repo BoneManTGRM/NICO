@@ -482,9 +482,18 @@ def reconcile_assessment(assessment: dict[str, Any], stage_results: dict[str, An
                 f"Source-reviewed analyzer dispositions: {len(dispositions)} bounded nonblocking record(s); full rationale retained in canonical JSON.",
             ])
 
-    commit_sha = _text(output.get("commit_sha") or _find_nested(stage_results, lambda item: bool(item.get("commit_sha"))) or "", 80)
-    if isinstance(commit_sha, dict):
-        commit_sha = _text(commit_sha.get("commit_sha"), 80)
+    identity_record = _find_nested(
+        stage_results,
+        lambda item: bool(item.get("commit_sha") or item.get("target_commit_sha") or item.get("snapshot_commit_sha")),
+    )
+    commit_sha = _text(output.get("commit_sha"), 80)
+    if not commit_sha and isinstance(identity_record, dict):
+        commit_sha = _text(
+            identity_record.get("commit_sha")
+            or identity_record.get("target_commit_sha")
+            or identity_record.get("snapshot_commit_sha"),
+            80,
+        )
     ci_summary = output.get("ci_history_classification") if isinstance(output.get("ci_history_classification"), dict) else {}
     historical = ci_summary.get("historical_reliability") if isinstance(ci_summary.get("historical_reliability"), dict) else {}
     default_health = ci_summary.get("current_branch_health") if isinstance(ci_summary.get("current_branch_health"), dict) else {}
@@ -781,8 +790,8 @@ def _patch_report_surfaces() -> None:
         def quality(*args: Any, **kwargs: Any) -> dict[str, Any]:
             result = original_quality(*args, **kwargs)
             front_matter = kwargs.get("front_matter_text")
-            if front_matter is None and len(args) >= 18:
-                front_matter = args[17]
+            if front_matter is None and len(args) >= 15:
+                front_matter = args[14]
             text = str(front_matter or "")
             valid = "Assessment Coverage" in text and "Why this is broader than Express" not in text
             result["assessment_coverage_front_matter"] = valid
