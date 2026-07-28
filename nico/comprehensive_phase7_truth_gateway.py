@@ -4,8 +4,9 @@ from typing import Any, Mapping
 
 from nico.assessment_truth_integration_v1 import calculate_score_ledger, freeze_assessment
 from nico.comprehensive_decision_grade_assessment_v6 import build_decision_grade_assessment
+from nico.phase8_report_quality_v1 import harden_report_findings
 
-VERSION = "nico.comprehensive_phase8_truth_gateway.v1"
+VERSION = "nico.comprehensive_phase8_truth_gateway.v2"
 
 
 def _section_weight(section_count: int) -> float:
@@ -74,13 +75,14 @@ def build_truth_bound_comprehensive_assessment(
         "immutable_revision": commit_sha,
         "run_id": run_id,
     }
-    assessment["canonical_findings"] = assessment.get("findings_register") or []
+    hardened = harden_report_findings(assessment.get("findings_register") or [])
+    assessment["canonical_findings"] = hardened
+    assessment["findings_register"] = hardened
+    assessment["decision_grade_findings_register"] = hardened
+    assessment["executive_risk_register"] = hardened
     assessment["approval_state"] = "FINAL-PENDING-APPROVAL"
     frozen = freeze_assessment(assessment, ledger).as_dict()
 
-    # Every renderer and exporter must consume the exact same canonical list.
-    # Leaving the pre-freeze registers intact allowed duplicate legacy and enriched
-    # findings to reappear in PDFs even though canonical_findings was clean.
     canonical_findings = list(frozen.get("canonical_findings") or [])
     frozen["findings_register"] = canonical_findings
     frozen["decision_grade_findings_register"] = canonical_findings
