@@ -24,8 +24,8 @@ jobs:
           install_step() {
             label="$1"; shift
             if ! "$@" >"/tmp/${label}.log" 2>&1; then
-              echo "INSTALL FAILURE: ${label}"
-              tail -80 "/tmp/${label}.log"
+              mkdir -p diagnostics
+              cp "/tmp/${label}.log" "diagnostics/install-${label}.txt"
               exit 1
             fi
           }
@@ -33,13 +33,21 @@ jobs:
           install_step pytest pip install pytest
           install_step requirements pip install -r requirements.txt
           install_step editable pip install --no-deps -e .
-          echo "install: PASS"
-      - name: Diagnose CLI
+          mkdir -p diagnostics
+          echo "install=0" > diagnostics/status.txt
+      - name: Capture CLI diagnostic
+        if: always()
         run: |
-          python -m nico --help
-      - name: Diagnose production imports
+          set +e
+          python -m nico --help > diagnostics/cli.txt 2>&1
+          rc=$?
+          echo "cli=$rc" >> diagnostics/status.txt
+          exit 0
+      - name: Capture production import diagnostic
+        if: always()
         run: |
-          python - <<'PY'
+          set +e
+          python - <<'PY' > diagnostics/production-import.txt 2>&1
           import traceback
           try:
               from importlib.metadata import entry_points
@@ -55,9 +63,36 @@ jobs:
               traceback.print_exc()
               raise
           PY
-      - name: Run Phase 6 behavior tests
+          rc=$?
+          echo "production_import=$rc" >> diagnostics/status.txt
+          exit 0
+      - name: Capture Phase 6 behavior tests
+        if: always()
         run: |
-          python -m pytest tests/test_phase6_final_remediation.py tests/test_phase6_report_integrity_contracts.py -q --tb=short
-      - name: Compile Phase 6 runtime
+          set +e
+          python -m pytest tests/test_phase6_final_remediation.py tests/test_phase6_report_integrity_contracts.py -q --tb=short > diagnostics/phase6-tests.txt 2>&1
+          rc=$?
+          echo "phase6_tests=$rc" >> diagnostics/status.txt
+          exit 0
+      - name: Capture compile diagnostic
+        if: always()
         run: |
-          python -m py_compile nico/phase6_final_remediation_v1.py nico/phase6_pdf_layout_v1.py nico/api/terminal_authority_bootstrap.py
+          set +e
+          python -m py_compile nico/phase6_final_remediation_v1.py nico/phase6_pdf_layout_v1.py nico/api/terminal_authority_bootstrap.py > diagnostics/compile.txt 2>&1
+          rc=$?
+          echo "compile=$rc" >> diagnostics/status.txt
+          exit 0
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-diagnostics
+          path: diagnostics/
+          if-no-files-found: error
+      - name: Enforce diagnostic status
+        if: always()
+        run: |
+          cat diagnostics/status.txt
+          if grep -Eq '=(1|2|3|4|5|6|7|8|9|[1-9][0-9]+)$' diagnostics/status.txt; then
+            exit 1
+          fi
