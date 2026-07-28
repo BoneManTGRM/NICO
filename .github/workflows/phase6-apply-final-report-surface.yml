@@ -1,0 +1,146 @@
+name: Phase 6 Apply Final Report Surface
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-apply-final-report-surface.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase6-apply-final-report-surface-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out Phase 6 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply final customer-facing terminology and bootstrap
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old!r}")
+              target.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_exact(
+              "nico/comprehensive_express_quality_v7.py",
+              '"The Comprehensive package retains the Express technical-health baseline and adds exact-location findings, deeper architecture evidence, "',
+              '"The Comprehensive package combines shared technical-health evidence with exact-location findings, deeper architecture evidence, "',
+          )
+          replace_exact(
+              "nico/comprehensive_express_quality_v7.py",
+              "# Page 1 - premium cover aligned with the Express visual standard.",
+              "# Page 1 - premium evidence-bound Comprehensive cover.",
+          )
+          replace_exact(
+              "nico/comprehensive_express_quality_v7.py",
+              "# Page 2 - executive decision brief and scope expansion.",
+              "# Page 2 - executive decision brief and assessment coverage.",
+          )
+          replace_exact(
+              "nico/comprehensive_express_quality_v7.py",
+              'page.drawString(42, y, "Why this is broader than Express")',
+              'page.drawString(42, y, "Assessment Coverage")',
+          )
+          replace_exact(
+              "nico/comprehensive_decision_grade_report_v5.py",
+              'for token in ("NICO COMPREHENSIVE", "TECHNICAL MATURITY", "Why this is broader than Express")',
+              'for token in ("NICO COMPREHENSIVE", "TECHNICAL MATURITY", "Assessment Coverage")',
+          )
+          replace_exact(
+              "apps/web/app/assessment/MidSectionReview.tsx",
+              'const expressNote = displayText(scoreContract.express_comparison_note, "Express is a faster baseline. Mid uses an immutable snapshot, scanner evidence, and seven fixed technical weights, so the scores are not directly interchangeable.");',
+              'const methodologyNote = displayText(scoreContract.score_methodology_note, "Technical score and evidence readiness are independent measures. This view uses an immutable snapshot, retained scanner evidence, and seven fixed technical weights.");',
+          )
+          replace_exact(
+              "apps/web/app/assessment/MidSectionReview.tsx",
+              '<p>{expressNote}</p>',
+              '<p>{methodologyNote}</p>',
+          )
+
+          bootstrap = Path("nico/api/terminal_authority_bootstrap.py")
+          text = bootstrap.read_text(encoding="utf-8")
+          text = text.replace(
+              "from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2\n",
+              "from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2\nfrom nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1\n",
+              1,
+          )
+          text = text.replace('VERSION = "nico.api.terminal_authority_bootstrap.v11"', 'VERSION = "nico.api.terminal_authority_bootstrap.v12"', 1)
+          text = text.replace(
+              "PHASE5_REPORT_TRUTH = install_phase5_report_truth_v2()\nEXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()",
+              "PHASE5_REPORT_TRUTH = install_phase5_report_truth_v2()\nPHASE6_FINAL_REMEDIATION = install_phase6_final_remediation_v1()\nEXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()",
+              1,
+          )
+          text = text.replace(
+              "app.state.nico_phase5_report_truth = PHASE5_REPORT_TRUTH\napp.state.nico_express_terminal_authority",
+              "app.state.nico_phase5_report_truth = PHASE5_REPORT_TRUTH\napp.state.nico_phase6_final_remediation = PHASE6_FINAL_REMEDIATION\napp.state.nico_express_terminal_authority",
+              1,
+          )
+          text = text.replace(
+              'if PHASE5_REPORT_TRUTH.get("baseline_delta_section") is not True:\n    raise RuntimeError("Phase 5 does not render a verified baseline delta section")\n',
+              '',
+              1,
+          )
+          anchor = 'if PHASE5_REPORT_TRUTH.get("client_delivery_allowed") is not False:\n    raise RuntimeError("Phase 5 report truth must block unapproved client delivery")\n\n'
+          phase6_checks = '''if PHASE6_FINAL_REMEDIATION.get("status") != "installed":
+              raise RuntimeError(f"Phase 6 final remediation did not install: {PHASE6_FINAL_REMEDIATION}")
+          if PHASE6_FINAL_REMEDIATION.get("phase_numbered_customer_sections_removed") is not True:
+              raise RuntimeError("Phase-numbered content can still enter customer reports")
+          if PHASE6_FINAL_REMEDIATION.get("express_comparison_customer_language_removed") is not True:
+              raise RuntimeError("Product-tier comparison language can still enter Comprehensive reports")
+          if PHASE6_FINAL_REMEDIATION.get("canonical_finding_identity") is not True:
+              raise RuntimeError("Phase 6 canonical finding identity is not active")
+          if PHASE6_FINAL_REMEDIATION.get("idempotent_report_filename") is not True:
+              raise RuntimeError("Phase 6 report filenames are not idempotent")
+          if PHASE6_FINAL_REMEDIATION.get("human_review_required") is not True:
+              raise RuntimeError("Phase 6 must preserve human review")
+          if PHASE6_FINAL_REMEDIATION.get("client_delivery_allowed") is not False:
+              raise RuntimeError("Phase 6 must block unapproved client delivery")
+
+          '''
+          if anchor not in text:
+              raise SystemExit("terminal bootstrap phase5 anchor was not found")
+          text = text.replace(anchor, anchor + phase6_checks, 1)
+          text = text.replace(
+              '    "PHASE5_REPORT_TRUTH",\n    "EXPRESS_TERMINAL_AUTHORITY",',
+              '    "PHASE5_REPORT_TRUTH",\n    "PHASE6_FINAL_REMEDIATION",\n    "EXPRESS_TERMINAL_AUTHORITY",',
+              1,
+          )
+          required = (
+              "install_phase6_final_remediation_v1",
+              "PHASE6_FINAL_REMEDIATION = install_phase6_final_remediation_v1()",
+              "Assessment Coverage",
+          )
+          if not all(token in text or token in Path("nico/comprehensive_express_quality_v7.py").read_text(encoding="utf-8") for token in required):
+              raise SystemExit("Phase 6 source rewrite verification failed")
+          bootstrap.write_text(text, encoding="utf-8")
+          PY
+
+          rm -f .github/workflows/phase6-apply-final-report-surface.yml
+          git add -A
+          git diff --cached --check
+
+      - name: Commit and push final report surface changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: remove phase and tier language from reports"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
