@@ -86,6 +86,7 @@ jobs:
               raise SystemExit(1)
           truth = json.loads(path.read_text(encoding="utf-8"))
           assessed = truth.get("assessed_commit") or {}
+          assert assessed["all_required_checks_green"] is True
           checks = assessed.get("checks") or {}
           stale = {
               name: {
@@ -128,6 +129,7 @@ jobs:
           receipt = json.loads(path.read_text(encoding="utf-8"))
           truth = json.loads(Path("dispatched-proof/pre-dispatch-ci-truth.json").read_text(encoding="utf-8"))
           assessed = truth["assessed_commit"]
+          assert assessed["all_required_checks_green"] is True
           receipt.update(
               {
                   "status": "exact_sha_checks_green",
