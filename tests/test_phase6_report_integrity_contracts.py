@@ -6,7 +6,8 @@ from nico.phase6_final_remediation_v1 import canonicalize_findings, normalize_re
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASE6_SOURCE = ROOT / "nico" / "phase6_final_remediation_v1.py"
-HTML_SOURCE = ROOT / "nico" / "comprehensive_decision_grade_html_v5.py"
+HTML_SOURCE = ROOT / "nico" / "comprehensive_decision_grade_html_v6.py"
+HTML_COMPAT_SOURCE = ROOT / "nico" / "comprehensive_decision_grade_html_v5.py"
 CSV_SOURCE = ROOT / "nico" / "comprehensive_decision_grade_csv_v6.py"
 
 
@@ -76,6 +77,13 @@ def test_phase6_cross_format_exports_use_canonical_fields() -> None:
         assert token in csv_source
 
 
+def test_phase6_html_compatibility_entry_point_routes_to_decomposed_builder() -> None:
+    source = _source(HTML_COMPAT_SOURCE)
+
+    assert "from nico.comprehensive_decision_grade_html_v6 import" in source
+    assert "def _build_html" not in source
+
+
 def test_phase6_customer_report_has_no_phase_or_tier_comparison_heading() -> None:
     sources = "\n".join(
         _source(path)
@@ -83,6 +91,7 @@ def test_phase6_customer_report_has_no_phase_or_tier_comparison_heading() -> Non
             ROOT / "nico" / "comprehensive_express_quality_v7.py",
             ROOT / "nico" / "comprehensive_decision_grade_report_v5.py",
             HTML_SOURCE,
+            HTML_COMPAT_SOURCE,
         )
     )
 
