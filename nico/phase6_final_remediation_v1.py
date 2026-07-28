@@ -828,9 +828,12 @@ def _patch_report_surfaces() -> None:
 
 
 def install_phase6_final_remediation_v1() -> dict[str, Any]:
+    from nico.phase6_pdf_layout_v1 import install_phase6_pdf_layout_v1
+
     _patch_scanner_runners()
     _patch_scanner_precedence()
     _patch_report_surfaces()
+    pdf_layout = install_phase6_pdf_layout_v1()
     return {
         "status": "installed",
         "version": VERSION,
@@ -848,6 +851,8 @@ def install_phase6_final_remediation_v1() -> dict[str, Any]:
         "ci_health_dimensions_separated": True,
         "actionable_complexity_classification": True,
         "idempotent_report_filename": True,
+        "concise_pdf_layout": pdf_layout.get("status") in {"installed", "already_installed"},
+        "artificial_minimum_page_padding_removed": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
