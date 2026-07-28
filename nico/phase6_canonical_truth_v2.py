@@ -11,6 +11,7 @@ from copy import deepcopy
 from typing import Any, Iterable
 
 from nico import phase6_final_remediation_v1 as phase6
+from nico.phase6_sql_dispositions_v1 import disposition_for, source_review_coverage
 
 VERSION = "nico.phase6_canonical_truth.v2"
 _PATCH_MARKER = "_nico_phase6_canonical_truth_v2"
@@ -206,11 +207,13 @@ def _canonicalize_finding_v2(raw: dict[str, Any]) -> dict[str, Any]:
             },
         }
     )
-    if path in phase6._SQL_DISPOSITIONS and phase6._is_sql_message(analyzer_message):
-        disposition = deepcopy(phase6._SQL_DISPOSITIONS[path])
+    disposition = disposition_for(path, analyzer_message)
+    if disposition:
         item["disposition"] = disposition
-        item["status"] = "bounded_exception"
+        item["status"] = "approved_nonblocking"
+        item["priority"] = "P3"
         item["executive_title"] = "Source-reviewed SQL construction"
+        item["title"] = "Source-reviewed SQL construction"
         item["technical_summary"] = disposition["rationale"]
         item["recommendation"] = disposition["verification"]
     return item
@@ -337,6 +340,7 @@ def _canonicalize_surface_assessment(assessment: dict[str, Any]) -> dict[str, An
         "occurrence_identity_retained": all(bool(item.get("occurrence_fingerprints") or item.get("occurrence_fingerprint")) for item in actionable),
         "ordered_set_mappings": True,
     }
+    output["sql_source_review_coverage"] = source_review_coverage()
     output["canonical_assessment_model"] = VERSION
     return output
 
