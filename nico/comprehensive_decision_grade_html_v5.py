@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import html
+import io
 from typing import Any, Iterable
 
 from nico.comprehensive_decision_grade_model_v5 import _score_band, _text
@@ -199,4 +201,47 @@ def _build_html(
 </main></body></html>"""
 
 
-__all__ = ["VERSION", "_build_html"]
+def _csv_cell(value: Any) -> str:
+    if isinstance(value, (list, tuple, set)):
+        return "; ".join(_text(item, 3000) for item in value)
+    if isinstance(value, dict):
+        import json
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return _text(value, 6000)
+
+
+def _findings_csv(findings: list[dict[str, Any]]) -> str:
+    fields = [
+        "id", "priority", "category", "executive_title", "technical_summary",
+        "analyzer_message", "canonical_path", "canonical_line", "canonical_location",
+        "related_locations", "finding_id", "fact", "evidence", "business_impact",
+        "confidence", "owner_role", "effort", "recommendation", "acceptance_criteria",
+        "cost_of_inaction", "residual_risk", "roadmap_mappings", "backlog_mappings",
+        "backlog_issue_mapping", "status", "source_evidence_fingerprint",
+    ]
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for item in findings:
+        if isinstance(item, dict):
+            writer.writerow({field: _csv_cell(item.get(field)) for field in fields})
+    return stream.getvalue()
+
+
+def _evidence_csv(stages: list[dict[str, Any]]) -> str:
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+    writer.writerow(["stage_id", "stage_title", "stage_status", "record_type", "record"])
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        for record_type in ("evidence", "findings", "unavailable"):
+            for item in stage.get(record_type) or []:
+                writer.writerow([
+                    stage.get("stage_id"), stage.get("title"), stage.get("status"),
+                    record_type, _csv_cell(item),
+                ])
+    return stream.getvalue()
+
+
+__all__ = ["VERSION", "_build_html", "_findings_csv", "_evidence_csv"]
