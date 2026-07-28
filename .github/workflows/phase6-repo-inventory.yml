@@ -1,0 +1,29 @@
+name: Phase 6 Repository Inventory
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-repo-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Capture report wiring inventory
+        run: |
+          mkdir -p inventory
+          grep -RInE "Spanish|Español|español|locale|language|report_language|language_code|build_comprehensive_report_package|phase5_verified_outcomes" nico apps/web tests --include='*.py' --include='*.ts' --include='*.tsx' > inventory/report-language-wiring.txt || true
+          grep -RInE "comprehensive_decision_grade_(assessment|html)|MidSectionReview|cyclomatic_complexity|actionable_hotspot" nico apps/web tests --include='*.py' --include='*.ts' --include='*.tsx' > inventory/hotspot-wiring.txt || true
+          find .github/workflows -maxdepth 1 -type f -printf '%f\n' | sort > inventory/workflows.txt
+      - name: Upload inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-repository-inventory
+          path: inventory/
+          if-no-files-found: error
