@@ -1,0 +1,201 @@
+name: Phase 6 Refactor Mid Review
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-refactor-mid-review.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Split Mid review derivation into bounded helpers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("apps/web/app/assessment/MidSectionReview.tsx")
+          text = path.read_text(encoding="utf-8")
+          marker = 'export default function MidSectionReview({payload}: Props) {'
+          start = text.index(marker)
+          toggle = text.index('  function toggle(key: string) {', start)
+          helpers = r'''
+          function deriveSectionView(payload: JsonRecord) {
+            const assessment = isRecord(payload.assessment) ? payload.assessment : {};
+            const sections = records(assessment.sections) as Section[];
+            const technical = TECHNICAL_IDS.flatMap((id) => {
+              const match = sections.find((section) => sectionId(section) === id);
+              return match ? [match] : [];
+            });
+            const context = sections.filter((section) => !TECHNICAL_IDS.includes(sectionId(section)));
+            return {assessment, technical, context};
+          }
+
+          function deriveScoreView(payload: JsonRecord, assessment: JsonRecord, technical: Section[]) {
+            const rows = weightedRows(payload, technical);
+            const weightedTotal = rows.reduce((total, row) => total + row.weight, 0);
+            const completeScorecard = rows.length === TECHNICAL_IDS.length && weightedTotal === 100;
+            const weightedScore = completeScorecard
+              ? Math.round(rows.reduce((total, row) => total + row.score * row.weight / 100, 0))
+              : null;
+            const intelligence = isRecord(payload.mid_score_intelligence) ? payload.mid_score_intelligence : {};
+            const scoreContract = isRecord(intelligence.score_contract) ? intelligence.score_contract : {};
+            const maturity = isRecord(assessment.maturity_signal) ? assessment.maturity_signal : {};
+            const score = bounded(
+              weightedScore
+                ?? finite(scoreContract.final_report_score)
+                ?? finite(scoreContract.reported_score)
+                ?? finite(scoreContract.calculated_score)
+                ?? finite(maturity.score)
+                ?? finite(payload.technical_score),
+            );
+            const projected = score == null || !completeScorecard
+              ? null
+              : Math.max(0, Math.min(100, Math.round(score + rows.reduce((total, row) => total + row.projected_lift_if_verified, 0))));
+            return {rows, completeScorecard, intelligence, scoreContract, maturity, score, projected};
+          }
+
+          function deriveEvidenceView(payload: JsonRecord, assessment: JsonRecord, technical: Section[]) {
+            const coverage = isRecord(assessment.evidence_coverage)
+              ? assessment.evidence_coverage
+              : isRecord(payload.evidence_coverage) ? payload.evidence_coverage : {};
+            const readiness = bounded(
+              finite(payload.evidence_readiness)
+                ?? finite(assessment.evidence_readiness)
+                ?? finite(assessment.evidence_readiness_score)
+                ?? finite(payload.evidence_readiness_score),
+            );
+            return {
+              readiness,
+              coveragePercent: bounded(coverage.percent),
+              evidenceUnits: technical.reduce((total, section) => total + textItems(section.evidence).length, 0),
+            };
+          }
+
+          function deriveArtifactView(payload: JsonRecord, intelligence: JsonRecord) {
+            const lifecycle = isRecord(intelligence.report_lifecycle) ? intelligence.report_lifecycle : {};
+            const reports = isRecord(payload.reports) ? payload.reports : {};
+            const pdfReady = (explicitTrue(lifecycle.pdf_available) && (hasArtifact(reports.pdf_base64) || hasArtifact(reports.pdf)))
+              || hasArtifact(reports.pdf_base64)
+              || hasArtifact(reports.pdf);
+            const markdownReady = (explicitTrue(lifecycle.markdown_available) && hasArtifact(reports.markdown))
+              || hasArtifact(reports.markdown);
+            const rawReportStatus = displayText(lifecycle.draft_generation_status || payload.report_generation_status, "pending");
+            const reportStatusClaimsReady = REPORT_READY_STATUSES.has(normalizedStatus(rawReportStatus));
+            const reportReady = pdfReady || markdownReady;
+            return {
+              pdfReady,
+              markdownReady,
+              reportLabel: reportReady ? "Ready" : reportStatusClaimsReady ? "Artifact unavailable" : titleCase(rawReportStatus),
+              reportDetail: pdfReady ? "PDF available" : markdownReady ? "Markdown available" : reportStatusClaimsReady ? "Refresh or regenerate the artifact" : "Artifact pending",
+              lifecycle,
+            };
+          }
+
+          function deriveReviewView(payload: JsonRecord, lifecycle: JsonRecord) {
+            const approval = isRecord(payload.approval_request) ? payload.approval_request : {};
+            const rawReviewStatus = displayText(lifecycle.human_review_status || approval.status || payload.approval_request_status, "pending");
+            const normalizedReviewStatus = normalizedStatus(rawReviewStatus);
+            const reviewApproved = REVIEW_APPROVED_STATUSES.has(normalizedReviewStatus);
+            const reviewBlocked = REVIEW_BLOCKED_STATUSES.has(normalizedReviewStatus);
+            return {
+              reviewApproved,
+              reviewBlocked,
+              reviewLabel: reviewApproved ? "Approved" : reviewBlocked ? "Blocked" : "Required",
+            };
+          }
+
+          function derivePriorityView(technical: Section[]) {
+            const priority = [...technical]
+              .filter((section) => !isUnscored(section) && ((bounded(section.score) ?? 101) < 80 || textItems(section.findings).length > 0 || limitations(section).length > 0))
+              .sort((left, right) => (bounded(left.score) ?? 101) - (bounded(right.score) ?? 101))
+              .slice(0, 3);
+            return {priority, attentionCount: technical.filter((section) => tone(section) !== "healthy").length};
+          }
+
+          function buildMidReviewView(payload: JsonRecord) {
+            const {assessment, technical, context} = deriveSectionView(payload);
+            const scoreView = deriveScoreView(payload, assessment, technical);
+            const evidenceView = deriveEvidenceView(payload, assessment, technical);
+            const artifactView = deriveArtifactView(payload, scoreView.intelligence);
+            const reviewView = deriveReviewView(payload, artifactView.lifecycle);
+            const priorityView = derivePriorityView(technical);
+            return {
+              assessment,
+              technical,
+              context,
+              ...scoreView,
+              ...evidenceView,
+              ...artifactView,
+              ...reviewView,
+              ...priorityView,
+              maturityLabel: displayText(scoreView.maturity.level || assessment.maturity, "Mid"),
+              repository: displayText(payload.repository || assessment.repository, "Repository assessment"),
+              runId: cleanText(payload.run_id || assessment.run_id),
+              methodologyNote: displayText(
+                scoreView.scoreContract.score_methodology_note,
+                "Technical score and evidence readiness are independent measures. This view uses an immutable snapshot, retained scanner evidence, and seven fixed technical weights.",
+              ),
+            };
+          }
+
+          '''
+          prefix = r'''export default function MidSectionReview({payload}: Props) {
+            const [filter, setFilter] = useState<Filter>("all");
+            const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+            const [actionNotice, setActionNotice] = useState("");
+            const view = buildMidReviewView(payload);
+            const {
+              technical,
+              context,
+              rows,
+              completeScorecard,
+              score,
+              projected,
+              readiness,
+              coveragePercent,
+              evidenceUnits,
+              pdfReady,
+              markdownReady,
+              reportLabel,
+              reportDetail,
+              reviewApproved,
+              reviewBlocked,
+              reviewLabel,
+              maturityLabel,
+              priority,
+              attentionCount,
+              repository,
+              runId,
+              methodologyNote,
+            } = view;
+            const visible = technical.filter((section) => filter === "all" || (filter === "attention" ? tone(section) !== "healthy" : tone(section) === "healthy"));
+
+          '''
+          text = text[:start] + helpers + prefix + text[toggle:]
+          path.write_text(text, encoding="utf-8")
+          PY
+          rm -f .github/workflows/phase6-refactor-mid-review.yml
+          cd apps/web
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          cd ../..
+          git add -A
+          git diff --cached --check
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: reduce Mid review component complexity"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
