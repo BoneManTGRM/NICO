@@ -1,33 +1,43 @@
 name: Frozen SHA Scanner Evidence Proof
 
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       target_sha:
         description: Immutable application commit to scan twice
         required: true
+  workflow_call:
+    inputs:
+      target_sha:
+        description: Immutable application commit to scan twice
+        required: true
+        type: string
 
 permissions:
   contents: read
   actions: read
+  checks: read
+  pull-requests: read
 
 jobs:
   frozen-scanner-proof:
-    name: Two clean scanner runs on exact SHA
+    name: Two clean scanner runs and final report proof on exact SHA
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
+      TARGET_SHA: ${{ inputs.target_sha }}
       NICO_ALLOW_PROJECT_COMMANDS: "true"
       NICO_NODE_OPTIONS: "--max-old-space-size=2048"
       NICO_MAX_SCANNER_PARSE_BYTES: "268435456"
       NICO_SCANNER_INSTALL_STRICT: "true"
+      NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "false"
+      NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE: "false"
+      NICO_ENABLE_SQLITE_DURABLE_STORAGE: "true"
+      NICO_SQLITE_PATH: /tmp/nico-phase6-verification.sqlite3
+      NICO_SCANNER_RAW_ARTIFACT_ROOT: /tmp/nico-phase6-scanner-artifacts
 
     steps:
-      - name: Check out scanner pipeline implementation
+      - name: Check out scanner and report implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -50,7 +60,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install exact NICO scanner runtime
+      - name: Install exact NICO scanner and report runtime
         working-directory: runner
         run: |
           python -m pip install --upgrade pip
@@ -90,7 +100,6 @@ jobs:
           echo "NICO_ESLINT_MODULE_ROOT=$profile_root/node_modules" >> "$GITHUB_ENV"
           echo "NICO_ESLINT_PARSER_ENTRY=$parser_entry" >> "$GITHUB_ENV"
           "$profile_root/node_modules/.bin/eslint" --version
-          echo "$parser_entry"
           "$profile_root/node_modules/.bin/tsc" --version
 
       - name: Verify exact checkout identity
@@ -109,32 +118,93 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --output frozen-scanner-proof
 
-      - name: Capture bounded CI history
+      - name: Capture bounded CI and pull-request history
         working-directory: runner
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" > workflow-runs.json
+          gh api "repos/$GITHUB_REPOSITORY/pulls?state=all&per_page=100&sort=updated&direction=desc" > pull-requests.json
           python - <<'PY'
           import json
           from pathlib import Path
-          payload = json.loads(Path("workflow-runs.json").read_text(encoding="utf-8"))
-          assert isinstance(payload.get("workflow_runs"), list)
-          assert payload["workflow_runs"]
+          workflows = json.loads(Path("workflow-runs.json").read_text(encoding="utf-8"))
+          pulls = json.loads(Path("pull-requests.json").read_text(encoding="utf-8"))
+          assert isinstance(workflows.get("workflow_runs"), list) and workflows["workflow_runs"]
+          assert isinstance(pulls, list)
           PY
 
-      - name: Build exact-SHA Phase 5 verification package
+      - name: Capture assessed-commit CI truth
+        working-directory: runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          python scripts/capture_phase6_ci_truth.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --target-sha "$TARGET_SHA" \
+            --output phase6-ci-truth.json \
+            --wait-seconds 900 \
+            --poll-seconds 20
+          capture_rc=$?
+          set -e
+          python - "$capture_rc" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          capture_rc = int(sys.argv[1])
+          path = Path("phase6-ci-truth.json")
+          if not path.exists():
+              raise SystemExit(capture_rc or 1)
+          truth = json.loads(path.read_text(encoding="utf-8"))
+          assessed = truth.get("assessed_commit") or {}
+          if assessed.get("all_required_checks_green") is not True:
+              raise SystemExit(
+                  f"Assessed-commit checks are not green: rc={capture_rc} "
+                  f"failed={assessed.get('failed')} pending={assessed.get('pending')} missing={assessed.get('missing')}"
+              )
+          print("Authoritative exact-SHA CI snapshot is green.")
+          PY
+
+      - name: Build exact-SHA Phase 6 final Comprehensive package
         working-directory: runner
         run: |
-          python scripts/build_phase5_verification_package.py \
+          mkdir -p phase6-final-verification
+          set +e
+          python scripts/build_phase6_verification_package.py \
             --source ../frozen-source \
             --scanner-run frozen-scanner-proof/scanner-run-1.json \
             --scanner-proof frozen-scanner-proof/frozen-scanner-proof.json \
             --workflow-runs workflow-runs.json \
+            --pulls pull-requests.json \
+            --ci-truth phase6-ci-truth.json \
             --repository "$GITHUB_REPOSITORY" \
-            --output phase5-verification
+            --output phase6-final-verification \
+            > >(tee phase6-final-verification/build-stdout.log) \
+            2> >(tee phase6-final-verification/build-stderr.log >&2)
+          build_rc=$?
+          set -e
+          python - "$build_rc" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
 
-      - name: Validate visible before and after outcomes
+          build_rc = int(sys.argv[1])
+          diagnostic = {
+              "schema": "nico.phase6.package_build_diagnostic.v1",
+              "exit_code": build_rc,
+              "stdout": Path("phase6-final-verification/build-stdout.log").read_text(encoding="utf-8", errors="replace"),
+              "stderr": Path("phase6-final-verification/build-stderr.log").read_text(encoding="utf-8", errors="replace"),
+          }
+          Path("phase6-final-verification/build-diagnostic.json").write_text(
+              json.dumps(diagnostic, indent=2, sort_keys=True), encoding="utf-8"
+          )
+          if build_rc:
+              raise SystemExit(build_rc)
+          PY
+
+      - name: Validate final visible outcomes
         working-directory: runner
         run: |
           python - <<'PY'
@@ -143,22 +213,29 @@ jobs:
           from pathlib import Path
 
           summary = json.loads(
-              Path("phase5-verification/phase5-verification-summary.json").read_text(encoding="utf-8")
+              Path("phase6-final-verification/phase6-final-verification-summary.json").read_text(encoding="utf-8")
           )
           assert summary["status"] == "verified", summary
           assert summary["exact_commit_sha"] == os.environ["TARGET_SHA"]
           assert summary["two_consecutive_scanner_runs"] is True
           assert all(value == "completed" for value in summary["required_scanner_statuses"].values())
-          assert set(summary["scanner_status_changes"]) >= {"bandit", "eslint", "gitleaks", "osv-scanner"}
-          complexity = summary["complexity_changes"]["_build_complexity"]
-          assert complexity["before"] == 94
-          assert complexity["after"] < complexity["before"]
-          assert complexity["delta"] < 0
-          assert summary["tls_verify_disabled_finding_open"] is False
-          assert summary["ci_history_classification_visible"] is True
+          assert sorted(summary["report_completed_scanners"]) == sorted(summary["required_scanner_statuses"])
+          assert summary["report_incomplete_scanners"] == []
+          assert summary["finding_ids_unique"] is True
+          assert summary["canonical_locations_present"] is True
+          assert summary["source_reviewed_sql_disposition_count"] >= 12
+          assert summary["duplicate_mapping_records"] == []
+          assert summary["assessed_commit_ci"]["green"] is True
+          assert summary["cross_format_truth_status"] == "valid"
+          assert summary["english_spanish_factual_parity"]["equivalent"] is True
+          assert summary["phase5_customer_section_present"] is False
+          assert summary["express_comparison_section_present"] is False
+          assert summary["english_filename_token_counts"]["FINAL-PENDING-APPROVAL"] == 1
+          assert "FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL" not in summary["english_pdf_filename"].upper()
           assert summary["human_review_required"] is True
           assert summary["client_delivery_allowed"] is False
-          assert {Path(name).suffix for name in summary["artifacts"]} >= {".md", ".html", ".pdf", ".csv", ".json"}
+          required_suffixes = {".md", ".html", ".pdf", ".json", ".csv"}
+          assert {Path(name).suffix for name in summary["artifacts"]} >= required_suffixes
           PY
 
       - name: Upload retained raw scanner evidence
@@ -170,10 +247,13 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Upload visible Phase 5 verification package
+      - name: Upload final Phase 6 Comprehensive proof package
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase5-verification-package-${{ env.TARGET_SHA }}
-          path: runner/phase5-verification
+          name: phase6-final-comprehensive-${{ env.TARGET_SHA }}
+          path: |
+            runner/phase6-final-verification
+            runner/phase6-ci-truth.json
           if-no-files-found: error
           retention-days: 90

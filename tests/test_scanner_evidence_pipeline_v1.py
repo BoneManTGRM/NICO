@@ -144,16 +144,22 @@ def test_docker_runtime_has_bounded_large_capture_memory_and_durable_root() -> N
 def test_frozen_sha_proof_requires_two_complete_equivalent_runs() -> None:
     proof = (ROOT / "scripts/frozen_scanner_evidence_proof.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/frozen-sha-scanner-proof.yml").read_text(encoding="utf-8")
+    dispatch = (ROOT / ".github/workflows/phase6-proof-dispatch.yml").read_text(encoding="utf-8")
     assert "run_number=1" in proof
     assert "run_number=2" in proof
     assert "two_consecutive_clean_runs" in proof
     assert "deterministic_fingerprints_equal" in proof
     assert "raw_artifact_retention_complete" in proof
-    assert "github.event.pull_request.head.sha" in workflow
-    assert "inputs.target_sha" in workflow
-    assert "phase5-verification-package-${{ env.TARGET_SHA }}" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_call:" in workflow
+    assert "TARGET_SHA: ${{ inputs.target_sha }}" in workflow
+    assert "phase6-final-comprehensive-${{ env.TARGET_SHA }}" in workflow
+    assert "build_phase6_verification_package.py" in workflow
     assert workflow.count("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1") == 2
     assert "retention-days: 90" in workflow
+    assert "Wait for authoritative exact-SHA required checks" in dispatch
+    assert "gh workflow run frozen-sha-scanner-proof.yml" in dispatch
+    assert "-f target_sha=\"$TARGET_SHA\"" in dispatch
 
 
 def test_pipeline_does_not_replace_public_scanner_tool_api() -> None:
@@ -161,7 +167,6 @@ def test_pipeline_does_not_replace_public_scanner_tool_api() -> None:
     assert "scanner_tool_runners.run_scanner_tool =" not in source
     assert "hosted_scanner_worker.run_scanner_tools = final_run_scanner_tools" in source
     assert "missing_evidence_is_not_clean" in source
-
 
 
 def test_eslint_profile_uses_explicit_module_root(monkeypatch, tmp_path: Path) -> None:

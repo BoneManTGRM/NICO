@@ -84,6 +84,9 @@ jobs:
         python -m py_compile nico/modules/express_pack.py
         python -m py_compile nico/phase5_report_truth_v1.py
         python -m py_compile nico/phase5_report_truth_v2.py
+        python -m py_compile nico/phase6_final_remediation_v1.py
+        python -m py_compile nico/phase6_canonical_truth_v2.py
+        python -m py_compile scripts/build_phase6_verification_package.py
 
     - name: Run Python dependency audit evidence
       run: |

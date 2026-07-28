@@ -9,7 +9,7 @@ ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
 ENV NICO_NODE_OPTIONS=--max-old-space-size=2048
 ENV NICO_MAX_SCANNER_PARSE_BYTES=268435456
 ENV NICO_SCANNER_RAW_ARTIFACT_ROOT=/data/scanner-artifacts
-ARG NICO_SCANNER_INSTALL_STRICT=false
+ARG NICO_SCANNER_INSTALL_STRICT=true
 ARG NICO_SEMGREP_VERSION=1.170.0
 ENV NICO_SCANNER_INSTALL_STRICT=${NICO_SCANNER_INSTALL_STRICT}
 ENV NICO_REQUIRE_DURABLE_DELIVERY_STORAGE=true
@@ -62,7 +62,10 @@ RUN python -m pip install --upgrade pip \
     && "$NICO_SEMGREP_HOME/bin/pip" install --no-cache-dir "semgrep==${NICO_SEMGREP_VERSION}" \
     && ln -s "$NICO_SEMGREP_HOME/bin/semgrep" /usr/local/bin/semgrep \
     && command -v semgrep \
-    && python scripts/install_hosted_scanner_binaries.py
+    && python scripts/install_hosted_scanner_binaries.py \
+    && command -v osv-scanner \
+    && command -v gitleaks \
+    && command -v trufflehog
 
 COPY . .
 RUN python -m pip install --no-cache-dir --no-deps . \

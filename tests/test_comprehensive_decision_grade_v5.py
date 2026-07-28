@@ -184,8 +184,8 @@ def test_report_package_is_decision_grade_and_page_truth_matches() -> None:
     pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert report["pdf_page_count"] == len(reader.pages)
-    assert 0 < report["core_report_page_count"] < report["final_package_page_count"]
-    assert report["final_package_page_count"] >= 25
+    assert 0 < report["core_report_page_count"] <= report["final_package_page_count"]
+    assert 5 <= report["final_package_page_count"] < 25
     assert len(reader.outline) > 0
     assert "Executive Risk Register" in pdf_text
     assert "Architecture and Complexity" in pdf_text
@@ -196,7 +196,7 @@ def test_report_package_is_decision_grade_and_page_truth_matches() -> None:
 
     assert "| Control | Technical score | Band | Evidence assurance |" in report["markdown"]
     assert "<h2>Executive Risk Register</h2>" in report["html"]
-    assert report["findings_csv"].startswith("id,priority,category,title,location")
+    assert report["findings_csv"].startswith("id,finding_id,priority,status,category,executive_title")
     assert report["evidence_ledger_csv"].startswith("stage_id,stage_title,stage_status")
     quality = report["report_quality_contract"]
     assert quality["score_band_separated_from_assurance"] is True
