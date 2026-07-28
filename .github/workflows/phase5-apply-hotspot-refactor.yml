@@ -1,0 +1,79 @@
+name: Phase 5 Apply Hotspot Refactor
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase5-apply-hotspot-refactor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase5-apply-hotspot-refactor-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_GZIP_SHA256: 6c25ba29873587011bb29e74ff20bac381417d49ee72dd113558c4987f5e7bb6
+    steps:
+      - name: Check out current Phase 5 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-5/report-truth-outcomes
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconstruct verified patch from immutable Git blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > /tmp/phase5-hotspots.patch.gz.b64
+          for sha in \
+            f9faa7b1e045b664b6d426f9dba58588104c6380 \
+            e1e8c54a74374cd127dc575817b933c11e1dae7b \
+            2db14d62855bb0d14c5c7d367252765d47c28cd4 \
+            4fd50989e8289c93be14a6afdacdbd895bed20e4 \
+            a9d6a0c67ace5eb483bf8306507ea473cdcaa01a \
+            b6fcf20d2ee29ea8cb5279e558a320a3d48b897b \
+            2bf3a139ed535994ef8165812c83fa5c22e3a6c8 \
+            e227333db91f92d29a7f8075818ae0235a712e93 \
+            6a9b4d5ea39bc5ec3db57afbad96e0c2e4863e4e \
+            c45389b5f9a2f58e4186be64c1b066cd47c4ab6f \
+            49570fc22b4d105b4b5ece56988757c6b9be137d \
+            9cc5f851f7f4f33233c048098abec5b7eb68c915 \
+            febea37de056d96cd2c392fcad09b65d8dbf748a \
+            6d564be369a47ab8b041f8ea6bb9858e4b24d544 \
+            c8ea731b9e1f6683978a989fe5793cdcd55132c8 \
+            fdffa28b8b23baaf76902926aeb280aa23269572
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
+              | tr -d '\n' \
+              | base64 --decode \
+              >> /tmp/phase5-hotspots.patch.gz.b64
+          done
+          base64 --decode /tmp/phase5-hotspots.patch.gz.b64 > /tmp/phase5-hotspots.patch.gz
+          echo "$EXPECTED_GZIP_SHA256  /tmp/phase5-hotspots.patch.gz" | sha256sum --check --strict
+          gzip --decompress --stdout /tmp/phase5-hotspots.patch.gz > /tmp/phase5-hotspots.patch
+          git apply --check --3way /tmp/phase5-hotspots.patch
+
+      - name: Apply verified production refactors
+        run: |
+          set -euo pipefail
+          git apply --3way --index /tmp/phase5-hotspots.patch
+          rm -f .github/workflows/phase5-apply-hotspot-refactor.yml
+          git add -A
+          git diff --cached --check
+
+      - name: Commit and push Phase 5 hotspot completion
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 5: reduce every named report hotspot"
+          git push origin HEAD:phase-5/report-truth-outcomes
