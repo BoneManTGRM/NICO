@@ -69,10 +69,12 @@ def _supplement_pdf(stages: list[dict[str, Any]], pages_needed: int, run_id: str
     def paragraph(value: Any, style: ParagraphStyle = body) -> Paragraph:
         return Paragraph(html.escape(_text(value)), style)
 
+    p = paragraph
+
     def list_item(value: Any) -> Paragraph:
         # A literal hyphen is used because ReportLab's default Helvetica bullet
         # can extract as DEL (U+007F) in some PDF readers.
-        return paragraph(f"- {_text(value, 2100)}", small)
+        return p(f"- {_text(value, 2100)}", small)
 
     def footer(canvas: Any, document: Any) -> None:
         canvas.saveState()

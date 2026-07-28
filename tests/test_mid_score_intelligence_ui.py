@@ -26,12 +26,12 @@ def test_legacy_mid_review_surface_retains_score_contract_without_public_mount()
     source = UNIFIED.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
-    assert "Express is a faster baseline" in source
+    assert "Technical score and evidence readiness are independent measures" in source
+    assert "Express is a faster baseline" not in source
     assert "seven fixed technical weights" in source
-    assert "verified-fix scenario" in source
-    assert "Evidence-unit coverage" in source
-    assert "new immutable snapshot assessment" in source
-    assert "weightTable" in source
+    assert "Projected after verified remediation" in source
+    assert "immutable snapshot" in source
+    assert "scoreTable" in source
     assert "MidScoreIntelligencePortal" not in layout
     assert "MidSectionReviewPortal" not in layout
     assert "Start Express or Comprehensive" in layout

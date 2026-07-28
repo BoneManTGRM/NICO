@@ -318,7 +318,7 @@ function buildView(payload: JsonRecord) {
     ...artifacts,
     ...review,
     ...priority,
-    maturityLabel: displayText(scores.maturity.level || sectionView.assessment.maturity, "Mid"),
+    maturityLabel: displayText(scores.maturity.level || sectionView.assessment.maturity, "Assessment"),
     repository: displayText(payload.repository || sectionView.assessment.repository, "Repository assessment"),
     runId: cleanText(payload.run_id || sectionView.assessment.run_id),
     methodologyNote: displayText(scores.scoreContract.score_methodology_note, "Technical score and evidence readiness are independent measures. This view uses an immutable snapshot, retained scanner evidence, and seven fixed technical weights."),
@@ -356,9 +356,9 @@ export default function MidSectionReview({payload}: Props) {
     setActionNotice(clicked ? "Report action opened." : "The report artifact is not available yet.");
   }
 
-  return <section className={styles.workspace} data-nico-mid-review="true">
+  return <section className={styles.workspace} data-nico-mid-review="true" aria-label="Comprehensive assessment review">
     <header className={styles.header}>
-      <div><span className={styles.eyebrow}>MID ASSESSMENT</span><h2>Engineering decision review</h2><p>{view.repository}{view.runId ? ` · ${view.runId}` : ""}</p></div>
+      <div><span className={styles.eyebrow}>COMPREHENSIVE ASSESSMENT</span><h2>Engineering decision review</h2><p>{view.repository}{view.runId ? ` · ${view.runId}` : ""}</p></div>
       <div className={styles.headerActions}>
         <button type="button" className={styles.secondaryAction} onClick={requestReview} disabled={view.reviewApproved}>{view.reviewApproved ? "Review approved" : "Request review"}</button>
         <button type="button" className={styles.primaryAction} onClick={openReport} disabled={!view.pdfReady && !view.markdownReady}>Open report</button>
@@ -378,7 +378,7 @@ export default function MidSectionReview({payload}: Props) {
     {view.priority.length ? <section className={styles.priorityPanel}><div><span className={styles.eyebrow}>PRIORITY</span><h3>What should change first</h3></div><div className={styles.priorityGrid}>{view.priority.map((section) => <button type="button" key={sectionId(section)} onClick={() => openPriority(section)}><span>{sectionLabel(section)}</span><strong>{scoreLabel(section)}</strong><small>{textItems(section.findings)[0] || limitations(section)[0] || "Evidence disposition required"}</small></button>)}</div></section> : null}
 
     <section className={styles.controlsPanel}>
-      <div className={styles.controlsHeader}><div><span className={styles.eyebrow}>TECHNICAL CONTROLS</span><h3>Seven-control scorecard</h3><p>{view.attentionCount} of {view.technical.length} controls need attention.</p></div><div className={styles.filterGroup}>{(["all", "attention", "verified"] as Filter[]).map((item) => <button type="button" key={item} className={filter === item ? styles.activeFilter : ""} onClick={() => setFilter(item)}>{titleCase(item)}</button>)}</div></div>
+      <div className={styles.controlsHeader}><div><span className={styles.eyebrow}>TECHNICAL CONTROLS</span><h3>Seven-control scorecard</h3><p>{view.attentionCount} of {view.technical.length} controls need attention.</p></div><div className={styles.filterGroup} role="group" aria-label="Filter technical controls">{(["all", "attention", "verified"] as Filter[]).map((item) => <button type="button" key={item} aria-pressed={filter === item} className={filter === item ? styles.activeFilter : ""} onClick={() => setFilter(item)}>{titleCase(item)}</button>)}</div></div>
       <div className={styles.controlList}>{visible.map((section) => {const key = sectionId(section) || sectionLabel(section); return <ControlRow key={key} section={section} expanded={expanded.has(key)} onToggle={() => toggle(key)} />;})}</div>
     </section>
 

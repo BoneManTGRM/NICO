@@ -64,7 +64,7 @@ def _repository_relative_path(value: Any) -> str:
         if index >= 0:
             candidates.append((index, raw[index:]))
     if candidates:
-        raw = min(candidates, key=lambda item: item[0])[1]
+        raw = max(candidates, key=lambda item: item[0])[1]
     return raw.lstrip("./") or "location-not-retained"
 
 
@@ -227,10 +227,19 @@ def _location_sort_key(value: str) -> tuple[str, int, str]:
     return (_repository_relative_path(match.group(1)).casefold(), int(match.group(2)), text.casefold())
 
 
+def _canonical_location_text(value: Any) -> str:
+    text = _text(value, 1200)
+    match = re.search(r"^(.*?):(\d+)(?::\d+)?$", text)
+    if match:
+        return f"{_repository_relative_path(match.group(1))}:{int(match.group(2))}"
+    return _repository_relative_path(text) if text else ""
+
+
 def _merge_finding_v2(target: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     merged = _ORIGINAL_MERGE_FINDING(target, candidate)
     locations = _ordered_unique(
-        [
+        _canonical_location_text(value)
+        for value in [
             target.get("canonical_location"),
             candidate.get("canonical_location"),
             *(target.get("related_locations") or []),

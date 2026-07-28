@@ -183,6 +183,8 @@ def _build_html(
     ]
     incomplete_rows = [[item.get("scanner"), item.get("status"), item.get("required"), item.get("confidence_impact"), item.get("remediation")] for item in incomplete]
     disposition_rows = _disposition_rows(assessment)
+    boundaries = [item for item in assessment.get("scope_boundaries") or [] if isinstance(item, dict)]
+    assumptions = [item for item in assessment.get("assumption_register") or [] if isinstance(item, dict)]
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>{_styles()}</style></head><body><main>
 <header><h1>{html.escape(title)}</h1><p>Generated {html.escape(generated_at)}</p><span class='badge'>{_escape(assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED')}</span></header>
 <section><h2>Executive Decision Brief</h2><p>{_escape(_decision_summary(identity, assessment, limitations), 3500)}</p><h3>Top Priority Decisions</h3>{_list_html([f"{item.get('executive_title') or item.get('title')} [{item.get('finding_id') or item.get('id')}]" for item in executive[:3]], 'Complete exact-package review')}<p class='warning'>Client delivery is not authorized until an approved human review record exists.</p></section>
@@ -196,6 +198,9 @@ def _build_html(
 <section><h2>Architecture and Data Flow</h2><div class='flow'><span>Repository</span><b>→</b><span>Immutable Snapshot</span><b>→</b><span>Evidence</span><b>→</b><span>Canonical Findings</span><b>→</b><span>Decision</span><b>→</b><span>Verification</span><b>→</b><span>Human Review</span></div></section>
 <h2>Six-Month Execution Roadmap</h2>{_roadmap_html(roadmap)}
 <section><h2>Staffing and Sequencing</h2>{_list_html([f"Sequence {item.get('sequence')}: {item.get('role')} — {item.get('focus')}" for item in staffing if isinstance(item, dict)], 'Requires stakeholder approval.')}</section>
+<section><h2>How to Use This Report</h2>{_list_html(assessment.get('how_to_use_report') or [], 'Complete exact-package human review before delivery.')}</section>
+<section><h2>Scope Boundary and Unassessed Risk</h2>{_html_table(['Area','Boundary'], [[item.get('area'), item.get('boundary')] for item in boundaries] or [['Unassessed domains','Must not be interpreted as healthy']])}</section>
+<section><h2>Assumption Register</h2>{_html_table(['ID','Category','Assumption','Source','Confidence','Sensitivity','Consequence if wrong'], [[item.get('assumption_id'),item.get('category'),item.get('description'),item.get('source'),item.get('confidence'),item.get('sensitivity'),item.get('consequence_if_wrong')] for item in assumptions] or [['—','—','No structured assumption retained','—','—','—','Human validation required']])}</section>
 <h2>Evidence Appendix</h2>{_stage_html(stages)}
 <section><h2>Human Review and Acceptance Gate</h2>{_list_html(['Verify exact identities and immutable evidence.', 'Triage every material, review-required, failed, timed-out, and unavailable analyzer result.', 'Confirm cross-format score, scanner, finding, limitation, CI, and delivery truth.', 'Approve or reject the exact immutable package.'])}<p class='warning'>{_escape(assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED')} — CLIENT DELIVERY NOT AUTHORIZED WITHOUT EXACT-PACKAGE APPROVAL</p></section>
 </main></body></html>"""

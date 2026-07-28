@@ -151,7 +151,8 @@ def test_frozen_sha_proof_requires_two_complete_equivalent_runs() -> None:
     assert "raw_artifact_retention_complete" in proof
     assert "github.event.pull_request.head.sha" in workflow
     assert "inputs.target_sha" in workflow
-    assert "phase5-verification-package-${{ env.TARGET_SHA }}" in workflow
+    assert "phase6-final-comprehensive-${{ env.TARGET_SHA }}" in workflow
+    assert "build_phase6_verification_package.py" in workflow
     assert workflow.count("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1") == 2
     assert "retention-days: 90" in workflow
 

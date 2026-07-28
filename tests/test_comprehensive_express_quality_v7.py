@@ -140,8 +140,9 @@ def test_comprehensive_pdf_has_express_quality_front_matter_and_exact_page_count
     front_text = " ".join((reader.pages[index].extract_text() or "") for index in range(2))
 
     assert len(reader.pages) == page_count
-    assert page_count >= 25
+    assert 2 <= page_count < 25
     assert "NICO COMPREHENSIVE" in front_text
     assert "TECHNICAL MATURITY" in front_text
-    assert "Why this is broader than Express" in front_text
+    assert "Assessment Coverage" in front_text
+    assert "Why this is broader than Express" not in front_text
     assert f"Final PDF pages: {page_count}" in front_text

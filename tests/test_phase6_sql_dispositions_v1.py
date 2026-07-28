@@ -43,7 +43,8 @@ def test_sql_disposition_is_traceable_and_source_change_sensitive() -> None:
     assert record["source_reviewed"] is True
     assert record["expires_on_source_change"] is True
     assert record["human_review_required"] is True
-    assert "parameter" in record["rationale"].lower()
+    assert "placeholder" in record["rationale"].lower()
+    assert "cursor.execute" in record["rationale"]
 
 
 def test_non_sql_message_does_not_receive_sql_exception() -> None:
