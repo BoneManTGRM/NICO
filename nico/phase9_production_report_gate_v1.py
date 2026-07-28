@@ -55,13 +55,23 @@ def normalized_filename(filename: str, approval_state: str) -> str:
     return f"{stem}-{state}{path.suffix}"
 
 
+def _context_subject(path: str) -> str:
+    file_path = Path(path)
+    stem = file_path.stem.replace("_", " ").replace("-", " ").strip()
+    parent = file_path.parent.name.replace("_", " ").replace("-", " ").strip()
+    generic_stems = {"page", "index", "main", "app", "route", "handler", "utils", "helpers"}
+    if stem.lower() in generic_stems and parent:
+        return f"{parent} {stem}".strip()
+    return stem or parent or "repository logic"
+
+
 def contextual_title(finding: Mapping[str, Any]) -> str:
     title = _text(finding.get("decision_title") or finding.get("title") or finding.get("interpretation"))
     if title.lower() not in _GENERIC_TITLES:
         return title
     path, _ = _path_line(finding)
     symbol = _text(finding.get("symbol") or finding.get("function") or finding.get("component"))
-    subject = symbol or Path(path).stem.replace("_", " ").replace("-", " ") or "repository logic"
+    subject = symbol or _context_subject(path)
     if "complex" in title.lower():
         return f"{subject} has concentrated branching and elevated change risk"
     return f"{subject}: {title.lower()}"
