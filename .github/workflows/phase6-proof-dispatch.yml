@@ -22,12 +22,18 @@ jobs:
   dispatch-and-wait:
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'phase-6/report-deduplication-security-remediation'
     runs-on: ubuntu-24.04
-    timeout-minutes: 100
+    timeout-minutes: 110
     env:
       TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
       TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || 'phase-6/report-deduplication-security-remediation' }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Check out exact orchestration implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+
       - name: Validate immutable target and initialize receipt
         run: |
           test -n "$TARGET_SHA"
@@ -42,16 +48,43 @@ jobs:
           Path("dispatched-proof/dispatch-receipt.json").write_text(
               json.dumps(
                   {
-                      "schema": "nico.phase6.dispatched_proof_receipt.v2",
+                      "schema": "nico.phase6.dispatched_proof_receipt.v3",
                       "repository": os.environ["GITHUB_REPOSITORY"],
                       "target_sha": os.environ["TARGET_SHA"],
-                      "status": "dispatch_started",
+                      "status": "waiting_for_exact_sha_checks",
                   },
                   indent=2,
                   sort_keys=True,
               ),
               encoding="utf-8",
           )
+          PY
+
+      - name: Wait for authoritative exact-SHA required checks
+        run: |
+          python scripts/capture_phase6_ci_truth.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --target-sha "$TARGET_SHA" \
+            --output dispatched-proof/pre-dispatch-ci-truth.json \
+            --wait-seconds 4200 \
+            --poll-seconds 30
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("dispatched-proof/dispatch-receipt.json")
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          truth = json.loads(Path("dispatched-proof/pre-dispatch-ci-truth.json").read_text(encoding="utf-8"))
+          assessed = truth["assessed_commit"]
+          assert assessed["all_required_checks_green"] is True, assessed
+          receipt.update(
+              {
+                  "status": "exact_sha_checks_green",
+                  "required_check_count": assessed["required_count"],
+                  "observed_check_count": assessed["observed_count"],
+              }
+          )
+          path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
           PY
 
       - name: Dispatch exact-SHA scanner and report proof
@@ -64,6 +97,7 @@ jobs:
       - name: Resolve dispatched proof run
         id: proof
         run: |
+          dispatch_epoch=$(date +%s)
           for attempt in $(seq 1 30); do
             gh run list \
               --repo "$GITHUB_REPOSITORY" \
@@ -73,6 +107,7 @@ jobs:
               --limit 20 \
               --json databaseId,headSha,status,conclusion,createdAt > proof-runs.json
             run_id=$(python - <<'PY'
+          import datetime as dt
           import json
           import os
           from pathlib import Path
@@ -80,9 +115,10 @@ jobs:
           runs = json.loads(Path("proof-runs.json").read_text(encoding="utf-8"))
           target = os.environ["TARGET_SHA"]
           for run in runs:
-              if str(run.get("headSha") or "") == target:
-                  print(run["databaseId"])
-                  break
+              if str(run.get("headSha") or "") != target:
+                  continue
+              print(run["databaseId"])
+              break
           PY
             )
             if [ -n "$run_id" ]; then
@@ -110,7 +146,6 @@ jobs:
             --dir dispatched-proof
           python - <<'PY'
           import json
-          import os
           from pathlib import Path
 
           receipt_path = Path("dispatched-proof/dispatch-receipt.json")
