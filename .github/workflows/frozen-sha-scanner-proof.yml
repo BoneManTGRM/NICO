@@ -1,12 +1,6 @@
 name: Frozen SHA Scanner Evidence Proof
 
 on:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - phase-6/report-deduplication-security-remediation
   workflow_dispatch:
     inputs:
       target_sha:
@@ -31,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
+      TARGET_SHA: ${{ inputs.target_sha }}
       NICO_ALLOW_PROJECT_COMMANDS: "true"
       NICO_NODE_OPTIONS: "--max-old-space-size=2048"
       NICO_MAX_SCANNER_PARSE_BYTES: "268435456"
@@ -140,7 +134,7 @@ jobs:
           assert isinstance(pulls, list)
           PY
 
-      - name: Wait for and capture assessed-commit CI truth
+      - name: Capture assessed-commit CI truth
         working-directory: runner
         env:
           GH_TOKEN: ${{ github.token }}
@@ -149,8 +143,8 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --target-sha "$TARGET_SHA" \
             --output phase6-ci-truth.json \
-            --wait-seconds 2700 \
-            --poll-seconds 30
+            --wait-seconds 300 \
+            --poll-seconds 15
 
       - name: Build exact-SHA Phase 6 final Comprehensive package
         working-directory: runner
