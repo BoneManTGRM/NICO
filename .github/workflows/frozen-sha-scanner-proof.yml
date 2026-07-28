@@ -12,6 +12,12 @@ on:
       target_sha:
         description: Immutable application commit to scan twice
         required: true
+  workflow_call:
+    inputs:
+      target_sha:
+        description: Immutable application commit to scan twice
+        required: true
+        type: string
 
 permissions:
   contents: read
