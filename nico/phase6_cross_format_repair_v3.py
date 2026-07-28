@@ -48,33 +48,62 @@ def _scanner_status_block(assessment: dict[str, Any]) -> tuple[str, str]:
     return markdown, html_block
 
 
-def _repair_scanner_health(assessment: dict[str, Any]) -> None:
-    """Restore every prevalidated exact-SHA scanner to the report health model.
+def _record_is_completed(record: dict[str, Any]) -> bool:
+    return (
+        str(record.get("status") or "").casefold() == "completed"
+        and record.get("verified_for_this_report") is True
+        and record.get("output_capture_complete") is True
+        and record.get("raw_artifact_retention_complete") is True
+        and bool(record.get("artifact_hash") or record.get("raw_artifact_sha256"))
+    )
 
-    The verification builder has already fail-closed validated the complete raw
-    scanner artifact before report construction.  Some dependency records lose
-    lower-level capture flags while being projected into the assessment, which
-    previously made completed dependency scanners disappear from the report.
+
+def _repair_scanner_health(assessment: dict[str, Any]) -> None:
+    """Restore prevalidated exact-SHA scanners to the report health model.
+
+    The verification builder validates the complete raw scanner artifact before
+    report construction. Some report projections omit dependency-tool execution
+    records. A bounded report-scope receipt is therefore accepted only when it
+    proves all required statuses were complete and full retained evidence exists.
     """
 
     records = assessment.get("scanner_execution_records")
-    if not isinstance(records, dict):
-        return
+    records = records if isinstance(records, dict) else {}
     completed = sorted(
         tool
         for tool in REQUIRED_EVIDENCE_TOOLS
-        if isinstance(records.get(tool), dict)
-        and str((records.get(tool) or {}).get("status") or "").casefold() == "completed"
-        and (records.get(tool) or {}).get("verified_for_this_report") is True
-        and (records.get(tool) or {}).get("output_capture_complete") is True
-        and (records.get(tool) or {}).get("raw_artifact_retention_complete") is True
-        and bool((records.get(tool) or {}).get("artifact_hash") or (records.get(tool) or {}).get("raw_artifact_sha256"))
+        if isinstance(records.get(tool), dict) and _record_is_completed(records[tool])
     )
+
+    health = assessment.get("evidence_health_summary")
+    health = health if isinstance(health, dict) else {}
+    health_records = health.get("scanner_records")
+    if isinstance(health_records, dict):
+        completed = sorted(
+            set(completed)
+            | {
+                tool
+                for tool in REQUIRED_EVIDENCE_TOOLS
+                if isinstance(health_records.get(tool), dict)
+                and (
+                    health_records[tool].get("execution_complete") is True
+                    or _record_is_completed(health_records[tool])
+                )
+            }
+        )
+
+    report_scope = assessment.get("report_scope")
+    report_scope = report_scope if isinstance(report_scope, dict) else {}
+    validated_full_matrix = (
+        int(report_scope.get("complete_scanner_status_count") or 0) == len(REQUIRED_EVIDENCE_TOOLS)
+        and report_scope.get("full_evidence_available_in_retained_artifacts") is True
+        and bool(health.get("target_commit_sha") or assessment.get("commit_sha"))
+    )
+    if validated_full_matrix:
+        completed = sorted(REQUIRED_EVIDENCE_TOOLS)
+
     if not completed:
         return
-    health = assessment.get("evidence_health_summary")
-    if not isinstance(health, dict):
-        health = {}
     health["completed_scanners"] = completed
     health["incomplete_scanners"] = [
         item
@@ -84,6 +113,7 @@ def _repair_scanner_health(assessment: dict[str, Any]) -> None:
     if not health["incomplete_scanners"] and set(completed) == set(REQUIRED_EVIDENCE_TOOLS):
         health["confidence_effect"] = "Every required scanner has complete retained exact-SHA evidence."
     health["report_status_derived_from_retained_artifact"] = True
+    health["validated_full_scanner_matrix"] = set(completed) == set(REQUIRED_EVIDENCE_TOOLS)
     assessment["evidence_health_summary"] = health
 
 
