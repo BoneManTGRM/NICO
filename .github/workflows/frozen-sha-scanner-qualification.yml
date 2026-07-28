@@ -27,11 +27,11 @@ permissions:
 
 jobs:
   qualify:
-    name: Two clean passes at a5cee7f
+    name: Two clean exact-revision passes
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      FROZEN_SHA: a5cee7f13a9ecb6811c99ba1db3f104c9e5d34d5
+      FROZEN_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
       NICO_SCANNER_ARTIFACT_ROOT: ${{ runner.temp }}/nico-frozen-sha-scanner-artifacts
       NICO_SCANNER_MAX_RETAINED_OUTPUT_BYTES: "268435456"
       NICO_SCANNER_NODE_HEAP_MB: "4096"
@@ -107,8 +107,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import json
+          import os
 
-          expected = "a5cee7f13a9ecb6811c99ba1db3f104c9e5d34d5"
+          expected = os.environ["FROZEN_SHA"]
           payload = json.loads(Path("frozen-sha-scanner-qualification.json").read_text(encoding="utf-8"))
           assert payload["status"] == "qualified", payload
           assert payload["expected_commit_sha"] == expected
@@ -127,7 +128,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: frozen-sha-scanner-evidence-a5cee7f
+          name: frozen-sha-scanner-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 90
           path: |
