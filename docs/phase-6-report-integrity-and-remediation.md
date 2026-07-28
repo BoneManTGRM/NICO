@@ -90,3 +90,5 @@ Phase 6 remains draft until a fresh exact-SHA Comprehensive package proves all o
 ## Merge policy
 
 Green CI is necessary but not sufficient. Merge only after a newly generated exact-SHA Comprehensive PDF, Markdown, HTML, JSON, and CSV package visibly demonstrates corrected scanner states, unique findings, source-reviewed dispositions, canonical locations, accurate CI truth, actionable complexity, idempotent artifact naming, English-Spanish factual parity, and preserved human approval controls.
+
+The final candidate is validated only from an immutable user-authored commit after temporary correction and diagnostic workflows have been removed.
