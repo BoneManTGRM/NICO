@@ -1,0 +1,61 @@
+name: Phase 6 Apply Proven Final Corrections
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-apply-proven-final-corrections.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase6-proven-final-corrections
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply the correction patch already proven by compile and tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/phase6-final-package-fix.yml")
+          text = workflow.read_text(encoding="utf-8")
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "          PY\n\n          rm -f .github/workflows/phase6-package-debug.yml"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          lines = text[start:end].splitlines()
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
+          exec(compile(script, str(workflow), "exec"), {"__name__": "__main__"})
+          PY
+
+          rm -f \
+            .github/workflows/phase6-package-debug.yml \
+            .github/workflows/phase6-final-package-fix.yml \
+            .github/workflows/phase6-final-fix-diagnostic.yml \
+            .github/workflows/phase6-apply-proven-final-corrections.yml
+
+          python -m py_compile \
+            nico/phase6_canonical_truth_v2.py \
+            nico/comprehensive_decision_grade_csv_v6.py
+          git add -A
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+
+      - name: Commit and push the proven correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: reconcile final exact-SHA report truth"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
