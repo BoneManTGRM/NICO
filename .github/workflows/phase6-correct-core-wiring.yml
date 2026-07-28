@@ -26,32 +26,13 @@ jobs:
           from pathlib import Path
           path = Path("nico/phase6_final_remediation_v1.py")
           text = path.read_text(encoding="utf-8")
-          old = '''    commit_sha = _text(output.get("commit_sha") or _find_nested(stage_results, lambda item: bool(item.get("commit_sha"))) or "", 80)
-              if isinstance(commit_sha, dict):
-                  commit_sha = _text(commit_sha.get("commit_sha"), 80)
-          '''
-          new = '''    identity_record = _find_nested(
-                  stage_results,
-                  lambda item: bool(item.get("commit_sha") or item.get("target_commit_sha") or item.get("snapshot_commit_sha")),
-              )
-              commit_sha = _text(output.get("commit_sha"), 80)
-              if not commit_sha and isinstance(identity_record, dict):
-                  commit_sha = _text(
-                      identity_record.get("commit_sha")
-                      or identity_record.get("target_commit_sha")
-                      or identity_record.get("snapshot_commit_sha"),
-                      80,
-                  )
-          '''
+          old = '    commit_sha = _text(output.get("commit_sha") or _find_nested(stage_results, lambda item: bool(item.get("commit_sha"))) or "", 80)\n    if isinstance(commit_sha, dict):\n        commit_sha = _text(commit_sha.get("commit_sha"), 80)\n'
+          new = '    identity_record = _find_nested(\n        stage_results,\n        lambda item: bool(item.get("commit_sha") or item.get("target_commit_sha") or item.get("snapshot_commit_sha")),\n    )\n    commit_sha = _text(output.get("commit_sha"), 80)\n    if not commit_sha and isinstance(identity_record, dict):\n        commit_sha = _text(\n            identity_record.get("commit_sha")\n            or identity_record.get("target_commit_sha")\n            or identity_record.get("snapshot_commit_sha"),\n            80,\n        )\n'
           if text.count(old) != 1:
               raise SystemExit(f"exact commit block count={text.count(old)}")
           text = text.replace(old, new)
-          old_quality = '''            if front_matter is None and len(args) >= 18:
-                      front_matter = args[17]
-          '''
-          new_quality = '''            if front_matter is None and len(args) >= 15:
-                      front_matter = args[14]
-          '''
+          old_quality = '            if front_matter is None and len(args) >= 18:\n                front_matter = args[17]\n'
+          new_quality = '            if front_matter is None and len(args) >= 15:\n                front_matter = args[14]\n'
           if text.count(old_quality) != 1:
               raise SystemExit(f"quality positional block count={text.count(old_quality)}")
           text = text.replace(old_quality, new_quality)
