@@ -47,13 +47,14 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
-          npm ci
+          npm --prefix apps/web ci
 
       - name: Run integrated Python tests
         run: |
@@ -63,8 +64,8 @@ jobs:
       - name: Run frontend typecheck and production build
         run: |
           set -euo pipefail
-          npm run typecheck
-          npm run build
+          npm --prefix apps/web run lint
+          npm --prefix apps/web run build
 
       - name: Verify provider support disclosures fail closed
         run: |
