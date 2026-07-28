@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -26,30 +27,78 @@ REQUIRED_WORKFLOWS = (
     "Remediation Evidence",
 )
 
+_RETRYABLE_HTTP_STATUS = {403, 408, 409, 429, 500, 502, 503, 504}
 
-def _request(url: str, token: str) -> dict[str, Any]:
-    request = urllib.request.Request(url)
-    request.add_header("Accept", "application/vnd.github+json")
-    request.add_header("X-GitHub-Api-Version", "2022-11-28")
-    request.add_header("User-Agent", "NICO-phase6-ci-truth")
-    if token:
-        request.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310 - fixed GitHub API host
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError("GitHub API response was not an object")
-    return payload
+
+def _retry_delay(error: urllib.error.HTTPError, attempt: int) -> float:
+    retry_after = str(error.headers.get("Retry-After") or "").strip()
+    if retry_after.isdigit():
+        return min(120.0, max(1.0, float(retry_after)))
+
+    reset = str(error.headers.get("X-RateLimit-Reset") or "").strip()
+    if reset.isdigit():
+        return min(120.0, max(1.0, float(reset) - time.time() + 1.0))
+
+    return min(60.0, float(2 ** min(attempt, 5)))
+
+
+def _request(url: str, token: str, *, attempts: int = 10) -> dict[str, Any]:
+    last_error: BaseException | None = None
+    for attempt in range(max(1, attempts)):
+        request = urllib.request.Request(url)
+        request.add_header("Accept", "application/vnd.github+json")
+        request.add_header("X-GitHub-Api-Version", "2022-11-28")
+        request.add_header("User-Agent", "NICO-phase6-ci-truth")
+        if token:
+            request.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310 - fixed GitHub API host
+                payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise RuntimeError("GitHub API response was not an object")
+            return payload
+        except urllib.error.HTTPError as error:
+            last_error = error
+            if error.code not in _RETRYABLE_HTTP_STATUS or attempt + 1 >= attempts:
+                raise
+            delay = _retry_delay(error, attempt)
+            print(
+                f"GitHub API request retry {attempt + 1}/{attempts - 1}: "
+                f"status={error.code} delay_seconds={delay:.0f} url={url}",
+                flush=True,
+            )
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError) as error:
+            last_error = error
+            if attempt + 1 >= attempts:
+                raise
+            delay = min(60.0, float(2 ** min(attempt, 5)))
+            print(
+                f"GitHub API transport retry {attempt + 1}/{attempts - 1}: "
+                f"delay_seconds={delay:.0f} error={error}",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"GitHub API request failed after retries: {last_error}")
 
 
 def _api(repository: str, path: str, token: str, **query: Any) -> dict[str, Any]:
     encoded = urllib.parse.urlencode({key: value for key, value in query.items() if value is not None})
     suffix = f"?{encoded}" if encoded else ""
-    return _request(f"https://api.github.com/repos/{repository}/{path}{suffix}", token)
+    base = f"https://api.github.com/repos/{repository}"
+    resource = f"/{path.lstrip('/')}" if path else ""
+    return _request(f"{base}{resource}{suffix}", token)
 
 
 def _runs_for_sha(repository: str, sha: str, token: str) -> list[dict[str, Any]]:
-    payload = _api(repository, "actions/runs", token, head_sha=sha, per_page=100)
-    return [dict(item) for item in payload.get("workflow_runs") or [] if isinstance(item, dict)]
+    runs: list[dict[str, Any]] = []
+    for page in range(1, 4):
+        payload = _api(repository, "actions/runs", token, head_sha=sha, per_page=100, page=page)
+        page_runs = [dict(item) for item in payload.get("workflow_runs") or [] if isinstance(item, dict)]
+        runs.extend(page_runs)
+        if len(page_runs) < 100:
+            break
+    return runs
 
 
 def _run_authority(item: dict[str, Any]) -> tuple[int, str, int, int]:
@@ -126,7 +175,7 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
     missing = [name for name, item in checks.items() if item["status"] == "not_observed"]
     green = not pending and not failed and not missing
     return {
-        "schema": "nico.phase6.required_checks.v2",
+        "schema": "nico.phase6.required_checks.v3",
         "commit_sha": sha,
         "all_required_checks_green": green,
         "required_checks_green": green,
@@ -143,17 +192,35 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
     }
 
 
+def _write_snapshot(path: Path, repository: str, assessed: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "nico.phase6.ci_truth_pending.v3",
+                "repository": repository,
+                "assessed_commit": assessed,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _wait_for_assessed_commit(
     repository: str,
     target_sha: str,
     token: str,
     *,
+    output_path: Path,
     wait_seconds: int,
     poll_seconds: int,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(0, wait_seconds)
     while True:
         assessed = _snapshot(repository, target_sha, token)
+        _write_snapshot(output_path, repository, assessed)
         if assessed["all_required_checks_green"]:
             return assessed
         if time.monotonic() >= deadline:
@@ -187,6 +254,7 @@ def main() -> int:
         repository,
         target_sha,
         token,
+        output_path=args.output,
         wait_seconds=args.wait_seconds,
         poll_seconds=args.poll_seconds,
     )
@@ -196,7 +264,7 @@ def main() -> int:
     branch_payload = _api(repository, f"branches/{urllib.parse.quote(default_branch, safe='')}", token)
     default_sha = str(((branch_payload.get("commit") or {}).get("sha")) or "").lower()
     default_health = _snapshot(repository, default_sha, token) if default_sha else {
-        "schema": "nico.phase6.required_checks.v2",
+        "schema": "nico.phase6.required_checks.v3",
         "commit_sha": "",
         "status": "not_observed",
         "all_required_checks_green": None,
@@ -209,7 +277,7 @@ def main() -> int:
         "missing": list(REQUIRED_WORKFLOWS),
     }
     output = {
-        "schema": "nico.phase6.ci_truth_capture.v2",
+        "schema": "nico.phase6.ci_truth_capture.v3",
         "repository": repository,
         "assessed_commit": assessed,
         "current_default_branch": {**default_health, "branch": default_branch},
@@ -218,6 +286,7 @@ def main() -> int:
         "historical_failures_do_not_override_assessed_commit": True,
         "duplicate_failed_or_active_exact_sha_runs_do_not_override_a_successful_required_check": True,
         "active_or_queued_runs_are_not_historical_failures": True,
+        "api_transport_retries_enabled": True,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
