@@ -75,10 +75,7 @@ def _latest_by_name(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         name = str(run.get("name") or "").strip()
         if name:
             grouped.setdefault(name, []).append(run)
-    return {
-        name: max(items, key=_run_authority)
-        for name, items in grouped.items()
-    }
+    return {name: max(items, key=_run_authority) for name, items in grouped.items()}
 
 
 def _project(name: str, run: dict[str, Any] | None) -> dict[str, Any]:
@@ -159,16 +156,14 @@ def _wait_for_assessed_commit(
         assessed = _snapshot(repository, target_sha, token)
         if assessed["all_required_checks_green"]:
             return assessed
-        if assessed["failed"]:
-            raise SystemExit(f"Required assessed-commit workflows failed without an authoritative successful run: {assessed['failed']}")
         if time.monotonic() >= deadline:
             raise SystemExit(
-                "Timed out waiting for assessed-commit workflows: "
-                f"pending={assessed['pending']} missing={assessed['missing']}"
+                "Timed out waiting for authoritative assessed-commit workflow results: "
+                f"failed={assessed['failed']} pending={assessed['pending']} missing={assessed['missing']}"
             )
         print(
-            "waiting for assessed-commit workflows: "
-            f"pending={assessed['pending']} missing={assessed['missing']}",
+            "waiting for authoritative assessed-commit workflows: "
+            f"failed={assessed['failed']} pending={assessed['pending']} missing={assessed['missing']}",
             flush=True,
         )
         time.sleep(max(5, poll_seconds))
@@ -217,10 +212,7 @@ def main() -> int:
         "schema": "nico.phase6.ci_truth_capture.v2",
         "repository": repository,
         "assessed_commit": assessed,
-        "current_default_branch": {
-            **default_health,
-            "branch": default_branch,
-        },
+        "current_default_branch": {**default_health, "branch": default_branch},
         "required_workflows": list(REQUIRED_WORKFLOWS),
         "historical_reliability_source": "separate bounded workflow-runs capture",
         "historical_failures_do_not_override_assessed_commit": True,
