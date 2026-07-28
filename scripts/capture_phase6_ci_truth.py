@@ -52,17 +52,33 @@ def _runs_for_sha(repository: str, sha: str, token: str) -> list[dict[str, Any]]
     return [dict(item) for item in payload.get("workflow_runs") or [] if isinstance(item, dict)]
 
 
+def _run_authority(item: dict[str, Any]) -> tuple[int, str, int, int]:
+    status = str(item.get("status") or "unknown").casefold()
+    conclusion = str(item.get("conclusion") or "").casefold()
+    if status == "completed" and conclusion == "success":
+        state_rank = 3
+    elif status != "completed":
+        state_rank = 2
+    else:
+        state_rank = 1
+    return (
+        state_rank,
+        str(item.get("updated_at") or ""),
+        int(item.get("run_attempt") or 0),
+        int(item.get("id") or 0),
+    )
+
+
 def _latest_by_name(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    output: dict[str, dict[str, Any]] = {}
-    for run in sorted(
-        runs,
-        key=lambda item: (str(item.get("updated_at") or ""), int(item.get("run_attempt") or 0), int(item.get("id") or 0)),
-        reverse=True,
-    ):
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for run in runs:
         name = str(run.get("name") or "").strip()
-        if name and name not in output:
-            output[name] = run
-    return output
+        if name:
+            grouped.setdefault(name, []).append(run)
+    return {
+        name: max(items, key=_run_authority)
+        for name, items in grouped.items()
+    }
 
 
 def _project(name: str, run: dict[str, Any] | None) -> dict[str, Any]:
@@ -86,11 +102,26 @@ def _project(name: str, run: dict[str, Any] | None) -> dict[str, Any]:
         "created_at": run.get("created_at"),
         "updated_at": run.get("updated_at"),
         "url": run.get("html_url"),
+        "authority_rule": "successful exact-SHA completion, then active exact-SHA run, then failed exact-SHA run; newest record breaks ties",
     }
 
 
+def _duplicate_run_summary(runs: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    grouped: dict[str, dict[str, int]] = {}
+    for run in runs:
+        name = str(run.get("name") or "").strip()
+        if not name:
+            continue
+        status = str(run.get("status") or "unknown").casefold()
+        conclusion = str(run.get("conclusion") or "").casefold()
+        bucket = "success" if status == "completed" and conclusion == "success" else "active" if status != "completed" else "failed"
+        grouped.setdefault(name, {"success": 0, "active": 0, "failed": 0})[bucket] += 1
+    return grouped
+
+
 def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
-    latest = _latest_by_name(_runs_for_sha(repository, sha, token))
+    runs = _runs_for_sha(repository, sha, token)
+    latest = _latest_by_name(runs)
     checks = {name: _project(name, latest.get(name)) for name in REQUIRED_WORKFLOWS}
     observed = [item for item in checks.values() if item["status"] != "not_observed"]
     pending = [name for name, item in checks.items() if item["status"] not in {"completed", "not_observed"}]
@@ -98,7 +129,7 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
     missing = [name for name, item in checks.items() if item["status"] == "not_observed"]
     green = not pending and not failed and not missing
     return {
-        "schema": "nico.phase6.required_checks.v1",
+        "schema": "nico.phase6.required_checks.v2",
         "commit_sha": sha,
         "all_required_checks_green": green,
         "required_checks_green": green,
@@ -109,8 +140,38 @@ def _snapshot(repository: str, sha: str, token: str) -> dict[str, Any]:
         "pending": pending,
         "failed": failed,
         "missing": missing,
+        "duplicate_exact_sha_run_summary": _duplicate_run_summary(runs),
+        "successful_exact_sha_run_is_authoritative_over_duplicate_failed_or_active_runs": True,
         "active_or_queued_runs_are_not_failures": True,
     }
+
+
+def _wait_for_assessed_commit(
+    repository: str,
+    target_sha: str,
+    token: str,
+    *,
+    wait_seconds: int,
+    poll_seconds: int,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(0, wait_seconds)
+    while True:
+        assessed = _snapshot(repository, target_sha, token)
+        if assessed["all_required_checks_green"]:
+            return assessed
+        if assessed["failed"]:
+            raise SystemExit(f"Required assessed-commit workflows failed without an authoritative successful run: {assessed['failed']}")
+        if time.monotonic() >= deadline:
+            raise SystemExit(
+                "Timed out waiting for assessed-commit workflows: "
+                f"pending={assessed['pending']} missing={assessed['missing']}"
+            )
+        print(
+            "waiting for assessed-commit workflows: "
+            f"pending={assessed['pending']} missing={assessed['missing']}",
+            flush=True,
+        )
+        time.sleep(max(5, poll_seconds))
 
 
 def main() -> int:
@@ -127,32 +188,20 @@ def main() -> int:
         raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required")
     repository = args.repository.strip()
     target_sha = args.target_sha.strip().lower()
-    deadline = time.monotonic() + max(0, args.wait_seconds)
-
-    while True:
-        assessed = _snapshot(repository, target_sha, token)
-        if assessed["all_required_checks_green"]:
-            break
-        if assessed["failed"]:
-            raise SystemExit(f"Required assessed-commit workflows failed: {assessed['failed']}")
-        if time.monotonic() >= deadline:
-            raise SystemExit(
-                "Timed out waiting for assessed-commit workflows: "
-                f"pending={assessed['pending']} missing={assessed['missing']}"
-            )
-        print(
-            "waiting for assessed-commit workflows: "
-            f"pending={assessed['pending']} missing={assessed['missing']}",
-            flush=True,
-        )
-        time.sleep(max(5, args.poll_seconds))
+    assessed = _wait_for_assessed_commit(
+        repository,
+        target_sha,
+        token,
+        wait_seconds=args.wait_seconds,
+        poll_seconds=args.poll_seconds,
+    )
 
     repository_payload = _api(repository, "", token)
     default_branch = str(repository_payload.get("default_branch") or "main")
     branch_payload = _api(repository, f"branches/{urllib.parse.quote(default_branch, safe='')}", token)
     default_sha = str(((branch_payload.get("commit") or {}).get("sha")) or "").lower()
     default_health = _snapshot(repository, default_sha, token) if default_sha else {
-        "schema": "nico.phase6.required_checks.v1",
+        "schema": "nico.phase6.required_checks.v2",
         "commit_sha": "",
         "status": "not_observed",
         "all_required_checks_green": None,
@@ -165,7 +214,7 @@ def main() -> int:
         "missing": list(REQUIRED_WORKFLOWS),
     }
     output = {
-        "schema": "nico.phase6.ci_truth_capture.v1",
+        "schema": "nico.phase6.ci_truth_capture.v2",
         "repository": repository,
         "assessed_commit": assessed,
         "current_default_branch": {
@@ -175,6 +224,7 @@ def main() -> int:
         "required_workflows": list(REQUIRED_WORKFLOWS),
         "historical_reliability_source": "separate bounded workflow-runs capture",
         "historical_failures_do_not_override_assessed_commit": True,
+        "duplicate_failed_or_active_exact_sha_runs_do_not_override_a_successful_required_check": True,
         "active_or_queued_runs_are_not_historical_failures": True,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
