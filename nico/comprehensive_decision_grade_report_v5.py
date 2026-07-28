@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import io
+import json
 import re
 from typing import Any
 
@@ -128,20 +130,8 @@ def _build_contract(
     )
 
 
-def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    required_identity = {
-        field: _text(identity.get(field), 180)
-        for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id")
-    }
-    missing = [field for field, value in required_identity.items() if not value]
-    if missing:
-        return {
-            "status": "blocked",
-            "reason": "missing_report_identity:" + ",".join(missing),
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
 
+def _prepare_report_context(identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> tuple[Any, ...]:
     generated_at = base_report._now()
     assessment = reconcile_executive_risk_truth(
         reconcile_comprehensive_assessment(_decorate_assessment(base_report._assessment(stage_results)))
@@ -160,8 +150,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
     }
     roadmap = _roadmap_from_stages(stage_results, assessment)
     staffing = _staffing_from_stages(stage_results)
+    return generated_at, assessment, stages, limitations, roadmap, staffing
 
-    # First pass establishes an initial rendered boundary for contract validation.
+
+def _initial_render(required_identity: dict[str, str], assessment: dict[str, Any], stages: list[dict[str, Any]], roadmap: list[dict[str, Any]], staffing: list[dict[str, Any]], limitations: dict[str, int], generated_at: str) -> tuple[Any, ...]:
     markdown, rendered_html, pdf_bytes, page_count, pdf_error = _render_artifacts(
         required_identity,
         assessment,
@@ -172,7 +164,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         generated_at,
     )
     core_page_count, front_matter_text = _pdf_metrics(pdf_bytes, page_count)
+    return markdown, rendered_html, pdf_bytes, page_count, pdf_error, core_page_count, front_matter_text
 
+
+def _contract_render(identity: dict[str, Any], required_identity: dict[str, str], assessment: dict[str, Any], stages: list[dict[str, Any]], roadmap: list[dict[str, Any]], staffing: list[dict[str, Any]], limitations: dict[str, int], generated_at: str, markdown: str, rendered_html: str, pdf_bytes: bytes, page_count: int, pdf_error: str | None, core_page_count: int, front_matter_text: str) -> tuple[Any, ...]:
     contract_error = None
     decision_grade_contract: DecisionGradeContract | None = None
     try:
@@ -245,7 +240,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
             "monetary_claims_require_assumptions": False,
             "client_ready": False,
         }
+    return assessment, roadmap, markdown, rendered_html, pdf_bytes, page_count, pdf_error, core_page_count, front_matter_text, contract_error, decision_grade_contract, contract_payload, contract_summary
 
+
+def _export_outputs(identity: dict[str, Any], required_identity: dict[str, str], assessment: dict[str, Any], stages: list[dict[str, Any]], decision_grade_contract: DecisionGradeContract | None, contract_error: str | None) -> tuple[Any, ...]:
     findings = [
         item
         for item in (
@@ -342,7 +340,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
             "synthetic_delta_generated": False,
         }
         historical_delta_markdown = delta_markdown(historical_delta)
+    return findings, executive_risks, findings_csv, evidence_csv, backlog_error, delta_error, backlog_exports, historical_delta, historical_delta_markdown
 
+
+def _canonical_identity(required_identity: dict[str, str], assessment: dict[str, Any], stages: list[dict[str, Any]], findings: list[dict[str, Any]], executive_risks: list[dict[str, Any]], roadmap: list[dict[str, Any]], staffing: list[dict[str, Any]], limitations: dict[str, int], contract_payload: dict[str, Any], backlog_exports: dict[str, Any], historical_delta: dict[str, Any], contract_summary: dict[str, Any]) -> tuple[Any, ...]:
     canonical = {
         "service_id": "comprehensive",
         "identity": required_identity,
@@ -382,6 +383,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         for item in backlog_exports["json"].get("items", [])
         if isinstance(item, dict)
     ]
+    return canonical, truth_sha, report_id, filename, static_section, static_is_scored, backlog_ids
+
+
+def _quality_contract(assessment: dict[str, Any], findings: list[dict[str, Any]], executive_risks: list[dict[str, Any]], roadmap: list[dict[str, Any]], limitations: dict[str, int], contract_error: str | None, contract_summary: dict[str, Any], backlog_error: str | None, backlog_exports: dict[str, Any], backlog_ids: list[Any], historical_delta: dict[str, Any], page_count: int, core_page_count: int, pdf_bytes: bytes, front_matter_text: str, rendered_html: str, markdown: str, static_section: dict[str, Any], static_is_scored: bool) -> dict[str, Any]:
     quality = {
         "version": VERSION,
         "premium_synthesis_version": PREMIUM_VERSION,
@@ -483,6 +488,10 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    return quality
+
+
+def _package_complete(pdf_bytes: bytes, pdf_error: str | None, quality: dict[str, Any]) -> bool:
     complete = bool(
         pdf_bytes.startswith(b"%PDF")
         and not pdf_error
@@ -509,6 +518,89 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         and quality["backlog_items_unique"]
         and quality["historical_delta_generated_only_when_comparable"]
     )
+    return complete
+
+
+def _phase5_outcome_rows(assessment: dict[str, Any]) -> list[dict[str, str]]:
+    outcomes = assessment.get("phase5_verified_outcomes")
+    outcomes = outcomes if isinstance(outcomes, dict) else {}
+    rows: list[dict[str, str]] = []
+    for tool, change in sorted((outcomes.get("scanner_status_changes") or {}).items()):
+        if isinstance(change, dict):
+            rows.append({
+                "category": "scanner",
+                "item": str(tool),
+                "before": str(change.get("before") or "unknown"),
+                "after": str(change.get("after") or "unknown"),
+                "delta": "status changed",
+                "evidence": "retained exact-SHA scanner artifact",
+            })
+    for name, change in sorted((outcomes.get("complexity_changes") or {}).items()):
+        if not isinstance(change, dict):
+            continue
+        evidence = change.get("evidence") if isinstance(change.get("evidence"), dict) else {}
+        rows.append({
+            "category": "complexity",
+            "item": str(name),
+            "before": str(change.get("before")),
+            "after": str(change.get("after")),
+            "delta": str(change.get("delta")),
+            "evidence": "; ".join(
+                part for part in (
+                    str(evidence.get("path") or ""),
+                    f"line {evidence.get('line')}" if evidence.get("line") else "",
+                    str(evidence.get("method") or ""),
+                ) if part
+            ) or "exact-SHA complexity evidence",
+        })
+    if outcomes.get("ci_history_classification_visible") is True:
+        summary = assessment.get("ci_history_classification")
+        historical = summary.get("historical_reliability") if isinstance(summary, dict) else {}
+        counts = historical.get("classified_counts") if isinstance(historical, dict) else {}
+        rows.append({
+            "category": "ci_history",
+            "item": "classified workflow outcomes",
+            "before": "raw non-success count",
+            "after": json.dumps(counts or {}, sort_keys=True, separators=(",", ":")),
+            "delta": "cancellations separated from genuine failures",
+            "evidence": "retained bounded workflow run history",
+        })
+    rows.append({
+        "category": "code_risk",
+        "item": "tls_verify_disabled",
+        "before": "open in Phase 5 baseline",
+        "after": "open" if outcomes.get("tls_verify_disabled_finding_open") else "not present in executable exact-SHA finding ledger",
+        "delta": "configuration literals excluded; executable calls remain detectable",
+        "evidence": "token-aware executable-source risk scan",
+    })
+    for tool in outcomes.get("unobserved_baseline_scanners") or []:
+        rows.append({
+            "category": "unobserved",
+            "item": str(tool),
+            "before": "baseline status retained",
+            "after": "no authoritative current exact-SHA record",
+            "delta": "not counted as improvement",
+            "evidence": "fail-closed truth boundary",
+        })
+    return rows
+
+
+def _phase5_outcome_csv(assessment: dict[str, Any]) -> str:
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=("category", "item", "before", "after", "delta", "evidence"),
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    writer.writerows(_phase5_outcome_rows(assessment))
+    return buffer.getvalue()
+
+
+def _final_report_payload(report_id: str, markdown: str, rendered_html: str, canonical: dict[str, Any], contract_payload: dict[str, Any], findings_csv: str, evidence_csv: str, backlog_exports: dict[str, Any], historical_delta: dict[str, Any], historical_delta_markdown: str, pdf_bytes: bytes, pdf_error: str | None, filename: str, page_count: int, core_page_count: int, truth_sha: str, quality: dict[str, Any], contract_summary: dict[str, Any], complete: bool, contract_error: str | None, backlog_error: str | None, delta_error: str | None, generated_at: str, assessment: dict[str, Any], stages: list[dict[str, Any]]) -> dict[str, Any]:
+    phase5_outcomes = assessment.get("phase5_verified_outcomes")
+    phase5_outcomes = phase5_outcomes if isinstance(phase5_outcomes, dict) else {}
+    phase5_csv = _phase5_outcome_csv(assessment)
     report_package = {
         "service_id": "comprehensive",
         "report_id": report_id,
@@ -540,6 +632,11 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
         "findings_csv_sha256": hashlib.sha256(findings_csv.encode("utf-8")).hexdigest(),
         "evidence_ledger_csv_sha256": hashlib.sha256(evidence_csv.encode("utf-8")).hexdigest(),
+        "phase5_verified_outcomes": phase5_outcomes,
+        "phase5_verified_outcomes_json": json.dumps(phase5_outcomes, sort_keys=True, separators=(",", ":"), default=str),
+        "phase5_verified_outcomes_csv": phase5_csv,
+        "phase5_verified_outcomes_csv_sha256": hashlib.sha256(phase5_csv.encode("utf-8")).hexdigest(),
+        "phase5_outcomes_visible_in_markdown_html_pdf": bool(phase5_outcomes),
         "appendix_contract_schema": VERSION,
         "evidence_appendix_present": True,
         "human_review_acceptance_gate_present": True,
@@ -574,6 +671,34 @@ def build_comprehensive_report_package(*, identity: dict[str, Any], stage_result
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+
+
+def build_comprehensive_report_package(*, identity: dict[str, Any], stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    required_identity = {
+        field: _text(identity.get(field), 180)
+        for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id")
+    }
+    missing = [field for field, value in required_identity.items() if not value]
+    if missing:
+        return {
+            "status": "blocked",
+            "reason": "missing_report_identity:" + ",".join(missing),
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+
+    generated_at, assessment, stages, limitations, roadmap, staffing = _prepare_report_context(identity, stage_results)
+    rendered = _initial_render(required_identity, assessment, stages, roadmap, staffing, limitations, generated_at)
+    markdown, rendered_html, pdf_bytes, page_count, pdf_error, core_page_count, front_matter_text = rendered
+    contracted = _contract_render(identity, required_identity, assessment, stages, roadmap, staffing, limitations, generated_at, markdown, rendered_html, pdf_bytes, page_count, pdf_error, core_page_count, front_matter_text)
+    assessment, roadmap, markdown, rendered_html, pdf_bytes, page_count, pdf_error, core_page_count, front_matter_text, contract_error, decision_grade_contract, contract_payload, contract_summary = contracted
+    exported = _export_outputs(identity, required_identity, assessment, stages, decision_grade_contract, contract_error)
+    findings, executive_risks, findings_csv, evidence_csv, backlog_error, delta_error, backlog_exports, historical_delta, historical_delta_markdown = exported
+    canonical_values = _canonical_identity(required_identity, assessment, stages, findings, executive_risks, roadmap, staffing, limitations, contract_payload, backlog_exports, historical_delta, contract_summary)
+    canonical, truth_sha, report_id, filename, static_section, static_is_scored, backlog_ids = canonical_values
+    quality = _quality_contract(assessment, findings, executive_risks, roadmap, limitations, contract_error, contract_summary, backlog_error, backlog_exports, backlog_ids, historical_delta, page_count, core_page_count, pdf_bytes, front_matter_text, rendered_html, markdown, static_section, static_is_scored)
+    complete = _package_complete(pdf_bytes, pdf_error, quality)
+    return _final_report_payload(report_id, markdown, rendered_html, canonical, contract_payload, findings_csv, evidence_csv, backlog_exports, historical_delta, historical_delta_markdown, pdf_bytes, pdf_error, filename, page_count, core_page_count, truth_sha, quality, contract_summary, complete, contract_error, backlog_error, delta_error, generated_at, assessment, stages)
 
 
 __all__ = ["build_comprehensive_report_package"]

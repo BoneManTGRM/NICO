@@ -296,7 +296,7 @@ function compactDigest(value: unknown): string {
   return `${normalized.slice(0, 12)}…${normalized.slice(-8)}`;
 }
 
-export default function FinalReviewWorkspace() {
+function useFinalReviewState() {
   const [locale, setLocale] = useState<Locale>("en");
   const [service, setService] = useState<Service>("comprehensive");
   const [runId, setRunId] = useState("");
@@ -323,6 +323,23 @@ export default function FinalReviewWorkspace() {
     setCustomerId(query.get("customer_id") || "default_customer");
     setProjectId(query.get("project_id") || "default_project");
   }, []);
+  return {
+    locale, setLocale, service, setService, runId, setRunId,
+    customerId, setCustomerId, projectId, setProjectId, adminToken, setAdminToken,
+    reviewer, setReviewer, reviewerRole, setReviewerRole, confirmed, setConfirmed,
+    note, setNote, result, setResult, loading, setLoading,
+    error, setError, notice, setNotice,
+  };
+}
+
+export default function FinalReviewWorkspace() {
+  const {
+    locale, setLocale, service, setService, runId, setRunId,
+    customerId, setCustomerId, projectId, setProjectId, adminToken, setAdminToken,
+    reviewer, setReviewer, reviewerRole, setReviewerRole, confirmed, setConfirmed,
+    note, setNote, result, setResult, loading, setLoading,
+    error, setError, notice, setNotice,
+  } = useFinalReviewState();
 
   const copy = COPY[locale];
   const canonical = service === "comprehensive";
@@ -635,7 +652,9 @@ export default function FinalReviewWorkspace() {
     }
   }
 
-  return <main className={styles.shell} data-review-contract={canonical ? "accepted-edition-v2" : "legacy-operator-review"}>
+
+  function renderHero() {
+    return (
     <section className={styles.hero}>
       <div className={styles.heroGlow} aria-hidden="true" />
       <p className={styles.eyebrow}>{copy.eyebrow}</p>
@@ -647,7 +666,11 @@ export default function FinalReviewWorkspace() {
         <div className={identityReady ? styles.identityReady : styles.identityMissing}><span>{copy.identity}</span><strong>{identityReady ? copy.bound : copy.missing}</strong></div>
       </div>
     </section>
+    );
+  }
 
+  function renderAccessPanel() {
+    return (
     <section className={styles.panel}>
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
@@ -664,7 +687,11 @@ export default function FinalReviewWorkspace() {
       <p className={styles.securityNote}>{canonical ? copy.canonicalSecurity : copy.legacySecurity}</p>
       <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
     </section>
+    );
+  }
 
+  function renderDecisionPanel() {
+    return (
     <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
       <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{copy.approveHeading}</h2><p>{copy.approveLead}</p></div></div>
       <div className={styles.statusGrid}>
@@ -687,9 +714,20 @@ export default function FinalReviewWorkspace() {
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || deliveryAllowed} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || deliveryAllowed} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}
     </section>
+    );
+  }
 
-    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section> : null}
+  function renderTechnicalRecord() {
+    return     <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section>;
+  }
+
+  return <main className={styles.shell} data-review-contract={canonical ? "accepted-edition-v2" : "legacy-operator-review"}>
+    {renderHero()}
+    {renderAccessPanel()}
+    {renderDecisionPanel()}
+    {result ? renderTechnicalRecord() : null}
   </main>;
 }
+
 
 /* Legacy Express compatibility remains deliberately isolated: Operator admin token; type="password"; await ensureLegacyReview(current); /approved`; Request more evidence; Reject delivery. */

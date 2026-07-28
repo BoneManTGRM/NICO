@@ -227,31 +227,19 @@ def _safe_max(values: list[int], *, empty: int | None = None) -> int | None:
     return max(values) if values else empty
 
 
-def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
-    from nico import full_assessment_complexity_evidence as base
-
-    source_files, python_files, javascript_files = _partition_source_files(files, base)
-    python_analyses, python_notes = _collect_python_analyses(python_files, base)
-    javascript_analyses, javascript_notes, ast_result = _collect_javascript_analyses(javascript_files, base)
-    analyses = [*python_analyses, *javascript_analyses]
-    parse_notes = [*python_notes, *javascript_notes]
-
-    metrics = _function_metrics(analyses)
-    functions = metrics["functions"]
-    complexities = metrics["complexities"]
-    cognitive = metrics["cognitive"]
-    lengths = metrics["lengths"]
-    nesting = metrics["nesting"]
-    grades = metrics["grades"]
-    hotspots = _build_hotspots(functions)
-    tracked = _tracked_function_metrics(functions)
-    coupled, fan_outs, internal_fan_outs, fan_ins = _build_coupling(analyses)
-
-    eligible_count = len(source_files)
-    analyzed_count = len(analyses)
-    high_complexity = sum(value >= 11 for value in complexities)
-    import_graph = ast_result.get("import_graph") if isinstance(ast_result.get("import_graph"), dict) else {}
-
+def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
+    analyses = context["analyses"]
+    functions = context["functions"]
+    complexities = context["complexities"]
+    cognitive = context["cognitive"]
+    lengths = context["lengths"]
+    nesting = context["nesting"]
+    grades = context["grades"]
+    ast_result = context["ast_result"]
+    eligible_count = context["eligible_count"]
+    analyzed_count = context["analyzed_count"]
+    high_complexity = context["high_complexity"]
+    base = context["base"]
     return {
         "status": "attached" if analyses else "unavailable",
         "analyzer_version": VERSION,
@@ -265,10 +253,10 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "typescript_ast_files_analyzed": sum(item.get("method") == "typescript_compiler_ast" for item in analyses),
         "typescript_ast_status": ast_result.get("status") or "unavailable",
         "typescript_parser_version": ast_result.get("parser_version") or "unavailable",
-        "source_parse_limitations": len(parse_notes),
+        "source_parse_limitations": len(context["parse_notes"]),
         "total_source_loc": sum(int(item.get("source_loc") or 0) for item in analyses),
         "functions_measured": len(functions),
-        "tracked_function_metrics": tracked,
+        "tracked_function_metrics": context["tracked"],
         "tracked_function_metrics_are_exact_sha": True,
         "average_cyclomatic_complexity": _safe_average(complexities),
         "median_cyclomatic_complexity": _safe_median(complexities),
@@ -285,6 +273,16 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "long_functions": sum(value >= 80 for value in lengths),
         "deep_nesting_functions": sum(value >= 5 for value in nesting),
         "maximum_nesting": _safe_max(nesting),
+    }
+
+
+def _complexity_architecture_payload(context: dict[str, Any]) -> dict[str, Any]:
+    fan_outs = context["fan_outs"]
+    internal_fan_outs = context["internal_fan_outs"]
+    fan_ins = context["fan_ins"]
+    import_graph = context["import_graph"]
+    ast_result = context["ast_result"]
+    return {
         "import_edges": sum(fan_outs),
         "internal_import_edges": sum(internal_fan_outs),
         "average_fan_out": _safe_average(fan_outs, empty=0.0),
@@ -294,11 +292,16 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "strongly_connected_components": int(import_graph.get("strongly_connected_components") or 0),
         "cyclic_components": list(import_graph.get("cyclic_components") or [])[:20],
         "files_in_import_cycles": list(import_graph.get("files_in_cycles") or [])[:100],
-        "top_coupled_files": coupled[:25],
-        "hotspots": hotspots[:50],
-        "duplicate_evidence": base._duplicate_evidence(source_files),
-        "parse_notes": parse_notes[:30],
-        "unavailable_data_notes": _unavailable_notes(ast_result, javascript_files, parse_notes, source_files),
+        "top_coupled_files": context["coupled"][:25],
+        "hotspots": context["hotspots"][:50],
+        "duplicate_evidence": context["base"]._duplicate_evidence(context["source_files"]),
+        "parse_notes": context["parse_notes"][:30],
+        "unavailable_data_notes": _unavailable_notes(
+            ast_result,
+            context["javascript_files"],
+            context["parse_notes"],
+            context["source_files"],
+        ),
         "threshold_contract": {
             "per_function_cyclomatic_target": 20,
             "module_residual_complexity_target": 40,
@@ -309,6 +312,40 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "guardrail": "Architecture metrics describe the exact-SHA first-party source profile. Parser limitations and coverage remain explicit and cannot be converted into clean evidence.",
         "human_review_required": True,
     }
+
+
+def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
+    from nico import full_assessment_complexity_evidence as base
+
+    source_files, python_files, javascript_files = _partition_source_files(files, base)
+    python_analyses, python_notes = _collect_python_analyses(python_files, base)
+    javascript_analyses, javascript_notes, ast_result = _collect_javascript_analyses(javascript_files, base)
+    analyses = [*python_analyses, *javascript_analyses]
+    parse_notes = [*python_notes, *javascript_notes]
+    metrics = _function_metrics(analyses)
+    functions = metrics["functions"]
+    complexities = metrics["complexities"]
+    coupled, fan_outs, internal_fan_outs, fan_ins = _build_coupling(analyses)
+    context = {
+        **metrics,
+        "base": base,
+        "source_files": source_files,
+        "javascript_files": javascript_files,
+        "analyses": analyses,
+        "parse_notes": parse_notes,
+        "ast_result": ast_result,
+        "tracked": _tracked_function_metrics(functions),
+        "hotspots": _build_hotspots(functions),
+        "coupled": coupled,
+        "fan_outs": fan_outs,
+        "internal_fan_outs": internal_fan_outs,
+        "fan_ins": fan_ins,
+        "eligible_count": len(source_files),
+        "analyzed_count": len(analyses),
+        "high_complexity": sum(value >= 11 for value in complexities),
+        "import_graph": ast_result.get("import_graph") if isinstance(ast_result.get("import_graph"), dict) else {},
+    }
+    return {**_complexity_summary_payload(context), **_complexity_architecture_payload(context)}
 
 
 def install_typescript_ast_complexity_v1() -> dict[str, Any]:

@@ -109,12 +109,31 @@ function functionMetrics(ts, node, sourceFile) {
   const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
   const line = start.line + 1;
   const endLine = end.line + 1;
+  const nestedRanges = [];
+  function collectNestedRanges(current) {
+    if (current !== node && isFunctionLike(ts, current)) {
+      const nestedStart = sourceFile.getLineAndCharacterOfPosition(current.getStart(sourceFile)).line + 1;
+      const nestedEnd = sourceFile.getLineAndCharacterOfPosition(current.getEnd()).line + 1;
+      nestedRanges.push([nestedStart, nestedEnd]);
+      return;
+    }
+    ts.forEachChild(current, collectNestedRanges);
+  }
+  collectNestedRanges(node);
+  const excludedLines = new Set();
+  for (const [nestedStart, nestedEnd] of nestedRanges) {
+    for (let currentLine = nestedStart; currentLine <= nestedEnd; currentLine += 1) excludedLines.add(currentLine);
+  }
+  const spanLoc = Math.max(1, endLine - line + 1);
+  const residualLoc = Math.max(1, spanLoc - [...excludedLines].filter((value) => value >= line && value <= endLine).length);
   return {
     path: sourceFile.fileName,
     name: nodeName(ts, node, sourceFile),
     line,
     end_line: endLine,
-    loc: Math.max(1, endLine - line + 1),
+    loc: residualLoc,
+    span_loc: spanLoc,
+    loc_method: "function_residual_physical_lines_excluding_nested_functions_v2",
     cyclomatic_complexity: cyclomatic,
     cognitive_complexity: cognitive,
     grade: grade(cyclomatic),

@@ -136,6 +136,39 @@ def _python_imports(tree: ast.AST) -> tuple[set[str], set[str]]:
     return imports, internal
 
 
+
+def _residual_function_loc(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, int]:
+    end_line = int(getattr(node, "end_lineno", node.lineno) or node.lineno)
+    span_loc = max(1, end_line - int(node.lineno) + 1)
+    excluded: set[int] = set()
+
+    class NestedDefinitionVisitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, child: ast.FunctionDef) -> None:
+            if child is node:
+                self.generic_visit(child)
+                return
+            child_end = int(getattr(child, "end_lineno", child.lineno) or child.lineno)
+            excluded.update(range(int(child.lineno), child_end + 1))
+
+        def visit_AsyncFunctionDef(self, child: ast.AsyncFunctionDef) -> None:
+            if child is node:
+                self.generic_visit(child)
+                return
+            child_end = int(getattr(child, "end_lineno", child.lineno) or child.lineno)
+            excluded.update(range(int(child.lineno), child_end + 1))
+
+        def visit_ClassDef(self, child: ast.ClassDef) -> None:
+            child_end = int(getattr(child, "end_lineno", child.lineno) or child.lineno)
+            excluded.update(range(int(child.lineno), child_end + 1))
+
+        def visit_Lambda(self, child: ast.Lambda) -> None:
+            child_end = int(getattr(child, "end_lineno", child.lineno) or child.lineno)
+            excluded.update(range(int(child.lineno), child_end + 1))
+
+    NestedDefinitionVisitor().visit(node)
+    residual = max(1, span_loc - sum(int(node.lineno) <= line <= end_line for line in excluded))
+    return residual, span_loc
+
 def _analyze_python(path: str, text: str) -> dict[str, Any]:
     try:
         tree = ast.parse(text, filename=path)
@@ -156,7 +189,7 @@ def _analyze_python(path: str, text: str) -> dict[str, Any]:
         visitor = _FunctionComplexityVisitor(node)
         visitor.visit(node)
         end_line = int(getattr(node, "end_lineno", node.lineno) or node.lineno)
-        loc = max(1, end_line - int(node.lineno) + 1)
+        loc, span_loc = _residual_function_loc(node)
         functions.append(
             {
                 "path": path,
@@ -164,6 +197,8 @@ def _analyze_python(path: str, text: str) -> dict[str, Any]:
                 "line": int(node.lineno),
                 "end_line": end_line,
                 "loc": loc,
+                "span_loc": span_loc,
+                "loc_method": "function_residual_physical_lines_excluding_nested_definitions_v2",
                 "cyclomatic_complexity": visitor.complexity,
                 "grade": _grade(visitor.complexity),
                 "max_nesting": visitor.max_nesting,

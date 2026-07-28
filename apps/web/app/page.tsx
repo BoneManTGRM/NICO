@@ -224,7 +224,7 @@ function extractBlock(text: string, label: string) {
   return text.match(pattern)?.[1]?.trim() || "";
 }
 
-export default function Page() {
+function usePageState() {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState("");
   const [assessmentType, setAssessmentType] = useState<AssessmentType>("express");
@@ -264,6 +264,37 @@ export default function Page() {
   const [reportPackage, setReportPackage] = useState<ReportPackage | null>(null);
   const [reportExport, setReportExport] = useState("");
   const [reportError, setReportError] = useState("");
+  return {
+    health, setHealth, healthError, setHealthError, assessmentType, setAssessmentType,
+    repository, setRepository, clientName, setClientName, projectName, setProjectName,
+    authorized, setAuthorized, loading, setLoading, assessmentError, setAssessmentError,
+    expressResult, setExpressResult, midResult, setMidResult, midRunId, setMidRunId,
+    copied, setCopied, workerCustomerId, setWorkerCustomerId, workerProjectId, setWorkerProjectId,
+    authorizedBy, setAuthorizedBy, authorizationScope, setAuthorizationScope, selectedWorkerTools, setSelectedWorkerTools,
+    scanId, setScanId, scanResult, setScanResult, scanError, setScanError,
+    repairIssue, setRepairIssue, repairEvidence, setRepairEvidence, affectedFiles, setAffectedFiles,
+    repairResult, setRepairResult, repairError, setRepairError, retainerNotes, setRetainerNotes,
+    retainerResult, setRetainerResult, opsError, setOpsError, approvals, setApprovals,
+    approvalError, setApprovalError, reportNotes, setReportNotes, reportPackage, setReportPackage,
+    reportExport, setReportExport, reportError, setReportError,
+  };
+}
+
+export default function Page() {
+  const {
+    health, setHealth, healthError, setHealthError, assessmentType, setAssessmentType,
+    repository, setRepository, clientName, setClientName, projectName, setProjectName,
+    authorized, setAuthorized, loading, setLoading, assessmentError, setAssessmentError,
+    expressResult, setExpressResult, midResult, setMidResult, midRunId, setMidRunId,
+    copied, setCopied, workerCustomerId, setWorkerCustomerId, workerProjectId, setWorkerProjectId,
+    authorizedBy, setAuthorizedBy, authorizationScope, setAuthorizationScope, selectedWorkerTools, setSelectedWorkerTools,
+    scanId, setScanId, scanResult, setScanResult, scanError, setScanError,
+    repairIssue, setRepairIssue, repairEvidence, setRepairEvidence, affectedFiles, setAffectedFiles,
+    repairResult, setRepairResult, repairError, setRepairError, retainerNotes, setRetainerNotes,
+    retainerResult, setRetainerResult, opsError, setOpsError, approvals, setApprovals,
+    approvalError, setApprovalError, reportNotes, setReportNotes, reportPackage, setReportPackage,
+    reportExport, setReportExport, reportError, setReportError,
+  } = usePageState();
 
   const backendConfigured = Boolean(API_URL);
   const backendOnline = health?.status === "ok";
@@ -574,7 +605,9 @@ export default function Page() {
     URL.revokeObjectURL(url);
   }
 
-  return <main className="shell">
+
+  function renderHero() {
+    return (
     <section className="hero">
       <p className="eyebrow">NICO Hosted Command Center</p>
       <h1>Evidence-bound technical oversight</h1>
@@ -586,7 +619,11 @@ export default function Page() {
         <a href="#approvals" className="secondary-link">Approvals</a>
       </div>
     </section>
+    );
+  }
 
+  function renderServiceModel() {
+    return (
     <section className="section panel status-panel">
       <div className="section-head">
         <div><p className="eyebrow">Service model</p><h2>Measured evidence, not accuracy promises</h2></div>
@@ -594,7 +631,11 @@ export default function Page() {
       </div>
       <div className="grid four target-grid">{serviceCards.map(([title, target, note]) => <article key={title}><b>{title}</b><span>{target}</span><small>{note}</small></article>)}</div>
     </section>
+    );
+  }
 
+  function renderSystemStatus() {
+    return (
     <section className="section panel status-panel">
       <div className="section-head">
         <div><p className="eyebrow">System status</p><h2>Frontend and backend</h2></div>
@@ -608,7 +649,11 @@ export default function Page() {
       <button type="button" className="small-button" onClick={checkBackend}>Check backend</button>
       {healthError ? <p className="error-box">{healthError}</p> : null}
     </section>
+    );
+  }
 
+  function renderAssessmentSetup() {
+    return (
     <section id="assessment" className="section panel">
       <div className="section-head">
         <div><p className="eyebrow">{assessmentHeading}</p><h2>{assessmentDescription}</h2></div>
@@ -645,7 +690,11 @@ export default function Page() {
       </div>
       {assessmentError ? <p className="error-box">{assessmentError}</p> : null}
     </section>
+    );
+  }
 
+  function renderAssessmentResult() {
+    return (
     <section className="section panel">
       <div className="section-head">
         <div><p className="eyebrow">{assessmentType === "express" ? "Express result" : "Mid run"}</p><h2>{selectedDocument?.maturity_signal?.level ? `${selectedDocument.maturity_signal.level} maturity signal` : assessmentType === "mid" && midRunId ? midRunId : "Awaiting assessment"}</h2></div>
@@ -697,7 +746,11 @@ export default function Page() {
       </>}
       {reportError ? <p className="error-box">{reportError}</p> : null}
     </section>
+    );
+  }
 
+  function renderScanner() {
+    return (
     <section id="scanner" className="section panel">
       <div className="section-head"><div><p className="eyebrow">Scanner worker</p><h2>Controlled scanner execution and evidence collection</h2></div><span className={statusClass(scanResult?.status)}>{scanResult?.status || "not run"}</span></div>
       <HelpDetails title="Scanner instructions"><ul><li>Use only on authorized GitHub repositories.</li><li>Unavailable means missing evidence, not a clean result.</li><li>Mid normally starts its own snapshot-bound scanner; this panel is for controlled standalone diagnostics.</li></ul></HelpDetails>
@@ -724,7 +777,11 @@ export default function Page() {
         <p className="warning-box">{scanResult.retention_note || "Temporary workspace should be deleted after scan completion."}</p>
       </> : null}
     </section>
+    );
+  }
 
+  function renderRepair() {
+    return (
     <section id="repair" className="section panel">
       <div className="section-head"><div><p className="eyebrow">Repair intelligence</p><h2>Evidence-backed code-fix suggestions</h2></div><span className="status gray">Suggest only</span></div>
       <div className="form-grid repair-grid">
@@ -741,7 +798,11 @@ export default function Page() {
         <HelpDetails title="Quality checklist"><ListBlock items={repairResult.quality_checklist} /></HelpDetails>
       </div> : null}
     </section>
+    );
+  }
 
+  function renderRetainer() {
+    return (
     <section id="retainer" className="section panel">
       <div className="section-head"><div><p className="eyebrow">Retainer operations</p><h2>Weekly status, backlog, release, and approvals</h2></div><span className="status gray">Ongoing evidence</span></div>
       <div className="command-card"><textarea value={retainerNotes} onChange={(event) => setRetainerNotes(event.target.value)} aria-label="Retainer operating evidence" /></div>
@@ -749,7 +810,11 @@ export default function Page() {
       {opsError ? <p className="error-box">{opsError}</p> : null}
       {retainerResult ? <><ResultSections sections={retainerResult.sections} /><div className="two-col inset-grid"><div className="mini-panel"><p className="eyebrow">Weekly status</p><ListBlock items={retainerResult.weekly_status_report} /></div><div className="mini-panel"><p className="eyebrow">Release checklist</p><ListBlock items={retainerResult.release_checklist} /></div></div></> : null}
     </section>
+    );
+  }
 
+  function renderApprovals() {
+    return (
     <section id="approvals" className="section panel">
       <div className="section-head"><div><p className="eyebrow">Approval queue</p><h2>Human decisions before guarded actions</h2></div><span className="status blue">{approvals.length} items</span></div>
       <button type="button" className="small-button" onClick={loadApprovals}>Load approvals</button>
@@ -765,7 +830,11 @@ export default function Page() {
         </div>
       </article>)}</div>
     </section>
+    );
+  }
 
+  function renderReports() {
+    return (
     <section id="reports-ui" className="section panel">
       <div className="section-head"><div><p className="eyebrow">Reports</p><h2>{assessmentType === "mid" ? "Mid report pipeline is guarded" : "Express report package"}</h2></div><span className={statusClass(reportPackage?.status)}>{reportPackage?.status || "not created"}</span></div>
       {assessmentType === "mid" ? <p className="warning-box">The generic report builder is disabled for Mid. Mid reports must retain the same midrun ID, snapshot, evidence ledger, and human-review chain.</p> : <>
@@ -781,10 +850,29 @@ export default function Page() {
       {reportPackage ? <HelpDetails title="Report package"><JsonBlock data={reportPackage} /></HelpDetails> : null}
       {reportExport ? <pre className="json-block">{reportExport}</pre> : null}
     </section>
+    );
+  }
 
+  function renderSafety() {
+    return (
     <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Safety boundary</p><h2>Authorized defensive use only</h2></div><span className="status blue">Enforced</span></div>
       <div className="two-col inset-grid"><div className="mini-panel"><p className="eyebrow">Rules</p><ListBlock items={safetyRules} /></div><div className="mini-panel"><p className="eyebrow">Assessment areas</p><ListBlock items={assessmentAreas} /></div></div>
     </section>
+    );
+  }
+
+  return <main className="shell">
+    {renderHero()}
+    {renderServiceModel()}
+    {renderSystemStatus()}
+    {renderAssessmentSetup()}
+    {renderAssessmentResult()}
+    {renderScanner()}
+    {renderRepair()}
+    {renderRetainer()}
+    {renderApprovals()}
+    {renderReports()}
+    {renderSafety()}
   </main>;
 }
