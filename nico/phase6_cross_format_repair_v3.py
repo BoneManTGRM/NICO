@@ -6,6 +6,7 @@ from typing import Any
 
 from nico import phase6_canonical_truth_v2 as truth
 from nico import phase6_final_remediation_v1 as phase6
+from nico.comprehensive_decision_grade_csv_v6 import _findings_csv
 
 VERSION = "nico.phase6_cross_format_repair.v3"
 _PATCH_MARKER = "_nico_phase6_cross_format_repair_v3"
@@ -54,6 +55,15 @@ def _repair_result(result: dict[str, Any]) -> dict[str, Any]:
         result["assessment"] = deepcopy(rendered_assessment)
 
     assessment = result.get("assessment") if isinstance(result.get("assessment"), dict) else {}
+    canonical_findings = [
+        item
+        for item in assessment.get("decision_grade_findings_register")
+        or assessment.get("findings_register")
+        or []
+        if isinstance(item, dict)
+    ]
+    package["findings_csv"] = _findings_csv(canonical_findings)
+
     markdown_block, html_block = _scanner_status_block(assessment)
     completed = [str(item).casefold() for item in ((assessment.get("evidence_health_summary") or {}).get("completed_scanners") or [])]
 
