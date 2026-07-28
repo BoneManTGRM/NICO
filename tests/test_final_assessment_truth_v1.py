@@ -28,6 +28,7 @@ def test_duplicate_finding_records_collapse_to_one_canonical_record() -> None:
             "rule_id": "python.lang.security.audit.eval-detected",
             "path": "nico/runtime.py",
             "line": 42,
+            "title": "Unsafe eval usage",
             "evidence": "eval(user_code)",
             "acceptance_criteria": ["Remove direct eval"],
         },
@@ -38,6 +39,7 @@ def test_duplicate_finding_records_collapse_to_one_canonical_record() -> None:
             "rule_id": "python.lang.security.audit.eval-detected",
             "path": "./nico/runtime.py",
             "line": 42,
+            "title": "Unsafe eval usage",
             "evidence": "eval(user_code)",
             "acceptance_criteria": ["Remove direct eval"],
         },
@@ -49,6 +51,38 @@ def test_duplicate_finding_records_collapse_to_one_canonical_record() -> None:
     assert canonical[0]["finding_id"].startswith("RISK-")
     assert canonical[0]["legacy_finding_ids"] == ["legacy-a", "legacy-b"]
     assert len(canonical[0]["acceptance_criteria"]) == 1
+
+
+def test_legacy_and_enriched_hotspot_records_with_string_location_collapse() -> None:
+    findings = [
+        {
+            "id": "RISK-OLD",
+            "category": "architecture",
+            "title": "High-complexity code hotspot",
+            "location": "apps/web/app/operations/page.tsx:177",
+            "acceptance_criteria": ["Reduce complexity and retain behavior coverage"],
+        },
+        {
+            "id": "RISK-P1-ENRICHED",
+            "category": "architecture",
+            "decision_title": "High-complexity code hotspot",
+            "location": "apps/web/app/operations/page.tsx:177",
+            "acceptance_criteria": [
+                "Reduce complexity and retain behavior coverage",
+                "Reduce complexity and retain behavior coverage",
+            ],
+            "roadmap_mappings": ["WP-02"],
+        },
+    ]
+
+    canonical = canonicalize_findings(findings, _identity())
+
+    assert len(canonical) == 1
+    assert canonical[0]["canonical_path"] == "apps/web/app/operations/page.tsx"
+    assert canonical[0]["canonical_line"] == 177
+    assert canonical[0]["legacy_finding_ids"] == ["RISK-OLD", "RISK-P1-ENRICHED"]
+    assert len(canonical[0]["acceptance_criteria"]) == 1
+    assert canonical[0]["roadmap_mappings"] == ["WP-02"]
 
 
 def test_frozen_truth_rejects_contradictory_report_surface() -> None:
@@ -83,7 +117,7 @@ def test_report_filename_is_idempotent_and_has_one_terminal_status() -> None:
         extension="pdf",
     )
     second = build_report_filename(
-        first.removesuffix(".pdf"),
+        first,
         language=None,
         status=ReportStatus.FINAL_PENDING_APPROVAL,
         extension="pdf",
