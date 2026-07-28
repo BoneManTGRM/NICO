@@ -11,7 +11,8 @@ from copy import deepcopy
 from typing import Any, Iterable
 
 from nico import phase6_final_remediation_v1 as phase6
-from nico.phase6_sql_dispositions_v1 import disposition_for, source_review_coverage
+from nico.phase6_sql_dispositions_v1 import SQL_DISPOSITIONS, disposition_for, source_review_coverage
+from nico.scanner_evidence_pipeline_v1 import REQUIRED_EVIDENCE_TOOLS
 
 VERSION = "nico.phase6_canonical_truth.v2"
 _PATCH_MARKER = "_nico_phase6_canonical_truth_v2"
@@ -321,6 +322,278 @@ def canonicalize_findings_v2(records: Iterable[dict[str, Any]]) -> tuple[list[di
     return actionable, dispositions
 
 
+_SCANNER_CATEGORIES = {
+    "pip-audit": "dependency",
+    "npm-audit": "dependency",
+    "osv-scanner": "dependency",
+    "bandit": "static",
+    "semgrep": "static",
+    "eslint": "static",
+    "typescript": "static",
+    "gitleaks": "secret",
+    "trufflehog": "secret",
+}
+
+
+def _sha(value: Any) -> str:
+    token = str(value or "").strip().casefold()
+    return token if len(token) == 40 and all(character in "0123456789abcdef" for character in token) else ""
+
+
+def _scanner_record(
+    tool: str,
+    payload: dict[str, Any],
+    *,
+    target_commit: str,
+    inherited_commit: str,
+    source_path: str,
+) -> dict[str, Any]:
+    commit_sha = _sha(payload.get("target_commit_sha") or payload.get("commit_sha")) or inherited_commit
+    exact = bool(target_commit and commit_sha == target_commit)
+    retained = payload.get("raw_artifact_retention_complete") is True or isinstance(payload.get("raw_artifact"), dict)
+    artifact_hash = _text(payload.get("artifact_hash") or payload.get("raw_artifact_sha256"), 180)
+    history_ready = payload.get("scans_git_history") is not True or payload.get("full_history_verified") is True
+    status = _text(payload.get("status") or "unknown", 80).casefold()
+    execution_complete = (
+        status == "completed"
+        and payload.get("verified_for_this_report") is True
+        and payload.get("output_capture_complete") is True
+        and payload.get("raw_artifact_capture_complete") is True
+        and retained
+        and bool(artifact_hash)
+        and payload.get("returncode_valid") is not False
+        and payload.get("timed_out") is not True
+        and history_ready
+        and exact
+    )
+    return {
+        "tool": tool,
+        "category": _SCANNER_CATEGORIES.get(tool, _text(payload.get("category"), 80) or "unknown"),
+        "status": status,
+        "execution_complete": execution_complete,
+        "exact_commit_match": exact,
+        "target_commit_sha": commit_sha,
+        "raw_artifact_retention_complete": retained,
+        "verified_artifact_hash": bool(artifact_hash),
+        "artifact_hash": artifact_hash,
+        "findings_count": int(payload.get("findings_count") or len(payload.get("findings") or [])),
+        "failure_reason": _text(payload.get("failure_or_unavailable_reason") or payload.get("reason"), 1200),
+        "observed_at": _text(payload.get("finished_at") or payload.get("generated_at") or payload.get("updated_at"), 120),
+        "source_path": source_path,
+    }
+
+
+def _collect_scanner_records(
+    value: Any,
+    *,
+    target_commit: str,
+    path: str = "stage_results",
+    inherited_commit: str = "",
+    inferred_tool: str = "",
+    output: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    records = output if output is not None else []
+    if isinstance(value, dict):
+        local_commit = _sha(
+            value.get("target_commit_sha")
+            or value.get("commit_sha")
+            or value.get("snapshot_commit_sha")
+        ) or inherited_commit
+        tool = _text(value.get("tool") or value.get("scanner") or inferred_tool, 120).casefold()
+        if tool in REQUIRED_EVIDENCE_TOOLS and "status" in value:
+            records.append(
+                _scanner_record(
+                    tool,
+                    value,
+                    target_commit=target_commit,
+                    inherited_commit=local_commit,
+                    source_path=path,
+                )
+            )
+        for key, child in value.items():
+            key_tool = str(key).casefold() if str(key).casefold() in REQUIRED_EVIDENCE_TOOLS else ""
+            _collect_scanner_records(
+                child,
+                target_commit=target_commit,
+                path=f"{path}.{key}",
+                inherited_commit=local_commit,
+                inferred_tool=key_tool,
+                output=records,
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _collect_scanner_records(
+                child,
+                target_commit=target_commit,
+                path=f"{path}[{index}]",
+                inherited_commit=inherited_commit,
+                inferred_tool=inferred_tool,
+                output=records,
+            )
+    return records
+
+
+def _authoritative_scanner_records(stage_results: dict[str, Any], target_commit: str) -> dict[str, dict[str, Any]]:
+    candidates = _collect_scanner_records(stage_results, target_commit=target_commit)
+    selected: dict[str, dict[str, Any]] = {}
+    for tool in REQUIRED_EVIDENCE_TOOLS:
+        records = [item for item in candidates if item.get("tool") == tool]
+        if not records:
+            continue
+        selected[tool] = max(
+            records,
+            key=lambda item: (
+                bool(item.get("exact_commit_match")),
+                bool(item.get("raw_artifact_retention_complete")),
+                bool(item.get("verified_artifact_hash")),
+                bool(item.get("execution_complete")),
+                str(item.get("observed_at") or ""),
+                str(item.get("source_path") or ""),
+            ),
+        )
+    return selected
+
+
+def _target_commit(assessment: dict[str, Any], stage_results: dict[str, Any]) -> str:
+    direct = _sha(assessment.get("commit_sha"))
+    if direct:
+        return direct
+
+    def walk(value: Any) -> str:
+        if isinstance(value, dict):
+            for key in ("target_commit_sha", "snapshot_commit_sha", "commit_sha"):
+                commit = _sha(value.get(key))
+                if commit:
+                    return commit
+            for child in value.values():
+                commit = walk(child)
+                if commit:
+                    return commit
+        elif isinstance(value, list):
+            for child in value:
+                commit = walk(child)
+                if commit:
+                    return commit
+        return ""
+
+    return walk(stage_results)
+
+
+def _apply_exact_scanner_health(
+    assessment: dict[str, Any],
+    stage_results: dict[str, Any],
+) -> dict[str, Any]:
+    output = deepcopy(assessment)
+    target_commit = _target_commit(output, stage_results)
+    records = _authoritative_scanner_records(stage_results, target_commit)
+    if not target_commit or not records:
+        return output
+    completed = sorted(
+        tool for tool, record in records.items()
+        if record.get("execution_complete") is True
+    )
+    incomplete: list[dict[str, Any]] = []
+    for tool in REQUIRED_EVIDENCE_TOOLS:
+        record = records.get(tool)
+        if record and record.get("execution_complete") is True:
+            continue
+        incomplete.append(
+            {
+                "scanner": tool,
+                "status": record.get("status") if record else "missing",
+                "required": True,
+                "affected_categories": _SCANNER_CATEGORIES.get(tool, "unknown"),
+                "confidence_impact": "Material reduction",
+                "remediation": (
+                    record.get("failure_reason")
+                    if record
+                    else "No complete retained exact-SHA scanner artifact was observed."
+                ),
+                "exact_commit_match": bool(record and record.get("exact_commit_match")),
+                "artifact_hash": record.get("artifact_hash") if record else "",
+            }
+        )
+    output["evidence_health_summary"] = {
+        "schema": "nico.phase6.scanner_report_truth.v2",
+        "confidence_effect": (
+            "Every required scanner has complete retained exact-SHA evidence."
+            if not incomplete
+            else "Required scanner limitations remain visible and reduce evidence confidence."
+        ),
+        "completed_scanners": completed,
+        "incomplete_scanners": incomplete,
+        "target_commit_sha": target_commit,
+        "authority_precedence": [
+            "exact assessed commit match",
+            "complete retained raw artifact",
+            "verified artifact hash",
+            "complete valid execution state",
+            "newest valid exact-commit record",
+        ],
+        "report_status_derived_from_retained_artifact": True,
+        "scanner_records": records,
+    }
+    completed_tokens = {tool.casefold() for tool in completed}
+    for section in output.get("sections") or []:
+        if isinstance(section, dict):
+            phase6._clean_section_text(section, completed_tokens)
+    return output
+
+
+def _source_review_sql_records(stage_results: dict[str, Any]) -> list[dict[str, Any]]:
+    occurrences: dict[tuple[str, int], dict[str, Any]] = {}
+
+    def walk(value: Any, inferred_tool: str = "") -> None:
+        if isinstance(value, dict):
+            tool = _text(value.get("tool") or value.get("scanner") or inferred_tool, 120).casefold()
+            if tool == "bandit":
+                for finding in value.get("findings") or []:
+                    if not isinstance(finding, dict) or _rule(finding) != "b608":
+                        continue
+                    path = _repository_relative_path(
+                        finding.get("canonical_path")
+                        or finding.get("file_path")
+                        or finding.get("filename")
+                        or finding.get("path")
+                    )
+                    if path not in SQL_DISPOSITIONS:
+                        continue
+                    line = _line_number(finding) or 1
+                    occurrences[(path, line)] = {
+                        "tool": "bandit",
+                        "rule_id": "B608",
+                        "priority": "P1",
+                        "category": "static",
+                        "title": "Possible SQL injection vector through string-based query construction.",
+                        "message": "Possible SQL injection vector through string-based query construction.",
+                        "file_path": path,
+                        "line": line,
+                        "fact": (
+                            "Bandit B608 identified string-based SQL construction at the exact assessed source location. "
+                            "Phase 6 retained a source-specific review rather than claiming verified exploitability."
+                        ),
+                        "evidence": (
+                            f"tool=bandit; rule=B608; exact_commit_location={path}:{line}; "
+                            "complete_raw_artifact_retained=true"
+                        ),
+                        "confidence": "high",
+                        "acceptance_criteria": [
+                            "The source-specific rationale remains valid for the exact assessed code.",
+                            "The originating analyzer is rerun after any SQL construction change.",
+                        ],
+                        "human_review_required": True,
+                    }
+            for key, child in value.items():
+                key_tool = str(key).casefold() if str(key).casefold() in REQUIRED_EVIDENCE_TOOLS else ""
+                walk(child, key_tool)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, inferred_tool)
+
+    walk(stage_results)
+    return [occurrences[key] for key in sorted(occurrences)]
+
+
 def _canonicalize_surface_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(assessment)
     output.pop("phase5_verified_outcomes", None)
@@ -332,7 +605,7 @@ def _canonicalize_surface_assessment(assessment: dict[str, Any]) -> dict[str, An
     ]
     output["sections"] = sections
     raw_findings: list[dict[str, Any]] = []
-    for field in ("decision_grade_findings_register", "findings_register", "executive_risk_register"):
+    for field in ("decision_grade_findings_register", "findings_register", "executive_risk_register", "finding_dispositions"):
         raw_findings.extend(item for item in output.get(field) or [] if isinstance(item, dict))
     actionable, dispositions = canonicalize_findings_v2(raw_findings)
     output["findings_register"] = actionable
@@ -355,7 +628,13 @@ def _canonicalize_surface_assessment(assessment: dict[str, Any]) -> dict[str, An
 
 
 def reconcile_assessment_v2(assessment: dict[str, Any], stage_results: dict[str, Any]) -> dict[str, Any]:
-    return _canonicalize_surface_assessment(_ORIGINAL_RECONCILE(assessment, stage_results))
+    reconciled = _ORIGINAL_RECONCILE(assessment, stage_results)
+    reconciled = _apply_exact_scanner_health(reconciled, stage_results)
+    reconciled["finding_dispositions"] = [
+        *(reconciled.get("finding_dispositions") or []),
+        *_source_review_sql_records(stage_results),
+    ]
+    return _canonicalize_surface_assessment(reconciled)
 
 
 def _projection(assessment: dict[str, Any], identity: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -450,6 +729,20 @@ def _pdf_text(package: dict[str, Any]) -> str:
         return ""
 
 
+def _csv_list(value: Any) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return _ordered_unique(parsed)
+    return _ordered_unique(text.split(";"))
+
+
 def _csv_projection(csv_text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in csv.DictReader(io.StringIO(csv_text or "")):
@@ -461,9 +754,9 @@ def _csv_projection(csv_text: str) -> list[dict[str, Any]]:
                 "canonical_path": row.get("canonical_path"),
                 "canonical_line": int(row["canonical_line"]) if str(row.get("canonical_line") or "").isdigit() else None,
                 "canonical_location": row.get("canonical_location") or row.get("location"),
-                "acceptance_criteria": _ordered_unique(str(row.get("acceptance_criteria") or "").split(";")),
-                "roadmap_mappings": _ordered_unique(str(row.get("roadmap_mappings") or "").split(";")),
-                "backlog_mappings": _ordered_unique(str(row.get("backlog_mappings") or row.get("backlog_issue_mapping") or "").split(";")),
+                "acceptance_criteria": _csv_list(row.get("acceptance_criteria")),
+                "roadmap_mappings": _csv_list(row.get("roadmap_mappings")),
+                "backlog_mappings": _csv_list(row.get("backlog_mappings") or row.get("backlog_issue_mapping")),
             }
         )
     return rows
@@ -565,7 +858,21 @@ def _patch_report_boundaries() -> None:
             result = current_build(*args, **kwargs)
             if isinstance(result.get("assessment"), dict):
                 result["assessment"] = _canonicalize_surface_assessment(result["assessment"])
-            return validate_cross_format_truth(result)
+            result = validate_cross_format_truth(result)
+            package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
+            manifest = package.get("canonical_truth_manifest") if isinstance(package.get("canonical_truth_manifest"), dict) else {}
+            artifacts_complete = all(
+                bool(package.get(key))
+                for key in ("markdown", "html", "pdf_base64", "findings_csv", "evidence_ledger_csv", "json")
+            )
+            approved = result.get("client_delivery_allowed") is True or package.get("client_delivery_allowed") is True
+            package["pdf_filename"] = phase6.normalize_report_filename(
+                str(package.get("pdf_filename") or "nico-comprehensive-assessment.pdf"),
+                complete=manifest.get("status") == "valid" and artifacts_complete,
+                approved=approved,
+            )
+            result["report_package"] = package
+            return result
 
         setattr(build, _PATCH_MARKER, True)
         report.build_comprehensive_report_package = build

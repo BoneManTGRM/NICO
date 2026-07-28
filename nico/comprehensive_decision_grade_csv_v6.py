@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from typing import Any
 
 from nico.comprehensive_decision_grade_model_v5 import _text
@@ -11,12 +12,14 @@ VERSION = "nico.comprehensive_decision_grade_csv.v6"
 
 def _csv_value(value: Any, limit: int = 6000) -> str:
     if isinstance(value, (list, tuple, set)):
-        return "; ".join(_text(item, limit) for item in value if _text(item, limit))
+        normalized = [_text(item, limit) for item in value if _text(item, limit)]
+        return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, dict):
-        return "; ".join(
-            f"{_text(key, 300)}={_text(item, limit)}"
+        normalized = {
+            _text(key, 300): _text(item, limit)
             for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-        )
+        }
+        return json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return _text(value, limit)
 
 
