@@ -26,49 +26,47 @@ jobs:
           from pathlib import Path
 
           path = Path("nico/phase6_final_remediation_v1.py")
-          text = path.read_text(encoding="utf-8")
+          lines = path.read_text(encoding="utf-8").splitlines()
 
-          old = '''    commit_sha = _text(output.get("commit_sha") or _find_nested(stage_results, lambda item: bool(item.get("commit_sha"))) or "", 80)
-              if isinstance(commit_sha, dict):
-                  commit_sha = _text(commit_sha.get("commit_sha"), 80)
-          '''
-          if old not in text:
-              old = '''    commit_sha = _text(output.get("commit_sha") or _find_nested(stage_results, lambda item: bool(item.get("commit_sha"))) or "", 80)
-              if isinstance(commit_sha, dict):
-                  commit_sha = _text(commit_sha.get("commit_sha"), 80)
-          '''.replace("              if", "    if").replace("                  commit_sha", "        commit_sha")
-          new = '''    identity_record = _find_nested(
-              stage_results,
-              lambda item: bool(item.get("commit_sha") or item.get("target_commit_sha") or item.get("snapshot_commit_sha")),
+          commit_index = next(
+              index
+              for index, line in enumerate(lines)
+              if line.startswith('    commit_sha = _text(output.get("commit_sha") or _find_nested(')
           )
-          commit_sha = _text(output.get("commit_sha"), 80)
-          if not commit_sha and isinstance(identity_record, dict):
-              commit_sha = _text(
-                  identity_record.get("commit_sha")
-                  or identity_record.get("target_commit_sha")
-                  or identity_record.get("snapshot_commit_sha"),
-                  80,
-              )
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"exact commit block count={text.count(old)}")
-          text = text.replace(old, new)
+          commit_end = commit_index + 1
+          while commit_end < len(lines) and (
+              lines[commit_end].startswith("    if isinstance(commit_sha")
+              or lines[commit_end].startswith("        commit_sha =")
+          ):
+              commit_end += 1
+          commit_block = [
+              "    identity_record = _find_nested(",
+              "        stage_results,",
+              "        lambda item: bool(item.get(\"commit_sha\") or item.get(\"target_commit_sha\") or item.get(\"snapshot_commit_sha\")),",
+              "    )",
+              "    commit_sha = _text(output.get(\"commit_sha\"), 80)",
+              "    if not commit_sha and isinstance(identity_record, dict):",
+              "        commit_sha = _text(",
+              "            identity_record.get(\"commit_sha\")",
+              "            or identity_record.get(\"target_commit_sha\")",
+              "            or identity_record.get(\"snapshot_commit_sha\"),",
+              "            80,",
+              "        )",
+          ]
+          lines[commit_index:commit_end] = commit_block
 
-          old_quality = '''            if front_matter is None and len(args) >= 18:
-                      front_matter = args[17]
-          '''
-          if old_quality not in text:
-              old_quality = '''            if front_matter is None and len(args) >= 18:
-                      front_matter = args[17]
-          '''.replace("                      front_matter", "                front_matter")
-          new_quality = '''            if front_matter is None and len(args) >= 15:
-                      front_matter = args[14]
-          '''.replace("                      front_matter", "                front_matter")
-          if text.count(old_quality) != 1:
-              raise SystemExit(f"quality positional block count={text.count(old_quality)}")
-          text = text.replace(old_quality, new_quality)
+          quality_index = next(
+              index
+              for index, line in enumerate(lines)
+              if "if front_matter is None and len(args) >= 18:" in line
+          )
+          indent = lines[quality_index].split("if front_matter", 1)[0]
+          lines[quality_index:quality_index + 2] = [
+              f"{indent}if front_matter is None and len(args) >= 15:",
+              f"{indent}    front_matter = args[14]",
+          ]
 
-          path.write_text(text, encoding="utf-8")
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
           rm -f .github/workflows/phase6-correct-core-wiring.yml
           python -m py_compile nico/phase6_final_remediation_v1.py nico/api/terminal_authority_bootstrap.py
