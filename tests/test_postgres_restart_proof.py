@@ -181,6 +181,7 @@ def test_restart_workflow_runs_real_postgres_and_uploads_bounded_evidence() -> N
     assert "NICO_TEST_DATABASE_URL" in source
     assert "scripts/postgres_restart_proof.py" in source
     assert "audit-results/postgres-restart-proof.json" in source
+    # Require the reviewed immutable v7.0.1 commit rather than a mutable major tag.
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in source
     assert "permissions:\n  contents: read" in source
     assert "NICO_ADMIN_TOKEN" not in source
