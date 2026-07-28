@@ -1,0 +1,63 @@
+name: Phase 9 Production Report and Node Scanner Proof
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report-and-node-scanners:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PHASE9_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test production report gate twice
+        run: |
+          pytest -q tests/test_phase9_production_report_gate_v1.py
+          pytest -q tests/test_phase9_production_report_gate_v1.py
+      - name: Run TypeScript and ESLint boundaries
+        run: python scripts/run_phase9_node_scanners.py
+      - name: Verify exact-revision node evidence
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          payload = json.loads(Path('phase9-node-scanner-evidence/manifest.json').read_text())
+          assert payload['immutable_revision'] == os.environ['PHASE9_REVISION']
+          assert payload['typescript']['status'] == 'completed'
+          assert payload['typescript']['artifact_sha256']
+          assert payload['eslint']['status'] in {'completed', 'not_applicable'}
+          if payload['eslint']['status'] == 'not_applicable':
+              assert 'not declared' in payload['eslint']['reason']
+          PY
+      - name: Upload retained Phase 9 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-report-node-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: phase9-node-scanner-evidence/

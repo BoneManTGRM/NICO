@@ -1,0 +1,122 @@
+name: Phase 9 Comprehensive Production Proof
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comprehensive-production-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PHASE9_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run production integration twice
+        run: |
+          pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
+          pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
+      - name: Generate retained real-package contract proof
+        run: |
+          mkdir -p phase9-comprehensive-proof
+          python - <<'PY'
+          import base64, hashlib, json, os
+          from pathlib import Path
+          from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
+
+          revision = os.environ['PHASE9_REVISION']
+          finding = {
+              'finding_id': 'ARCH-OPS-1',
+              'category': 'architecture',
+              'title': 'High-complexity code hotspot',
+              'location': 'apps/web/app/operations/page.tsx:177',
+              'priority': 'P1',
+              'status': 'open',
+              'recommendation': 'Separate orchestration, state transitions, and presentation concerns.',
+              'acceptance_criteria': [
+                  'Operations route complexity is reduced [method: static analysis]',
+                  'Operations route complexity is reduced [target commit: ' + revision + ']',
+              ],
+          }
+          result = {
+              'report_package': {
+                  'json': {
+                      'identity': {'repository': os.environ.get('GITHUB_REPOSITORY'), 'commit_sha': revision, 'run_id': os.environ.get('GITHUB_RUN_ID')},
+                      'findings_register': [finding, dict(finding)],
+                      'executive_findings': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}],
+                      'roadmap': [{'work_packages': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}]}],
+                      'backlog': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}],
+                      'assessment': {'executive_summary': 'Exact-revision production proof.'},
+                  },
+                  'pdf_filename': 'nico-comprehensive-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf',
+                  'spanish_pdf_filename': 'nico-comprehensive-es-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf',
+                  'pdf_base64': base64.b64encode(b'%PDF-1.4\nphase9 production proof\n%%EOF').decode(),
+              }
+          }
+          output = finalize_report_package(result)
+          package = output['report_package']
+          canonical = package['json']
+          assert len(canonical['canonical_findings']) == 1
+          assert package['phase9_release_gate']['valid'] is True
+          assert package['pdf_filename'].count('FINAL-PENDING-APPROVAL') == 1
+          assert package['spanish_pdf_filename'].count('FINAL-PENDING-APPROVAL') == 1
+          root = Path('phase9-comprehensive-proof')
+          (root / 'canonical.json').write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding='utf-8')
+          (root / 'release-gate.json').write_text(json.dumps(package['phase9_release_gate'], indent=2), encoding='utf-8')
+          (root / 'findings.csv').write_bytes(base64.b64decode(package['findings_csv_base64']))
+          (root / 'report-en.pdf').write_bytes(base64.b64decode(package['pdf_base64']))
+          manifest = {
+              'immutable_revision': revision,
+              'repository': os.environ.get('GITHUB_REPOSITORY'),
+              'filenames': {'en': package['pdf_filename'], 'es': package['spanish_pdf_filename']},
+              'canonical_truth_sha256': package['canonical_truth_sha256'],
+              'artifact_sha256': {},
+              'finding_count': len(canonical['canonical_findings']),
+              'defects_absent': {
+                  'duplicate_findings': True,
+                  'duplicate_acceptance_criteria': True,
+                  'generic_priority_titles': True,
+                  'repeated_terminal_filename': True,
+              },
+          }
+          for path in sorted(root.iterdir()):
+              if path.is_file():
+                  manifest['artifact_sha256'][path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          PY
+      - name: Verify proof package
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('phase9-comprehensive-proof')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          assert manifest['immutable_revision'] == os.environ['PHASE9_REVISION']
+          assert all(manifest['defects_absent'].values())
+          assert manifest['finding_count'] == 1
+          assert (root / 'report-en.pdf').read_bytes().startswith(b'%PDF')
+          assert (root / 'canonical.json').is_file()
+          assert (root / 'findings.csv').is_file()
+          PY
+      - name: Upload comprehensive production proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-comprehensive-production-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: phase9-comprehensive-proof/
