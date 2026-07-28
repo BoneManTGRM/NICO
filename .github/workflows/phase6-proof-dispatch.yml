@@ -28,11 +28,31 @@ jobs:
       TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || 'phase-6/report-deduplication-security-remediation' }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Validate immutable target
+      - name: Validate immutable target and initialize receipt
         run: |
           test -n "$TARGET_SHA"
           test -n "$TARGET_REF"
           gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA" --jq '.sha' | grep -Fx "$TARGET_SHA"
+          mkdir -p dispatched-proof
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          Path("dispatched-proof/dispatch-receipt.json").write_text(
+              json.dumps(
+                  {
+                      "schema": "nico.phase6.dispatched_proof_receipt.v2",
+                      "repository": os.environ["GITHUB_REPOSITORY"],
+                      "target_sha": os.environ["TARGET_SHA"],
+                      "status": "dispatch_started",
+                  },
+                  indent=2,
+                  sort_keys=True,
+              ),
+              encoding="utf-8",
+          )
+          PY
 
       - name: Dispatch exact-SHA scanner and report proof
         run: |
@@ -85,7 +105,6 @@ jobs:
       - name: Download final proof artifacts
         if: always() && steps.proof.outputs.run_id != ''
         run: |
-          mkdir -p dispatched-proof
           gh run download "${{ steps.proof.outputs.run_id }}" \
             --repo "$GITHUB_REPOSITORY" \
             --dir dispatched-proof
@@ -94,16 +113,15 @@ jobs:
           import os
           from pathlib import Path
 
-          receipt = {
-              "schema": "nico.phase6.dispatched_proof_receipt.v1",
-              "repository": os.environ["GITHUB_REPOSITORY"],
-              "target_sha": os.environ["TARGET_SHA"],
-              "proof_run_id": "${{ steps.proof.outputs.run_id }}",
-          }
-          Path("dispatched-proof/dispatch-receipt.json").write_text(
-              json.dumps(receipt, indent=2, sort_keys=True),
-              encoding="utf-8",
+          receipt_path = Path("dispatched-proof/dispatch-receipt.json")
+          receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+          receipt.update(
+              {
+                  "status": "proof_completed",
+                  "proof_run_id": "${{ steps.proof.outputs.run_id }}",
+              }
           )
+          receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
           PY
 
       - name: Retain final proof package with pull request run
