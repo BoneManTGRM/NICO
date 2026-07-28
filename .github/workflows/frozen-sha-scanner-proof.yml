@@ -1,6 +1,5 @@
 name: Frozen SHA Scanner Evidence Proof
 
-# Direct validation retrigger after scanner fingerprint stabilization.
 on:
   pull_request:
     branches:
@@ -10,18 +9,18 @@ on:
       target_sha:
         description: Immutable application commit to scan twice
         required: true
-        default: 8ed545766fb4c5054798a02ea17ece0fe7bcab64
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   frozen-scanner-proof:
-    name: Two clean scanner runs on frozen SHA
+    name: Two clean scanner runs on exact SHA
     runs-on: ubuntu-24.04
-    timeout-minutes: 70
+    timeout-minutes: 90
     env:
-      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || '8ed545766fb4c5054798a02ea17ece0fe7bcab64' }}
+      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
       NICO_ALLOW_PROJECT_COMMANDS: "true"
       NICO_NODE_OPTIONS: "--max-old-space-size=2048"
       NICO_MAX_SCANNER_PARSE_BYTES: "268435456"
@@ -29,25 +28,25 @@ jobs:
 
     steps:
       - name: Check out scanner pipeline implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           path: runner
 
-      - name: Check out exact frozen application SHA
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out exact application SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.TARGET_SHA }}
           path: frozen-source
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "20"
 
@@ -94,9 +93,10 @@ jobs:
           echo "$parser_entry"
           "$profile_root/node_modules/.bin/tsc" --version
 
-      - name: Verify frozen checkout identity
+      - name: Verify exact checkout identity
         working-directory: frozen-source
         run: |
+          test -n "$TARGET_SHA"
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git rev-parse --is-shallow-repository)" = "false"
 
@@ -106,14 +106,74 @@ jobs:
           python scripts/frozen_scanner_evidence_proof.py \
             --source ../frozen-source \
             --target-sha "$TARGET_SHA" \
-            --repository BoneManTGRM/NICO \
+            --repository "$GITHUB_REPOSITORY" \
             --output frozen-scanner-proof
+
+      - name: Capture bounded CI history
+        working-directory: runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" > workflow-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("workflow-runs.json").read_text(encoding="utf-8"))
+          assert isinstance(payload.get("workflow_runs"), list)
+          assert payload["workflow_runs"]
+          PY
+
+      - name: Build exact-SHA Phase 5 verification package
+        working-directory: runner
+        run: |
+          python scripts/build_phase5_verification_package.py \
+            --source ../frozen-source \
+            --scanner-run frozen-scanner-proof/scanner-run-1.json \
+            --scanner-proof frozen-scanner-proof/frozen-scanner-proof.json \
+            --workflow-runs workflow-runs.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --output phase5-verification
+
+      - name: Validate visible before and after outcomes
+        working-directory: runner
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary = json.loads(
+              Path("phase5-verification/phase5-verification-summary.json").read_text(encoding="utf-8")
+          )
+          assert summary["status"] == "verified", summary
+          assert summary["exact_commit_sha"] == os.environ["TARGET_SHA"]
+          assert summary["two_consecutive_scanner_runs"] is True
+          assert all(value == "completed" for value in summary["required_scanner_statuses"].values())
+          assert set(summary["scanner_status_changes"]) >= {"bandit", "eslint", "gitleaks", "osv-scanner"}
+          complexity = summary["complexity_changes"]["_build_complexity"]
+          assert complexity["before"] == 94
+          assert complexity["after"] < complexity["before"]
+          assert complexity["delta"] < 0
+          assert summary["tls_verify_disabled_finding_open"] is False
+          assert summary["ci_history_classification_visible"] is True
+          assert summary["human_review_required"] is True
+          assert summary["client_delivery_allowed"] is False
+          assert {Path(name).suffix for name in summary["artifacts"]} >= {".md", ".html", ".pdf", ".csv", ".json"}
+          PY
 
       - name: Upload retained raw scanner evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frozen-sha-scanner-evidence-${{ env.TARGET_SHA }}
           path: runner/frozen-scanner-proof
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+
+      - name: Upload visible Phase 5 verification package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase5-verification-package-${{ env.TARGET_SHA }}
+          path: runner/phase5-verification
+          if-no-files-found: error
+          retention-days: 90

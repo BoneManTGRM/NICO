@@ -149,9 +149,11 @@ def test_frozen_sha_proof_requires_two_complete_equivalent_runs() -> None:
     assert "two_consecutive_clean_runs" in proof
     assert "deterministic_fingerprints_equal" in proof
     assert "raw_artifact_retention_complete" in proof
-    assert "8ed545766fb4c5054798a02ea17ece0fe7bcab64" in workflow
+    assert "github.event.pull_request.head.sha" in workflow
+    assert "inputs.target_sha" in workflow
+    assert "phase5-verification-package-${{ env.TARGET_SHA }}" in workflow
     assert workflow.count("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1") == 2
-    assert "retention-days: 30" in workflow
+    assert "retention-days: 90" in workflow
 
 
 def test_pipeline_does_not_replace_public_scanner_tool_api() -> None:

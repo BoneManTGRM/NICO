@@ -1,0 +1,31 @@
+rules:
+  - id: nico.python.eval
+    message: Dynamic eval execution requires security review.
+    severity: ERROR
+    languages: [python]
+    pattern: eval(...)
+  - id: nico.python.exec
+    message: Dynamic exec execution requires security review.
+    severity: ERROR
+    languages: [python]
+    pattern: exec(...)
+  - id: nico.python.subprocess-shell
+    message: subprocess with shell=True requires injection review.
+    severity: ERROR
+    languages: [python]
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+  - id: nico.python.requests-no-verify
+    message: TLS verification is disabled.
+    severity: ERROR
+    languages: [python]
+    pattern: requests.$METHOD(..., verify=False, ...)
+  - id: nico.javascript.eval
+    message: Dynamic eval execution requires security review.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern: eval(...)
+  - id: nico.javascript.new-function
+    message: Dynamic Function construction requires security review.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern: new Function(...)

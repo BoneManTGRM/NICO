@@ -186,6 +186,188 @@ def _evidence_health_lines(assessment: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _markdown_context(assessment: dict[str, Any]) -> dict[str, Any]:
+    maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
+    score = maturity.get("presented_score", maturity.get("score"))
+    adjusted = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score"))
+    findings = assessment.get("decision_grade_findings_register")
+    if not isinstance(findings, list):
+        findings = assessment.get("findings_register") if isinstance(assessment.get("findings_register"), list) else []
+    return {
+        "maturity": maturity,
+        "score": score,
+        "score_text": f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED",
+        "adjusted_text": f"{int(adjusted)}/100" if isinstance(adjusted, (int, float)) else "NOT SCORED",
+        "findings": findings,
+        "executive": [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)][:7],
+        "sections": assessment.get("sections") if isinstance(assessment.get("sections"), list) else [],
+        "postures": assessment.get("decision_postures") if isinstance(assessment.get("decision_postures"), dict) else {},
+    }
+
+
+def _front_matter_lines(
+    identity: dict[str, Any],
+    assessment: dict[str, Any],
+    limitations: dict[str, int],
+    generated_at: str,
+    context: dict[str, Any],
+) -> list[str]:
+    maturity, score, postures = context["maturity"], context["score"], context["postures"]
+    executive = context["executive"]
+    decisions = [
+        f"{index}. {item.get('title')} [{item.get('finding_id') or item.get('id')}]"
+        for index, item in enumerate(executive[:3], start=1)
+    ] or ["1. Complete exact-package human review and evidence disposition."]
+    return [
+        f"# NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}", "",
+        f"Generated: {generated_at}", f"Run ID: {_text(identity.get('run_id'))}",
+        f"Immutable commit SHA: {_text(identity.get('commit_sha'))}",
+        f"Evidence ledger ID: {_text(identity.get('evidence_ledger_id'))}",
+        f"Customer scope: {_text(identity.get('customer_id'))}", f"Project scope: {_text(identity.get('project_id'))}", "",
+        "## Executive Decision Brief", _decision_summary(identity, assessment, limitations), "", "### Top Priority Decisions",
+        *decisions, "", "## Decision Boundary",
+        "Technical score, evidence assurance, and client-delivery authorization are independent. Human review is mandatory. Client delivery remains controlled by deterministic readiness gates and exact-package approval.",
+        "", "## Assessment Dashboard",
+        *_markdown_table(["Dimension", "Result", "Conditions / meaning"], [
+            ["Technical maturity", f"{maturity.get('score_band_label') or _score_band(score)['score_band_label']} · {context['score_text']}", "Score-derived engineering health"],
+            ["Evidence-Adjusted", context["adjusted_text"], "Technical signal reduced or constrained by evidence completeness"],
+            ["Operate", (postures.get("operate") or {}).get("status") or "Conditional", "; ".join((postures.get("operate") or {}).get("conditions") or [])],
+            ["Release", (postures.get("release") or {}).get("status") or "Conditional", "; ".join((postures.get("release") or {}).get("conditions") or [])],
+            ["Client delivery", assessment.get("delivery_status") or "Human Review Required", (postures.get("client_delivery") or {}).get("required_next_action") or "Exact-package approval required"],
+        ]), "", "## Limitation Accounting",
+        *_markdown_table(["Metric", "Count", "Definition"], [
+            ["Stages with limitations", limitations["stages_with_limitations"], "Stages containing at least one unavailable or limited-evidence record"],
+            ["Distinct limitation records", limitations["individual_limitation_records"], "Deduplicated limitation statements across stages and assessment-wide notes"],
+            ["Score-affecting records", limitations["score_affecting_records"], "Section findings or evidence gaps that constrain score or assurance"],
+            ["Informational records", limitations["informational_records"], "Disclosures that do not independently change a technical score"],
+        ]), "", *_evidence_health_lines(assessment), "",
+    ]
+
+
+def _scorecard_and_risk_lines(context: dict[str, Any]) -> list[str]:
+    sections, executive = context["sections"], context["executive"]
+    score_rows = [[
+        section.get("label") or section.get("id"),
+        f"{section.get('score_value')}/100" if isinstance(section.get("score_value"), int) else "NOT SCORED",
+        section.get("score_band_label") or "NOT SCORED",
+        section.get("assurance_label") or "HUMAN REVIEW PENDING",
+        section.get("summary") or "",
+    ] for section in sections if isinstance(section, dict)]
+    risk_rows = [[
+        item.get("priority"), item.get("finding_id") or item.get("id"), item.get("title"),
+        item.get("business_impact") or item.get("impact"), item.get("confidence"), item.get("recommendation"),
+        item.get("effort"), item.get("cost_of_inaction") or "Not quantified",
+        item.get("residual_risk") or "Requires review", item.get("location"),
+    ] for item in executive]
+    if not risk_rows:
+        risk_rows = [["—", "—", "No structured technical finding was retained.", "Human review still required.", "—", "Verify evidence completeness.", "—", "Not quantified", "Unknown", "—"]]
+    return [
+        "## Canonical Technical Scorecard",
+        *_markdown_table(["Control", "Technical score", "Band", "Evidence assurance", "Summary"], score_rows), "",
+        "## Executive Risk Register",
+        *_markdown_table(["Priority", "Risk ID", "Risk", "Business impact", "Confidence", "Recommended action", "Effort", "Cost of inaction", "Residual risk", "Evidence locations"], risk_rows),
+        "", "## Detailed Findings Register",
+    ]
+
+
+def _finding_lines(findings: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        criteria = [f"  - [ ] {criterion}" for criterion in item.get("acceptance_criteria") or []]
+        lines.extend(["", f"### {item.get('priority')} · {item.get('title')} · {item.get('finding_id') or item.get('id')}",
+            f"- Category: {item.get('category')}", f"- Location: {item.get('location')}",
+            f"- Layer 1 — Evidence / fact: {item.get('fact') or item.get('evidence')}",
+            f"- Layer 2 — Technical interpretation: {item.get('interpretation') or item.get('title')}",
+            f"- Layer 3 — Business inference: {item.get('business_impact') or item.get('impact')}",
+            f"- Layer 4 — Recommendation: {item.get('recommendation')}", f"- Confidence: {item.get('confidence')}",
+            f"- Owner role: {item.get('owner_role')}", f"- Estimated effort: {item.get('effort')}",
+            f"- Cost of inaction: {item.get('cost_of_inaction') or 'Not quantified'}",
+            f"- Cost assumptions: {'; '.join(item.get('cost_of_inaction_assumptions') or []) or 'No monetary conversion claimed'}",
+            f"- Residual risk: {item.get('residual_risk') or 'Requires human review'}", "- Acceptance criteria:",
+            *(criteria or ["  - [ ] A binary verification criterion must be recorded."]),
+            f"- Roadmap mapping: {', '.join(item.get('roadmap_mappings') or []) or 'Not mapped'}",
+            f"- Backlog mapping: {item.get('backlog_issue_mapping') or 'Not mapped'}"])
+    return lines
+
+
+def _architecture_lines(sections: list[Any]) -> list[str]:
+    architecture = next((item for item in sections if isinstance(item, dict) and item.get("id") == "architecture_debt"), {})
+    lines = ["", "## Architecture and Data Flow", "Repository → Immutable Snapshot → Evidence Collection → Interpretation → Business Inference → Recommendation → Verification → Human Review → Authorized Delivery", "", "### Complexity Profile"]
+    lines.extend(f"- {item}" for item in architecture.get("evidence") or [])
+    if architecture.get("findings"):
+        lines.extend(["", "### Named Hotspots", *[f"- {item}" for item in architecture.get("findings") or []]])
+    return lines
+
+
+def _roadmap_lines(roadmap: list[dict[str, Any]]) -> list[str]:
+    lines = ["", "## Six-Month Execution Roadmap"]
+    for window in roadmap:
+        if not isinstance(window, dict):
+            continue
+        lines.extend(["", f"### {window.get('window')} — {window.get('objective')}"])
+        for package in window.get("work_packages") or []:
+            if not isinstance(package, dict):
+                continue
+            lines.extend([f"- **{package.get('work_package_id') or 'WORK PACKAGE'} · {package.get('title')}**",
+                f"  - Classification: {package.get('classification') or 'Requires classification'}",
+                f"  - Related risks: {', '.join(package.get('related_finding_ids') or []) or 'None retained'}",
+                f"  - Owner: {package.get('owner_role')}", f"  - Supporting roles: {', '.join(package.get('supporting_roles') or []) or 'None retained'}",
+                f"  - Effort: {package.get('effort') or package.get('effort_range')}", f"  - Objective: {package.get('objective')}",
+                f"  - Dependencies: {', '.join(package.get('dependencies') or []) or 'None retained'}",
+                f"  - Implementation sequence: {'; '.join(package.get('ordered_implementation_steps') or []) or 'Requires implementation planning'}",
+                f"  - Acceptance: {'; '.join(package.get('acceptance_criteria') or []) or 'Requires human approval'}",
+                f"  - Expected impact: {package.get('expected_impact')}", f"  - Residual risk: {package.get('residual_risk') or 'Requires review'}"])
+    return lines
+
+
+def _governance_lines(assessment: dict[str, Any], staffing: list[dict[str, Any]]) -> list[str]:
+    lines = ["", "## Staffing and Sequencing"]
+    lines.extend(f"- **Sequence {item.get('sequence')}: {item.get('role')}** — {item.get('focus')} Capacity: {item.get('estimated_load') or 'Requires client planning.'}" for item in staffing if isinstance(item, dict))
+    if not staffing:
+        lines.append("- Staffing details require stakeholder approval.")
+    lines.extend(["", "## How to Use This Report"])
+    usage = assessment.get("how_to_use_report") or []
+    lines.extend(f"{index}. {item}" for index, item in enumerate(usage, start=1))
+    if not usage:
+        lines.append("1. Complete exact-package human review before external delivery.")
+    lines.extend(["", "## Scope Boundary and Unassessed Risk"])
+    boundaries = assessment.get("scope_boundaries") or []
+    lines.extend(f"- **{item.get('area')}** — {item.get('boundary')}" for item in boundaries if isinstance(item, dict))
+    if not boundaries:
+        lines.append("- Unassessed domains must not be interpreted as healthy.")
+    lines.extend(["", "## Assumption Register"])
+    assumptions = assessment.get("assumption_register") or []
+    lines.extend(f"- **{item.get('assumption_id')} · {item.get('category')}** — {item.get('description')} Source: {item.get('source')}; confidence: {item.get('confidence')}; sensitivity: {item.get('sensitivity')}; consequence if wrong: {item.get('consequence_if_wrong')}" for item in assumptions if isinstance(item, dict))
+    if not assumptions:
+        lines.append("- No structured assumptions were retained; human validation remains required.")
+    return lines
+
+
+def _appendix_lines(stages: list[dict[str, Any]]) -> list[str]:
+    lines = ["", APPENDIX_HEADING, "The client-facing report contains bounded, decision-relevant stage evidence. The complete machine-readable evidence ledger remains in the canonical JSON and CSV artifacts."]
+    for index, stage in enumerate(stages, start=1):
+        lines.extend(["", f"### A{index}. {stage['title']} — {stage['status'].upper()}", f"- Stage ID: `{stage['stage_id']}`",
+            f"- Summary: {stage['summary']}", f"- Evidence records retained: {len(stage.get('evidence') or [])}",
+            f"- Finding records retained: {len(stage.get('findings') or [])}", f"- Limitation records retained: {len(stage.get('unavailable') or [])}"])
+        lines.extend(f"- Evidence: {item}" for item in (stage.get("evidence") or [])[:8])
+        lines.extend(f"- Finding: {item}" for item in (stage.get("findings") or [])[:6])
+        lines.extend(f"- Limitation: {item}" for item in (stage.get("unavailable") or [])[:6])
+    return lines
+
+
+def _review_lines(assessment: dict[str, Any]) -> list[str]:
+    return ["", REVIEW_HEADING,
+        "- [ ] Verify repository, run, commit, evidence-ledger, customer, and project identities.",
+        "- [ ] Triage every material, review-required, failed, timed-out, and unavailable analyzer result.",
+        "- [ ] Confirm technical score, Evidence-Adjusted score, score band, evidence assurance, and delivery status match across JSON, CSV, Markdown, HTML, and PDF.",
+        "- [ ] Disposition every P1 against its structured acceptance criteria and residual-risk statement.",
+        "- [ ] Validate business context, assumptions, roadmap, staffing, sequencing, effort, and any financial scenario inputs.",
+        "- [ ] Approve or reject the exact immutable report package before any delivery access is created.", "", "## Delivery Status",
+        f"**{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} — CLIENT DELIVERY NOT AUTHORIZED WITHOUT EXACT-PACKAGE APPROVAL**", ""]
+
+
 def _build_markdown(
     identity: dict[str, Any],
     assessment: dict[str, Any],
@@ -195,226 +377,15 @@ def _build_markdown(
     limitations: dict[str, int],
     generated_at: str,
 ) -> str:
-    maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
-    score = maturity.get("presented_score", maturity.get("score"))
-    score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
-    adjusted = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score"))
-    adjusted_text = f"{int(adjusted)}/100" if isinstance(adjusted, (int, float)) else "NOT SCORED"
-    findings = assessment.get("decision_grade_findings_register") if isinstance(assessment.get("decision_grade_findings_register"), list) else assessment.get("findings_register") if isinstance(assessment.get("findings_register"), list) else []
-    executive = [item for item in assessment.get("executive_risk_register") or [] if isinstance(item, dict)][:7]
-    sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
-    postures = assessment.get("decision_postures") if isinstance(assessment.get("decision_postures"), dict) else {}
-    lines = [
-        f"# NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}",
-        "",
-        f"Generated: {generated_at}",
-        f"Run ID: {_text(identity.get('run_id'))}",
-        f"Immutable commit SHA: {_text(identity.get('commit_sha'))}",
-        f"Evidence ledger ID: {_text(identity.get('evidence_ledger_id'))}",
-        f"Customer scope: {_text(identity.get('customer_id'))}",
-        f"Project scope: {_text(identity.get('project_id'))}",
-        "",
-        "## Executive Decision Brief",
-        _decision_summary(identity, assessment, limitations),
-        "",
-        "### Top Priority Decisions",
-        *([f"{index}. {item.get('title')} [{item.get('finding_id') or item.get('id')}]" for index, item in enumerate(executive[:3], start=1)] or ["1. Complete exact-package human review and evidence disposition."]),
-        "",
-        "## Decision Boundary",
-        "Technical score, evidence assurance, and client-delivery authorization are independent. Human review is mandatory. Client delivery remains controlled by deterministic readiness gates and exact-package approval.",
-        "",
-        "## Assessment Dashboard",
-        *_markdown_table(
-            ["Dimension", "Result", "Conditions / meaning"],
-            [
-                ["Technical maturity", f"{maturity.get('score_band_label') or _score_band(score)['score_band_label']} · {score_text}", "Score-derived engineering health"],
-                ["Evidence-Adjusted", adjusted_text, "Technical signal reduced or constrained by evidence completeness"],
-                ["Operate", (postures.get("operate") or {}).get("status") or "Conditional", "; ".join((postures.get("operate") or {}).get("conditions") or [])],
-                ["Release", (postures.get("release") or {}).get("status") or "Conditional", "; ".join((postures.get("release") or {}).get("conditions") or [])],
-                ["Client delivery", assessment.get("delivery_status") or "Human Review Required", (postures.get("client_delivery") or {}).get("required_next_action") or "Exact-package approval required"],
-            ],
-        ),
-        "",
-        "## Limitation Accounting",
-        *_markdown_table(
-            ["Metric", "Count", "Definition"],
-            [
-                ["Stages with limitations", limitations["stages_with_limitations"], "Stages containing at least one unavailable or limited-evidence record"],
-                ["Distinct limitation records", limitations["individual_limitation_records"], "Deduplicated limitation statements across stages and assessment-wide notes"],
-                ["Score-affecting records", limitations["score_affecting_records"], "Section findings or evidence gaps that constrain score or assurance"],
-                ["Informational records", limitations["informational_records"], "Disclosures that do not independently change a technical score"],
-            ],
-        ),
-        "",
-        *_evidence_health_lines(assessment),
-        "",
-        "## Canonical Technical Scorecard",
-        *_markdown_table(
-            ["Control", "Technical score", "Band", "Evidence assurance", "Summary"],
-            [
-                [
-                    section.get("label") or section.get("id"),
-                    f"{section.get('score_value')}/100" if isinstance(section.get("score_value"), int) else "NOT SCORED",
-                    section.get("score_band_label") or "NOT SCORED",
-                    section.get("assurance_label") or "HUMAN REVIEW PENDING",
-                    section.get("summary") or "",
-                ]
-                for section in sections
-                if isinstance(section, dict)
-            ],
-        ),
-        "",
-        "## Executive Risk Register",
-        *_markdown_table(
-            ["Priority", "Risk ID", "Risk", "Business impact", "Confidence", "Recommended action", "Effort", "Cost of inaction", "Residual risk", "Evidence locations"],
-            [
-                [
-                    item.get("priority"),
-                    item.get("finding_id") or item.get("id"),
-                    item.get("title"),
-                    item.get("business_impact") or item.get("impact"),
-                    item.get("confidence"),
-                    item.get("recommendation"),
-                    item.get("effort"),
-                    item.get("cost_of_inaction") or "Not quantified",
-                    item.get("residual_risk") or "Requires review",
-                    item.get("location"),
-                ]
-                for item in executive
-            ]
-            or [["—", "—", "No structured technical finding was retained.", "Human review still required.", "—", "Verify evidence completeness.", "—", "Not quantified", "Unknown", "—"]],
-        ),
-        "",
-        "## Detailed Findings Register",
-    ]
-    for item in findings:
-        if not isinstance(item, dict):
-            continue
-        lines.extend(
-            [
-                "",
-                f"### {item.get('priority')} · {item.get('title')} · {item.get('finding_id') or item.get('id')}",
-                f"- Category: {item.get('category')}",
-                f"- Location: {item.get('location')}",
-                f"- Layer 1 — Evidence / fact: {item.get('fact') or item.get('evidence')}",
-                f"- Layer 2 — Technical interpretation: {item.get('interpretation') or item.get('title')}",
-                f"- Layer 3 — Business inference: {item.get('business_impact') or item.get('impact')}",
-                f"- Layer 4 — Recommendation: {item.get('recommendation')}",
-                f"- Confidence: {item.get('confidence')}",
-                f"- Owner role: {item.get('owner_role')}",
-                f"- Estimated effort: {item.get('effort')}",
-                f"- Cost of inaction: {item.get('cost_of_inaction') or 'Not quantified'}",
-                f"- Cost assumptions: {'; '.join(item.get('cost_of_inaction_assumptions') or []) or 'No monetary conversion claimed'}",
-                f"- Residual risk: {item.get('residual_risk') or 'Requires human review'}",
-                "- Acceptance criteria:",
-                *([f"  - [ ] {criterion}" for criterion in item.get("acceptance_criteria") or []] or ["  - [ ] A binary verification criterion must be recorded."]),
-                f"- Roadmap mapping: {', '.join(item.get('roadmap_mappings') or []) or 'Not mapped'}",
-                f"- Backlog mapping: {item.get('backlog_issue_mapping') or 'Not mapped'}",
-            ]
-        )
-    lines.extend(["", "## Architecture and Data Flow", "Repository → Immutable Snapshot → Evidence Collection → Interpretation → Business Inference → Recommendation → Verification → Human Review → Authorized Delivery", ""])
-    architecture = next((item for item in sections if isinstance(item, dict) and item.get("id") == "architecture_debt"), {})
-    lines.extend(["### Complexity Profile", *[f"- {item}" for item in architecture.get("evidence") or []]])
-    if architecture.get("findings"):
-        lines.extend(["", "### Named Hotspots", *[f"- {item}" for item in architecture.get("findings") or []]])
-
-    lines.extend(["", "## Six-Month Execution Roadmap"])
-    for window in roadmap:
-        if not isinstance(window, dict):
-            continue
-        lines.extend(["", f"### {window.get('window')} — {window.get('objective')}"])
-        for package in window.get("work_packages") or []:
-            if not isinstance(package, dict):
-                continue
-            lines.extend(
-                [
-                    f"- **{package.get('work_package_id') or 'WORK PACKAGE'} · {package.get('title')}**",
-                    f"  - Classification: {package.get('classification') or 'Requires classification'}",
-                    f"  - Related risks: {', '.join(package.get('related_finding_ids') or []) or 'None retained'}",
-                    f"  - Owner: {package.get('owner_role')}",
-                    f"  - Supporting roles: {', '.join(package.get('supporting_roles') or []) or 'None retained'}",
-                    f"  - Effort: {package.get('effort') or package.get('effort_range')}",
-                    f"  - Objective: {package.get('objective')}",
-                    f"  - Dependencies: {', '.join(package.get('dependencies') or []) or 'None retained'}",
-                    f"  - Implementation sequence: {'; '.join(package.get('ordered_implementation_steps') or []) or 'Requires implementation planning'}",
-                    f"  - Acceptance: {'; '.join(package.get('acceptance_criteria') or []) or 'Requires human approval'}",
-                    f"  - Expected impact: {package.get('expected_impact')}",
-                    f"  - Residual risk: {package.get('residual_risk') or 'Requires review'}",
-                ]
-            )
-
-    lines.extend(["", "## Staffing and Sequencing"])
-    for item in staffing:
-        if isinstance(item, dict):
-            lines.append(
-                f"- **Sequence {item.get('sequence')}: {item.get('role')}** — {item.get('focus')} Capacity: {item.get('estimated_load') or 'Requires client planning.'}"
-            )
-    if not staffing:
-        lines.append("- Staffing details require stakeholder approval.")
-
-    lines.extend(["", "## How to Use This Report"])
-    for index, item in enumerate(assessment.get("how_to_use_report") or [], start=1):
-        lines.append(f"{index}. {item}")
-    if not assessment.get("how_to_use_report"):
-        lines.append("1. Complete exact-package human review before external delivery.")
-
-    lines.extend(["", "## Scope Boundary and Unassessed Risk"])
-    boundaries = assessment.get("scope_boundaries") or []
-    for item in boundaries:
-        if isinstance(item, dict):
-            lines.append(f"- **{item.get('area')}** — {item.get('boundary')}")
-    if not boundaries:
-        lines.append("- Unassessed domains must not be interpreted as healthy.")
-
-    lines.extend(["", "## Assumption Register"])
-    assumptions = assessment.get("assumption_register") or []
-    for item in assumptions:
-        if isinstance(item, dict):
-            lines.append(
-                f"- **{item.get('assumption_id')} · {item.get('category')}** — {item.get('description')} Source: {item.get('source')}; confidence: {item.get('confidence')}; sensitivity: {item.get('sensitivity')}; consequence if wrong: {item.get('consequence_if_wrong')}"
-            )
-    if not assumptions:
-        lines.append("- No structured assumptions were retained; human validation remains required.")
-
-    lines.extend(
-        [
-            "",
-            APPENDIX_HEADING,
-            "The client-facing report contains bounded, decision-relevant stage evidence. The complete machine-readable evidence ledger remains in the canonical JSON and CSV artifacts.",
-        ]
-    )
-    for index, stage in enumerate(stages, start=1):
-        lines.extend(
-            [
-                "",
-                f"### A{index}. {stage['title']} — {stage['status'].upper()}",
-                f"- Stage ID: `{stage['stage_id']}`",
-                f"- Summary: {stage['summary']}",
-                f"- Evidence records retained: {len(stage.get('evidence') or [])}",
-                f"- Finding records retained: {len(stage.get('findings') or [])}",
-                f"- Limitation records retained: {len(stage.get('unavailable') or [])}",
-            ]
-        )
-        lines.extend(f"- Evidence: {item}" for item in (stage.get("evidence") or [])[:8])
-        lines.extend(f"- Finding: {item}" for item in (stage.get("findings") or [])[:6])
-        lines.extend(f"- Limitation: {item}" for item in (stage.get("unavailable") or [])[:6])
-
-    lines.extend(
-        [
-            "",
-            REVIEW_HEADING,
-            "- [ ] Verify repository, run, commit, evidence-ledger, customer, and project identities.",
-            "- [ ] Triage every material, review-required, failed, timed-out, and unavailable analyzer result.",
-            "- [ ] Confirm technical score, Evidence-Adjusted score, score band, evidence assurance, and delivery status match across JSON, CSV, Markdown, HTML, and PDF.",
-            "- [ ] Disposition every P1 against its structured acceptance criteria and residual-risk statement.",
-            "- [ ] Validate business context, assumptions, roadmap, staffing, sequencing, effort, and any financial scenario inputs.",
-            "- [ ] Approve or reject the exact immutable report package before any delivery access is created.",
-            "",
-            "## Delivery Status",
-            f"**{assessment.get('delivery_status') or 'HUMAN REVIEW REQUIRED'} — CLIENT DELIVERY NOT AUTHORIZED WITHOUT EXACT-PACKAGE APPROVAL**",
-            "",
-        ]
-    )
+    context = _markdown_context(assessment)
+    lines = _front_matter_lines(identity, assessment, limitations, generated_at, context)
+    lines.extend(_scorecard_and_risk_lines(context))
+    lines.extend(_finding_lines(context["findings"]))
+    lines.extend(_architecture_lines(context["sections"]))
+    lines.extend(_roadmap_lines(roadmap))
+    lines.extend(_governance_lines(assessment, staffing))
+    lines.extend(_appendix_lines(stages))
+    lines.extend(_review_lines(assessment))
     return "\n".join(lines).strip() + "\n"
 
 

@@ -98,6 +98,8 @@ def test_pdf_tables_use_explicit_white_header_paragraphs() -> None:
 
     assert '"P6-TableHeader"' in source
     assert "textColor=colors.white" in source
-    assert "style = table_header if header and row_index == 0 else small" in source
+    assert "header_style = ParagraphStyle" in source
+    assert "parent=table_header" in source
+    assert "header_style if header and row_index == 0 else cell_style" in source
     assert '("TOPPADDING", (0, 0), (-1, 0), 6)' in source
     assert '("BOTTOMPADDING", (0, 0), (-1, 0), 6)' in source
