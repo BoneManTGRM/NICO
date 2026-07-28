@@ -39,8 +39,8 @@ jobs:
       NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "false"
       NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE: "false"
       NICO_ENABLE_SQLITE_DURABLE_STORAGE: "true"
-      NICO_SQLITE_PATH: ${{ runner.temp }}/phase6-verification.sqlite3
-      NICO_SCANNER_RAW_ARTIFACT_ROOT: ${{ runner.temp }}/phase6-scanner-artifacts
+      NICO_SQLITE_PATH: /tmp/nico-phase6-verification.sqlite3
+      NICO_SCANNER_RAW_ARTIFACT_ROOT: /tmp/nico-phase6-scanner-artifacts
 
     steps:
       - name: Check out scanner and report implementation
