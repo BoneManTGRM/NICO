@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      EXPECTED_GZIP_SHA256: 6c25ba29873587011bb29e74ff20bac381417d49ee72dd113558c4987f5e7bb6
+      EXPECTED_GZIP_SHA256: eb07644e9411460025ee6c05af614e4a15ed2328cf1d42bae4c71cee01b66231
     steps:
       - name: Check out current Phase 5 branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
