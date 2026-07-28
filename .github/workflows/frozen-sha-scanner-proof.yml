@@ -170,6 +170,8 @@ jobs:
       - name: Build exact-SHA Phase 6 final Comprehensive package
         working-directory: runner
         run: |
+          mkdir -p phase6-final-verification
+          set +e
           python scripts/build_phase6_verification_package.py \
             --source ../frozen-source \
             --scanner-run frozen-scanner-proof/scanner-run-1.json \
@@ -178,7 +180,29 @@ jobs:
             --pulls pull-requests.json \
             --ci-truth phase6-ci-truth.json \
             --repository "$GITHUB_REPOSITORY" \
-            --output phase6-final-verification
+            --output phase6-final-verification \
+            > >(tee phase6-final-verification/build-stdout.log) \
+            2> >(tee phase6-final-verification/build-stderr.log >&2)
+          build_rc=$?
+          set -e
+          python - "$build_rc" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          build_rc = int(sys.argv[1])
+          diagnostic = {
+              "schema": "nico.phase6.package_build_diagnostic.v1",
+              "exit_code": build_rc,
+              "stdout": Path("phase6-final-verification/build-stdout.log").read_text(encoding="utf-8", errors="replace"),
+              "stderr": Path("phase6-final-verification/build-stderr.log").read_text(encoding="utf-8", errors="replace"),
+          }
+          Path("phase6-final-verification/build-diagnostic.json").write_text(
+              json.dumps(diagnostic, indent=2, sort_keys=True), encoding="utf-8"
+          )
+          if build_rc:
+              raise SystemExit(build_rc)
+          PY
 
       - name: Validate final visible outcomes
         working-directory: runner
