@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -75,39 +76,35 @@ def test_complete_package_builds_hashed_manifest(tmp_path: Path) -> None:
         path.write_bytes(payload)
         artifact_paths[surface] = str(path)
 
-    findings = ["RISK-ONE"]
     assessment = {
+        "repository": "owner/repo",
+        "commit_sha": REVISION,
+        "run_id": "phase8-test-run",
         "assessment_identity": {
             "provider": "github",
             "repository": "owner/repo",
             "immutable_revision": REVISION,
         },
-        "technical_score": 80,
-        "evidence_adjusted_score": 75,
+        "maturity_signal": {
+            "observed_performance": 82,
+            "coverage_adjusted_maturity": 80,
+            "evidence_adjusted_readiness": 75,
+        },
         "approval_state": "FINAL-PENDING-APPROVAL",
-        "limitations": [],
-        "ranked_risks": findings,
+        "client_ready": False,
+        "client_delivery_allowed": False,
+        "canonical_findings": [{"finding_id": "RISK-ONE"}],
+        "unavailable_data_notes": [],
         "truth_sha256": "d" * 64,
     }
-    surface = {
-        "technical_score": 80,
-        "evidence_adjusted_score": 75,
-        "limitation_count": 0,
-        "ranked_risks": findings,
-        "approval_state": "FINAL-PENDING-APPROVAL",
-    }
-    language = {
-        "technical_score": 80,
-        "evidence_adjusted_score": 75,
-        "limitation_count": 0,
-        "ranked_risks": findings,
-        "approval_state": "FINAL-PENDING-APPROVAL",
-    }
+    surface = deepcopy(assessment)
+    language = deepcopy(assessment)
+
     result = build_operational_acceptance(
         assessment=assessment,
         english=language,
         spanish=language,
-        surfaces={name: surface for name in artifact_paths},
+        surfaces={name: deepcopy(surface) for name in artifact_paths},
         artifact_paths=artifact_paths,
         scanner_records=[_scanner("bandit"), _scanner("eslint")],
         required_scanners=["bandit", "eslint"],
