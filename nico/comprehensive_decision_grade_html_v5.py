@@ -76,7 +76,7 @@ def _finding_card(item: dict[str, Any]) -> str:
         f"<dl><dt>Category / status</dt><dd>{_escape(item.get('category'))} · {_escape(item.get('status') or 'open')}</dd>"
         f"<dt>Canonical location</dt><dd>{_escape(location)}</dd>"
         f"<dt>Related locations</dt><dd>{_escape(', '.join(str(value) for value in related) or location)}</dd>"
-        f"<dt>Evidence / fact</dt><dd>{_escape(item.get('fact') or item.get('evidence'))}</dd>"
+        f"<dt>Layer 1 — Evidence / fact</dt><dd>{_escape(item.get('fact') or item.get('evidence'))}</dd>"
         f"<dt>Technical summary</dt><dd>{_escape(item.get('technical_summary') or item.get('interpretation') or title)}</dd>"
         f"<dt>Original analyzer message</dt><dd>{_escape(analyzer, 2600)}</dd>"
         f"<dt>Business impact</dt><dd>{_escape(item.get('business_impact') or item.get('impact'))}</dd>"

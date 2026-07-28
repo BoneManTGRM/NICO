@@ -60,7 +60,7 @@ def _repository_relative_path(value: Any) -> str:
     lowered = raw.casefold()
     candidates: list[tuple[int, str]] = []
     for root in _REPOSITORY_ROOTS:
-        index = lowered.find(root.casefold())
+        index = lowered.rfind(root.casefold())
         if index >= 0:
             candidates.append((index, raw[index:]))
     if candidates:
