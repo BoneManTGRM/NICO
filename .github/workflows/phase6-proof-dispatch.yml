@@ -48,7 +48,7 @@ jobs:
           Path("dispatched-proof/dispatch-receipt.json").write_text(
               json.dumps(
                   {
-                      "schema": "nico.phase6.dispatched_proof_receipt.v3",
+                      "schema": "nico.phase6.dispatched_proof_receipt.v4",
                       "repository": os.environ["GITHUB_REPOSITORY"],
                       "target_sha": os.environ["TARGET_SHA"],
                       "status": "waiting_for_exact_sha_checks",
@@ -87,6 +87,26 @@ jobs:
           path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
           PY
 
+      - name: Snapshot existing proof runs
+        run: |
+          gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow frozen-sha-scanner-proof.yml \
+            --branch "$TARGET_REF" \
+            --event workflow_dispatch \
+            --limit 100 \
+            --json databaseId > preexisting-proof-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          runs = json.loads(Path("preexisting-proof-runs.json").read_text(encoding="utf-8"))
+          Path("preexisting-proof-run-ids.json").write_text(
+              json.dumps(sorted(int(item["databaseId"]) for item in runs), indent=2),
+              encoding="utf-8",
+          )
+          PY
+
       - name: Dispatch exact-SHA scanner and report proof
         run: |
           gh workflow run frozen-sha-scanner-proof.yml \
@@ -94,41 +114,44 @@ jobs:
             --ref "$TARGET_REF" \
             -f target_sha="$TARGET_SHA"
 
-      - name: Resolve dispatched proof run
+      - name: Resolve newly dispatched proof run
         id: proof
         run: |
-          dispatch_epoch=$(date +%s)
           for attempt in $(seq 1 30); do
             gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow frozen-sha-scanner-proof.yml \
               --branch "$TARGET_REF" \
               --event workflow_dispatch \
-              --limit 20 \
+              --limit 100 \
               --json databaseId,headSha,status,conclusion,createdAt > proof-runs.json
             run_id=$(python - <<'PY'
-          import datetime as dt
           import json
           import os
           from pathlib import Path
 
           runs = json.loads(Path("proof-runs.json").read_text(encoding="utf-8"))
+          existing = set(json.loads(Path("preexisting-proof-run-ids.json").read_text(encoding="utf-8")))
           target = os.environ["TARGET_SHA"]
-          for run in runs:
-              if str(run.get("headSha") or "") != target:
-                  continue
-              print(run["databaseId"])
-              break
+          candidates = [
+              run
+              for run in runs
+              if int(run.get("databaseId") or 0) not in existing
+              and str(run.get("headSha") or "") == target
+          ]
+          candidates.sort(key=lambda item: (str(item.get("createdAt") or ""), int(item.get("databaseId") or 0)), reverse=True)
+          if candidates:
+              print(candidates[0]["databaseId"])
           PY
             )
             if [ -n "$run_id" ]; then
               echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-              echo "Dispatched proof run: $run_id"
+              echo "Newly dispatched proof run: $run_id"
               exit 0
             fi
             sleep 10
           done
-          echo "Unable to resolve dispatched exact-SHA proof run." >&2
+          echo "Unable to resolve the newly dispatched exact-SHA proof run." >&2
           exit 1
 
       - name: Wait for proof completion
