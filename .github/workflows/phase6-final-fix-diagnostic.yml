@@ -29,9 +29,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install --no-deps -e .
 
-      - name: Execute correction patch and tests with complete logs
+      - name: Execute correction patch and retain exact patched sources
         run: |
-          mkdir -p diagnostic-output
+          mkdir -p diagnostic-output/patched/nico
           set +e
           python - <<'PY' > diagnostic-output/patch.stdout.log 2> diagnostic-output/patch.stderr.log
           from pathlib import Path
@@ -49,6 +49,8 @@ jobs:
           patch_status=$?
           echo "$patch_status" > diagnostic-output/patch.exit-code.txt
           if [ "$patch_status" -eq 0 ]; then
+            cp nico/phase6_canonical_truth_v2.py diagnostic-output/patched/nico/
+            cp nico/comprehensive_decision_grade_csv_v6.py diagnostic-output/patched/nico/
             python -m py_compile nico/phase6_canonical_truth_v2.py nico/comprehensive_decision_grade_csv_v6.py \
               > diagnostic-output/compile.stdout.log 2> diagnostic-output/compile.stderr.log
             compile_status=$?
@@ -61,18 +63,18 @@ jobs:
               -q --tb=short \
               > diagnostic-output/pytest.stdout.log 2> diagnostic-output/pytest.stderr.log
             pytest_status=$?
+            git add nico/phase6_canonical_truth_v2.py nico/comprehensive_decision_grade_csv_v6.py
+            git diff --cached --check > diagnostic-output/diff-check.stdout.log 2> diagnostic-output/diff-check.stderr.log
+            diff_status=$?
+            git diff --cached > diagnostic-output/patched.diff
           else
             compile_status=99
             pytest_status=99
+            diff_status=99
           fi
           echo "$compile_status" > diagnostic-output/compile.exit-code.txt
           echo "$pytest_status" > diagnostic-output/pytest.exit-code.txt
-          cat diagnostic-output/patch.stdout.log
-          cat diagnostic-output/patch.stderr.log >&2
-          cat diagnostic-output/compile.stdout.log 2>/dev/null || true
-          cat diagnostic-output/compile.stderr.log >&2 2>/dev/null || true
-          cat diagnostic-output/pytest.stdout.log 2>/dev/null || true
-          cat diagnostic-output/pytest.stderr.log >&2 2>/dev/null || true
+          echo "$diff_status" > diagnostic-output/diff-check.exit-code.txt
           exit 0
 
       - name: Upload diagnostics
