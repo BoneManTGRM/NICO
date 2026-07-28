@@ -7,6 +7,7 @@ from typing import Any
 from nico import phase6_canonical_truth_v2 as truth
 from nico import phase6_final_remediation_v1 as phase6
 from nico.comprehensive_decision_grade_csv_v6 import _findings_csv
+from nico.scanner_evidence_pipeline_v1 import REQUIRED_EVIDENCE_TOOLS
 
 VERSION = "nico.phase6_cross_format_repair.v3"
 _PATCH_MARKER = "_nico_phase6_cross_format_repair_v3"
@@ -47,6 +48,71 @@ def _scanner_status_block(assessment: dict[str, Any]) -> tuple[str, str]:
     return markdown, html_block
 
 
+def _repair_scanner_health(assessment: dict[str, Any]) -> None:
+    """Restore every prevalidated exact-SHA scanner to the report health model.
+
+    The verification builder has already fail-closed validated the complete raw
+    scanner artifact before report construction.  Some dependency records lose
+    lower-level capture flags while being projected into the assessment, which
+    previously made completed dependency scanners disappear from the report.
+    """
+
+    records = assessment.get("scanner_execution_records")
+    if not isinstance(records, dict):
+        return
+    completed = sorted(
+        tool
+        for tool in REQUIRED_EVIDENCE_TOOLS
+        if isinstance(records.get(tool), dict)
+        and str((records.get(tool) or {}).get("status") or "").casefold() == "completed"
+        and (records.get(tool) or {}).get("verified_for_this_report") is True
+        and (records.get(tool) or {}).get("output_capture_complete") is True
+        and (records.get(tool) or {}).get("raw_artifact_retention_complete") is True
+        and bool((records.get(tool) or {}).get("artifact_hash") or (records.get(tool) or {}).get("raw_artifact_sha256"))
+    )
+    if not completed:
+        return
+    health = assessment.get("evidence_health_summary")
+    if not isinstance(health, dict):
+        health = {}
+    health["completed_scanners"] = completed
+    health["incomplete_scanners"] = [
+        item
+        for item in health.get("incomplete_scanners") or []
+        if isinstance(item, dict) and str(item.get("scanner") or "") not in completed
+    ]
+    if not health["incomplete_scanners"] and set(completed) == set(REQUIRED_EVIDENCE_TOOLS):
+        health["confidence_effect"] = "Every required scanner has complete retained exact-SHA evidence."
+    health["report_status_derived_from_retained_artifact"] = True
+    assessment["evidence_health_summary"] = health
+
+
+def _normalize_findings_for_csv(assessment: dict[str, Any]) -> list[dict[str, Any]]:
+    findings = [
+        deepcopy(item)
+        for item in assessment.get("decision_grade_findings_register")
+        or assessment.get("findings_register")
+        or []
+        if isinstance(item, dict)
+    ]
+    # CSV has no null scalar representation. Normalize the canonical model to
+    # the exact values that round-trip through DictReader before validation.
+    for item in findings:
+        for key in ("finding_id", "priority", "status", "canonical_path", "canonical_location"):
+            if item.get(key) is None:
+                item[key] = ""
+        if not item.get("finding_id") and item.get("id"):
+            item["finding_id"] = str(item.get("id"))
+        if item.get("canonical_line") in ("", 0):
+            item["canonical_line"] = None
+        for key in ("acceptance_criteria", "roadmap_mappings", "backlog_mappings"):
+            item[key] = truth._ordered_unique(item.get(key) or [])
+    assessment["findings_register"] = findings
+    assessment["decision_grade_findings_register"] = findings
+    assessment["executive_risk_register"] = findings[:7]
+    return findings
+
+
 def _repair_result(result: dict[str, Any]) -> dict[str, Any]:
     package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
     canonical_json = package.get("json") if isinstance(package.get("json"), dict) else {}
@@ -55,13 +121,13 @@ def _repair_result(result: dict[str, Any]) -> dict[str, Any]:
         result["assessment"] = deepcopy(rendered_assessment)
 
     assessment = result.get("assessment") if isinstance(result.get("assessment"), dict) else {}
-    canonical_findings = [
-        item
-        for item in assessment.get("decision_grade_findings_register")
-        or assessment.get("findings_register")
-        or []
-        if isinstance(item, dict)
-    ]
+    _repair_scanner_health(assessment)
+    canonical_findings = _normalize_findings_for_csv(assessment)
+    result["assessment"] = assessment
+
+    # Keep canonical JSON and CSV derived from the exact same repaired model.
+    canonical_json["assessment"] = deepcopy(assessment)
+    package["json"] = canonical_json
     package["findings_csv"] = _findings_csv(canonical_findings)
 
     markdown_block, html_block = _scanner_status_block(assessment)
