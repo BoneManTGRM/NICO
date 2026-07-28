@@ -1,0 +1,114 @@
+name: Phase 10 Real Assessment Validation
+
+on:
+  pull_request:
+    paths:
+      - "nico/phase10_real_validation_v1.py"
+      - "tests/test_phase10_real_validation_v1.py"
+      - "docs/phase10-validation-contract.md"
+      - ".github/workflows/phase10-real-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase10-real-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase10-contract-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Record exact revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/phase10
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          EXPECTED_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          printf '%s\n' "$ACTUAL_SHA" > artifacts/phase10/exact-revision.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Compile Phase 10 validation module
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile nico/phase10_real_validation_v1.py
+
+      - name: Run Phase 10 regression suite twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_phase10_real_validation_v1.py | tee artifacts/phase10/pytest-first.txt
+          pytest -q tests/test_phase10_real_validation_v1.py | tee artifacts/phase10/pytest-second.txt
+
+      - name: Generate immutable proof manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("artifacts/phase10")
+          paths = [
+              Path("nico/phase10_real_validation_v1.py"),
+              Path("tests/test_phase10_real_validation_v1.py"),
+              Path("docs/phase10-validation-contract.md"),
+              root / "exact-revision.txt",
+              root / "pytest-first.txt",
+              root / "pytest-second.txt",
+          ]
+          inventory = []
+          for path in paths:
+              data = path.read_bytes()
+              inventory.append({
+                  "path": str(path),
+                  "bytes": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+              })
+          manifest = {
+              "schema": "nico.phase10.contract-proof.v1",
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "commit_sha": (root / "exact-revision.txt").read_text().strip(),
+              "production_evidence_policy": "fail_closed",
+              "independent_human_review_required_for_completion": True,
+              "external_repository_evidence_required_for_completion": True,
+              "claim_boundary_enforced": True,
+              "inventory": inventory,
+          }
+          encoded = json.dumps(manifest, sort_keys=True, indent=2).encode()
+          (root / "manifest.json").write_bytes(encoded)
+          (root / "manifest.sha256").write_text(hashlib.sha256(encoded).hexdigest() + "\n")
+          PY
+
+      - name: Upload exact-revision proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase10-contract-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/phase10
+          retention-days: 90
+          if-no-files-found: error
