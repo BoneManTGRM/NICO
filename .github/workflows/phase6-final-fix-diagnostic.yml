@@ -1,0 +1,50 @@
+name: Phase 6 Final Correction Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-final-fix-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 1
+
+      - name: Execute correction source patch and capture output
+        run: |
+          mkdir -p diagnostic-output
+          python - <<'PY' > diagnostic-output/patch.stdout.log 2> diagnostic-output/patch.stderr.log
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/phase6-final-package-fix.yml")
+          text = workflow.read_text(encoding="utf-8")
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "          PY\n\n          rm -f .github/workflows/phase6-package-debug.yml"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          lines = text[start:end].splitlines()
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
+          exec(compile(script, str(workflow), "exec"), {"__name__": "__main__"})
+          PY
+          status=$?
+          echo "$status" > diagnostic-output/patch.exit-code.txt
+          cat diagnostic-output/patch.stdout.log
+          cat diagnostic-output/patch.stderr.log >&2
+          exit 0
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-final-correction-diagnostic
+          path: diagnostic-output/
+          if-no-files-found: error
+          retention-days: 7
