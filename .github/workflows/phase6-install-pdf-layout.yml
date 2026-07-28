@@ -1,0 +1,63 @@
+name: Phase 6 Install PDF Layout
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-install-pdf-layout.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: phase-6/report-deduplication-security-remediation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Wire final PDF layout
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("nico/phase6_final_remediation_v1.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''def install_phase6_final_remediation_v1() -> dict[str, Any]:
+              _patch_scanner_runners()
+              _patch_scanner_precedence()
+              _patch_report_surfaces()
+              return {
+          '''
+          new = '''def install_phase6_final_remediation_v1() -> dict[str, Any]:
+              from nico.phase6_pdf_layout_v1 import install_phase6_pdf_layout_v1
+
+              _patch_scanner_runners()
+              _patch_scanner_precedence()
+              _patch_report_surfaces()
+              pdf_layout = install_phase6_pdf_layout_v1()
+              return {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"installer block count={text.count(old)}")
+          text = text.replace(old, new)
+          marker = '        "idempotent_report_filename": True,\n'
+          addition = '        "idempotent_report_filename": True,\n        "concise_pdf_layout": pdf_layout.get("status") in {"installed", "already_installed"},\n        "artificial_minimum_page_padding_removed": True,\n'
+          if text.count(marker) != 1:
+              raise SystemExit(f"return marker count={text.count(marker)}")
+          text = text.replace(marker, addition)
+          path.write_text(text, encoding="utf-8")
+          PY
+          rm -f .github/workflows/phase6-install-pdf-layout.yml
+          python -m py_compile nico/phase6_final_remediation_v1.py nico/phase6_pdf_layout_v1.py
+          git add -A
+          git diff --cached --check
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Phase 6: install concise evidence-bearing PDF layout"
+          git push origin HEAD:phase-6/report-deduplication-security-remediation
