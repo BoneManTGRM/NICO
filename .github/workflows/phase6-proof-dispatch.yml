@@ -48,7 +48,7 @@ jobs:
           Path("dispatched-proof/dispatch-receipt.json").write_text(
               json.dumps(
                   {
-                      "schema": "nico.phase6.dispatched_proof_receipt.v4",
+                      "schema": "nico.phase6.dispatched_proof_receipt.v5",
                       "repository": os.environ["GITHUB_REPOSITORY"],
                       "target_sha": os.environ["TARGET_SHA"],
                       "status": "waiting_for_exact_sha_checks",
@@ -62,12 +62,64 @@ jobs:
 
       - name: Wait for authoritative exact-SHA required checks
         run: |
-          python scripts/capture_phase6_ci_truth.py \
-            --repository "$GITHUB_REPOSITORY" \
-            --target-sha "$TARGET_SHA" \
-            --output dispatched-proof/pre-dispatch-ci-truth.json \
-            --wait-seconds 4200 \
-            --poll-seconds 30
+          set +e
+          ready=0
+          for attempt in $(seq 1 140); do
+            python scripts/capture_phase6_ci_truth.py \
+              --repository "$GITHUB_REPOSITORY" \
+              --target-sha "$TARGET_SHA" \
+              --output dispatched-proof/pre-dispatch-ci-truth.json \
+              --wait-seconds 0 \
+              --poll-seconds 5
+            capture_rc=$?
+
+            python - "$capture_rc" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          capture_rc = int(sys.argv[1])
+          target = os.environ["TARGET_SHA"].casefold()
+          path = Path("dispatched-proof/pre-dispatch-ci-truth.json")
+          if capture_rc != 0 or not path.exists():
+              raise SystemExit(1)
+          truth = json.loads(path.read_text(encoding="utf-8"))
+          assessed = truth.get("assessed_commit") or {}
+          checks = assessed.get("checks") or {}
+          stale = {
+              name: {
+                  "status": item.get("status"),
+                  "conclusion": item.get("conclusion"),
+                  "head_sha": item.get("head_sha"),
+                  "run_id": item.get("run_id"),
+              }
+              for name, item in checks.items()
+              if str(item.get("head_sha") or "").casefold() != target
+          }
+          if assessed.get("all_required_checks_green") is not True or stale:
+              print(
+                  "Exact-SHA workflow matrix not ready: "
+                  f"failed={assessed.get('failed')} pending={assessed.get('pending')} "
+                  f"missing={assessed.get('missing')} stale={stale}",
+                  flush=True,
+              )
+              raise SystemExit(1)
+          print("Every required workflow is successful and bound to the exact PR head SHA.")
+          PY
+            validate_rc=$?
+            if [ "$capture_rc" -eq 0 ] && [ "$validate_rc" -eq 0 ]; then
+              ready=1
+              break
+            fi
+            sleep 30
+          done
+          set -e
+          if [ "$ready" -ne 1 ]; then
+            echo "Timed out waiting for an entirely exact-SHA required-check matrix." >&2
+            exit 1
+          fi
+
           python - <<'PY'
           import json
           from pathlib import Path
@@ -76,12 +128,12 @@ jobs:
           receipt = json.loads(path.read_text(encoding="utf-8"))
           truth = json.loads(Path("dispatched-proof/pre-dispatch-ci-truth.json").read_text(encoding="utf-8"))
           assessed = truth["assessed_commit"]
-          assert assessed["all_required_checks_green"] is True, assessed
           receipt.update(
               {
                   "status": "exact_sha_checks_green",
                   "required_check_count": assessed["required_count"],
                   "observed_check_count": assessed["observed_count"],
+                  "all_check_heads_match_target": True,
               }
           )
           path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
