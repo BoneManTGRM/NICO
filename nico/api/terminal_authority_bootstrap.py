@@ -7,6 +7,7 @@ from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
 from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2
 from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
+from nico.phase6_canonical_truth_v2 import install_phase6_canonical_truth_v2
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import (
     install_exact_scanner_checkout_reconciliation_v1,
@@ -14,7 +15,7 @@ from nico.exact_scanner_checkout_reconciliation_v1 import (
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v12"
+VERSION = "nico.api.terminal_authority_bootstrap.v13"
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
@@ -23,6 +24,7 @@ CI_HISTORY_CLASSIFICATION = install_ci_history_classification_v1()
 WORKFLOW_SUPPLY_CHAIN_POLICY = install_workflow_supply_chain_policy_v1()
 PHASE5_REPORT_TRUTH = install_phase5_report_truth_v2()
 PHASE6_FINAL_REMEDIATION = install_phase6_final_remediation_v1()
+PHASE6_CANONICAL_TRUTH = install_phase6_canonical_truth_v2()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 app.state.nico_scanner_evidence_pipeline = SCANNER_EVIDENCE_PIPELINE
@@ -33,6 +35,7 @@ app.state.nico_ci_history_classification = CI_HISTORY_CLASSIFICATION
 app.state.nico_workflow_supply_chain_policy = WORKFLOW_SUPPLY_CHAIN_POLICY
 app.state.nico_phase5_report_truth = PHASE5_REPORT_TRUTH
 app.state.nico_phase6_final_remediation = PHASE6_FINAL_REMEDIATION
+app.state.nico_phase6_canonical_truth = PHASE6_CANONICAL_TRUTH
 app.state.nico_express_terminal_authority = EXPRESS_TERMINAL_AUTHORITY
 app.state.nico_express_failure_stage_truth = EXPRESS_FAILURE_STAGE_TRUTH
 
@@ -151,6 +154,19 @@ if PHASE6_FINAL_REMEDIATION.get("human_review_required") is not True:
 if PHASE6_FINAL_REMEDIATION.get("client_delivery_allowed") is not False:
     raise RuntimeError("Phase 6 must block unapproved client delivery")
 
+if PHASE6_CANONICAL_TRUTH.get("status") != "installed":
+    raise RuntimeError(f"Phase 6 canonical truth did not install: {PHASE6_CANONICAL_TRUTH}")
+if PHASE6_CANONICAL_TRUTH.get("canonical_model_precedes_all_renderers") is not True:
+    raise RuntimeError("Phase 6 canonical model does not precede all report renderers")
+if PHASE6_CANONICAL_TRUTH.get("cross_format_truth_build_gate") is not True:
+    raise RuntimeError("Phase 6 cross-format truth build gate is not active")
+if PHASE6_CANONICAL_TRUTH.get("language_factual_parity_projection") is not True:
+    raise RuntimeError("Phase 6 language factual parity projection is not active")
+if PHASE6_CANONICAL_TRUTH.get("human_review_required") is not True:
+    raise RuntimeError("Phase 6 canonical truth must preserve human review")
+if PHASE6_CANONICAL_TRUTH.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Phase 6 canonical truth must block unapproved client delivery")
+
 if EXPRESS_TERMINAL_AUTHORITY.get("status") != "installed":
     raise RuntimeError(f"Express terminal authority did not install: {EXPRESS_TERMINAL_AUTHORITY}")
 if EXPRESS_TERMINAL_AUTHORITY.get("compact_terminal_precedes_rich_record") is not True:
@@ -189,6 +205,7 @@ __all__ = [
     "WORKFLOW_SUPPLY_CHAIN_POLICY",
     "PHASE5_REPORT_TRUTH",
     "PHASE6_FINAL_REMEDIATION",
+    "PHASE6_CANONICAL_TRUTH",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "VERSION",
