@@ -14,7 +14,7 @@ from nico.exact_scanner_checkout_reconciliation_v1 import install_exact_scanner_
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v14"
+VERSION = "nico.api.terminal_authority_bootstrap.v15"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
@@ -48,6 +48,23 @@ for state_name, installation in _INSTALLATIONS.items():
     if installation.get("status") not in {"installed", "already_installed"}:
         raise RuntimeError(f"Terminal authority component did not install: {state_name}={installation}")
     setattr(app.state, state_name, installation)
+
+# Keep the foundational production contracts explicit and independently fail-closed.
+# These named checks also make the installed safety boundary directly auditable.
+if SCANNER_EVIDENCE_PIPELINE.get("durable_redacted_raw_artifacts") is not True:
+    raise RuntimeError("Scanner evidence pipeline does not retain durable redacted raw artifacts")
+if SCANNER_EVIDENCE_PIPELINE.get("public_scanner_tool_api_unchanged") is not True:
+    raise RuntimeError("Scanner evidence pipeline unexpectedly replaced the public scanner tool API")
+if EXACT_COMMIT_BINDING.get("repository_files_bound_to_exact_commit") is not True:
+    raise RuntimeError("Repository file evidence is not bound to the exact immutable commit")
+if EXACT_COMMIT_BINDING.get("scanner_bound_to_exact_commit") is not True:
+    raise RuntimeError("Scanner execution is not bound to the exact immutable commit")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("checkout_identity_retained") is not True:
+    raise RuntimeError("Hosted scanner checkout identity is still discarded")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("exact_sha_match_required") is not True:
+    raise RuntimeError("Exact scanner reconciliation does not require the assessed SHA")
+if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("mismatched_or_untrusted_artifacts_blocked") is not True:
+    raise RuntimeError("Mismatched or untrusted scanner artifacts are not blocked")
 
 _REQUIRED_TRUTH_FLAGS = {
     "PHASE6_FINAL_REMEDIATION": (
