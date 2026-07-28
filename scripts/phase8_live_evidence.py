@@ -5,13 +5,17 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from nico.report_package_release_verifier_v1 import verify_report_package
 from nico.phase8_operational_acceptance_v1 import validate_scanner_ledger
 
-ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "phase8-evidence"
 REVISION = os.environ.get("PHASE8_REVISION") or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "BoneManTGRM/NICO")
