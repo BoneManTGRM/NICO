@@ -1,0 +1,90 @@
+name: Phase 8 Operational Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PHASE8_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run Phase 8 truth and acceptance tests twice
+        run: |
+          pytest -q \
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+          pytest -q \
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+      - name: Generate exact-revision operational evidence pass one
+        run: |
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-one.json
+      - name: Generate exact-revision operational evidence pass two
+        run: |
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-two.json
+      - name: Verify both complete bilingual passes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          one = json.loads(Path('phase8-pass-one.json').read_text())
+          two = json.loads(Path('phase8-pass-two.json').read_text())
+          expected = os.environ['PHASE8_REVISION']
+          required_surfaces = {'json', 'markdown', 'html', 'pdf', 'csv'}
+
+          for payload in (one, two):
+              assert payload['immutable_revision'] == expected
+              assert payload['scanner_ledger']['valid'] is True
+              assert payload['report_quality']['valid'] is True
+              assert set(payload['packages']) == {'en', 'es'}
+              assert all(payload['packages'][lang]['valid'] is True for lang in ('en', 'es'))
+              assert all(set(payload['artifact_inventory'][lang]) == required_surfaces for lang in ('en', 'es'))
+              assert payload['pdf_review']['reviewed_languages'] == ['en', 'es']
+              assert payload['pdf_review']['human_approval_required'] is True
+              assert payload['client_delivery_allowed'] is False
+
+          assert one['truth'] == two['truth']
+          print({'revision': expected, 'pass_one': one['manifest_sha256'], 'pass_two': two['manifest_sha256']})
+          PY
+      - name: Upload retained Phase 8 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase8-operational-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            phase8-evidence/
+            phase8-pass-one.json
+            phase8-pass-two.json
