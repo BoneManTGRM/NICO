@@ -1,0 +1,93 @@
+name: Phase 6 Package Build Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/phase6-package-debug.yml"
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_SHA: a940a81fc38ae877a8b69bf7b55ac3dc5816a4d9
+      PROOF_RUN_ID: "30347096366"
+      GH_TOKEN: ${{ github.token }}
+      NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "false"
+      NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE: "false"
+      NICO_ENABLE_SQLITE_DURABLE_STORAGE: "true"
+      NICO_SQLITE_PATH: /tmp/nico-phase6-package-debug.sqlite3
+    steps:
+      - name: Check out current report implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: runner
+          fetch-depth: 1
+
+      - name: Check out exact source target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: frozen-source
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Install report runtime
+        working-directory: runner
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install --no-deps -e .
+
+      - name: Download prior exact-SHA scanner and CI evidence
+        run: |
+          mkdir -p prior-proof diagnostic-output
+          gh run download "$PROOF_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir prior-proof
+          find prior-proof -maxdepth 4 -type f -print | sort | tee diagnostic-output/downloaded-files.txt
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" > runner/workflow-runs.json
+          gh api "repos/$GITHUB_REPOSITORY/pulls?state=all&per_page=100&sort=updated&direction=desc" > runner/pull-requests.json
+
+      - name: Reproduce final package build with complete log
+        working-directory: runner
+        run: |
+          scanner_run="$(find ../prior-proof -name scanner-run-1.json -print -quit)"
+          scanner_proof="$(find ../prior-proof -name frozen-scanner-proof.json -print -quit)"
+          ci_truth="$(find ../prior-proof -name phase6-ci-truth.json -print -quit)"
+          test -f "$scanner_run"
+          test -f "$scanner_proof"
+          test -f "$ci_truth"
+          set +e
+          python scripts/build_phase6_verification_package.py \
+            --source ../frozen-source \
+            --scanner-run "$scanner_run" \
+            --scanner-proof "$scanner_proof" \
+            --workflow-runs workflow-runs.json \
+            --pulls pull-requests.json \
+            --ci-truth "$ci_truth" \
+            --repository "$GITHUB_REPOSITORY" \
+            --output ../diagnostic-output/phase6-final-verification \
+            > ../diagnostic-output/build.stdout.log \
+            2> ../diagnostic-output/build.stderr.log
+          status=$?
+          echo "$status" > ../diagnostic-output/build.exit-code.txt
+          cat ../diagnostic-output/build.stdout.log
+          cat ../diagnostic-output/build.stderr.log >&2
+          exit 0
+
+      - name: Upload complete diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-package-build-diagnostic-${{ env.TARGET_SHA }}
+          path: diagnostic-output/
+          if-no-files-found: error
+          retention-days: 14
