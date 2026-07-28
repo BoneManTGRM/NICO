@@ -37,14 +37,23 @@ def test_scanner_authority_order_matches_phase6_contract() -> None:
     assert "current_run" not in block
 
 
-def test_frozen_sha_proof_runs_for_final_phase6_branch_commits() -> None:
-    source = (ROOT / ".github" / "workflows" / "frozen-sha-scanner-proof.yml").read_text(encoding="utf-8")
+def test_frozen_sha_proof_is_dispatched_only_after_exact_sha_checks_are_green() -> None:
+    proof = (ROOT / ".github" / "workflows" / "frozen-sha-scanner-proof.yml").read_text(encoding="utf-8")
+    dispatch = (ROOT / ".github" / "workflows" / "phase6-proof-dispatch.yml").read_text(encoding="utf-8")
 
-    assert "push:" in source
-    assert "phase-6/report-deduplication-security-remediation" in source
-    assert "github.event_name == 'push' && github.sha" in source
-    assert "Two clean scanner runs and final report proof on exact SHA" in source
-    assert "phase6-final-comprehensive-${{ env.TARGET_SHA }}" in source
+    assert "workflow_dispatch:" in proof
+    assert "workflow_call:" in proof
+    assert "push:" not in proof
+    assert "pull_request:" not in proof
+    assert "TARGET_SHA: ${{ inputs.target_sha }}" in proof
+    assert "Two clean scanner runs and final report proof on exact SHA" in proof
+    assert "phase6-final-comprehensive-${{ env.TARGET_SHA }}" in proof
+
+    assert "Wait for authoritative exact-SHA required checks" in dispatch
+    assert "capture_phase6_ci_truth.py" in dispatch
+    assert 'assert assessed["all_required_checks_green"] is True' in dispatch
+    assert "gh workflow run frozen-sha-scanner-proof.yml" in dispatch
+    assert "-f target_sha=\"$TARGET_SHA\"" in dispatch
 
 
 def test_final_verification_blocks_internal_phase_and_tier_comparisons() -> None:
