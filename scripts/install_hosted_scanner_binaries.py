@@ -29,7 +29,7 @@ TOOLS = (
         "name": "osv-scanner",
         "repository": "google/osv-scanner",
         "version_env": "NICO_OSV_SCANNER_VERSION",
-        "default_tag": "v2.4.0",
+        "default_tag": "v2.3.8",
         "asset_markers": ("osv-scanner_linux_amd64", "linux_amd64"),
         "binary": "osv-scanner",
     },
@@ -45,7 +45,7 @@ TOOLS = (
         "name": "trufflehog",
         "repository": "trufflesecurity/trufflehog",
         "version_env": "NICO_TRUFFLEHOG_VERSION",
-        "default_tag": "v3.95.9",
+        "default_tag": "v3.95.0",
         "asset_markers": ("linux_amd64.tar.gz", "linux_amd64"),
         "binary": "trufflehog",
     },
@@ -99,7 +99,6 @@ def _release(repository: str, tag: str) -> dict[str, Any]:
     if not SAFE_RELEASE_TAG.fullmatch(tag):
         raise RuntimeError("Invalid scanner release tag.")
     url = f"https://api.github.com/repos/{repository}/releases/tags/{tag}"
-    # URL validation and host allowlisting happen inside _request before this network call.
     with urllib.request.urlopen(_request(url), timeout=45) as response:  # nosec B310
         release = json.loads(_read_bounded(response, 5 * 1024 * 1024).decode("utf-8"))
     actual_tag = str(release.get("tag_name") or "") if isinstance(release, dict) else ""
@@ -127,7 +126,6 @@ def _download(asset: dict[str, Any], destination: Path) -> None:
     url = _validated_https_url(str(asset.get("browser_download_url") or ""))
     if not url:
         raise RuntimeError("Release asset missing browser_download_url")
-    # URL validation and host allowlisting happen before this network call.
     with urllib.request.urlopen(_request(url), timeout=120) as response:  # nosec B310
         destination.write_bytes(_read_bounded(response))
 
@@ -230,7 +228,7 @@ def main() -> None:
         try:
             tag = install_tool(tool)
             installed.append(f"{name}@{tag}")
-        except Exception as exc:  # pragma: no cover - exercised during Docker build
+        except Exception as exc:  # pragma: no cover
             failures.append(f"{name}: {exc}")
             print(f"warning: could not install {name}: {exc}")
     print("hosted scanner binary installer summary: installed=" + ", ".join(installed or ["none"]))
