@@ -8,6 +8,7 @@ from nico.v2_authoritative_premium_report import (
     rebuild_authoritative_premium_artifacts,
 )
 from nico.v2_dark_branded_cover import apply_dark_branded_cover
+from nico.v2_executive_score_dashboard import apply_executive_score_dashboard
 
 # v2_pipeline_adapter imports this module before importing its canonical builder
 # and hash helpers. Install the authoritative projection at that boundary so
@@ -25,6 +26,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     evidence appendix without reviving any legacy data path.
     """
     rendered = rebuild_authoritative_premium_artifacts(package)
+    rendered = apply_executive_score_dashboard(rendered)
     return apply_dark_branded_cover(rendered)
 
 
