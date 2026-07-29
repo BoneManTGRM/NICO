@@ -6,17 +6,55 @@ import io
 from copy import deepcopy
 from typing import Any, Mapping
 
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
 from nico.v2_authoritative_premium_report import project_authoritative_canonical
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v1"
+VERSION = "nico.v2.single-pass-premium-report.v2"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _safe_pdf_string(value: Any) -> Any:
+    """Replace only control-glyph list markers while preserving all other text."""
+    if isinstance(value, TextStringObject):
+        return TextStringObject(str(value).replace("\x7f", "-").replace("•", "-"))
+    if isinstance(value, ByteStringObject):
+        return ByteStringObject(bytes(value).replace(b"\x7f", b"-"))
+    return value
+
+
+def _sanitize_final_pdf_text(pdf: bytes) -> bytes:
+    """Repair C1 glyphs in the already-finished premium PDF, without rerendering it."""
+    reader = PdfReader(io.BytesIO(pdf))
+    writer = PdfWriter()
+
+    for page in reader.pages:
+        contents = page.get_contents()
+        if contents is not None:
+            stream = ContentStream(contents, reader)
+            repaired_operations: list[tuple[list[Any], bytes]] = []
+            for operands, operator in stream.operations:
+                repaired = list(operands)
+                if operator in {b"Tj", b"'"} and repaired:
+                    repaired[0] = _safe_pdf_string(repaired[0])
+                elif operator == b'"' and len(repaired) >= 3:
+                    repaired[2] = _safe_pdf_string(repaired[2])
+                elif operator == b"TJ" and repaired and isinstance(repaired[0], list):
+                    repaired[0] = [_safe_pdf_string(item) for item in repaired[0]]
+                repaired_operations.append((repaired, operator))
+            stream.operations = repaired_operations
+            page.replace_contents(stream)
+        writer.add_page(page)
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
@@ -39,9 +77,9 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
 def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Render the mature premium report exactly once from authoritative canonical truth.
 
-    This deliberately avoids the dashboard, cover-replacement, and Markdown-to-PDF
-    post-processing chain. The legacy premium renderer remains the presentation
-    compiler; the projected canonical assessment remains its only data source.
+    The old premium compiler creates the complete client document. A bounded final-byte
+    sanitation pass only replaces malformed control-glyph list markers; it does not
+    regenerate pages, alter scores, or replace the premium layout.
     """
     prepared = deepcopy(dict(package))
     canonical = project_authoritative_canonical(
@@ -55,7 +93,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     )
     result["json"] = canonical
 
-    pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    rendered_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    pdf = _sanitize_final_pdf_text(rendered_pdf)
     page_count = _validate_final_pdf(pdf, canonical)
     markdown = str(result.get("markdown") or "")
     rendered_html = str(result.get("html") or "")
@@ -69,6 +108,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "canonical_system_is_sole_truth": True,
             "post_render_pdf_replacement_disabled": True,
             "final_pdf_control_glyph_validation": True,
+            "final_pdf_text_operator_sanitation": True,
             "final_pdf_identity_validation": True,
             "page_count": page_count,
         }
@@ -84,6 +124,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     )
     result.update(
         {
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
             "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
             "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
@@ -105,4 +146,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     return result
 
 
-__all__ = ["VERSION", "rebuild_single_pass_premium_artifacts"]
+__all__ = [
+    "VERSION",
+    "_sanitize_final_pdf_text",
+    "rebuild_single_pass_premium_artifacts",
+]
