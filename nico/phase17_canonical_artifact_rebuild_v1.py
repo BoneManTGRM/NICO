@@ -4,7 +4,14 @@ from typing import Any, Mapping
 
 from nico import v2_assessment_pipeline as _assessment_pipeline
 from nico.v2_canonical_premium_truth import repair_canonical_premium_truth
-from nico.v2_premium_evidence_appendix import (
+from nico.v2_premium_pdf_finality import install_v2_premium_pdf_finality
+
+# This must run before v2_premium_report_renderer imports the production PDF
+# function by value. It binds final pending-approval language and footers into
+# the same premium renderer that owns the dark cover and executive dashboard.
+install_v2_premium_pdf_finality()
+
+from nico.v2_premium_evidence_appendix import (  # noqa: E402
     VERSION,
     rebuild_premium_client_artifacts_with_appendix,
 )
