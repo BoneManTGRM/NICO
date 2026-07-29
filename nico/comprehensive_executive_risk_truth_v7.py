@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from nico.phase12_report_remediation_v1 import remediate_assessment
+from nico.phase15_production_integration_v1 import integrate_production_truth
 
-VERSION = "nico.comprehensive_executive_risk_truth.v8"
+VERSION = "nico.comprehensive_executive_risk_truth.v9"
 
 
 def reconcile_executive_risk_truth(assessment: dict[str, Any]) -> dict[str, Any]:
-    """Align executive risk wording with final control truth and canonicalize report findings."""
+    """Align executive risk wording and apply canonical findings plus analyzer truth."""
     sections = [item for item in assessment.get("sections") or [] if isinstance(item, dict)]
     static = next((item for item in sections if item.get("id") == "static_analysis"), None)
     static_scored = bool(
@@ -51,14 +51,9 @@ def reconcile_executive_risk_truth(assessment: dict[str, Any]) -> dict[str, Any]
         "technical_score_not_conflated_with_assurance": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "production_integration_required": True,
     }
-    identity = assessment.get("identity")
-    commit_sha = str(
-        assessment.get("commit_sha")
-        or (identity.get("commit_sha") if isinstance(identity, dict) else "")
-        or ""
-    )
-    return remediate_assessment(assessment, commit_sha=commit_sha)
+    return integrate_production_truth(assessment)
 
 
 __all__ = ["VERSION", "reconcile_executive_risk_truth"]
