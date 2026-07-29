@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 from nico.phase9_production_report_gate_v1 import acceptance_key, contextual_title, normalized_filename
 
-VERSION = "nico.phase13.canonical-findings.v2"
+VERSION = "nico.phase13.canonical-findings.v3"
 _STATUS_RANK = {"completed": 5, "success": 5, "not_applicable": 4, "partial": 3, "timed_out": 2, "failed": 1, "unknown": 0}
 _GENERIC_FAMILIES = {
     "high-complexity code hotspot": "complexity_hotspot",
@@ -176,7 +176,6 @@ def _merge_records(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[st
 
 def canonical_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     selected: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
-    order: list[tuple[str, str, str, str, str]] = []
     for raw in findings:
         item = deepcopy(dict(raw))
         if _unsupported_tls_aggregate(item):
@@ -193,10 +192,9 @@ def canonical_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, 
             item["title"] = _specific_title(item)
             item["decision_title"] = item["title"]
             selected[key] = item
-            order.append(key)
         else:
             selected[key] = _merge_records(selected[key], item)
-    return [selected[key] for key in order]
+    return [selected[key] for key in sorted(selected)]
 
 
 def _scanner_name(record: Mapping[str, Any]) -> str:
