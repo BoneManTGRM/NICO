@@ -1,0 +1,100 @@
+name: Phase 11 Client Workflow Hardening
+
+on:
+  pull_request:
+    paths:
+      - "nico/phase11_client_workflow_v1.py"
+      - "tests/test_phase11_client_workflow_v1.py"
+      - ".github/workflows/phase11-client-workflow-hardening.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase11-client-workflow-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase11-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify exact revision and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/phase11
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$ACTUAL" = "$EXPECTED"
+          printf '%s\n' "$ACTUAL" > artifacts/phase11/exact-revision.txt
+          python -m py_compile nico/phase11_client_workflow_v1.py
+
+      - name: Run operational hardening tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_phase11_client_workflow_v1.py | tee artifacts/phase11/pytest-first.txt
+          pytest -q tests/test_phase11_client_workflow_v1.py | tee artifacts/phase11/pytest-second.txt
+
+      - name: Produce retained proof manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("artifacts/phase11")
+          files = [
+              Path("nico/phase11_client_workflow_v1.py"),
+              Path("tests/test_phase11_client_workflow_v1.py"),
+              root / "exact-revision.txt",
+              root / "pytest-first.txt",
+              root / "pytest-second.txt",
+          ]
+          inventory = []
+          for path in files:
+              data = path.read_bytes()
+              inventory.append({"path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+          manifest = {
+              "schema": "nico.phase11.client-workflow-proof.v1",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "commit_sha": (root / "exact-revision.txt").read_text().strip(),
+              "required_scenarios": 11,
+              "identity_drift_fails_closed": True,
+              "duplicate_side_effects_fail_closed": True,
+              "approval_and_delivery_fail_closed": True,
+              "inventory": inventory,
+          }
+          payload = json.dumps(manifest, sort_keys=True, indent=2).encode()
+          (root / "manifest.json").write_bytes(payload)
+          (root / "manifest.sha256").write_text(hashlib.sha256(payload).hexdigest() + "\n")
+          PY
+
+      - name: Upload Phase 11 proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: phase11-client-workflow-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/phase11
+          retention-days: 90
+          if-no-files-found: error
