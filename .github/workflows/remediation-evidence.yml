@@ -46,6 +46,7 @@ jobs:
       - name: Install hosted scanner binaries
         env:
           NICO_SCANNER_INSTALL_STRICT: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/install_hosted_scanner_binaries.py
 
       - name: Install frontend dependencies
