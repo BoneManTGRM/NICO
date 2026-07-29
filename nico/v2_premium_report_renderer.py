@@ -2,20 +2,28 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import io
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
-from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
-from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
-from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
+from nico import v2_premium_report_renderer_legacy as _legacy
 
-VERSION = "nico.v2.premium-report-renderer.v5"
+VERSION = "nico.v2.premium-report-renderer.v6"
 
 
-def _text(value: Any) -> str:
-    return " ".join(str(value or "").split()).strip()
+def __getattr__(name: str) -> Any:
+    return getattr(_legacy, name)
+
+
+_FINAL_EN = "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED"
+_FINAL_ES = "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
+
+
+def _text(value: Any, limit: int = 6000) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
@@ -25,7 +33,6 @@ def _is_spanish(canonical: Mapping[str, Any]) -> bool:
         canonical.get("report_language")
         or canonical.get("locale")
         or assessment.get("report_language")
-        or assessment.get("locale")
         or identity.get("report_language")
         or "en"
     ).casefold()
@@ -33,6 +40,7 @@ def _is_spanish(canonical: Mapping[str, Any]) -> bool:
 
 
 def _score_pair(assessment: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    truth = assessment.get("comprehensive_score_truth") if isinstance(assessment.get("comprehensive_score_truth"), Mapping) else {}
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
 
     def numeric(*values: Any) -> int | None:
@@ -43,356 +51,302 @@ def _score_pair(assessment: Mapping[str, Any]) -> tuple[int | None, int | None]:
         return None
 
     technical = numeric(
-        assessment.get("technical_score"),
-        maturity.get("technical_score"),
-        maturity.get("presented_score"),
-        maturity.get("score"),
+        truth.get("technical_score"), assessment.get("technical_score"),
+        maturity.get("technical_score"), maturity.get("presented_score"), maturity.get("score"),
     )
     adjusted = numeric(
-        assessment.get("canonical_evidence_adjusted_score"),
-        assessment.get("evidence_adjusted_score"),
-        maturity.get("canonical_evidence_adjusted_score"),
-        maturity.get("evidence_adjusted_score"),
-        technical,
+        truth.get("canonical_evidence_adjusted_score"),
+        assessment.get("canonical_evidence_adjusted_score"), assessment.get("evidence_adjusted_score"),
+        maturity.get("canonical_evidence_adjusted_score"), maturity.get("evidence_adjusted_score"), technical,
     )
     return technical, adjusted
 
 
-def _score_summary_markdown(assessment: Mapping[str, Any], *, spanish: bool) -> str:
-    technical, adjusted = _score_pair(assessment)
-    technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
-    adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
-    if spanish:
-        return (
-            "## Resumen canónico de puntuación\n\n"
-            f"- Madurez técnica: {technical_text}\n"
-            f"- Ajuste por evidencia: {adjusted_text}\n"
+def _dependency_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    rows = [item for item in canonical.get("dependency_disposition") or [] if isinstance(item, Mapping)]
+    heading = "## Clasificación de dependencias" if spanish else "## Dependency Disposition"
+    lines = [heading, ""]
+    if not rows:
+        lines.append(
+            "- No se conservaron avisos OSV en la población canónica."
+            if spanish else "- No OSV advisory records were retained in the canonical scanner population."
         )
-    return (
-        "## Canonical Score Summary\n\n"
-        f"- Technical maturity: {technical_text}\n"
-        f"- Evidence-Adjusted: {adjusted_text}\n"
+        return "\n".join(lines)
+    if spanish:
+        lines += [
+            "Los avisos no clasificados reducen la confianza, no la madurez técnica, hasta verificar materialidad.", "",
+            "| Aviso | Paquete | Instalada | Corregida | Alcance | Accesibilidad | Disposición | Impacto |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+    else:
+        lines += [
+            "Untriaged advisories reduce assurance, not technical maturity, until materiality is verified.", "",
+            "| Advisory | Package | Installed | Fixed | Scope | Reachability | Disposition | Score impact |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+    for item in rows:
+        impact = "Sí" if spanish and item.get("technical_score_impact") else "No, solo confianza" if spanish else "Yes" if item.get("technical_score_impact") else "No, assurance only"
+        lines.append(
+            f"| {_text(item.get('advisory_id'))} | {_text(item.get('package'))} | "
+            f"{_text(item.get('installed_version'))} | {_text(item.get('fixed_version'))} | "
+            f"{_text(item.get('scope'))} | {_text(item.get('reachability'))} | "
+            f"{_text(item.get('disposition'))} | {impact} |"
+        )
+    return "\n".join(lines)
+
+
+def _build_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    stages = _legacy._canonical_stages(canonical)
+    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
+    generated = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    if spanish:
+        markdown = _legacy._spanish_markdown(canonical)
+        markdown = markdown.replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
+        markdown = markdown.replace(
+            "La evaluación automatizada terminó como borrador.",
+            "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
+        )
+        boundary = f"**{_FINAL_ES}**"
+        if boundary not in markdown:
+            markdown = boundary + "\n\n" + markdown
+        dependency = _dependency_markdown(canonical, spanish=True)
+        marker = "## Puerta de revisión y entrega"
+        markdown = markdown.replace(marker, f"{dependency}\n\n{marker}", 1) if marker in markdown else markdown.rstrip() + "\n\n" + dependency
+        if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
+            markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
+        return markdown
+
+    markdown = _legacy._markdown(dict(identity), dict(assessment), stages, generated)
+    markdown = markdown.replace(
+        "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
+        _FINAL_EN,
+    ).replace(
+        "The package is a review-gated draft:",
+        "The package is a final automated report pending human approval:",
+    ).replace(
+        "The report is an evidence-bound draft.",
+        "The report is an evidence-bound final automated report pending human approval.",
+    ).replace(
+        "The automated assessment is complete only as a draft.",
+        "The automated assessment package is complete and pending human approval.",
     )
+    detailed = _legacy._detailed_findings_markdown(findings, spanish=False)
+    dependency = _dependency_markdown(canonical, spanish=False)
+    marker = "## Delivery Status"
+    insertion = f"{dependency}\n\n{detailed}\n\n"
+    markdown = markdown.replace(marker, insertion + marker, 1) if marker in markdown else markdown.rstrip() + "\n\n" + insertion
+    return markdown
 
 
-def _prepend_score_summary_pdf(
-    pdf_bytes: bytes,
-    *,
-    identity: Mapping[str, Any],
-    assessment: Mapping[str, Any],
-    spanish: bool,
-) -> bytes:
-    from pypdf import PdfReader, PdfWriter
+def _html(markdown: str, title: str, *, spanish: bool) -> str:
+    blocks: list[str] = []
+    list_items: list[str] = []
+    table_lines: list[str] = []
+
+    def flush_list() -> None:
+        nonlocal list_items
+        if list_items:
+            blocks.append("<ul>" + "".join(list_items) + "</ul>")
+            list_items = []
+
+    def flush_table() -> None:
+        nonlocal table_lines
+        if not table_lines:
+            return
+        rows: list[str] = []
+        for index, line in enumerate(table_lines):
+            cells = [html.escape(cell.strip()) for cell in line.strip("|").split("|")]
+            if index == 1 and all(set(cell) <= {"-", ":"} for cell in cells):
+                continue
+            tag = "th" if index == 0 else "td"
+            rows.append("<tr>" + "".join(f"<{tag}>{cell}</{tag}>" for cell in cells) + "</tr>")
+        blocks.append('<div class="table-wrap"><table>' + "".join(rows) + "</table></div>")
+        table_lines = []
+
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if line.startswith("|"):
+            flush_list(); table_lines.append(line); continue
+        flush_table()
+        if not line:
+            flush_list()
+        elif line.startswith("<!--"):
+            blocks.append(line)
+        elif line.startswith("### "):
+            flush_list(); blocks.append(f"<h3>{html.escape(line[4:])}</h3>")
+        elif line.startswith("## "):
+            flush_list(); blocks.append(f"<h2>{html.escape(line[3:])}</h2>")
+        elif line.startswith("# "):
+            flush_list(); blocks.append(f"<h1>{html.escape(line[2:])}</h1>")
+        elif line.startswith("- [ ] "):
+            list_items.append(f"<li>☐ {html.escape(line[6:])}</li>")
+        elif line.startswith("  - "):
+            list_items.append(f"<li>{html.escape(line[4:])}</li>")
+        elif line.startswith("- "):
+            list_items.append(f"<li>{html.escape(line[2:])}</li>")
+        elif line.startswith("**") and line.endswith("**"):
+            flush_list(); blocks.append(f'<p class="warning">{html.escape(line.strip("*"))}</p>')
+        else:
+            flush_list(); blocks.append(f"<p>{html.escape(line)}</p>")
+    flush_list(); flush_table()
+    lang = "es" if spanish else "en"
+    boundary = _FINAL_ES if spanish else _FINAL_EN
+    return f"""<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><style>
+:root{{color-scheme:dark}}body{{margin:0;background:#050b18;color:#dbeafe;font:15px/1.58 Inter,system-ui,sans-serif}}main{{max-width:1160px;margin:auto;padding:34px 20px 76px}}header{{background:linear-gradient(135deg,#071124,#0d2743);border:1px solid #1e4d70;border-radius:26px;padding:36px;margin-bottom:22px;box-shadow:0 22px 70px #0008}}header h1{{margin:0;color:#fff;font-size:clamp(30px,5vw,52px);line-height:1.04}}.eyebrow{{color:#38bdf8;font-weight:900;letter-spacing:.14em;text-transform:uppercase}}.badge{{display:inline-block;margin-top:16px;padding:8px 13px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{background:#0b172c;border:1px solid #274060;border-radius:24px;padding:30px}}h1{{color:#fff}}h2{{color:#7dd3fc;border-top:1px solid #274060;padding-top:25px;margin-top:36px}}h3{{color:#e0f2fe}}p,li{{color:#cbd5e1}}.warning{{padding:15px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800}}.table-wrap{{overflow:auto;margin:16px 0;border:1px solid #274060;border-radius:14px}}table{{width:100%;border-collapse:collapse;background:#0d1a31}}th,td{{border-bottom:1px solid #274060;padding:10px;text-align:left;vertical-align:top}}th{{color:#fff;background:#0c4a6e}}
+</style></head><body><main><header><div class="eyebrow">NICO Comprehensive</div><h1>{html.escape(title)}</h1><span class="badge">{html.escape(boundary)}</span></header><article>{''.join(blocks)}</article></main></body></html>"""
+
+
+def _pdf(markdown: str, canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    scanners = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
     technical, adjusted = _score_pair(assessment)
-    technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
-    adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
-    buffer = io.BytesIO()
+    navy = colors.HexColor("#071124")
+    navy2 = colors.HexColor("#0d2743")
+    cyan = colors.HexColor("#38bdf8")
+    pale = colors.HexColor("#dbeafe")
+    amber = colors.HexColor("#f59e0b")
     styles = getSampleStyleSheet()
-    title = ParagraphStyle(
-        "CanonicalScoreTitle",
-        parent=styles["Title"],
-        fontName="Helvetica-Bold",
-        fontSize=24,
-        leading=29,
-        textColor=colors.HexColor("#0f172a"),
-        spaceAfter=18,
-    )
-    body = ParagraphStyle(
-        "CanonicalScoreBody",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=10,
-        leading=15,
-        textColor=colors.HexColor("#334155"),
-        spaceAfter=8,
-    )
-    warning = ParagraphStyle(
-        "CanonicalScoreWarning",
-        parent=body,
-        fontName="Helvetica-Bold",
-        textColor=colors.HexColor("#92400e"),
-        backColor=colors.HexColor("#fef3c7"),
-        borderColor=colors.HexColor("#f59e0b"),
-        borderWidth=.8,
-        borderPadding=9,
-        spaceAfter=16,
-    )
-    heading = "Resumen canónico de puntuación" if spanish else "Canonical Score Summary"
-    boundary = (
-        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
-        if spanish
-        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED"
-    )
-    rows = [
-        ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
-        ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
-        ["ID de ejecución" if spanish else "Run ID", _text(identity.get("run_id"))],
-        ["Madurez técnica" if spanish else "Technical maturity", technical_text],
-        ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", adjusted_text],
-    ]
-    table = Table(rows, colWidths=[1.65 * inch, 5.15 * inch])
-    table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), .4, colors.HexColor("#cbd5e1")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2fe")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-    ]))
-    story = [
-        Spacer(1, .65 * inch),
-        Paragraph("NICO COMPREHENSIVE", title),
-        Paragraph(heading, title),
-        Paragraph(boundary, warning),
-        table,
-        Spacer(1, .2 * inch),
-        Paragraph(
-            "These two scores are separate: technical maturity summarizes scored technical controls, while Evidence-Adjusted reflects the confidence and completeness of retained evidence."
-            if not spanish
-            else "Estas dos puntuaciones son distintas: la madurez técnica resume los controles técnicos puntuados y el ajuste por evidencia refleja la confianza y completitud de la evidencia conservada.",
-            body,
-        ),
-    ]
-    document = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=.6 * inch,
-        rightMargin=.6 * inch,
-        topMargin=.6 * inch,
-        bottomMargin=.6 * inch,
-        invariant=1,
-    )
-    document.build(story)
-    writer = PdfWriter()
-    for page in PdfReader(io.BytesIO(buffer.getvalue())).pages:
-        writer.add_page(page)
-    for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
-        writer.add_page(page)
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    cover_title = ParagraphStyle("CoverTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=29, leading=34, textColor=colors.white, alignment=TA_LEFT, spaceAfter=16)
+    cover_label = ParagraphStyle("CoverLabel", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=10, leading=13, textColor=cyan, spaceAfter=8)
+    cover_body = ParagraphStyle("CoverBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.5, leading=14, textColor=pale, spaceAfter=7)
+    h1 = ParagraphStyle("H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=navy, spaceAfter=10)
+    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=colors.HexColor("#075985"), spaceBefore=8, spaceAfter=6)
+    h3 = ParagraphStyle("H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.5, leading=13, textColor=navy, spaceBefore=6, spaceAfter=4)
+    body = ParagraphStyle("Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.6, leading=12.2, textColor=colors.HexColor("#334155"), spaceAfter=5)
+    small = ParagraphStyle("Small", parent=body, fontSize=7.2, leading=9.4, textColor=colors.HexColor("#475569"))
+    warning = ParagraphStyle("Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=amber, borderWidth=.8, borderPadding=9, spaceAfter=10)
+    card_title = ParagraphStyle("CardTitle", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8.2, leading=10, textColor=cyan, alignment=TA_CENTER)
+    card_value = ParagraphStyle("CardValue", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=21, leading=23, textColor=colors.white, alignment=TA_CENTER)
 
+    def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
+        return Paragraph(html.escape(_text(value, 6000)), style)
 
-def _stage(stage_id: str, title: str, summary: str, *, evidence: list[str] | None = None,
-           findings: list[str] | None = None, unavailable: list[str] | None = None,
-           status: str = "complete") -> dict[str, Any]:
-    return {
-        "stage_id": stage_id,
-        "title": title,
-        "status": status,
-        "summary": summary,
-        "evidence": list(evidence or []),
-        "findings": list(findings or []),
-        "unavailable": list(unavailable or []),
+    def cover(canvas: Any, doc: Any) -> None:
+        canvas.saveState(); canvas.setFillColor(navy); canvas.rect(0, 0, letter[0], letter[1], stroke=0, fill=1)
+        canvas.setFillColor(navy2); canvas.circle(7.4 * inch, 9.6 * inch, 2.7 * inch, stroke=0, fill=1)
+        canvas.setFillColor(colors.HexColor("#0b5f84")); canvas.circle(.8 * inch, .8 * inch, 1.5 * inch, stroke=0, fill=1)
+        canvas.restoreState()
+
+    def footer(canvas: Any, doc: Any) -> None:
+        canvas.saveState(); canvas.setFont("Helvetica", 7); canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawString(.55 * inch, .36 * inch, f"NICO Comprehensive · {_text(identity.get('run_id'), 48)} · FINAL · APPROVAL PENDING")
+        canvas.drawRightString(7.95 * inch, .36 * inch, f"Page {doc.page}"); canvas.restoreState()
+
+    boundary = _FINAL_ES if spanish else _FINAL_EN
+    title = "Evaluación Técnica Integral" if spanish else "Comprehensive Technical Assessment"
+    story: list[Any] = [
+        Spacer(1, .78 * inch), p("NICO COMPREHENSIVE", cover_label), p(title, cover_title),
+        p(identity.get("repository"), ParagraphStyle("Repo", parent=cover_body, fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=colors.white)),
+        Spacer(1, .32 * inch), p(boundary, ParagraphStyle("CoverWarning", parent=cover_body, fontName="Helvetica-Bold", textColor=colors.HexColor("#fde68a"), backColor=colors.HexColor("#4a2406"), borderColor=amber, borderWidth=.8, borderPadding=10)),
+        Spacer(1, .32 * inch), p(("ID de ejecución" if spanish else "Run ID") + f": {_text(identity.get('run_id'))}", cover_body),
+        p(("Commit exacto" if spanish else "Exact commit") + f": {_text(identity.get('commit_sha'))}", cover_body),
+        PageBreak(), p("Panel ejecutivo" if spanish else "Executive Dashboard", h1),
+    ]
+    cards = Table([
+        [p("MADUREZ TÉCNICA" if spanish else "TECHNICAL MATURITY", card_title), p("AJUSTE POR EVIDENCIA" if spanish else "EVIDENCE-ADJUSTED", card_title), p("ANALIZADORES COMPLETOS" if spanish else "SCANNERS COMPLETE", card_title)],
+        [p(f"{technical}/100" if technical is not None else "N/A", card_value), p(f"{adjusted}/100" if adjusted is not None else "N/A", card_value), p(f"{sum(item.get('completed') is True for item in scanners)}/{len(scanners)}", card_value)],
+    ], colWidths=[2.35 * inch] * 3)
+    cards.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), navy2), ("BOX", (0, 0), (-1, -1), .8, cyan), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#1e4d70")), ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
+    story += [cards, Spacer(1, .2 * inch), p(assessment.get("executive_summary") or "Automated assessment complete; human approval remains required.", body), PageBreak()]
+
+    major = {
+        "Executive Decision Brief", "Technical Scorecard", "Evidence Foundation", "Deep Technical Diligence",
+        "Business and Delivery Context", "Roadmap, Resourcing, and Decision", "Dependency Disposition",
+        "Detailed Canonical Findings", "Human Review Checklist", "Delivery Status",
+        "Resumen ejecutivo", "Clasificación de dependencias", "Hallazgos canónicos detallados",
+        "Apéndice de evidencia", "Puerta de revisión y entrega",
     }
+    table_lines: list[str] = []
 
+    def flush_table() -> None:
+        nonlocal table_lines
+        if not table_lines:
+            return
+        parsed = [[cell.strip() for cell in line.strip("|").split("|")] for line in table_lines]
+        if len(parsed) > 1 and all(set(cell) <= {"-", ":"} for cell in parsed[1]):
+            parsed.pop(1)
+        width = 7.2 * inch / max(1, len(parsed[0]))
+        rows = [[p(cell, small) for cell in row] for row in parsed]
+        table = Table(rows, colWidths=[width] * len(parsed[0]), repeatRows=1)
+        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#cbd5e1")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")])]))
+        story.append(table); story.append(Spacer(1, .12 * inch)); table_lines = []
 
-def _finding_lines(findings: list[Mapping[str, Any]]) -> list[str]:
-    output: list[str] = []
-    for item in findings:
-        identifier = _text(item.get("finding_id") or item.get("id"))
-        title = _text(item.get("title") or item.get("decision_title"))
-        priority = _text(item.get("priority") or item.get("severity") or "P2")
-        location = _text(item.get("location"))
-        impact = _text(item.get("business_impact") or item.get("impact"))
-        recommendation = _text(item.get("recommendation"))
-        output.append(
-            f"{priority} · {title} · {identifier} · {location or 'location not retained'} · "
-            f"Impact: {impact or 'requires review'} · Recommendation: {recommendation or 'requires review'}"
-        )
-    return output
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if line.startswith("|"):
+            table_lines.append(line); continue
+        flush_table()
+        if not line or line.startswith("<!--") or line.startswith("# "):
+            continue
+        if line.startswith("## "):
+            heading = line[3:]
+            if heading in major and story and not isinstance(story[-1], PageBreak):
+                story.append(PageBreak())
+            story.append(p(heading, h1)); continue
+        if line.startswith("### "):
+            story.append(p(line[4:], h2)); continue
+        if line.startswith("- [ ] "):
+            story.append(p("☐ " + line[6:], small)); continue
+        if line.startswith("  - "):
+            story.append(p("• " + line[4:], small)); continue
+        if line.startswith("- "):
+            story.append(p("• " + line[2:], small)); continue
+        if line.startswith("**") and line.endswith("**"):
+            story.append(p(line.strip("*"), warning)); continue
+        story.append(p(line, body))
+    flush_table()
 
-
-def _detailed_findings_markdown(findings: list[Mapping[str, Any]], *, spanish: bool) -> str:
-    heading = "## Hallazgos canónicos detallados" if spanish else "## Detailed Canonical Findings"
-    lines = [heading, ""]
-    if not findings:
-        lines.append("No se conservó ningún hallazgo canónico accionable." if spanish else "No canonical actionable finding was retained.")
-        return "\n".join(lines)
-    for item in findings:
-        identifier = _text(item.get("finding_id") or item.get("id"))
-        title = _text(item.get("title") or item.get("decision_title"))
-        priority = _text(item.get("priority") or item.get("severity") or "P2")
-        lines += [
-            f"### {priority} - {title}",
-            "",
-            f"- Finding ID: {identifier}",
-            f"- Category / status: {_text(item.get('category'))} · {_text(item.get('status'))}",
-            f"- Location: {_text(item.get('location')) or 'Location not retained'}",
-            f"- Evidence: {_text(item.get('fact') or item.get('evidence')) or 'Evidence requires review'}",
-            f"- Interpretation: {_text(item.get('interpretation') or title)}",
-            f"- Business impact: {_text(item.get('business_impact') or item.get('impact')) or 'Requires review'}",
-            f"- Recommendation: {_text(item.get('recommendation')) or 'Requires review'}",
-            f"- Owner / effort: {_text(item.get('owner_role')) or 'Unassigned'} · {_text(item.get('effort')) or 'Unestimated'}",
-            f"- Cost of inaction: {_text(item.get('cost_of_inaction')) or 'Not quantified'}",
-            f"- Residual risk: {_text(item.get('residual_risk')) or 'Requires review'}",
-        ]
-        criteria: list[str] = []
-        seen: set[str] = set()
-        for raw in item.get("acceptance_criteria") or []:
-            value = _text(raw)
-            key = value.casefold()
-            if value and key not in seen:
-                seen.add(key)
-                criteria.append(value)
-        if criteria:
-            lines.append("- Acceptance criteria:")
-            lines.extend(f"  - {value}" for value in criteria)
-        lines.append("")
-    return "\n".join(lines).strip()
-
-
-def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
-    records = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
-    completed = [item for item in records if item.get("completed") is True]
-    incomplete = [item for item in records if item.get("completed") is not True]
-    evidence = [
-        f"{_text(item.get('scanner_name') or item.get('tool'))}: "
-        f"{_text(item.get('state') or item.get('status'))}; "
-        f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
-        f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
-        f"findings={len(item.get('findings') or [])}"
-        for item in records
-    ]
-    limitations = [
-        f"{_text(item.get('scanner_name') or item.get('tool'))}: "
-        f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner evidence incomplete')}"
-        for item in incomplete
-    ]
-    return [
-        _stage(
-            "dependency_security_static_analysis",
-            "Dependency, Security, and Static Analysis",
-            f"{len(completed)} scanner records completed and {len(incomplete)} remain incomplete or review-limited.",
-            evidence=evidence,
-            unavailable=limitations,
-            status="complete" if not incomplete else "review_required",
-        )
-    ]
-
-
-def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
-    existing = [deepcopy(dict(item)) for item in canonical.get("stage_summaries") or [] if isinstance(item, Mapping)]
-    by_id = {_text(item.get("stage_id")): item for item in existing if _text(item.get("stage_id"))}
-    for item in _scanner_stages(canonical):
-        by_id[item["stage_id"]] = item
-
-    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
-    by_id["risk_reduction_and_executive_briefing"] = _stage(
-        "risk_reduction_and_executive_briefing",
-        "Executive Risk Register and Decision Briefing",
-        f"The canonical register contains {len(findings)} unique decision-grade findings.",
-        findings=_finding_lines(findings),
-        status="complete",
-    )
-
-    roadmap = [item for item in canonical.get("roadmap") or [] if isinstance(item, Mapping)]
-    roadmap_evidence: list[str] = []
-    for window in roadmap:
-        label = _text(window.get("window") or window.get("title"))
-        objective = _text(window.get("objective"))
-        roadmap_evidence.append(f"{label}: {objective}")
-        for work in window.get("work_packages") or []:
-            if isinstance(work, Mapping):
-                roadmap_evidence.append(
-                    f"{label} · {_text(work.get('work_package_id') or work.get('id'))}: "
-                    f"{_text(work.get('title') or work.get('objective'))}; "
-                    f"owner={_text(work.get('owner_role') or work.get('owner'))}; "
-                    f"effort={_text(work.get('effort') or work.get('effort_range'))}"
-                )
-    if roadmap_evidence:
-        by_id["six_month_roadmap"] = _stage(
-            "six_month_roadmap",
-            "Six-Month Roadmap",
-            "The roadmap is generated from the canonical findings and retained delivery evidence.",
-            evidence=roadmap_evidence,
-            status="complete",
-        )
-    return list(by_id.values())
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=.55 * inch, leftMargin=.55 * inch, topMargin=.58 * inch, bottomMargin=.62 * inch, invariant=1, title=title, author="NICO")
+    doc.build(story, onFirstPage=cover, onLaterPages=footer)
+    return buffer.getvalue()
 
 
 def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(package))
     canonical = deepcopy(dict(result.get("json") or {})) if isinstance(result.get("json"), Mapping) else {}
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
-    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
-    stages = _canonical_stages(canonical)
-    canonical["stage_summaries"] = deepcopy(stages)
-    generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     spanish = _is_spanish(canonical)
-    score_summary = _score_summary_markdown(assessment, spanish=spanish)
-
-    if spanish:
-        markdown = _spanish_markdown(canonical).replace(
-            "La evaluación automatizada terminó como borrador.",
-            "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
-        ).replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
-        marker = "## Resumen ejecutivo"
-        markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
-        detailed = _detailed_findings_markdown(findings, spanish=True)
-        marker = "## Puerta de revisión y entrega"
-        markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
-        if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
-            markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
-        rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
-        pdf_bytes, original_page_count = _spanish_pdf(canonical)
-        pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=True)
-        page_count = original_page_count + 1
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
-        pdf_error = None
-    else:
-        markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
-            "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
-            "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY BLOCKED — CLIENT DELIVERY NOT AUTHORIZED",
-        )
-        marker = "## Executive Decision Brief"
-        markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
-        detailed = _detailed_findings_markdown(findings, spanish=False)
-        marker = "## Delivery Status"
-        markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
-        title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
-        rendered_html = _semantic_html(markdown, title)
-        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
-        pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
-        if pdf_bytes.startswith(b"%PDF"):
-            pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=False)
-            pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
-            page_count = original_page_count + 1
-        else:
-            page_count = original_page_count
-
-    if pdf_error or not pdf_base64 or not pdf_bytes.startswith(b"%PDF"):
-        raise ValueError(f"premium PDF renderer failed: {pdf_error or 'invalid or empty PDF'}")
+    markdown = _build_markdown(canonical, spanish=spanish)
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    title = ("Evaluación Técnica Integral NICO" if spanish else "NICO Comprehensive Technical Assessment") + f" — {_text(identity.get('repository'))}"
+    rendered_html = _html(markdown, title, spanish=spanish)
+    pdf_bytes = _pdf(markdown, canonical, spanish=spanish)
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError("premium PDF renderer failed: invalid or empty PDF")
+    from pypdf import PdfReader
+    page_count = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
 
     phase17 = deepcopy(dict(result.get("phase17_artifact_rebuild") or {}))
     phase17.update({
         "version": VERSION,
         "rebuilt_from_repaired_canonical_truth": True,
         "markdown_html_pdf_share_one_canonical_population": True,
-        "premium_renderer_restored_after_canonical_repair": True,
-        "detailed_canonical_findings_rendered": True,
-        "canonical_score_pair_explicit_in_all_formats": True,
-        "legacy_aliases_hidden_from_client_artifacts": True,
-        "bilingual_renderer_selected_from_canonical_language": True,
+        "old_visual_shell_new_canonical_engine": True,
+        "dark_branded_cover_restored": True,
+        "executive_dashboard_restored": True,
+        "plain_canonical_score_summary_removed": True,
+        "canonical_scanner_truth_only": True,
+        "dependency_disposition_rendered": True,
+        "non_production_findings_excluded_from_score_impact": True,
         "finality_semantics_embedded": True,
         "page_count": page_count,
     })
-
     result.update({
         "json": canonical,
         "markdown": markdown,
         "html": rendered_html,
-        "pdf_base64": pdf_base64,
+        "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
         "pdf_error": None,
         "pdf_available": True,
         "pdf_page_count": page_count,
@@ -413,10 +367,14 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "premium_report_renderer": {
             "version": VERSION,
             "premium_multi_chapter_layout": True,
-            "executive_decision_brief": True,
+            "old_system_visual_shell": True,
+            "new_canonical_system_engine": True,
+            "dark_branded_cover": True,
+            "executive_dashboard": True,
             "weighted_scorecard": True,
-            "canonical_score_summary": True,
+            "canonical_score_summary": False,
             "evidence_health_summary": True,
+            "dependency_disposition": True,
             "executive_risk_register": True,
             "detailed_canonical_finding_cards": True,
             "architecture_and_delivery_chapters": True,
