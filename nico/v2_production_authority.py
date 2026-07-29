@@ -9,20 +9,38 @@ from fastapi import FastAPI
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v2"
-_MARKER = "__nico_v2_production_authority_v2__"
+VERSION = "nico.v2.production-authority.v3"
+_MARKER = "__nico_v2_production_authority_v3__"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _inject_live_scanner_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+def _report_language(context: dict[str, Any]) -> str:
+    value = _text(context.get("report_language") or context.get("locale") or "en").casefold()
+    return "es-MX" if value.startswith("es") else "en"
+
+
+def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(source)
     package = output.get("report_package") if isinstance(output.get("report_package"), dict) else {}
     canonical = deepcopy(package.get("json")) if isinstance(package.get("json"), dict) else {}
     if not canonical:
         return output
+
+    language = _report_language(context)
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
+    identity = deepcopy(identity)
+    identity["report_language"] = language
+    canonical["identity"] = identity
+    canonical["report_language"] = language
+    canonical["locale"] = language
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
+    assessment = deepcopy(assessment)
+    assessment["report_language"] = language
+    assessment["locale"] = language
+
     try:
         from nico import comprehensive_native_providers as providers
 
@@ -31,7 +49,6 @@ def _inject_live_scanner_truth(source: dict[str, Any], context: dict[str, Any]) 
         scan = {}
     records = scan.get("scanner_results") if isinstance(scan, dict) and isinstance(scan.get("scanner_results"), list) else []
     if records:
-        identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
         commit_sha = _text(identity.get("commit_sha") or context.get("commit_sha")).casefold()
         enriched: list[dict[str, Any]] = []
         for raw in records:
@@ -46,11 +63,8 @@ def _inject_live_scanner_truth(source: dict[str, Any], context: dict[str, Any]) 
                 item["exit_code"] = item["returncode"]
             enriched.append(item)
         canonical["scanner_execution_records"] = enriched
-        assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
-        assessment = deepcopy(assessment)
         assessment["scanner_execution_records"] = deepcopy(enriched)
         assessment["scanner_execution_summary"] = deepcopy(scan.get("scanner_execution_summary") or {})
-        canonical["assessment"] = assessment
         canonical["live_scanner_evidence"] = {
             "scan_id": scan.get("scan_id"),
             "snapshot_commit_sha": scan.get("snapshot_commit_sha"),
@@ -63,9 +77,15 @@ def _inject_live_scanner_truth(source: dict[str, Any], context: dict[str, Any]) 
             "timed_out_tools": list(scan.get("timed_out_tools") or []),
             "full_history_verified_tools": list(scan.get("full_history_verified_tools") or []),
         }
-        package["json"] = canonical
-        output["report_package"] = package
-        output["canonical_report"] = canonical
+
+    canonical["assessment"] = assessment
+    package["json"] = canonical
+    package["report_language"] = language
+    package["locale"] = language
+    output["report_package"] = package
+    output["canonical_report"] = canonical
+    output["report_language"] = language
+    output["locale"] = language
     return output
 
 
@@ -84,7 +104,7 @@ def wrap_final_report_publication(
         package = source.get("report_package")
         if not isinstance(package, dict) or not isinstance(package.get("json"), dict):
             return source
-        source = _inject_live_scanner_truth(source, context)
+        source = _inject_live_runtime_truth(source, context)
         try:
             published = finalize_report_package(source)
         except Exception as exc:
@@ -112,13 +132,14 @@ def wrap_final_report_publication(
         published["reason"] = ""
         published["summary"] = (
             "The final Comprehensive package was rebuilt from one canonical evidence, "
-            "scanner, finding, lifecycle, and artifact truth and is ready for internal review."
+            "scanner, finding, lifecycle, language, and artifact truth and is ready for internal review."
         )
         published["v2_production_authority"] = {
             "status": "complete",
             "version": VERSION,
             "single_final_publication_boundary": True,
             "live_scanner_truth_injected_before_canonicalization": True,
+            "report_language_bound_before_rendering": True,
             "canonical_findings_only": True,
             "normalized_scanner_results_only": True,
             "all_artifacts_rebuilt_after_canonicalization": True,
@@ -133,6 +154,7 @@ def wrap_final_report_publication(
                 "v2_single_source_pipeline": True,
                 "canonical_truth_sha256": published.get("canonical_truth_sha256") or "",
                 "assessment_state": "review_required",
+                "report_language": published.get("report_language") or _report_language(context),
                 "final_artifact_generation_complete": True,
                 "human_review_required": True,
                 "client_delivery_allowed": False,
@@ -178,6 +200,7 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "single_final_publication_boundary": True,
         "v2_finalizer_invoked_by_real_provider": True,
         "live_scanner_truth_injected_before_canonicalization": True,
+        "report_language_bound_before_rendering": True,
         "legacy_post_generation_publication_disabled": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
