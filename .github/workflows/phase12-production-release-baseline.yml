@@ -1,0 +1,116 @@
+name: Phase 12 Production Release Baseline
+
+on:
+  pull_request:
+    paths:
+      - "nico/phase12_release_baseline_v1.py"
+      - "nico/phase12_report_remediation_v1.py"
+      - "nico/comprehensive_executive_risk_truth_v7.py"
+      - "tests/test_phase12_release_baseline_v1.py"
+      - "tests/test_phase12_report_remediation_v1.py"
+      - ".github/workflows/phase12-production-release-baseline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase12-release-baseline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase12-contract-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify exact revision and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/phase12
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$ACTUAL" = "$EXPECTED"
+          printf '%s\n' "$ACTUAL" > artifacts/phase12/exact-revision.txt
+          python -m py_compile \
+            nico/phase12_release_baseline_v1.py \
+            nico/phase12_report_remediation_v1.py \
+            nico/comprehensive_executive_risk_truth_v7.py
+
+      - name: Run Phase 12 and report-remediation tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          TESTS="tests/test_phase12_release_baseline_v1.py tests/test_phase12_report_remediation_v1.py"
+          pytest -q $TESTS | tee artifacts/phase12/pytest-first.txt
+          pytest -q $TESTS | tee artifacts/phase12/pytest-second.txt
+
+      - name: Generate immutable proof manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("artifacts/phase12")
+          files = [
+              Path("nico/phase12_release_baseline_v1.py"),
+              Path("nico/phase12_report_remediation_v1.py"),
+              Path("nico/comprehensive_executive_risk_truth_v7.py"),
+              Path("tests/test_phase12_release_baseline_v1.py"),
+              Path("tests/test_phase12_report_remediation_v1.py"),
+              root / "exact-revision.txt",
+              root / "pytest-first.txt",
+              root / "pytest-second.txt",
+          ]
+          inventory = []
+          for path in files:
+              data = path.read_bytes()
+              inventory.append({"path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+          manifest = {
+              "schema": "nico.phase12.release-baseline-proof.v2",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "commit_sha": (root / "exact-revision.txt").read_text().strip(),
+              "required_production_proofs": 14,
+              "consecutive_acceptance_runs_required": 2,
+              "human_package_approval_required": True,
+              "rollback_and_recovery_rehearsals_required": True,
+              "unsupported_claims_prohibited": True,
+              "report_semantic_duplicates_blocked": True,
+              "acceptance_criteria_duplicates_blocked": True,
+              "repeated_terminal_filename_state_blocked": True,
+              "stale_scanner_evidence_reconciled": True,
+              "unsupported_internal_tls_aggregate_findings_blocked": True,
+              "inventory": inventory,
+          }
+          payload = json.dumps(manifest, sort_keys=True, indent=2).encode()
+          (root / "manifest.json").write_bytes(payload)
+          (root / "manifest.sha256").write_text(hashlib.sha256(payload).hexdigest() + "\n")
+          PY
+
+      - name: Upload Phase 12 contract proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: phase12-release-baseline-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/phase12
+          retention-days: 90
+          if-no-files-found: error
