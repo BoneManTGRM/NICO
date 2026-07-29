@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
@@ -9,8 +10,8 @@ from fastapi import FastAPI
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v3"
-_MARKER = "__nico_v2_production_authority_v3__"
+VERSION = "nico.v2.production-authority.v4"
+_MARKER = "__nico_v2_production_authority_v4__"
 
 
 def _text(value: Any) -> str:
@@ -20,6 +21,11 @@ def _text(value: Any) -> str:
 def _report_language(context: dict[str, Any]) -> str:
     value = _text(context.get("report_language") or context.get("locale") or "en").casefold()
     return "es-MX" if value.startswith("es") else "en"
+
+
+def _safe_filename(value: Any, default: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", _text(value)).strip("-")
+    return normalized or default
 
 
 def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -82,6 +88,12 @@ def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) 
     package["json"] = canonical
     package["report_language"] = language
     package["locale"] = language
+    if language == "es-MX":
+        repository = _safe_filename(identity.get("repository") or context.get("repository"), "repositorio")
+        run_id = _safe_filename(identity.get("run_id") or context.get("run_id"), "run")
+        localized = f"nico-evaluacion-tecnica-integral-{repository}-{run_id}-es-MX.pdf"
+        package["pdf_filename"] = localized
+        package["spanish_pdf_filename"] = localized
     output["report_package"] = package
     output["canonical_report"] = canonical
     output["report_language"] = language
@@ -140,6 +152,7 @@ def wrap_final_report_publication(
             "single_final_publication_boundary": True,
             "live_scanner_truth_injected_before_canonicalization": True,
             "report_language_bound_before_rendering": True,
+            "localized_filename_bound_before_rendering": True,
             "canonical_findings_only": True,
             "normalized_scanner_results_only": True,
             "all_artifacts_rebuilt_after_canonicalization": True,
@@ -201,6 +214,7 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "v2_finalizer_invoked_by_real_provider": True,
         "live_scanner_truth_injected_before_canonicalization": True,
         "report_language_bound_before_rendering": True,
+        "localized_filename_bound_before_rendering": True,
         "legacy_post_generation_publication_disabled": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
