@@ -6,6 +6,7 @@ import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from pathlib import PurePosixPath
 from typing import Any, Iterable, Mapping
 
 from nico.phase9_production_report_gate_v1 import contextual_title
@@ -85,6 +86,11 @@ def _normalized_location(value: Any) -> str:
     return normalized
 
 
+def _location_path(value: Any) -> str:
+    normalized = _normalized_location(value)
+    return re.sub(r":\d+(?::\d+)?$", "", normalized)
+
+
 def _normalized_title(value: Any) -> str:
     text = _text(value).casefold().replace("_", " ")
     text = re.sub(r"\brisk(?:-p[0-3])?-[a-z0-9]+\b", "", text)
@@ -92,6 +98,9 @@ def _normalized_title(value: Any) -> str:
 
 
 def _rule_family(finding: Mapping[str, Any]) -> str:
+    declared = _text(finding.get("finding_family")).casefold()
+    if declared:
+        return declared
     rule = _text(
         finding.get("rule_id")
         or finding.get("rule")
@@ -101,14 +110,29 @@ def _rule_family(finding: Mapping[str, Any]) -> str:
     ).casefold()
     if rule:
         return rule
-    title = _normalized_title(
-        finding.get("interpretation")
-        or finding.get("decision_title")
-        or finding.get("title")
+    text = _normalized_title(
+        " ".join(
+            _text(value)
+            for value in (
+                finding.get("interpretation"),
+                finding.get("decision_title"),
+                finding.get("title"),
+                finding.get("recommendation"),
+            )
+            if _text(value)
+        )
     )
-    if "complexity" in title and ("hotspot" in title or "complex" in title):
+    if "complex" in text or "concentrated branching" in text:
         return "complexity-hotspot"
-    return title
+    return text
+
+
+def _decision_title(finding: Mapping[str, Any], family: str) -> str:
+    if family == "complexity-hotspot":
+        path = _location_path(finding.get("location"))
+        filename = PurePosixPath(path).name if path else "target code"
+        return f"Reduce complexity in {filename}"
+    return contextual_title(finding)
 
 
 def _criterion_identity(value: Any) -> str:
@@ -178,7 +202,10 @@ def _finding_quality(item: Mapping[str, Any]) -> tuple[int, int, int, int, str]:
 
 def _normalize_finding(raw: Mapping[str, Any]) -> dict[str, Any]:
     item = deepcopy(dict(raw))
-    title = contextual_title(item)
+    family = _rule_family(item)
+    if family:
+        item["finding_family"] = family
+    title = _decision_title(item, family)
     if title:
         item["title"] = title
         item["decision_title"] = title
@@ -277,14 +304,13 @@ def normalize_scanner_result(raw: Mapping[str, Any], expected_commit_sha: str) -
     }
     findings_exit_is_success = exit_code == 1 and name in {"bandit", "eslint", "gitleaks"}
     valid_artifact = bool(artifact_hash and exact_commit)
-    completed = bool(valid_artifact and (completed_signal or findings_exit_is_success))
     retention_declared = "raw_artifact_retention_complete" in raw
     retention_valid = raw.get("raw_artifact_retention_complete") is True if retention_declared else True
-    verified_signal = any(
-        raw.get(field_name) is True
-        for field_name in ("verified", "verified_complete", "verified_for_this_report", "output_capture_complete")
-    )
-    verified = bool(completed and verified_signal and retention_valid)
+    completed = bool(valid_artifact and retention_valid and (completed_signal or findings_exit_is_success))
+    verification_fields = ("verified", "verified_complete", "verified_for_this_report", "output_capture_complete")
+    verification_declared = any(field_name in raw for field_name in verification_fields)
+    verified_signal = any(raw.get(field_name) is True for field_name in verification_fields)
+    verified = bool(completed and (verified_signal if verification_declared else valid_artifact))
 
     if completed:
         state = ScannerState.COMPLETED_WITH_FINDINGS if findings else ScannerState.COMPLETED
@@ -395,7 +421,7 @@ def build_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
     assessment["incomplete_scanner_records"] = [item for item in scanner_dicts if not item["completed"]]
     canonical["assessment"] = assessment
     canonical["v2_pipeline_contract"] = {
-        "version": "nico.v2.single_source_pipeline.v2",
+        "version": "nico.v2.single_source_pipeline.v3",
         "immutable_commit_sha": commit_sha,
         "canonical_finding_count": len(findings),
         "scanner_result_count": len(scanners),
@@ -404,6 +430,7 @@ def build_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
         "publish_fails_on_duplicate_findings": True,
         "acceptance_metadata_removed_from_client_criteria": True,
         "prioritized_finding_identity_preferred": True,
+        "stable_finding_family_precedes_title_rewrite": True,
         "generic_titles_contextualized_before_rendering": True,
     }
     return canonical
