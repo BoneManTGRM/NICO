@@ -12,13 +12,17 @@ from nico.phase6_cross_format_repair_v3 import install_phase6_cross_format_repai
 from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
+from nico.v2_scanner_evidence_completion import install_v2_scanner_evidence_completion
+from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_evidence_context_normalization
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v17"
+VERSION = "nico.api.terminal_authority_bootstrap.v19"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
+V2_SCANNER_EVIDENCE_COMPLETION = install_v2_scanner_evidence_completion()
+V2_SCANNER_CONTEXT_NORMALIZATION = install_v2_scanner_evidence_context_normalization()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
@@ -34,6 +38,8 @@ EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 _INSTALLATIONS = {
     "nico_scanner_evidence_pipeline": SCANNER_EVIDENCE_PIPELINE,
     "nico_v2_snapshot_scanner_authority": V2_SNAPSHOT_SCANNER_AUTHORITY,
+    "nico_v2_scanner_evidence_completion": V2_SCANNER_EVIDENCE_COMPLETION,
+    "nico_v2_scanner_context_normalization": V2_SCANNER_CONTEXT_NORMALIZATION,
     "nico_exact_commit_binding": EXACT_COMMIT_BINDING,
     "nico_exact_scanner_checkout_reconciliation": EXACT_SCANNER_CHECKOUT_RECONCILIATION,
     "nico_scanner_evidence_qualification": SCANNER_EVIDENCE_QUALIFICATION,
@@ -68,6 +74,18 @@ if V2_SNAPSHOT_SCANNER_AUTHORITY.get("raw_artifacts_retained_before_workspace_de
     raise RuntimeError("Comprehensive scanner artifacts are not retained before temporary workspace deletion")
 if V2_SNAPSHOT_SCANNER_AUTHORITY.get("full_history_restoration_bound") is not True:
     raise RuntimeError("History-aware secret scans are not bound to full-history restoration")
+if V2_SCANNER_EVIDENCE_COMPLETION.get("bound") is not True:
+    raise RuntimeError("Scanner evidence completion is not bound to the production snapshot worker")
+if V2_SCANNER_EVIDENCE_COMPLETION.get("osv_package_version_path_context_retained") is not True:
+    raise RuntimeError("OSV evidence loses package, installed-version, or dependency-path context")
+if V2_SCANNER_EVIDENCE_COMPLETION.get("full_object_store_repacked_and_verified") is not True:
+    raise RuntimeError("History-aware scanners are not bound to a verified complete Git object store")
+if V2_SCANNER_EVIDENCE_COMPLETION.get("trufflehog_internal_clone_supported") is not True:
+    raise RuntimeError("TruffleHog remains bound to a partial or lazy Git object store")
+if V2_SCANNER_CONTEXT_NORMALIZATION.get("bound") is not True:
+    raise RuntimeError("Nested OSV source and manifest context is not normalized")
+if V2_SCANNER_CONTEXT_NORMALIZATION.get("nested_source_path_normalized") is not True:
+    raise RuntimeError("Nested OSV source paths are not retained as canonical dependency paths")
 if EXACT_COMMIT_BINDING.get("repository_files_bound_to_exact_commit") is not True:
     raise RuntimeError("Repository file evidence is not bound to the exact immutable commit")
 if EXACT_COMMIT_BINDING.get("scanner_bound_to_exact_commit") is not True:
@@ -114,6 +132,8 @@ __all__ = [
     "app",
     "SCANNER_EVIDENCE_PIPELINE",
     "V2_SNAPSHOT_SCANNER_AUTHORITY",
+    "V2_SCANNER_EVIDENCE_COMPLETION",
+    "V2_SCANNER_CONTEXT_NORMALIZATION",
     "EXACT_COMMIT_BINDING",
     "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
     "SCANNER_EVIDENCE_QUALIFICATION",
