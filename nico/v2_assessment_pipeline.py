@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Mapping
 
+from nico.phase9_production_report_gate_v1 import contextual_title
+
 
 class AssessmentState(str, Enum):
     RUNNING = "running"
@@ -106,6 +108,10 @@ def canonicalize_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[st
     order: list[tuple[str, str, str, str]] = []
     for raw in findings:
         item = deepcopy(dict(raw))
+        title = contextual_title(item)
+        if title:
+            item["title"] = title
+            item["decision_title"] = title
         key = semantic_finding_key(item)
         if not any(key):
             raise ValueError("finding lacks semantic identity")
@@ -245,6 +251,7 @@ def build_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
         "single_source_of_truth": True,
         "parallel_report_pipelines_forbidden": True,
         "publish_fails_on_duplicate_findings": True,
+        "generic_titles_contextualized_before_rendering": True,
     }
     return canonical
 
