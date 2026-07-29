@@ -7,6 +7,7 @@ from nico.v2_authoritative_premium_report import (
     install_pipeline_projection,
     rebuild_authoritative_premium_artifacts,
 )
+from nico.v2_authoritative_review_gate import install_authoritative_review_gate
 from nico.v2_dark_branded_cover import apply_dark_branded_cover
 from nico.v2_executive_score_dashboard import apply_executive_score_dashboard
 
@@ -15,6 +16,9 @@ from nico.v2_executive_score_dashboard import apply_executive_score_dashboard
 # scoring, scanner, finding, JSON, Markdown, HTML, PDF, CSV, and UI truth all
 # begin from the same repaired canonical object.
 install_pipeline_projection()
+# Preserve the old premium visual shell while making the human approval and
+# immutable-package acceptance boundary explicit in every rendered format.
+_AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
