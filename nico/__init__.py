@@ -202,3 +202,21 @@ install_spanish_cross_format_score_parity()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
+install_express_decision_quality_v17()
+# Rebind the final vector renderer after every late Express installer.
+install_express_pdf_renderer_truth_v21()
+# The dossier exporter imported the premium renderer by value. Rebind that
+# static reference explicitly so the live PDF path consumes the final renderer.
+install_express_live_renderer_binding_v22()
+# Rebind report recovery and the rich exact-run checkpoint after every renderer
+# and report-consistency installer.
+install_express_report_generation_recovery()
+install_express_final_gate_checkpoint_patch()
+# Bind the canonical Express completion and safe-response transport last.
+install_express_backend_completion_transport()
+install_express_run_record_integrity()
+# Resolve the compact terminal assessment only after every report and score
+# installer has finished rebinding canonical report output.
+install_comprehensive_mobile_score_projection_v2()
+
+__version__ = "0.1.1"
