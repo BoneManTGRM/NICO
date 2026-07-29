@@ -13,7 +13,7 @@ def test_workflow_fails_before_browser_install_when_persistence_is_unsafe() -> N
 
     readiness = source.index("- name: Verify production assessment readiness")
     browser = source.index("- name: Install pinned browser proof dependencies")
-    live_run = source.index("- name: Run two consecutive unified strategic assessment passes")
+    live_run = source.index("- name: Run two consecutive authoritative strategic assessment passes")
 
     assert readiness < browser < live_run
     assert "/api/nico/diagnostics/comprehensive-runtime" in source
