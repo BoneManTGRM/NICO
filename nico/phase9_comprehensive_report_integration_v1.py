@@ -6,9 +6,9 @@ import hashlib
 import io
 import json
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from nico.phase15_production_integration_v1 import integrate_production_truth
 from nico.phase9_production_report_gate_v1 import (
     acceptance_key,
     assert_production_report,
@@ -17,7 +17,7 @@ from nico.phase9_production_report_gate_v1 import (
     normalized_filename,
 )
 
-VERSION = "nico.phase9_comprehensive_report_integration.v1"
+VERSION = "nico.phase9_comprehensive_report_integration.v2"
 
 
 def _text(value: Any) -> str:
@@ -77,7 +77,7 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
             "title", "decision_title", "category", "priority", "severity", "status",
             "location", "fact", "evidence", "interpretation", "business_impact",
             "impact", "recommendation", "owner_role", "effort", "cost_of_inaction",
-            "residual_risk", "acceptance_criteria",
+            "residual_risk", "acceptance_criteria", "finding_aliases", "supporting_evidence",
         ):
             if field in canonical:
                 item[field] = deepcopy(canonical[field])
@@ -87,21 +87,26 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
 
 
 def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
-    normalized = deepcopy(dict(report))
+    normalized = integrate_production_truth(report)
     source = normalized.get("canonical_findings") or normalized.get("findings_register") or normalized.get("findings") or []
     findings = canonicalize_findings(item for item in source if isinstance(item, Mapping))
-    by_id = {
-        _text(item.get("finding_id") or item.get("id")): item
-        for item in findings
-        if _text(item.get("finding_id") or item.get("id"))
-    }
+    by_id: dict[str, Mapping[str, Any]] = {}
+    for item in findings:
+        ids = [item.get("finding_id"), item.get("id"), *(item.get("finding_aliases") or [])]
+        for value in ids:
+            key = _text(value)
+            if key:
+                by_id[key] = item
+
     normalized["canonical_findings"] = deepcopy(findings)
     normalized["findings_register"] = deepcopy(findings)
     normalized["findings"] = deepcopy(findings)
+    normalized["decision_grade_findings_register"] = deepcopy(findings)
+    normalized["executive_risk_register"] = deepcopy(findings[:7])
+    normalized["priority_findings"] = deepcopy(findings[:5])
     for surface in (
-        "executive_findings", "priority_findings", "finding_cards", "roadmap",
-        "backlog", "work_packages", "remediation_plan", "recommendations",
-        "assessment", "stage_summaries",
+        "executive_findings", "finding_cards", "roadmap", "backlog", "work_packages",
+        "remediation_plan", "recommendations", "assessment", "stage_summaries",
     ):
         if surface in normalized:
             normalized[surface] = _sync_surface(normalized[surface], by_id)
@@ -112,6 +117,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "all_surfaces_share_canonical_population": True,
         "acceptance_criteria_deduplicated": True,
         "generic_titles_repaired": True,
+        "phase13_and_phase14_applied_before_rendering": True,
     }
     return normalized
 
@@ -150,6 +156,8 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     package["json"] = canonical
     package["canonical_findings"] = deepcopy(canonical["canonical_findings"])
     package["findings_register"] = deepcopy(canonical["findings_register"])
+    package["analyzer_evidence_report"] = deepcopy(canonical.get("analyzer_evidence_report") or {})
+    package["analyzer_evidence_ui"] = deepcopy(canonical.get("analyzer_evidence_ui") or {})
     package["findings_csv_base64"] = base64.b64encode(_findings_csv(canonical["canonical_findings"])).decode("ascii")
     package["canonical_truth_sha256"] = _sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8"))
 
@@ -162,6 +170,7 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     package["phase9_release_gate"] = assert_production_report(canonical, filename=package["pdf_filename"])
     package["phase9_release_gate"]["production_path_integrated"] = True
     package["phase9_release_gate"]["all_export_surfaces_canonicalized"] = True
+    package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
     finalized["report_package"] = package
     finalized["canonical_report"] = canonical
     finalized["approval_state"] = approval_state
