@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+import os
+import subprocess
+import threading
+from pathlib import Path
+from typing import Any, Callable
+
+from nico import scanner_tool_runners
+from nico import snapshot_scanner_worker
+from nico.scanner_evidence_pipeline_v1 import (
+    DEFAULT_RAW_ROOT,
+    REQUIRED_EVIDENCE_TOOLS,
+    _run_problem_tool,
+    _target_repository,
+    prepare_project_commands,
+    redact_payload,
+)
+from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
+
+VERSION = "nico.v2.snapshot-scanner-authority.v1"
+_TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v1__"
+_CLONE_MARKER = "__nico_v2_full_history_clone_v1__"
+_PREPARATION_CACHE: dict[str, Any] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _commit_sha(workspace: WorkerWorkspace) -> str:
+    try:
+        result = run_command(
+            ("git", "rev-parse", "HEAD"),
+            cwd=workspace.repo_dir,
+            limits=__import__("nico.worker_execution", fromlist=["WorkerLimits"]).WorkerLimits(30, 4000),
+        )
+    except Exception:
+        return ""
+    value = (result.stdout or "").strip().casefold()
+    return value if len(value) == 40 else ""
+
+
+def _preparation(workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> Any:
+    key = str(workspace.root)
+    with _CACHE_LOCK:
+        cached = _PREPARATION_CACHE.get(key)
+    if cached is not None:
+        return cached
+    prepared = prepare_project_commands(workspace, runner=runner)
+    with _CACHE_LOCK:
+        _PREPARATION_CACHE[key] = prepared
+    return prepared
+
+
+def _persist_raw_blob(
+    payload: dict[str, Any],
+    blob: dict[str, Any],
+    *,
+    workspace: WorkerWorkspace,
+) -> None:
+    compressed = bytes.fromhex(str(blob.get("gzip_hex") or ""))
+    if not compressed or _sha256(compressed) != str(blob.get("gzip_sha256") or ""):
+        raise ValueError("compressed scanner artifact checksum mismatch")
+    raw = gzip.decompress(compressed)
+    if _sha256(raw) != str(blob.get("sha256") or ""):
+        raise ValueError("scanner artifact checksum mismatch")
+
+    repository = _target_repository(workspace)
+    commit_sha = _commit_sha(workspace) or "unknown"
+    run_key = _sha256(str(workspace.root).encode("utf-8"))[:20]
+    repository_key = _sha256(repository.encode("utf-8"))[:16]
+    destination = Path(DEFAULT_RAW_ROOT) / repository_key / commit_sha / run_key
+    destination.mkdir(parents=True, exist_ok=True)
+    filename = str(blob.get("filename") or f"{payload.get('tool')}.raw.gz").replace("/", "_")
+    path = destination / filename
+    path.write_bytes(compressed)
+    path.chmod(0o600)
+    storage_key = str(path.relative_to(Path(DEFAULT_RAW_ROOT)))
+    payload["raw_artifact"] = {
+        "storage_key": storage_key,
+        "filename": filename,
+        "sha256": blob.get("sha256"),
+        "gzip_sha256": blob.get("gzip_sha256"),
+        "raw_format": blob.get("raw_format"),
+        "retained_bytes": blob.get("retained_bytes"),
+        "gzip_bytes": blob.get("gzip_bytes"),
+        "redacted": True,
+    }
+    payload["raw_artifact_retention_complete"] = True
+    payload["raw_artifact_sha256"] = blob.get("sha256")
+
+    manifest = destination / "manifest.json"
+    existing: dict[str, Any] = {}
+    if manifest.exists():
+        try:
+            decoded = json.loads(manifest.read_text(encoding="utf-8"))
+            existing = decoded if isinstance(decoded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    artifacts = existing.get("artifacts") if isinstance(existing.get("artifacts"), dict) else {}
+    artifacts[str(payload.get("tool") or "unknown")] = payload["raw_artifact"]
+    manifest_payload = {
+        "schema": "nico.v2.snapshot-scanner-artifacts.v1",
+        "repository": repository,
+        "commit_sha": commit_sha,
+        "run_key": run_key,
+        "pipeline_version": VERSION,
+        "artifacts": dict(sorted(artifacts.items())),
+    }
+    manifest.write_text(json.dumps(manifest_payload, indent=2, sort_keys=True), encoding="utf-8")
+    manifest.chmod(0o600)
+    payload["raw_artifact_manifest_storage_key"] = str(manifest.relative_to(Path(DEFAULT_RAW_ROOT)))
+
+
+def canonical_snapshot_tool_runner(
+    spec: scanner_tool_runners.ScannerToolSpec,
+    workspace: WorkerWorkspace,
+    *,
+    runner: Callable[..., WorkerCommandResult] = run_command,
+    preparation: Any = None,
+) -> dict[str, Any]:
+    if spec.name not in REQUIRED_EVIDENCE_TOOLS:
+        previous = getattr(canonical_snapshot_tool_runner, "_nico_previous")
+        return previous(spec, workspace, runner=runner, preparation=preparation)
+
+    prepared = preparation
+    if spec.name in {"eslint", "typescript"} and prepared is None:
+        prepared = _preparation(workspace, runner)
+    payload = _run_problem_tool(spec, workspace, runner, prepared)
+    if not isinstance(payload, dict):
+        raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
+    blob = payload.pop("_raw_artifact_blob", None)
+    if isinstance(blob, dict):
+        try:
+            _persist_raw_blob(payload, blob, workspace=workspace)
+        except Exception as exc:
+            payload["status"] = "failed"
+            payload["verified_for_this_report"] = False
+            payload["raw_artifact_retention_complete"] = False
+            payload["reason"] = f"raw scanner artifact retention failed: {type(exc).__name__}: {exc}"
+            payload["failure_or_unavailable_reason"] = payload["reason"]
+    else:
+        payload["raw_artifact_retention_complete"] = False
+
+    commit_sha = _commit_sha(workspace)
+    payload["scanner_name"] = spec.name
+    payload["commit_sha"] = commit_sha
+    payload["snapshot_commit_sha"] = commit_sha
+    payload["exact_commit_match"] = bool(commit_sha)
+    payload["exit_code"] = payload.get("returncode")
+    completed = payload.get("status") == "completed" and payload.get("raw_artifact_retention_complete") is True
+    payload["completed"] = completed
+    payload["verified"] = completed and payload.get("verified_for_this_report") is True
+    payload["verified_complete"] = payload["verified"]
+    if not completed and not payload.get("failure_reason"):
+        payload["failure_reason"] = str(
+            payload.get("failure_or_unavailable_reason")
+            or payload.get("reason")
+            or "scanner did not retain a complete exact-SHA artifact"
+        )
+    safe = redact_payload(payload)
+    safe["artifact_hash"] = _sha256(
+        json.dumps(
+            {key: value for key, value in safe.items() if key != "artifact_hash"},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    return safe
+
+
+def full_history_snapshot_clone(
+    repository: str,
+    commit_sha: str,
+    workspace: Path,
+    env: dict[str, str],
+) -> tuple[Path | None, str, list[str]]:
+    previous = getattr(full_history_snapshot_clone, "_nico_previous")
+    repo_path, actual_sha, notes = previous(repository, commit_sha, workspace, env)
+    if repo_path is None or os.getenv("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN", "false").casefold() != "true":
+        return repo_path, actual_sha, notes
+    try:
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+            check=False,
+        )
+        if shallow.returncode == 0 and (shallow.stdout or "").strip().casefold() == "true":
+            unshallow = subprocess.run(
+                ["git", "fetch", "--unshallow", "--tags", "origin"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env,
+                check=False,
+            )
+            if unshallow.returncode != 0:
+                notes = [*notes, "Full git history could not be restored for history-aware secret scanning."]
+        verify = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+            check=False,
+        )
+        if verify.returncode != 0 or (verify.stdout or "").strip().casefold() != "false":
+            notes = [*notes, "Repository history remains shallow; Gitleaks and TruffleHog must remain unverified."]
+    except Exception as exc:
+        notes = [*notes, f"Full-history preparation failed safely: {type(exc).__name__}."]
+    return repo_path, actual_sha, notes
+
+
+def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
+    current_tool = scanner_tool_runners.run_scanner_tool
+    if not getattr(current_tool, _TOOL_MARKER, False):
+        setattr(canonical_snapshot_tool_runner, "_nico_previous", current_tool)
+        setattr(canonical_snapshot_tool_runner, _TOOL_MARKER, True)
+        scanner_tool_runners.run_scanner_tool = canonical_snapshot_tool_runner
+
+    current_clone = snapshot_scanner_worker.clone_repository_at_snapshot
+    if not getattr(current_clone, _CLONE_MARKER, False):
+        setattr(full_history_snapshot_clone, "_nico_previous", current_clone)
+        setattr(full_history_snapshot_clone, _CLONE_MARKER, True)
+        snapshot_scanner_worker.clone_repository_at_snapshot = full_history_snapshot_clone
+
+    tool_bound = scanner_tool_runners.run_scanner_tool is canonical_snapshot_tool_runner
+    clone_bound = snapshot_scanner_worker.clone_repository_at_snapshot is full_history_snapshot_clone
+    return {
+        "status": "installed" if tool_bound and clone_bound else "blocked",
+        "version": VERSION,
+        "bound": tool_bound and clone_bound,
+        "snapshot_worker_uses_canonical_scanner_runner": tool_bound,
+        "raw_artifacts_retained_before_workspace_deletion": tool_bound,
+        "returncode_and_exit_code_both_exposed": tool_bound,
+        "exact_commit_identity_exposed": tool_bound,
+        "full_history_restoration_bound": clone_bound,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+__all__ = [
+    "VERSION",
+    "canonical_snapshot_tool_runner",
+    "full_history_snapshot_clone",
+    "install_v2_snapshot_scanner_authority",
+]
