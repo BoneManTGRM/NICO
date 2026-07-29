@@ -57,7 +57,7 @@ def test_authoritative_ui_state_uses_exact_url_identity_and_terminal_defaults(mo
 
 def test_authoritative_run_service_keeps_reader_bound_for_terminal_read(monkeypatch: pytest.MonkeyPatch):
     sentinel = lambda _page: {"run_id": "legacy"}
-    module.production.acceptance.ui_state = sentinel
+    monkeypatch.setattr(module.production.acceptance, "ui_state", sentinel)
     observed = {}
 
     def fake_run_service(browser, config, pass_number, service):
