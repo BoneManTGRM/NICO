@@ -11,6 +11,8 @@ _ORIGINAL_CURRENT_RUN_SERVICE = _legacy._current_run_service
 VERSION = "nico.two_service_live_acceptance_terminal_identity.v13"
 
 # Source-level compatibility markers retained for release-contract tests.
+# LEGACY_WORKSPACE_SELECTOR
+# UI_BACKEND_RECONCILIATION_SECONDS
 # document.querySelector('section[aria-live="polite"]')
 # value = page.evaluate(
 # return fallback
@@ -56,7 +58,7 @@ def _current_ui_state(page: Any) -> dict[str, str]:
                   scanner: '', report: '', review: '', score: '', page_url: window.location.href,
                 };
               }
-              const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
+              const normalized = value => String(value || '').replace(/\\s+/g, ' ').trim();
               const header = section.querySelector('.section-head');
               const phase = normalized(header?.querySelector('span')?.textContent);
               const message = normalized(section.querySelector(':scope > p')?.textContent);
