@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from nico import v2_pipeline_adapter_legacy as _legacy
+from nico.v2_authoritative_finding_projection import project_finding_classification_in_place
 from nico.v2_authoritative_report_truth import repair_canonical_truth_in_place
 
 _ORIGINAL_BUILD_CANONICAL_ASSESSMENT = _legacy.build_canonical_assessment
@@ -15,6 +16,7 @@ def __getattr__(name: str) -> Any:
 def _build_authoritative_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
     canonical = _ORIGINAL_BUILD_CANONICAL_ASSESSMENT(report)
     repair_canonical_truth_in_place(canonical)
+    project_finding_classification_in_place(canonical)
     return canonical
 
 
