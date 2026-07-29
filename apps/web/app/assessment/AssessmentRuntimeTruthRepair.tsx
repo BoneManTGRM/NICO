@@ -43,6 +43,10 @@ function isSpanish(): boolean {
   return document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
+/**
+ * This helper reads a bounded terminal projection only. It never performs
+ * external mutation of live result nodes; React remains the DOM owner.
+ */
 export function terminalRunVisible(): boolean {
   const state = window.__nicoV2AssessmentSnapshot?.assessment_state
     || window.__nicoV2AssessmentSnapshot?.record?.assessment_state;
@@ -260,6 +264,8 @@ function installAssessmentFetchObserver(): () => void {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
       response = await previousFetch(input, nextInit);
     }
+    // A Comprehensive continuation can contain the complete report package, so it
+    // is never cloned. Only bounded intake and status projections are inspected.
     if (assessmentRequest && boundedPersistenceRequest(target)) capturePersistence(response);
     if (assessmentRequest && (boundedPersistenceRequest(target) || statusProjectionRequest(target))) {
       captureAssessmentSnapshot(response);
@@ -351,6 +357,8 @@ export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
     const restoreFetch = installAssessmentFetchObserver();
     const restoreClipboard = installNativeClipboardFallback();
+    // One bounded localization pass translates static page chrome without observing
+    // or repeatedly mutating React-owned live assessment nodes.
     localizeSpanishAssessmentDom(document);
     projectAuthoritativeState();
     repairReviewWaitingPresentation();
