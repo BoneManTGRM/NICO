@@ -46,6 +46,7 @@ jobs:
       - name: Install hosted scanner binaries
         env:
           NICO_SCANNER_INSTALL_STRICT: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/install_hosted_scanner_binaries.py
 
       - name: Install frontend dependencies
@@ -133,9 +134,9 @@ jobs:
           assert complexity.get('status') in {'attached', 'unavailable'}
           print(json.dumps(payload['summary'], sort_keys=True))
           print(json.dumps({
-              'high_complexity_functions': complexity.get('high_complexity_functions'),
-              'very_high_complexity_functions': complexity.get('very_high_complexity_functions'),
-              'maximum_cyclomatic_complexity': complexity.get('maximum_cyclomatic_complexity'),
+            'high_complexity_functions': complexity.get('high_complexity_functions'),
+            'very_high_complexity_functions': complexity.get('very_high_complexity_functions'),
+            'maximum_cyclomatic_complexity': complexity.get('maximum_cyclomatic_complexity'),
           }, sort_keys=True))
           PY
 
