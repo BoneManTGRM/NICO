@@ -8,7 +8,7 @@ import json
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.v2.canonical-artifact-renderer.v3"
+VERSION = "nico.v2.canonical-artifact-renderer.v4"
 
 
 def _text(value: Any, limit: int = 6000) -> str:
@@ -18,6 +18,20 @@ def _text(value: Any, limit: int = 6000) -> str:
 
 def _list(value: Any) -> list[dict[str, Any]]:
     return [deepcopy(dict(item)) for item in (value or []) if isinstance(item, Mapping)]
+
+
+def _is_spanish(canonical: Mapping[str, Any]) -> bool:
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    ).casefold()
+    return language.startswith("es")
 
 
 def _score_truth(canonical: Mapping[str, Any]) -> tuple[Any, Any]:
@@ -54,7 +68,7 @@ def _criterion_lines(finding: Mapping[str, Any]) -> list[str]:
     return output
 
 
-def _markdown(canonical: Mapping[str, Any]) -> str:
+def _english_markdown(canonical: Mapping[str, Any]) -> str:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     findings = _list(canonical.get("canonical_findings") or canonical.get("findings_register"))
@@ -66,7 +80,7 @@ def _markdown(canonical: Mapping[str, Any]) -> str:
     lines = [
         "# NICO Comprehensive Technical Assessment",
         "",
-        "**FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED**",
+        "**FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED**",
         "",
         f"- Repository: {_text(identity.get('repository'))}",
         f"- Exact commit: {_text(identity.get('commit_sha'))}",
@@ -180,12 +194,36 @@ def _markdown(canonical: Mapping[str, Any]) -> str:
         "",
         "The automated assessment package is complete. An authorized reviewer must inspect and approve the exact immutable package before client delivery.",
         "",
-        "**PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED**",
+        "**PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED**",
     ]
     return "\n".join(lines).strip() + "\n"
 
 
-def _html(markdown: str) -> str:
+def _spanish_markdown(canonical: Mapping[str, Any]) -> str:
+    from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown as legacy_spanish_markdown
+
+    markdown = legacy_spanish_markdown(deepcopy(dict(canonical)))
+    markdown = markdown.replace(
+        "La evaluación automatizada terminó como borrador.",
+        "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
+    )
+    markdown = markdown.replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
+    marker = "**INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA**"
+    rows = markdown.splitlines()
+    if marker not in markdown:
+        rows.insert(2 if len(rows) >= 2 else len(rows), marker)
+    markdown = "\n".join(rows).strip() + "\n"
+    if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
+        markdown += "<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
+    return markdown
+
+
+def _html(markdown: str, *, spanish: bool = False) -> str:
+    if spanish:
+        from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html
+
+        return _spanish_html(markdown, "Evaluación Técnica Integral NICO")
+
     blocks: list[str] = []
     list_items: list[str] = []
     table_lines: list[str] = []
@@ -219,6 +257,8 @@ def _html(markdown: str) -> str:
         flush_table()
         if not line:
             flush_list()
+        elif line.startswith("<!--"):
+            blocks.append(line)
         elif line.startswith("### "):
             flush_list(); blocks.append(f"<h3>{html.escape(line[4:])}</h3>")
         elif line.startswith("## "):
@@ -244,8 +284,9 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    spanish = _is_spanish(canonical)
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     technical, adjusted = _score_truth(canonical)
     buffer = io.BytesIO()
@@ -254,6 +295,7 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
     h1 = ParagraphStyle("V2H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.HexColor("#075985"), spaceBefore=12, spaceAfter=7)
     h2 = ParagraphStyle("V2H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=10.5, leading=14, textColor=colors.HexColor("#0f172a"), spaceBefore=8, spaceAfter=4)
     body = ParagraphStyle("V2Body", parent=styles["BodyText"], fontSize=8.3, leading=11.2, textColor=colors.HexColor("#334155"), spaceAfter=4)
+    small = ParagraphStyle("V2Small", parent=body, fontSize=6.8, leading=8.6)
     bullet = ParagraphStyle("V2Bullet", parent=body, leftIndent=12, firstLineIndent=-7)
     warning = ParagraphStyle("V2Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.8, borderPadding=8, spaceAfter=10)
 
@@ -264,25 +306,28 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawString(.55 * inch, .35 * inch, f"NICO Comprehensive · {_text(identity.get('run_id'), 50)} · FINAL · PENDING APPROVAL")
-        canvas.drawRightString(7.95 * inch, .35 * inch, f"Page {doc.page}")
+        footer_label = "NICO Integral" if spanish else "NICO Comprehensive"
+        final_label = "FINAL · APROBACIÓN PENDIENTE" if spanish else "FINAL · PENDING APPROVAL"
+        page_label = "Página" if spanish else "Page"
+        canvas.drawString(.55 * inch, .35 * inch, f"{footer_label} · {_text(identity.get('run_id'), 42)} · {final_label}")
+        canvas.drawRightString(7.95 * inch, .35 * inch, f"{page_label} {doc.page}")
         canvas.restoreState()
 
-    story: list[Any] = [
-        Spacer(1, .45 * inch),
-        paragraph("NICO COMPREHENSIVE", title),
-        paragraph("Decision-Grade Technical Assessment", h1),
-        paragraph("FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED", warning),
-        Spacer(1, .1 * inch),
-    ]
+    brand = "NICO INTEGRAL" if spanish else "NICO COMPREHENSIVE"
+    subtitle = "Evaluación técnica para decisiones" if spanish else "Decision-Grade Technical Assessment"
+    warning_text = (
+        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
+        if spanish
+        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
+    )
     score_rows = [
-        ["Repository", _text(identity.get("repository"))],
-        ["Exact commit", _text(identity.get("commit_sha"))],
-        ["Run ID", _text(identity.get("run_id"))],
-        ["Technical maturity", f"{technical}/100" if isinstance(technical, (int, float)) else "Not scored"],
-        ["Evidence-Adjusted", f"{adjusted}/100" if isinstance(adjusted, (int, float)) else "Not scored"],
-        ["Internal review", "Required"],
-        ["Client-ready", "No"],
+        ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
+        ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
+        ["ID de ejecución" if spanish else "Run ID", _text(identity.get("run_id"))],
+        ["Madurez técnica" if spanish else "Technical maturity", f"{technical}/100" if isinstance(technical, (int, float)) else ("Sin puntuación" if spanish else "Not scored")],
+        ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", f"{adjusted}/100" if isinstance(adjusted, (int, float)) else ("Sin puntuación" if spanish else "Not scored")],
+        ["Revisión interna" if spanish else "Internal review", "Requerida" if spanish else "Required"],
+        ["Listo para cliente" if spanish else "Client-ready", "No"],
     ]
     score_table = Table(score_rows, colWidths=[1.45 * inch, 5.35 * inch])
     score_table.setStyle(TableStyle([
@@ -296,11 +341,52 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
-    story += [score_table, PageBreak()]
+    story: list[Any] = [
+        Spacer(1, .45 * inch),
+        paragraph(brand, title),
+        paragraph(subtitle, h1),
+        paragraph(warning_text, warning),
+        Spacer(1, .1 * inch),
+        score_table,
+        PageBreak(),
+    ]
 
-    for raw in markdown.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("# NICO") or line.startswith("|") or set(line) <= {"|", "-", ":"}:
+    rows = markdown.splitlines()
+    index = 0
+    while index < len(rows):
+        line = rows[index].strip()
+        if line.startswith("|"):
+            table_lines: list[str] = []
+            while index < len(rows) and rows[index].strip().startswith("|"):
+                table_lines.append(rows[index].strip())
+                index += 1
+            parsed: list[list[str]] = []
+            for row_index, table_line in enumerate(table_lines):
+                cells = [cell.strip() for cell in table_line.strip("|").split("|")]
+                if row_index == 1 and all(set(cell) <= {"-", ":"} for cell in cells):
+                    continue
+                parsed.append(cells)
+            if parsed:
+                columns = max(len(row) for row in parsed)
+                data = [
+                    [paragraph(cell, small) for cell in [*row, *("" for _ in range(columns - len(row)))] ]
+                    for row in parsed
+                ]
+                table = LongTable(data, colWidths=[6.8 * inch / columns] * columns, repeatRows=1, splitByRow=1)
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#075985")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#cbd5e1")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]))
+                story += [table, Spacer(1, 6)]
+            continue
+        index += 1
+        if not line or line.startswith("<!--") or line.startswith("# ") or set(line) <= {"|", "-", ":"}:
             continue
         if line.startswith("## "):
             story += [PageBreak(), paragraph(line[3:], h1)]
@@ -315,6 +401,7 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
         else:
             story.append(paragraph(line, body))
 
+    document_title = "Evaluación Técnica Integral NICO" if spanish else "NICO Comprehensive Technical Assessment"
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
@@ -322,7 +409,7 @@ def _pdf(canonical: Mapping[str, Any], markdown: str) -> bytes:
         rightMargin=.55 * inch,
         topMargin=.55 * inch,
         bottomMargin=.62 * inch,
-        title="NICO Comprehensive Technical Assessment",
+        title=document_title,
         author="NICO",
         invariant=1,
     )
@@ -341,8 +428,12 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         "client_delivery_allowed": False,
         "assessment_state": "review_required",
     })
-    markdown = _markdown(canonical)
-    rendered_html = _html(markdown)
+    spanish = _is_spanish(canonical)
+    language = "es-MX" if spanish else "en"
+    canonical["report_language"] = language
+    canonical["locale"] = language
+    markdown = _spanish_markdown(canonical) if spanish else _english_markdown(canonical)
+    rendered_html = _html(markdown, spanish=spanish)
     pdf = _pdf(canonical, markdown)
     result.update({
         "json": canonical,
@@ -364,6 +455,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_completed": False,
         "client_delivery_allowed": False,
         "assessment_state": "review_required",
+        "report_language": language,
+        "locale": language,
     })
     result["canonical_truth_sha256"] = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
@@ -377,6 +470,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_finding_count": len(canonical.get("canonical_findings") or []),
         "scanner_record_count": len(canonical.get("scanner_execution_records") or []),
         "legacy_aliases_hidden_from_client_artifacts": True,
+        "bilingual_renderer_selected_from_canonical_language": True,
+        "markdown_tables_rendered_in_pdf": True,
         "finality_semantics_embedded": True,
     }
     return result
