@@ -3,55 +3,68 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import re
 from copy import deepcopy
 from typing import Any, Mapping
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
+from pypdf.generic import ContentStream, TextStringObject
 
-from nico.v2_authoritative_premium_report import project_authoritative_canonical
+from nico.v2_authoritative_premium_report import (
+    _html_from_markdown,
+    project_authoritative_canonical,
+)
+from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v2"
+VERSION = "nico.v2.single-pass-premium-report.v1"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _safe_pdf_string(value: Any) -> Any:
-    """Replace only control-glyph list markers while preserving all other text."""
-    if isinstance(value, TextStringObject):
-        return TextStringObject(str(value).replace("\x7f", "-").replace("•", "-"))
-    if isinstance(value, ByteStringObject):
-        return ByteStringObject(bytes(value).replace(b"\x7f", b"-"))
-    return value
+def _is_spanish(canonical: Mapping[str, Any]) -> bool:
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or identity.get("report_language")
+    ).casefold()
+    return language.startswith("es")
 
 
-def _sanitize_final_pdf_text(pdf: bytes) -> bytes:
-    """Repair C1 glyphs in the already-finished premium PDF, without rerendering it."""
+def _sanitize_text(value: str) -> str:
+    return "".join("-" if ord(char) == 0x7F else char for char in str(value or ""))
+
+
+def _sanitize_pdf_control_glyphs(pdf: bytes) -> bytes:
+    """Replace malformed extracted U+007F text glyphs without re-rendering layout."""
     reader = PdfReader(io.BytesIO(pdf))
     writer = PdfWriter()
-
-    for page in reader.pages:
-        contents = page.get_contents()
-        if contents is not None:
-            stream = ContentStream(contents, reader)
-            repaired_operations: list[tuple[list[Any], bytes]] = []
-            for operands, operator in stream.operations:
-                repaired = list(operands)
-                if operator in {b"Tj", b"'"} and repaired:
-                    repaired[0] = _safe_pdf_string(repaired[0])
-                elif operator == b'"' and len(repaired) >= 3:
-                    repaired[2] = _safe_pdf_string(repaired[2])
-                elif operator == b"TJ" and repaired and isinstance(repaired[0], list):
-                    repaired[0] = [_safe_pdf_string(item) for item in repaired[0]]
-                repaired_operations.append((repaired, operator))
-            stream.operations = repaired_operations
+    for source_page in reader.pages:
+        writer.add_page(source_page)
+        page = writer.pages[-1]
+        stream = ContentStream(page.get_contents(), writer)
+        changed = False
+        for operands, operator in stream.operations:
+            if operator == b"Tj" and operands and isinstance(operands[0], TextStringObject):
+                clean = _sanitize_text(str(operands[0]))
+                if clean != str(operands[0]):
+                    operands[0] = TextStringObject(clean)
+                    changed = True
+            elif operator == b"TJ" and operands:
+                for index, value in enumerate(operands[0]):
+                    if isinstance(value, TextStringObject):
+                        clean = _sanitize_text(str(value))
+                        if clean != str(value):
+                            operands[0][index] = TextStringObject(clean)
+                            changed = True
+        if changed:
             page.replace_contents(stream)
-        writer.add_page(page)
-
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -67,7 +80,7 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
     for required in (
         _text(identity.get("run_id")),
         _text(identity.get("commit_sha")),
-        "Human Review and Acceptance Gate",
+        "Puerta de revisión humana y aceptación" if _is_spanish(canonical) else "Human Review and Acceptance Gate",
     ):
         if required and required not in extracted:
             raise ValueError(f"final premium PDF omitted required identity or gate text: {required}")
@@ -77,9 +90,9 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
 def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Render the mature premium report exactly once from authoritative canonical truth.
 
-    The old premium compiler creates the complete client document. A bounded final-byte
-    sanitation pass only replaces malformed control-glyph list markers; it does not
-    regenerate pages, alter scores, or replace the premium layout.
+    This deliberately avoids the dashboard, cover-replacement, and Markdown-to-PDF
+    post-processing chain. The legacy premium renderer remains the presentation
+    compiler; the projected canonical assessment remains its only data source.
     """
     prepared = deepcopy(dict(package))
     canonical = project_authoritative_canonical(
@@ -93,11 +106,21 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     )
     result["json"] = canonical
 
-    rendered_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
-    pdf = _sanitize_final_pdf_text(rendered_pdf)
+    spanish = _is_spanish(canonical)
+    markdown = ensure_authoritative_review_gate(
+        str(result.get("markdown") or ""), canonical, spanish=spanish
+    ).strip() + "\n"
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    title = (
+        "Evaluación Técnica Integral NICO"
+        if spanish
+        else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
+    )
+    rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
+
+    pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    pdf = _sanitize_pdf_control_glyphs(pdf)
     page_count = _validate_final_pdf(pdf, canonical)
-    markdown = str(result.get("markdown") or "")
-    rendered_html = str(result.get("html") or "")
 
     contract = deepcopy(dict(result.get("premium_report_renderer") or {}))
     contract.update(
@@ -108,8 +131,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "canonical_system_is_sole_truth": True,
             "post_render_pdf_replacement_disabled": True,
             "final_pdf_control_glyph_validation": True,
-            "final_pdf_text_operator_sanitation": True,
             "final_pdf_identity_validation": True,
+            "markdown_html_review_gate_preserved": True,
             "page_count": page_count,
         }
     )
@@ -124,6 +147,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     )
     result.update(
         {
+            "markdown": markdown,
+            "html": rendered_html,
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
             "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
@@ -146,8 +171,4 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     return result
 
 
-__all__ = [
-    "VERSION",
-    "_sanitize_final_pdf_text",
-    "rebuild_single_pass_premium_artifacts",
-]
+__all__ = ["VERSION", "rebuild_single_pass_premium_artifacts"]
