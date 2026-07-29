@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py
-          python -m py_compile scripts/unified_production_acceptance.py scripts/production_frontend_release_identity.py
+          python -m py_compile scripts/unified_production_acceptance.py scripts/unified_production_acceptance_authoritative.py scripts/production_frontend_release_identity.py
           python - <<'PY'
           from pathlib import Path
 
@@ -41,6 +41,7 @@ jobs:
           reconnect = Path("scripts/two_service_live_acceptance_v2.py").read_text(encoding="utf-8")
           unified = Path("scripts/two_service_live_acceptance_v3.py").read_text(encoding="utf-8")
           production = Path("scripts/unified_production_acceptance.py").read_text(encoding="utf-8")
+          authoritative = Path("scripts/unified_production_acceptance_authoritative.py").read_text(encoding="utf-8")
           release_identity = Path("scripts/production_frontend_release_identity.py").read_text(encoding="utf-8")
           workspace = Path("apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
           controller = Path("apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
@@ -74,6 +75,14 @@ jobs:
           assert 'has_comprehensive_report_identity' in production
           assert 'canonical_report_identity_verified' in production
           assert 'acceptance.validate_report = validate_report' in production
+
+          assert 'install_authoritative_identity_reader' in authoritative
+          assert 'production.canonical_ui_state = authoritative_ui_state' in authoritative
+          assert 'production.acceptance.ui_state = authoritative_ui_state' in authoritative
+          assert 'production.unified._current_ui_state = authoritative_ui_state' in authoritative
+          assert 'production.unified._impl._safe_ui_state = authoritative_ui_state' in authoritative
+          assert 'expected_commit_sha' in authoritative
+          assert 'run_id' in authoritative
 
           assert 'nico.frontend_production_release_identity.v1' in release_identity
           assert 'A successful provider deployment status is insufficient' in release_identity
@@ -121,7 +130,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for deployed unified assessment acceptance proof",
+              "description": "Waiting for deployed authoritative assessment acceptance proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -260,12 +269,12 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0" "pypdf>=5,<7"
           python -m playwright install --with-deps chromium
 
-      - name: Run two consecutive unified strategic assessment passes
+      - name: Run two consecutive authoritative strategic assessment passes
         id: acceptance
         continue-on-error: true
         run: |
           set -euo pipefail
-          python scripts/unified_production_acceptance.py \
+          python scripts/unified_production_acceptance_authoritative.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -342,7 +351,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Two unified strategic assessment passes succeeded",
+              "description": "Two authoritative strategic assessment passes succeeded",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -363,7 +372,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Unified production acceptance failed; release requires repair",
+              "description": "Authoritative production acceptance failed; release requires repair",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
