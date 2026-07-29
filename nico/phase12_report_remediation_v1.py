@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 from nico.phase9_production_report_gate_v1 import acceptance_key, contextual_title, normalized_filename
 
-VERSION = "nico.phase13.canonical-findings.v1"
+VERSION = "nico.phase13.canonical-findings.v2"
 _STATUS_RANK = {"completed": 5, "success": 5, "not_applicable": 4, "partial": 3, "timed_out": 2, "failed": 1, "unknown": 0}
 _GENERIC_FAMILIES = {
     "high-complexity code hotspot": "complexity_hotspot",
@@ -144,20 +144,20 @@ def _merge_records(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[st
             merged[key] = deepcopy(value)
 
     merged["acceptance_criteria"] = _criteria(
-        _list_values(left.get("acceptance_criteria")) + _list_values(right.get("acceptance_criteria"))
+        _list_values(preferred.get("acceptance_criteria")) + _list_values(secondary.get("acceptance_criteria"))
     )
     for key in ("roadmap_ids", "roadmap", "backlog_ids", "backlog", "affected_files", "affected_symbols"):
-        values = _list_values(left.get(key)) + _list_values(right.get(key))
+        values = _list_values(preferred.get(key)) + _list_values(secondary.get(key))
         if values:
             merged[key] = _dedupe_values(values)
 
-    aliases = _list_values(left.get("finding_aliases")) + _list_values(right.get("finding_aliases"))
-    aliases += [left.get("finding_id") or left.get("id"), right.get("finding_id") or right.get("id")]
+    aliases = _list_values(preferred.get("finding_aliases")) + _list_values(secondary.get("finding_aliases"))
+    aliases += [preferred.get("finding_id") or preferred.get("id"), secondary.get("finding_id") or secondary.get("id")]
     merged["finding_aliases"] = [value for value in _dedupe_values(aliases) if _text(value)]
 
-    evidence_records = _list_values(left.get("evidence_records") or left.get("supporting_evidence"))
-    evidence_records += _list_values(right.get("evidence_records") or right.get("supporting_evidence"))
-    for source in (left, right):
+    evidence_records = _list_values(preferred.get("evidence_records") or preferred.get("supporting_evidence"))
+    evidence_records += _list_values(secondary.get("evidence_records") or secondary.get("supporting_evidence"))
+    for source in (preferred, secondary):
         compact = {
             key: deepcopy(source.get(key))
             for key in ("finding_id", "id", "tool", "rule_id", "evidence", "fact", "location", "symbol")
@@ -259,6 +259,7 @@ def remediate_assessment(assessment: Mapping[str, Any], *, commit_sha: str = "")
         "generic_titles_replaced": True,
         "unsupported_internal_tls_aggregate_findings_removed": True,
         "stale_scanner_records_reconciled": True,
+        "preferred_record_order_stable": True,
     }
     return result
 
