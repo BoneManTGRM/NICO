@@ -166,7 +166,8 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert "scripts/unified_production_acceptance.py" in source
-    assert "python scripts/unified_production_acceptance.py" in source
+    assert "scripts/unified_production_acceptance_authoritative.py" in source
+    assert "python scripts/unified_production_acceptance_authoritative.py" in source
     assert 'canonical_report_identity_verified' in source
     assert "--passes 2" in source
     assert "Wait for exact frontend and backend deployments" in source
