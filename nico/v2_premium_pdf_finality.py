@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-VERSION = "nico.v2.premium-pdf-finality.v2"
-_BUILD_MARKER = "__nico_v2_premium_pdf_build_finality_v2__"
+VERSION = "nico.v2.premium-pdf-finality.v3"
+_BUILD_MARKER = "__nico_v2_premium_pdf_build_finality_v3__"
 _BUILD_LOCK = threading.RLock()
 
 
@@ -106,16 +106,29 @@ def _bind_source_footer_repair(premium: Any) -> bool:
 
 
 def install_v2_premium_pdf_finality() -> dict[str, Any]:
+    from nico import comprehensive_decision_grade_pdf_v5 as decision_grade
     from nico import comprehensive_premium_pdf_v6 as premium
 
     premium._PdfStoryBuilder.appendix_and_review = _final_appendix_and_review
     build_bound = _bind_source_footer_repair(premium)
+
+    # comprehensive_decision_grade_pdf_v5 imports the premium delegates by value.
+    # Rebind those cached delegates after installing the source renderer repair so
+    # the actual production path cannot continue invoking the pre-repair function.
+    decision_grade._premium_build_pdf = premium._build_pdf
+    decision_grade._premium_pdf_with_final_count = premium._pdf_with_final_count
+    delegates_bound = (
+        decision_grade._premium_build_pdf is premium._build_pdf
+        and decision_grade._premium_pdf_with_final_count is premium._pdf_with_final_count
+    )
+    bound = build_bound and delegates_bound
     return {
-        "status": "installed" if build_bound else "blocked",
+        "status": "installed" if bound else "blocked",
         "version": VERSION,
         "premium_review_gate_uses_final_pending_approval": True,
         "legacy_draft_text_replaced_during_source_render": build_bound,
-        "pdf_text_extraction_contains_no_legacy_draft_footer": build_bound,
+        "decision_grade_cached_delegates_rebound": delegates_bound,
+        "pdf_text_extraction_contains_no_legacy_draft_footer": bound,
         "client_delivery_remains_blocked": True,
     }
 
