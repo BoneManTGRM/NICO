@@ -4,11 +4,12 @@ from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.phase15_production_integration_v1 import integrate_production_truth
+from nico.phase16_client_delivery_verification_v1 import repair_client_delivery_package
 from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize_findings
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v2"
+VERSION = "nico.v2.comprehensive.finalizer.v3"
 
 
 def _text(value: Any) -> str:
@@ -71,12 +72,17 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "scanner_result_count": len(normalized.get("scanner_execution_records") or []),
         "legacy_post_generation_mutation_disabled": True,
         "single_v2_publisher": True,
+        "phase16_repair_runs_before_v2_rendering": True,
     }
     return normalized
 
 
 def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
-    """The only Comprehensive publication boundary."""
+    """The only Comprehensive publication boundary.
+
+    Phase 16 compatibility repair is allowed only before v2 rendering. The v2
+    adapter then rebuilds every published artifact from the repaired canonical JSON.
+    """
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else finalized.get("canonical_report")
@@ -85,10 +91,19 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     canonical = normalize_canonical_report(canonical)
     canonical["approval_state"] = approval_state
     package["json"] = canonical
+    package = repair_client_delivery_package(package)
+    package["json"] = canonical
     finalized["report_package"] = package
     finalized["canonical_report"] = canonical
     finalized["approval_state"] = approval_state
-    return apply_v2_pipeline(finalized)
+
+    published = apply_v2_pipeline(finalized)
+    package = published["report_package"]
+    if not package["canonical_truth_sha256"]:
+        raise ValueError("v2 publication did not bind a canonical truth hash")
+    if not package["findings_csv_base64"]:
+        raise ValueError("v2 publication did not produce the canonical findings CSV")
+    return published
 
 
 __all__ = ["VERSION", "canonicalize_findings", "normalize_canonical_report", "finalize_report_package"]
