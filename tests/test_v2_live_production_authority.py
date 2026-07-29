@@ -171,7 +171,7 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete"
+    assert verification["status"] == "complete", verification
 
 
 def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(monkeypatch):
@@ -200,7 +200,7 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete"
+    assert verification["status"] == "complete", verification
 
 
 def test_production_bootstraps_bind_real_report_and_scanner_authorities():
