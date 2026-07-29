@@ -6,12 +6,29 @@ import pytest
 
 from nico.phase16_client_delivery_verification_v1 import (
     assert_client_delivery_package,
+    repair_client_delivery_package,
     verify_client_delivery_package,
 )
 
 
+def _finding(fid: str, location: str = "apps/web/app/operations/page.tsx:177"):
+    return {
+        "finding_id": fid,
+        "title": "High-complexity code hotspot",
+        "decision_title": "High-complexity code hotspot",
+        "interpretation": "High-complexity code hotspot",
+        "category": "architecture",
+        "location": location,
+        "acceptance_criteria": [
+            "Target functions fall below the approved complexity threshold. [method: automated_test; target commit: " + "a" * 40 + "]",
+        ],
+    }
+
+
 def _package():
-    finding = {"finding_id": "ARCH-1", "title": "Reduce complexity in page.tsx"}
+    finding = _finding("ARCH-1")
+    finding["title"] = "Reduce complexity in page.tsx"
+    finding["decision_title"] = finding["title"]
     return {
         "json": {
             "canonical_findings": [finding],
@@ -59,3 +76,33 @@ def test_phase16_rejects_non_pdf_payload():
     result = verify_client_delivery_package(package)
     assert result["valid"] is False
     assert "client PDF payload does not have a PDF signature" in result["errors"]
+
+
+def test_phase16_repairs_paired_legacy_and_p1_findings_and_repeated_criteria():
+    package = _package()
+    legacy = _finding("RISK-54DC2C8248A9")
+    enriched = _finding("RISK-P1-0A2FA160AB")
+    enriched["cost_of_inaction"] = "Material"
+    enriched["acceptance_criteria"].append(
+        "Target functions fall below the approved complexity threshold. [method: workflow_verification; target commit: " + "a" * 40 + "]"
+    )
+    package["json"]["canonical_findings"] = [legacy, enriched]
+    package["json"]["findings_register"] = [legacy, enriched]
+    package["json"]["executive_risk_register"] = [legacy, enriched]
+    package["pdf_filename"] = "nico-report-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf"
+
+    repaired = repair_client_delivery_package(package)
+    assert len(repaired["json"]["canonical_findings"]) == 1
+    finding = repaired["json"]["canonical_findings"][0]
+    assert set(finding["finding_aliases"]) == {"RISK-54DC2C8248A9", "RISK-P1-0A2FA160AB"}
+    assert len(finding["acceptance_criteria"]) == 1
+    assert repaired["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
+    assert assert_client_delivery_package(repaired)["valid"] is True
+
+
+def test_phase16_repair_is_idempotent():
+    first = repair_client_delivery_package(_package())
+    second = repair_client_delivery_package(first)
+    assert first["pdf_filename"] == second["pdf_filename"]
+    assert first["json"]["canonical_findings"] == second["json"]["canonical_findings"]
+    assert first["canonical_truth_sha256"] == second["canonical_truth_sha256"]
