@@ -96,16 +96,16 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     retention_declared = "raw_artifact_retention_complete" in item
     retention_valid = item.get("raw_artifact_retention_complete") is True if retention_declared else True
     completed = bool(retained_result and retention_valid and (completed_status or findings_exit))
-    verified_signal = any(
-        item.get(field_name) is True
-        for field_name in ("verified", "verified_complete", "verified_for_this_report", "output_capture_complete")
-    )
+    verification_fields = ("verified", "verified_complete", "verified_for_this_report", "output_capture_complete")
+    verification_declared = any(field_name in item for field_name in verification_fields)
+    verified_signal = any(item.get(field_name) is True for field_name in verification_fields)
+    verified = bool(completed and retention_valid and (verified_signal if verification_declared else retained_result))
 
     if completed:
         item["status"] = "completed_with_findings" if item["findings"] or findings_exit else "completed"
         item["completed"] = True
-        item["verified"] = bool(verified_signal)
-        item["verified_complete"] = bool(verified_signal)
+        item["verified"] = verified
+        item["verified_complete"] = verified
         item["failure_reason"] = ""
         item["failure_message"] = ""
         item["reason"] = ""
@@ -175,12 +175,13 @@ def reconcile_scanner_records(canonical: Mapping[str, Any]) -> dict[str, Any]:
     assessment["completed_scanner_records"] = [item for item in records if item.get("completed")]
     result["assessment"] = assessment
     result["v2_scanner_reconciliation"] = {
-        "version": "nico.v2.scanner-reconciliation.v2",
+        "version": "nico.v2.scanner-reconciliation.v3",
         "record_count": len(records),
         "completed_count": sum(item.get("completed") is True for item in records),
         "incomplete_count": sum(item.get("completed") is not True for item in records),
         "returncode_alias_supported": True,
         "exact_sha_artifact_required": True,
+        "retained_exact_sha_artifact_is_verification_default": True,
     }
     return result
 
