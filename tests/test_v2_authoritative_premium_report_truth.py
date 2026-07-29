@@ -210,10 +210,12 @@ def test_premium_renderer_uses_old_visual_shell_with_new_authoritative_engine():
     assert "DRAFT" not in markdown.upper()
 
     pdf_text = _pdf_text(result["pdf_base64"])
-    assert "Executive Dashboard" in pdf_text
+    upper_pdf = pdf_text.upper()
+    assert "TECHNICAL MATURITY" in upper_pdf
+    assert "EVIDENCE-ADJUSTED" in upper_pdf
     assert "74/100" in pdf_text
     assert "73/100" in pdf_text
-    assert "DRAFT" not in pdf_text.upper()
+    assert "DRAFT" not in upper_pdf
     assert result["pdf_page_count"] >= 5
 
 
