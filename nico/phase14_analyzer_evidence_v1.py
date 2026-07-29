@@ -223,6 +223,14 @@ def reconcile_analyzers(
         for item in summaries
         if item["required"] and not item["acceptance_ready"]
     ]
+    if rejected:
+        blockers.append(
+            {
+                "scanner": "evidence-contract",
+                "status": "rejected_records",
+                "remediation": "Correct malformed, stale-SHA, or incomplete analyzer records and regenerate the manifest.",
+            }
+        )
     result = {
         "schema": VERSION,
         "commit_sha": commit_sha,
