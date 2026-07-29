@@ -3,6 +3,7 @@ export const MAX_POLL_ATTEMPTS = 360;
 
 export type Locale = "en" | "es-MX";
 export type Service = "express" | "comprehensive";
+export type AssessmentState = "running" | "analyzing" | "generating_report" | "review_required" | "client_ready" | "failed" | "cancelled";
 export type Phase = "idle" | "checking" | "starting" | "running" | "review_required" | "complete" | "unavailable" | "failed" | "timed_out";
 export type Evidence = Record<string, unknown> | string[];
 export type Report = Record<string, unknown> & {
@@ -13,6 +14,8 @@ export type Report = Record<string, unknown> & {
   pdf_error?: string;
   report_id?: string;
   pdf_sha256?: string;
+  canonical_truth_sha256?: string;
+  assessment_state?: AssessmentState;
   json?: Record<string, unknown>;
   markdown_available?: boolean;
   html_available?: boolean;
@@ -37,11 +40,15 @@ export type Stage = {status?: string; message?: string; summary?: string; eviden
 export type ProgressItem = {step?: string; status?: string; message?: string; evidence?: Record<string, unknown>};
 export type RunIdentity = {run_id?: string; repository?: string; commit_sha?: string; evidence_ledger_id?: string; customer_id?: string; project_id?: string};
 export type RunRecord = {
+  assessment_state?: AssessmentState;
+  canonical_truth_sha256?: string;
+  assessment_package_complete?: boolean;
   status?: string;
   current_stage?: string | null;
   progress_percent?: number;
   stage_results?: Record<string, Stage>;
   identity?: RunIdentity;
+  human_review_required?: boolean;
   human_review_completed?: boolean;
   client_delivery_allowed?: boolean;
   delivery_status?: string;
@@ -50,6 +57,8 @@ export type RunRecord = {
   approved_delivery_package?: Record<string, unknown>;
 };
 export type Result = Assessment & {
+  assessment_state?: AssessmentState;
+  canonical_truth_sha256?: string;
   service_id?: string;
   status?: string;
   reason?: string;
@@ -79,5 +88,4 @@ export type Result = Assessment & {
   approved_delivery_package?: Record<string, unknown>;
 };
 export type Scope = {customerId: string; projectId: string};
-// Copy is intentionally data-driven; every locale is validated by the shared workspace tests.
 export type Copy = Record<string, any>;
