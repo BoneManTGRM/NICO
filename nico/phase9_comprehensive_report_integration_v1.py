@@ -9,6 +9,10 @@ from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.phase15_production_integration_v1 import integrate_production_truth
+from nico.phase16_client_delivery_verification_v1 import (
+    assert_client_delivery_package,
+    repair_client_delivery_package,
+)
 from nico.phase9_production_report_gate_v1 import (
     acceptance_key,
     assert_production_report,
@@ -17,7 +21,7 @@ from nico.phase9_production_report_gate_v1 import (
     normalized_filename,
 )
 
-VERSION = "nico.phase9_comprehensive_report_integration.v3"
+VERSION = "nico.phase9_comprehensive_report_integration.v5"
 
 
 def _text(value: Any) -> str:
@@ -69,10 +73,6 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
         return [_sync_surface(item, canonical_by_id) for item in value]
     if not isinstance(value, Mapping):
         return value
-
-    # Recurse through the original structure first. Enriching a matching record
-    # before recursion can inject supporting_evidence records that carry the same
-    # finding ID, causing unbounded self-similar expansion.
     original = dict(value)
     item = {key: _sync_surface(child, canonical_by_id) for key, child in original.items()}
     finding_id = _text(original.get("finding_id") or original.get("id"))
@@ -171,10 +171,22 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
         package["spanish_pdf_filename"] = normalized_filename(_text(package["spanish_pdf_filename"]), approval_state)
     if package.get("json_filename"):
         package["json_filename"] = normalized_filename(_text(package["json_filename"]), approval_state).replace(".pdf", ".json")
+
     package["phase9_release_gate"] = assert_production_report(canonical, filename=package["pdf_filename"])
     package["phase9_release_gate"]["production_path_integrated"] = True
     package["phase9_release_gate"]["all_export_surfaces_canonicalized"] = True
     package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
+
+    package = repair_client_delivery_package(package)
+    canonical = deepcopy(package["json"])
+    package["findings_csv_base64"] = base64.b64encode(_findings_csv(canonical["canonical_findings"])).decode("ascii")
+    package["phase9_release_gate"] = assert_production_report(canonical, filename=package["pdf_filename"])
+    package["phase9_release_gate"]["production_path_integrated"] = True
+    package["phase9_release_gate"]["all_export_surfaces_canonicalized"] = True
+    package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
+    package["phase16_delivery_verification"] = assert_client_delivery_package(package)
+    package["phase9_release_gate"]["phase16_client_delivery_verified"] = True
+
     finalized["report_package"] = package
     finalized["canonical_report"] = canonical
     finalized["approval_state"] = approval_state
