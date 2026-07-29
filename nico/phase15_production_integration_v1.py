@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
@@ -7,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from nico.phase12_report_remediation_v1 import remediate_assessment
 from nico.phase14_analyzer_evidence_v1 import apply_analyzer_evidence
 
-VERSION = "nico.phase15.production-integration.v1"
+VERSION = "nico.phase15.production-integration.v2"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _FINDING_SURFACES = (
     "canonical_findings",
@@ -53,27 +54,55 @@ def _scanner_name(record: Mapping[str, Any]) -> str:
     return _text(record.get("scanner") or record.get("tool") or record.get("name")).casefold()
 
 
+def _scanner_source_identity(item: Mapping[str, Any]) -> str:
+    explicit_run = item.get("run_id") or item.get("execution_id") or item.get("attempt_id") or item.get("run_sequence")
+    payload = {
+        "scanner": _scanner_name(item),
+        "commit_sha": _text(item.get("commit_sha") or item.get("target_sha") or item.get("immutable_revision")).lower(),
+        "explicit_run": explicit_run,
+        "artifact": item.get("artifact_sha256") or item.get("output_sha256") or item.get("artifact_hash"),
+        "exit_code": item.get("raw_exit_code", item.get("exit_code")),
+        "status": _text(item.get("status")).casefold(),
+        "finding_count": item.get("finding_count"),
+        "command": item.get("command"),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
 def _legacy_scanner_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     evidence = payload.get("evidence_health_summary")
     if isinstance(evidence, Mapping):
         for key in ("scanner_records", "records", "incomplete_scanner_records"):
             values = evidence.get(key)
             if isinstance(values, list):
-                records.extend(deepcopy(dict(item)) for item in values if isinstance(item, Mapping))
+                candidates.extend(deepcopy(dict(item)) for item in values if isinstance(item, Mapping))
     for key in ("scanner_records", "scanner_execution_records", "analyzer_records"):
         values = payload.get(key)
         if isinstance(values, list):
-            records.extend(deepcopy(dict(item)) for item in values if isinstance(item, Mapping))
-    return records
+            candidates.extend(deepcopy(dict(item)) for item in values if isinstance(item, Mapping))
+
+    # The legacy payload often mirrors the same scanner record into multiple
+    # report surfaces. Collapse those mirrors without collapsing genuinely
+    # distinct runs that carry a run/attempt identity.
+    selected: dict[str, dict[str, Any]] = {}
+    for item in candidates:
+        identity = _scanner_source_identity(item)
+        selected.setdefault(identity, item)
+    return list(selected.values())
 
 
 def normalize_production_scanner_records(
     records: Iterable[Mapping[str, Any]], *, expected_sha: str
 ) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for index, raw in enumerate(records, start=1):
         item = deepcopy(dict(raw))
+        source_identity = _scanner_source_identity(item)
+        if source_identity in seen:
+            continue
+        seen.add(source_identity)
         name = _scanner_name(item)
         if not name:
             continue
@@ -155,6 +184,7 @@ def integrate_production_truth(payload: Mapping[str, Any]) -> dict[str, Any]:
         "analyzer_contract_applied": bool(commit_sha and raw_records),
         "bandit_record_ingested": any(_scanner_name(item) == "bandit" for item in raw_records),
         "legacy_report_surfaces_replaced": True,
+        "mirrored_scanner_records_deduplicated": True,
     }
     return result
 
