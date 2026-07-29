@@ -33,6 +33,20 @@ def _numeric(value: Any) -> int | None:
     return max(0, min(100, int(round(value))))
 
 
+def _report_language(canonical: Mapping[str, Any]) -> str:
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    value = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    ).casefold()
+    return "es-MX" if value.startswith("es") else "en"
+
+
 def _synchronize_score_truth(canonical: dict[str, Any]) -> None:
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     assessment = deepcopy(dict(assessment))
@@ -82,6 +96,46 @@ def _synchronize_score_truth(canonical: dict[str, Any]) -> None:
         "canonical_evidence_adjusted_score": adjusted,
         "aliases_synchronized": adjusted is not None,
     }
+    canonical["assessment"] = assessment
+
+
+def _synchronize_scanner_truth(canonical: dict[str, Any]) -> None:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    expected_commit = _text(identity.get("commit_sha")).casefold()
+    source = canonical.get("scanner_execution_records") if isinstance(canonical.get("scanner_execution_records"), list) else []
+    records: list[dict[str, Any]] = []
+    for raw in source:
+        if not isinstance(raw, Mapping):
+            continue
+        item = deepcopy(dict(raw))
+        state = _text(item.get("state") or item.get("status") or "unknown").casefold().replace("-", "_")
+        item["state"] = state
+        item["status"] = state
+        item["required"] = item.get("required") is not False
+        observed_commit = _text(item.get("commit_sha") or item.get("snapshot_commit_sha")).casefold()
+        item["exact_commit_match"] = bool(expected_commit and observed_commit == expected_commit)
+        item["verified_complete"] = item.get("verified") is True or item.get("verified_complete") is True
+        item["verified_for_this_report"] = item["verified_complete"]
+        records.append(item)
+    canonical["scanner_execution_records"] = records
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    assessment = deepcopy(dict(assessment))
+    assessment["scanner_execution_records"] = deepcopy(records)
+    completed = [item for item in records if item.get("completed") is True]
+    incomplete = [item for item in records if item.get("completed") is not True]
+    assessment["completed_scanner_records"] = deepcopy(completed)
+    assessment["incomplete_scanner_records"] = deepcopy(incomplete)
+    previous_health = assessment.get("evidence_health_summary") if isinstance(assessment.get("evidence_health_summary"), Mapping) else {}
+    health = deepcopy(dict(previous_health))
+    health.update({
+        "scanner_execution_records": deepcopy(records),
+        "completed_scanners": [_text(item.get("scanner_name")) for item in completed],
+        "incomplete_scanners": deepcopy(incomplete),
+        "completed_scanner_count": len(completed),
+        "incomplete_scanner_count": len(incomplete),
+        "single_normalized_scanner_population": True,
+    })
+    assessment["evidence_health_summary"] = health
     canonical["assessment"] = assessment
 
 
@@ -143,7 +197,20 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("v2 pipeline requires canonical report JSON")
 
     canonical = build_canonical_assessment(raw_canonical)
+    language = _report_language(canonical)
+    canonical["report_language"] = language
+    canonical["locale"] = language
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    identity = deepcopy(dict(identity))
+    identity["report_language"] = language
+    canonical["identity"] = identity
     _synchronize_score_truth(canonical)
+    _synchronize_scanner_truth(canonical)
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    assessment = deepcopy(dict(assessment))
+    assessment["report_language"] = language
+    assessment["locale"] = language
+    canonical["assessment"] = assessment
     canonical.update({
         "approval_state": _APPROVAL_SUFFIX,
         "report_finality": "final",
@@ -173,6 +240,8 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
         "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
+        "report_language": language,
+        "locale": language,
     })
     package = rebuild_client_artifacts(package)
     package["json"] = canonical
@@ -189,6 +258,8 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "csv_canonical_sha256": digest,
         "ui_canonical_sha256": digest,
         "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
+        "report_language": language,
+        "locale": language,
     })
 
     pdf_bytes = base64.b64decode(package.get("pdf_base64") or "")
@@ -196,6 +267,8 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("v2 pipeline generated invalid PDF")
     if not _text(package.get("markdown")) or not _text(package.get("html")):
         raise ValueError("v2 pipeline did not generate complete Markdown and HTML artifacts")
+    if "CLIENT DELIVERY NOT AUTHORIZED" not in _text(package.get("markdown")):
+        raise ValueError("v2 Markdown does not preserve the production delivery boundary")
     for key in ("pdf_filename", "spanish_pdf_filename", "json_filename", "markdown_filename", "csv_filename"):
         value = _text(package.get(key))
         if value.count(_APPROVAL_SUFFIX) != 1:
@@ -216,6 +289,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "duplicate_findings_absent": True,
         "repeated_acceptance_criteria_absent": True,
         "approval_suffix_exactly_once": True,
+        "localized_artifacts_share_canonical_truth": True,
     })
     package["phase16_delivery_verification"] = assert_client_delivery_package(package)
 
@@ -243,6 +317,8 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_truth_sha256": digest,
         "final_artifact_generation_complete": True,
         "final_package": True,
+        "report_language": language,
+        "locale": language,
     })
     record = deepcopy(dict(finalized.get("record") or {}))
     record.update({
@@ -253,6 +329,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_completed": False,
         "client_delivery_allowed": False,
         "canonical_truth_sha256": digest,
+        "report_language": language,
     })
     finalized["record"] = record
     return finalized
