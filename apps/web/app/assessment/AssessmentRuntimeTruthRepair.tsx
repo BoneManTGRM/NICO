@@ -32,23 +32,18 @@ function isSpanish(): boolean {
   return document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
-/**
- * Compatibility helper retained for source-level truth tests and bounded manual
- * diagnostics. It is deliberately not driven by a MutationObserver. React owns
- * the assessment DOM; external mutation of live result nodes previously caused
- * the Comprehensive page to fall into the root error boundary during long runs.
- */
 export function terminalRunVisible(): boolean {
   const section = document.querySelector<HTMLElement>('section[aria-live="polite"]');
   if (!section) return false;
   const phase = normalizeText(section.querySelector(".section-head > span")?.textContent);
-  if (["complete", "human review required", "completo", "revisión humana obligatoria"].includes(phase)) {
+  if (["complete", "human review required", "ready for internal review", "completo", "revisión humana obligatoria", "listo para revisión interna"].includes(phase)) {
     return true;
   }
   const message = normalizeText(section.querySelector(":scope > p")?.textContent);
   return message.includes("express completed its evidence")
     || message.includes("express completó las etapas")
     || message.includes("comprehensive completed every automated stage")
+    || message.includes("automated assessment complete")
     || message.includes("integral completó todas las etapas automatizadas");
 }
 
@@ -58,37 +53,46 @@ export function persistenceDisplay(spanish: boolean): {text: string; warning: bo
   const adapter = normalizeText(persistence.adapter) || "unknown";
   const durable = persistence.durable === true || persistence.durability_verified === true;
   if (durable) {
-    if (adapter === "postgres") {
-      return {text: spanish ? "Durable · Postgres verificado" : "Durable · verified Postgres", warning: false};
-    }
-    if (adapter === "sqlite") {
-      return {text: spanish ? "Durable · volumen SQLite persistente" : "Durable · persistent SQLite volume", warning: false};
-    }
+    if (adapter === "postgres") return {text: spanish ? "Durable · Postgres verificado" : "Durable · verified Postgres", warning: false};
+    if (adapter === "sqlite") return {text: spanish ? "Durable · volumen SQLite persistente" : "Durable · persistent SQLite volume", warning: false};
     return {text: `Durable · ${adapter}`, warning: false};
   }
   if (persistence.recorded) {
-    if (adapter === "sqlite") {
-      return {
-        text: spanish
-          ? "Registrado · verificación de almacenamiento pendiente"
-          : "Recorded · storage verification pending",
-        warning: true,
-      };
-    }
-    if (adapter === "memory") {
-      return {
-        text: spanish
-          ? "Registro temporal en memoria · requiere Postgres o un volumen persistente"
-          : "Temporary memory record · Postgres or a persistent volume required",
-        warning: true,
-      };
-    }
+    if (adapter === "sqlite") return {text: spanish ? "Registrado · verificación de almacenamiento pendiente" : "Recorded · storage verification pending", warning: true};
+    if (adapter === "memory") return {
+      text: spanish ? "Registro temporal en memoria · requiere Postgres o un volumen persistente" : "Temporary memory record · Postgres or a persistent volume required",
+      warning: true,
+    };
     return {text: spanish ? "Registrado · verificación de almacenamiento pendiente" : "Recorded · storage verification pending", warning: true};
   }
   return {text: spanish ? "Estado de persistencia pendiente" : "Persistence status pending", warning: true};
 }
 
-/** Retained as a bounded opt-in utility; it is never injected into React-owned nodes automatically. */
+async function writeClipboardText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // iOS Safari can expose Clipboard but reject it outside its narrow permission path.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus({preventScroll: true});
+  textarea.select();
+  textarea.setSelectionRange(0, value.length);
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy was not accepted by this browser.");
+}
+
 export function installCopyControl(card: HTMLElement, value: HTMLElement, spanish: boolean): void {
   if (card.querySelector(".nico-copy-control")) return;
   const raw = (value.textContent || "").trim();
@@ -99,7 +103,7 @@ export function installCopyControl(card: HTMLElement, value: HTMLElement, spanis
   button.textContent = spanish ? "Copiar" : "Copy";
   button.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(raw);
+      await writeClipboardText(raw);
       button.textContent = spanish ? "Copiado" : "Copied";
     } catch {
       button.textContent = spanish ? "No disponible" : "Unavailable";
@@ -117,8 +121,7 @@ function assessmentTarget(input: RequestInfo | URL): string {
 function boundedPersistenceRequest(target: string): boolean {
   try {
     const path = new URL(target, window.location.origin).pathname;
-    return path === "/api/nico/assessment/express-run"
-      || path === "/api/nico/assessment/comprehensive-intake";
+    return path === "/api/nico/assessment/express-run" || path === "/api/nico/assessment/comprehensive-intake";
   } catch {
     return false;
   }
@@ -153,16 +156,11 @@ function installAssessmentFetchObserver(): () => void {
       }
       nextInit = {...init, headers, cache: "no-store"};
     }
-
     let response = await previousFetch(input, nextInit);
     if (statusRequest && transientStatus(response.status)) {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
       response = await previousFetch(input, nextInit);
     }
-
-    // Only the small run-creation responses are cloned. Comprehensive continuation
-    // responses accumulate stage evidence and report payloads; cloning and parsing
-    // every one doubled browser memory at the exact point the prior release crashed.
     if (assessmentRequest && boundedPersistenceRequest(target)) capturePersistence(response);
     return response;
   };
@@ -172,14 +170,89 @@ function installAssessmentFetchObserver(): () => void {
   };
 }
 
+function runIdFromPage(): string {
+  const fromUrl = new URL(window.location.href).searchParams.get("run_id")?.trim();
+  if (fromUrl) return fromUrl;
+  const identity = Array.from(document.querySelectorAll<HTMLElement>("code[title]")).find((node) => /^comprun_[a-z0-9]+$/i.test(node.title));
+  return identity?.title || "";
+}
+
+async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<void> {
+  const runId = runIdFromPage();
+  if (!runId) throw new Error("Run ID is unavailable.");
+  const response = await fetch(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {Accept: "text/markdown"},
+  });
+  if (!response.ok) throw new Error(`Markdown report is unavailable (${response.status}).`);
+  const markdown = await response.text();
+  if (!markdown.trim()) throw new Error("Markdown report is empty.");
+  await writeClipboardText(markdown);
+  const original = button.textContent || (isSpanish() ? "Copiar Markdown" : "Copy Markdown");
+  button.textContent = isSpanish() ? "Markdown copiado" : "Markdown copied";
+  window.setTimeout(() => { button.textContent = original; }, 1800);
+}
+
+function installMarkdownCopyRepair(): () => void {
+  const handler = (event: MouseEvent) => {
+    const button = (event.target as Element | null)?.closest("button");
+    if (!(button instanceof HTMLButtonElement)) return;
+    const label = normalizeText(button.textContent);
+    if (!label.includes("copy markdown") && !label.includes("copiar markdown")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    button.disabled = true;
+    void copyCurrentMarkdown(button).catch((error) => {
+      button.textContent = isSpanish() ? "No se pudo copiar" : "Copy failed";
+      button.title = error instanceof Error ? error.message : String(error);
+    }).finally(() => {
+      window.setTimeout(() => { button.disabled = false; }, 300);
+    });
+  };
+  document.addEventListener("click", handler, true);
+  return () => document.removeEventListener("click", handler, true);
+}
+
+function repairReviewWaitingPresentation(): void {
+  const panel = document.querySelector<HTMLElement>('section[data-assessment-run-state="true"]');
+  if (!panel) return;
+  const cards = Array.from(panel.querySelectorAll<HTMLElement>("article"));
+  const cardValue = (label: string) => {
+    const card = cards.find((item) => normalizeText(item.querySelector("b")?.textContent) === label);
+    return normalizeText(card?.querySelector("span")?.textContent);
+  };
+  const packageComplete = ["complete", "completo"].includes(cardValue(isSpanish() ? "paquete de evaluación" : "assessment package"));
+  const reviewWaiting = cardValue(isSpanish() ? "revisión interna" : "internal review").includes(isSpanish() ? "esper" : "await");
+  const clientBlockedForApproval = cardValue(isSpanish() ? "listo para cliente" : "client-ready").includes(isSpanish() ? "aprobación" : "approval");
+  if (!packageComplete || !reviewWaiting || !clientBlockedForApproval) return;
+
+  const badge = panel.querySelector<HTMLElement>(".section-head > span");
+  if (badge && ["assessment requires attention", "la evaluación requiere atención"].includes(normalizeText(badge.textContent))) {
+    badge.textContent = isSpanish() ? "LISTO PARA REVISIÓN INTERNA" : "READY FOR INTERNAL REVIEW";
+    badge.classList.remove("red");
+    badge.classList.add("yellow");
+  }
+  const message = panel.querySelector<HTMLElement>(":scope > p");
+  if (message && normalizeText(message.textContent).includes(isSpanish() ? "se detuvo" : "stopped")) {
+    message.textContent = isSpanish()
+      ? "La evaluación automatizada terminó. La revisión interna es el siguiente paso requerido antes de la entrega."
+      : "The automated assessment is complete. Internal review is the next required step before delivery.";
+  }
+}
+
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
     const restoreFetch = installAssessmentFetchObserver();
-    // One bounded localization pass preserves the Spanish route without observing
-    // or mutating React-owned result nodes throughout a long assessment.
+    const restoreMarkdown = installMarkdownCopyRepair();
     localizeSpanishAssessmentDom(document);
+    const timer = window.setInterval(repairReviewWaitingPresentation, 500);
+    repairReviewWaitingPresentation();
     return () => {
       restoreFetch();
+      restoreMarkdown();
+      window.clearInterval(timer);
     };
   }, []);
   return null;
