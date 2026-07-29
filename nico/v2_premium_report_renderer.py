@@ -7,12 +7,28 @@ from datetime import UTC, datetime
 from typing import Any, Mapping
 
 from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
+from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
+from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
-VERSION = "nico.v2.premium-report-renderer.v1"
+VERSION = "nico.v2.premium-report-renderer.v2"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _is_spanish(canonical: Mapping[str, Any]) -> bool:
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    ).casefold()
+    return language.startswith("es")
 
 
 def _stage(stage_id: str, title: str, summary: str, *, evidence: list[str] | None = None,
@@ -49,21 +65,19 @@ def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
     records = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
     completed = [item for item in records if item.get("completed") is True]
     incomplete = [item for item in records if item.get("completed") is not True]
-    evidence = []
-    for item in records:
-        evidence.append(
-            f"{_text(item.get('scanner_name') or item.get('tool'))}: "
-            f"{_text(item.get('state') or item.get('status'))}; "
-            f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
-            f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
-            f"findings={len(item.get('findings') or [])}"
-        )
+    evidence = [
+        f"{_text(item.get('scanner_name') or item.get('tool'))}: "
+        f"{_text(item.get('state') or item.get('status'))}; "
+        f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
+        f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
+        f"findings={len(item.get('findings') or [])}"
+        for item in records
+    ]
     limitations = [
         f"{_text(item.get('scanner_name') or item.get('tool'))}: "
         f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner evidence incomplete')}"
         for item in incomplete
     ]
-    status = "complete" if not incomplete else "review_required"
     return [
         _stage(
             "dependency_security_static_analysis",
@@ -71,7 +85,7 @@ def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
             f"{len(completed)} scanner records completed and {len(incomplete)} remain incomplete or review-limited.",
             evidence=evidence,
             unavailable=limitations,
-            status=status,
+            status="complete" if not incomplete else "review_required",
         )
     ]
 
@@ -113,7 +127,6 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
             evidence=roadmap_evidence,
             status="complete",
         )
-
     return list(by_id.values())
 
 
@@ -123,21 +136,33 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     stages = _canonical_stages(canonical)
+    canonical["stage_summaries"] = deepcopy(stages)
     generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    spanish = _is_spanish(canonical)
 
-    markdown = _markdown(dict(identity), dict(assessment), stages, generated_at)
-    markdown = markdown.replace(
-        "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
-        "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY NOT AUTHORIZED",
-    )
-    title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
-    rendered_html = _semantic_html(markdown, title)
-    pdf_base64, pdf_error, page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
-    if pdf_error or not pdf_base64:
-        raise ValueError(f"premium PDF renderer failed: {pdf_error or 'empty PDF'}")
-    pdf_bytes = base64.b64decode(pdf_base64)
-    if not pdf_bytes.startswith(b"%PDF"):
-        raise ValueError("premium PDF renderer produced invalid bytes")
+    if spanish:
+        markdown = _spanish_markdown(canonical).replace(
+            "La evaluación automatizada terminó como borrador.",
+            "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
+        ).replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
+        if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
+            markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
+        rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
+        pdf_bytes, page_count = _spanish_pdf(canonical)
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+        pdf_error = None
+    else:
+        markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
+            "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
+            "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY NOT AUTHORIZED",
+        )
+        title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
+        rendered_html = _semantic_html(markdown, title)
+        pdf_base64, pdf_error, page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
+        pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
+
+    if pdf_error or not pdf_base64 or not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError(f"premium PDF renderer failed: {pdf_error or 'invalid or empty PDF'}")
 
     result.update({
         "json": canonical,
@@ -147,6 +172,8 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "pdf_error": None,
         "pdf_available": True,
         "pdf_page_count": page_count,
+        "core_report_page_count": page_count,
+        "final_package_page_count": page_count,
         "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
         "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
@@ -170,6 +197,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "full_evidence_appendix": True,
             "canonical_findings_only": True,
             "canonical_scanner_truth_only": True,
+            "bilingual_premium_output": True,
             "page_count": page_count,
         },
     })
