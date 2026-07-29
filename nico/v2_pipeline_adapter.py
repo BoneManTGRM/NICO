@@ -139,6 +139,51 @@ def _synchronize_scanner_truth(canonical: dict[str, Any]) -> None:
     canonical["assessment"] = assessment
 
 
+def _clean_criterion(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    lowered = text.casefold().lstrip("[")
+    if lowered.startswith("target commit:") or lowered.startswith("method:"):
+        return ""
+    text = re.sub(r"\s*\[(?:method|target\s+commit)\s*:[^\]]*(?:\]|$)", "", text, flags=re.I)
+    text = re.sub(r"\s+(?:method|target\s+commit)\s*:\s*[0-9A-Za-z_.-]+\]?", "", text, flags=re.I)
+    text = re.sub(r"\b[0-9a-f]{40,64}\b\]?", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip(" ;,.[]\t")
+    return text
+
+
+def _repair_client_criteria(canonical: dict[str, Any]) -> None:
+    source = canonical.get("canonical_findings") if isinstance(canonical.get("canonical_findings"), list) else []
+    repaired: list[dict[str, Any]] = []
+    for raw in source:
+        if not isinstance(raw, Mapping):
+            continue
+        item = deepcopy(dict(raw))
+        values = item.get("acceptance_criteria")
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            values = []
+        selected: dict[str, str] = {}
+        for value in values:
+            cleaned = _clean_criterion(value)
+            key = cleaned.casefold()
+            if cleaned and key not in selected:
+                selected[key] = cleaned
+        item["acceptance_criteria"] = list(selected.values())
+        repaired.append(item)
+    for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
+        canonical[surface] = deepcopy(repaired)
+    canonical["executive_risk_register"] = deepcopy(repaired[:7])
+    canonical["priority_findings"] = deepcopy(repaired[:5])
+    contract = canonical.get("v2_pipeline_contract") if isinstance(canonical.get("v2_pipeline_contract"), Mapping) else {}
+    contract = deepcopy(dict(contract))
+    contract["malformed_legacy_acceptance_metadata_repaired"] = True
+    contract["client_acceptance_criteria_count"] = sum(len(item.get("acceptance_criteria") or []) for item in repaired)
+    canonical["v2_pipeline_contract"] = contract
+
+
 def _normalized_artifact_filename(value: Any, *, default_name: str, extension: str) -> str:
     filename = _text(value) or default_name
     extension = extension if extension.startswith(".") else f".{extension}"
@@ -206,6 +251,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     canonical["identity"] = identity
     _synchronize_score_truth(canonical)
     _synchronize_scanner_truth(canonical)
+    _repair_client_criteria(canonical)
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     assessment = deepcopy(dict(assessment))
     assessment["report_language"] = language
@@ -290,6 +336,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "repeated_acceptance_criteria_absent": True,
         "approval_suffix_exactly_once": True,
         "localized_artifacts_share_canonical_truth": True,
+        "legacy_acceptance_metadata_removed": True,
     })
     package["phase16_delivery_verification"] = assert_client_delivery_package(package)
 
