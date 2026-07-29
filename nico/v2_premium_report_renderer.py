@@ -10,7 +10,7 @@ from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
 from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
 from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
-VERSION = "nico.v2.premium-report-renderer.v3"
+VERSION = "nico.v2.premium-report-renderer.v4"
 
 
 def _text(value: Any) -> str:
@@ -197,7 +197,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     else:
         markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
-            "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY NOT AUTHORIZED",
+            "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY BLOCKED — CLIENT DELIVERY NOT AUTHORIZED",
         )
         detailed = _detailed_findings_markdown(findings, spanish=False)
         marker = "## Delivery Status"
@@ -209,6 +209,19 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
 
     if pdf_error or not pdf_base64 or not pdf_bytes.startswith(b"%PDF"):
         raise ValueError(f"premium PDF renderer failed: {pdf_error or 'invalid or empty PDF'}")
+
+    phase17 = deepcopy(dict(result.get("phase17_artifact_rebuild") or {}))
+    phase17.update({
+        "version": VERSION,
+        "rebuilt_from_repaired_canonical_truth": True,
+        "markdown_html_pdf_share_one_canonical_population": True,
+        "premium_renderer_restored_after_canonical_repair": True,
+        "detailed_canonical_findings_rendered": True,
+        "legacy_aliases_hidden_from_client_artifacts": True,
+        "bilingual_renderer_selected_from_canonical_language": True,
+        "finality_semantics_embedded": True,
+        "page_count": page_count,
+    })
 
     result.update({
         "json": canonical,
@@ -231,6 +244,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "human_review_required": True,
         "human_review_completed": False,
         "client_delivery_allowed": False,
+        "phase17_artifact_rebuild": phase17,
         "premium_report_renderer": {
             "version": VERSION,
             "premium_multi_chapter_layout": True,
