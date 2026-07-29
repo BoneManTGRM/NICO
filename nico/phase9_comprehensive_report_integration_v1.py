@@ -6,8 +6,9 @@ from typing import Any, Iterable, Mapping
 from nico.phase15_production_integration_v1 import integrate_production_truth
 from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize_findings
 from nico.v2_pipeline_adapter import apply_v2_pipeline
+from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v1"
+VERSION = "nico.v2.comprehensive.finalizer.v2"
 
 
 def _text(value: Any) -> str:
@@ -40,8 +41,8 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
 
 
 def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
-    """Compatibility entry point that produces one semantic finding population before v2 publication."""
-    normalized = integrate_production_truth(report)
+    """Build one scanner population and one semantic finding population before rendering."""
+    normalized = reconcile_scanner_records(integrate_production_truth(report))
     source_findings: list[Mapping[str, Any]] = []
     for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
         source_findings.extend(item for item in normalized.get(surface) or [] if isinstance(item, Mapping))
@@ -67,6 +68,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     normalized["v2_prepublication_contract"] = {
         "version": VERSION,
         "canonical_finding_count": len(findings),
+        "scanner_result_count": len(normalized.get("scanner_execution_records") or []),
         "legacy_post_generation_mutation_disabled": True,
         "single_v2_publisher": True,
     }
@@ -74,17 +76,12 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
-    """The only Comprehensive publication boundary.
-
-    Legacy phases may enrich raw evidence before this function, but no layer may mutate
-    findings, scanner state, lifecycle state, or client artifacts after this returns.
-    """
+    """The only Comprehensive publication boundary."""
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else finalized.get("canonical_report")
     if not isinstance(canonical, Mapping):
         raise ValueError("report package is missing canonical JSON")
-
     canonical = normalize_canonical_report(canonical)
     canonical["approval_state"] = approval_state
     package["json"] = canonical
