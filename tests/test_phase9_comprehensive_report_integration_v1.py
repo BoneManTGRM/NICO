@@ -42,7 +42,7 @@ def test_finalizer_canonicalizes_every_surface_and_filename():
     canonical = package["json"]
     assert len(canonical["canonical_findings"]) == 1
     finding = canonical["canonical_findings"][0]
-    assert finding["title"].startswith("operations page")
+    assert finding["title"] == "Reduce complexity in page.tsx"
     assert len(finding["acceptance_criteria"]) == 1
     assert canonical["executive_findings"][0]["title"] == finding["title"]
     assert canonical["roadmap"][0]["work_packages"][0]["title"] == finding["title"]
