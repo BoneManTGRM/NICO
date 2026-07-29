@@ -13,6 +13,7 @@ from nico.phase16_client_delivery_verification_v1 import (
     assert_client_delivery_package,
     repair_client_delivery_package,
 )
+from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 from nico.phase9_production_report_gate_v1 import (
     acceptance_key,
     assert_production_report,
@@ -21,7 +22,7 @@ from nico.phase9_production_report_gate_v1 import (
     normalized_filename,
 )
 
-VERSION = "nico.phase9_comprehensive_report_integration.v5"
+VERSION = "nico.phase9_comprehensive_report_integration.v6"
 
 
 def _text(value: Any) -> str:
@@ -149,6 +150,10 @@ def _findings_csv(findings: Iterable[Mapping[str, Any]]) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
+def _review_record(value: Any) -> dict[str, Any]:
+    return deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+
+
 def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
@@ -178,18 +183,31 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
 
     package = repair_client_delivery_package(package)
+    package = rebuild_client_artifacts(package)
     canonical = deepcopy(package["json"])
     package["findings_csv_base64"] = base64.b64encode(_findings_csv(canonical["canonical_findings"])).decode("ascii")
     package["phase9_release_gate"] = assert_production_report(canonical, filename=package["pdf_filename"])
     package["phase9_release_gate"]["production_path_integrated"] = True
     package["phase9_release_gate"]["all_export_surfaces_canonicalized"] = True
     package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
+    package["phase9_release_gate"]["artifacts_rebuilt_after_canonical_repair"] = True
     package["phase16_delivery_verification"] = assert_client_delivery_package(package)
     package["phase9_release_gate"]["phase16_client_delivery_verified"] = True
 
     finalized["report_package"] = package
     finalized["canonical_report"] = canonical
     finalized["approval_state"] = approval_state
+    finalized["status"] = "review_required"
+    finalized["human_review_required"] = True
+    finalized["human_review_completed"] = False
+    finalized["client_delivery_allowed"] = False
+    record = _review_record(finalized.get("record"))
+    record["status"] = "review_required"
+    record["human_review_required"] = True
+    record["human_review_completed"] = False
+    record["client_delivery_allowed"] = False
+    record["assessment_package_complete"] = True
+    finalized["record"] = record
     return finalized
 
 
