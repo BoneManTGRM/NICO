@@ -6,8 +6,9 @@ import json
 import os
 import subprocess
 import threading
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from nico import scanner_tool_runners
 from nico import snapshot_scanner_worker
@@ -21,15 +22,19 @@ from nico.scanner_evidence_pipeline_v1 import (
 )
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
 
-VERSION = "nico.v2.snapshot-scanner-authority.v1"
-_TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v1__"
-_CLONE_MARKER = "__nico_v2_full_history_clone_v1__"
+VERSION = "nico.v2.snapshot-scanner-authority.v2"
+_TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v2__"
+_CLONE_MARKER = "__nico_v2_full_history_clone_v2__"
 _PREPARATION_CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _text(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip()
 
 
 def _commit_sha(workspace: WorkerWorkspace) -> str:
@@ -105,7 +110,7 @@ def _persist_raw_blob(
     artifacts = existing.get("artifacts") if isinstance(existing.get("artifacts"), dict) else {}
     artifacts[str(payload.get("tool") or "unknown")] = payload["raw_artifact"]
     manifest_payload = {
-        "schema": "nico.v2.snapshot-scanner-artifacts.v1",
+        "schema": "nico.v2.snapshot-scanner-artifacts.v2",
         "repository": repository,
         "commit_sha": commit_sha,
         "run_key": run_key,
@@ -115,6 +120,97 @@ def _persist_raw_blob(
     manifest.write_text(json.dumps(manifest_payload, indent=2, sort_keys=True), encoding="utf-8")
     manifest.chmod(0o600)
     payload["raw_artifact_manifest_storage_key"] = str(manifest.relative_to(Path(DEFAULT_RAW_ROOT)))
+
+
+def _raw_json(blob: Mapping[str, Any]) -> Any:
+    try:
+        compressed = bytes.fromhex(str(blob.get("gzip_hex") or ""))
+        raw = gzip.decompress(compressed)
+        if _sha256(raw) != str(blob.get("sha256") or ""):
+            return None
+        return json.loads(raw.decode("utf-8", errors="replace"))
+    except (ValueError, OSError, gzip.BadGzipFile, json.JSONDecodeError):
+        return None
+
+
+def _package_context(value: Mapping[str, Any], inherited: Mapping[str, Any]) -> dict[str, Any]:
+    context = deepcopy(dict(inherited))
+    package = value.get("package")
+    if isinstance(package, Mapping):
+        if _text(package.get("name")):
+            context["package"] = _text(package.get("name"))
+        if _text(package.get("ecosystem")):
+            context["ecosystem"] = _text(package.get("ecosystem"))
+        if _text(package.get("version")):
+            context["installed_version"] = _text(package.get("version"))
+    elif _text(package):
+        context["package"] = _text(package)
+    for key, target in (
+        ("name", "package"),
+        ("version", "installed_version"),
+        ("installed_version", "installed_version"),
+        ("ecosystem", "ecosystem"),
+        ("source", "dependency_path"),
+        ("path", "dependency_path"),
+        ("manifest", "dependency_path"),
+        ("lockfile", "dependency_path"),
+    ):
+        if _text(value.get(key)) and not _text(context.get(target)):
+            context[target] = _text(value.get(key))
+    return context
+
+
+def _walk_osv(value: Any, context: Mapping[str, Any], output: list[dict[str, Any]]) -> None:
+    if isinstance(value, Mapping):
+        local = _package_context(value, context)
+        for key, child in value.items():
+            if key in {"vulnerabilities", "vulns"} and isinstance(child, list):
+                for raw in child:
+                    if not isinstance(raw, Mapping):
+                        continue
+                    item = deepcopy(dict(raw))
+                    item.setdefault("package", local.get("package"))
+                    item.setdefault("installed_version", local.get("installed_version"))
+                    item.setdefault("ecosystem", local.get("ecosystem"))
+                    item.setdefault("dependency_path", local.get("dependency_path"))
+                    output.append(item)
+            else:
+                _walk_osv(child, local, output)
+    elif isinstance(value, list):
+        for child in value:
+            _walk_osv(child, context, output)
+
+
+def _enrich_osv_findings(payload: dict[str, Any], blob: Mapping[str, Any] | None) -> None:
+    if _text(payload.get("tool")) != "osv-scanner" or not isinstance(blob, Mapping):
+        return
+    raw = _raw_json(blob)
+    if raw is None:
+        payload["dependency_context_enrichment"] = {
+            "status": "review_required",
+            "reason": "retained OSV JSON could not be decoded for package-context enrichment",
+        }
+        return
+    enriched: list[dict[str, Any]] = []
+    _walk_osv(raw, {}, enriched)
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in enriched:
+        marker = json.dumps(item, sort_keys=True, default=str, separators=(",", ":"))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        selected.append(item)
+    if selected:
+        payload["findings"] = selected
+        payload["findings_count"] = len(selected)
+    payload["dependency_context_enrichment"] = {
+        "status": "complete" if selected else "review_required",
+        "raw_vulnerability_count": len(selected),
+        "package_context_retained": all(_text(item.get("package")) for item in selected) if selected else False,
+        "installed_version_retained": all(_text(item.get("installed_version")) for item in selected) if selected else False,
+        "advisory_identity_retained": all(_text(item.get("id") or (item.get("aliases") or [""])[0]) for item in selected) if selected else False,
+    }
 
 
 def canonical_snapshot_tool_runner(
@@ -134,6 +230,8 @@ def canonical_snapshot_tool_runner(
     payload = _run_problem_tool(spec, workspace, runner, prepared)
     if not isinstance(payload, dict):
         raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
+    blob = payload.get("_raw_artifact_blob")
+    _enrich_osv_findings(payload, blob if isinstance(blob, Mapping) else None)
     blob = payload.pop("_raw_artifact_blob", None)
     if isinstance(blob, dict):
         try:
@@ -175,6 +273,82 @@ def canonical_snapshot_tool_runner(
     return safe
 
 
+def _git(repo_path: Path, env: Mapping[str, str], *args: str, timeout: int = 300) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=dict(env),
+        check=False,
+    )
+
+
+def _config(repo_path: Path, env: Mapping[str, str], key: str) -> str:
+    result = _git(repo_path, env, "config", "--get", key, timeout=30)
+    return _text(result.stdout) if result.returncode == 0 else ""
+
+
+def _materialize_git_history(repo_path: Path, env: Mapping[str, str], notes: list[str]) -> tuple[list[str], bool]:
+    shallow = _git(repo_path, env, "rev-parse", "--is-shallow-repository", timeout=30)
+    if shallow.returncode != 0:
+        return [*notes, "Git repository depth could not be verified for history-aware secret scanning."], False
+    if _text(shallow.stdout).casefold() == "true":
+        unshallow = _git(repo_path, env, "fetch", "--unshallow", "--tags", "origin", timeout=600)
+        if unshallow.returncode != 0:
+            return [*notes, f"Full git history could not be restored: {_text(unshallow.stderr)[:500]}"], False
+
+    partial_keys = (
+        "remote.origin.promisor",
+        "remote.origin.partialclonefilter",
+        "extensions.partialClone",
+    )
+    partial = any(_config(repo_path, env, key) for key in partial_keys)
+    if partial:
+        for key in partial_keys:
+            _git(repo_path, env, "config", "--unset-all", key, timeout=30)
+        refetch = _git(
+            repo_path,
+            env,
+            "fetch",
+            "--refetch",
+            "--tags",
+            "--prune",
+            "origin",
+            "+refs/heads/*:refs/remotes/origin/*",
+            timeout=900,
+        )
+        if refetch.returncode != 0:
+            fallback = _git(
+                repo_path,
+                env,
+                "fetch",
+                "--tags",
+                "--prune",
+                "origin",
+                "+refs/heads/*:refs/remotes/origin/*",
+                timeout=900,
+            )
+            if fallback.returncode != 0:
+                return [*notes, f"Partial clone objects could not be materialized: {_text(fallback.stderr or refetch.stderr)[:500]}"], False
+
+    repack = _git(repo_path, env, "repack", "-a", "-d", timeout=900)
+    if repack.returncode != 0:
+        return [*notes, f"Full-object repository repack failed: {_text(repack.stderr)[:500]}"], False
+    verify_depth = _git(repo_path, env, "rev-parse", "--is-shallow-repository", timeout=30)
+    fsck = _git(repo_path, env, "fsck", "--full", "--no-dangling", timeout=900)
+    valid = (
+        verify_depth.returncode == 0
+        and _text(verify_depth.stdout).casefold() == "false"
+        and fsck.returncode == 0
+        and not any(_config(repo_path, env, key) for key in partial_keys)
+    )
+    if not valid:
+        return [*notes, f"Full git object verification failed: {_text(fsck.stderr or fsck.stdout)[:500]}"], False
+    return [*notes, "Full git history and object store were materialized and verified for history-aware secret scanning."], True
+
+
 def full_history_snapshot_clone(
     repository: str,
     commit_sha: str,
@@ -186,40 +360,15 @@ def full_history_snapshot_clone(
     if repo_path is None or os.getenv("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN", "false").casefold() != "true":
         return repo_path, actual_sha, notes
     try:
-        shallow = subprocess.run(
-            ["git", "rev-parse", "--is-shallow-repository"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-            check=False,
-        )
-        if shallow.returncode == 0 and (shallow.stdout or "").strip().casefold() == "true":
-            unshallow = subprocess.run(
-                ["git", "fetch", "--unshallow", "--tags", "origin"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=env,
-                check=False,
-            )
-            if unshallow.returncode != 0:
-                notes = [*notes, "Full git history could not be restored for history-aware secret scanning."]
-        verify = subprocess.run(
-            ["git", "rev-parse", "--is-shallow-repository"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-            check=False,
-        )
-        if verify.returncode != 0 or (verify.stdout or "").strip().casefold() != "false":
-            notes = [*notes, "Repository history remains shallow; Gitleaks and TruffleHog must remain unverified."]
+        notes, materialized = _materialize_git_history(repo_path, env, list(notes))
+        verified_sha = _git(repo_path, env, "rev-parse", "HEAD", timeout=30)
+        observed = _text(verified_sha.stdout).casefold() if verified_sha.returncode == 0 else ""
+        if observed != _text(commit_sha).casefold():
+            notes = [*notes, "Full-history materialization changed or could not verify the assessed commit identity."]
+        elif not materialized:
+            notes = [*notes, "Gitleaks and TruffleHog must remain unverified until full object materialization succeeds."]
     except Exception as exc:
-        notes = [*notes, f"Full-history preparation failed safely: {type(exc).__name__}."]
+        notes = [*notes, f"Full-history object materialization failed safely: {type(exc).__name__}: {_text(exc)}"]
     return repo_path, actual_sha, notes
 
 
@@ -244,9 +393,11 @@ def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
         "bound": tool_bound and clone_bound,
         "snapshot_worker_uses_canonical_scanner_runner": tool_bound,
         "raw_artifacts_retained_before_workspace_deletion": tool_bound,
+        "osv_package_context_retained": tool_bound,
         "returncode_and_exit_code_both_exposed": tool_bound,
         "exact_commit_identity_exposed": tool_bound,
         "full_history_restoration_bound": clone_bound,
+        "partial_clone_objects_materialized": clone_bound,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
