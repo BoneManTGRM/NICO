@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from nico.phase12_report_remediation_v1 import (
+    canonical_fingerprint,
     canonical_findings,
     canonical_scanner_records,
     remediate_assessment,
@@ -36,6 +37,33 @@ def test_semantic_duplicate_pair_collapses_to_enriched_record():
     assert result[0]["finding_id"] == "RISK-P1-NEW"
     assert result[0]["title"] == "Reduce complexity in page.tsx"
     assert result[0]["acceptance_criteria"] == ["Add tests"]
+    assert set(result[0]["finding_aliases"]) == {"RISK-P1-NEW", "RISK-OLD"}
+    assert len(result[0]["supporting_evidence"]) == 2
+
+
+def test_duplicate_merge_preserves_distinct_evidence_and_mappings():
+    left = _finding("RISK-A")
+    left.update({"tool": "radon", "rule_id": "CC", "evidence": "complexity=52", "roadmap_ids": ["WP-1"]})
+    right = _finding("RISK-P1-B", enriched=True)
+    right.update({"tool": "typescript", "rule_id": "CC", "evidence": "complexity=52", "roadmap_ids": ["WP-2"]})
+    result = canonical_findings([left, right])[0]
+    assert set(result["roadmap_ids"]) == {"WP-1", "WP-2"}
+    assert {item.get("tool") for item in result["supporting_evidence"]} == {"radon", "typescript"}
+    assert set(result["finding_aliases"]) == {"RISK-A", "RISK-P1-B"}
+
+
+def test_fingerprint_ignores_legacy_id_and_p_prefixed_id():
+    left = _finding("RISK-54DC2C8248A9", location="apps/web/app/operations/page.tsx:177")
+    right = _finding("RISK-P1-0A2FA160AB", location="apps/web/app/operations/page.tsx:177")
+    assert canonical_fingerprint(left) == canonical_fingerprint(right)
+
+
+def test_distinct_locations_remain_distinct_findings():
+    first = _finding("A", location="src/a.py:10")
+    second = _finding("B", location="src/b.py:10")
+    result = canonical_findings([first, second])
+    assert len(result) == 2
+    assert [item["title"] for item in result] == ["Reduce complexity in a.py", "Reduce complexity in b.py"]
 
 
 def test_internal_rule_literal_is_not_reported_as_tls_defect():
@@ -88,6 +116,7 @@ def test_assessment_surfaces_share_one_population():
     assert result["executive_risk_register"] == result["findings_register"]
     assert result["evidence_health_summary"]["completed_scanners"] == ["bandit"]
     assert result["evidence_health_summary"]["incomplete_scanner_records"] == []
+    assert result["phase13_canonical_findings"]["supporting_evidence_merged"] is True
 
 
 def test_terminal_filename_state_is_idempotent():
