@@ -9,6 +9,7 @@ from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.phase15_production_integration_v1 import integrate_production_truth
+from nico.phase16_client_delivery_verification_v1 import assert_client_delivery_package
 from nico.phase9_production_report_gate_v1 import (
     acceptance_key,
     assert_production_report,
@@ -17,7 +18,7 @@ from nico.phase9_production_report_gate_v1 import (
     normalized_filename,
 )
 
-VERSION = "nico.phase9_comprehensive_report_integration.v3"
+VERSION = "nico.phase9_comprehensive_report_integration.v4"
 
 
 def _text(value: Any) -> str:
@@ -175,6 +176,8 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     package["phase9_release_gate"]["production_path_integrated"] = True
     package["phase9_release_gate"]["all_export_surfaces_canonicalized"] = True
     package["phase9_release_gate"]["phase13_and_phase14_visible"] = True
+    package["phase16_delivery_verification"] = assert_client_delivery_package(package)
+    package["phase9_release_gate"]["phase16_client_delivery_verified"] = True
     finalized["report_package"] = package
     finalized["canonical_report"] = canonical
     finalized["approval_state"] = approval_state
