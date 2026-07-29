@@ -13,9 +13,20 @@ type PersistenceSnapshot = {
   warning?: string;
 };
 
+type V2Snapshot = {
+  assessment_state?: string;
+  canonical_truth_sha256?: string;
+  human_review_required?: boolean;
+  human_review_completed?: boolean;
+  client_delivery_allowed?: boolean;
+  persistence?: PersistenceSnapshot;
+  record?: V2Snapshot & {assessment_package_complete?: boolean};
+};
+
 declare global {
   interface Window {
     __nicoPersistenceSnapshot?: PersistenceSnapshot;
+    __nicoV2AssessmentSnapshot?: V2Snapshot;
   }
 }
 
@@ -39,10 +50,14 @@ function isSpanish(): boolean {
  * the Comprehensive page to fall into the root error boundary during long runs.
  */
 export function terminalRunVisible(): boolean {
+  const state = window.__nicoV2AssessmentSnapshot?.assessment_state
+    || window.__nicoV2AssessmentSnapshot?.record?.assessment_state;
+  if (["review_required", "client_ready", "failed", "cancelled"].includes(String(state || ""))) return true;
+
   const section = document.querySelector<HTMLElement>('section[aria-live="polite"]');
   if (!section) return false;
   const phase = normalizeText(section.querySelector(".section-head > span")?.textContent);
-  if (["complete", "human review required", "ready for internal review", "completo", "revisión humana obligatoria", "listo para revisión interna"].includes(phase)) {
+  if (["complete", "human review required", "ready for internal review", "internal review required", "completo", "revisión humana obligatoria", "listo para revisión interna", "revisión interna requerida"].includes(phase)) {
     return true;
   }
   const message = normalizeText(section.querySelector(":scope > p")?.textContent);
@@ -74,7 +89,7 @@ export function persistenceDisplay(spanish: boolean): {text: string; warning: bo
   return {text: spanish ? "Estado de persistencia pendiente" : "Persistence status pending", warning: true};
 }
 
-async function writeClipboardText(value: string): Promise<void> {
+export async function writeClipboardText(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(value);
@@ -133,6 +148,14 @@ function boundedPersistenceRequest(target: string): boolean {
   }
 }
 
+function statusProjectionRequest(target: string): boolean {
+  try {
+    return /\/status$/.test(new URL(target, window.location.origin).pathname);
+  } catch {
+    return false;
+  }
+}
+
 function capturePersistence(response: Response): void {
   response.clone().json().then((payload: {persistence?: PersistenceSnapshot}) => {
     if (!payload?.persistence || typeof payload.persistence !== "object") return;
@@ -141,8 +164,49 @@ function capturePersistence(response: Response): void {
   }).catch(() => undefined);
 }
 
+function captureSnapshot(payload: V2Snapshot): void {
+  if (!payload || typeof payload !== "object") return;
+  window.__nicoV2AssessmentSnapshot = payload;
+  if (payload.persistence && typeof payload.persistence === "object") {
+    window.__nicoPersistenceSnapshot = payload.persistence;
+  }
+  window.dispatchEvent(new CustomEvent("nico:v2-state", {detail: payload}));
+}
+
+function captureAssessmentSnapshot(response: Response): void {
+  const type = response.headers.get("content-type") || "";
+  if (!type.includes("application/json")) return;
+  response.clone().json().then((payload: V2Snapshot) => captureSnapshot(payload)).catch(() => undefined);
+}
+
 function transientStatus(status: number): boolean {
   return [429, 502, 503, 504].includes(status);
+}
+
+function projectAuthoritativeState(): void {
+  const snapshot = window.__nicoV2AssessmentSnapshot;
+  const state = String(snapshot?.assessment_state || snapshot?.record?.assessment_state || "");
+  if (!state) return;
+  const panel = document.querySelector<HTMLElement>('section[data-assessment-run-state="true"]');
+  if (!panel) return;
+  const spanish = isSpanish();
+  const badge = panel.querySelector<HTMLElement>(".section-head > span");
+  const message = panel.querySelector<HTMLElement>(":scope > p");
+  const cards = Array.from(panel.querySelectorAll<HTMLElement>("article"));
+  const reviewCard = cards.find((item) => normalizeText(item.querySelector("b")?.textContent) === (spanish ? "revisión interna" : "internal review"));
+  const reviewValue = reviewCard?.querySelector<HTMLElement>("span");
+
+  if (state === "review_required") {
+    if (badge) {
+      badge.textContent = spanish ? "LISTO PARA REVISIÓN INTERNA" : "READY FOR INTERNAL REVIEW";
+      badge.classList.remove("red", "green");
+      badge.classList.add("yellow");
+    }
+    if (message) message.textContent = spanish
+      ? "La evaluación automatizada terminó. La revisión interna es el siguiente paso requerido antes de la entrega."
+      : "The automated assessment is complete. Internal review is the next required step before delivery.";
+    if (reviewValue) reviewValue.textContent = spanish ? "Requerida" : "Required";
+  }
 }
 
 function installAssessmentFetchObserver(): () => void {
@@ -170,6 +234,9 @@ function installAssessmentFetchObserver(): () => void {
     // Only the small run-creation responses are cloned. Comprehensive continuation
     // responses can contain large evidence and report payloads and are never cloned.
     if (assessmentRequest && boundedPersistenceRequest(target)) capturePersistence(response);
+    if (assessmentRequest && (boundedPersistenceRequest(target) || statusProjectionRequest(target))) {
+      captureAssessmentSnapshot(response);
+    }
     if (assessmentRequest) window.requestAnimationFrame(repairReviewWaitingPresentation);
     return response;
   };
@@ -186,7 +253,7 @@ function runIdFromPage(): string {
   return identity?.title || "";
 }
 
-async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<void> {
+export async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<void> {
   const runId = runIdFromPage();
   if (!runId) throw new Error("Run ID is unavailable.");
   const response = await fetch(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`, {
@@ -203,15 +270,18 @@ async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<void> {
   window.setTimeout(() => { button.textContent = original; }, 1800);
 }
 
-function installMarkdownCopyRepair(): () => void {
+/**
+ * Optional bubble-phase compatibility fallback. It is intentionally not installed
+ * by the runtime component: the React workspace owns the primary Markdown action,
+ * which prevents a capture-phase handler from fetching before the user gesture.
+ */
+export function installMarkdownCopyRepair(): () => void {
   const handler = (event: MouseEvent) => {
     const button = (event.target as Element | null)?.closest("button");
     if (!(button instanceof HTMLButtonElement)) return;
     const label = normalizeText(button.textContent);
     if (!label.includes("copy markdown") && !label.includes("copiar markdown")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+    if (button.disabled) return;
     button.disabled = true;
     void copyCurrentMarkdown(button).catch((error) => {
       button.textContent = isSpanish() ? "No se pudo copiar" : "Copy failed";
@@ -220,11 +290,15 @@ function installMarkdownCopyRepair(): () => void {
       window.setTimeout(() => { button.disabled = false; }, 300);
     });
   };
-  document.addEventListener("click", handler, true);
-  return () => document.removeEventListener("click", handler, true);
+  document.addEventListener("click", handler, false);
+  return () => document.removeEventListener("click", handler, false);
 }
 
 function repairReviewWaitingPresentation(): void {
+  if ((window.__nicoV2AssessmentSnapshot?.assessment_state || window.__nicoV2AssessmentSnapshot?.record?.assessment_state) === "review_required") {
+    projectAuthoritativeState();
+    return;
+  }
   const panel = document.querySelector<HTMLElement>('section[data-assessment-run-state="true"]');
   if (!panel) return;
   const cards = Array.from(panel.querySelectorAll<HTMLElement>("article"));
@@ -254,17 +328,19 @@ function repairReviewWaitingPresentation(): void {
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
     const restoreFetch = installAssessmentFetchObserver();
-    const restoreMarkdown = installMarkdownCopyRepair();
     // One bounded localization pass preserves the Spanish route without observing
     // or continuously mutating React-owned result nodes throughout a long assessment.
     localizeSpanishAssessmentDom(document);
+    projectAuthoritativeState();
     repairReviewWaitingPresentation();
     const onPageShow = () => window.requestAnimationFrame(repairReviewWaitingPresentation);
+    const onState = () => window.requestAnimationFrame(projectAuthoritativeState);
     window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("nico:v2-state", onState);
     return () => {
       restoreFetch();
-      restoreMarkdown();
       window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("nico:v2-state", onState);
     };
   }, []);
   return null;

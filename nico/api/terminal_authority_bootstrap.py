@@ -14,7 +14,7 @@ from nico.exact_scanner_checkout_reconciliation_v1 import install_exact_scanner_
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
 
-VERSION = "nico.api.terminal_authority_bootstrap.v15"
+VERSION = "nico.api.terminal_authority_bootstrap.v16"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
@@ -51,8 +51,12 @@ for state_name, installation in _INSTALLATIONS.items():
 
 # Keep the foundational production contracts explicit and independently fail-closed.
 # These named checks also make the installed safety boundary directly auditable.
+if SCANNER_EVIDENCE_PIPELINE.get("full_output_capture") is not True:
+    raise RuntimeError("Scanner evidence pipeline does not retain complete file-backed output")
 if SCANNER_EVIDENCE_PIPELINE.get("durable_redacted_raw_artifacts") is not True:
     raise RuntimeError("Scanner evidence pipeline does not retain durable redacted raw artifacts")
+if SCANNER_EVIDENCE_PIPELINE.get("frozen_sha_determinism_supported") is not True:
+    raise RuntimeError("Scanner evidence pipeline cannot prove repeated execution on an immutable SHA")
 if SCANNER_EVIDENCE_PIPELINE.get("public_scanner_tool_api_unchanged") is not True:
     raise RuntimeError("Scanner evidence pipeline unexpectedly replaced the public scanner tool API")
 if EXACT_COMMIT_BINDING.get("repository_files_bound_to_exact_commit") is not True:
