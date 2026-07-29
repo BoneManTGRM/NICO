@@ -45,6 +45,7 @@ def _source() -> dict:
         "status": "complete",
         "report_package": {
             "service_id": "comprehensive",
+            "report_id": "report-v2-live",
             "json": {
                 "service_id": "comprehensive",
                 "identity": {
@@ -71,46 +72,53 @@ def _source() -> dict:
     }
 
 
-def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
-    from nico import comprehensive_native_providers as providers
+def _context(language: str = "en") -> dict:
+    return {
+        "run_id": "comprun_v2_live",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": SHA,
+        "evidence_ledger_id": "ledger-v2",
+        "customer_id": "customer-v2",
+        "project_id": "project-v2",
+        "report_language": language,
+        "prior_stage_results": {},
+    }
 
-    monkeypatch.setattr(
-        providers,
-        "_scan",
-        lambda context: {
-            "scan_id": "scan-v2",
-            "snapshot_commit_sha": SHA,
-            "actual_commit_sha": SHA,
-            "snapshot_match": True,
-            "tools_requested": ["bandit", "eslint"],
-            "tools_run": ["bandit", "eslint"],
-            "scanner_results": [
-                {
-                    "tool": "bandit",
-                    "status": "completed",
-                    "returncode": 1,
-                    "findings": [{"test_id": "B101"}],
-                    "artifact_hash": "b" * 64,
-                    "raw_artifact_retention_complete": True,
-                    "verified_for_this_report": True,
-                },
-                {
-                    "tool": "eslint",
-                    "status": "completed",
-                    "returncode": 1,
-                    "findings": [{"ruleId": "complexity"}],
-                    "artifact_hash": "e" * 64,
-                    "raw_artifact_retention_complete": True,
-                    "verified_for_this_report": True,
-                },
-            ],
-        },
-    )
-    provider = wrap_final_report_publication(lambda context: _source())
-    output = provider({"commit_sha": SHA, "prior_stage_results": {}})
+
+def _scan_payload() -> dict:
+    return {
+        "scan_id": "scan-v2",
+        "snapshot_commit_sha": SHA,
+        "actual_commit_sha": SHA,
+        "snapshot_match": True,
+        "tools_requested": ["bandit", "eslint"],
+        "tools_run": ["bandit", "eslint"],
+        "scanner_results": [
+            {
+                "tool": "bandit",
+                "status": "completed",
+                "returncode": 1,
+                "findings": [{"test_id": "B101"}],
+                "artifact_hash": "b" * 64,
+                "raw_artifact_retention_complete": True,
+                "verified_for_this_report": True,
+            },
+            {
+                "tool": "eslint",
+                "status": "completed",
+                "returncode": 1,
+                "findings": [{"ruleId": "complexity"}],
+                "artifact_hash": "e" * 64,
+                "raw_artifact_retention_complete": True,
+                "verified_for_this_report": True,
+            },
+        ],
+    }
+
+
+def _assert_shared_truth(output: dict) -> None:
     package = output["report_package"]
     canonical = package["json"]
-
     assert output["status"] == "complete"
     assert output["assessment_state"] == "review_required"
     assert output["v2_production_authority"]["single_final_publication_boundary"] is True
@@ -122,15 +130,16 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
 
     scanners = {item["scanner_name"]: item for item in canonical["scanner_execution_records"]}
     assert scanners["bandit"]["state"] == "completed_with_findings"
+    assert scanners["bandit"]["status"] == "completed_with_findings"
     assert scanners["bandit"]["exit_code"] == 1
+    assert scanners["bandit"]["verified"] is True
     assert scanners["eslint"]["state"] == "completed_with_findings"
-    assert all(item["verified"] is True for item in scanners.values())
+    assert scanners["eslint"]["verified"] is True
 
     assert package["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
     assert package["spanish_pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
-    assert "PENDING HUMAN APPROVAL" in package["markdown"]
-    assert "CLIENT DELIVERY BLOCKED" in package["markdown"]
-    assert "RISK-LEGACY-123" not in package["markdown"].split("## Canonical findings", 1)[1].split("Historical aliases:", 1)[0]
+    assert "CLIENT DELIVERY NOT AUTHORIZED" in package["markdown"]
+    assert "RISK-LEGACY-123" not in package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     hashes = {
         package["canonical_truth_sha256"],
@@ -142,6 +151,56 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
         package["ui_canonical_sha256"],
     }
     assert len(hashes) == 1
+
+
+def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
+    from nico import comprehensive_native_providers as providers
+
+    monkeypatch.setattr(providers, "_scan", lambda context: _scan_payload())
+    provider = wrap_final_report_publication(lambda context: _source())
+    context = _context("en")
+    output = provider(context)
+    _assert_shared_truth(output)
+
+    package = output["report_package"]
+    assert package["report_language"] == "en"
+    assert "PENDING HUMAN APPROVAL" in package["markdown"]
+    assert "CLIENT DELIVERY BLOCKED" in package["markdown"]
+    assert "Reduce complexity in page.tsx" in package["markdown"]
+
+    verification = providers.cross_format_verification_provider(
+        {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
+    )
+    assert verification["status"] == "complete"
+
+
+def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(monkeypatch):
+    from nico import comprehensive_native_providers as providers
+
+    monkeypatch.setattr(providers, "_scan", lambda context: _scan_payload())
+    provider = wrap_final_report_publication(lambda context: _source())
+    context = _context("es-MX")
+    output = provider(context)
+    _assert_shared_truth(output)
+
+    package = output["report_package"]
+    canonical = package["json"]
+    assert output["report_language"] == "es-MX"
+    assert package["report_language"] == "es-MX"
+    assert canonical["report_language"] == "es-MX"
+    assert package["pdf_filename"].startswith("nico-evaluacion-tecnica-integral-")
+    assert "Evaluación Técnica Integral NICO" in package["markdown"]
+    assert "APROBACIÓN HUMANA PENDIENTE" in package["markdown"]
+    assert "ENTREGA AL CLIENTE BLOQUEADA" in package["markdown"]
+    assert "como borrador" not in package["markdown"].casefold()
+    assert "DESCONOCIDO" not in package["markdown"]
+    assert "bandit" in package["markdown"]
+    assert "eslint" in package["markdown"]
+
+    verification = providers.cross_format_verification_provider(
+        {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
+    )
+    assert verification["status"] == "complete"
 
 
 def test_production_bootstraps_bind_real_report_and_scanner_authorities():
