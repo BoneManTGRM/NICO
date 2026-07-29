@@ -2,20 +2,20 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from nico.v2_premium_report_renderer import (
+from nico.v2_premium_evidence_appendix import (
     VERSION,
-    rebuild_premium_client_artifacts,
+    rebuild_premium_client_artifacts_with_appendix,
 )
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Render the canonical v2 package through the premium Comprehensive layout.
+    """Render canonical v2 truth through the premium report and evidence appendix.
 
     The v2 adapter remains the sole truth, lifecycle, filename, and delivery gate.
-    This boundary restores the mature multi-chapter client presentation without
-    reintroducing legacy finding, scanner, score, or approval-state mutations.
+    The presentation restores the mature multi-chapter report and a canonical
+    evidence appendix without reviving legacy finding or scanner mutation.
     """
-    return rebuild_premium_client_artifacts(package)
+    return rebuild_premium_client_artifacts_with_appendix(package)
 
 
 __all__ = ["VERSION", "rebuild_client_artifacts"]
