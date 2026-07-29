@@ -9,7 +9,15 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v4"
+VERSION = "nico.v2.comprehensive.finalizer.v5"
+_FINDING_SURFACES = (
+    "canonical_findings",
+    "findings_register",
+    "findings",
+    "decision_grade_findings_register",
+    "executive_risk_register",
+    "priority_findings",
+)
 
 
 def _text(value: Any) -> str:
@@ -18,6 +26,15 @@ def _text(value: Any) -> str:
 
 def canonicalize_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return v2_canonicalize_findings(findings)
+
+
+def _findings_from(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    values: list[Mapping[str, Any]] = []
+    for surface in _FINDING_SURFACES:
+        candidate = report.get(surface)
+        if isinstance(candidate, list):
+            values.extend(item for item in candidate if isinstance(item, Mapping))
+    return values
 
 
 def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
@@ -43,13 +60,9 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
 
 def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     """Build one scanner population and one semantic finding population before rendering."""
+    original_findings = _findings_from(report)
     normalized = reconcile_scanner_records(integrate_production_truth(report))
-    source_findings: list[Mapping[str, Any]] = []
-    for surface in (
-        "canonical_findings", "findings_register", "findings", "decision_grade_findings_register",
-        "executive_risk_register", "priority_findings",
-    ):
-        source_findings.extend(item for item in normalized.get(surface) or [] if isinstance(item, Mapping))
+    source_findings = [*original_findings, *_findings_from(normalized)]
     findings = canonicalize_findings(source_findings)
 
     by_id: dict[str, Mapping[str, Any]] = {}
@@ -77,6 +90,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "single_v2_publisher": True,
         "phase16_repair_runs_before_v2_rendering": True,
         "repaired_json_preserved_for_rendering": True,
+        "pre_integration_finding_aliases_preserved": True,
     }
     return normalized
 
@@ -106,10 +120,10 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     finalized["approval_state"] = approval_state
 
     published = apply_v2_pipeline(finalized)
-    output_package = published["report_package"]
-    if not output_package.get("canonical_truth_sha256"):
+    package = published["report_package"]
+    if not package["canonical_truth_sha256"]:
         raise ValueError("v2 publication did not bind a canonical truth hash")
-    if not output_package.get("findings_csv_base64"):
+    if not package["findings_csv_base64"]:
         raise ValueError("v2 publication did not produce the canonical findings CSV")
     return published
 
