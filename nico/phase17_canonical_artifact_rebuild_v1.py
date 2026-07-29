@@ -17,11 +17,39 @@ from nico.v2_premium_evidence_appendix import (  # noqa: E402
     rebuild_premium_client_artifacts_with_appendix,
 )
 
-_BUILD_MARKER = "__nico_v2_canonical_premium_truth_v2__"
+_BUILD_MARKER = "__nico_v2_canonical_premium_truth_v3__"
+
+
+def _section_sources(value: Mapping[str, Any]) -> dict[str, Any]:
+    assessment = value.get("assessment") if isinstance(value.get("assessment"), Mapping) else {}
+    output: dict[str, Any] = {}
+    for raw in assessment.get("sections") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        section_id = str(raw.get("id") or raw.get("section_id") or "")
+        source = raw.get("source_score_before_disposition_gate")
+        if source is None:
+            source = raw.get("score_value", raw.get("presented_score", raw.get("score")))
+        if section_id and source is not None:
+            output[section_id] = source
+    return output
+
+
+def _preserve_section_sources(value: dict[str, Any], sources: Mapping[str, Any]) -> None:
+    assessment = value.get("assessment") if isinstance(value.get("assessment"), Mapping) else {}
+    sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
+    for raw in sections:
+        if not isinstance(raw, dict):
+            continue
+        section_id = str(raw.get("id") or raw.get("section_id") or "")
+        if section_id in sources and raw.get("source_score_before_disposition_gate") is None:
+            raw["source_score_before_disposition_gate"] = sources[section_id]
 
 
 def _repair(value: Mapping[str, Any]) -> dict[str, Any]:
+    sources = _section_sources(value)
     repaired = repair_canonical_premium_truth(value)
+    _preserve_section_sources(repaired, sources)
     return synchronize_canonical_finding_surfaces(repaired)
 
 
