@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
@@ -8,24 +9,70 @@ from fastapi import FastAPI
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v1"
-_MARKER = "__nico_v2_production_authority_v1__"
+VERSION = "nico.v2.production-authority.v2"
+_MARKER = "__nico_v2_production_authority_v2__"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def _inject_live_scanner_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    output = deepcopy(source)
+    package = output.get("report_package") if isinstance(output.get("report_package"), dict) else {}
+    canonical = deepcopy(package.get("json")) if isinstance(package.get("json"), dict) else {}
+    if not canonical:
+        return output
+    try:
+        from nico import comprehensive_native_providers as providers
+
+        scan = providers._scan(context)
+    except Exception:
+        scan = {}
+    records = scan.get("scanner_results") if isinstance(scan, dict) and isinstance(scan.get("scanner_results"), list) else []
+    if records:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
+        commit_sha = _text(identity.get("commit_sha") or context.get("commit_sha")).casefold()
+        enriched: list[dict[str, Any]] = []
+        for raw in records:
+            if not isinstance(raw, dict):
+                continue
+            item = deepcopy(raw)
+            item.setdefault("scanner_name", item.get("tool") or item.get("scanner"))
+            item.setdefault("commit_sha", commit_sha)
+            item.setdefault("snapshot_commit_sha", commit_sha)
+            item.setdefault("exact_commit_match", _text(item.get("commit_sha")).casefold() == commit_sha)
+            if item.get("exit_code") is None and isinstance(item.get("returncode"), int):
+                item["exit_code"] = item["returncode"]
+            enriched.append(item)
+        canonical["scanner_execution_records"] = enriched
+        assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
+        assessment = deepcopy(assessment)
+        assessment["scanner_execution_records"] = deepcopy(enriched)
+        assessment["scanner_execution_summary"] = deepcopy(scan.get("scanner_execution_summary") or {})
+        canonical["assessment"] = assessment
+        canonical["live_scanner_evidence"] = {
+            "scan_id": scan.get("scan_id"),
+            "snapshot_commit_sha": scan.get("snapshot_commit_sha"),
+            "actual_commit_sha": scan.get("actual_commit_sha"),
+            "snapshot_match": scan.get("snapshot_match") is True,
+            "tools_requested": list(scan.get("tools_requested") or []),
+            "tools_run": list(scan.get("tools_run") or []),
+            "failed_tools": list(scan.get("failed_tools") or []),
+            "unavailable_tools": list(scan.get("unavailable_tools") or []),
+            "timed_out_tools": list(scan.get("timed_out_tools") or []),
+            "full_history_verified_tools": list(scan.get("full_history_verified_tools") or []),
+        }
+        package["json"] = canonical
+        output["report_package"] = package
+        output["canonical_report"] = canonical
+    return output
+
+
 def wrap_final_report_publication(
     delegate: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Make v2 the only final Comprehensive artifact publisher.
-
-    The existing provider may collect evidence and create an intermediate report,
-    but the returned client package is always canonicalized, deduplicated, rendered,
-    hashed, and lifecycle-bound through ``finalize_report_package`` before it can be
-    persisted as the completed final-report stage.
-    """
+    """Make v2 the only final Comprehensive artifact publisher."""
     if getattr(delegate, _MARKER, False):
         return delegate
 
@@ -37,6 +84,7 @@ def wrap_final_report_publication(
         package = source.get("report_package")
         if not isinstance(package, dict) or not isinstance(package.get("json"), dict):
             return source
+        source = _inject_live_scanner_truth(source, context)
         try:
             published = finalize_report_package(source)
         except Exception as exc:
@@ -70,6 +118,7 @@ def wrap_final_report_publication(
             "status": "complete",
             "version": VERSION,
             "single_final_publication_boundary": True,
+            "live_scanner_truth_injected_before_canonicalization": True,
             "canonical_findings_only": True,
             "normalized_scanner_results_only": True,
             "all_artifacts_rebuilt_after_canonicalization": True,
@@ -128,6 +177,7 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "bound": bound,
         "single_final_publication_boundary": True,
         "v2_finalizer_invoked_by_real_provider": True,
+        "live_scanner_truth_injected_before_canonicalization": True,
         "legacy_post_generation_publication_disabled": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
