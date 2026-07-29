@@ -175,6 +175,7 @@ def test_premium_report_restores_dark_cover_and_uses_only_repaired_truth():
     result = rebuild_client_artifacts({"json": _canonical()})
     canonical = result["json"]
     markdown = result["markdown"]
+    normalized_markdown = markdown.casefold()
     pdf = base64.b64decode(result["pdf_base64"])
     reader = PdfReader(io.BytesIO(pdf))
     first_page = reader.pages[0].extract_text() or ""
@@ -189,7 +190,12 @@ def test_premium_report_restores_dark_cover_and_uses_only_repaired_truth():
     assert "Non-Production Observations" in markdown
     assert "RISK-TEST-EVAL" not in markdown.split("## Detailed Canonical Findings", 1)[1].split("## Non-Production Observations", 1)[0]
     assert "RISK-TEST-EVAL" in markdown.split("## Non-Production Observations", 1)[1]
-    assert "bandit: completed" not in markdown.casefold() or "bandit: status=completed" in markdown.casefold()
+    assert "bandit: completed" in normalized_markdown
+    assert "eslint: completed_with_findings" in normalized_markdown
+    assert "gitleaks: completed" in normalized_markdown
+    assert "bandit failed" not in normalized_markdown
+    assert "eslint missing" not in normalized_markdown
+    assert "gitleaks missing" not in normalized_markdown
     assert "FINAL REPORT" in markdown
     assert "CLIENT DELIVERY NOT AUTHORIZED" in markdown
     assert "canonical_score_truth_mismatch" not in markdown
