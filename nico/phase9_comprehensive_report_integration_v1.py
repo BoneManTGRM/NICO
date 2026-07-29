@@ -9,7 +9,7 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v3"
+VERSION = "nico.v2.comprehensive.finalizer.v4"
 
 
 def _text(value: Any) -> str:
@@ -45,7 +45,10 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     """Build one scanner population and one semantic finding population before rendering."""
     normalized = reconcile_scanner_records(integrate_production_truth(report))
     source_findings: list[Mapping[str, Any]] = []
-    for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
+    for surface in (
+        "canonical_findings", "findings_register", "findings", "decision_grade_findings_register",
+        "executive_risk_register", "priority_findings",
+    ):
         source_findings.extend(item for item in normalized.get(surface) or [] if isinstance(item, Mapping))
     findings = canonicalize_findings(source_findings)
 
@@ -73,6 +76,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "legacy_post_generation_mutation_disabled": True,
         "single_v2_publisher": True,
         "phase16_repair_runs_before_v2_rendering": True,
+        "repaired_json_preserved_for_rendering": True,
     }
     return normalized
 
@@ -80,8 +84,9 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
 def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
     """The only Comprehensive publication boundary.
 
-    Phase 16 compatibility repair is allowed only before v2 rendering. The v2
-    adapter then rebuilds every published artifact from the repaired canonical JSON.
+    Compatibility repair is allowed only before v2 rendering. Every final artifact
+    is rebuilt afterward from the repaired canonical JSON and no later layer may
+    mutate the client-facing population.
     """
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
@@ -92,16 +97,19 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     canonical["approval_state"] = approval_state
     package["json"] = canonical
     package = repair_client_delivery_package(package)
-    package["json"] = canonical
+    repaired = package.get("json") if isinstance(package.get("json"), Mapping) else canonical
+    repaired = normalize_canonical_report(repaired)
+    repaired["approval_state"] = approval_state
+    package["json"] = repaired
     finalized["report_package"] = package
-    finalized["canonical_report"] = canonical
+    finalized["canonical_report"] = repaired
     finalized["approval_state"] = approval_state
 
     published = apply_v2_pipeline(finalized)
-    package = published["report_package"]
-    if not package["canonical_truth_sha256"]:
+    output_package = published["report_package"]
+    if not output_package.get("canonical_truth_sha256"):
         raise ValueError("v2 publication did not bind a canonical truth hash")
-    if not package["findings_csv_base64"]:
+    if not output_package.get("findings_csv_base64"):
         raise ValueError("v2 publication did not produce the canonical findings CSV")
     return published
 
