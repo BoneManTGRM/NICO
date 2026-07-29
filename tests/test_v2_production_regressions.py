@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 from nico.v2_scanner_reconciliation import normalize_record
 
 
 COMMIT = "a" * 40
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def finding(identifier: str, enriched: bool = False) -> dict:
@@ -62,6 +64,28 @@ def raw_result() -> dict:
             "pdf_base64": base64.b64encode(b"%PDF stale").decode("ascii"),
         },
     }
+
+
+def test_production_scanner_runtime_remains_installed_and_durable():
+    bootstrap = (ROOT / "nico/api/terminal_authority_bootstrap.py").read_text(encoding="utf-8")
+    runtime = (ROOT / "nico/scanner_evidence_pipeline_v1.py").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "install_scanner_evidence_pipeline_v1" in bootstrap
+    assert "SCANNER_EVIDENCE_PIPELINE" in bootstrap
+    assert "full_output_capture" in bootstrap
+    assert "durable_redacted_raw_artifacts" in bootstrap
+    assert "frozen_sha_determinism_supported" in bootstrap
+
+    assert "stdout_path" in runtime
+    assert "MAX_PARSE_BYTES" in runtime
+    assert "raw_artifact_sha256" in runtime
+    assert "verified_for_this_report" in runtime
+    assert "full_history_verified" in runtime
+
+    assert "NICO_MAX_SCANNER_PARSE_BYTES=268435456" in dockerfile
+    assert "NICO_SCANNER_RAW_ARTIFACT_ROOT=/data/scanner-artifacts" in dockerfile
+    assert "NICO_ESLINT_PARSER_ENTRY" in dockerfile
 
 
 def test_findings_exit_code_with_retained_exact_sha_artifact_is_completed():
