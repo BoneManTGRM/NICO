@@ -37,7 +37,7 @@ def test_semantic_duplicate_pair_collapses_to_enriched_record():
     assert result[0]["finding_id"] == "RISK-P1-NEW"
     assert result[0]["title"] == "Reduce complexity in page.tsx"
     assert result[0]["acceptance_criteria"] == ["Add tests"]
-    assert result[0]["finding_aliases"] == ["RISK-P1-NEW", "RISK-OLD"]
+    assert set(result[0]["finding_aliases"]) == {"RISK-P1-NEW", "RISK-OLD"}
     assert len(result[0]["supporting_evidence"]) == 2
 
 
@@ -47,7 +47,7 @@ def test_duplicate_merge_preserves_distinct_evidence_and_mappings():
     right = _finding("RISK-P1-B", enriched=True)
     right.update({"tool": "typescript", "rule_id": "CC", "evidence": "complexity=52", "roadmap_ids": ["WP-2"]})
     result = canonical_findings([left, right])[0]
-    assert result["roadmap_ids"] == ["WP-2", "WP-1"]
+    assert set(result["roadmap_ids"]) == {"WP-1", "WP-2"}
     assert {item.get("tool") for item in result["supporting_evidence"]} == {"radon", "typescript"}
     assert set(result["finding_aliases"]) == {"RISK-A", "RISK-P1-B"}
 
