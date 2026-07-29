@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v4"
-_MARKER = "__nico_v2_production_authority_v4__"
+VERSION = "nico.v2.production-authority.v5"
+_MARKER = "__nico_v2_production_authority_v5__"
 
 
 def _text(value: Any) -> str:
@@ -28,6 +28,22 @@ def _safe_filename(value: Any, default: str) -> str:
     return normalized or default
 
 
+def _install_spanish_vocabulary() -> None:
+    from nico.comprehensive_report_spanish_text_v51 import ES_REPLACEMENTS
+
+    ES_REPLACEMENTS.update({
+        "Reduce complexity in": "Reducir la complejidad en",
+        "completed with findings": "completado con hallazgos",
+        "completed": "completado",
+        "failed": "fallido",
+        "unavailable": "no disponible",
+        "partial": "parcial",
+        "unknown": "desconocido",
+        "review required": "revisión requerida",
+        "client delivery not authorized": "entrega al cliente no autorizada",
+    })
+
+
 def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(source)
     package = output.get("report_package") if isinstance(output.get("report_package"), dict) else {}
@@ -36,6 +52,8 @@ def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) 
         return output
 
     language = _report_language(context)
+    if language == "es-MX":
+        _install_spanish_vocabulary()
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
     identity = deepcopy(identity)
     identity["report_language"] = language
@@ -153,6 +171,7 @@ def wrap_final_report_publication(
             "live_scanner_truth_injected_before_canonicalization": True,
             "report_language_bound_before_rendering": True,
             "localized_filename_bound_before_rendering": True,
+            "spanish_vocabulary_bound_before_rendering": True,
             "canonical_findings_only": True,
             "normalized_scanner_results_only": True,
             "all_artifacts_rebuilt_after_canonicalization": True,
@@ -215,6 +234,7 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "live_scanner_truth_injected_before_canonicalization": True,
         "report_language_bound_before_rendering": True,
         "localized_filename_bound_before_rendering": True,
+        "spanish_vocabulary_bound_before_rendering": True,
         "legacy_post_generation_publication_disabled": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
