@@ -247,6 +247,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     record = deepcopy(dict(finalized.get("record") or {}))
     record.update({
         "assessment_state": state.value,
+        "status": state.value,
         "assessment_package_complete": True,
         "human_review_required": True,
         "human_review_completed": False,
