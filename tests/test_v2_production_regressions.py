@@ -48,12 +48,17 @@ def raw_result() -> dict:
             {"scanner_name": "gitleaks", "status": "partial", "commit_sha": COMMIT, "failure_reason": "binary unavailable"},
         ],
     }
+    duplicated = "FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL"
     return {
         "status": "failed",
         "record": {"status": "failed"},
         "report_package": {
             "json": canonical,
-            "pdf_filename": "nico-report-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf",
+            "pdf_filename": f"nico-report-{duplicated}.pdf",
+            "spanish_pdf_filename": f"nico-report-es-{duplicated}.pdf",
+            "json_filename": f"nico-report-{duplicated}.json",
+            "markdown_filename": f"nico-report-{duplicated}.md",
+            "csv_filename": f"nico-report-{duplicated}.csv",
             "pdf_base64": base64.b64encode(b"%PDF stale").decode("ascii"),
         },
     }
@@ -81,7 +86,8 @@ def test_finalizer_eliminates_production_contradictions_and_duplicates():
     assert output["client_delivery_allowed"] is False
     assert len(canonical["canonical_findings"]) == 1
     assert len(canonical["canonical_findings"][0]["acceptance_criteria"]) == 1
-    assert package["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
+    for key in ("pdf_filename", "spanish_pdf_filename", "json_filename", "markdown_filename", "csv_filename"):
+        assert package[key].count("FINAL-PENDING-APPROVAL") == 1
     assert package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     hashes = {
