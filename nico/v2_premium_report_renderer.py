@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Mapping
@@ -10,7 +11,7 @@ from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
 from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
 from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
-VERSION = "nico.v2.premium-report-renderer.v4"
+VERSION = "nico.v2.premium-report-renderer.v5"
 
 
 def _text(value: Any) -> str:
@@ -29,6 +30,156 @@ def _is_spanish(canonical: Mapping[str, Any]) -> bool:
         or "en"
     ).casefold()
     return language.startswith("es")
+
+
+def _score_pair(assessment: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
+
+    def numeric(*values: Any) -> int | None:
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            return max(0, min(100, int(round(value))))
+        return None
+
+    technical = numeric(
+        assessment.get("technical_score"),
+        maturity.get("technical_score"),
+        maturity.get("presented_score"),
+        maturity.get("score"),
+    )
+    adjusted = numeric(
+        assessment.get("canonical_evidence_adjusted_score"),
+        assessment.get("evidence_adjusted_score"),
+        maturity.get("canonical_evidence_adjusted_score"),
+        maturity.get("evidence_adjusted_score"),
+        technical,
+    )
+    return technical, adjusted
+
+
+def _score_summary_markdown(assessment: Mapping[str, Any], *, spanish: bool) -> str:
+    technical, adjusted = _score_pair(assessment)
+    technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
+    adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
+    if spanish:
+        return (
+            "## Resumen canónico de puntuación\n\n"
+            f"- Madurez técnica: {technical_text}\n"
+            f"- Ajuste por evidencia: {adjusted_text}\n"
+        )
+    return (
+        "## Canonical Score Summary\n\n"
+        f"- Technical maturity: {technical_text}\n"
+        f"- Evidence-Adjusted: {adjusted_text}\n"
+    )
+
+
+def _prepend_score_summary_pdf(
+    pdf_bytes: bytes,
+    *,
+    identity: Mapping[str, Any],
+    assessment: Mapping[str, Any],
+    spanish: bool,
+) -> bytes:
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    technical, adjusted = _score_pair(assessment)
+    technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
+    adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
+    buffer = io.BytesIO()
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle(
+        "CanonicalScoreTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=24,
+        leading=29,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=18,
+    )
+    body = ParagraphStyle(
+        "CanonicalScoreBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=15,
+        textColor=colors.HexColor("#334155"),
+        spaceAfter=8,
+    )
+    warning = ParagraphStyle(
+        "CanonicalScoreWarning",
+        parent=body,
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#92400e"),
+        backColor=colors.HexColor("#fef3c7"),
+        borderColor=colors.HexColor("#f59e0b"),
+        borderWidth=.8,
+        borderPadding=9,
+        spaceAfter=16,
+    )
+    heading = "Resumen canónico de puntuación" if spanish else "Canonical Score Summary"
+    boundary = (
+        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
+        if spanish
+        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED"
+    )
+    rows = [
+        ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
+        ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
+        ["ID de ejecución" if spanish else "Run ID", _text(identity.get("run_id"))],
+        ["Madurez técnica" if spanish else "Technical maturity", technical_text],
+        ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", adjusted_text],
+    ]
+    table = Table(rows, colWidths=[1.65 * inch, 5.15 * inch])
+    table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), .4, colors.HexColor("#cbd5e1")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2fe")),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story = [
+        Spacer(1, .65 * inch),
+        Paragraph("NICO COMPREHENSIVE", title),
+        Paragraph(heading, title),
+        Paragraph(boundary, warning),
+        table,
+        Spacer(1, .2 * inch),
+        Paragraph(
+            "These two scores are separate: technical maturity summarizes scored technical controls, while Evidence-Adjusted reflects the confidence and completeness of retained evidence."
+            if not spanish
+            else "Estas dos puntuaciones son distintas: la madurez técnica resume los controles técnicos puntuados y el ajuste por evidencia refleja la confianza y completitud de la evidencia conservada.",
+            body,
+        ),
+    ]
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=.6 * inch,
+        rightMargin=.6 * inch,
+        topMargin=.6 * inch,
+        bottomMargin=.6 * inch,
+        invariant=1,
+    )
+    document.build(story)
+    writer = PdfWriter()
+    for page in PdfReader(io.BytesIO(buffer.getvalue())).pages:
+        writer.add_page(page)
+    for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
+        writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def _stage(stage_id: str, title: str, summary: str, *, evidence: list[str] | None = None,
@@ -179,19 +330,24 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     canonical["stage_summaries"] = deepcopy(stages)
     generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     spanish = _is_spanish(canonical)
+    score_summary = _score_summary_markdown(assessment, spanish=spanish)
 
     if spanish:
         markdown = _spanish_markdown(canonical).replace(
             "La evaluación automatizada terminó como borrador.",
             "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
         ).replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
+        marker = "## Resumen ejecutivo"
+        markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         detailed = _detailed_findings_markdown(findings, spanish=True)
         marker = "## Puerta de revisión y entrega"
         markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
         if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
             markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
         rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
-        pdf_bytes, page_count = _spanish_pdf(canonical)
+        pdf_bytes, original_page_count = _spanish_pdf(canonical)
+        pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=True)
+        page_count = original_page_count + 1
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
         pdf_error = None
     else:
@@ -199,13 +355,21 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
             "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY BLOCKED — CLIENT DELIVERY NOT AUTHORIZED",
         )
+        marker = "## Executive Decision Brief"
+        markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         detailed = _detailed_findings_markdown(findings, spanish=False)
         marker = "## Delivery Status"
         markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
-        pdf_base64, pdf_error, page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
+        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
         pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
+        if pdf_bytes.startswith(b"%PDF"):
+            pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=False)
+            pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+            page_count = original_page_count + 1
+        else:
+            page_count = original_page_count
 
     if pdf_error or not pdf_base64 or not pdf_bytes.startswith(b"%PDF"):
         raise ValueError(f"premium PDF renderer failed: {pdf_error or 'invalid or empty PDF'}")
@@ -217,6 +381,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "markdown_html_pdf_share_one_canonical_population": True,
         "premium_renderer_restored_after_canonical_repair": True,
         "detailed_canonical_findings_rendered": True,
+        "canonical_score_pair_explicit_in_all_formats": True,
         "legacy_aliases_hidden_from_client_artifacts": True,
         "bilingual_renderer_selected_from_canonical_language": True,
         "finality_semantics_embedded": True,
@@ -250,6 +415,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "premium_multi_chapter_layout": True,
             "executive_decision_brief": True,
             "weighted_scorecard": True,
+            "canonical_score_summary": True,
             "evidence_health_summary": True,
             "executive_risk_register": True,
             "detailed_canonical_finding_cards": True,
