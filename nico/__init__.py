@@ -99,6 +99,7 @@ from nico.express_live_renderer_binding_v22 import install_express_live_renderer
 from nico.runtime_deployment_commit_resolution import install_runtime_deployment_commit_resolution
 from nico.comprehensive_mobile_recovery_v1 import install_comprehensive_mobile_recovery_v1
 from nico.comprehensive_mobile_score_projection_v2 import install_comprehensive_mobile_score_projection_v2
+from nico.spanish_cross_format_score_parity_v1 import install_spanish_cross_format_score_parity
 
 install_comprehensive_mobile_recovery_v1()
 install_runtime_deployment_commit_resolution()
@@ -195,6 +196,9 @@ install_mid_report_v9_production_binding()
 # Bind one canonical Comprehensive score object and fail closed on truncated
 # static-analyzer output after every report and scanner installer is active.
 install_comprehensive_canonical_truth()
+# Cross-format verification must accept the localized labels emitted by the
+# canonical Spanish Markdown, HTML, and PDF renderers while preserving score parity.
+install_spanish_cross_format_score_parity()
 # Install Express premium layers last for the Express export path.
 install_express_report_premium_v14()
 install_express_dossier_export_v15()
@@ -215,4 +219,4 @@ install_express_run_record_integrity()
 # installer has finished rebinding canonical report output.
 install_comprehensive_mobile_score_projection_v2()
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

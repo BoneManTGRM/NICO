@@ -9,7 +9,15 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v3"
+VERSION = "nico.v2.comprehensive.finalizer.v5"
+_FINDING_SURFACES = (
+    "canonical_findings",
+    "findings_register",
+    "findings",
+    "decision_grade_findings_register",
+    "executive_risk_register",
+    "priority_findings",
+)
 
 
 def _text(value: Any) -> str:
@@ -18,6 +26,15 @@ def _text(value: Any) -> str:
 
 def canonicalize_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return v2_canonicalize_findings(findings)
+
+
+def _findings_from(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    values: list[Mapping[str, Any]] = []
+    for surface in _FINDING_SURFACES:
+        candidate = report.get(surface)
+        if isinstance(candidate, list):
+            values.extend(item for item in candidate if isinstance(item, Mapping))
+    return values
 
 
 def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
@@ -43,10 +60,9 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
 
 def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     """Build one scanner population and one semantic finding population before rendering."""
+    original_findings = _findings_from(report)
     normalized = reconcile_scanner_records(integrate_production_truth(report))
-    source_findings: list[Mapping[str, Any]] = []
-    for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
-        source_findings.extend(item for item in normalized.get(surface) or [] if isinstance(item, Mapping))
+    source_findings = [*original_findings, *_findings_from(normalized)]
     findings = canonicalize_findings(source_findings)
 
     by_id: dict[str, Mapping[str, Any]] = {}
@@ -73,6 +89,8 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "legacy_post_generation_mutation_disabled": True,
         "single_v2_publisher": True,
         "phase16_repair_runs_before_v2_rendering": True,
+        "repaired_json_preserved_for_rendering": True,
+        "pre_integration_finding_aliases_preserved": True,
     }
     return normalized
 
@@ -80,8 +98,9 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
 def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
     """The only Comprehensive publication boundary.
 
-    Phase 16 compatibility repair is allowed only before v2 rendering. The v2
-    adapter then rebuilds every published artifact from the repaired canonical JSON.
+    Compatibility repair is allowed only before v2 rendering. Every final artifact
+    is rebuilt afterward from the repaired canonical JSON and no later layer may
+    mutate the client-facing population.
     """
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
@@ -92,9 +111,12 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     canonical["approval_state"] = approval_state
     package["json"] = canonical
     package = repair_client_delivery_package(package)
-    package["json"] = canonical
+    repaired = package.get("json") if isinstance(package.get("json"), Mapping) else canonical
+    repaired = normalize_canonical_report(repaired)
+    repaired["approval_state"] = approval_state
+    package["json"] = repaired
     finalized["report_package"] = package
-    finalized["canonical_report"] = canonical
+    finalized["canonical_report"] = repaired
     finalized["approval_state"] = approval_state
 
     published = apply_v2_pipeline(finalized)

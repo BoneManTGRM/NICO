@@ -2,21 +2,23 @@ from __future__ import annotations
 
 from nico.api.comprehensive_production_bootstrap import app
 from nico.ci_history_classification_v1 import install_ci_history_classification_v1
-from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
-from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
-from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
-from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2
-from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
-from nico.phase6_canonical_truth_v2 import install_phase6_canonical_truth_v2
-from nico.phase6_cross_format_repair_v3 import install_phase6_cross_format_repair_v3
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import install_exact_scanner_checkout_reconciliation_v1
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
 from nico.express_terminal_authority import install_express_terminal_authority
+from nico.phase5_report_truth_v2 import install_phase5_report_truth_v2
+from nico.phase6_canonical_truth_v2 import install_phase6_canonical_truth_v2
+from nico.phase6_cross_format_repair_v3 import install_phase6_cross_format_repair_v3
+from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
+from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
+from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
+from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
+from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v16"
+VERSION = "nico.api.terminal_authority_bootstrap.v17"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
+V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
 EXACT_COMMIT_BINDING = install_exact_commit_binding()
 EXACT_SCANNER_CHECKOUT_RECONCILIATION = install_exact_scanner_checkout_reconciliation_v1()
 SCANNER_EVIDENCE_QUALIFICATION = install_scanner_evidence_qualification_v1()
@@ -31,6 +33,7 @@ EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
 
 _INSTALLATIONS = {
     "nico_scanner_evidence_pipeline": SCANNER_EVIDENCE_PIPELINE,
+    "nico_v2_snapshot_scanner_authority": V2_SNAPSHOT_SCANNER_AUTHORITY,
     "nico_exact_commit_binding": EXACT_COMMIT_BINDING,
     "nico_exact_scanner_checkout_reconciliation": EXACT_SCANNER_CHECKOUT_RECONCILIATION,
     "nico_scanner_evidence_qualification": SCANNER_EVIDENCE_QUALIFICATION,
@@ -49,8 +52,6 @@ for state_name, installation in _INSTALLATIONS.items():
         raise RuntimeError(f"Terminal authority component did not install: {state_name}={installation}")
     setattr(app.state, state_name, installation)
 
-# Keep the foundational production contracts explicit and independently fail-closed.
-# These named checks also make the installed safety boundary directly auditable.
 if SCANNER_EVIDENCE_PIPELINE.get("full_output_capture") is not True:
     raise RuntimeError("Scanner evidence pipeline does not retain complete file-backed output")
 if SCANNER_EVIDENCE_PIPELINE.get("durable_redacted_raw_artifacts") is not True:
@@ -59,6 +60,14 @@ if SCANNER_EVIDENCE_PIPELINE.get("frozen_sha_determinism_supported") is not True
     raise RuntimeError("Scanner evidence pipeline cannot prove repeated execution on an immutable SHA")
 if SCANNER_EVIDENCE_PIPELINE.get("public_scanner_tool_api_unchanged") is not True:
     raise RuntimeError("Scanner evidence pipeline unexpectedly replaced the public scanner tool API")
+if V2_SNAPSHOT_SCANNER_AUTHORITY.get("bound") is not True:
+    raise RuntimeError("Comprehensive snapshot scans are not bound to canonical scanner authority")
+if V2_SNAPSHOT_SCANNER_AUTHORITY.get("snapshot_worker_uses_canonical_scanner_runner") is not True:
+    raise RuntimeError("Comprehensive snapshot worker still uses the legacy scanner runner")
+if V2_SNAPSHOT_SCANNER_AUTHORITY.get("raw_artifacts_retained_before_workspace_deletion") is not True:
+    raise RuntimeError("Comprehensive scanner artifacts are not retained before temporary workspace deletion")
+if V2_SNAPSHOT_SCANNER_AUTHORITY.get("full_history_restoration_bound") is not True:
+    raise RuntimeError("History-aware secret scans are not bound to full-history restoration")
 if EXACT_COMMIT_BINDING.get("repository_files_bound_to_exact_commit") is not True:
     raise RuntimeError("Repository file evidence is not bound to the exact immutable commit")
 if EXACT_COMMIT_BINDING.get("scanner_bound_to_exact_commit") is not True:
@@ -104,6 +113,7 @@ for component, values in _REQUIRED_TRUTH_FLAGS.items():
 __all__ = [
     "app",
     "SCANNER_EVIDENCE_PIPELINE",
+    "V2_SNAPSHOT_SCANNER_AUTHORITY",
     "EXACT_COMMIT_BINDING",
     "EXACT_SCANNER_CHECKOUT_RECONCILIATION",
     "SCANNER_EVIDENCE_QUALIFICATION",

@@ -44,10 +44,8 @@ function isSpanish(): boolean {
 }
 
 /**
- * Compatibility helper retained for source-level truth tests and bounded manual
- * diagnostics. It is deliberately not driven by a MutationObserver. React owns
- * the assessment DOM; external mutation of live result nodes previously caused
- * the Comprehensive page to fall into the root error boundary during long runs.
+ * This helper reads a bounded terminal projection only. It never performs
+ * external mutation of live result nodes; React remains the DOM owner.
  */
 export function terminalRunVisible(): boolean {
   const state = window.__nicoV2AssessmentSnapshot?.assessment_state
@@ -89,15 +87,7 @@ export function persistenceDisplay(spanish: boolean): {text: string; warning: bo
   return {text: spanish ? "Estado de persistencia pendiente" : "Persistence status pending", warning: true};
 }
 
-export async function writeClipboardText(value: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return;
-    } catch {
-      // iOS Safari can expose Clipboard but reject it outside its narrow permission path.
-    }
-  }
+function legacyClipboardCopy(value: string): void {
   const textarea = document.createElement("textarea");
   textarea.value = value;
   textarea.setAttribute("readonly", "true");
@@ -112,6 +102,49 @@ export async function writeClipboardText(value: string): Promise<void> {
   const copied = document.execCommand("copy");
   textarea.remove();
   if (!copied) throw new Error("Clipboard copy was not accepted by this browser.");
+}
+
+export async function writeClipboardText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // iOS Safari can expose Clipboard but reject it outside its narrow permission path.
+    }
+  }
+  legacyClipboardCopy(value);
+}
+
+/**
+ * The React workspace calls navigator.clipboard.writeText directly. Install one
+ * bounded wrapper so the same click keeps working on iPhone Safari when the
+ * native Clipboard promise rejects. No report fetch or DOM event interception is
+ * introduced, so the original user gesture remains intact.
+ */
+export function installNativeClipboardFallback(): () => void {
+  const clipboard = navigator.clipboard;
+  if (!clipboard?.writeText) return () => undefined;
+  const nativeWrite = clipboard.writeText.bind(clipboard);
+  const wrapped = async (value: string): Promise<void> => {
+    try {
+      await nativeWrite(value);
+    } catch {
+      legacyClipboardCopy(value);
+    }
+  };
+  try {
+    Object.defineProperty(clipboard, "writeText", {configurable: true, value: wrapped});
+  } catch {
+    return () => undefined;
+  }
+  return () => {
+    try {
+      Object.defineProperty(clipboard, "writeText", {configurable: true, value: nativeWrite});
+    } catch {
+      // The page is unloading; failure to restore a browser-owned property is harmless.
+    }
+  };
 }
 
 export function installCopyControl(card: HTMLElement, value: HTMLElement, spanish: boolean): void {
@@ -231,8 +264,8 @@ function installAssessmentFetchObserver(): () => void {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
       response = await previousFetch(input, nextInit);
     }
-    // Only the small run-creation responses are cloned. Comprehensive continuation
-    // responses can contain large evidence and report payloads and are never cloned.
+    // A Comprehensive continuation can contain the complete report package, so it
+    // is never cloned. Only bounded intake and status projections are inspected.
     if (assessmentRequest && boundedPersistenceRequest(target)) capturePersistence(response);
     if (assessmentRequest && (boundedPersistenceRequest(target) || statusProjectionRequest(target))) {
       captureAssessmentSnapshot(response);
@@ -270,11 +303,6 @@ export async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<vo
   window.setTimeout(() => { button.textContent = original; }, 1800);
 }
 
-/**
- * Optional bubble-phase compatibility fallback. It is intentionally not installed
- * by the runtime component: the React workspace owns the primary Markdown action,
- * which prevents a capture-phase handler from fetching before the user gesture.
- */
 export function installMarkdownCopyRepair(): () => void {
   const handler = (event: MouseEvent) => {
     const button = (event.target as Element | null)?.closest("button");
@@ -328,8 +356,9 @@ function repairReviewWaitingPresentation(): void {
 export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
     const restoreFetch = installAssessmentFetchObserver();
-    // One bounded localization pass preserves the Spanish route without observing
-    // or continuously mutating React-owned result nodes throughout a long assessment.
+    const restoreClipboard = installNativeClipboardFallback();
+    // One bounded localization pass translates static page chrome without observing
+    // or repeatedly mutating React-owned live assessment nodes.
     localizeSpanishAssessmentDom(document);
     projectAuthoritativeState();
     repairReviewWaitingPresentation();
@@ -339,6 +368,7 @@ export default function AssessmentRuntimeTruthRepair() {
     window.addEventListener("nico:v2-state", onState);
     return () => {
       restoreFetch();
+      restoreClipboard();
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("nico:v2-state", onState);
     };
