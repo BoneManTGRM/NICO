@@ -32,6 +32,12 @@ function isSpanish(): boolean {
   return document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
+/**
+ * Compatibility helper retained for source-level truth tests and bounded manual
+ * diagnostics. It is deliberately not driven by a MutationObserver. React owns
+ * the assessment DOM; external mutation of live result nodes previously caused
+ * the Comprehensive page to fall into the root error boundary during long runs.
+ */
 export function terminalRunVisible(): boolean {
   const section = document.querySelector<HTMLElement>('section[aria-live="polite"]');
   if (!section) return false;
@@ -161,7 +167,10 @@ function installAssessmentFetchObserver(): () => void {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
       response = await previousFetch(input, nextInit);
     }
+    // Only the small run-creation responses are cloned. Comprehensive continuation
+    // responses can contain large evidence and report payloads and are never cloned.
     if (assessmentRequest && boundedPersistenceRequest(target)) capturePersistence(response);
+    if (assessmentRequest) window.requestAnimationFrame(repairReviewWaitingPresentation);
     return response;
   };
   window.fetch = observedFetch;
@@ -246,13 +255,16 @@ export default function AssessmentRuntimeTruthRepair() {
   useEffect(() => {
     const restoreFetch = installAssessmentFetchObserver();
     const restoreMarkdown = installMarkdownCopyRepair();
+    // One bounded localization pass preserves the Spanish route without observing
+    // or continuously mutating React-owned result nodes throughout a long assessment.
     localizeSpanishAssessmentDom(document);
-    const timer = window.setInterval(repairReviewWaitingPresentation, 500);
     repairReviewWaitingPresentation();
+    const onPageShow = () => window.requestAnimationFrame(repairReviewWaitingPresentation);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       restoreFetch();
       restoreMarkdown();
-      window.clearInterval(timer);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
   return null;
