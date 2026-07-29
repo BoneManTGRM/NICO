@@ -17,7 +17,7 @@ from nico.phase9_production_report_gate_v1 import (
     normalized_filename,
 )
 
-VERSION = "nico.phase9_comprehensive_report_integration.v2"
+VERSION = "nico.phase9_comprehensive_report_integration.v3"
 
 
 def _text(value: Any) -> str:
@@ -69,8 +69,13 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
         return [_sync_surface(item, canonical_by_id) for item in value]
     if not isinstance(value, Mapping):
         return value
-    item = deepcopy(dict(value))
-    finding_id = _text(item.get("finding_id") or item.get("id"))
+
+    # Recurse through the original structure first. Enriching a matching record
+    # before recursion can inject supporting_evidence records that carry the same
+    # finding ID, causing unbounded self-similar expansion.
+    original = dict(value)
+    item = {key: _sync_surface(child, canonical_by_id) for key, child in original.items()}
+    finding_id = _text(original.get("finding_id") or original.get("id"))
     if finding_id and finding_id in canonical_by_id:
         canonical = canonical_by_id[finding_id]
         for field in (
@@ -81,8 +86,6 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
         ):
             if field in canonical:
                 item[field] = deepcopy(canonical[field])
-    for key, child in list(item.items()):
-        item[key] = _sync_surface(child, canonical_by_id)
     return item
 
 
@@ -118,6 +121,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "acceptance_criteria_deduplicated": True,
         "generic_titles_repaired": True,
         "phase13_and_phase14_applied_before_rendering": True,
+        "recursive_surface_expansion_blocked": True,
     }
     return normalized
 
