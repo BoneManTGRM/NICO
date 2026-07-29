@@ -7,13 +7,24 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.phase16.client-delivery-verification.v2"
+VERSION = "nico.phase16.client-delivery-verification.v3"
 _APPROVAL = "FINAL-PENDING-APPROVAL"
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
     "findings",
     "decision_grade_findings_register",
+)
+_CLIENT_SURFACES = (
+    "executive_findings",
+    "finding_cards",
+    "roadmap",
+    "backlog",
+    "work_packages",
+    "remediation_plan",
+    "recommendations",
+    "assessment",
+    "stage_summaries",
 )
 
 
@@ -34,7 +45,7 @@ def _location(item: Mapping[str, Any]) -> str:
     if isinstance(value, Mapping):
         path = _text(value.get("path") or value.get("file") or value.get("file_path"))
         line = _text(value.get("line") or value.get("start_line"))
-        return f"{path}:{line}".strip(":").casefold()
+        return f"{path}:{line}".strip(":").replace("\\", "/").casefold()
     return _text(value).replace("\\", "/").casefold()
 
 
@@ -76,6 +87,11 @@ def _dedupe_criteria(values: Any) -> list[Any]:
     return list(selected.values())
 
 
+def _aliases(item: Mapping[str, Any]) -> list[str]:
+    values = [*(item.get("finding_aliases") or []), item.get("finding_id") or item.get("id")]
+    return list(dict.fromkeys(_text(value) for value in values if _text(value)))
+
+
 def _quality(item: Mapping[str, Any]) -> tuple[int, int, int, str]:
     populated = sum(
         bool(_text(item.get(key)))
@@ -94,6 +110,13 @@ def _quality(item: Mapping[str, Any]) -> tuple[int, int, int, str]:
     return populated, mappings, criteria, _finding_id(item)
 
 
+def _normalize_finding(item: Mapping[str, Any]) -> dict[str, Any]:
+    result = deepcopy(dict(item))
+    result["acceptance_criteria"] = _dedupe_criteria(result.get("acceptance_criteria"))
+    result["finding_aliases"] = _aliases(result)
+    return result
+
+
 def _merge_findings(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
     preferred, other = (right, left) if _quality(right) > _quality(left) else (left, right)
     merged = deepcopy(dict(preferred))
@@ -103,12 +126,8 @@ def _merge_findings(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[s
     merged["acceptance_criteria"] = _dedupe_criteria(
         list(preferred.get("acceptance_criteria") or []) + list(other.get("acceptance_criteria") or [])
     )
-    aliases = []
-    for source in (preferred, other):
-        aliases.extend(source.get("finding_aliases") or [])
-        aliases.append(source.get("finding_id") or source.get("id"))
-    merged["finding_aliases"] = list(dict.fromkeys(_text(value) for value in aliases if _text(value)))
-    return merged
+    merged["finding_aliases"] = list(dict.fromkeys(_aliases(preferred) + _aliases(other)))
+    return _normalize_finding(merged)
 
 
 def _canonical_findings(values: Any) -> list[dict[str, Any]]:
@@ -119,8 +138,7 @@ def _canonical_findings(values: Any) -> list[dict[str, Any]]:
     for raw in values:
         if not isinstance(raw, Mapping):
             continue
-        item = deepcopy(dict(raw))
-        item["acceptance_criteria"] = _dedupe_criteria(item.get("acceptance_criteria"))
+        item = _normalize_finding(raw)
         key = _semantic_key(item)
         if key not in selected:
             selected[key] = item
@@ -132,18 +150,17 @@ def _canonical_findings(values: Any) -> list[dict[str, Any]]:
 
 def _replace_nested_findings(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
     if isinstance(value, list):
-        output = []
-        seen: set[str] = set()
+        output: list[Any] = []
+        seen: set[tuple[str, str, str, str]] = set()
         for child in value:
             repaired = _replace_nested_findings(child, canonical_by_id)
             if isinstance(repaired, Mapping):
                 finding_id = _finding_id(repaired)
-                canonical = canonical_by_id.get(finding_id)
-                repaired = deepcopy(dict(canonical or repaired))
-                key = json.dumps(_semantic_key(repaired), separators=(",", ":")) if _location(repaired) else ""
-                if key and key in seen:
+                repaired = deepcopy(dict(canonical_by_id.get(finding_id) or repaired))
+                key = _semantic_key(repaired)
+                if _location(repaired) and key in seen:
                     continue
-                if key:
+                if _location(repaired):
                     seen.add(key)
             output.append(repaired)
         return output
@@ -163,23 +180,23 @@ def _normalized_filename(value: Any) -> str:
     suffix = ".pdf" if filename.lower().endswith(".pdf") else ""
     stem = filename[:-4] if suffix else filename
     stem = re.sub(rf"(?:-{re.escape(_APPROVAL)})+\s*$", "", stem, flags=re.IGNORECASE)
-    return f"{stem}-{_APPROVAL}{suffix or '.pdf'}"
+    return f"{stem}-{_APPROVAL}.pdf"
 
 
 def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]:
     payload = deepcopy(dict(package))
     report = deepcopy(dict(payload.get("json") or {})) if isinstance(payload.get("json"), Mapping) else {}
-    source = []
+    source: list[Any] = []
     for key in _FINDING_SURFACES:
         values = report.get(key)
         if isinstance(values, list):
             source.extend(values)
     canonical = _canonical_findings(source)
+
     canonical_by_id: dict[str, Mapping[str, Any]] = {}
     for item in canonical:
-        for alias in [_finding_id(item), *(item.get("finding_aliases") or [])]:
-            if _text(alias):
-                canonical_by_id[_text(alias)] = item
+        for alias in _aliases(item):
+            canonical_by_id[alias] = item
 
     report["canonical_findings"] = deepcopy(canonical)
     report["findings_register"] = deepcopy(canonical)
@@ -187,7 +204,7 @@ def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     report["decision_grade_findings_register"] = deepcopy(canonical)
     report["executive_risk_register"] = deepcopy(canonical[:7])
     report["priority_findings"] = deepcopy(canonical[:5])
-    for surface in ("executive_findings", "finding_cards", "roadmap", "backlog", "work_packages", "remediation_plan", "recommendations", "assessment", "stage_summaries"):
+    for surface in _CLIENT_SURFACES:
         if surface in report:
             report[surface] = _replace_nested_findings(report[surface], canonical_by_id)
 
@@ -240,9 +257,12 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     if len(semantic) != len(set(semantic)):
         errors.append("canonical findings contain semantic duplicates")
     for item in findings:
-        if isinstance(item, Mapping):
-            criteria = item.get("acceptance_criteria") or []
-            if isinstance(criteria, list) and len(criteria) != len({_criterion_key(value) for value in criteria if _criterion_key(value)}):
+        if not isinstance(item, Mapping):
+            continue
+        criteria = item.get("acceptance_criteria") or []
+        if isinstance(criteria, list):
+            keys = [_criterion_key(value) for value in criteria if _criterion_key(value)]
+            if len(keys) != len(set(keys)):
                 errors.append(f"finding {_finding_id(item)} contains repeated acceptance criteria")
 
     canonical_titles = {
@@ -251,7 +271,16 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
         if isinstance(item, Mapping) and _finding_id(item)
     }
     observed: dict[str, set[str]] = {}
-    for surface in ("executive_findings", "executive_risk_register", "priority_findings", "roadmap", "backlog", "work_packages", "remediation_plan", "recommendations"):
+    for surface in (
+        "executive_findings",
+        "executive_risk_register",
+        "priority_findings",
+        "roadmap",
+        "backlog",
+        "work_packages",
+        "remediation_plan",
+        "recommendations",
+    ):
         if surface in report:
             _surface_titles(report[surface], observed)
     for finding_id, titles in observed.items():
@@ -284,7 +313,11 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     if isinstance(analyzer_report, Mapping):
         analyzers = analyzer_report.get("analyzers")
         if isinstance(analyzers, list):
-            scanner_names = [_text(item.get("scanner") or item.get("name")).casefold() for item in analyzers if isinstance(item, Mapping)]
+            scanner_names = [
+                _text(item.get("scanner") or item.get("name")).casefold()
+                for item in analyzers
+                if isinstance(item, Mapping)
+            ]
             scanner_names = [name for name in scanner_names if name]
             if len(scanner_names) != len(set(scanner_names)):
                 errors.append("analyzer evidence contains duplicate scanner records")
@@ -300,7 +333,9 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
         "errors": errors,
         "warnings": warnings,
     }
-    fingerprint = hashlib.sha256(json.dumps(verification_material, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    fingerprint = hashlib.sha256(
+        json.dumps(verification_material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     return {
         "version": VERSION,
         "valid": not errors,
@@ -321,4 +356,9 @@ def assert_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     return result
 
 
-__all__ = ["VERSION", "repair_client_delivery_package", "verify_client_delivery_package", "assert_client_delivery_package"]
+__all__ = [
+    "VERSION",
+    "repair_client_delivery_package",
+    "verify_client_delivery_package",
+    "assert_client_delivery_package",
+]
