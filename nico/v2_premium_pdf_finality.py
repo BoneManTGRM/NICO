@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import io
+import threading
 from typing import Any
 
-VERSION = "nico.v2.premium-pdf-finality.v1"
-_INSTALL_MARKER = "__nico_v2_premium_pdf_finality_v1__"
+VERSION = "nico.v2.premium-pdf-finality.v2"
+_BUILD_MARKER = "__nico_v2_premium_pdf_build_finality_v2__"
+_BUILD_LOCK = threading.RLock()
 
 
 def _text(value: Any, limit: int = 80) -> str:
@@ -73,67 +74,48 @@ def _final_appendix_and_review(self: Any) -> list[Any]:
     return story
 
 
-def _final_footer_overlay(pdf_bytes: bytes, identity: dict[str, Any]) -> bytes:
-    from pypdf import PdfReader, PdfWriter
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
+def _bind_source_footer_repair(premium: Any) -> bool:
+    current = premium._build_pdf
+    if getattr(current, _BUILD_MARKER, False):
+        return True
 
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    writer = PdfWriter()
-    width, _ = letter
-    for index, page in enumerate(reader.pages):
-        if index >= 2:
-            buffer = io.BytesIO()
-            overlay = canvas.Canvas(buffer, pagesize=letter, invariant=1)
-            overlay.setFillColor(colors.white)
-            overlay.rect(0, 0, width, 31, stroke=0, fill=1)
-            overlay.setFillColor(colors.HexColor("#64748b"))
-            overlay.setFont("Helvetica", 7)
-            overlay.drawString(
-                39.6,
-                10,
-                f"NICO Comprehensive · {_text(identity.get('run_id'), 32)} · "
-                f"{_text(identity.get('commit_sha'), 12)} · FINAL · PENDING HUMAN APPROVAL",
-            )
-            overlay.drawRightString(width - 39.6, 10, f"Page {index + 1}")
-            overlay.save()
-            replacement = PdfReader(io.BytesIO(buffer.getvalue())).pages[0]
-            page.merge_page(replacement, over=True)
-        writer.add_page(page)
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    def repaired_build(*args: Any, **kwargs: Any) -> bytes:
+        from reportlab.pdfgen.canvas import Canvas
+
+        with _BUILD_LOCK:
+            native_draw_string = Canvas.drawString
+
+            def final_draw_string(canvas: Any, x: float, y: float, text: Any, *draw_args: Any, **draw_kwargs: Any) -> Any:
+                if isinstance(text, str):
+                    text = text.replace(
+                        " · DRAFT",
+                        " · FINAL · PENDING HUMAN APPROVAL",
+                    )
+                return native_draw_string(canvas, x, y, text, *draw_args, **draw_kwargs)
+
+            Canvas.drawString = final_draw_string
+            try:
+                return current(*args, **kwargs)
+            finally:
+                Canvas.drawString = native_draw_string
+
+    setattr(repaired_build, _BUILD_MARKER, True)
+    setattr(repaired_build, "_nico_previous", current)
+    premium._build_pdf = repaired_build
+    return premium._build_pdf is repaired_build
 
 
 def install_v2_premium_pdf_finality() -> dict[str, Any]:
-    from nico import comprehensive_express_quality_v7 as quality
     from nico import comprehensive_premium_pdf_v6 as premium
 
     premium._PdfStoryBuilder.appendix_and_review = _final_appendix_and_review
-    current = quality.comprehensive_pdf_with_final_count
-    if not getattr(current, _INSTALL_MARKER, False):
-        def wrapped(
-            identity: dict[str, Any],
-            assessment: dict[str, Any],
-            stages: list[dict[str, Any]],
-            roadmap: list[dict[str, Any]],
-            staffing: list[dict[str, Any]],
-            limitations: dict[str, int],
-            generated_at: str,
-        ) -> tuple[bytes, int]:
-            pdf, count = current(identity, assessment, stages, roadmap, staffing, limitations, generated_at)
-            repaired = _final_footer_overlay(pdf, identity)
-            return repaired, count
-
-        setattr(wrapped, _INSTALL_MARKER, True)
-        setattr(wrapped, "_nico_previous", current)
-        quality.comprehensive_pdf_with_final_count = wrapped
+    build_bound = _bind_source_footer_repair(premium)
     return {
-        "status": "installed",
+        "status": "installed" if build_bound else "blocked",
         "version": VERSION,
         "premium_review_gate_uses_final_pending_approval": True,
-        "legacy_draft_footers_overlaid": True,
+        "legacy_draft_text_replaced_during_source_render": build_bound,
+        "pdf_text_extraction_contains_no_legacy_draft_footer": build_bound,
         "client_delivery_remains_blocked": True,
     }
 
