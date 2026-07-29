@@ -120,11 +120,19 @@ def test_workflow_runs_terminal_reconciliation_wrapper_and_compiles_all_contract
         "python -m py_compile scripts/two_service_live_acceptance.py "
         "scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py"
     ) in source
-    assert "python -m py_compile scripts/unified_production_acceptance.py" in source
-    assert "python scripts/unified_production_acceptance.py" in source
-    live_step = source.split("Run two consecutive unified strategic assessment passes", 1)[1]
+    assert (
+        "python -m py_compile scripts/unified_production_acceptance.py "
+        "scripts/unified_production_acceptance_authoritative.py "
+        "scripts/production_frontend_release_identity.py"
+    ) in source
+    assert "python scripts/unified_production_acceptance_authoritative.py" in source
+    live_step = source.split(
+        "Run two consecutive authoritative strategic assessment passes", 1
+    )[1]
+    assert "python scripts/unified_production_acceptance_authoritative.py" in live_step
+    assert "python scripts/unified_production_acceptance.py" not in live_step
     assert "python scripts/two_service_live_acceptance_v3.py" not in live_step
     assert "python scripts/two_service_live_acceptance_v2.py" not in live_step
     assert "python scripts/two_service_live_acceptance.py" not in live_step
     assert 'payload["public_assessment"] == "strategic"' in live_step
-    assert 'canonical_report_identity_verified' in live_step
+    assert "canonical_report_identity_verified" in live_step
