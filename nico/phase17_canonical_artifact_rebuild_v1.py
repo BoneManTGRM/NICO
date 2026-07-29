@@ -8,7 +8,7 @@ import json
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.v2.canonical-artifact-renderer.v2"
+VERSION = "nico.v2.canonical-artifact-renderer.v3"
 
 
 def _text(value: Any, limit: int = 6000) -> str:
@@ -126,9 +126,11 @@ def _markdown(canonical: Mapping[str, Any]) -> str:
     for finding in findings:
         identifier = _text(finding.get("finding_id") or finding.get("id"))
         title = _text(finding.get("title") or finding.get("decision_title"))
+        priority = _text(finding.get("priority") or "P2")
         lines += [
-            f"### {_text(finding.get('priority') or 'P2')} · {title} · {identifier}",
+            f"### {priority} - {title}",
             "",
+            f"- Finding ID: {identifier}",
             f"- Category / status: {_text(finding.get('category'))} · {_text(finding.get('status'))}",
             f"- Location: {_text(finding.get('location')) or 'Location not retained'}",
             f"- Evidence: {_text(finding.get('fact') or finding.get('evidence'))}",
@@ -143,9 +145,6 @@ def _markdown(canonical: Mapping[str, Any]) -> str:
         if criteria:
             lines.append("- Acceptance criteria:")
             lines.extend(f"  - {value}" for value in criteria)
-        aliases = [_text(value) for value in finding.get("finding_aliases") or [] if _text(value)]
-        if aliases:
-            lines.append(f"- Historical aliases: {', '.join(dict.fromkeys(aliases))}")
         lines.append("")
 
     if roadmap:
@@ -357,10 +356,12 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
         "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+        "status": "review_required",
         "report_finality": "final",
         "approval_status": "pending_human_approval",
         "delivery_status": "blocked_pending_human_approval",
         "human_review_required": True,
+        "human_review_completed": False,
         "client_delivery_allowed": False,
         "assessment_state": "review_required",
     })
@@ -375,6 +376,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         "pdf_signature_verified": pdf.startswith(b"%PDF"),
         "canonical_finding_count": len(canonical.get("canonical_findings") or []),
         "scanner_record_count": len(canonical.get("scanner_execution_records") or []),
+        "legacy_aliases_hidden_from_client_artifacts": True,
         "finality_semantics_embedded": True,
     }
     return result
