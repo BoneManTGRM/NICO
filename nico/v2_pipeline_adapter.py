@@ -6,8 +6,10 @@ from nico import v2_pipeline_adapter_legacy as _legacy
 from nico.v2_authoritative_finding_projection import project_finding_classification_in_place
 from nico.v2_authoritative_report_truth import repair_canonical_truth_in_place
 from nico.v2_authoritative_score_projection import project_score_labels_in_place
+from nico.v2_premium_pdf_compaction import install_premium_pdf_compaction
 
 _ORIGINAL_BUILD_CANONICAL_ASSESSMENT = _legacy.build_canonical_assessment
+_PDF_COMPACTION = install_premium_pdf_compaction()
 
 
 def __getattr__(name: str) -> Any:
