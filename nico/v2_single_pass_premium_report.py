@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ContentStream, TextStringObject
+from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
 from nico.v2_authoritative_premium_report import (
     _html_from_markdown,
@@ -41,6 +41,18 @@ def _sanitize_text(value: str) -> str:
     return "".join("-" if ord(char) == 0x7F else char for char in str(value or ""))
 
 
+def _sanitize_operand(value: Any) -> tuple[Any, bool]:
+    if isinstance(value, TextStringObject):
+        original = str(value)
+        clean = _sanitize_text(original)
+        return (TextStringObject(clean), clean != original)
+    if isinstance(value, ByteStringObject):
+        original = bytes(value)
+        clean = original.replace(b"\x7f", b"-")
+        return (ByteStringObject(clean), clean != original)
+    return value, False
+
+
 def _sanitize_pdf_control_glyphs(pdf: bytes) -> bytes:
     """Replace malformed extracted U+007F text glyphs without re-rendering layout."""
     reader = PdfReader(io.BytesIO(pdf))
@@ -51,23 +63,24 @@ def _sanitize_pdf_control_glyphs(pdf: bytes) -> bytes:
         stream = ContentStream(page.get_contents(), writer)
         changed = False
         for operands, operator in stream.operations:
-            if operator == b"Tj" and operands and isinstance(operands[0], TextStringObject):
-                clean = _sanitize_text(str(operands[0]))
-                if clean != str(operands[0]):
-                    operands[0] = TextStringObject(clean)
-                    changed = True
+            if operator == b"Tj" and operands:
+                operands[0], operand_changed = _sanitize_operand(operands[0])
+                changed = changed or operand_changed
             elif operator == b"TJ" and operands:
                 for index, value in enumerate(operands[0]):
-                    if isinstance(value, TextStringObject):
-                        clean = _sanitize_text(str(value))
-                        if clean != str(value):
-                            operands[0][index] = TextStringObject(clean)
-                            changed = True
+                    operands[0][index], operand_changed = _sanitize_operand(value)
+                    changed = changed or operand_changed
+            elif operator in {b"'", b'"'} and operands:
+                text_index = -1
+                operands[text_index], operand_changed = _sanitize_operand(operands[text_index])
+                changed = changed or operand_changed
         if changed:
             page.replace_contents(stream)
     output = io.BytesIO()
     writer.write(output)
-    return output.getvalue()
+    sanitized = output.getvalue()
+    _assert_no_control_glyphs(sanitized)
+    return sanitized
 
 
 def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
