@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import unified_production_acceptance as production
 
-VERSION = "nico.unified_production_acceptance.authoritative_identity.v1"
+VERSION = "nico.unified_production_acceptance.authoritative_identity.v2"
 _ORIGINAL_UI_STATE = production.canonical_ui_state
 
 
@@ -65,8 +65,23 @@ def authoritative_ui_state(page: Any) -> dict[str, str]:
     return {key: str(value or "") for key, value in state.items()}
 
 
-def main(argv: list[str] | None = None) -> int:
+def install_authoritative_identity_reader() -> None:
+    """Bind the identity reader at every runtime layer that can replace it.
+
+    ``unified_production_acceptance.main`` binds ``acceptance.ui_state`` from
+    ``canonical_ui_state``. It then delegates to ``two_service_live_acceptance_v3``,
+    whose startup hook binds ``_impl._safe_ui_state`` from ``_current_ui_state``.
+    Updating only the first symbol is therefore insufficient. Keep all three
+    references aligned before the delegated startup hook executes.
+    """
     production.canonical_ui_state = authoritative_ui_state
+    production.acceptance.ui_state = authoritative_ui_state
+    production.unified._current_ui_state = authoritative_ui_state
+    production.unified._impl._safe_ui_state = authoritative_ui_state
+
+
+def main(argv: list[str] | None = None) -> int:
+    install_authoritative_identity_reader()
     return production.main(argv)
 
 
