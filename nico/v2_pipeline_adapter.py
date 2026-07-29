@@ -27,6 +27,64 @@ def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def _numeric(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return max(0, min(100, int(round(value))))
+
+
+def _synchronize_score_truth(canonical: dict[str, Any]) -> None:
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    assessment = deepcopy(dict(assessment))
+    maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
+    maturity = deepcopy(dict(maturity))
+    technical = next(
+        (
+            score
+            for raw in (
+                assessment.get("technical_score"),
+                maturity.get("technical_score"),
+                maturity.get("presented_score"),
+                maturity.get("score"),
+            )
+            if (score := _numeric(raw)) is not None
+        ),
+        None,
+    )
+    adjusted = next(
+        (
+            score
+            for raw in (
+                assessment.get("canonical_evidence_adjusted_score"),
+                assessment.get("evidence_adjusted_score"),
+                maturity.get("canonical_evidence_adjusted_score"),
+                maturity.get("evidence_adjusted_score"),
+                technical,
+            )
+            if (score := _numeric(raw)) is not None
+        ),
+        None,
+    )
+    if technical is not None:
+        assessment["technical_score"] = technical
+        maturity["technical_score"] = technical
+        maturity["presented_score"] = technical
+        maturity["score"] = technical
+        maturity["source_score"] = technical
+    if adjusted is not None:
+        assessment["canonical_evidence_adjusted_score"] = adjusted
+        assessment["evidence_adjusted_score"] = adjusted
+        maturity["canonical_evidence_adjusted_score"] = adjusted
+        maturity["evidence_adjusted_score"] = adjusted
+    assessment["maturity_signal"] = maturity
+    assessment["comprehensive_score_truth"] = {
+        "technical_score": technical,
+        "canonical_evidence_adjusted_score": adjusted,
+        "aliases_synchronized": adjusted is not None,
+    }
+    canonical["assessment"] = assessment
+
+
 def _normalized_artifact_filename(value: Any, *, default_name: str, extension: str) -> str:
     filename = _text(value) or default_name
     extension = extension if extension.startswith(".") else f".{extension}"
@@ -85,6 +143,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("v2 pipeline requires canonical report JSON")
 
     canonical = build_canonical_assessment(raw_canonical)
+    _synchronize_score_truth(canonical)
     canonical.update({
         "approval_state": _APPROVAL_SUFFIX,
         "report_finality": "final",
@@ -102,31 +161,11 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "json": canonical,
         "canonical_findings": deepcopy(findings),
         "findings_register": deepcopy(findings),
-        "pdf_filename": _normalized_artifact_filename(
-            package.get("pdf_filename"),
-            default_name="nico-comprehensive-assessment.pdf",
-            extension=".pdf",
-        ),
-        "spanish_pdf_filename": _normalized_artifact_filename(
-            package.get("spanish_pdf_filename"),
-            default_name="nico-comprehensive-assessment-es.pdf",
-            extension=".pdf",
-        ),
-        "json_filename": _normalized_artifact_filename(
-            package.get("json_filename"),
-            default_name="nico-comprehensive-assessment.json",
-            extension=".json",
-        ),
-        "markdown_filename": _normalized_artifact_filename(
-            package.get("markdown_filename"),
-            default_name="nico-comprehensive-assessment.md",
-            extension=".md",
-        ),
-        "csv_filename": _normalized_artifact_filename(
-            package.get("csv_filename"),
-            default_name="nico-comprehensive-assessment.csv",
-            extension=".csv",
-        ),
+        "pdf_filename": _normalized_artifact_filename(package.get("pdf_filename"), default_name="nico-comprehensive-assessment.pdf", extension=".pdf"),
+        "spanish_pdf_filename": _normalized_artifact_filename(package.get("spanish_pdf_filename"), default_name="nico-comprehensive-assessment-es.pdf", extension=".pdf"),
+        "json_filename": _normalized_artifact_filename(package.get("json_filename"), default_name="nico-comprehensive-assessment.json", extension=".json"),
+        "markdown_filename": _normalized_artifact_filename(package.get("markdown_filename"), default_name="nico-comprehensive-assessment.md", extension=".md"),
+        "csv_filename": _normalized_artifact_filename(package.get("csv_filename"), default_name="nico-comprehensive-assessment.csv", extension=".csv"),
         "canonical_truth_sha256": digest,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
@@ -193,7 +232,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_report": canonical,
         "assessment": deepcopy(canonical.get("assessment") or {}),
         "assessment_state": state.value,
-        "status": "complete",
+        "status": state.value,
         "approval_state": _APPROVAL_SUFFIX,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
