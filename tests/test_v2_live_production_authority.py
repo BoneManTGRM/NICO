@@ -126,7 +126,7 @@ def _assert_shared_truth(output: dict) -> None:
     finding = canonical["canonical_findings"][0]
     assert finding["finding_id"] == "RISK-P1-CANONICAL"
     assert set(finding["finding_aliases"]) >= {"RISK-LEGACY-123", "RISK-P1-CANONICAL"}
-    assert finding["acceptance_criteria"] == ["Target complexity is at most 30."]
+    assert finding["acceptance_criteria"] == ["Target complexity is at most 30"]
 
     scanners = {item["scanner_name"]: item for item in canonical["scanner_execution_records"]}
     assert scanners["bandit"]["state"] == "completed_with_findings"
