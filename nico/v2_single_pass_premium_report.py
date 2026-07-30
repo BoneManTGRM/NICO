@@ -16,10 +16,11 @@ from nico.v2_authoritative_premium_report import (
     project_authoritative_canonical,
 )
 from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
+from nico.v2_dark_branded_cover import apply_dark_branded_cover
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v3"
+VERSION = "nico.v2.single-pass-premium-report.v1"
 
 
 def _text(value: Any) -> str:
@@ -102,8 +103,6 @@ def _has_human_review_gate(extracted: str) -> bool:
     if any(marker in normalized for marker in exact_markers):
         return True
 
-    # Future-safe semantic validation: require a review concept, a gate/approval
-    # concept, and a delivery-block or human-approval boundary in the same report.
     review = "human review" in normalized or "revision humana" in normalized or "puerta de revision" in normalized
     acceptance = "acceptance gate" in normalized or "aceptacion" in normalized or "aprobacion" in normalized
     boundary = (
@@ -135,11 +134,12 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
 
 
 def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Render the mature premium report exactly once from authoritative canonical truth.
+    """Render the mature premium report once from authoritative canonical truth.
 
-    This deliberately avoids the dashboard, cover-replacement, and Markdown-to-PDF
-    post-processing chain. The legacy premium renderer remains the presentation
-    compiler; the projected canonical assessment remains its only data source.
+    The established premium renderer remains the presentation compiler and the
+    projected canonical assessment remains its only data source. The approved
+    English dark cover is assembled inside this compiler before final validation,
+    so phase 17 still has one authoritative report-build entry point.
     """
     prepared = deepcopy(dict(package))
     canonical = project_authoritative_canonical(
@@ -154,6 +154,13 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     result["json"] = canonical
 
     spanish = _is_spanish(canonical)
+    if not spanish:
+        result = deepcopy(apply_dark_branded_cover(result))
+        canonical = project_authoritative_canonical(
+            result.get("json") if isinstance(result.get("json"), Mapping) else canonical
+        )
+        result["json"] = canonical
+
     markdown = ensure_authoritative_review_gate(
         str(result.get("markdown") or ""), canonical, spanish=spanish
     ).strip() + "\n"
@@ -176,6 +183,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "single_pass_renderer": True,
             "old_premium_layout_is_client_pdf": True,
             "canonical_system_is_sole_truth": True,
+            "approved_cover_assembled_inside_compiler": not spanish,
+            "spanish_cover_preserved": spanish,
             "post_render_pdf_replacement_disabled": True,
             "final_pdf_control_glyph_validation": True,
             "final_pdf_identity_validation": True,
