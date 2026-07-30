@@ -22,7 +22,10 @@ def _text(value: Any) -> str:
 def _numeric(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return max(0, min(100, int(round(value))))
+    score = int(round(value))
+    if score < 0 or score > 100:
+        raise AssertionError(f"canonical score is outside the 0-100 range: {value}")
+    return score
 
 
 def _score_band(value: Any) -> str:
@@ -204,6 +207,7 @@ def authoritative_validate_report(
             "single_scanner_status_per_tool_verified": True,
             "markdown_html_pdf_json_artifacts_retained": True,
             "report_filename_lifecycle_idempotent": True,
+            "score_clamping_forbidden": True,
         }
     )
     evidence.update(
@@ -410,6 +414,7 @@ def verify_authoritative_output(path: Path) -> None:
             assert artifact_path.stat().st_size > 0
         assert report["semantic_contract"]["section_status_score_parity_verified"] is True
         assert report["semantic_contract"]["single_scanner_status_per_tool_verified"] is True
+        assert report["semantic_contract"]["score_clamping_forbidden"] is True
 
     proof = dict(payload.get("proof") or {})
     proof.update(
@@ -421,6 +426,7 @@ def verify_authoritative_output(path: Path) -> None:
             "identity_bound_canonical_truth_hashes_retained": True,
             "all_four_report_artifacts_retained": True,
             "numeric_section_status_parity": True,
+            "score_clamping_forbidden": True,
         }
     )
     payload["proof"] = proof
