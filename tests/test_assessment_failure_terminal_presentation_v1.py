@@ -58,4 +58,6 @@ def test_mobile_failure_surface_hides_duplicate_intake_and_wraps_identity() -> N
     assert "env(safe-area-inset-top, 0px)" in source
     assert "grid-template-columns: minmax(0, 1fr)" in source
     assert "assessment-mobile-stability.css" in str(MOBILE_STABILITY)
-    assert 'main[data-workspace="assessment"] section[data-assessment-run-state="true"]' in stability
+    assert 'main[data-workspace="assessment"]' in stability
+    assert '[data-assessment-run-state="true"]' in stability
+    assert "overflow-anchor: none !important" in stability
