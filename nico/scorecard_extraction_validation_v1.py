@@ -106,21 +106,21 @@ def validate_final_pdf(
 
 def install_scorecard_extraction_validation() -> dict[str, Any]:
     global _INSTALLED
-    if _INSTALLED:
-        return {"status": "already_installed", "version": VERSION}
-
-    quality._validate_final_pdf = validate_final_pdf
-    # runtime_compat imported the validator by value, so rebind its module global.
-    runtime_compat._validate_final_pdf = validate_final_pdf
-    _INSTALLED = True
-    return {
-        "status": "installed",
+    contract = {
         "version": VERSION,
         "raw_exact_match_retained_as_primary": True,
         "wrapped_label_normalization_enabled": True,
         "all_canonical_rows_and_scores_required": True,
         "scorecard_page_range_bounded_to_renderer_output": True,
     }
+    if _INSTALLED:
+        return {"status": "already_installed", **contract}
+
+    quality._validate_final_pdf = validate_final_pdf
+    # runtime_compat imported the validator by value, so rebind its module global.
+    runtime_compat._validate_final_pdf = validate_final_pdf
+    _INSTALLED = True
+    return {"status": "installed", **contract}
 
 
 __all__ = [
