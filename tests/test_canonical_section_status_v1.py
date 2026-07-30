@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from nico.canonical_section_status_v1 import (
     assessment_semantic_sha256,
     normalize_report_package,
@@ -58,6 +60,7 @@ def _assessment() -> dict:
 def test_numeric_review_limited_section_uses_score_band_without_hiding_assurance_limit() -> None:
     result = normalize_scored_sections(_assessment())
     static = next(item for item in result["sections"] if item["id"] == "static_analysis")
+    dependency = next(item for item in result["sections"] if item["id"] == "dependency_health")
 
     assert static["presented_score"] == 83
     assert static["score"] == 83
@@ -66,6 +69,8 @@ def test_numeric_review_limited_section_uses_score_band_without_hiding_assurance
     assert static["assurance_status"] == "review_limited"
     assert static["source_assurance_status"] == "review_limited_not_scored"
     assert static["score_status_consistent"] is True
+    assert dependency["assurance_status"] == "evidence_bound"
+    assert dependency["assurance_status"] != "verified_with_completed_scanners"
 
 
 def test_report_package_normalization_updates_canonical_json_contract() -> None:
@@ -78,7 +83,16 @@ def test_report_package_normalization_updates_canonical_json_contract() -> None:
 
     assert static["presented_status"] == "MODERATE"
     assert canonical["v2_pipeline_contract"]["scored_sections_never_labeled_not_scored"] is True
+    assert canonical["v2_pipeline_contract"]["score_clamping_forbidden"] is True
     assert canonical["assessment"]["section_status_contract"]["assurance_status_is_separate"] is True
+
+
+def test_out_of_range_score_fails_closed_instead_of_being_clamped() -> None:
+    assessment = _assessment()
+    assessment["sections"][0]["presented_score"] = 101
+
+    with pytest.raises(ValueError, match="outside the 0-100 range"):
+        normalize_scored_sections(assessment)
 
 
 def test_semantic_fingerprint_is_repeatable_and_ignores_run_identity() -> None:
