@@ -118,13 +118,13 @@ def authoritative_ui_state(page: Any) -> dict[str, str]:
     )
 
     phase = state["phase_label"].casefold()
-    terminal = any(
+    review_terminal = any(
         marker in phase
-        for marker in ("review", "revisión", "complete", "completo", "failed", "blocked")
+        for marker in ("review", "revisión", "complete", "completo")
     )
-    if terminal and not state["scanner"]:
+    if review_terminal and not state["scanner"]:
         state["scanner"] = "Complete with disclosed limitations"
-    if terminal and not state["review"]:
+    if review_terminal and not state["review"]:
         state["review"] = "Required"
     return state
 
