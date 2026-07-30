@@ -37,11 +37,13 @@ def test_package_filename_normalization_repairs_nested_fields() -> None:
 
 def test_bandit_policy_excludes_only_nonproduction_paths_and_skips_no_rules() -> None:
     policy = Path(".bandit").read_text(encoding="utf-8")
-    assert "exclude =" in policy
-    assert "tests" in policy
+    assert "exclude_dirs =" in policy
+    exclusion_line = policy.split("exclude_dirs =", 1)[1].splitlines()[0]
+    excluded = {item.strip() for item in exclusion_line.split(",") if item.strip()}
+    assert "tests" in excluded
     assert "skips" not in policy.casefold()
-    assert "nico" not in policy.split("exclude =", 1)[1].splitlines()[0].split(",")
-    assert "scripts" not in policy.split("exclude =", 1)[1].splitlines()[0].split(",")
+    assert "nico" not in excluded
+    assert "scripts" not in excluded
 
 
 def test_gitleaks_policy_uses_defaults_without_broad_allowlists() -> None:

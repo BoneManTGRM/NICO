@@ -32,6 +32,18 @@ const STAGE_PROGRESS: Record<string, number> = {
 type JsonRecord = Record<string, unknown>;
 type ProgressRecord = {step?: unknown; status?: unknown; message?: unknown; evidence?: unknown};
 
+function record(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function text(...values: unknown[]): string {
+  for (const value of values) {
+    const candidate = String(value || "").trim();
+    if (candidate) return candidate;
+  }
+  return "";
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -49,12 +61,10 @@ function requestUrl(input: RequestInfo | URL): URL | null {
   }
 }
 
-function requestBody(input: RequestInfo | URL, init?: RequestInit): JsonRecord {
-  const raw = init?.body;
-  if (typeof raw !== "string") return {};
+function requestBody(init?: RequestInit): JsonRecord {
+  if (typeof init?.body !== "string") return {};
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed as JsonRecord : {};
+    return record(JSON.parse(init.body));
   } catch {
     return {};
   }
@@ -63,10 +73,6 @@ function requestBody(input: RequestInfo | URL, init?: RequestInit): JsonRecord {
 function boundedNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : null;
-}
-
-function record(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function progressItems(payload: JsonRecord): ProgressRecord[] {
@@ -81,11 +87,15 @@ function activeProgress(payload: JsonRecord): ProgressRecord | null {
   return items.find((item) => active.has(String(item.status || "").toLowerCase())) || items[items.length - 1] || null;
 }
 
+function terminalProgress(payload: JsonRecord): ProgressRecord | null {
+  const items = progressItems(payload);
+  return [...items].reverse().find((item) => TERMINAL_STATUSES.has(String(item.status || "").toLowerCase())) || null;
+}
+
 function scannerProgress(payload: JsonRecord): number | null {
   const scanner = record(payload.scanner);
   const scannerEvidence = record(payload.scanner_evidence);
-  const active = activeProgress(payload);
-  const activeEvidence = record(active?.evidence);
+  const activeEvidence = record(activeProgress(payload)?.evidence);
   const explicit = boundedNumber(
     scanner.progress_percent
     ?? scannerEvidence.scanner_progress_percent
@@ -96,38 +106,83 @@ function scannerProgress(payload: JsonRecord): number | null {
 
   const requested = Array.isArray(scanner.tools_requested)
     ? scanner.tools_requested.map(String)
-    : Array.isArray(activeEvidence.tools_requested)
-      ? activeEvidence.tools_requested.map(String)
-      : [];
+    : Array.isArray(activeEvidence.tools_requested) ? activeEvidence.tools_requested.map(String) : [];
   const completed = Array.isArray(scanner.tools_run)
     ? scanner.tools_run.map(String)
-    : Array.isArray(activeEvidence.tools_run)
-      ? activeEvidence.tools_run.map(String)
-      : [];
-  const activeTool = String(scanner.active_tool || activeEvidence.active_tool || "");
+    : Array.isArray(activeEvidence.tools_run) ? activeEvidence.tools_run.map(String) : [];
+  const activeTool = text(scanner.active_tool, activeEvidence.active_tool);
   if (!requested.length) return null;
   const activeIndex = activeTool ? requested.indexOf(activeTool) : -1;
-  const fractional = activeIndex >= 0
-    ? (activeIndex + 0.35) / requested.length
-    : completed.length / requested.length;
+  const fractional = activeIndex >= 0 ? (activeIndex + 0.35) / requested.length : completed.length / requested.length;
   return Math.max(0, Math.min(100, Math.round(fractional * 100)));
+}
+
+function failureContext(payload: JsonRecord): JsonRecord {
+  const detail = record(payload.detail);
+  const contract = record(payload.report_contract);
+  const scanner = record(payload.scanner);
+  const terminal = terminalProgress(payload);
+  const evidence = record(terminal?.evidence);
+  const stage = text(
+    detail.failed_stage,
+    detail.blocked_stage,
+    payload.failed_stage,
+    payload.blocked_stage,
+    terminal?.step,
+    payload.current_stage,
+    "unknown_stage",
+  );
+  const reason = text(
+    detail.reason,
+    detail.message,
+    payload.failure_reason,
+    payload.blocked_reason,
+    contract.reason,
+    scanner.reason,
+    evidence.reason,
+    terminal?.message,
+    "A required assessment stage failed or was blocked.",
+  );
+  const code = text(
+    detail.error_code,
+    payload.error_code,
+    contract.status,
+    contract.reason,
+    evidence.error_code,
+  );
+  return {stage, reason, code};
 }
 
 function normalizedProgress(payload: JsonRecord): JsonRecord {
   const output: JsonRecord = structuredClone(payload);
-  const status = String(output.status || "").toLowerCase();
+  const detail = record(output.detail);
+  const status = text(detail.status, output.status).toLowerCase();
   const active = activeProgress(output);
-  const step = String(active?.step || output.current_stage || "");
-  const scanStatus = String(record(output.scanner).status || record(output.scanner_evidence).scanner_status || "").toLowerCase();
+  const step = text(active?.step, output.current_stage);
+  const scanStatus = text(record(output.scanner).status, record(output.scanner_evidence).scanner_status).toLowerCase();
   const scanPercent = scannerProgress(output);
 
-  const reportComplete = String(output.report_generation_status || "").toLowerCase() === "complete";
+  if (TERMINAL_STATUSES.has(status)) {
+    const failure = failureContext(output);
+    output.status = status;
+    output.current_stage = failure.stage;
+    output.failed_stage = failure.stage;
+    output.failure_reason = failure.reason;
+    output.error_code = failure.code;
+    output.attention_summary = `Stage ${failure.stage} requires attention: ${failure.reason}`;
+    output.human_review_required = true;
+    output.client_ready = false;
+    output.progress_percent = boundedNumber(output.progress_percent) ?? STAGE_PROGRESS[String(failure.stage)] ?? 0;
+    return output;
+  }
+
+  const reportComplete = text(output.report_generation_status).toLowerCase() === "complete";
   const approval = record(output.approval_request);
   const fullApproval = record(output.approval);
   const finalReady = status === "complete" && (
     Boolean(approval.approval_id) && reportComplete
     || Boolean(fullApproval.approval_id)
-    || String(output.assessment_type || output.service_tier || "").toLowerCase() === "express"
+    || text(output.assessment_type, output.service_tier).toLowerCase() === "express"
   );
   if (finalReady) {
     output.current_stage = "complete";
@@ -137,14 +192,8 @@ function normalizedProgress(payload: JsonRecord): JsonRecord {
 
   if (step === "scanner_worker" || ["queued", "running"].includes(scanStatus)) {
     output.current_stage = "scanner_worker";
-    if (scanPercent !== null) {
-      // Repository evidence occupies 0-18%; scanner execution advances through
-      // the remaining scanner window to evidence attachment at 62%.
-      output.progress_percent = Math.max(18, Math.min(61, Math.round(18 + (scanPercent * 0.43))));
-      output.scanner_progress_percent = Math.round(scanPercent);
-    } else {
-      output.progress_percent = 18;
-    }
+    output.progress_percent = scanPercent === null ? 18 : Math.max(18, Math.min(61, Math.round(18 + (scanPercent * 0.43))));
+    if (scanPercent !== null) output.scanner_progress_percent = Math.round(scanPercent);
     return output;
   }
 
@@ -157,8 +206,7 @@ function normalizedProgress(payload: JsonRecord): JsonRecord {
 
 async function jsonPayload(response: Response): Promise<JsonRecord | null> {
   try {
-    const payload = await response.clone().json();
-    return payload && typeof payload === "object" ? payload as JsonRecord : null;
+    return record(await response.clone().json());
   } catch {
     return null;
   }
@@ -168,27 +216,22 @@ function responseFromPayload(response: Response, payload: JsonRecord): Response 
   const headers = new Headers(response.headers);
   headers.set("Content-Type", "application/json");
   headers.set("Cache-Control", "no-store");
-  return new Response(JSON.stringify(payload), {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  return new Response(JSON.stringify(payload), {status: response.status, statusText: response.statusText, headers});
 }
 
 function matchingTerminalEvidence(payload: JsonRecord | null, runId: string) {
   if (!payload) return false;
   const detail = record(payload.detail);
-  const status = String(detail.status || payload.status || "").toLowerCase();
-  const responseRunId = String(detail.run_id || payload.run_id || "");
-  return responseRunId === runId && TERMINAL_STATUSES.has(status);
+  return text(detail.run_id, payload.run_id) === runId
+    && TERMINAL_STATUSES.has(text(detail.status, payload.status).toLowerCase());
 }
 
 function rememberMidRun(payload: JsonRecord) {
-  const runId = String(payload.run_id || "");
+  const runId = text(payload.run_id);
   if (!runId.startsWith("midrun_")) return;
-  const status = String(payload.status || "").toLowerCase();
+  const status = text(payload.status).toLowerCase();
   const final = status === "complete"
-    && String(payload.report_generation_status || "").toLowerCase() === "complete"
+    && text(payload.report_generation_status).toLowerCase() === "complete"
     && Boolean(record(payload.approval_request).approval_id);
   try {
     if (final || TERMINAL_STATUSES.has(status)) {
@@ -197,35 +240,20 @@ function rememberMidRun(payload: JsonRecord) {
       window.sessionStorage.setItem(MID_ACTIVE_RUN_KEY, runId);
     }
   } catch {
-    // Exact-run state remains in the response even if browser storage is unavailable.
+    // The response remains authoritative when browser storage is unavailable.
   }
 }
 
 function temporarilyUnreachable(lastGood: JsonRecord, runId: string): Response {
   const output = normalizedProgress(lastGood);
-  const items = progressItems(output);
-  const active = activeProgress(output);
-  const replacement: ProgressRecord = {
-    ...(active || {}),
-    status: String(active?.status || "running"),
-    message: `Status is temporarily unreachable. Exact run ${runId} remains preserved and NICO will continue read-only status checks without starting a duplicate assessment.`,
-  };
-  if (active) {
-    const index = items.indexOf(active);
-    items[index] = replacement;
-  } else {
-    items.push({step: String(output.current_stage || "status_recovery"), status: "running", message: replacement.message});
-  }
   output.status = "running";
-  output.run_id = String(output.run_id || runId);
-  output.progress = items;
+  output.run_id = text(output.run_id, runId);
   output.status_transport = {
     status: "temporarily_unreachable",
     consecutive_failures: STATUS_MAX_CONSECUTIVE_FAILURES,
     recovery_required_if_stale: true,
     duplicate_start_allowed: false,
   };
-  rememberMidRun(output);
   return new Response(JSON.stringify(output), {
     status: 200,
     headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
@@ -233,7 +261,7 @@ function temporarilyUnreachable(lastGood: JsonRecord, runId: string): Response {
 }
 
 function savedRunUnavailable(runId: string, body: JsonRecord): Response {
-  const payload: JsonRecord = {
+  return new Response(JSON.stringify({
     status: "running",
     run_id: runId,
     repository: body.repository || "",
@@ -243,23 +271,11 @@ function savedRunUnavailable(runId: string, body: JsonRecord): Response {
     service_tier: "mid",
     current_stage: "status_recovery",
     progress_percent: 4,
-    progress: [{
-      step: "status_recovery",
-      status: "running",
-      message: `A saved Mid run (${runId}) exists, but its status is temporarily unreachable. NICO did not start a duplicate assessment. Review Recovery if the run becomes stale.`,
-    }],
-    status_transport: {
-      status: "temporarily_unreachable",
-      recovery_required_if_stale: true,
-      duplicate_start_allowed: false,
-    },
+    progress: [{step: "status_recovery", status: "running", message: `Saved run ${runId} is temporarily unreachable; no duplicate assessment was started.`}],
+    status_transport: {status: "temporarily_unreachable", recovery_required_if_stale: true, duplicate_start_allowed: false},
     human_review_required: true,
     client_ready: false,
-  };
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
-  });
+  }), {status: 200, headers: {"Content-Type": "application/json", "Cache-Control": "no-store"}});
 }
 
 export default function AssessmentStatusResilience() {
@@ -274,14 +290,10 @@ export default function AssessmentStatusResilience() {
       const statusMatch = STATUS_PATH.exec(url.pathname);
 
       if (startMatch) {
-        const body = requestBody(input, init);
+        const body = requestBody(init);
         if (MID_START_PATH.test(url.pathname)) {
           let savedRunId = "";
-          try {
-            savedRunId = window.sessionStorage.getItem(MID_ACTIVE_RUN_KEY) || "";
-          } catch {
-            savedRunId = "";
-          }
+          try { savedRunId = window.sessionStorage.getItem(MID_ACTIVE_RUN_KEY) || ""; } catch { savedRunId = ""; }
           if (savedRunId.startsWith("midrun_")) {
             const savedStatusUrl = new URL(`${url.pathname}/${encodeURIComponent(savedRunId)}/status`, url.origin);
             try {
@@ -294,38 +306,26 @@ export default function AssessmentStatusResilience() {
                 keepalive: true,
               });
               const savedPayload = await jsonPayload(savedResponse);
-              if (savedResponse.ok && savedPayload) {
-                const normalized = normalizedProgress(savedPayload);
-                lastGoodByRun.set(savedRunId, normalized);
-                rememberMidRun(normalized);
-                return responseFromPayload(savedResponse, normalized);
-              }
+              if (savedResponse.ok && savedPayload) return responseFromPayload(savedResponse, normalizedProgress(savedPayload));
               if (savedResponse.status !== 404) return savedRunUnavailable(savedRunId, body);
-              try {
-                window.sessionStorage.removeItem(MID_ACTIVE_RUN_KEY);
-              } catch {
-                // A missing saved run may still proceed through normal start validation.
-              }
+              try { window.sessionStorage.removeItem(MID_ACTIVE_RUN_KEY); } catch { /* continue normally */ }
             } catch {
               return savedRunUnavailable(savedRunId, body);
             }
           }
         }
 
-        // Assessment starts remain single-shot. Only exact-run status reads retry.
         const response = await originalFetch(input, init);
         const payload = await jsonPayload(response);
-        if (response.ok && payload) {
-          const normalized = normalizedProgress(payload);
-          const runId = String(normalized.run_id || "");
-          if (runId) lastGoodByRun.set(runId, normalized);
-          rememberMidRun(normalized);
-          return responseFromPayload(response, normalized);
-        }
-        return response;
+        if (!payload) return response;
+        const normalized = normalizedProgress(payload);
+        const runId = text(normalized.run_id);
+        if (runId) lastGoodByRun.set(runId, normalized);
+        rememberMidRun(normalized);
+        return responseFromPayload(response, normalized);
       }
 
-      if (!statusMatch || String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase() !== "POST") {
+      if (!statusMatch || text(init?.method, input instanceof Request ? input.method : "GET").toUpperCase() !== "POST") {
         return originalFetch(input, init);
       }
 
@@ -334,16 +334,15 @@ export default function AssessmentStatusResilience() {
       let lastError: unknown = null;
       for (let failure = 0; failure < STATUS_MAX_CONSECUTIVE_FAILURES; failure += 1) {
         try {
-          const nextInput = input instanceof Request ? input.clone() : input;
-          const response = await originalFetch(nextInput, {
-            ...init,
-            credentials: "same-origin",
-            keepalive: true,
-          });
+          const response = await originalFetch(input instanceof Request ? input.clone() : input, {...init, credentials: "same-origin", keepalive: true});
           lastResponse = response;
           const payload = await jsonPayload(response);
-
-          if (matchingTerminalEvidence(payload, runId)) return response;
+          if (payload && matchingTerminalEvidence(payload, runId)) {
+            const normalized = normalizedProgress(payload);
+            lastGoodByRun.set(runId, normalized);
+            rememberMidRun(normalized);
+            return responseFromPayload(response, normalized);
+          }
           if (!response.ok && RETRYABLE_HTTP_STATUSES.has(response.status)) {
             if (failure + 1 < STATUS_MAX_CONSECUTIVE_FAILURES) await sleep(retryDelay(failure + 1));
             continue;
@@ -352,13 +351,11 @@ export default function AssessmentStatusResilience() {
             if (failure + 1 < STATUS_MAX_CONSECUTIVE_FAILURES) await sleep(retryDelay(failure + 1));
             continue;
           }
-          if (payload) {
-            const normalized = normalizedProgress(payload);
-            lastGoodByRun.set(runId, normalized);
-            rememberMidRun(normalized);
-            return responseFromPayload(response, normalized);
-          }
-          return response;
+          if (!payload) return response;
+          const normalized = normalizedProgress(payload);
+          lastGoodByRun.set(runId, normalized);
+          rememberMidRun(normalized);
+          return responseFromPayload(response, normalized);
         } catch (error) {
           lastError = error;
           if (failure + 1 < STATUS_MAX_CONSECUTIVE_FAILURES) await sleep(retryDelay(failure + 1));
@@ -372,9 +369,7 @@ export default function AssessmentStatusResilience() {
     };
 
     window.fetch = resilientFetch;
-    return () => {
-      if (window.fetch === resilientFetch) window.fetch = originalFetch;
-    };
+    return () => { if (window.fetch === resilientFetch) window.fetch = originalFetch; };
   }, []);
 
   return null;
