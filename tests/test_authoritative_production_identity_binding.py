@@ -19,19 +19,29 @@ def _module():
 def test_authoritative_reader_is_bound_at_every_runtime_override_layer(monkeypatch):
     module = _module()
     observed: dict[str, bool] = {}
+    argv = [
+        "--frontend-url",
+        "https://app.nicoaudit.com",
+        "--repository",
+        "BoneManTGRM/NICO",
+        "--expected-sha",
+        SHA,
+        "--passes",
+        "2",
+    ]
 
-    def delegated_main(argv):
+    def delegated_main(received):
         observed.update(
             canonical=module.production.canonical_ui_state is module.authoritative_ui_state,
             acceptance=module.production.acceptance.ui_state is module.authoritative_ui_state,
             current=module.production.unified._current_ui_state is module.authoritative_ui_state,
             implementation=module.production.unified._impl._safe_ui_state is module.authoritative_ui_state,
         )
-        assert argv == ["--passes", "2"]
+        assert received == argv
         return 17
 
     monkeypatch.setattr(module.production, "main", delegated_main)
-    assert module.main(["--passes", "2"]) == 17
+    assert module.main(argv) == 17
     assert observed == {
         "canonical": True,
         "acceptance": True,
