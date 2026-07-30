@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / "apps" / "web" / "app" / "AssessmentApiTransportBridge.tsx"
+FAILURE_BRIDGE = ROOT / "apps" / "web" / "app" / "AssessmentFailureResponseBridge.tsx"
 FAILURE_PANEL = ROOT / "apps" / "web" / "app" / "AssessmentFailureEvidencePanel.tsx"
 ROUTE = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
@@ -79,6 +80,26 @@ def test_bridge_retains_only_bounded_page_scoped_failure_identity_and_progress()
     assert request_start < express_branch
     assert 'evidence:' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
     assert 'headers' not in source.split('const evidence: AssessmentFailureEvidence = {', 1)[1].split('};', 1)[0]
+
+
+def test_terminal_failure_bridge_surfaces_comprehensive_200_payload_details() -> None:
+    source = FAILURE_BRIDGE.read_text(encoding="utf-8")
+
+    assert 'COMPREHENSIVE_ROUTE' in source
+    assert 'comprehensive-intake' in source
+    assert 'comprehensive-run' in source
+    assert 'return await normalizeTerminalFailure(response, target.pathname) || response;' in source
+    assert '|| response.ok' not in source
+    assert 'source.failed_stage' in source
+    assert 'source.blocked_stage' in source
+    assert 'source.failure_reason' in source
+    assert 'source.attention_summary' in source
+    assert 'reportContract.report_contract_reason' in source
+    assert 'stageResultFailure(runRecord.stage_results)' in source
+    assert 'normalizedProgress.push({step: failedStage, status, message: failureReason})' in source
+    assert 'assessmentTypeForRoute(route, source, payload)' in source
+    assert 'window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT' in source
+    assert 'X-NICO-Terminal-Failure' in source
 
 
 def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnostics() -> None:

@@ -6,6 +6,8 @@ from nico.report_artifact_filename import (
     normalize_pdf_filename,
     normalize_report_artifact_filenames,
 )
+from nico.scanner_command_repair_v1 import install_scanner_command_repair
+import nico.scanner_tool_runners as scanner_tool_runners
 
 
 def test_pdf_filename_normalization_is_idempotent() -> None:
@@ -37,13 +39,21 @@ def test_package_filename_normalization_repairs_nested_fields() -> None:
 
 def test_bandit_policy_excludes_only_nonproduction_paths_and_skips_no_rules() -> None:
     policy = Path(".bandit").read_text(encoding="utf-8")
-    assert "exclude_dirs =" in policy
-    exclusion_line = policy.split("exclude_dirs =", 1)[1].splitlines()[0]
+    assert "exclude =" in policy
+    exclusion_line = policy.split("exclude =", 1)[1].splitlines()[0]
     excluded = {item.strip() for item in exclusion_line.split(",") if item.strip()}
     assert "tests" in excluded
-    assert "skips" not in policy.casefold()
     assert "nico" not in excluded
     assert "scripts" not in excluded
+    assert "skips" not in policy.casefold()
+
+    contract = install_scanner_command_repair()
+    bandit = next(spec for spec in scanner_tool_runners.TOOL_SPECS if spec.name == "bandit")
+    assert bandit.command[:5] == ("bandit", "-r", ".", "-f", "json")
+    assert "-x" in bandit.command
+    runtime_excludes = set(bandit.command[bandit.command.index("-x") + 1].split(","))
+    assert runtime_excludes == excluded
+    assert contract["bandit_rules_skipped"] is False
 
 
 def test_gitleaks_policy_uses_defaults_without_broad_allowlists() -> None:
