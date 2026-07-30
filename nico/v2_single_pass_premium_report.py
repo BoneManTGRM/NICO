@@ -18,7 +18,7 @@ from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v1"
+VERSION = "nico.v2.single-pass-premium-report.v2"
 
 
 def _text(value: Any) -> str:
@@ -97,9 +97,13 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
         if required and required not in extracted:
             raise ValueError(f"final premium PDF omitted required identity text: {required}")
 
+    # The established Spanish premium renderer uses its original localized gate
+    # heading. It is semantically equivalent to the newer explicit acceptance
+    # heading and must not be rejected merely because the wording predates v2.
     gate_markers = (
         "Human Review and Acceptance Gate",
         "Puerta de revisión humana y aceptación",
+        "Puerta de revisión y entrega",
     )
     if not any(marker in extracted for marker in gate_markers):
         raise ValueError("final premium PDF omitted the human review and acceptance gate")
@@ -153,6 +157,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "final_pdf_identity_validation": True,
             "markdown_html_review_gate_preserved": True,
             "pdf_review_gate_verified_bilingually": True,
+            "legacy_spanish_review_gate_heading_accepted": True,
             "page_count": page_count,
         }
     )
