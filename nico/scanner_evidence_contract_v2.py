@@ -177,6 +177,7 @@ def _run_scanner_tool(
     # hash from claiming the scope of a returned payload that differs from what was
     # actually hashed and keeps the identity independently reproducible downstream.
     safe_result = scanner_module.redact_payload(result)
+    safe_result["artifact_hash_scope"] = "redacted_normalized_scanner_record"
     evidence_projection = {
         key: value
         for key, value in safe_result.items()
@@ -185,7 +186,6 @@ def _run_scanner_tool(
     fingerprint = _canonical_hash(evidence_projection)
     safe_result["deterministic_fingerprint"] = fingerprint
     safe_result["artifact_hash"] = fingerprint
-    safe_result["artifact_hash_scope"] = "redacted_normalized_scanner_record"
     return safe_result
 
 
