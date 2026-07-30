@@ -20,7 +20,7 @@ from nico.scanner_applicability_v1 import normalize_scanner_applicability_packag
 from nico.v2_authoritative_premium_report import _html_from_markdown
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 
-VERSION = "nico.client-report-completion.v1"
+VERSION = "nico.client-report-completion.v2"
 _REGISTER_HEADINGS = (
     "## Detailed Canonical Findings",
     "## Hallazgos canónicos detallados",
@@ -37,7 +37,16 @@ _REGISTER_BOUNDARIES = (
     "## Puerta de revisión humana y aceptación",
 )
 _PROVENANCE_HEADINGS = ("### Scanner provenance", "### Procedencia de analizadores")
-_PROVENANCE_PAGE_MARKERS = ("scanner provenance", "procedencia de analizadores")
+_CURRENT_PROVENANCE_HEADINGS = (
+    "## Analyzer Applicability and Provenance",
+    "## Procedencia y aplicabilidad de analizadores",
+)
+_PROVENANCE_PAGE_MARKERS = (
+    "scanner provenance",
+    "procedencia de analizadores",
+    "analyzer applicability and provenance",
+    "procedencia y aplicabilidad de analizadores",
+)
 _EVIDENCE_PAGE_MARKERS = ("evidence appendix", "apéndice de evidencia", "apendice de evidencia")
 _REVIEW_PAGE_MARKERS = (
     "human review and acceptance gate",
@@ -45,12 +54,16 @@ _REVIEW_PAGE_MARKERS = (
     "puerta de revision y entrega",
 )
 _STALE_EMPTY_FINDING_TEXT = "No structured item was retained."
-_STALE_EMPTY_FINDING_REPLACEMENT = "Structured finding details are retained in the Finding and Remediation Register."
+_STALE_EMPTY_FINDING_REPLACEMENT = "Structured finding register retained below."
 
 
 def _text(value: Any, limit: int = 6000) -> str:
     normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+
+
+def _compact(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).casefold()
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
@@ -84,6 +97,13 @@ def _remove_old_register(markdown: str) -> str:
 
 
 def _remove_legacy_scanner_provenance(markdown: str) -> str:
+    # The applicability-aware block is terminal by contract. Remove it first so a
+    # repeated finalization cannot append a second copy.
+    current_positions = [markdown.rfind(heading) for heading in _CURRENT_PROVENANCE_HEADINGS]
+    current_positions = [position for position in current_positions if position >= 0]
+    if current_positions:
+        markdown = markdown[: min(current_positions)].rstrip() + "\n"
+
     positions: list[int] = []
     for heading in ("## Evidence Appendix", "## Apéndice de evidencia"):
         cursor = 0
@@ -127,7 +147,6 @@ def _scanner_records(canonical: Mapping[str, Any]) -> tuple[list[Mapping[str, An
 
 def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     applicable, not_applicable = _scanner_records(canonical)
     completed = [item for item in applicable if item.get("completed") is True]
     incomplete = [item for item in applicable if item.get("completed") is not True]
@@ -316,7 +335,10 @@ def _replace_stale_pdf_text(pdf: bytes) -> bytes:
     for source_page in reader.pages:
         writer.add_page(source_page)
         page = writer.pages[-1]
-        stream = ContentStream(page.get_contents(), writer)
+        contents = page.get_contents()
+        if contents is None:
+            continue
+        stream = ContentStream(contents, writer)
         changed = False
         for operands, operator in stream.operations:
             if operator == b"Tj" and operands:
@@ -352,7 +374,7 @@ def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) ->
     for source_page in base_reader.pages:
         text = _normalized_page_text(source_page)
         if any(marker in text for marker in _PROVENANCE_PAGE_MARKERS):
-            # Replace the old scanner-only page with the applicability-aware page.
+            # Replace both the old scanner-only page and any prior applicability page.
             continue
         if insert_at is None and any(marker in text for marker in _EVIDENCE_PAGE_MARKERS):
             insert_at = len(retained_pages)
@@ -438,16 +460,21 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     pdf = _compose_pdf(base_pdf, register_pdf, provenance_pdf)
     extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
     normalized_extracted = " ".join(extracted.casefold().split())
+    compact_extracted = _compact(extracted)
 
     code_findings = [item for item in register.get("code_findings") or [] if isinstance(item, Mapping)]
     if code_findings and not any(
         marker in normalized_extracted
-        for marker in ("finding and remediation register", "registro de hallazgos y remediacion", "registro de hallazgos y remediación")
+        for marker in (
+            "finding and remediation register",
+            "registro de hallazgos y remediacion",
+            "registro de hallazgos y remediación",
+        )
     ):
         raise ValueError("final client PDF omitted the Finding and Remediation Register")
     for item in code_findings[:60]:
         location = _text(item.get("location"))
-        if location and location not in extracted:
+        if location and _compact(location) not in compact_extracted:
             raise ValueError(f"final client PDF omitted exact source location: {location}")
     for item in canonical.get("not_applicable_scanner_records") or []:
         if not isinstance(item, Mapping):
