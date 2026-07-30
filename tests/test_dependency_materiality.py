@@ -5,6 +5,7 @@ from copy import deepcopy
 from nico.dependency_materiality import classify_dependency_finding
 from nico.mid_static_score_accuracy import apply_verified_control_reconciliation
 from nico.snapshot_scanner_worker import _finding_summary
+from nico.v2_authoritative_premium_report import _classify_findings
 
 
 def _assessment() -> dict:
@@ -181,3 +182,25 @@ def test_clean_exact_audits_and_review_only_osv_can_recover_dependency_score() -
     assert reconciled["scorecard"]["technical_score"] >= 83
     assert reconciled["scorecard"]["technical_score"] > original["scorecard"]["technical_score"]
     assert dependency["findings"] == original["sections"][1]["findings"]
+
+
+def test_canonical_test_dependency_stays_non_production_and_unscored() -> None:
+    canonical = {
+        "canonical_findings": [
+            {
+                "id": "DEP-TEST-1",
+                "category": "dependency",
+                "location": "tests/fixtures/package-lock.json",
+                **_osv_review_candidate(),
+            }
+        ]
+    }
+
+    _classify_findings(canonical)
+
+    finding = canonical["canonical_findings"][0]
+    assert finding["scope"] == "non_production"
+    assert finding["production_relevant"] is False
+    assert finding["disposition"] == "verified_non_material"
+    assert finding["technical_score_impact"] == "none"
+    assert canonical["executive_risk_register"] == []

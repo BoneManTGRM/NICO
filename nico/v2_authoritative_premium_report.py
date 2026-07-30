@@ -148,6 +148,8 @@ def _classify_findings(canonical: dict[str, Any]) -> None:
         if _non_production_path(location):
             item.update({
                 "production_scope": False,
+                "production_relevant": False,
+                "scope": "non_production",
                 "observation_class": "non_production_observation",
                 "technical_score_impact": "none",
                 "requires_human_triage": False,
