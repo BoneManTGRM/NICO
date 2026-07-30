@@ -1,0 +1,5 @@
+[bandit]
+# Production-risk scoring deliberately excludes non-production and generated paths.
+# No Bandit rule is skipped. Tests remain covered by pytest and are retained as
+# non-production observations rather than being presented as production defects.
+exclude = tests,fixtures,fixture,generated,vendor,vendors,dist,build,coverage,node_modules,.venv,venv
