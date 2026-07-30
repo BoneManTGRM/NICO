@@ -97,9 +97,8 @@ def test_real_missing_control_row_still_fails_closed(monkeypatch) -> None:
         raise AssertionError("a genuinely missing canonical control row must block publication")
 
 
-def test_install_rebinds_both_english_runtime_validation_paths() -> None:
-    contract = validation.install_scorecard_extraction_validation()
-
-    assert contract["all_canonical_rows_and_scores_required"] is True
+def test_final_installer_binds_both_english_runtime_validation_paths() -> None:
+    # nico.__init__ calls comprehensive_mobile_score_projection_v2 last, and that
+    # installer binds this validator after every report compatibility module.
     assert quality._validate_final_pdf is validation.validate_final_pdf
     assert runtime_compat._validate_final_pdf is validation.validate_final_pdf
