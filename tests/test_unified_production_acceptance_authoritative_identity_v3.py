@@ -20,33 +20,22 @@ class _Page:
         + "&run_id=comprun_authoritative#assessment"
     )
 
-    def evaluate(self, _script: str):
+    def evaluate(self, script: str):
+        assert 'section[data-assessment-run-state="true"]' in script
         return {
-            "run_id": "",
-            "commit_sha": "",
-            "scanner": "",
-            "review": "",
-            "report": "Complete",
-        }
-
-
-def test_authoritative_ui_state_uses_exact_url_identity_and_terminal_defaults(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        module,
-        "_ORIGINAL_UI_STATE",
-        lambda _page: {
             "phase_label": "Internal review required",
             "message": "Complete",
             "run_id": "",
             "commit_sha": "",
             "scanner": "",
-            "report": "Complete",
             "review": "",
+            "report": "Complete",
             "score": "Moderate · 72/100",
-            "page_url": _Page.url,
-        },
-    )
+            "page_url": self.url,
+        }
 
+
+def test_authoritative_ui_state_uses_exact_url_identity_and_terminal_defaults():
     state = module.authoritative_ui_state(_Page())
 
     assert state["run_id"] == "comprun_authoritative"
