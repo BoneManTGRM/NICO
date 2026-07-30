@@ -1,0 +1,7 @@
+title = "NICO strict secret-scanning policy"
+
+[extend]
+useDefault = true
+
+# Deliberately no global path, rule, commit, or regex allowlist is defined here.
+# Synthetic fixtures must be generated at runtime rather than hidden from Gitleaks.

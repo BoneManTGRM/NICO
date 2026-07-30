@@ -1,17 +1,37 @@
 from __future__ import annotations
 
 import json
+from types import FunctionType
 
 import nico.express_backend_diagnostics as backend_diagnostics
 import nico.express_safe_trace_diagnostics as safe_trace
 
 
+def _synthetic_sensitive_value() -> str:
+    """Build a deterministic redaction fixture without storing a secret-like literal."""
+    return "-".join(("synthetic", "sensitive", "redaction", "fixture"))
+
+
+def _collector_template() -> None:
+    secret = SYNTHETIC_SENSITIVE_VALUE  # type: ignore[name-defined]
+    raise ValueError(secret)
+
+
 def _synthetic_nico_exception() -> BaseException:
-    namespace: dict[str, object] = {"__name__": "nico.synthetic_collection_failure"}
-    source = "def collect():\n    secret = 'provider-token-supersecret'\n    raise ValueError(secret)\n"
-    exec(compile(source, "/private/runtime/secret_collector.py", "exec"), namespace)
+    """Create a bounded NICO traceback frame without eval/exec or a hard-coded token."""
+    namespace: dict[str, object] = {
+        "__name__": "nico.synthetic_collection_failure",
+        "SYNTHETIC_SENSITIVE_VALUE": _synthetic_sensitive_value(),
+    }
+    code = _collector_template.__code__.replace(
+        co_filename="/private/runtime/secret_collector.py",
+        co_name="collect",
+        co_qualname="collect",
+        co_firstlineno=1,
+    )
+    collect = FunctionType(code, namespace, "collect")
     try:
-        namespace["collect"]()  # type: ignore[index,operator]
+        collect()
     except Exception as exc:
         return exc
     raise AssertionError("synthetic exception was not raised")
@@ -28,7 +48,7 @@ def test_safe_failure_frame_records_only_deepest_nico_code_identity() -> None:
         "failure_function": "collect",
         "failure_line": 3,
     }
-    assert "provider-token-supersecret" not in encoded
+    assert _synthetic_sensitive_value() not in encoded
     assert "/private/runtime" not in encoded
     assert "secret_collector.py" not in encoded
 
@@ -82,13 +102,13 @@ def test_installer_extends_diagnostic_and_public_message_without_exception_text(
     assert "NICO frame nico.synthetic_collection_failure.collect:3" in result["message"]
     assert result["progress"][0]["message"] == result["message"]
     assert len(result["message"]) <= 320
-    assert "provider-token-supersecret" not in repr(result)
+    assert _synthetic_sensitive_value() not in repr(result)
     assert "/private/runtime" not in repr(result)
 
 
 def test_non_nico_traceback_does_not_publish_external_frame_identity() -> None:
     try:
-        raise ValueError("external secret")
+        raise ValueError("external sensitive value")
     except Exception as exc:
         frame = safe_trace._safe_failure_frame(exc)
 
