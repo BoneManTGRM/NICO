@@ -4,7 +4,7 @@ import hashlib
 import inspect
 import json
 from copy import deepcopy
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import nico.scanner_tool_runners as scanner_module
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
@@ -35,6 +35,7 @@ def _git_history_evidence(workspace: WorkerWorkspace) -> dict[str, Any]:
             "reason": "checked-out repository does not contain Git metadata",
             "shallow": None,
             "head_verified": False,
+            "source": "local_git_probe",
         }
 
     shallow_result = run_command(
@@ -72,6 +73,35 @@ def _git_history_evidence(workspace: WorkerWorkspace) -> dict[str, Any]:
         "reason": "; ".join(reasons),
         "shallow": shallow if shallow_known else None,
         "head_verified": head_verified,
+        "source": "local_git_probe",
+    }
+
+
+def _trusted_upstream_history_evidence(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Recognize the existing fail-closed history guard without re-probing test or worker fixtures.
+
+    ``scanner_history_truth`` verifies or expands the checkout before invoking a history
+    scanner, then emits a redundant proof tuple. The terminal evidence wrapper may trust
+    that tuple only when all positive fields agree. A lone ``full_history_verified`` flag
+    is insufficient and still falls back to an independent local Git probe.
+    """
+    full_verified = result.get("full_history_verified") is True
+    depth_verified = result.get("history_depth_verified") is True
+    depth = str(result.get("history_depth") or "").strip().casefold()
+    scope = str(result.get("history_scope") or "").strip().casefold()
+    if not (
+        full_verified
+        and depth_verified
+        and depth == "full"
+        and scope == "full_git_history"
+    ):
+        return None
+    return {
+        "verified": True,
+        "reason": str(result.get("history_verification_note") or "Full Git history was verified by the upstream history guard."),
+        "shallow": False,
+        "head_verified": True,
+        "source": "upstream_scanner_history_truth_guard",
     }
 
 
@@ -82,12 +112,7 @@ def _invoke_original(
     runner: Callable[..., WorkerCommandResult],
     preparation: scanner_module.ProjectCommandPreparation | None,
 ) -> dict[str, Any]:
-    """Call whichever scanner wrapper is currently installed without breaking legacy signatures.
-
-    Older production capacity wrappers accept only ``runner``. Newer canonical runners
-    also accept ``preparation``. The evidence contract must decorate both safely rather
-    than forcing a keyword that a previously installed wrapper cannot receive.
-    """
+    """Call whichever scanner wrapper is installed without breaking legacy signatures."""
     assert _ORIGINAL_RUN_SCANNER_TOOL is not None
     kwargs: dict[str, Any] = {"runner": runner}
     try:
@@ -119,14 +144,21 @@ def _run_scanner_tool(
     result["findings_count"] = len(result.get("findings") or [])
 
     if spec.scans_git_history:
-        history = _git_history_evidence(workspace)
+        history = _trusted_upstream_history_evidence(result) or _git_history_evidence(workspace)
         result["full_history_verified"] = history["verified"]
+        result["history_depth_verified"] = history["verified"]
         result["history_checkout_shallow"] = history["shallow"]
         result["history_head_verified"] = history["head_verified"]
-        if result.get("status") == "completed" and not history["verified"]:
+        result["history_verification_source"] = history["source"]
+        if history["verified"]:
+            result["history_depth"] = "full"
+            result["history_scope"] = "full_git_history"
+            result.setdefault("history_verification_note", history["reason"])
+        elif result.get("status") == "completed":
             result["status"] = "partial"
             result["verified_for_this_report"] = False
             result["reason"] = history["reason"] or "full Git history was not verified"
+            result["failure_or_unavailable_reason"] = result["reason"]
     else:
         result["full_history_verified"] = False
 
@@ -168,6 +200,7 @@ def install_scanner_evidence_contract_v2() -> dict[str, Any]:
         "deterministic_record_hash_required": True,
         "raw_capture_required_for_verified_complete": True,
         "legacy_wrapper_signature_compatible": True,
+        "upstream_history_guard_proof_requires_redundant_fields": True,
     }
 
 
