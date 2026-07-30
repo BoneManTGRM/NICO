@@ -1,0 +1,101 @@
+name: Apply dependency materiality remediation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-dependency-materiality-remediation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the remediation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply the final non-production dependency repair
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          report_path = Path("nico/v2_authoritative_premium_report.py")
+          report = report_path.read_text(encoding="utf-8")
+          old = '''            item.update({
+                          "production_scope": False,
+                          "observation_class": "non_production_observation",
+                          "technical_score_impact": "none",
+                          "requires_human_triage": False,
+                      })'''
+          new = '''            item.update({
+                          "production_scope": False,
+                          "production_relevant": False,
+                          "scope": "non_production",
+                          "observation_class": "non_production_observation",
+                          "technical_score_impact": "none",
+                          "requires_human_triage": False,
+                      })'''
+          if '"scope": "non_production"' not in report:
+              if old not in report:
+                  raise SystemExit("authoritative report classification target was not found")
+              report_path.write_text(report.replace(old, new, 1), encoding="utf-8")
+
+          test_path = Path("tests/test_dependency_materiality.py")
+          tests = test_path.read_text(encoding="utf-8")
+          import_line = "from nico.v2_authoritative_premium_report import _classify_findings\n"
+          if import_line not in tests:
+              anchor = "from nico.snapshot_scanner_worker import _finding_summary\n"
+              if anchor not in tests:
+                  raise SystemExit("dependency materiality test import anchor was not found")
+              tests = tests.replace(anchor, anchor + import_line, 1)
+
+          test_name = "test_canonical_test_dependency_stays_non_production_and_unscored"
+          if test_name not in tests:
+              tests += '''
+
+          def test_canonical_test_dependency_stays_non_production_and_unscored() -> None:
+              canonical = {
+                  "canonical_findings": [
+                      {
+                          "id": "DEP-TEST-1",
+                          "category": "dependency",
+                          "location": "tests/fixtures/package-lock.json",
+                          **_osv_review_candidate(),
+                      }
+                  ]
+              }
+
+              _classify_findings(canonical)
+
+              finding = canonical["canonical_findings"][0]
+              assert finding["scope"] == "non_production"
+              assert finding["production_relevant"] is False
+              assert finding["disposition"] == "verified_non_material"
+              assert finding["technical_score_impact"] == "none"
+              assert canonical["executive_risk_register"] == []
+          '''
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+          python -m compileall -q nico
+          pytest -q tests/test_dependency_materiality.py
+
+      - name: Commit the source changes when needed
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          if git diff --quiet -- nico/v2_authoritative_premium_report.py tests/test_dependency_materiality.py; then
+            echo "The final repair is already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add nico/v2_authoritative_premium_report.py tests/test_dependency_materiality.py
+          git commit -m "Keep non-production dependency evidence out of technical scoring"
+          git push origin "HEAD:${BRANCH_NAME}"
