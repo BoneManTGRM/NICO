@@ -16,6 +16,7 @@ EXCLUDED_SEGMENTS = {
     "vendor",
     "vendors",
     "fixtures",
+    "test_lab",
 }
 
 
