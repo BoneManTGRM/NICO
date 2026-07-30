@@ -5,9 +5,9 @@ import hashlib
 from copy import deepcopy
 from typing import Any, Mapping
 
-from nico.v2_authoritative_premium_report import _html_from_markdown, _pdf_from_markdown
+from nico import v2_authoritative_premium_report as _premium_report
 
-VERSION = "nico.v2.executive-score-dashboard.v1"
+VERSION = "nico.v2.executive-score-dashboard.v2"
 
 
 def _text(value: Any) -> str:
@@ -71,10 +71,6 @@ def apply_executive_score_dashboard(package: Mapping[str, Any]) -> dict[str, Any
     markdown = str(result.get("markdown") or "").strip()
     dashboard = _dashboard(canonical, spanish=spanish).strip()
 
-    # Replace any prior dashboard instance and place the integrated dashboard
-    # immediately before the executive decision brief. This preserves the old
-    # report's executive visual hierarchy without reviving the removed plain
-    # Canonical Score Summary page.
     headings = ("## Executive Score Dashboard", "## Panel ejecutivo de puntuación")
     for heading in headings:
         start = markdown.find(heading)
@@ -95,14 +91,18 @@ def apply_executive_score_dashboard(package: Mapping[str, Any]) -> dict[str, Any
 
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     title = "Evaluación Técnica Integral NICO" if spanish else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
-    rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
-    pdf, page_count = _pdf_from_markdown(markdown, canonical, spanish=spanish)
+    rendered_html = _premium_report._html_from_markdown(markdown, title, spanish=spanish)
+    # Resolve the renderer dynamically. The PDF control-character guard is installed
+    # after this module is imported, so capturing the function at import time bypassed
+    # the production guard and reintroduced Helvetica bullet extraction as U+007F.
+    pdf, page_count = _premium_report._pdf_from_markdown(markdown, canonical, spanish=spanish)
     contract = deepcopy(dict(result.get("premium_report_renderer") or {}))
     contract.update({
         "executive_score_dashboard": True,
         "executive_score_dashboard_version": VERSION,
         "canonical_score_labels_in_markdown_html_pdf": True,
         "plain_canonical_score_page_removed": True,
+        "dynamic_authoritative_pdf_renderer_binding": True,
         "page_count": page_count,
     })
     result.update({
