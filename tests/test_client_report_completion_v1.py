@@ -5,8 +5,8 @@ import io
 
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate
 
 from nico.client_report_completion_v1 import finalize_client_report_package
 
@@ -63,7 +63,9 @@ def _package() -> dict:
                 "interpretation": "Disabled certificate verification bypasses transport authenticity checks.",
                 "business_impact": "A confirmed production path could expose requests to interception.",
                 "recommendation": "Restore certificate verification and add a regression test.",
-                "acceptance_criteria": ["The exact-SHA rerun no longer reports verify=False at src/http_client.py:27."],
+                "acceptance_criteria": [
+                    "The exact-SHA rerun no longer reports verify=False at src/http_client.py:27."
+                ],
                 "production_scope": True,
             }
         ],
@@ -184,11 +186,11 @@ def test_final_report_replaces_old_findings_and_scanner_only_appendix() -> None:
     assert "Finding and Remediation Register" in extracted
     assert "src/http_client.py:27".replace(" ", "") in compact
     assert "tls_verify_disabled" in extracted
-    assert "Analyzer Applicability and Provenance" in extracted
+    assert extracted.count("Analyzer Applicability and Provenance") == 1
     assert "npm-audit" in extracted
     assert "not applicable" in extracted.casefold() or "not-applicable" in extracted.casefold()
     assert "No structured item was retained." not in extracted
-    assert extracted.count("Scanner provenance") == 0
+    assert "eslint: unavailable" not in extracted
 
 
 def test_final_report_is_idempotent_for_register_and_provenance() -> None:
