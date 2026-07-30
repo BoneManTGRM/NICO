@@ -140,14 +140,20 @@ def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnos
 def test_failure_panel_displays_only_current_page_failure_without_hydration() -> None:
     source = FAILURE_PANEL.read_text(encoding="utf-8")
 
-    assert 'ASSESSMENT FAILURE EVIDENCE' in source
+    assert 'data-assessment-failure-evidence="true"' in source
+    assert 'window.location.pathname.startsWith("/assessment")' in source
+    assert 'window.location.pathname.startsWith("/es/assessment")' in source
+    assert 'window.addEventListener(ASSESSMENT_FAILURE_EVENT, handleFailure)' in source
+    assert 'window.removeEventListener(ASSESSMENT_FAILURE_EVENT, handleFailure)' in source
     assert 'failure.run_id' in source
     assert 'failure.http_status' in source
     assert 'failure.route' in source
     assert 'failure.progress.map' in source
-    assert 'href="/operations/recovery"' in source
-    assert 'for the current open page' in source
-    assert 'does not convert the failed or unavailable stage into a passing result' in source
+    assert '<details className="help-details nico-failure-evidence__details">' in source
+    assert 'href={recoveryHref}' in source
+    assert '`/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}' in source
+    assert 'boundary: "This exact run remains blocked and is not client-ready.' in source
+    assert 'without converting the failure into a passing result' in source
     assert 'sessionStorage' not in source
     assert 'localStorage' not in source
     assert 'dangerouslySetInnerHTML' not in source
