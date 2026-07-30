@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v2"
+VERSION = "nico.comprehensive_mobile_score_projection.v3"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -50,12 +50,23 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
 
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
+
+    # This installer is intentionally the final call in nico.__init__. Install the
+    # exact-SHA scanner boundary here so no older compatibility wrapper can replace
+    # the Bandit, ESLint, or Gitleaks execution contract afterward.
+    from nico.authoritative_scanner_execution_v3 import (
+        install_authoritative_scanner_execution_v3,
+    )
+
+    scanner_contract = install_authoritative_scanner_execution_v3()
     _INSTALLED = True
     return {
         "status": "installed",
         "version": VERSION,
         "canonical_assessment_fallback": "report.json.assessment",
         "full_report_embedded": False,
+        "authoritative_scanner_execution": scanner_contract,
+        "scanner_installed_after_legacy_wrappers": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
