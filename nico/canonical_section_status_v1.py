@@ -16,7 +16,10 @@ def _text(value: Any) -> str:
 def _numeric(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return max(0, min(100, int(round(value))))
+    score = int(round(value))
+    if score < 0 or score > 100:
+        raise ValueError(f"canonical score is outside the 0-100 range: {value}")
+    return score
 
 
 def score_band(value: Any) -> str:
@@ -51,11 +54,11 @@ def normalize_scored_sections(assessment: Mapping[str, Any]) -> dict[str, Any]:
         if score is not None:
             prior = _text(section.get("presented_status") or section.get("status")).upper()
             band = score_band(score)
-            assurance = _text(section.get("assurance_status")).casefold()
+            existing_assurance = _text(section.get("assurance_status")).casefold()
             review_limited = bool(
                 "REVIEW_LIMITED" in prior
                 or "NOT_SCORED" in prior
-                or assurance == "review_limited"
+                or existing_assurance == "review_limited"
                 or any(section.get("unavailable") or [])
             )
             if prior and prior not in _SCORE_BANDS:
@@ -67,7 +70,9 @@ def normalize_scored_sections(assessment: Mapping[str, Any]) -> dict[str, Any]:
             section["status"] = band.casefold()
             section["presented_status"] = band
             section["assurance_status"] = (
-                "review_limited" if review_limited else "verified_with_completed_scanners"
+                "review_limited"
+                if review_limited
+                else existing_assurance or "evidence_bound"
             )
             section["score_status_consistent"] = True
         normalized.append(section)
@@ -80,6 +85,7 @@ def normalize_scored_sections(assessment: Mapping[str, Any]) -> dict[str, Any]:
             "numeric_sections_use_score_bands": True,
             "assurance_status_is_separate": True,
             "scored_sections_never_labeled_not_scored": True,
+            "score_clamping_forbidden": True,
             "sections_repaired": repaired,
         }
     )
@@ -100,6 +106,7 @@ def normalize_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
                 "canonical_section_status_version": VERSION,
                 "scored_sections_never_labeled_not_scored": True,
                 "section_assurance_separated_from_score_band": True,
+                "score_clamping_forbidden": True,
             }
         )
         canonical["v2_pipeline_contract"] = pipeline
