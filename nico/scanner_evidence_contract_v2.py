@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from copy import deepcopy
 from typing import Any, Callable
@@ -74,6 +75,30 @@ def _git_history_evidence(workspace: WorkerWorkspace) -> dict[str, Any]:
     }
 
 
+def _invoke_original(
+    spec: scanner_module.ScannerToolSpec,
+    workspace: WorkerWorkspace,
+    *,
+    runner: Callable[..., WorkerCommandResult],
+    preparation: scanner_module.ProjectCommandPreparation | None,
+) -> dict[str, Any]:
+    """Call whichever scanner wrapper is currently installed without breaking legacy signatures.
+
+    Older production capacity wrappers accept only ``runner``. Newer canonical runners
+    also accept ``preparation``. The evidence contract must decorate both safely rather
+    than forcing a keyword that a previously installed wrapper cannot receive.
+    """
+    assert _ORIGINAL_RUN_SCANNER_TOOL is not None
+    kwargs: dict[str, Any] = {"runner": runner}
+    try:
+        parameters = inspect.signature(_ORIGINAL_RUN_SCANNER_TOOL).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "preparation" in parameters:
+        kwargs["preparation"] = preparation
+    return _ORIGINAL_RUN_SCANNER_TOOL(spec, workspace, **kwargs)
+
+
 def _run_scanner_tool(
     spec: scanner_module.ScannerToolSpec,
     workspace: WorkerWorkspace,
@@ -81,8 +106,7 @@ def _run_scanner_tool(
     runner: Callable[..., WorkerCommandResult] = run_command,
     preparation: scanner_module.ProjectCommandPreparation | None = None,
 ) -> dict[str, Any]:
-    assert _ORIGINAL_RUN_SCANNER_TOOL is not None
-    raw = _ORIGINAL_RUN_SCANNER_TOOL(
+    raw = _invoke_original(
         spec,
         workspace,
         runner=runner,
@@ -143,6 +167,7 @@ def install_scanner_evidence_contract_v2() -> dict[str, Any]:
         "history_scanners_fail_closed": True,
         "deterministic_record_hash_required": True,
         "raw_capture_required_for_verified_complete": True,
+        "legacy_wrapper_signature_compatible": True,
     }
 
 
