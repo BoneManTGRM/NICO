@@ -6,7 +6,7 @@ import io
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.v2.dark-branded-cover.v1"
+VERSION = "nico.v2.dark-branded-cover.v2"
 
 
 def _text(value: Any) -> str:
@@ -22,67 +22,168 @@ def _score_pair(assessment: Mapping[str, Any]) -> tuple[str, str]:
     return technical_label, adjusted_label
 
 
+def _priority_titles(canonical: Mapping[str, Any]) -> list[str]:
+    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
+    titles: list[str] = []
+    for item in findings:
+        title = _text(item.get("decision_title") or item.get("title"))
+        if title and title.casefold() not in {value.casefold() for value in titles}:
+            titles.append(title)
+        if len(titles) == 3:
+            break
+    return titles or ["No unresolved priority finding retained"]
+
+
+def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: str, *, spanish: bool) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    repository = _text(identity.get("repository"))
+    if spanish:
+        return (
+            f"NICO completó una evaluación técnica integral autorizada para {repository}. "
+            f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
+            "La evaluación combina salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
+            "una hoja de ruta de seis meses, secuencia de personal y un apéndice completo de evidencia."
+        )
+    return (
+        f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
+        f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
+        "The assessment combines repository health, exact-location findings, deeper architecture evidence, "
+        "a six-month execution roadmap, staffing sequence, and a full evidence appendix."
+    )
+
+
 def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     technical, adjusted = _score_pair(assessment)
+    priorities = _priority_titles(canonical)
     width, height = letter
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
-    pdf.setFillColor(colors.HexColor("#050b18"))
+
+    navy = colors.HexColor("#030817")
+    panel = colors.HexColor("#0b1b34")
+    border = colors.HexColor("#173f65")
+    cyan = colors.HexColor("#38c7f2")
+    teal = colors.HexColor("#35d5bf")
+    muted = colors.HexColor("#9fb3ca")
+    white = colors.white
+
+    pdf.setFillColor(navy)
     pdf.rect(0, 0, width, height, fill=1, stroke=0)
-    pdf.setFillColor(colors.HexColor("#0b213b"))
-    pdf.circle(width + 25, height - 75, 210, fill=1, stroke=0)
-    pdf.setFillColor(colors.HexColor("#0c4a6e"))
-    pdf.circle(width - 15, height - 55, 125, fill=1, stroke=0)
+    pdf.setFillColor(cyan)
+    pdf.rect(0, height - 8, width * 0.73, 8, fill=1, stroke=0)
+    pdf.setFillColor(teal)
+    pdf.rect(width * 0.73, height - 8, width * 0.27, 8, fill=1, stroke=0)
+    pdf.setFillColor(colors.HexColor("#0b2942"))
+    pdf.circle(width + 12, height - 35, 165, fill=1, stroke=0)
+    pdf.setFillColor(colors.HexColor("#0a3b4b"))
+    pdf.circle(5, -30, 125, fill=1, stroke=0)
 
-    pdf.setFillColor(colors.HexColor("#55d7f4"))
-    pdf.setFont("Helvetica-Bold", 17)
-    pdf.drawCentredString(width / 2, height - 110, "NICO")
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 27)
-    title = "EVALUACIÓN TÉCNICA INTEGRAL" if spanish else "COMPREHENSIVE TECHNICAL ASSESSMENT"
-    pdf.drawCentredString(width / 2, height - 160, title)
-    pdf.setFillColor(colors.HexColor("#cbd5e1"))
-    pdf.setFont("Helvetica", 12)
-    pdf.drawCentredString(width / 2, height - 188, _text(identity.get("repository"))[:90])
+    left = 42
+    pdf.setFillColor(cyan)
+    pdf.setFont("Helvetica-Bold", 7.5)
+    pdf.drawString(left, height - 42, "NICO / EVIDENCE-BOUND ENGINEERING INTELLIGENCE")
+    pdf.setFillColor(white)
+    pdf.setFont("Helvetica-Bold", 25)
+    pdf.drawString(left, height - 88, "NICO COMPREHENSIVE")
+    pdf.setFillColor(muted)
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(left, height - 108, "Decision-Grade Technical Assessment" if not spanish else "Evaluación técnica para decisiones")
 
-    x, y, box_w, box_h = 95, height - 335, width - 190, 62
-    pdf.setFillColor(colors.HexColor("#081426"))
-    pdf.roundRect(x, y, box_w, box_h, 10, fill=1, stroke=0)
-    pdf.setStrokeColor(colors.HexColor("#1e7494"))
-    pdf.roundRect(x, y, box_w, box_h, 10, fill=0, stroke=1)
-    pdf.setFillColor(colors.HexColor("#cbd5e1"))
-    pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(x + 20, y + 39, "MADUREZ TÉCNICA" if spanish else "TECHNICAL MATURITY")
-    pdf.drawString(x + box_w / 2 + 20, y + 39, "AJUSTE POR EVIDENCIA" if spanish else "EVIDENCE-ADJUSTED")
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 18)
-    pdf.drawString(x + 20, y + 14, technical)
-    pdf.drawString(x + box_w / 2 + 20, y + 14, adjusted)
+    labels = [
+        ("TECHNICAL MATURITY" if not spanish else "MADUREZ TÉCNICA", technical, cyan),
+        ("EVIDENCE-ADJUSTED" if not spanish else "AJUSTE POR EVIDENCIA", adjusted, teal),
+        ("INTERNAL REVIEW" if not spanish else "REVISIÓN INTERNA", "Required" if not spanish else "Obligatoria", colors.HexColor("#f5a623")),
+        ("CLIENT-READY" if not spanish else "LISTO PARA CLIENTE", "No", colors.HexColor("#d95df5")),
+    ]
+    gap = 9
+    card_w = (width - 84 - gap * 3) / 4
+    y = height - 182
+    for index, (label, value, accent) in enumerate(labels):
+        x = left + index * (card_w + gap)
+        pdf.setFillColor(panel)
+        pdf.setStrokeColor(border)
+        pdf.roundRect(x, y, card_w, 58, 8, fill=1, stroke=1)
+        pdf.setFillColor(accent)
+        pdf.setFont("Helvetica-Bold", 6.2)
+        pdf.drawString(x + 10, y + 39, label)
+        pdf.setFillColor(white)
+        pdf.setFont("Helvetica-Bold", 15)
+        pdf.drawString(x + 10, y + 15, value)
 
-    pdf.setFillColor(colors.HexColor("#94a3b8"))
-    pdf.setFont("Helvetica", 8)
-    pdf.drawCentredString(width / 2, height - 395, f"Run ID: {_text(identity.get('run_id'))}")
-    pdf.drawCentredString(width / 2, height - 410, f"Exact commit: {_text(identity.get('commit_sha'))}")
+    y_repo = height - 255
+    pdf.setFillColor(panel)
+    pdf.setStrokeColor(border)
+    pdf.roundRect(left, y_repo, width - 84, 60, 9, fill=1, stroke=1)
+    pdf.setFillColor(cyan)
+    pdf.setFont("Helvetica-Bold", 6.5)
+    pdf.drawString(left + 13, y_repo + 40, "ASSESSED REPOSITORY" if not spanish else "REPOSITORIO EVALUADO")
+    pdf.setFillColor(white)
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(left + 13, y_repo + 22, _text(identity.get("repository"))[:82])
+    pdf.setFillColor(muted)
+    pdf.setFont("Helvetica", 6.2)
+    pdf.drawString(left + 13, y_repo + 9, _text(identity.get("commit_sha")))
+    pdf.drawRightString(width - 55, y_repo + 9, _text(canonical.get("generated_at") or identity.get("generated_at")))
 
-    pdf.setFillColor(colors.HexColor("#3b2108"))
-    pdf.setStrokeColor(colors.HexColor("#f59e0b"))
-    pdf.roundRect(75, 130, width - 150, 54, 10, fill=1, stroke=1)
-    pdf.setFillColor(colors.HexColor("#fde68a"))
-    pdf.setFont("Helvetica-Bold", 10)
-    boundary = (
-        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA BLOQUEADA"
-        if spanish
-        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
-    )
-    pdf.drawCentredString(width / 2, 158, boundary)
-    pdf.setFont("Helvetica", 8)
-    pdf.drawCentredString(width / 2, 143, "CLIENT DELIVERY NOT AUTHORIZED")
+    pdf.setFillColor(white)
+    pdf.setFont("Helvetica-Bold", 15)
+    pdf.drawString(left, height - 285, "Executive posture" if not spanish else "Postura ejecutiva")
+    posture = _executive_posture(canonical, technical, adjusted, spanish=spanish)
+    pdf.setFillColor(muted)
+    pdf.setFont("Helvetica", 7.1)
+    words = posture.split()
+    lines: list[str] = []
+    line = ""
+    max_width = width - 84
+    for word in words:
+        candidate = f"{line} {word}".strip()
+        if stringWidth(candidate, "Helvetica", 7.1) <= max_width:
+            line = candidate
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    for i, value in enumerate(lines[:5]):
+        pdf.drawString(left, height - 303 - i * 10, value)
+
+    box_y = 155
+    pdf.setFillColor(panel)
+    pdf.setStrokeColor(border)
+    pdf.roundRect(left, box_y, width - 84, 132, 10, fill=1, stroke=1)
+    pdf.setFillColor(cyan)
+    pdf.setFont("Helvetica-Bold", 6.5)
+    pdf.drawString(left + 14, box_y + 111, "PRIORITY DECISIONS" if not spanish else "DECISIONES PRIORITARIAS")
+    for index, title in enumerate(priorities[:3], start=1):
+        cy = box_y + 82 - (index - 1) * 28
+        pdf.setFillColor(teal)
+        pdf.circle(left + 18, cy + 3, 7, fill=1, stroke=0)
+        pdf.setFillColor(navy)
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawCentredString(left + 18, cy + 1, str(index))
+        pdf.setFillColor(white)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(left + 34, cy, title[:88])
+
+    pdf.setFillColor(muted)
+    pdf.setFont("Helvetica", 6.2)
+    pdf.drawString(left, 60, "READ-ONLY · IMMUTABLE SNAPSHOT · INTERNAL REVIEW REQUIRED")
+    pdf.setFillColor(cyan)
+    pdf.setFont("Helvetica-Bold", 6.2)
+    pdf.drawRightString(width - left, 60, "POWERED BY REPARODYNAMICS")
+    pdf.setFillColor(colors.HexColor("#f0a23a"))
+    pdf.setFont("Helvetica", 6.2)
+    pdf.drawString(left, 45, "Client-ready after internal approval")
+    pdf.setFillColor(muted)
+    pdf.drawRightString(width - left, 45, "Page 1")
+
     pdf.showPage()
     pdf.save()
     return buffer.getvalue()
@@ -107,7 +208,12 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
     writer.write(output)
     pdf = output.getvalue()
     contract = deepcopy(dict(result.get("premium_report_renderer") or {}))
-    contract.update({"dark_branded_cover_restored": True, "dark_cover_version": VERSION})
+    contract.update({
+        "dark_branded_cover_restored": True,
+        "dark_cover_version": VERSION,
+        "golden_cover_layout_restored": True,
+        "canonical_score_sheet_removed": True,
+    })
     page_count = len(writer.pages)
     result.update({
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
