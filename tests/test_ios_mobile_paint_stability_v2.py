@@ -8,6 +8,7 @@ LAYOUT = ROOT / "apps/web/app/layout.tsx"
 MOBILE_CSS = ROOT / "apps/web/styles/assessment-mobile-stability.css"
 EVIDENCE_FORM = ROOT / "apps/web/app/assessment/StrategicEvidenceForm.tsx"
 WEBKIT_PROOF = ROOT / "scripts/mobile_restart_live_acceptance_v2.py"
+FAILURE_LAYOUT_PROOF = ROOT / "scripts/mobile_failure_layout_probe.py"
 SCORE_PROJECTION = ROOT / "nico/comprehensive_mobile_score_projection_v2.py"
 PACKAGE = ROOT / "nico/__init__.py"
 
@@ -49,14 +50,17 @@ def test_touch_devices_do_not_mount_the_optional_evidence_editor() -> None:
     assert source.index("if (!richEditorEnabled)") < source.index("const activeDefinition")
 
 
-def test_webkit_gate_requires_zero_allocated_evidence_controls() -> None:
+def test_webkit_gate_requires_zero_allocated_evidence_controls_and_failure_layout_matrix() -> None:
     source = WEBKIT_PROOF.read_text(encoding="utf-8")
+    failure = FAILURE_LAYOUT_PROOF.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.mobile_restart_live_acceptance.webkit.v3"' in source
+    assert 'VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"' in source
     assert "playwright.webkit.launch" in source
     assert 'device_scale_factor", 3' in source
     assert 'is_mobile", True' in source
     assert 'has_touch", True' in source
+    assert "failure_layout.prove_failure_layouts(browser, args)" in source
+    assert "terminal_failure_layout_viewports_verified" in source
     assert "_prove_intake_paint(browser, args)" in source
     assert "optional_evidence_editor_unmounted" in source
     assert "optional_evidence_controls_allocated" in source
@@ -67,6 +71,16 @@ def test_webkit_gate_requires_zero_allocated_evidence_controls() -> None:
     assert "ancestor_clipping_absent" in source
     assert "page_crash_absent" in source
     assert "recovery.run_proof(browser, args)" in source
+
+    assert "VIEWPORT_WIDTHS = (320, 375, 390, 414, 430)" in failure
+    assert '("en", "/assessment?tier=comprehensive", "The assessment stopped")' in failure
+    assert '("es-MX", "/es/assessment?tier=comprehensive", "La evaluación se detuvo")' in failure
+    assert 'data-assessment-failure-evidence="true"' in failure
+    assert 'document_scroll_width' in failure
+    assert 'raw_error_prominent' in failure
+    assert 'http_badge_prominent' in failure
+    assert 'recovery_visible' in failure
+    assert 'details_open' in failure
 
 
 def test_bounded_terminal_response_recovers_canonical_score_from_report_json() -> None:
