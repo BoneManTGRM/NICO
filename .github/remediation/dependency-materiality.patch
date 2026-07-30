@@ -1,160 +1,46 @@
---- NICO_src/nico/snapshot_scanner_worker.py	2026-07-30 12:29:06.000000000 +0000
-+++ NICO_work/nico/snapshot_scanner_worker.py	2026-07-30 12:37:22.515186435 +0000
-@@ -12,6 +12,7 @@
- from uuid import uuid4
- 
- from nico import scanner_tool_runners as tool_runners
-+from nico.dependency_materiality import classify_dependency_finding
- from nico import scanner_worker as base
- from nico.storage import STORE
- from nico.worker_execution import WorkerWorkspace
-@@ -104,10 +105,13 @@
- 
- def _finding_path(finding: dict[str, Any]) -> str:
-     return str(
--        finding.get("file_path")
-+        finding.get("dependency_path")
-+        or finding.get("source_path")
-+        or finding.get("file_path")
-         or finding.get("filename")
-         or finding.get("path")
-         or finding.get("filePath")
-+        or ((finding.get("source") or {}).get("path") if isinstance(finding.get("source"), dict) else "")
-         or ""
-     ).replace("\\", "/")
- 
-@@ -181,12 +185,37 @@
-             "excluded_test_only": excluded_test_only,
-         }
-     if category == "dependency":
-+        classified = [classify_dependency_finding(finding) for finding in findings]
-+        item["findings"] = classified
-+        item["dependency_dispositions"] = classified
-+        material = 0
-+        review = 0
-+        approved = 0
-+        excluded = 0
-+        for finding in classified:
-+            if _test_or_example_path(_finding_path(finding)) or str(finding.get("scope") or "").lower() in {
-+                "test", "tests", "testing", "development", "dev", "non_production"
-+            }:
-+                excluded += 1
-+            elif finding.get("disposition") == "verified_material":
-+                material += 1
-+            elif finding.get("disposition") == "verified_non_material":
-+                approved += 1
-+            else:
-+                review += 1
-+        item["dependency_disposition_summary"] = {
-+            "material": material,
-+            "review_required": review,
-+            "verified_non_material": approved,
-+            "excluded_test_only": excluded,
-+            "materiality_requires_complete_disposition": True,
-+        }
-         return {
-             "raw": len(findings),
--            "material": high,
--            "review_required": max(0, len(production) - high),
--            "approved_or_nonblocking": 0,
--            "excluded_test_only": excluded_test_only,
-+            "material": material,
-+            "review_required": review,
-+            "approved_or_nonblocking": approved,
-+            "excluded_test_only": excluded,
-         }
-     return {
-         "raw": len(findings),
-@@ -217,7 +246,7 @@
-         "excluded_test_only_total": sum(item.get("excluded_test_only", 0) for item in by_tool.values()),
-         "by_tool": dict(sorted(by_tool.items())),
-         "by_category": category_payload,
--        "truth_model": "material_confirmed_or_high_severity_only; review and test-only findings disclosed separately",
-+        "truth_model": "dependency materiality requires advisory, installed package/version, fixed version, dependency path, verified production scope, and verified reachability; unresolved and test-only findings remain separately disclosed",
-     }
+--- a/nico/v2_authoritative_premium_report.py
++++ b/nico/v2_authoritative_premium_report.py
+@@ -148,6 +148,8 @@
+         if _non_production_path(location):
+             item.update({
+                 "production_scope": False,
++                "production_relevant": False,
++                "scope": "non_production",
+                 "observation_class": "non_production_observation",
+                 "technical_score_impact": "none",
+                 "requires_human_triage": False,
+--- a/tests/test_dependency_materiality.py
++++ b/tests/test_dependency_materiality.py
+@@ -5,6 +5,7 @@
+ from nico.dependency_materiality import classify_dependency_finding
+ from nico.mid_static_score_accuracy import apply_verified_control_reconciliation
+ from nico.snapshot_scanner_worker import _finding_summary
++from nico.v2_authoritative_premium_report import _classify_findings
  
  
---- NICO_src/nico/v2_authoritative_premium_report.py	2026-07-30 12:29:06.000000000 +0000
-+++ NICO_work/nico/v2_authoritative_premium_report.py	2026-07-30 12:37:23.011186445 +0000
-@@ -10,6 +10,7 @@
- from typing import Any, Mapping
+ def _assessment() -> dict:
+@@ -182,3 +183,24 @@
+     assert reconciled["scorecard"]["technical_score"] > original["scorecard"]["technical_score"]
+     assert dependency["findings"] == original["sections"][1]["findings"]
  
- from nico import v2_assessment_pipeline as _pipeline
-+from nico.dependency_materiality import classify_dependency_finding
- from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
- 
- VERSION = "nico.v2.authoritative-premium-report.v1"
-@@ -117,41 +118,22 @@
- 
- def _dependency_dispositions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-     dispositions: list[dict[str, Any]] = []
-+    seen: set[str] = set()
-     for record in records:
--        if _scanner_name(record.get("scanner_name") or record.get("tool")) not in {"osv", "osv-scanner"}:
-+        tool = _scanner_name(record.get("scanner_name") or record.get("tool"))
-+        category = _text(record.get("category")).casefold()
-+        if category != "dependency" and tool not in {"osv", "osv-scanner", "pip-audit", "npm-audit"}:
-             continue
-         for raw in record.get("findings") or []:
-             if not isinstance(raw, Mapping):
-                 continue
--            item = deepcopy(dict(raw))
--            package = _text(item.get("package") or item.get("package_name") or item.get("name"))
--            installed = _text(item.get("installed_version") or item.get("version"))
--            fixed = _text(item.get("fixed_version") or item.get("fixed") or item.get("patched_version"))
--            advisory = _text(item.get("advisory_id") or item.get("id") or item.get("vulnerability_id"))
--            path = _text(item.get("dependency_path") or item.get("path"))
--            scope = _text(item.get("scope") or item.get("environment") or item.get("dependency_scope")).casefold()
--            reachability = _text(item.get("reachability") or item.get("reachable")).casefold()
--            production = scope in {"production", "runtime", "prod"} or item.get("production_relevant") is True
--            reachable = reachability in {"reachable", "true", "verified", "confirmed"} or item.get("reachable") is True
--            complete = all((package, installed, fixed, advisory, path))
--            verified_material = bool(complete and production and reachable)
--            dispositions.append({
--                "advisory_id": advisory,
--                "package": package,
--                "installed_version": installed,
--                "fixed_version": fixed,
--                "dependency_path": path,
--                "severity": _text(item.get("severity")),
--                "scope": scope or "unknown",
--                "reachability": reachability or "unknown",
--                "disposition": "verified_material" if verified_material else "triage_required",
--                "technical_score_impact": "material" if verified_material else "assurance_only",
--                "missing_disposition_fields": [label for label, present in (
--                    ("advisory_id", bool(advisory)), ("package", bool(package)),
--                    ("installed_version", bool(installed)), ("fixed_version", bool(fixed)),
--                    ("dependency_path", bool(path)), ("production_scope", production), ("reachability", reachable),
--                ) if not present],
--            })
-+            item = classify_dependency_finding(raw)
-+            fingerprint = _text(item.get("dependency_fingerprint"))
-+            if fingerprint and fingerprint in seen:
-+                continue
-+            if fingerprint:
-+                seen.add(fingerprint)
-+            dispositions.append(item)
-     return dispositions
- 
- 
-@@ -172,18 +154,8 @@
-             })
-         category = _text(item.get("category")).casefold()
-         if "depend" in category or _text(item.get("finding_family")).casefold().startswith("osv"):
--            required = all(_text(item.get(field)) for field in (
--                "advisory_id", "package", "installed_version", "fixed_version", "dependency_path",
--            ))
--            production = item.get("production_relevant") is True or _text(item.get("scope")).casefold() in {"production", "runtime", "prod"}
--            reachable = item.get("reachable") is True or _text(item.get("reachability")).casefold() in {"reachable", "verified", "confirmed"}
--            if not (required and production and reachable):
--                item.update({
--                    "material": False,
--                    "disposition": "triage_required",
--                    "technical_score_impact": "assurance_only",
--                    "requires_human_triage": True,
--                })
-+            item.update(classify_dependency_finding(item))
-+            item["requires_human_triage"] = item.get("disposition") == "triage_required"
-         repaired.append(item)
-     for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
-         canonical[surface] = deepcopy(repaired)
++
++def test_canonical_test_dependency_stays_non_production_and_unscored() -> None:
++    canonical = {
++        "canonical_findings": [
++            {
++                "id": "DEP-TEST-1",
++                "category": "dependency",
++                "location": "tests/fixtures/package-lock.json",
++                **_osv_review_candidate(),
++            }
++        ]
++    }
++
++    _classify_findings(canonical)
++
++    finding = canonical["canonical_findings"][0]
++    assert finding["scope"] == "non_production"
++    assert finding["production_relevant"] is False
++    assert finding["disposition"] == "verified_non_material"
++    assert finding["technical_score_impact"] == "none"
++    assert canonical["executive_risk_register"] == []
