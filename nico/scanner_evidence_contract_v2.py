@@ -78,12 +78,11 @@ def _git_history_evidence(workspace: WorkerWorkspace) -> dict[str, Any]:
 
 
 def _trusted_upstream_history_evidence(result: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Recognize the existing fail-closed history guard without re-probing test or worker fixtures.
+    """Recognize the existing fail-closed history guard without re-probing fixtures.
 
     ``scanner_history_truth`` verifies or expands the checkout before invoking a history
     scanner, then emits a redundant proof tuple. The terminal evidence wrapper may trust
-    that tuple only when all positive fields agree. A lone ``full_history_verified`` flag
-    is insufficient and still falls back to an independent local Git probe.
+    that tuple only when every positive field agrees. A lone boolean is never sufficient.
     """
     full_verified = result.get("full_history_verified") is True
     depth_verified = result.get("history_depth_verified") is True
@@ -162,15 +161,6 @@ def _run_scanner_tool(
     else:
         result["full_history_verified"] = False
 
-    evidence_projection = {
-        key: value
-        for key, value in result.items()
-        if key not in {"artifact_hash", "deterministic_fingerprint"}
-    }
-    fingerprint = _canonical_hash(evidence_projection)
-    result["deterministic_fingerprint"] = fingerprint
-    result["artifact_hash"] = fingerprint
-    result["artifact_hash_scope"] = "redacted_normalized_scanner_record"
     result["raw_artifact_retention_complete"] = bool(
         result.get("output_capture_complete") is True
         and not result.get("output_truncated")
@@ -182,7 +172,21 @@ def _run_scanner_tool(
         and result["raw_artifact_retention_complete"]
         and (not spec.scans_git_history or result.get("full_history_verified") is True)
     )
-    return scanner_module.redact_payload(result)
+
+    # Redact first, then fingerprint the exact report-safe record. This prevents a
+    # hash from claiming the scope of a returned payload that differs from what was
+    # actually hashed and keeps the identity independently reproducible downstream.
+    safe_result = scanner_module.redact_payload(result)
+    evidence_projection = {
+        key: value
+        for key, value in safe_result.items()
+        if key not in {"artifact_hash", "deterministic_fingerprint"}
+    }
+    fingerprint = _canonical_hash(evidence_projection)
+    safe_result["deterministic_fingerprint"] = fingerprint
+    safe_result["artifact_hash"] = fingerprint
+    safe_result["artifact_hash_scope"] = "redacted_normalized_scanner_record"
+    return safe_result
 
 
 def install_scanner_evidence_contract_v2() -> dict[str, Any]:
@@ -201,6 +205,7 @@ def install_scanner_evidence_contract_v2() -> dict[str, Any]:
         "raw_capture_required_for_verified_complete": True,
         "legacy_wrapper_signature_compatible": True,
         "upstream_history_guard_proof_requires_redundant_fields": True,
+        "hash_is_computed_after_redaction": True,
     }
 
 
