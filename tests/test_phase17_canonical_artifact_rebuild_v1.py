@@ -49,7 +49,18 @@ def _result() -> dict:
             "technical_score": 83,
             "canonical_evidence_adjusted_score": 81,
             "executive_summary": "Assessment complete.",
-            "sections": [],
+            "sections": [
+                {
+                    "id": "static_analysis",
+                    "label": "Static Analysis",
+                    "score": 83,
+                    "presented_score": 83,
+                    "status": "review_limited_not_scored",
+                    "presented_status": "REVIEW_LIMITED_NOT_SCORED",
+                    "unavailable": ["One supplemental analyzer was review-limited."],
+                    "summary": "Completed analyzer evidence is scored separately from assurance limits.",
+                }
+            ],
         },
         "canonical_findings": [legacy, prioritized],
         "findings_register": [legacy, prioritized],
@@ -81,6 +92,13 @@ def test_phase17_renders_repaired_canonical_truth_not_stale_artifacts() -> None:
     assert package["phase17_artifact_rebuild"]["rebuilt_from_repaired_canonical_truth"] is True
     assert package["phase9_release_gate"]["artifacts_rebuilt_after_canonical_repair"] is True
     assert package["pdf_filename"] == "nico-report-FINAL-PENDING-APPROVAL.pdf"
+
+    section = canonical["assessment"]["sections"][0]
+    assert section["presented_score"] == 83
+    assert section["presented_status"] == "MODERATE"
+    assert section["status"] == "moderate"
+    assert section["assurance_status"] == "review_limited"
+    assert canonical["v2_pipeline_contract"]["scored_sections_never_labeled_not_scored"] is True
 
 
 def test_phase17_returns_completed_package_as_internal_review_required() -> None:

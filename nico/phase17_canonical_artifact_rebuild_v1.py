@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from nico.canonical_section_status_v1 import normalize_report_package
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -22,11 +23,17 @@ _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
 
 
+def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep numeric score bands and assurance state separate after each truth pass."""
+
+    return normalize_report_package(reconcile_production_report_truth(package))
+
+
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one premium report from reconciled authoritative production evidence."""
-    reconciled = reconcile_production_report_truth(package)
+    reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
-    prepared = reconcile_production_report_truth(prepared)
+    prepared = _reconcile(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
@@ -34,7 +41,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    return reconcile_production_report_truth(repaired)
+    return _reconcile(repaired)
 
 
 __all__ = [
