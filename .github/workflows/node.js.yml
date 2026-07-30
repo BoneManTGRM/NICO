@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - "apps/web/**"
+      - ".github/workflows/node.js.yml"
   push:
     branches:
       - main
       - upgrade/repair-first-foundation
     paths:
       - "apps/web/**"
+      - ".github/workflows/node.js.yml"
   workflow_dispatch:
 
 permissions:
@@ -31,13 +33,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install exact frontend dependencies
         working-directory: apps/web
-        run: npm install
+        timeout-minutes: 6
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefer-offline
 
       - name: Generate npm audit evidence
         working-directory: apps/web
+        timeout-minutes: 3
         run: |
           mkdir -p ../../audit-results
           npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
@@ -45,15 +51,19 @@ jobs:
 
       - name: Lint frontend
         working-directory: apps/web
+        timeout-minutes: 3
         run: npm run lint
 
       - name: Build frontend
         working-directory: apps/web
+        timeout-minutes: 6
         run: npm run build
 
       - name: Upload frontend audit results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: frontend-audit-results
+          name: frontend-audit-results-${{ github.run_id }}
           path: audit-results/
+          if-no-files-found: error
+          retention-days: 7
