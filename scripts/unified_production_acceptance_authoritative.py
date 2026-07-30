@@ -7,6 +7,10 @@ from urllib.parse import parse_qs, urlparse
 import unified_production_acceptance as production
 
 VERSION = "nico.unified_production_acceptance.authoritative_identity.v4"
+# Legacy repair-contract vocabulary: "collapsed identity" referred to the
+# disclosure that rendered exact run and commit identifiers. The v4 reader keeps
+# those identifiers authoritative while reading the canonical state section with
+# one immediate DOM query, so response capture is never blocked by a locator wait.
 _ORIGINAL_RUN_SERVICE = production.unified._current_run_service
 
 
