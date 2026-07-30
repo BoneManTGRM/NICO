@@ -32,15 +32,20 @@ def test_bridge_preserves_backend_failure_payload_without_relabeling_it_successf
     assert "failure_code" in source
 
 
-def test_failure_panel_supports_english_and_spanish_and_hides_unavailable_report_actions() -> None:
+def test_failure_panel_supports_bilingual_semantic_state_and_hides_unavailable_report_actions() -> None:
     source = _read("apps/web/app/AssessmentFailureEvidencePanel.tsx")
 
     assert 'window.location.pathname.startsWith("/assessment")' in source
     assert 'window.location.pathname.startsWith("/es/assessment")' in source
-    assert "Actual failed stage" in source
-    assert "Etapa que falló" in source
-    assert "ASSESSMENT FAILURE EVIDENCE" in source
-    assert "EVIDENCIA DE FALLO DE LA EVALUACIÓN" in source
-    assert 'body[data-nico-terminal-failure="true"] .report-actions' in source
-    assert 'href="/operations/recovery"' in source
-    assert "/operations/recovery?run_id=" in source
+    assert 'failedStage: "Failed stage"' in source
+    assert 'failedStage: "Etapa que falló"' in source
+    assert 'title: "The assessment stopped"' in source
+    assert 'title: "La evaluación se detuvo"' in source
+    assert 'data-assessment-failure-evidence="true"' in source
+    assert 'data-assessment-failure-stage={failedStage?.step || "unknown_stage"}' in source
+    assert 'data-assessment-failure-code={failure.code}' in source
+    assert 'const reportActions = state.querySelector<HTMLElement>(\'[data-assessment-report-actions="true"]\')' in source
+    assert "if (reportActions) reportActions.hidden = true" in source
+    assert '<details className="help-details nico-failure-evidence__details">' in source
+    assert 'href={recoveryHref}' in source
+    assert '`/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}' in source

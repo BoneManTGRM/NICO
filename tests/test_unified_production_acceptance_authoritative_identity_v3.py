@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+AUTHORITATIVE_SCRIPT = SCRIPTS / "unified_production_acceptance_authoritative.py"
+OBSOLETE_REPAIR_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "authoritative-production-acceptance-repair.yml"
+)
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
@@ -80,3 +85,12 @@ def test_install_binds_authoritative_reader_and_run_wrapper(monkeypatch: pytest.
     assert module.production.unified._impl._safe_ui_state is module.authoritative_ui_state
     assert module.production.unified._current_run_service is module.authoritative_run_service
     assert module.production.unified._impl._original_run_service is module.authoritative_run_service
+
+
+def test_authoritative_acceptance_has_no_legacy_locator_or_status_overwrite_workflow() -> None:
+    source = AUTHORITATIVE_SCRIPT.read_text(encoding="utf-8")
+
+    assert "collapsed identity" not in source
+    assert "_ORIGINAL_UI_STATE" not in source
+    assert ".locator(" not in source
+    assert not OBSOLETE_REPAIR_WORKFLOW.exists()

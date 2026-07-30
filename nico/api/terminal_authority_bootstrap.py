@@ -12,12 +12,13 @@ from nico.phase6_cross_format_repair_v3 import install_phase6_cross_format_repai
 from nico.phase6_final_remediation_v1 import install_phase6_final_remediation_v1
 from nico.scanner_evidence_pipeline_v1 import install_scanner_evidence_pipeline_v1
 from nico.scanner_evidence_qualification_v1 import install_scanner_evidence_qualification_v1
+from nico.scorecard_extraction_validation_v1 import install_scorecard_extraction_validation
 from nico.v2_scanner_evidence_completion import install_v2_scanner_evidence_completion
 from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_evidence_context_normalization
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v19"
+VERSION = "nico.api.terminal_authority_bootstrap.v20"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
@@ -34,6 +35,9 @@ PHASE6_CANONICAL_TRUTH = install_phase6_canonical_truth_v2()
 PHASE6_CROSS_FORMAT_REPAIR = install_phase6_cross_format_repair_v3()
 EXPRESS_TERMINAL_AUTHORITY = install_express_terminal_authority()
 EXPRESS_FAILURE_STAGE_TRUTH = install_express_failure_stage_truth_v3()
+# Install the extraction-order-safe validator after every report and compatibility
+# installer. The production API must never fall back to the raw substring gate.
+SCORECARD_EXTRACTION_VALIDATION = install_scorecard_extraction_validation()
 
 _INSTALLATIONS = {
     "nico_scanner_evidence_pipeline": SCANNER_EVIDENCE_PIPELINE,
@@ -51,6 +55,7 @@ _INSTALLATIONS = {
     "nico_phase6_cross_format_repair": PHASE6_CROSS_FORMAT_REPAIR,
     "nico_express_terminal_authority": EXPRESS_TERMINAL_AUTHORITY,
     "nico_express_failure_stage_truth": EXPRESS_FAILURE_STAGE_TRUTH,
+    "nico_scorecard_extraction_validation": SCORECARD_EXTRACTION_VALIDATION,
 }
 
 for state_name, installation in _INSTALLATIONS.items():
@@ -96,6 +101,14 @@ if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("exact_sha_match_required") is not 
     raise RuntimeError("Exact scanner reconciliation does not require the assessed SHA")
 if EXACT_SCANNER_CHECKOUT_RECONCILIATION.get("mismatched_or_untrusted_artifacts_blocked") is not True:
     raise RuntimeError("Mismatched or untrusted scanner artifacts are not blocked")
+if SCORECARD_EXTRACTION_VALIDATION.get("column_extraction_order_independent") is not True:
+    raise RuntimeError("Production scorecard validation still depends on PDF column extraction order")
+if SCORECARD_EXTRACTION_VALIDATION.get("multi_page_scorecard_supported") is not True:
+    raise RuntimeError("Production scorecard validation does not support continuation pages")
+if SCORECARD_EXTRACTION_VALIDATION.get("all_canonical_rows_and_scores_required") is not True:
+    raise RuntimeError("Production scorecard validation does not fail closed on missing canonical rows")
+if SCORECARD_EXTRACTION_VALIDATION.get("spanish_and_english_supported") is not True:
+    raise RuntimeError("Production scorecard validation is not bound for both report languages")
 
 _REQUIRED_TRUTH_FLAGS = {
     "PHASE6_FINAL_REMEDIATION": (
@@ -145,5 +158,6 @@ __all__ = [
     "PHASE6_CROSS_FORMAT_REPAIR",
     "EXPRESS_TERMINAL_AUTHORITY",
     "EXPRESS_FAILURE_STAGE_TRUTH",
+    "SCORECARD_EXTRACTION_VALIDATION",
     "VERSION",
 ]

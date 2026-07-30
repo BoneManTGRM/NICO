@@ -1,0 +1,250 @@
+/*
+ * Terminal failure presentation.
+ *
+ * A failed exact run is an operational review surface, not a second intake page.
+ * Keep the preserved evidence and status cards visible while removing duplicate
+ * hero/form content and containing long diagnostic identifiers on phones.
+ */
+
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] > .hero,
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] > section#assessment {
+  display: none !important;
+}
+
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] {
+  padding-top: 12px !important;
+}
+
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] section[data-assessment-run-state="true"] {
+  margin-top: 0 !important;
+}
+
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] section[data-assessment-run-state="true"] > .section-head,
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] section[data-assessment-run-state="true"] > [class*="stateMessage"],
+body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] [data-assessment-report-actions="true"] {
+  display: none !important;
+}
+
+.nico-failure-evidence {
+  width: min(1180px, calc(100% - 32px));
+  margin: 28px auto 12px;
+  padding: clamp(20px, 3vw, 30px);
+  overflow: hidden;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(35, 11, 18, 0.98), rgba(10, 15, 27, 0.98));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.nico-failure-evidence__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.nico-failure-evidence__head > div {
+  min-width: 0;
+}
+
+.nico-failure-evidence__head h2 {
+  margin: 6px 0 0;
+  color: #f8fafc;
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 720;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+.nico-failure-evidence__head > .status {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.nico-failure-evidence__summary {
+  max-width: 760px;
+  margin: 13px 0 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.nico-failure-evidence__primary {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.nico-failure-evidence__primary article {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  padding: 15px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.7);
+  box-shadow: none;
+}
+
+.nico-failure-evidence__primary b {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nico-failure-evidence__primary span,
+.nico-failure-evidence__primary code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.nico-failure-evidence__details,
+.nico-failure-evidence__stages {
+  margin-top: 14px;
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.nico-failure-evidence__details > summary,
+.nico-failure-evidence__stages > summary {
+  padding: 13px 15px;
+  color: #dbeafe;
+  font-weight: 700;
+}
+
+.nico-failure-evidence__details dl {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0 15px 15px;
+}
+
+.nico-failure-evidence__details dl > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.nico-failure-evidence__details dt {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nico-failure-evidence__details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nico-failure-evidence__details code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.nico-failure-evidence__stages > .results-grid {
+  margin: 0;
+  padding: 14px;
+}
+
+.nico-failure-evidence__boundary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 14px 15px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 13px;
+  background: rgba(120, 53, 15, 0.18);
+}
+
+.nico-failure-evidence__boundary p {
+  max-width: 760px;
+  margin: 0;
+  color: #d8c79a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nico-failure-evidence__boundary a {
+  flex: 0 0 auto;
+  padding: 10px 13px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 10px;
+  background: rgba(146, 64, 14, 0.34);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 720;
+  text-align: center;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] {
+    padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+  }
+
+  .nico-failure-evidence {
+    width: calc(100% - 20px);
+    margin: calc(10px + env(safe-area-inset-top, 0px)) 10px 10px;
+    padding: 18px 14px;
+    border-radius: 19px;
+    box-shadow: none;
+  }
+
+  .nico-failure-evidence__head {
+    display: grid;
+    gap: 12px;
+  }
+
+  .nico-failure-evidence__head h2 {
+    font-size: clamp(27px, 8vw, 34px);
+    line-height: 1.06;
+  }
+
+  .nico-failure-evidence__head > .status {
+    justify-self: start;
+    margin-top: 0;
+  }
+
+  .nico-failure-evidence__summary {
+    font-size: 13px;
+  }
+
+  .nico-failure-evidence__primary {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 16px;
+  }
+
+  .nico-failure-evidence__details dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .nico-failure-evidence__boundary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nico-failure-evidence__boundary a {
+    width: 100%;
+    min-height: 46px;
+    display: grid;
+    place-items: center;
+  }
+
+  body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] section[data-assessment-run-state="true"] {
+    padding-top: 14px !important;
+    border-radius: 19px !important;
+  }
+}
