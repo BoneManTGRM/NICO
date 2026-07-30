@@ -6,7 +6,20 @@ from typing import Any, Iterable, Mapping
 
 from nico import client_finding_remediation_register_v1 as v1
 
-VERSION = "nico.client-finding-remediation-register.v2"
+VERSION = "nico.client-finding-remediation-register.v3"
+_CANONICAL_DECISION_FIELDS = (
+    "finding_id",
+    "priority",
+    "category",
+    "status",
+    "title",
+    "interpretation",
+    "business_impact",
+    "recommended_correction",
+    "owner_role",
+    "effort",
+    "rollback",
+)
 
 
 def _text(value: Any) -> str:
@@ -29,7 +42,9 @@ def _record_key(item: Mapping[str, Any]) -> tuple[str, str, int, str]:
         or item.get("title")
     )
     if path and line:
-        return category, path, line, technical_identity
+        # Exact source anchor plus technical identity is authoritative. Category is
+        # presentation metadata and may differ between a scanner and canonical risk.
+        return "code", path, line, technical_identity
     return category, "", 0, _identity_token(
         item.get("finding_id")
         or item.get("title")
@@ -65,12 +80,30 @@ def _dedupe_list(values: Any) -> list[str]:
     return output
 
 
+def _canonical_source(left: Mapping[str, Any], right: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    for item in (left, right):
+        if _text(item.get("record_source")).casefold() == "canonical_finding":
+            return item
+    return None
+
+
 def _merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
     preferred, other = (right, left) if _quality(right) > _quality(left) else (left, right)
     result = deepcopy(dict(preferred))
     for field, value in other.items():
         if result.get(field) in (None, "", [], {}):
             result[field] = deepcopy(value)
+
+    # Scanner evidence usually has the strongest source excerpt and artifact
+    # identity; the canonical finding retains the decision title, category, impact,
+    # correction, owner, and risk identity. Combine both rather than choosing one.
+    canonical = _canonical_source(left, right)
+    if canonical is not None:
+        for field in _CANONICAL_DECISION_FIELDS:
+            value = canonical.get(field)
+            if value not in (None, "", [], {}):
+                result[field] = deepcopy(value)
+
     result["verification"] = _dedupe_list(
         [*list(result.get("verification") or []), *list(other.get("verification") or [])]
     )
