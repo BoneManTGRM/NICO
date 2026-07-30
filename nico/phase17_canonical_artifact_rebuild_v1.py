@@ -17,7 +17,7 @@ _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build the old premium report once from the new authoritative evidence."""
+    """Build the premium report once from authoritative evidence."""
     return rebuild_single_pass_premium_artifacts(package)
 
 
