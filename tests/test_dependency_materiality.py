@@ -139,23 +139,24 @@ def test_verified_material_dependency_still_caps_score() -> None:
 
 
 def test_clean_exact_audits_and_review_only_osv_can_recover_dependency_score() -> None:
+    tools = ("pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "typescript")
     results = [
         {
             "tool": tool,
-            "category": "dependency",
+            "category": "dependency" if tool in {"pip-audit", "npm-audit", "osv-scanner"} else "static",
             "status": "completed",
             "verified_for_this_report": True,
             "current_run": True,
             "findings": [] if tool != "osv-scanner" else [_osv_review_candidate()],
         }
-        for tool in ("pip-audit", "npm-audit", "osv-scanner")
+        for tool in tools
     ]
     summary = _finding_summary(results)
     scanner = {
         "status": "attached",
         "snapshot_match": True,
-        "tools_requested": ["pip-audit", "npm-audit", "osv-scanner"],
-        "tools_run": ["pip-audit", "npm-audit", "osv-scanner"],
+        "tools_requested": list(tools),
+        "tools_run": list(tools),
         "failed_tools": [],
         "timed_out_tools": [],
         "unavailable_tools": [],
@@ -177,5 +178,6 @@ def test_clean_exact_audits_and_review_only_osv_can_recover_dependency_score() -
     assert summary["by_category"]["dependency"]["review_required"] == 1
     assert dependency["score"] == 88
     assert dependency["status"] == "green"
+    assert reconciled["scorecard"]["technical_score"] >= 83
     assert reconciled["scorecard"]["technical_score"] > original["scorecard"]["technical_score"]
     assert dependency["findings"] == original["sections"][1]["findings"]
