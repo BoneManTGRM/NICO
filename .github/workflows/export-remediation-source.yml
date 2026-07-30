@@ -25,11 +25,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Record immutable source identity
+      - name: Verify clean checkout and record immutable source identity
         run: |
+          test -z "$(git status --porcelain=v1)"
           git rev-parse HEAD > remediation-source-sha.txt
-          git status --porcelain=v1 > remediation-source-status.txt
-          test ! -s remediation-source-status.txt
 
       - name: Upload bounded source archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
