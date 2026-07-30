@@ -19,8 +19,9 @@ from nico.client_finding_remediation_register_v1 import (
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 from nico.v2_authoritative_premium_report import _html_from_markdown
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
+from nico.v2_single_pass_premium_report import _sanitize_pdf_control_glyphs
 
-VERSION = "nico.client-report-completion.v2"
+VERSION = "nico.client-report-completion.v3"
 _REGISTER_HEADINGS = (
     "## Detailed Canonical Findings",
     "## Hallazgos canónicos detallados",
@@ -97,8 +98,6 @@ def _remove_old_register(markdown: str) -> str:
 
 
 def _remove_legacy_scanner_provenance(markdown: str) -> str:
-    # The applicability-aware block is terminal by contract. Remove it first so a
-    # repeated finalization cannot append a second copy.
     current_positions = [markdown.rfind(heading) for heading in _CURRENT_PROVENANCE_HEADINGS]
     current_positions = [position for position in current_positions if position >= 0]
     if current_positions:
@@ -296,7 +295,7 @@ def _provenance_pdf(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
         elif line.startswith("### "):
             story.append(Paragraph(html.escape(line[4:]), subheading))
         elif line.startswith("- "):
-            story.append(Paragraph("• " + html.escape(line[2:]), body))
+            story.append(Paragraph("- " + html.escape(line[2:]), body))
         else:
             story.append(Paragraph(html.escape(line), body))
     document = SimpleDocTemplate(
@@ -374,7 +373,6 @@ def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) ->
     for source_page in base_reader.pages:
         text = _normalized_page_text(source_page)
         if any(marker in text for marker in _PROVENANCE_PAGE_MARKERS):
-            # Replace both the old scanner-only page and any prior applicability page.
             continue
         if insert_at is None and any(marker in text for marker in _EVIDENCE_PAGE_MARKERS):
             insert_at = len(retained_pages)
@@ -402,13 +400,12 @@ def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) ->
     output = io.BytesIO()
     writer.write(output)
     combined = _replace_stale_pdf_text(output.getvalue())
+    combined = _sanitize_pdf_control_glyphs(combined)
     _assert_no_control_glyphs(combined)
     return combined
 
 
 def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply scanner applicability and retain the structured register before render."""
-
     result = normalize_scanner_applicability_package(package)
     canonical = deepcopy(dict(result.get("json") or {}))
     register = build_finding_remediation_register(canonical)
@@ -429,8 +426,6 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Make JSON, Markdown, HTML, and PDF expose one accurate client register."""
-
     result = prepare_client_report_package(package)
     canonical = deepcopy(dict(result.get("json") or {}))
     register = canonical.get("client_finding_remediation_register")
