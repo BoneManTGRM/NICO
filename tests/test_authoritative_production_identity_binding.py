@@ -40,7 +40,7 @@ def test_authoritative_reader_is_bound_at_every_runtime_override_layer(monkeypat
     }
 
 
-def test_authoritative_reader_recovers_exact_identity_from_proof_url(monkeypatch):
+def test_authoritative_reader_recovers_exact_identity_from_proof_url():
     module = _module()
     run_id = "comprun_authoritative_identity"
     url = (
@@ -51,27 +51,27 @@ def test_authoritative_reader_recovers_exact_identity_from_proof_url(monkeypatch
     class Page:
         def __init__(self):
             self.url = url
+            self.evaluate_calls = 0
 
-        def evaluate(self, _script):
-            return {}
+        def evaluate(self, script):
+            self.evaluate_calls += 1
+            assert 'section[data-assessment-run-state="true"]' in script
+            return {
+                "phase_label": "Internal review required",
+                "message": "The automated assessment is complete.",
+                "run_id": "",
+                "commit_sha": "",
+                "scanner": "",
+                "report": "Complete",
+                "review": "",
+                "score": "Moderate · 72/100",
+                "page_url": self.url,
+            }
 
-    monkeypatch.setattr(
-        module,
-        "_ORIGINAL_UI_STATE",
-        lambda page: {
-            "phase_label": "Internal review required",
-            "message": "The automated assessment is complete.",
-            "run_id": "",
-            "commit_sha": "",
-            "scanner": "",
-            "report": "Complete",
-            "review": "",
-            "score": "Moderate · 72/100",
-            "page_url": page.url,
-        },
-    )
+    page = Page()
+    state = module.authoritative_ui_state(page)
 
-    state = module.authoritative_ui_state(Page())
+    assert page.evaluate_calls == 1
     assert state["run_id"] == run_id
     assert state["commit_sha"] == SHA
     assert state["scanner"] == "Complete with disclosed limitations"
