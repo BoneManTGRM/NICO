@@ -9,6 +9,7 @@ import nico.scorecard_extraction_validation_v1 as validation
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / "nico" / "api" / "terminal_authority_bootstrap.py"
+DOCKERFILE = ROOT / "Dockerfile"
 
 
 def _canonical() -> dict:
@@ -82,6 +83,7 @@ def test_publication_fallback_preserves_all_non_scorecard_gates(
 
 def test_production_api_bootstrap_installs_scorecard_validator_last() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
     assert 'VERSION = "nico.api.terminal_authority_bootstrap.v20"' in source
     assert "install_scorecard_extraction_validation" in source
@@ -93,3 +95,4 @@ def test_production_api_bootstrap_installs_scorecard_validator_last() -> None:
     assert '"multi_page_scorecard_supported"' in source
     assert '"all_canonical_rows_and_scores_required"' in source
     assert '"spanish_and_english_supported"' in source
+    assert "uvicorn nico.api.terminal_authority_bootstrap:app" in dockerfile
