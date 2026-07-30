@@ -23,7 +23,7 @@ def test_status_resilience_retries_only_exact_run_status_requests() -> None:
     assert 'credentials: "same-origin"' in source
     assert "keepalive: true" in source
     status_section = source.split("if (!statusMatch", 1)[1]
-    assert "originalFetch(nextInput" in status_section
+    assert "originalFetch(input instanceof Request ? input.clone() : input" in status_section
     assert "START_PATH" not in status_section
     assert "Run ${" not in status_section
 
@@ -35,7 +35,8 @@ def test_one_transport_or_json_failure_does_not_become_a_failed_assessment() -> 
     assert "await sleep(retryDelay(failure + 1))" in source
     assert "temporarilyUnreachable(lastGood, runId)" in source
     assert 'output.status = "running"' in source
-    assert "Exact run ${runId} remains preserved" in source
+    assert 'status: "temporarily_unreachable"' in source
+    assert "output.run_id = text(output.run_id, runId)" in source
     assert "duplicate_start_allowed: false" in source
 
 
@@ -112,8 +113,13 @@ def test_unreachable_saved_mid_run_still_blocks_duplicate_start() -> None:
 def test_exact_run_terminal_evidence_is_never_retried_into_a_pass() -> None:
     source = RESILIENCE.read_text(encoding="utf-8")
     assert 'TERMINAL_STATUSES = new Set(["blocked", "failed", "error", "interrupted", "rejected"])' in source
-    assert "responseRunId === runId && TERMINAL_STATUSES.has(status)" in source
-    assert "if (matchingTerminalEvidence(payload, runId)) return response" in source
+    assert "text(detail.run_id, payload.run_id) === runId" in source
+    assert "TERMINAL_STATUSES.has(text(detail.status, payload.status).toLowerCase())" in source
+    terminal_block = source.split("if (payload && matchingTerminalEvidence(payload, runId))", 1)[1].split(
+        "if (!response.ok", 1
+    )[0]
+    assert "normalizedProgress(payload)" in terminal_block
+    assert "return responseFromPayload(response, normalized)" in terminal_block
 
 
 def test_scanner_progress_moves_inside_the_scanner_stage_instead_of_staying_static() -> None:
