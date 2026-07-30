@@ -26,6 +26,60 @@ function tone(status: string): string {
   return "gray";
 }
 
+function normalizedLabel(value: string | null | undefined): string {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function reconcileFailureWorkspace(spanish: boolean) {
+  const main = document.querySelector<HTMLElement>('main[data-workspace="assessment"]');
+  if (!main) return;
+  main.dataset.assessmentTerminalFailure = "true";
+
+  const state = main.querySelector<HTMLElement>('section[data-assessment-run-state="true"]');
+  if (!state) return;
+  state.dataset.assessmentFailureReconciled = "true";
+
+  const header = state.querySelector<HTMLElement>(".section-head");
+  if (header) header.hidden = true;
+
+  const reportActions = state.querySelector<HTMLElement>('[data-assessment-report-actions="true"]');
+  if (reportActions) reportActions.hidden = true;
+
+  const cardCopy = spanish ? {
+    packageLabels: ["paquete de evaluación", "informe"],
+    reviewLabels: ["revisión interna", "revisión humana", "revisión experta"],
+    packageValue: "Bloqueado durante la generación del informe final",
+    reviewValue: "No alcanzada",
+  } : {
+    packageLabels: ["assessment package", "report"],
+    reviewLabels: ["internal review", "human review", "expert review"],
+    packageValue: "Blocked during final report generation",
+    reviewValue: "Not reached",
+  };
+
+  const articles = Array.from(state.querySelectorAll<HTMLElement>("article"));
+  const updateCard = (labels: string[], value: string) => {
+    const card = articles.find((article) => labels.includes(normalizedLabel(article.querySelector("b")?.textContent)));
+    const target = card?.querySelector<HTMLElement>("span");
+    if (target && target.textContent !== value) target.textContent = value;
+  };
+  updateCard(cardCopy.packageLabels, cardCopy.packageValue);
+  updateCard(cardCopy.reviewLabels, cardCopy.reviewValue);
+}
+
+function clearFailureWorkspace() {
+  const main = document.querySelector<HTMLElement>('main[data-workspace="assessment"]');
+  if (!main) return;
+  delete main.dataset.assessmentTerminalFailure;
+  const state = main.querySelector<HTMLElement>('section[data-assessment-run-state="true"]');
+  if (!state) return;
+  delete state.dataset.assessmentFailureReconciled;
+  const header = state.querySelector<HTMLElement>(".section-head");
+  if (header) header.hidden = false;
+  const reportActions = state.querySelector<HTMLElement>('[data-assessment-report-actions="true"]');
+  if (reportActions) reportActions.hidden = false;
+}
+
 export default function AssessmentFailureEvidencePanel() {
   const [failure, setFailure] = useState<AssessmentFailureEvidence | null>(null);
   const [spanish, setSpanish] = useState(false);
@@ -47,8 +101,24 @@ export default function AssessmentFailureEvidencePanel() {
     return () => {
       window.removeEventListener(ASSESSMENT_FAILURE_EVENT, handleFailure);
       delete document.body.dataset.nicoTerminalFailure;
+      clearFailureWorkspace();
     };
   }, []);
+
+  useEffect(() => {
+    if (!failure) {
+      clearFailureWorkspace();
+      return;
+    }
+    const apply = () => reconcileFailureWorkspace(spanish);
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+    return () => {
+      observer.disconnect();
+      clearFailureWorkspace();
+    };
+  }, [failure, spanish]);
 
   const failedStage = useMemo(
     () => failure?.progress.find((item) => TERMINAL_FAILURES.has(item.status.toLowerCase())) || null,
@@ -58,71 +128,105 @@ export default function AssessmentFailureEvidencePanel() {
   if (!failure) return null;
 
   const copy = spanish ? {
-    eyebrow: "EVIDENCIA DE FALLO DE LA EVALUACIÓN",
-    stopped: failure.run_id ? `La ejecución ${failure.run_id} se detuvo` : "La solicitud se detuvo antes de recibir un ID de ejecución",
+    eyebrow: "EVIDENCIA DEL FALLO",
+    title: "La evaluación se detuvo",
+    summary: "El análisis completado y la identidad exacta de la ejecución permanecen preservados, pero el paquete final no pudo publicarse.",
+    blocked: "BLOQUEADA",
     failedStage: "Etapa que falló",
     http: "Estado HTTP original",
     route: "Ruta canónica",
     type: "Tipo de evaluación",
     run: "Identidad de ejecución",
+    code: "Código diagnóstico",
+    message: "Motivo técnico",
     missing: "no devuelto",
+    details: "Ver detalles técnicos",
+    stages: "Ver evidencia acotada de etapas",
     noSteps: "El backend no devolvió evidencia acotada de la etapa que falló.",
-    boundary: "Este panel conserva únicamente evidencia acotada del estado para la página abierta actualmente. No convierte la etapa fallida o no disponible en un resultado aprobado.",
-    recovery: "Abrir esta misma ejecución en Recuperación antes de iniciar otra.",
+    boundary: "Esta ejecución sigue bloqueada y no está lista para el cliente. La evidencia preservada puede revisarse sin convertir el fallo en un resultado aprobado.",
+    recovery: "Abrir esta ejecución en Recuperación",
   } : {
-    eyebrow: "ASSESSMENT FAILURE EVIDENCE",
-    stopped: failure.run_id ? `Run ${failure.run_id} stopped` : "Assessment request stopped before a run ID was returned",
-    failedStage: "Actual failed stage",
+    eyebrow: "ASSESSMENT FAILURE",
+    title: "The assessment stopped",
+    summary: "Completed analysis and the exact run identity remain preserved, but the final assessment package could not be published.",
+    blocked: "BLOCKED",
+    failedStage: "Failed stage",
     http: "Original HTTP status",
     route: "Canonical route",
     type: "Assessment type",
     run: "Run identity",
+    code: "Diagnostic code",
+    message: "Technical reason",
     missing: "not returned",
+    details: "View technical details",
+    stages: "View bounded stage evidence",
     noSteps: "The backend did not return bounded evidence for the actual failed stage.",
-    boundary: "This panel preserves only bounded status evidence for the current open page. It does not convert the failed or unavailable stage into a passing result.",
-    recovery: "Open this same run in Recovery before starting another.",
+    boundary: "This exact run remains blocked and is not client-ready. Preserved evidence can be reviewed without converting the failure into a passing result.",
+    recovery: "Open this run in Recovery",
   };
   const recoveryHref = failure.run_id
-    ? `/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}&assessment_type=${encodeURIComponent(failure.assessment_type || "express")}`
+    ? `/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}&assessment_type=${encodeURIComponent(failure.assessment_type || "comprehensive")}`
     : "/operations/recovery";
+  const failedStageName = failedStage?.step.replaceAll("_", " ") || copy.missing;
 
-  return <>
-    <style>{`body[data-nico-terminal-failure="true"] .report-actions { display: none !important; }`}</style>
-    <section className="section panel" aria-live="assertive" lang={spanish ? "es-MX" : undefined}>
-      <div className="section-head">
-        <div>
-          <p className="eyebrow">{copy.eyebrow}</p>
-          <h2>{copy.stopped}</h2>
-        </div>
-        <span className="status red">{failure.code}</span>
+  return <section
+    className="section panel nico-failure-evidence"
+    data-assessment-failure-evidence="true"
+    data-assessment-failure-stage={failedStage?.step || "unknown_stage"}
+    data-assessment-failure-code={failure.code}
+    aria-live="assertive"
+    lang={spanish ? "es-MX" : undefined}
+  >
+    <div className="nico-failure-evidence__head">
+      <div>
+        <p className="eyebrow">{copy.eyebrow}</p>
+        <h2>{copy.title}</h2>
+        <p className="nico-failure-evidence__summary">{copy.summary}</p>
       </div>
-      <p className="error-box">{failure.message}</p>
-      <div className="grid four target-grid">
-        <article><b>{copy.failedStage}</b><span>{failedStage?.step.replaceAll("_", " ") || copy.missing}</span></article>
-        <article><b>{copy.http}</b><span>{failure.http_status}</span></article>
-        <article><b>{copy.type}</b><span>{failure.assessment_type || copy.missing}</span></article>
-        <article><b>{copy.run}</b><span>{failure.run_id || copy.missing}</span></article>
-      </div>
-      <details className="help-details">
-        <summary>{copy.route}</summary>
-        <code>{failure.route}</code>
-      </details>
-      {failure.progress.length ? <div className="results-grid">
+      <span className="status red">{copy.blocked}</span>
+    </div>
+
+    <div className="nico-failure-evidence__primary">
+      <article>
+        <b>{copy.failedStage}</b>
+        <span>{failedStageName}</span>
+      </article>
+      <article>
+        <b>{copy.run}</b>
+        <code title={failure.run_id || copy.missing}>{failure.run_id || copy.missing}</code>
+      </article>
+    </div>
+
+    <details className="help-details nico-failure-evidence__details">
+      <summary>{copy.details}</summary>
+      <dl>
+        <div><dt>{copy.code}</dt><dd><code>{failure.code}</code></dd></div>
+        <div><dt>{copy.message}</dt><dd>{failure.message}</dd></div>
+        <div><dt>{copy.http}</dt><dd>{failure.http_status}</dd></div>
+        <div><dt>{copy.type}</dt><dd>{failure.assessment_type || copy.missing}</dd></div>
+        <div><dt>{copy.route}</dt><dd><code>{failure.route}</code></dd></div>
+      </dl>
+    </details>
+
+    {failure.progress.length ? <details className="help-details nico-failure-evidence__stages">
+      <summary>{copy.stages}</summary>
+      <div className="results-grid">
         {failure.progress.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}>
           <div className="result-head"><b>{item.step.replaceAll("_", " ")}</b><span className={`status ${tone(item.status)}`}>{item.status}</span></div>
           <p>{item.message}</p>
         </article>)}
-      </div> : <p className="warning-box">{copy.noSteps}</p>}
-      <p className="warning-box">
-        {copy.boundary}
-        {failure.run_id ? <> <a
-          href="/operations/recovery"
-          onClick={(event) => {
-            event.preventDefault();
-            window.location.assign(recoveryHref);
-          }}
-        >{copy.recovery}</a></> : null}
-      </p>
-    </section>
-  </>;
+      </div>
+    </details> : <p className="warning-box">{copy.noSteps}</p>}
+
+    <div className="nico-failure-evidence__boundary">
+      <p>{copy.boundary}</p>
+      {failure.run_id ? <a
+        href={recoveryHref}
+        onClick={(event) => {
+          event.preventDefault();
+          window.location.assign(recoveryHref);
+        }}
+      >{copy.recovery}</a> : null}
+    </div>
+  </section>;
 }
