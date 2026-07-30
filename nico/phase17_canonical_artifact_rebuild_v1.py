@@ -17,15 +17,32 @@ _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
 
 
-def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Render canonical truth through the mature report and restore its branded cover.
+def _is_spanish(package: Mapping[str, Any]) -> bool:
+    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = str(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    ).strip().casefold()
+    return language.startswith("es")
 
-    The single-pass compiler builds the complete report body from current scanner,
-    score, finding, identity, and lifecycle truth. The cover compositor then replaces
-    the temporary canonical-score sheet with the established dark NICO cover without
-    regenerating or mutating any report-body page.
+
+def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Render canonical truth through the mature report and approved cover.
+
+    The English client PDF receives the restored decision-grade dark cover. The
+    localized Spanish renderer remains intact until its equivalent dark cover is
+    validated independently, preventing the cover replacement from discarding its
+    localized human-review and acceptance gate.
     """
     rendered = rebuild_single_pass_premium_artifacts(package)
+    if _is_spanish(rendered):
+        return rendered
     return apply_dark_branded_cover(rendered)
 
 
