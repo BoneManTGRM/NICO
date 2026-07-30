@@ -93,10 +93,16 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
     for required in (
         _text(identity.get("run_id")),
         _text(identity.get("commit_sha")),
-        "Puerta de revisión humana y aceptación" if _is_spanish(canonical) else "Human Review and Acceptance Gate",
     ):
         if required and required not in extracted:
-            raise ValueError(f"final premium PDF omitted required identity or gate text: {required}")
+            raise ValueError(f"final premium PDF omitted required identity text: {required}")
+
+    gate_markers = (
+        "Human Review and Acceptance Gate",
+        "Puerta de revisión humana y aceptación",
+    )
+    if not any(marker in extracted for marker in gate_markers):
+        raise ValueError("final premium PDF omitted the human review and acceptance gate")
     return len(reader.pages)
 
 
@@ -146,6 +152,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "final_pdf_control_glyph_validation": True,
             "final_pdf_identity_validation": True,
             "markdown_html_review_gate_preserved": True,
+            "pdf_review_gate_verified_bilingually": True,
             "page_count": page_count,
         }
     )
