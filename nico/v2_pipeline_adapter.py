@@ -30,7 +30,10 @@ def _text(value: Any) -> str:
 def _numeric(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return max(0, min(100, int(round(value))))
+    score = int(round(value))
+    if score < 0 or score > 100:
+        raise ValueError(f"canonical score is outside the 0-100 range: {value}")
+    return score
 
 
 def _report_language(canonical: Mapping[str, Any]) -> str:
@@ -268,7 +271,6 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     })
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
-    digest = canonical_truth_sha256(canonical)
 
     package.update({
         "json": canonical,
@@ -279,7 +281,6 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "json_filename": _normalized_artifact_filename(package.get("json_filename"), default_name="nico-comprehensive-assessment.json", extension=".json"),
         "markdown_filename": _normalized_artifact_filename(package.get("markdown_filename"), default_name="nico-comprehensive-assessment.md", extension=".md"),
         "csv_filename": _normalized_artifact_filename(package.get("csv_filename"), default_name="nico-comprehensive-assessment.csv", extension=".csv"),
-        "canonical_truth_sha256": digest,
         "report_finality": "final",
         "approval_status": "pending_human_approval",
         "delivery_status": "blocked_pending_human_approval",
@@ -290,7 +291,18 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "locale": language,
     })
     package = rebuild_client_artifacts(package)
-    package["json"] = canonical
+    rebuilt_canonical = package.get("json")
+    if not isinstance(rebuilt_canonical, Mapping):
+        raise ValueError("v2 artifact rebuild did not preserve canonical JSON")
+    canonical = deepcopy(dict(rebuilt_canonical))
+    findings = list(canonical.get("canonical_findings") or [])
+    _assert_canonical_population(findings)
+    digest = canonical_truth_sha256(canonical)
+    package.update({
+        "json": canonical,
+        "canonical_findings": deepcopy(findings),
+        "findings_register": deepcopy(findings),
+    })
 
     csv_bytes = _findings_csv(findings)
     package.update({
@@ -331,6 +343,9 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "production_path_integrated": True,
         "all_export_surfaces_canonicalized": True,
         "artifacts_rebuilt_after_canonical_repair": True,
+        "repaired_canonical_json_preserved": True,
+        "final_truth_hash_recomputed_after_repair": True,
+        "score_clamping_forbidden": True,
         "v2_single_source_pipeline": True,
         "duplicate_findings_absent": True,
         "repeated_acceptance_criteria_absent": True,
