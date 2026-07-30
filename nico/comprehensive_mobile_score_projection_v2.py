@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v2"
+VERSION = "nico.comprehensive_mobile_score_projection.v3"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -50,12 +50,24 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
 
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
+
+    # This installer is the final report-related call in nico.__init__. Bind the
+    # extraction-safe scorecard validator here so no earlier compatibility module
+    # can restore the brittle raw-substring row check afterward.
+    from nico.scorecard_extraction_validation_v1 import (
+        install_scorecard_extraction_validation,
+    )
+
+    scorecard_validation = install_scorecard_extraction_validation()
     _INSTALLED = True
     return {
         "status": "installed",
         "version": VERSION,
         "canonical_assessment_fallback": "report.json.assessment",
         "full_report_embedded": False,
+        "scorecard_extraction_validation": scorecard_validation,
+        "wrapped_control_labels_supported": True,
+        "all_canonical_rows_and_scores_required": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }

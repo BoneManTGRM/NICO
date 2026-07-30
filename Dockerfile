@@ -67,6 +67,8 @@ RUN python -m pip install --upgrade pip \
     && command -v gitleaks \
     && command -v trufflehog
 
+# Release boundary: report renderer, terminal truth, and production-acceptance
+# changes must rebuild Railway so the web client and API use the same exact SHA.
 COPY . .
 RUN python -m pip install --no-cache-dir --no-deps . \
     && if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --ignore-scripts --no-audit --no-fund; fi \
