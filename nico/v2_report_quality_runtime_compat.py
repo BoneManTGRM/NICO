@@ -6,12 +6,12 @@ import io
 from copy import deepcopy
 from typing import Any, Mapping
 
+import nico.v2_report_quality_repairs as quality
 from nico.v2_report_quality_repairs import (
     VERSION,
     _is_spanish,
     _replace_pdf_text,
     _scorecard_page,
-    _validate_final_pdf,
     _normalize_final_text,
 )
 
@@ -64,14 +64,23 @@ def repair_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
     writer.write(output)
     spanish = _is_spanish(canonical)
     pdf, finality_replacements = _replace_pdf_text(output.getvalue(), spanish=spanish)
-    _validate_final_pdf(pdf, canonical, expected_sections=sections, spanish=spanish)
+    # Resolve the validator dynamically from the authoritative quality module.
+    # Production bootstrap installs the extraction-order-safe validator last; a
+    # function imported by value here could otherwise retain the brittle version.
+    quality._validate_final_pdf(
+        pdf,
+        canonical,
+        expected_sections=sections,
+        spanish=spanish,
+    )
 
     markdown = _normalize_final_text(str(result.get("markdown") or ""), spanish=spanish)
     rendered_html = _normalize_final_text(str(result.get("html") or ""), spanish=spanish)
     contract = deepcopy(dict(result.get("premium_report_renderer") or {}))
     contract.update({
         "report_quality_repairs_version": VERSION,
-        "runtime_compatibility_version": "nico.v2.report-quality-runtime-compat.v1",
+        "runtime_compatibility_version": "nico.v2.report-quality-runtime-compat.v2",
+        "dynamic_authoritative_validator_resolution": True,
         "scorecard_word_jumble_removed": replaced,
         "scorecard_cells_wrapped": replaced,
         "scorecard_replacement_skipped_no_sections": not bool(sections),
