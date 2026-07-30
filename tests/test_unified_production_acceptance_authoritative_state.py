@@ -56,8 +56,10 @@ def test_authoritative_reader_never_calls_the_legacy_locator_fallback() -> None:
 
     assert "_ORIGINAL_UI_STATE" not in source
     assert "page.locator(" not in source
+    assert "wait_for(" not in source
     assert "document.querySelector('section[data-assessment-run-state=\"true\"]')" in source
-    assert "response capture" in source
+    assert "page_url: window.location.href" in source
+    assert "except Exception:" in source
 
 
 def test_authoritative_reader_returns_immediately_when_dom_query_fails() -> None:
