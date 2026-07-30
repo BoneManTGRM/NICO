@@ -27,10 +27,11 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
-      - name: Compile and verify WebKit unmount proof
+      - name: Compile and verify WebKit unmount and terminal layout proof
         run: |
           set -euo pipefail
           python -m py_compile \
+            scripts/mobile_failure_layout_probe.py \
             scripts/mobile_restart_live_acceptance_v1.py \
             scripts/mobile_restart_live_acceptance_v2.py \
             scripts/mobile_restart_live_acceptance_v3.py \
@@ -38,10 +39,17 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           proof = Path("scripts/mobile_restart_live_acceptance_v2.py").read_text(encoding="utf-8")
+          failure = Path("scripts/mobile_failure_layout_probe.py").read_text(encoding="utf-8")
           dispatch = Path("scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
           component = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
           css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
-          assert 'nico.mobile_restart_live_acceptance.webkit.v3' in proof
+          assert 'nico.mobile_restart_live_acceptance.webkit.v4' in proof
+          assert 'failure_layout.prove_failure_layouts(browser, args)' in proof
+          assert 'terminal_failure_layout_viewports_verified' in proof
+          assert 'VIEWPORT_WIDTHS = (320, 375, 390, 414, 430)' in failure
+          assert 'data-assessment-failure-evidence="true"' in failure
+          assert 'raw_error_prominent' in failure
+          assert 'recovery_visible' in failure
           assert 'data-mobile-evidence-boundary="true"' in proof
           assert 'interactive_control_count' in proof
           assert 'rich_editor_node_count' in proof
@@ -54,7 +62,7 @@ jobs:
           PY
 
   live-production:
-    name: Prove iPhone WebKit intake and exact-run recovery
+    name: Prove iPhone WebKit intake, failure layout, and exact-run recovery
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: contract
     runs-on: ubuntu-latest
@@ -82,7 +90,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for exact-SHA iPhone WebKit editor-unmount proof",
+              "description": "Waiting for exact-SHA WebKit intake, failure-layout, and recovery proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -152,7 +160,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
           python -m playwright install --with-deps webkit
 
-      - name: Prove iPhone WebKit paint and exact-run recovery
+      - name: Prove WebKit intake, bilingual terminal failure layout, and exact-run recovery
         id: ios_proof
         continue-on-error: true
         run: |
@@ -174,6 +182,7 @@ jobs:
             audit-results/ios-webkit-live-proof.png
             audit-results/ios-webkit-live-proof-intake-top.png
             audit-results/ios-webkit-live-proof-intake-bottom.png
+            audit-results/ios-webkit-live-proof-failure-*.png
           if-no-files-found: warn
           retention-days: 90
 
@@ -189,9 +198,21 @@ jobs:
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == "${{ github.sha }}"
           assert payload["browser_engine"] == "webkit"
-          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v3"
+          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v4"
           assert payload["start_dispatch"] == "single_native_dom_click"
           assert payload["start_dispatch_retry_absent"] is True
+          assert payload["terminal_failure_layout_viewports_verified"] is True
+          layouts = payload["terminal_failure_layouts"]
+          assert layouts["status"] == "passed"
+          assert layouts["viewports"] == [320, 375, 390, 414, 430]
+          assert layouts["locales"] == ["en", "es-MX"]
+          assert layouts["cases_required"] == 10
+          assert layouts["cases_completed"] == 10
+          assert layouts["horizontal_overflow_absent"] is True
+          assert layouts["duplicate_terminal_content_absent"] is True
+          assert layouts["raw_diagnostics_collapsed"] is True
+          assert layouts["recovery_reachable"] is True
+          assert all(item["status"] == "passed" for item in layouts["results"])
           assert payload["webkit_intake_paint_stability_verified"] is True
           intake = payload["webkit_intake_paint"]
           assert intake["optional_evidence_editor_unmounted"] is True
@@ -221,7 +242,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "WebKit allocated zero evidence controls and recovered one scored run",
+              "description": "WebKit proved 10 bilingual failure layouts and recovered one scored run",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -241,7 +262,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "WebKit editor-unmount or recovery proof failed",
+              "description": "WebKit failure-layout, editor-unmount, or recovery proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
