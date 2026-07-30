@@ -195,3 +195,35 @@ def test_legacy_scanner_wrapper_without_preparation_keyword_remains_supported(tm
     assert result["status"] == "completed"
     assert result["verified_complete"] is True
     assert result["scanner_evidence_contract_version"] == contract.VERSION
+
+
+def test_fingerprint_matches_exact_returned_redacted_record(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    workspace = WorkerWorkspace(root=tmp_path)
+    spec = ScannerToolSpec("bandit", ("bandit", "-r", "."), "static")
+    sensitive = "api_key='abcdefghijklmnopqrstuvwxyz'"
+
+    monkeypatch.setattr(
+        contract,
+        "_ORIGINAL_RUN_SCANNER_TOOL",
+        lambda *args, **kwargs: {
+            "tool": "bandit",
+            "status": "completed",
+            "findings": [{"message": sensitive}],
+            "output_capture_complete": True,
+            "output_truncated": False,
+            "verified_for_this_report": True,
+        },
+    )
+
+    result = contract._run_scanner_tool(spec, workspace)
+    assert sensitive not in repr(result)
+    assert "[REDACTED]" in repr(result)
+    projection = {
+        key: value
+        for key, value in result.items()
+        if key not in {"artifact_hash", "deterministic_fingerprint"}
+    }
+    assert result["artifact_hash"] == contract._canonical_hash(projection)
+    assert result["artifact_hash"] == result["deterministic_fingerprint"]
