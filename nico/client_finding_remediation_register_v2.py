@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping
 
 from nico import client_finding_remediation_register_v1 as v1
 
-VERSION = "nico.client-finding-remediation-register.v3"
+VERSION = "nico.client-finding-remediation-register.v4"
 _CANONICAL_DECISION_FIELDS = (
     "finding_id",
     "priority",
@@ -19,6 +19,11 @@ _CANONICAL_DECISION_FIELDS = (
     "owner_role",
     "effort",
     "rollback",
+)
+_GENERIC_EXIT_CRITERION = (
+    "All listed verification requirements pass on the exact remediation commit, "
+    "the exact-SHA rerun no longer reports the condition as unresolved material risk, "
+    "and no new material regression is introduced."
 )
 
 
@@ -42,8 +47,6 @@ def _record_key(item: Mapping[str, Any]) -> tuple[str, str, int, str]:
         or item.get("title")
     )
     if path and line:
-        # Exact source anchor plus technical identity is authoritative. Category is
-        # presentation metadata and may differ between a scanner and canonical risk.
         return "code", path, line, technical_identity
     return category, "", 0, _identity_token(
         item.get("finding_id")
@@ -80,6 +83,20 @@ def _dedupe_list(values: Any) -> list[str]:
     return output
 
 
+def _distinct_verification_and_exit(item: Mapping[str, Any]) -> dict[str, Any]:
+    result = deepcopy(dict(item))
+    verification = _dedupe_list(result.get("verification") or [])
+    exits = _dedupe_list(result.get("exit_criteria") or [])
+    verification_keys = {value.casefold() for value in verification}
+    unique_exits = [value for value in exits if value.casefold() not in verification_keys]
+    if exits and not unique_exits:
+        unique_exits = [_GENERIC_EXIT_CRITERION]
+    result["verification"] = verification
+    result["exit_criteria"] = unique_exits
+    result["verification_and_exit_criteria_distinct"] = True
+    return result
+
+
 def _canonical_source(left: Mapping[str, Any], right: Mapping[str, Any]) -> Mapping[str, Any] | None:
     for item in (left, right):
         if _text(item.get("record_source")).casefold() == "canonical_finding":
@@ -94,9 +111,6 @@ def _merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
         if result.get(field) in (None, "", [], {}):
             result[field] = deepcopy(value)
 
-    # Scanner evidence usually has the strongest source excerpt and artifact
-    # identity; the canonical finding retains the decision title, category, impact,
-    # correction, owner, and risk identity. Combine both rather than choosing one.
     canonical = _canonical_source(left, right)
     if canonical is not None:
         for field in _CANONICAL_DECISION_FIELDS:
@@ -126,14 +140,14 @@ def _merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
         ]
     )
     result["duplicate_sources_consolidated"] = True
-    return result
+    return _distinct_verification_and_exit(result)
 
 
 def _consolidate(values: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     selected: dict[tuple[str, str, int, str], dict[str, Any]] = {}
     order: list[tuple[str, str, int, str]] = []
     for raw in values:
-        item = deepcopy(dict(raw))
+        item = _distinct_verification_and_exit(raw)
         key = _record_key(item)
         if key not in selected:
             selected[key] = item
@@ -172,6 +186,7 @@ def normalize_finding_remediation_register(register: Mapping[str, Any]) -> dict[
     )
     summary = deepcopy(dict(result.get("summary") or {}))
     before = int(summary.get("deduplicated_record_count") or 0)
+    all_records = [*code, *operational]
     summary.update(
         {
             "register_normalization_version": VERSION,
@@ -188,6 +203,10 @@ def normalize_finding_remediation_register(register: Mapping[str, Any]) -> dict[
                 {_record_key(item) for item in code}
             )
             == len(code),
+            "verification_and_exit_criteria_distinct": all(
+                item.get("verification_and_exit_criteria_distinct") is True
+                for item in all_records
+            ),
         }
     )
     result.update(
