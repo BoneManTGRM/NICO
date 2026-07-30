@@ -10,6 +10,7 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico import v2_assessment_pipeline as _pipeline
+from nico.dependency_materiality import classify_dependency_finding
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
 VERSION = "nico.v2.authoritative-premium-report.v1"
@@ -117,41 +118,22 @@ def _sanitize_container(value: Any, completed: set[str]) -> Any:
 
 def _dependency_dispositions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     dispositions: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for record in records:
-        if _scanner_name(record.get("scanner_name") or record.get("tool")) not in {"osv", "osv-scanner"}:
+        tool = _scanner_name(record.get("scanner_name") or record.get("tool"))
+        category = _text(record.get("category")).casefold()
+        if category != "dependency" and tool not in {"osv", "osv-scanner", "pip-audit", "npm-audit"}:
             continue
         for raw in record.get("findings") or []:
             if not isinstance(raw, Mapping):
                 continue
-            item = deepcopy(dict(raw))
-            package = _text(item.get("package") or item.get("package_name") or item.get("name"))
-            installed = _text(item.get("installed_version") or item.get("version"))
-            fixed = _text(item.get("fixed_version") or item.get("fixed") or item.get("patched_version"))
-            advisory = _text(item.get("advisory_id") or item.get("id") or item.get("vulnerability_id"))
-            path = _text(item.get("dependency_path") or item.get("path"))
-            scope = _text(item.get("scope") or item.get("environment") or item.get("dependency_scope")).casefold()
-            reachability = _text(item.get("reachability") or item.get("reachable")).casefold()
-            production = scope in {"production", "runtime", "prod"} or item.get("production_relevant") is True
-            reachable = reachability in {"reachable", "true", "verified", "confirmed"} or item.get("reachable") is True
-            complete = all((package, installed, fixed, advisory, path))
-            verified_material = bool(complete and production and reachable)
-            dispositions.append({
-                "advisory_id": advisory,
-                "package": package,
-                "installed_version": installed,
-                "fixed_version": fixed,
-                "dependency_path": path,
-                "severity": _text(item.get("severity")),
-                "scope": scope or "unknown",
-                "reachability": reachability or "unknown",
-                "disposition": "verified_material" if verified_material else "triage_required",
-                "technical_score_impact": "material" if verified_material else "assurance_only",
-                "missing_disposition_fields": [label for label, present in (
-                    ("advisory_id", bool(advisory)), ("package", bool(package)),
-                    ("installed_version", bool(installed)), ("fixed_version", bool(fixed)),
-                    ("dependency_path", bool(path)), ("production_scope", production), ("reachability", reachable),
-                ) if not present],
-            })
+            item = classify_dependency_finding(raw)
+            fingerprint = _text(item.get("dependency_fingerprint"))
+            if fingerprint and fingerprint in seen:
+                continue
+            if fingerprint:
+                seen.add(fingerprint)
+            dispositions.append(item)
     return dispositions
 
 
@@ -172,18 +154,8 @@ def _classify_findings(canonical: dict[str, Any]) -> None:
             })
         category = _text(item.get("category")).casefold()
         if "depend" in category or _text(item.get("finding_family")).casefold().startswith("osv"):
-            required = all(_text(item.get(field)) for field in (
-                "advisory_id", "package", "installed_version", "fixed_version", "dependency_path",
-            ))
-            production = item.get("production_relevant") is True or _text(item.get("scope")).casefold() in {"production", "runtime", "prod"}
-            reachable = item.get("reachable") is True or _text(item.get("reachability")).casefold() in {"reachable", "verified", "confirmed"}
-            if not (required and production and reachable):
-                item.update({
-                    "material": False,
-                    "disposition": "triage_required",
-                    "technical_score_impact": "assurance_only",
-                    "requires_human_triage": True,
-                })
+            item.update(classify_dependency_finding(item))
+            item["requires_human_triage"] = item.get("disposition") == "triage_required"
         repaired.append(item)
     for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
         canonical[surface] = deepcopy(repaired)

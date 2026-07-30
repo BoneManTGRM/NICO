@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from nico import scanner_tool_runners as tool_runners
+from nico.dependency_materiality import classify_dependency_finding
 from nico import scanner_worker as base
 from nico.storage import STORE
 from nico.worker_execution import WorkerWorkspace
@@ -104,10 +105,13 @@ def _tool_name(item: dict[str, Any]) -> str:
 
 def _finding_path(finding: dict[str, Any]) -> str:
     return str(
-        finding.get("file_path")
+        finding.get("dependency_path")
+        or finding.get("source_path")
+        or finding.get("file_path")
         or finding.get("filename")
         or finding.get("path")
         or finding.get("filePath")
+        or ((finding.get("source") or {}).get("path") if isinstance(finding.get("source"), dict) else "")
         or ""
     ).replace("\\", "/")
 
@@ -181,12 +185,37 @@ def _tool_triage(item: dict[str, Any]) -> dict[str, int]:
             "excluded_test_only": excluded_test_only,
         }
     if category == "dependency":
+        classified = [classify_dependency_finding(finding) for finding in findings]
+        item["findings"] = classified
+        item["dependency_dispositions"] = classified
+        material = 0
+        review = 0
+        approved = 0
+        excluded = 0
+        for finding in classified:
+            if _test_or_example_path(_finding_path(finding)) or str(finding.get("scope") or "").lower() in {
+                "test", "tests", "testing", "development", "dev", "non_production"
+            }:
+                excluded += 1
+            elif finding.get("disposition") == "verified_material":
+                material += 1
+            elif finding.get("disposition") == "verified_non_material":
+                approved += 1
+            else:
+                review += 1
+        item["dependency_disposition_summary"] = {
+            "material": material,
+            "review_required": review,
+            "verified_non_material": approved,
+            "excluded_test_only": excluded,
+            "materiality_requires_complete_disposition": True,
+        }
         return {
             "raw": len(findings),
-            "material": high,
-            "review_required": max(0, len(production) - high),
-            "approved_or_nonblocking": 0,
-            "excluded_test_only": excluded_test_only,
+            "material": material,
+            "review_required": review,
+            "approved_or_nonblocking": approved,
+            "excluded_test_only": excluded,
         }
     return {
         "raw": len(findings),
@@ -217,7 +246,7 @@ def _finding_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         "excluded_test_only_total": sum(item.get("excluded_test_only", 0) for item in by_tool.values()),
         "by_tool": dict(sorted(by_tool.items())),
         "by_category": category_payload,
-        "truth_model": "material_confirmed_or_high_severity_only; review and test-only findings disclosed separately",
+        "truth_model": "dependency materiality requires advisory, installed package/version, fixed version, dependency path, verified production scope, and verified reachability; unresolved and test-only findings remain separately disclosed",
     }
 
 
