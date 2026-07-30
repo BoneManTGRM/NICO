@@ -1,11 +1,17 @@
 name: Export remediation source
 
 on:
-  push:
+  pull_request:
     branches:
-      - improve/actual-score-lift
+      - main
     paths:
       - .github/workflows/export-remediation-source.yml
+      - apps/**
+      - nico/**
+      - scripts/**
+      - tests/**
+      - requirements.txt
+      - pyproject.toml
 
 permissions:
   contents: read
@@ -14,7 +20,7 @@ jobs:
   export:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out exact branch revision
+      - name: Check out exact pull request revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
