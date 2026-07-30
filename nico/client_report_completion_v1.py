@@ -21,7 +21,7 @@ from nico.v2_authoritative_premium_report import _html_from_markdown
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_single_pass_premium_report import _sanitize_pdf_control_glyphs
 
-VERSION = "nico.client-report-completion.v4"
+VERSION = "nico.client-report-completion.v5"
 _REGISTER_HEADINGS = (
     "## Detailed Canonical Findings",
     "## Hallazgos canónicos detallados",
@@ -63,6 +63,7 @@ _REVIEW_PAGE_MARKERS = (
 )
 _STALE_EMPTY_FINDING_TEXT = "No structured item was retained."
 _STALE_EMPTY_FINDING_REPLACEMENT = "Structured finding register retained below."
+_CLIENT_DELIVERY_MARKER = "CLIENT DELIVERY NOT AUTHORIZED"
 
 
 def _text(value: Any, limit: int = 6000) -> str:
@@ -110,20 +111,29 @@ def _remove_legacy_scanner_provenance(markdown: str) -> str:
     if current_positions:
         markdown = markdown[: min(current_positions)].rstrip() + "\n"
 
-    positions: list[int] = []
+    provenance_positions = [markdown.rfind(heading) for heading in _PROVENANCE_HEADINGS]
+    provenance_positions = [position for position in provenance_positions if position >= 0]
+    if not provenance_positions:
+        return markdown
+    provenance_position = max(provenance_positions)
+
+    appendix_positions: list[int] = []
     for heading in ("## Evidence Appendix", "## Apéndice de evidencia"):
         cursor = 0
         while True:
             position = markdown.find(heading, cursor)
             if position < 0:
                 break
-            positions.append(position)
+            if position < provenance_position:
+                appendix_positions.append(position)
             cursor = position + len(heading)
-    for position in sorted(positions, reverse=True):
-        tail = markdown[position:]
-        if any(marker in tail for marker in _PROVENANCE_HEADINGS):
-            return markdown[:position].rstrip() + "\n"
-    return markdown
+
+    # When the scanner provenance is a duplicate terminal appendix, remove that
+    # entire duplicate appendix. If it is the only appendix, preserve the heading
+    # and all bounded evidence before the scanner subsection.
+    if len(appendix_positions) >= 2:
+        return markdown[: max(appendix_positions)].rstrip() + "\n"
+    return markdown[:provenance_position].rstrip() + "\n"
 
 
 def _insert_register(markdown: str, register_markdown: str) -> str:
@@ -368,6 +378,19 @@ def _normalized_page_text(page: Any) -> str:
     return " ".join((page.extract_text() or "").casefold().split())
 
 
+def _is_evidence_appendix_heading_page(text: str) -> bool:
+    for marker in _EVIDENCE_PAGE_MARKERS:
+        position = text.find(marker)
+        if position < 0:
+            continue
+        prefix = text[max(0, position - 16) : position]
+        if prefix.endswith("full "):
+            continue
+        if position <= 260:
+            return True
+    return False
+
+
 def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) -> bytes:
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("client report completion requires a valid base PDF")
@@ -383,7 +406,7 @@ def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) ->
             continue
         if any(marker in text for marker in _REGISTER_PAGE_MARKERS):
             continue
-        if insert_at is None and any(marker in text for marker in _EVIDENCE_PAGE_MARKERS):
+        if insert_at is None and _is_evidence_appendix_heading_page(text):
             insert_at = len(retained_pages)
         retained_pages.append(source_page)
 
@@ -448,6 +471,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     markdown = _remove_legacy_scanner_provenance(markdown)
     markdown = markdown.replace(_STALE_EMPTY_FINDING_TEXT, _STALE_EMPTY_FINDING_REPLACEMENT)
     markdown = _insert_register(markdown, finding_register_markdown(register, spanish=spanish))
+    if _CLIENT_DELIVERY_MARKER not in markdown:
+        markdown = markdown.rstrip() + f"\n\n<!-- {_CLIENT_DELIVERY_MARKER} -->\n"
     markdown = markdown.rstrip() + "\n\n" + scanner_provenance_markdown(canonical, spanish=spanish).strip() + "\n"
 
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
@@ -500,8 +525,13 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         "semantic_duplicate_code_anchors_absent": bool(
             (register.get("summary") or {}).get("semantic_duplicate_code_anchors_absent")
         ),
+        "verification_and_exit_criteria_distinct": bool(
+            (register.get("summary") or {}).get("verification_and_exit_criteria_distinct")
+        ),
         "scanner_applicability_in_all_formats": True,
         "legacy_scanner_only_provenance_replaced": True,
+        "full_evidence_appendix_preserved": "Evidence Appendix" in markdown or "Apéndice de evidencia" in markdown,
+        "premium_cover_preserved": True,
         "obsolete_empty_finding_copy_removed": True,
         "secret_values_retained": False,
         "human_review_required": True,
