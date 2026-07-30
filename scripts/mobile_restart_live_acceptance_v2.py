@@ -7,9 +7,10 @@ from typing import Any
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
+import mobile_failure_layout_probe as failure_layout
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.webkit.v3"
+VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"
 OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
@@ -183,10 +184,13 @@ def main(argv: list[str] | None = None) -> int:
             raw_browser = playwright.webkit.launch(headless=True)
             browser = _IPhoneBrowser(raw_browser)
             try:
+                failure_layouts = failure_layout.prove_failure_layouts(browser, args)
                 intake = _prove_intake_paint(browser, args)
                 result = recovery.run_proof(browser, args)
             finally:
                 raw_browser.close()
+        result["terminal_failure_layouts"] = failure_layouts
+        result["terminal_failure_layout_viewports_verified"] = True
         result["webkit_intake_paint"] = intake
         result["webkit_intake_paint_stability_verified"] = True
         result["browser_engine"] = "webkit"
