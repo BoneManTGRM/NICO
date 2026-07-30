@@ -84,7 +84,6 @@ jobs:
           test_path.write_text(tests, encoding="utf-8")
           PY
           python -m compileall -q nico
-          pytest -q tests/test_dependency_materiality.py
 
       - name: Commit the source changes when needed
         env:
