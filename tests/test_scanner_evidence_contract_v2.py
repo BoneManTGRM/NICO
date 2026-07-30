@@ -119,3 +119,30 @@ def test_completed_scanner_requires_complete_capture(tmp_path: Path, monkeypatch
     assert result["raw_artifact_retention_complete"] is False
     assert result["verified_complete"] is False
     assert result["full_history_verified"] is False
+
+
+def test_legacy_scanner_wrapper_without_preparation_keyword_remains_supported(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    workspace = WorkerWorkspace(root=tmp_path)
+    spec = ScannerToolSpec("eslint", ("eslint", "."), "static", requires_project_commands=True)
+    observed: dict[str, object] = {}
+
+    def legacy_wrapper(spec, workspace, *, runner):
+        observed["runner"] = runner
+        return {
+            "tool": spec.name,
+            "status": "completed",
+            "findings": [],
+            "output_capture_complete": True,
+            "output_truncated": False,
+            "verified_for_this_report": True,
+        }
+
+    monkeypatch.setattr(contract, "_ORIGINAL_RUN_SCANNER_TOOL", legacy_wrapper)
+    result = contract._run_scanner_tool(spec, workspace, preparation=None)
+
+    assert observed["runner"] is contract.run_command
+    assert result["status"] == "completed"
+    assert result["verified_complete"] is True
+    assert result["scanner_evidence_contract_version"] == contract.VERSION
