@@ -1,5 +1,5 @@
 [bandit]
 # Keep the production scanner bounded and deterministic. No Bandit rule is skipped.
-# Test, generated, dependency-cache, and build output remain covered by their own
-# controls and must not inflate the production static-analysis artifact.
-exclude_dirs = tests,test,fixtures,fixture,examples,example,samples,sample,generated,vendor,vendors,dist,build,coverage,node_modules,.next,.venv,venv,audit-results
+# Bandit's .bandit INI format uses `exclude`; the production runner also supplies
+# the same bounded paths explicitly so configuration discovery cannot drift.
+exclude = tests,test,fixtures,fixture,examples,example,samples,sample,generated,vendor,vendors,dist,build,coverage,node_modules,.next,.venv,venv,audit-results
