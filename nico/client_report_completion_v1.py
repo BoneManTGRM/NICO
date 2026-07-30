@@ -11,7 +11,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-from nico.client_finding_remediation_register_v1 import (
+from nico.client_finding_remediation_register_v2 import (
     build_finding_remediation_register,
     finding_register_markdown,
     render_finding_register_pdf,
@@ -21,7 +21,7 @@ from nico.v2_authoritative_premium_report import _html_from_markdown
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_single_pass_premium_report import _sanitize_pdf_control_glyphs
 
-VERSION = "nico.client-report-completion.v3"
+VERSION = "nico.client-report-completion.v4"
 _REGISTER_HEADINGS = (
     "## Detailed Canonical Findings",
     "## Hallazgos canónicos detallados",
@@ -47,6 +47,13 @@ _PROVENANCE_PAGE_MARKERS = (
     "procedencia de analizadores",
     "analyzer applicability and provenance",
     "procedencia y aplicabilidad de analizadores",
+)
+_REGISTER_PAGE_MARKERS = (
+    "finding and remediation register",
+    "registro de hallazgos y remediación",
+    "registro de hallazgos y remediacion",
+    "proposed exact source review and human approval required",
+    "operational and context findings",
 )
 _EVIDENCE_PAGE_MARKERS = ("evidence appendix", "apéndice de evidencia", "apendice de evidencia")
 _REVIEW_PAGE_MARKERS = (
@@ -374,6 +381,8 @@ def _compose_pdf(base_pdf: bytes, register_pdf: bytes, provenance_pdf: bytes) ->
         text = _normalized_page_text(source_page)
         if any(marker in text for marker in _PROVENANCE_PAGE_MARKERS):
             continue
+        if any(marker in text for marker in _REGISTER_PAGE_MARKERS):
+            continue
         if insert_at is None and any(marker in text for marker in _EVIDENCE_PAGE_MARKERS):
             insert_at = len(retained_pages)
         retained_pages.append(source_page)
@@ -488,6 +497,9 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         "finding_register_in_html": True,
         "finding_register_in_pdf": True,
         "exact_source_locations_verified_in_pdf": True,
+        "semantic_duplicate_code_anchors_absent": bool(
+            (register.get("summary") or {}).get("semantic_duplicate_code_anchors_absent")
+        ),
         "scanner_applicability_in_all_formats": True,
         "legacy_scanner_only_provenance_replaced": True,
         "obsolete_empty_finding_copy_removed": True,
