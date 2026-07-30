@@ -73,10 +73,13 @@ def test_bounded_terminal_response_recovers_canonical_score_from_report_json() -
     source = SCORE_PROJECTION.read_text(encoding="utf-8")
     package = PACKAGE.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.comprehensive_mobile_score_projection.v2"' in source
+    assert 'VERSION = "nico.comprehensive_mobile_score_projection.v3"' in source
     assert 'json_value.get("assessment")' in source
     assert "controller_module._report_outputs = _report_outputs" in source
     assert '"full_report_embedded": False' in source
+    assert "install_scorecard_extraction_validation" in source
+    assert '"wrapped_control_labels_supported": True' in source
+    assert '"all_canonical_rows_and_scores_required": True' in source
     assert "from nico.comprehensive_mobile_score_projection_v2 import" in package
     assert package.rindex("install_comprehensive_mobile_score_projection_v2()") > package.index(
         "install_comprehensive_canonical_truth()"
