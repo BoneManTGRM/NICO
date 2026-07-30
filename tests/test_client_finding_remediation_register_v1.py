@@ -4,7 +4,7 @@ import io
 
 from pypdf import PdfReader
 
-from nico.client_finding_remediation_register_v1 import (
+from nico.client_finding_remediation_register_v2 import (
     build_finding_remediation_register,
     finding_register_markdown,
     render_finding_register_pdf,
@@ -27,10 +27,10 @@ def _canonical() -> dict:
                 "priority": "P1",
                 "category": "architecture",
                 "status": "open",
-                "title": "Reduce complexity in request_handler",
+                "title": "request handler has concentrated branching and elevated change risk",
                 "location": "src/service.py:41",
                 "symbol": "request_handler",
-                "finding_family": "complexity_hotspot",
+                "finding_family": "complexity-hotspot",
                 "fact": "cyclomatic_complexity=36; loc=92; grade=F; method=python_ast",
                 "interpretation": "High-complexity code hotspot",
                 "business_impact": "Concentrated branching increases regression risk.",
@@ -127,16 +127,23 @@ def test_register_retains_exact_locations_and_separates_operational_findings() -
     operational = register["operational_findings"]
 
     assert register["exact_commit_sha"] == SHA
-    assert any(item["location"] == "src/service.py:41" for item in code)
-    tls = next(item for item in code if item["location"] == "src/http_client.py:27")
+    service_records = [item for item in code if item["location"] == "src/service.py:41"]
+    assert len(service_records) == 1
+    assert service_records[0]["duplicate_sources_consolidated"] is True
+    tls_records = [item for item in code if item["location"] == "src/http_client.py:27"]
+    assert len(tls_records) == 1
+    tls = tls_records[0]
     assert tls["rule_id"] == "tls_verify_disabled"
     assert "verify=False" in tls["problematic_code"]
     assert "verify=False" in tls["source_excerpt"]
     assert tls["exact_commit_sha"] == SHA
+    assert tls["artifact_hash"] == "c" * 64
     assert tls["human_disposition_required"] is True
     assert any(item["title"] == "Classify recurring workflow failures" for item in operational)
     assert all(item["location"] != "tests/test_http_client.py:18" for item in code)
     assert register["summary"]["excluded_non_production_count"] >= 1
+    assert register["summary"]["semantic_duplicate_code_anchors_absent"] is True
+    assert register["summary"]["cross_source_duplicates_consolidated"] >= 2
 
 
 def test_secret_value_is_redacted_in_all_client_surfaces() -> None:
