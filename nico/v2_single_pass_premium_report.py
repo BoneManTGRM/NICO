@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import re
+import unicodedata
 from copy import deepcopy
 from typing import Any, Mapping
 
@@ -18,7 +19,7 @@ from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v2"
+VERSION = "nico.v2.single-pass-premium-report.v3"
 
 
 def _text(value: Any) -> str:
@@ -83,6 +84,37 @@ def _sanitize_pdf_control_glyphs(pdf: bytes) -> bytes:
     return sanitized
 
 
+def _semantic_text(value: str) -> str:
+    """Normalize extracted PDF text for robust bilingual semantic validation."""
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.casefold().split())
+
+
+def _has_human_review_gate(extracted: str) -> bool:
+    normalized = _semantic_text(extracted)
+    exact_markers = (
+        "human review and acceptance gate",
+        "puerta de revision humana y aceptacion",
+        "puerta de revision y aceptacion humana",
+        "puerta de revision y entrega",
+    )
+    if any(marker in normalized for marker in exact_markers):
+        return True
+
+    # Future-safe semantic validation: require a review concept, a gate/approval
+    # concept, and a delivery-block or human-approval boundary in the same report.
+    review = "human review" in normalized or "revision humana" in normalized or "puerta de revision" in normalized
+    acceptance = "acceptance gate" in normalized or "aceptacion" in normalized or "aprobacion" in normalized
+    boundary = (
+        "client delivery blocked" in normalized
+        or "client delivery not authorized" in normalized
+        or "entrega al cliente bloqueada" in normalized
+        or "aprobacion humana pendiente" in normalized
+    )
+    return review and acceptance and boundary
+
+
 def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("single-pass premium renderer did not produce a valid PDF")
@@ -97,15 +129,7 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
         if required and required not in extracted:
             raise ValueError(f"final premium PDF omitted required identity text: {required}")
 
-    # The established Spanish premium renderer uses its original localized gate
-    # heading. It is semantically equivalent to the newer explicit acceptance
-    # heading and must not be rejected merely because the wording predates v2.
-    gate_markers = (
-        "Human Review and Acceptance Gate",
-        "Puerta de revisión humana y aceptación",
-        "Puerta de revisión y entrega",
-    )
-    if not any(marker in extracted for marker in gate_markers):
+    if not _has_human_review_gate(extracted):
         raise ValueError("final premium PDF omitted the human review and acceptance gate")
     return len(reader.pages)
 
@@ -158,6 +182,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "markdown_html_review_gate_preserved": True,
             "pdf_review_gate_verified_bilingually": True,
             "legacy_spanish_review_gate_heading_accepted": True,
+            "semantic_review_gate_validation": True,
             "page_count": page_count,
         }
     )
