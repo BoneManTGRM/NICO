@@ -107,7 +107,6 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey,
   useEffect(() => {
     if (refreshKey && adminToken.trim()) void loadRecovery(false);
     // Admin authentication remains parent page memory and is never persisted.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
   useEffect(() => {
