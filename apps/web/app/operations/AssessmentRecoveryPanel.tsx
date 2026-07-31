@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import styles from "./operations.module.css";
 
 type AssessmentRecoveryItem = {
@@ -62,7 +62,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey,
   const [error, setError] = useState("");
   const [actor, setActor] = useState("operator");
 
-  async function loadRecovery(refresh = false) {
+  const loadRecovery = useCallback(async (refresh = false) => {
     if (!apiUrl || !adminToken.trim()) return;
     setLoading(true);
     setError("");
@@ -79,7 +79,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey,
     } finally {
       setLoading(false);
     }
-  }
+  }, [adminToken, apiUrl]);
 
   async function resume(runId: string) {
     if (!runId || !apiUrl || !adminToken.trim()) return;
@@ -106,9 +106,7 @@ export default function AssessmentRecoveryPanel({apiUrl, adminToken, refreshKey,
 
   useEffect(() => {
     if (refreshKey && adminToken.trim()) void loadRecovery(false);
-    // Admin authentication remains parent page memory and is never persisted.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [adminToken, loadRecovery, refreshKey]);
 
   useEffect(() => {
     if (!inventory || !targetRunId) return;
