@@ -2,11 +2,9 @@ name: Security Audit Evidence
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +16,6 @@ jobs:
     name: Audit evidence collection
     runs-on: ubuntu-latest
     timeout-minutes: 35
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,9 +65,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
-
+          import hashlib, json
           data = json.loads(Path('bandit.json').read_text(encoding='utf-8'))
           results = data.get('results') if isinstance(data, dict) else None
           if not isinstance(results, list):
@@ -88,12 +83,11 @@ jobs:
               fingerprint = hashlib.sha256(
                   f'{test_id}|{filename}|{line_number}|{severity}|{confidence}'.encode()
               ).hexdigest()[:16]
-              if severity in {'HIGH', 'CRITICAL'}:
-                  disposition = 'blocking'
-              elif severity == 'LOW':
-                  disposition = 'candidate_false_positive'
-              else:
-                  disposition = 'needs_review'
+              disposition = (
+                  'blocking' if severity in {'HIGH', 'CRITICAL'}
+                  else 'candidate_false_positive' if severity == 'LOW'
+                  else 'needs_review'
+              )
               counts[disposition] += 1
               items.append({
                   'fingerprint': fingerprint,
@@ -105,17 +99,14 @@ jobs:
                   'line': line_number,
                   'disposition': disposition,
               })
-          triage = {
+          Path('bandit-triage.json').write_text(json.dumps({
               'schema': 'nico.bandit_triage.v1',
               'tool': 'bandit',
               'finding_count': len(items),
               **counts,
               'human_review_required': bool(items),
               'items': items,
-          }
-          Path('bandit-triage.json').write_text(
-              json.dumps(triage, indent=2, sort_keys=True), encoding='utf-8'
-          )
+          }, indent=2, sort_keys=True), encoding='utf-8')
           PY
 
       - name: Collect Semgrep evidence
@@ -126,9 +117,7 @@ jobs:
           set -e
           python - "$status" <<'PY'
           from pathlib import Path
-          import json
-          import sys
-
+          import json, sys
           status = int(sys.argv[1])
           path = Path('semgrep.json')
           try:
@@ -137,8 +126,7 @@ jobs:
               data = None
           if not isinstance(data, dict) or not isinstance(data.get('results'), list) or not isinstance(data.get('errors'), list):
               reason = Path('semgrep.stderr.txt').read_text(encoding='utf-8', errors='replace')[-2000:]
-              data = {'results': [], 'errors': [{'level': 'error', 'message': reason or f'exit {status}'}]}
-              path.write_text(json.dumps(data, indent=2), encoding='utf-8')
+              path.write_text(json.dumps({'results': [], 'errors': [{'level': 'error', 'message': reason or f'exit {status}'}]}, indent=2), encoding='utf-8')
           PY
 
       - name: Collect OSV Scanner evidence
@@ -149,9 +137,7 @@ jobs:
           set -e
           python - "$status" <<'PY'
           from pathlib import Path
-          import json
-          import sys
-
+          import json, sys
           status = int(sys.argv[1])
           path = Path('osv-scanner.json')
           try:
@@ -160,10 +146,7 @@ jobs:
               data = None
           if not isinstance(data, dict) or not isinstance(data.get('results'), list):
               reason = Path('osv-scanner.stderr.txt').read_text(encoding='utf-8', errors='replace')[-2000:]
-              path.write_text(json.dumps({
-                  'status': 'unavailable',
-                  'reason': reason or f'exit {status}',
-              }, indent=2), encoding='utf-8')
+              path.write_text(json.dumps({'status': 'unavailable', 'reason': reason or f'exit {status}'}, indent=2), encoding='utf-8')
           PY
 
       - name: Collect gitleaks git-history evidence
@@ -174,9 +157,7 @@ jobs:
           set -e
           python - "$status" <<'PY'
           from pathlib import Path
-          import json
-          import sys
-
+          import json, sys
           status = int(sys.argv[1])
           path = Path('gitleaks.json')
           if status == 0 and not path.exists():
@@ -186,16 +167,14 @@ jobs:
           except Exception:
               data = None
           valid = isinstance(data, list)
-          findings = data if valid else []
-          summary = {
+          Path('gitleaks-summary.json').write_text(json.dumps({
               'scanner': 'gitleaks',
               'status': 'completed' if valid else 'unavailable',
-              'finding_count': len(findings),
+              'finding_count': len(data) if valid else 0,
               'artifact_present': path.exists(),
               'history_depth': 'full',
               'exit_code': status,
-          }
-          Path('gitleaks-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          }, indent=2), encoding='utf-8')
           PY
 
       - name: Collect trufflehog git-history evidence
@@ -206,9 +185,7 @@ jobs:
           set -e
           python - "$status" <<'PY'
           from pathlib import Path
-          import json
-          import sys
-
+          import json, sys
           status = int(sys.argv[1])
           path = Path('trufflehog.json')
           raw = path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
@@ -227,7 +204,7 @@ jobs:
               else:
                   invalid_lines += 1
           completed = invalid_lines == 0 and (status == 0 or bool(findings))
-          summary = {
+          Path('trufflehog-summary.json').write_text(json.dumps({
               'scanner': 'trufflehog',
               'status': 'completed' if completed else 'unavailable',
               'finding_count': len(findings),
@@ -235,17 +212,14 @@ jobs:
               'history_depth': 'full',
               'exit_code': status,
               'invalid_json_lines': invalid_lines,
-          }
-          Path('trufflehog-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          }, indent=2), encoding='utf-8')
           PY
 
       - name: Collect built-in high-confidence credential evidence
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
-          import re
-
+          import json, re
           skip = {'.git', 'node_modules', '.next', 'dist', 'build', '.venv', 'venv', '__pycache__'}
           suffixes = {'.py','.js','.jsx','.ts','.tsx','.json','.yaml','.yml','.toml','.ini','.cfg','.txt','.md','.sh','.html','.css','.xml','.env','.example'}
           patterns = {
@@ -263,14 +237,8 @@ jobs:
               for line_number, line in enumerate(text.splitlines(), 1):
                   for finding_type, pattern in patterns.items():
                       if pattern.search(line):
-                          findings.append({
-                              'path': str(path),
-                              'line': line_number,
-                              'type': finding_type,
-                          })
-          Path('credential-scan.json').write_text(
-              json.dumps({'findings': findings}, indent=2), encoding='utf-8'
-          )
+                          findings.append({'path': str(path), 'line': line_number, 'type': finding_type})
+          Path('credential-scan.json').write_text(json.dumps({'findings': findings}, indent=2), encoding='utf-8')
           PY
 
       - name: Set up Node
@@ -279,6 +247,11 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install supported npm audit client
+        run: |
+          npm install --global npm@11
+          npm --version
 
       - name: Install exact frontend dependencies
         working-directory: apps/web
@@ -293,9 +266,7 @@ jobs:
           set -e
           python - "$status" <<'PY'
           from pathlib import Path
-          import json
-          import sys
-
+          import json, sys
           status = int(sys.argv[1])
           Path('../../typescript-summary.json').write_text(json.dumps({
               'scanner': 'typescript',
@@ -311,72 +282,51 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
-          import subprocess
-
-          configs = [
-              'eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs',
-              '.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json',
-              '.eslintrc.yaml', '.eslintrc.yml',
-          ]
+          import json, subprocess
+          configs = ['eslint.config.js','eslint.config.mjs','eslint.config.cjs','.eslintrc','.eslintrc.js','.eslintrc.cjs','.eslintrc.json','.eslintrc.yaml','.eslintrc.yml']
           configured = any(Path(name).is_file() for name in configs)
           binary = Path('node_modules/.bin/eslint')
           if not configured:
               data = []
-              summary = {
-                  'scanner': 'eslint',
-                  'status': 'unavailable_not_configured',
-                  'configured': False,
-                  'finding_count': 0,
-                  'error_count': 0,
-                  'warning_count': 0,
-              }
+              summary = {'scanner': 'eslint', 'status': 'unavailable_not_configured', 'configured': False, 'finding_count': 0, 'error_count': 0, 'warning_count': 0}
           elif not binary.is_file():
               data = []
-              summary = {
-                  'scanner': 'eslint',
-                  'status': 'unavailable',
-                  'configured': True,
-                  'finding_count': 0,
-                  'error_count': 0,
-                  'warning_count': 0,
-                  'reason': 'local ESLint binary is unavailable',
-              }
+              summary = {'scanner': 'eslint', 'status': 'unavailable', 'configured': True, 'finding_count': 0, 'error_count': 0, 'warning_count': 0, 'reason': 'local ESLint binary is unavailable'}
           else:
-              result = subprocess.run(
-                  [str(binary), '.', '--format', 'json'],
-                  capture_output=True,
-                  text=True,
-                  timeout=180,
-                  check=False,
-              )
+              result = subprocess.run([str(binary), '.', '--format', 'json'], capture_output=True, text=True, timeout=180, check=False)
               try:
                   data = json.loads(result.stdout)
               except json.JSONDecodeError:
                   data = []
-              messages = [
-                  message
-                  for file_result in data if isinstance(file_result, dict)
-                  for message in file_result.get('messages') or [] if isinstance(message, dict)
-              ]
+              messages = [message for file_result in data if isinstance(file_result, dict) for message in file_result.get('messages') or [] if isinstance(message, dict)]
               errors = sum(1 for message in messages if int(message.get('severity') or 0) == 2)
               warnings = sum(1 for message in messages if int(message.get('severity') or 0) == 1)
-              summary = {
-                  'scanner': 'eslint',
-                  'status': 'completed_clean' if result.returncode == 0 else 'completed_with_findings',
-                  'configured': True,
-                  'finding_count': len(messages),
-                  'error_count': errors,
-                  'warning_count': warnings,
-                  'exit_code': result.returncode,
-              }
+              summary = {'scanner': 'eslint', 'status': 'completed_clean' if result.returncode == 0 else 'completed_with_findings', 'configured': True, 'finding_count': len(messages), 'error_count': errors, 'warning_count': warnings, 'exit_code': result.returncode}
           Path('../../eslint.json').write_text(json.dumps(data, indent=2), encoding='utf-8')
           Path('../../eslint-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
           PY
 
       - name: Collect npm audit evidence
         working-directory: apps/web
-        run: npm audit --omit=dev --json > ../../npm-audit.json || true
+        run: |
+          set +e
+          npm audit --omit=dev --json > ../../npm-audit.json 2> ../../npm-audit.stderr.txt
+          status=$?
+          set -e
+          python - "$status" <<'PY'
+          from pathlib import Path
+          import json, sys
+          status = int(sys.argv[1])
+          output = Path('../../npm-audit.json')
+          stderr = Path('../../npm-audit.stderr.txt').read_text(encoding='utf-8', errors='replace')
+          try:
+              data = json.loads(output.read_text(encoding='utf-8'))
+          except Exception:
+              data = None
+          valid = isinstance(data, dict) and isinstance(data.get('metadata'), dict) and isinstance(data['metadata'].get('vulnerabilities'), dict)
+          if not valid:
+              output.write_text(json.dumps({'status': 'unavailable', 'reason': stderr[-2000:] or f'npm audit exit {status} emitted invalid JSON', 'exit_code': status}, indent=2), encoding='utf-8')
+          PY
 
       - name: Collect complexity evidence
         run: |
@@ -384,11 +334,7 @@ jobs:
           import json
           from pathlib import Path
           from nico.complexity_engine import build_complexity_profile
-
-          Path('complexity-profile.json').write_text(
-              json.dumps(build_complexity_profile(Path('.')), indent=2, sort_keys=True),
-              encoding='utf-8',
-          )
+          Path('complexity-profile.json').write_text(json.dumps(build_complexity_profile(Path('.')), indent=2, sort_keys=True), encoding='utf-8')
           PY
 
       - name: Build fail-closed scanner manifest
@@ -416,6 +362,7 @@ jobs:
             trufflehog.stderr.txt
             credential-scan.json
             npm-audit.json
+            npm-audit.stderr.txt
             typescript.txt
             typescript-summary.json
             eslint.json
