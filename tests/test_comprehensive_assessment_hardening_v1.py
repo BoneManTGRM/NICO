@@ -5,6 +5,7 @@ from pathlib import Path
 
 from nico import comprehensive_assessment_hardening_v1 as hardening
 from nico.comprehensive_native_providers_v3 import (
+    HARDENING_STATUS,
     _immutable_ci_score,
     _immutable_delivery_score,
 )
@@ -403,7 +404,7 @@ def test_mutable_history_cannot_change_immutable_scores() -> None:
 def test_import_time_hardening_restores_source_signal_binding() -> None:
     from nico import snapshot_repository_evidence as snapshot
 
-    status = hardening.install_import_time_hardening()
+    status = HARDENING_STATUS
 
     assert callable(snapshot.analyze_source_signals)
     assert callable(snapshot.scan_files)
