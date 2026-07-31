@@ -10,7 +10,7 @@ from pypdf import PdfReader
 
 from nico import client_report_completion_v1 as legacy
 from nico.client_assessment_truth_v3 import normalize_client_assessment_truth
-from nico.client_finding_remediation_register_v4 import (
+from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     finding_register_markdown,
     render_finding_register_pdf,
