@@ -37,7 +37,7 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
 
     spec = ScannerToolSpec(
         "trufflehog",
-        ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification"),
+        ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification", "--branch", "HEAD"),
         "secret",
         scans_git_history=True,
     )
@@ -70,7 +70,7 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
 
     spec = ScannerToolSpec(
         "gitleaks",
-        ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", "."),
+        ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", ".", "--log-opts", "HEAD"),
         "secret",
         scans_git_history=True,
     )
