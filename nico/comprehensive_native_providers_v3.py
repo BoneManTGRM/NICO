@@ -5,9 +5,11 @@ from typing import Any, Mapping
 
 from fastapi import FastAPI
 
+from nico import client_assessment_truth_v3 as client_truth
 from nico import comprehensive_assessment_hardening_v1 as hardening
 from nico import comprehensive_native_providers as legacy
 from nico import comprehensive_native_providers_v2 as v2
+from nico import snapshot_repository_evidence as snapshot_repository
 from nico.comprehensive_assessment_hardening_v1 import (
     install_final_publisher_gate,
     install_import_time_hardening,
@@ -16,44 +18,99 @@ from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
 VERSION = "nico.comprehensive-native-providers.v3"
 
+_PRE_HARDENING_SCAN_FILES = getattr(snapshot_repository, "scan_files", None)
+_PRE_HARDENING_SCORE_REPAIR = client_truth._repair_stale_report_contracts
+
 
 def _strict_review_candidate(item: Mapping[str, Any]) -> bool:
-    """Compress only records explicitly classified as unverified review candidates."""
+    """Group only explicit dependency or secret review candidates.
+
+    Existing report polish remains authoritative for scanner runtime diagnostics,
+    confirmed P2 records, code candidates, and static-analysis candidates. This
+    prevents a generic candidate-volume layer from replacing more precise client
+    language or hiding a confirmed finding.
+    """
 
     category = str(item.get("category") or "").strip().casefold()
-    if category not in {"dependency", "secret", "static", "code"}:
+    if category not in {"dependency", "secret"}:
         return False
     if item.get("material") is True:
         return False
     status = str(item.get("status") or "").strip().casefold()
-    if item.get("review_required") is True or status in {
-        "review_required",
-        "candidate",
-        "unverified",
-    }:
-        return True
     disposition = str(
         item.get("disposition") or item.get("candidate_classification") or ""
     ).strip().casefold()
-    if "review" in disposition or "candidate" in disposition:
-        return True
-    evidence = " ".join(
-        str(item.get(key) or "").casefold()
-        for key in ("evidence", "fact", "title", "interpretation")
+    explicit = bool(
+        item.get("review_required") is True
+        or status in {"review_required", "candidate", "unverified"}
+        or "review_required" in disposition
+        or disposition.endswith("_candidate")
     )
-    return any(
-        token in evidence
+    if not explicit:
+        return False
+    title = str(item.get("title") or "").casefold()
+    fact = str(item.get("fact") or "").casefold()
+    evidence = str(item.get("evidence") or "").casefold()
+    runtime_diagnostic = any(
+        token in f"{title} {fact} {evidence}"
         for token in (
-            "verified=false",
-            "unverified candidate",
-            "candidate requires review",
-            "review-required candidate",
+            "resource limit",
+            "failed to create new os thread",
+            "did not produce a complete result",
+            "configuration failed",
+            "configuration_failed",
+            "scanner execution boundary",
         )
     )
+    return not runtime_diagnostic
+
+
+def _has_numeric_score_truth(canonical: Mapping[str, Any]) -> bool:
+    assessment = canonical.get("assessment")
+    if not isinstance(assessment, Mapping):
+        return False
+    maturity = assessment.get("maturity_signal")
+    score_contract = assessment.get("score_contract")
+    candidates = [
+        assessment.get("technical_score"),
+        assessment.get("canonical_evidence_adjusted_score"),
+        assessment.get("evidence_adjusted_score"),
+    ]
+    if isinstance(maturity, Mapping):
+        candidates.extend(
+            maturity.get(key)
+            for key in (
+                "score",
+                "source_score",
+                "presented_score",
+                "technical_score",
+                "canonical_evidence_adjusted_score",
+                "evidence_adjusted_score",
+            )
+        )
+    if isinstance(score_contract, Mapping):
+        candidates.extend(
+            score_contract.get(key)
+            for key in ("technical_score", "evidence_adjusted_score")
+        )
+    return any(isinstance(value, (int, float)) and not isinstance(value, bool) for value in candidates)
+
+
+def _hybrid_score_truth_repair(canonical: dict[str, Any]) -> int:
+    """Use equality verification when score aliases exist, legacy repair otherwise."""
+
+    if _has_numeric_score_truth(canonical):
+        return hardening._repair_stale_report_contracts_hardened(canonical)
+    return _PRE_HARDENING_SCORE_REPAIR(canonical)
 
 
 hardening._is_review_candidate = _strict_review_candidate
 HARDENING_STATUS = install_import_time_hardening()
+client_truth._repair_stale_report_contracts = _hybrid_score_truth_repair
+if callable(_PRE_HARDENING_SCAN_FILES):
+    snapshot_repository.scan_files = _PRE_HARDENING_SCAN_FILES
+elif not callable(getattr(snapshot_repository, "scan_files", None)):
+    snapshot_repository.scan_files = snapshot_repository.analyze_source_signals
 
 _IMMUTABLE_CONTROL_FIELDS = (
     "cache",
@@ -86,21 +143,14 @@ def _immutable_ci_score(
     workflow: dict[str, Any],
     commit_sha: str,
 ) -> tuple[int, list[str], list[str], dict[str, Any]]:
-    """Score only workflow configuration bound to the immutable repository commit.
-
-    Job, run, and deployment history remains useful operational context, but it is
-    deliberately excluded from technical scoring so repeat assessments of one exact
-    commit cannot drift as new GitHub Actions runs occur later.
-    """
+    """Score only workflow configuration bound to the immutable repository commit."""
 
     workflow_files = int(workflow.get("workflow_file_count") or 0)
     configuration_sha = str(
         workflow.get("workflow_configuration_snapshot_sha") or ""
     ).casefold()
     expected_sha = str(commit_sha or "").casefold()
-    exact_configuration = bool(
-        expected_sha and configuration_sha == expected_sha
-    )
+    exact_configuration = bool(expected_sha and configuration_sha == expected_sha)
     explicit_permissions = workflow.get("explicit_permissions_present") is True
     controls = (
         workflow.get("configuration_controls")
@@ -108,8 +158,7 @@ def _immutable_ci_score(
         else {}
     )
     retained_controls = {
-        name: controls.get(name) is True
-        for name in _IMMUTABLE_CONTROL_FIELDS
+        name: controls.get(name) is True for name in _IMMUTABLE_CONTROL_FIELDS
     }
     control_count = sum(retained_controls.values())
 
@@ -118,9 +167,7 @@ def _immutable_ci_score(
     if workflow_files:
         score += 10
     else:
-        findings.append(
-            "No workflow configuration was retained at the assessed commit."
-        )
+        findings.append("No workflow configuration was retained at the assessed commit.")
     if exact_configuration:
         score += 10
     else:
@@ -141,12 +188,8 @@ def _immutable_ci_score(
         "jobs_observed": int(workflow.get("jobs_observed") or 0),
         "job_success_rate": workflow.get("job_success_rate"),
         "deployments_observed": int(workflow.get("deployments_observed") or 0),
-        "successful_deployments": int(
-            workflow.get("successful_deployments") or 0
-        ),
-        "runtime_proof_workflows": list(
-            workflow.get("runtime_proof_workflows") or []
-        ),
+        "successful_deployments": int(workflow.get("successful_deployments") or 0),
+        "runtime_proof_workflows": list(workflow.get("runtime_proof_workflows") or []),
         "score_effect": "none",
         "classification": "mutable_operational_trend",
     }
@@ -215,12 +258,8 @@ def _immutable_delivery_score(
         "mutable_activity_affects_technical_score": False,
         "operational_trend": {
             "commits_returned": int(activity.get("commits_returned") or 0),
-            "pull_requests_returned": int(
-                activity.get("pull_requests_returned") or 0
-            ),
-            "merged_pull_requests": int(
-                activity.get("merged_pull_requests") or 0
-            ),
+            "pull_requests_returned": int(activity.get("pull_requests_returned") or 0),
+            "merged_pull_requests": int(activity.get("merged_pull_requests") or 0),
             "jobs_observed": int(workflow.get("jobs_observed") or 0),
             "job_success_rate": workflow.get("job_success_rate"),
             "score_effect": "none",
@@ -249,9 +288,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
 
     architecture = sections.get("architecture_debt") or {}
     architecture_score = int(
-        architecture.get("presented_score")
-        or architecture.get("score")
-        or 0
+        architecture.get("presented_score") or architecture.get("score") or 0
     )
     ci_score, ci_evidence, ci_findings, ci_contract = _immutable_ci_score(
         workflow,
@@ -441,6 +478,7 @@ def install_native_comprehensive_providers(
 
 __all__ = [
     "VERSION",
+    "HARDENING_STATUS",
     "canonical_scoring_provider",
     "install_native_comprehensive_providers",
     "native_comprehensive_providers",
