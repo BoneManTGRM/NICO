@@ -1,0 +1,308 @@
+name: PR 953 one-use CI repair
+
+on:
+  push:
+    branches:
+      - fix/canonical-finding-truth-client-report-v3
+    paths:
+      - .github/workflows/pr953-self-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/canonical-finding-truth-client-report-v3
+          fetch-depth: 0
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: '3.11'
+
+      - name: Apply bounded repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('nico/client_finding_remediation_register_v4.py')
+          text = path.read_text()
+
+          replacements = []
+
+          replacements.append((
+          '''_SKIP_KEYS = {
+              "pdf_base64",
+              "markdown",
+              "html",
+              "raw_output",
+              "stdout",
+              "stderr",
+              "secret",
+              "match",
+          }
+          ''',
+          '''_SKIP_KEYS = {
+              "pdf_base64",
+              "markdown",
+              "html",
+              "raw_output",
+              "stdout",
+              "stderr",
+              "secret",
+              "match",
+          }
+          _MISSING_LOCATION_VALUES = {
+              "",
+              "location-not-retained",
+              "not retained",
+              "unknown",
+          }
+          '''))
+
+          replacements.append((
+          '''def _parse_location(item: Mapping[str, Any]) -> tuple[str, int | None]:
+              path = normalize_repository_path(
+                  item.get("path") or item.get("file_path") or item.get("source_path") or ""
+              )
+              line = _int(item.get("line") or item.get("start_line"))
+              location = normalize_repository_path(item.get("location") or "")
+              match = re.match(r"^(.*?):(\\d+)(?:-\\d+)?(?::\\d+)?$", location)
+              if match:
+                  path = normalize_repository_path(match.group(1))
+                  line = line or int(match.group(2))
+              elif not path and location not in {"", "location-not-retained", "not retained", "unknown"}:
+                  path = location
+              return path, line
+          ''',
+          '''def _parse_location(item: Mapping[str, Any]) -> tuple[str, int | None]:
+              path = normalize_repository_path(
+                  item.get("path") or item.get("file_path") or item.get("source_path") or ""
+              )
+              if path.casefold() in _MISSING_LOCATION_VALUES:
+                  path = ""
+              line = _int(item.get("line") or item.get("start_line"))
+              location = normalize_repository_path(item.get("location") or "")
+              if location.casefold() in _MISSING_LOCATION_VALUES:
+                  location = ""
+              match = re.match(r"^(.*?):(\\d+)(?:-\\d+)?(?::\\d+)?$", location)
+              if match:
+                  path = normalize_repository_path(match.group(1))
+                  line = line or int(match.group(2))
+              elif not path and location:
+                  path = location
+              return path, line
+
+
+          def _scanner_configuration_issue_count(canonical: Mapping[str, Any]) -> int:
+              assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+              record_count = 0
+              for candidate in (
+                  canonical.get("requested_scanner_records"),
+                  assessment.get("requested_scanner_records"),
+                  canonical.get("scanner_execution_records"),
+                  assessment.get("scanner_execution_records"),
+              ):
+                  if isinstance(candidate, list):
+                      record_count = max(
+                          record_count,
+                          sum(
+                              max(0, _int(item.get("scanner_configuration_error_count")) or 0)
+                              for item in candidate
+                              if isinstance(item, Mapping)
+                          ),
+                      )
+              issue_count = 0
+              for candidate in (
+                  canonical.get("scanner_configuration_issues"),
+                  assessment.get("scanner_configuration_issues"),
+              ):
+                  if isinstance(candidate, list):
+                      issue_count = max(
+                          issue_count,
+                          sum(
+                              max(0, _int(item.get("count")) or 0)
+                              for item in candidate
+                              if isinstance(item, Mapping)
+                          ),
+                      )
+              applicability = assessment.get("scanner_applicability_summary") if isinstance(assessment.get("scanner_applicability_summary"), Mapping) else {}
+              return max(
+                  record_count,
+                  issue_count,
+                  max(0, _int(applicability.get("scanner_configuration_issue_count")) or 0),
+              )
+          '''))
+
+          replacements.append((
+          '''    return [selected[key] for key in order]
+
+
+def normalize_finding_remediation_register(
+          ''',
+          '''    return [selected[key] for key in order]
+
+
+def _source_anchor(item: Mapping[str, Any]) -> tuple[str, int, str] | None:
+              path, line = _parse_location(item)
+              if not path or line is None:
+                  return None
+              return path.casefold(), int(line), _family(item)
+
+
+def normalize_finding_remediation_register(
+          '''))
+
+          replacements.append((
+          '''    excluded = _normalize_records(
+              (
+                  item
+                  for item in result.get("excluded_non_production_findings") or []
+                  if isinstance(item, Mapping)
+              ),
+              repository=repository,
+              aliases_by_anchor=aliases_by_anchor,
+          )
+
+              code.sort(
+          ''',
+          '''    excluded = _normalize_records(
+              (
+                  item
+                  for item in result.get("excluded_non_production_findings") or []
+                  if isinstance(item, Mapping)
+              ),
+              repository=repository,
+              aliases_by_anchor=aliases_by_anchor,
+          )
+
+              code_anchors = {
+                  anchor for item in code
+                  if (anchor := _source_anchor(item)) is not None
+              }
+              operational = [
+                  item for item in operational
+                  if (anchor := _source_anchor(item)) is None or anchor not in code_anchors
+              ]
+
+              code.sort(
+          '''))
+
+          replacements.append((
+          '''    summary = deepcopy(dict(result.get("summary") or {}))
+              decision_count = len(code) + len(operational)
+              summary.update(
+                  {
+                      "register_normalization_version": VERSION,
+                      "decision_finding_count": decision_count,
+                      "exact_source_code_finding_count": len(code),
+                      "operational_or_context_finding_count": len(operational),
+                      "excluded_non_production_count": len(excluded),
+          ''',
+          '''    summary = deepcopy(dict(result.get("summary") or {}))
+              decision_count = len(code) + len(operational)
+              retained_count = decision_count + len(excluded)
+              scanner_configuration_issue_count = max(
+                  max(0, _int(summary.get("scanner_configuration_issue_count")) or 0),
+                  _scanner_configuration_issue_count(canonical),
+              )
+              summary.update(
+                  {
+                      "register_normalization_version": VERSION,
+                      "canonical_finding_count": decision_count,
+                      "finding_register_count": decision_count,
+                      "deduplicated_record_count": retained_count,
+                      "decision_finding_count": decision_count,
+                      "exact_source_code_finding_count": len(code),
+                      "operational_or_context_finding_count": len(operational),
+                      "excluded_non_production_count": len(excluded),
+                      "scanner_configuration_issue_count": scanner_configuration_issue_count,
+          '''))
+
+          replacements.append((
+          '''            == len(code),
+                      "stable_alias_projection_idempotent": True,
+          ''',
+          '''            == len(code),
+                      "cross_population_duplicates_absent": all(
+                          _source_anchor(item) not in code_anchors
+                          for item in operational
+                      ),
+                      "stable_alias_projection_idempotent": True,
+          '''))
+
+          replacements.append((
+          '''def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
+              return v3.finding_register_markdown(register, spanish=spanish)
+          ''',
+          '''def _finding_alias_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
+              rows: list[str] = []
+              values = [
+                  *[item for item in register.get("code_findings") or [] if isinstance(item, Mapping)],
+                  *[item for item in register.get("operational_findings") or [] if isinstance(item, Mapping)],
+              ]
+              for item in values:
+                  finding_id = _text(item.get("finding_id") or item.get("id"))
+                  aliases = [
+                      alias for alias in _dedupe(item.get("finding_aliases") or [])
+                      if alias != finding_id
+                  ]
+                  if finding_id and aliases:
+                      label = "Alias de identidad" if spanish else "Identity aliases"
+                      rows.append(f"- `{finding_id}`: {label}: " + ", ".join(f"`{alias}`" for alias in aliases))
+              if not rows:
+                  return ""
+              heading = "### Alias de identidad de hallazgos" if spanish else "### Finding identity aliases"
+              return "\\n".join([heading, "", *rows])
+
+
+def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
+              markdown = v3.finding_register_markdown(register, spanish=spanish).rstrip()
+              aliases = _finding_alias_markdown(register, spanish=spanish)
+              return markdown + (f"\\n\\n{aliases}\\n" if aliases else "\\n")
+          '''))
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one replacement target, found {count}: {old[:80]!r}')
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+
+          python -m py_compile nico/client_finding_remediation_register_v4.py
+          rm .github/workflows/pr953-self-repair.yml
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Run focused regressions
+        run: |
+          pytest -q \
+            tests/test_canonical_finding_surface_sync_v1.py \
+            tests/test_client_finding_truth_v3.py \
+            tests/test_client_report_completion_v2.py \
+            tests/test_v2_premium_report_renderer.py
+
+      - name: Run full Python suite
+        run: pytest -q
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add nico/client_finding_remediation_register_v4.py .github/workflows/pr953-self-repair.yml
+          git diff --cached --check
+          git commit -m "Fix PR 953 canonical finding CI regressions"
+          git push origin HEAD:fix/canonical-finding-truth-client-report-v3
