@@ -25,15 +25,6 @@ def _initialize_repository(repo_dir) -> None:
 def _rebind_scanner_determinism(monkeypatch) -> None:
     """Rebind after other installer tests replace the shared scanner runner."""
     monkeypatch.setattr(scanner_determinism_v1, "_INSTALLED", False)
-    # functools.wraps copies function attributes. A later test/bootstrap wrapper can
-    # therefore inherit the deterministic marker without retaining the deterministic
-    # command rewrite. Remove the inherited marker so this isolation helper actually
-    # reinstalls the contract it is about to verify.
-    monkeypatch.delattr(
-        scanner_tool_runners.run_scanner_tool,
-        "__nico_deterministic_runner__",
-        raising=False,
-    )
     install_scanner_determinism()
 
 
