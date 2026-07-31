@@ -32,6 +32,9 @@ _SECRET_PATTERNS = (
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("generic_secret_assignment", re.compile(r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?[A-Za-z0-9_./+=:-]{16,}")),
 )
+_EXAMPLE_CONNECTION_ASSIGNMENT = re.compile(
+    r"(?i)\b[A-Za-z][A-Za-z0-9_]*(?:URL|URI)\s*=\s*[^\s'\"]+://[^\s'\"]+"
+)
 _JS_RISKS = (
     ("js_inner_html", re.compile(r"\.innerHTML\s*="), "innerHTML assignments can create XSS risk."),
     ("react_dangerous_html", re.compile(r"\bdangerouslySetInnerHTML\b"), "dangerouslySetInnerHTML requires strict sanitization evidence."),
@@ -188,6 +191,13 @@ def _masked(value: str) -> str:
     return "***" if len(value) <= 8 else f"{value[:4]}...{value[-4:]}"
 
 
+def _is_example_placeholder_line(path: str, line: str) -> bool:
+    return bool(
+        PurePosixPath(path).name.casefold() in _EXAMPLE_ENV_NAMES
+        and any(marker in line.casefold() for marker in _PLACEHOLDER_MARKERS)
+    )
+
+
 def analyze_source_signals(files: Mapping[str, str]) -> dict[str, Any]:
     """Analyze source semantics without promoting comments, strings, or fixtures.
 
@@ -209,17 +219,26 @@ def analyze_source_signals(files: Mapping[str, str]) -> dict[str, Any]:
             upper = line.strip().upper()
             if "TODO" in upper or "FIXME" in upper or "SECURITY" in upper:
                 todos.append(f"{path}:{line_number}: {line.strip()[:140]}")
+            placeholder_line = _is_example_placeholder_line(path, line)
+            matched_secret_pattern = False
             for name, pattern in _SECRET_PATTERNS:
                 match = pattern.search(line)
                 if not match:
                     continue
+                matched_secret_pattern = True
                 evidence = f"{path}:{line_number}: potential {name} evidence {_masked(match.group(0))}"
-                if PurePosixPath(path).name.casefold() in _EXAMPLE_ENV_NAMES and any(
-                    marker in line.casefold() for marker in _PLACEHOLDER_MARKERS
-                ):
+                if placeholder_line:
                     placeholder_secrets.append(evidence)
                 elif not _non_production(path):
                     secrets.append(evidence)
+            if (
+                placeholder_line
+                and not matched_secret_pattern
+                and _EXAMPLE_CONNECTION_ASSIGNMENT.search(line)
+            ):
+                placeholder_secrets.append(
+                    f"{path}:{line_number}: verified example connection placeholder"
+                )
 
         suffix = PurePosixPath(path).suffix.casefold()
         if suffix not in _SOURCE_SUFFIXES:
