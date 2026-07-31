@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Mapping
 
 from fastapi import FastAPI
 
+from nico import comprehensive_assessment_hardening_v1 as hardening
 from nico import comprehensive_native_providers as legacy
 from nico import comprehensive_native_providers_v2 as v2
 from nico.comprehensive_assessment_hardening_v1 import (
@@ -15,6 +16,43 @@ from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
 VERSION = "nico.comprehensive-native-providers.v3"
 
+
+def _strict_review_candidate(item: Mapping[str, Any]) -> bool:
+    """Compress only records explicitly classified as unverified review candidates."""
+
+    category = str(item.get("category") or "").strip().casefold()
+    if category not in {"dependency", "secret", "static", "code"}:
+        return False
+    if item.get("material") is True:
+        return False
+    status = str(item.get("status") or "").strip().casefold()
+    if item.get("review_required") is True or status in {
+        "review_required",
+        "candidate",
+        "unverified",
+    }:
+        return True
+    disposition = str(
+        item.get("disposition") or item.get("candidate_classification") or ""
+    ).strip().casefold()
+    if "review" in disposition or "candidate" in disposition:
+        return True
+    evidence = " ".join(
+        str(item.get(key) or "").casefold()
+        for key in ("evidence", "fact", "title", "interpretation")
+    )
+    return any(
+        token in evidence
+        for token in (
+            "verified=false",
+            "unverified candidate",
+            "candidate requires review",
+            "review-required candidate",
+        )
+    )
+
+
+hardening._is_review_candidate = _strict_review_candidate
 HARDENING_STATUS = install_import_time_hardening()
 
 _IMMUTABLE_CONTROL_FIELDS = (
@@ -367,7 +405,7 @@ def install_native_comprehensive_providers(
     setattr(app.state, PROVIDER_STATE_KEY, providers)
 
     final_gate = install_final_publisher_gate()
-    hardening = {**HARDENING_STATUS, **final_gate}
+    hardening_status = {**HARDENING_STATUS, **final_gate}
     app.state.nico_native_comprehensive_provider_status = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
@@ -380,21 +418,21 @@ def install_native_comprehensive_providers(
         "mutable_operational_history_affects_score": False,
         "score_override_allowed": False,
         "source_signal_binding_compatible": (
-            hardening.get("source_signal_binding_compatible") is True
+            hardening_status.get("source_signal_binding_compatible") is True
         ),
         "frozen_operational_evidence_bound": (
-            hardening.get("frozen_operational_evidence_bound") is True
+            hardening_status.get("frozen_operational_evidence_bound") is True
         ),
         "production_manifest_scope_filter_bound": (
-            hardening.get("production_manifest_scope_filter_bound") is True
+            hardening_status.get("production_manifest_scope_filter_bound") is True
         ),
         "review_candidate_summary_bound": (
-            hardening.get("review_candidate_summary_bound") is True
+            hardening_status.get("review_candidate_summary_bound") is True
         ),
         "report_contract_publication_gate_bound": (
-            hardening.get("final_report_contract_publication_gate_bound") is True
+            hardening_status.get("final_report_contract_publication_gate_bound") is True
         ),
-        "hardening_status": hardening,
+        "hardening_status": hardening_status,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
