@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from nico.comprehensive_capability_registry import execution_plan
-from nico.comprehensive_native_providers import install_native_comprehensive_providers
+from nico.comprehensive_native_providers_v2 import install_native_comprehensive_providers
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 
 
@@ -31,12 +31,14 @@ def test_native_provider_install_covers_every_required_capability() -> None:
 def test_production_entrypoint_installs_providers_before_building_executors() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    assert "from nico.comprehensive_native_providers import install_native_comprehensive_providers" in source
+    assert "from nico.comprehensive_native_providers_v2 import install_native_comprehensive_providers" in source
     provider_install = source.index("native_providers = install_native_comprehensive_providers(target)")
     executor_build = source.index("executors = build_production_capability_executors(target)")
     runtime_install = source.index("controller = install_comprehensive_production_bootstrap(")
     assert provider_install < executor_build < runtime_install
     assert '"provider_install_before_executor_build": True' in source
+    assert '"category_specific_scoring_bound": True' in source
+    assert '"score_override_allowed": False' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:' in source
 
 
