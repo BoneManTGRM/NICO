@@ -31,7 +31,7 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
     workspace = WorkerWorkspace(root=tmp_path)
     calls: list[tuple[str, ...]] = []
 
-    def fake_runner(args, *, cwd, limits):
+    def fake_runner(args, *, cwd, limits, **kwargs):
         calls.append(tuple(args))
         return WorkerCommandResult(args=tuple(args), returncode=0, stdout='{"SourceMetadata": {}}', stderr="")
 
@@ -64,7 +64,7 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
     workspace = WorkerWorkspace(root=tmp_path)
     calls: list[tuple[str, ...]] = []
 
-    def fake_runner(args, *, cwd, limits):
+    def fake_runner(args, *, cwd, limits, **kwargs):
         calls.append(tuple(args))
         return WorkerCommandResult(args=tuple(args), returncode=0, stdout="[]", stderr="")
 
