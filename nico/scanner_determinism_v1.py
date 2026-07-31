@@ -332,9 +332,15 @@ def _wrap_result(original: Callable[..., dict[str, Any]], spec: Any, workspace: 
         "mutable_runtime_order_affects_result": False,
         "descendant_refs_excluded": bool(spec.scans_git_history),
     }
+    if spec.name == "osv-scanner" and result.get("fallback") == "OSV querybatch API":
+        result["execution_source"] = "osv_api_fallback"
+        result["current_run"] = True
     if spec.scans_git_history:
+        completed = result.get("status") == "completed"
         result["history_scope"] = "reachable_ancestry_at_assessed_commit"
-        result["full_history_verified"] = result.get("status") == "completed"
+        result["history_depth_verified"] = completed
+        result["full_history_verified"] = completed
+        result["descendant_refs_scanned"] = False
     return result
 
 
@@ -361,7 +367,8 @@ def install_scanner_determinism() -> dict[str, Any]:
     if not getattr(runner, "__nico_deterministic_runner__", False):
         @wraps(runner)
         def deterministic(spec: Any, workspace: Any, *args: Any, **kwargs: Any):
-            return _wrap_result(runner, spec, workspace, *args, **kwargs)
+            deterministic_spec = _replace_specs((spec,))[0]
+            return _wrap_result(runner, deterministic_spec, workspace, *args, **kwargs)
 
         deterministic.__nico_deterministic_runner__ = True
         runners.run_scanner_tool = deterministic
