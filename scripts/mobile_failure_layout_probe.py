@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 VIEWPORT_WIDTHS = (320, 375, 390, 414, 430)
 VIEWPORT_HEIGHT = 844
@@ -16,11 +16,58 @@ def _screenshot_path(output: Path, locale: str, width: int) -> Path:
     return output.with_name(f"{output.stem}-failure-{language}-{width}.png")
 
 
+def _dispatch_failure_until_visible(
+    page: Any,
+    detail: Mapping[str, Any],
+    *,
+    timeout_ms: int,
+    poll_ms: int = 250,
+) -> int:
+    """Dispatch after hydration without relying on one timing-sensitive event."""
+
+    panel = page.locator('[data-assessment-failure-evidence="true"]').first
+    deadline = time.monotonic() + max(timeout_ms, 1) / 1000
+    dispatches = 0
+    while time.monotonic() < deadline:
+        page.evaluate(
+            r"""({eventName, detail}) => {
+              window.dispatchEvent(new CustomEvent(eventName, {detail}));
+            }""",
+            {"eventName": FAILURE_EVENT, "detail": dict(detail)},
+        )
+        dispatches += 1
+        if panel.is_visible():
+            return dispatches
+        page.wait_for_timeout(poll_ms)
+    raise AssertionError(
+        "terminal failure panel did not become visible after bounded hydration-safe dispatch; "
+        f"dispatches={dispatches} timeout_ms={timeout_ms}"
+    )
+
+
 def prove_failure_layouts(browser: Any, args: Any) -> dict[str, Any]:
     """Render the real failure component tree at every supported phone width."""
 
     results: list[dict[str, Any]] = []
     started = time.time()
+    detail = {
+        "http_status": 200,
+        "route": "/api/nico/assessment/comprehensive-run/layout-probe",
+        "code": "v2_production_publication_failed",
+        "message": (
+            "scorecard omitted canonical control row: "
+            "Dependency / Library Ecosystem"
+        ),
+        "assessment_type": "comprehensive",
+        "run_id": FAILURE_RUN_ID,
+        "progress": [
+            {
+                "step": "final_comprehensive_report_generation",
+                "status": "blocked",
+                "message": "Final report publication stopped before internal review.",
+            }
+        ],
+    }
     for locale, route, expected_title in (
         ("en", "/assessment?tier=comprehensive", "The assessment stopped"),
         ("es-MX", "/es/assessment?tier=comprehensive", "La evaluación se detuvo"),
@@ -47,33 +94,10 @@ def prove_failure_layouts(browser: Any, args: Any) -> dict[str, Any]:
                     state="visible",
                     timeout=args.navigation_timeout_ms,
                 )
-                page.evaluate(
-                    """({eventName, detail}) => {
-                      window.dispatchEvent(new CustomEvent(eventName, {detail}));
-                    }""",
-                    {
-                        "eventName": FAILURE_EVENT,
-                        "detail": {
-                            "http_status": 200,
-                            "route": "/api/nico/assessment/comprehensive-run/layout-probe",
-                            "code": "v2_production_publication_failed",
-                            "message": (
-                                "scorecard omitted canonical control row: "
-                                "Dependency / Library Ecosystem"
-                            ),
-                            "assessment_type": "comprehensive",
-                            "run_id": FAILURE_RUN_ID,
-                            "progress": [
-                                {
-                                    "step": "final_comprehensive_report_generation",
-                                    "status": "blocked",
-                                    "message": (
-                                        "Final report publication stopped before internal review."
-                                    ),
-                                }
-                            ],
-                        },
-                    },
+                dispatch_count = _dispatch_failure_until_visible(
+                    page,
+                    detail,
+                    timeout_ms=args.navigation_timeout_ms,
                 )
                 panel = page.locator('[data-assessment-failure-evidence="true"]').first
                 panel.wait_for(state="visible", timeout=args.navigation_timeout_ms)
@@ -82,7 +106,7 @@ def prove_failure_layouts(browser: Any, args: Any) -> dict[str, Any]:
                     timeout=args.navigation_timeout_ms,
                 )
                 metrics = page.evaluate(
-                    """({expectedTitle, expectedRunId}) => {
+                    r"""({expectedTitle, expectedRunId}) => {
                       const visible = element => {
                         if (!element) return false;
                         const style = getComputedStyle(element);
@@ -176,6 +200,7 @@ def prove_failure_layouts(browser: Any, args: Any) -> dict[str, Any]:
                         "width": width,
                         "height": VIEWPORT_HEIGHT,
                         "status": "passed",
+                        "dispatch_count": dispatch_count,
                         "metrics": metrics,
                         "screenshot": screenshot.as_posix(),
                     }
@@ -193,10 +218,18 @@ def prove_failure_layouts(browser: Any, args: Any) -> dict[str, Any]:
         "duplicate_terminal_content_absent": True,
         "raw_diagnostics_collapsed": True,
         "recovery_reachable": True,
+        "hydration_safe_failure_dispatch": True,
         "results": results,
         "started_at_epoch": started,
         "finished_at_epoch": time.time(),
     }
 
 
-__all__ = ["VIEWPORT_HEIGHT", "VIEWPORT_WIDTHS", "prove_failure_layouts"]
+__all__ = [
+    "FAILURE_EVENT",
+    "FAILURE_RUN_ID",
+    "VIEWPORT_HEIGHT",
+    "VIEWPORT_WIDTHS",
+    "_dispatch_failure_until_visible",
+    "prove_failure_layouts",
+]
