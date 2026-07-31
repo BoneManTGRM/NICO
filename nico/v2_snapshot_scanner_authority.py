@@ -6,9 +6,11 @@ import json
 import os
 import subprocess
 import threading
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
+from nico import scanner_evidence_pipeline_v1 as scanner_pipeline
 from nico import scanner_tool_runners
 from nico import snapshot_scanner_worker
 from nico.scanner_evidence_pipeline_v1 import (
@@ -22,9 +24,10 @@ from nico.scanner_evidence_pipeline_v1 import (
 from nico.scanner_result_truth_v1 import reconcile_scanner_payload
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
 
-VERSION = "nico.v2.snapshot-scanner-authority.v2"
+VERSION = "nico.v2.snapshot-scanner-authority.v3"
 _TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v2__"
 _CLONE_MARKER = "__nico_v2_full_history_clone_v2__"
+_HISTORY_COMMAND_MARKER = "__nico_v2_exact_sha_history_commands_v1__"
 _PREPARATION_CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()
 
@@ -56,6 +59,83 @@ def _preparation(workspace: WorkerWorkspace, runner: Callable[..., WorkerCommand
     with _CACHE_LOCK:
         _PREPARATION_CACHE[key] = prepared
     return prepared
+
+
+def _force_option(command: tuple[str, ...], option: str, value: str) -> tuple[str, ...]:
+    parts = list(command)
+    if option in parts:
+        index = parts.index(option)
+        if index + 1 < len(parts):
+            parts[index + 1] = value
+        else:
+            parts.append(value)
+    else:
+        parts.extend((option, value))
+    return tuple(parts)
+
+
+def _head_scoped_runner(
+    tool_name: str,
+    runner: Callable[..., WorkerCommandResult],
+) -> Callable[..., WorkerCommandResult]:
+    def scoped(command: tuple[str, ...], **kwargs: Any) -> WorkerCommandResult:
+        immutable_command = tuple(command)
+        if tool_name == "gitleaks":
+            immutable_command = _force_option(immutable_command, "--log-opts", "HEAD")
+        elif tool_name == "trufflehog":
+            immutable_command = _force_option(immutable_command, "--branch", "HEAD")
+        filtered = scanner_pipeline._runner_kwargs(runner, **kwargs)
+        return runner(immutable_command, **filtered)
+
+    return scoped
+
+
+def _history_scoped_delegate(
+    delegate: Callable[..., dict[str, Any]],
+    tool_name: str,
+) -> Callable[..., dict[str, Any]]:
+    @wraps(delegate)
+    def wrapped(
+        spec: scanner_tool_runners.ScannerToolSpec,
+        workspace: WorkerWorkspace,
+        runner: Callable[..., WorkerCommandResult],
+    ) -> dict[str, Any]:
+        result = delegate(spec, workspace, _head_scoped_runner(tool_name, runner))
+        if not isinstance(result, dict):
+            return result
+        output = dict(result)
+        verified = bool(
+            output.get("status") == "completed"
+            and output.get("full_history_verified") is True
+        )
+        output.update(
+            {
+                "history_scope": "reachable_ancestry_at_assessed_commit",
+                "history_depth_verified": verified,
+                "immutable_head_selector": "HEAD",
+                "deterministic_head_selector_applied": True,
+                "descendant_refs_scanned": False,
+            }
+        )
+        return output
+
+    setattr(wrapped, _HISTORY_COMMAND_MARKER, tool_name)
+    setattr(wrapped, "_nico_previous", delegate)
+    return wrapped
+
+
+def _install_history_command_scope() -> dict[str, bool]:
+    installed: dict[str, bool] = {}
+    for attribute, tool_name in (
+        ("_run_gitleaks", "gitleaks"),
+        ("_run_trufflehog", "trufflehog"),
+    ):
+        current = getattr(scanner_pipeline, attribute)
+        if getattr(current, _HISTORY_COMMAND_MARKER, None) != tool_name:
+            current = _history_scoped_delegate(current, tool_name)
+            setattr(scanner_pipeline, attribute, current)
+        installed[tool_name] = getattr(current, _HISTORY_COMMAND_MARKER, None) == tool_name
+    return installed
 
 
 def _persist_raw_blob(
@@ -106,7 +186,7 @@ def _persist_raw_blob(
     artifacts = existing.get("artifacts") if isinstance(existing.get("artifacts"), dict) else {}
     artifacts[str(payload.get("tool") or "unknown")] = payload["raw_artifact"]
     manifest_payload = {
-        "schema": "nico.v2.snapshot-scanner-artifacts.v2",
+        "schema": "nico.v2.snapshot-scanner-artifacts.v3",
         "repository": repository,
         "commit_sha": commit_sha,
         "run_key": run_key,
@@ -200,7 +280,7 @@ def full_history_snapshot_clone(
         )
         if shallow.returncode == 0 and (shallow.stdout or "").strip().casefold() == "true":
             unshallow = subprocess.run(
-                ["git", "fetch", "--unshallow", "--tags", "origin"],
+                ["git", "fetch", "--unshallow", "--no-tags", "origin", commit_sha],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
@@ -209,7 +289,7 @@ def full_history_snapshot_clone(
                 check=False,
             )
             if unshallow.returncode != 0:
-                notes = [*notes, "Full git history could not be restored for history-aware secret scanning."]
+                notes = [*notes, "Exact-commit reachable history could not be restored for history-aware secret scanning."]
         verify = subprocess.run(
             ["git", "rev-parse", "--is-shallow-repository"],
             cwd=repo_path,
@@ -222,7 +302,7 @@ def full_history_snapshot_clone(
         if verify.returncode != 0 or (verify.stdout or "").strip().casefold() != "false":
             notes = [*notes, "Repository history remains shallow; Gitleaks and TruffleHog must remain unverified."]
     except Exception as exc:
-        notes = [*notes, f"Full-history preparation failed safely: {type(exc).__name__}."]
+        notes = [*notes, f"Exact-commit history preparation failed safely: {type(exc).__name__}."]
     return repo_path, actual_sha, notes
 
 
@@ -233,18 +313,23 @@ def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
         setattr(canonical_snapshot_tool_runner, _TOOL_MARKER, True)
         scanner_tool_runners.run_scanner_tool = canonical_snapshot_tool_runner
 
-    current_clone = snapshot_scanner_worker.clone_repository_at_snapshot
-    if not getattr(current_clone, _CLONE_MARKER, False):
-        setattr(full_history_snapshot_clone, "_nico_previous", current_clone)
-        setattr(full_history_snapshot_clone, _CLONE_MARKER, True)
-        snapshot_scanner_worker.clone_repository_at_snapshot = full_history_snapshot_clone
+    history_scope = _install_history_command_scope()
 
-    tool_bound = scanner_tool_runners.run_scanner_tool is canonical_snapshot_tool_runner
-    clone_bound = snapshot_scanner_worker.clone_repository_at_snapshot is full_history_snapshot_clone
+    # The deterministic clone fetches the assessed commit and all ancestry reachable
+    # from that commit without retaining branches, remotes, or tags. Replacing it with
+    # the legacy unshallow wrapper would reintroduce mutable refs and same-SHA drift.
+    from nico.scanner_determinism_v1 import clone_repository_at_snapshot as deterministic_clone
+
+    snapshot_scanner_worker.clone_repository_at_snapshot = deterministic_clone
+
+    tool_bound = bool(getattr(scanner_tool_runners.run_scanner_tool, _TOOL_MARKER, False))
+    clone_bound = snapshot_scanner_worker.clone_repository_at_snapshot is deterministic_clone
+    history_commands_bound = all(history_scope.values())
+    bound = tool_bound and clone_bound and history_commands_bound
     return {
-        "status": "installed" if tool_bound and clone_bound else "blocked",
+        "status": "installed" if bound else "blocked",
         "version": VERSION,
-        "bound": tool_bound and clone_bound,
+        "bound": bound,
         "snapshot_worker_uses_canonical_scanner_runner": tool_bound,
         "raw_artifacts_retained_before_workspace_deletion": tool_bound,
         "source_aware_scanner_projection_bound": tool_bound,
@@ -253,6 +338,10 @@ def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
         "returncode_and_exit_code_both_exposed": tool_bound,
         "exact_commit_identity_exposed": tool_bound,
         "full_history_restoration_bound": clone_bound,
+        "exact_commit_reachable_ancestry_bound": clone_bound,
+        "mutable_branch_remote_and_tag_refs_excluded": clone_bound,
+        "history_scanners_bound_to_head": history_commands_bound,
+        "history_command_scope": history_scope,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
