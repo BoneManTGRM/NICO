@@ -16,16 +16,8 @@ def _canonical() -> dict:
     return {
         "assessment": {
             "sections": [
-                {
-                    "id": "dependency_health",
-                    "label": "Dependency / Library Ecosystem",
-                    "presented_score": 88,
-                },
-                {
-                    "id": "static_analysis",
-                    "label": "Static Analysis",
-                    "presented_score": 79,
-                },
+                {"id": "dependency_health", "label": "Dependency / Library Ecosystem", "presented_score": 88},
+                {"id": "static_analysis", "label": "Static Analysis", "presented_score": 79},
             ]
         }
     }
@@ -42,25 +34,15 @@ def test_scorecard_validation_is_independent_of_column_extraction_order(monkeypa
             "Static Moderate 79 / 100 Analysis"
         ),
     )
-
-    validation._verify_all_rows(
-        b"%PDF-synthetic",
-        canonical,
-        canonical["assessment"]["sections"],
-    )
+    validation._verify_all_rows(b"%PDF-synthetic", canonical, canonical["assessment"]["sections"])
 
 
 @pytest.mark.parametrize("spanish", [False, True])
-def test_publication_fallback_preserves_all_non_scorecard_gates(
-    monkeypatch,
-    spanish: bool,
-) -> None:
+def test_publication_fallback_preserves_all_non_scorecard_gates(monkeypatch, spanish: bool) -> None:
     canonical = _canonical()
 
     def brittle_validator(*_args, **_kwargs):
-        raise ValueError(
-            "scorecard omitted canonical control row: Dependency / Library Ecosystem"
-        )
+        raise ValueError("scorecard omitted canonical control row: Dependency / Library Ecosystem")
 
     monkeypatch.setattr(validation, "_ORIGINAL_VALIDATE", brittle_validator)
     monkeypatch.setattr(
@@ -72,7 +54,6 @@ def test_publication_fallback_preserves_all_non_scorecard_gates(
             "Static Analysis\n79 / 100"
         ),
     )
-
     validation.validate_final_pdf(
         b"%PDF-synthetic",
         canonical,
@@ -85,12 +66,10 @@ def test_production_api_bootstrap_installs_scorecard_validator_last() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v20"' in source
+    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v21"' in source
     assert "install_scorecard_extraction_validation" in source
     assert "SCORECARD_EXTRACTION_VALIDATION = install_scorecard_extraction_validation()" in source
-    assert source.index("SCORECARD_EXTRACTION_VALIDATION =") > source.index(
-        "EXPRESS_FAILURE_STAGE_TRUTH ="
-    )
+    assert source.index("SCORECARD_EXTRACTION_VALIDATION =") > source.index("EXPRESS_FAILURE_STAGE_TRUTH =")
     assert '"column_extraction_order_independent"' in source
     assert '"multi_page_scorecard_supported"' in source
     assert '"all_canonical_rows_and_scores_required"' in source

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import subprocess
 
+from nico import scanner_tool_runners
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts
-from nico.scanner_tool_runners import ScannerToolSpec, run_scanner_tool
+from nico.scanner_determinism_v1 import install_scanner_determinism
+from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 
@@ -17,16 +19,11 @@ def _initialize_repository(repo_dir) -> None:
         ("git", "commit", "--quiet", "-m", "history scanner fixture"),
     )
     for command in commands:
-        subprocess.run(
-            command,
-            cwd=repo_dir,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        subprocess.run(command, cwd=repo_dir, check=True, capture_output=True, text=True)
 
 
 def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
+    install_scanner_determinism()
     monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda executable: f"/usr/bin/{executable}")
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -45,7 +42,7 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
         scans_git_history=True,
     )
 
-    result = run_scanner_tool(spec, workspace, runner=fake_runner)
+    result = scanner_tool_runners.run_scanner_tool(spec, workspace, runner=fake_runner)
 
     assert result["status"] == "completed"
     assert result["scans_git_history"] is True
@@ -59,6 +56,7 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
 
 
 def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
+    install_scanner_determinism()
     monkeypatch.setattr("nico.scanner_tool_runners.shutil.which", lambda executable: f"/usr/bin/{executable}")
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -77,7 +75,7 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
         scans_git_history=True,
     )
 
-    result = run_scanner_tool(spec, workspace, runner=fake_runner)
+    result = scanner_tool_runners.run_scanner_tool(spec, workspace, runner=fake_runner)
 
     assert result["status"] == "completed"
     assert result["scans_git_history"] is True
