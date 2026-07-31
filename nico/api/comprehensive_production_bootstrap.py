@@ -10,7 +10,7 @@ from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_core_report_readiness_v1 import install_comprehensive_core_report_readiness
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
 from nico.comprehensive_final_report_execution_v1 import install_comprehensive_final_report_execution
-from nico.comprehensive_native_providers_v2 import install_native_comprehensive_providers
+from nico.comprehensive_native_providers_v3 import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
@@ -18,7 +18,7 @@ from nico.decision_grade_scanner_executions_v1 import install_structured_scanner
 from nico.strategic_human_evidence_binding_v1 import install_strategic_human_evidence_binding
 from nico.v2_production_authority import install_v2_production_authority
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v13"
+VERSION = "nico.api.comprehensive_production_bootstrap.v14"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -54,7 +54,7 @@ def _register_runtime_diagnostics(target: FastAPI) -> None:
 
 
 def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
-    """Mount the production Comprehensive boundary with v2 as final authority."""
+    """Mount the production Comprehensive boundary with deterministic exact-SHA scoring."""
 
     report_binding = install_native_provider_binding()
     legacy_report_binding = report_binding
@@ -81,6 +81,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     missing_capabilities = list(provider_status.get("missing_capabilities") or [])
     replacement_safe = runtime.get("survives_container_replacement_verified") is True
     category_specific_scoring_bound = native_status.get("category_specific_scoring_bound") is True
+    same_sha_score_deterministic = native_status.get("same_sha_score_deterministic") is True
+    mutable_operational_history_affects_score = native_status.get("mutable_operational_history_affects_score") is True
     score_override_disabled = native_status.get("score_override_allowed") is False
     ready = (
         controller is not None
@@ -102,6 +104,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and v2_production_authority.get("bound") is True
         and v2_production_authority.get("v2_finalizer_invoked_by_real_provider") is True
         and category_specific_scoring_bound
+        and same_sha_score_deterministic
+        and not mutable_operational_history_affects_score
         and score_override_disabled
         and len(native_providers) > 0
         and not missing_capabilities
@@ -118,6 +122,10 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         reason = "v2_production_authority_binding_incomplete"
     if not reason and not category_specific_scoring_bound:
         reason = "category_specific_evidence_scoring_not_bound"
+    if not reason and not same_sha_score_deterministic:
+        reason = "same_sha_score_determinism_not_bound"
+    if not reason and mutable_operational_history_affects_score:
+        reason = "mutable_operational_history_still_affects_score"
     if not reason and not score_override_disabled:
         reason = "score_override_boundary_not_enforced"
     if not reason and missing_capabilities:
@@ -149,6 +157,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "native_provider_count": len(native_providers),
         "missing_capabilities": missing_capabilities,
         "category_specific_scoring_bound": category_specific_scoring_bound,
+        "same_sha_score_deterministic": same_sha_score_deterministic,
+        "mutable_operational_history_affects_score": mutable_operational_history_affects_score,
         "score_override_allowed": False,
         "report_binding_before_accepted_edition_identity": True,
         "accepted_edition_identity_before_provider_install": True,
@@ -208,6 +218,10 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["v2_production_authority"].get("bound") is n
     raise RuntimeError("V2 production authority was not installed on the final report provider")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["category_specific_scoring_bound"] is not True:
     raise RuntimeError("Category-specific evidence-bound scoring was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["same_sha_score_deterministic"] is not True:
+    raise RuntimeError("Same-SHA deterministic scoring was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["mutable_operational_history_affects_score"] is not False:
+    raise RuntimeError("Mutable operational history must not affect immutable technical scores")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["score_override_allowed"] is not False:
     raise RuntimeError("Comprehensive scoring must not allow score overrides")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["native_provider_count"] < 1:
