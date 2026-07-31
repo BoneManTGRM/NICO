@@ -202,6 +202,29 @@ def test_candidate_volume_is_grouped_without_hiding_raw_records() -> None:
     assert all(item["technical_score_impact"] == "assurance_only" for item in groups)
 
 
+def test_confirmed_p2_record_is_not_hidden_by_candidate_grouping() -> None:
+    confirmed = {
+        "finding_id": "STATIC-CONFIRMED-1",
+        "id": "STATIC-CONFIRMED-1",
+        "priority": "P2",
+        "category": "static",
+        "status": "open",
+        "title": "Confirmed input-validation defect",
+        "evidence": "verified exact source finding",
+        "fact": "The exact source branch is reachable and verified.",
+        "confidence": "moderate",
+        "material": False,
+        "review_required": False,
+    }
+
+    compressed = hardening.compress_review_candidates(
+        {"findings_register": [confirmed]}
+    )
+
+    assert compressed["findings_register"] == [confirmed]
+    assert "candidate_presentation_summary" not in compressed
+
+
 def test_authoritative_manifest_filter_excludes_non_production_trees(
     tmp_path: Path,
 ) -> None:
