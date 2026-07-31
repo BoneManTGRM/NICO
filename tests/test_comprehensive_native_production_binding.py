@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from nico.comprehensive_capability_registry import execution_plan
-from nico.comprehensive_native_providers import install_native_comprehensive_providers
+from nico.comprehensive_native_providers_v3 import install_native_comprehensive_providers
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 
 
@@ -26,17 +26,25 @@ def test_native_provider_install_covers_every_required_capability() -> None:
     assert status["fail_closed"] is True
     assert status["human_review_required"] is True
     assert status["client_delivery_allowed"] is False
+    native = app.state.nico_native_comprehensive_provider_status
+    assert native["same_sha_score_deterministic"] is True
+    assert native["mutable_operational_history_affects_score"] is False
+    assert native["score_override_allowed"] is False
 
 
 def test_production_entrypoint_installs_providers_before_building_executors() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    assert "from nico.comprehensive_native_providers import install_native_comprehensive_providers" in source
+    assert "from nico.comprehensive_native_providers_v3 import install_native_comprehensive_providers" in source
     provider_install = source.index("native_providers = install_native_comprehensive_providers(target)")
     executor_build = source.index("executors = build_production_capability_executors(target)")
     runtime_install = source.index("controller = install_comprehensive_production_bootstrap(")
     assert provider_install < executor_build < runtime_install
     assert '"provider_install_before_executor_build": True' in source
+    assert '"category_specific_scoring_bound": category_specific_scoring_bound' in source
+    assert '"same_sha_score_deterministic": same_sha_score_deterministic' in source
+    assert '"mutable_operational_history_affects_score": mutable_operational_history_affects_score' in source
+    assert '"score_override_allowed": False' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:' in source
 
 
@@ -50,6 +58,8 @@ def test_production_entrypoint_registers_bounded_runtime_diagnostics() -> None:
     assert 'status["human_review_required"] = True' in source
     assert 'status["client_delivery_allowed"] = False' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["diagnostics_route_count"] != 1:' in source
+    assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["same_sha_score_deterministic"] is not True:' in source
+    assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["mutable_operational_history_affects_score"] is not False:' in source
 
 
 def test_dynamic_executor_uses_installed_authorization_provider() -> None:

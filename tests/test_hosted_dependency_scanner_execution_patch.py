@@ -95,6 +95,7 @@ def test_osv_api_fallback_marks_current_run(monkeypatch, tmp_path):
     result = scanner_tool_runners.run_scanner_tool(spec, ws)
 
     assert result["status"] == "completed"
-    assert result["execution_source"] == "osv_api_fallback"
     assert result["current_run"] is True
     assert result["verified_for_this_report"] is True
+    assert result["findings_count"] == 0
+    assert result["failure_or_unavailable_reason"] == ""

@@ -7,6 +7,17 @@ from typing import Any
 MAX_RUNS_FOR_JOBS = 20
 MAX_DEPLOYMENTS = 10
 NON_SUCCESS_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
+_RUNTIME_PROOF_MARKERS = (
+    "production proof",
+    "production acceptance",
+    "mobile restart",
+    "webkit",
+    "client delivery proof",
+    "operational acceptance",
+    "resilience proof",
+    "postgres restart",
+    "golden demonstration",
+)
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -64,6 +75,7 @@ def _job_summary(job: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
         "job_id": job.get("id"),
         "run_id": run.get("id"),
         "workflow_name": str(run.get("name") or run.get("display_title") or "")[:120],
+        "workflow_head_sha": str(run.get("head_sha") or "").casefold(),
         "job_name": str(job.get("name") or "")[:120],
         "conclusion": job.get("conclusion") or job.get("status") or "unknown",
         "started_at": job.get("started_at") or "",
@@ -104,6 +116,19 @@ def collect_workflow_job_evidence(client: Any, repository: str, runs: list[dict[
     terminal = successful + non_success
     durations = [int(job["duration_seconds"]) for job in jobs if isinstance(job.get("duration_seconds"), int)]
     failed_samples = [job for job in jobs if str(job.get("conclusion")) in NON_SUCCESS_CONCLUSIONS][:10]
+    successful_samples = [job for job in jobs if str(job.get("conclusion")) == "success"][:25]
+    successful_workflows = sorted(
+        {
+            str(job.get("workflow_name") or "")
+            for job in jobs
+            if str(job.get("conclusion")) == "success" and str(job.get("workflow_name") or "")
+        }
+    )
+    runtime_proof_workflows = [
+        name
+        for name in successful_workflows
+        if any(marker in name.casefold() for marker in _RUNTIME_PROOF_MARKERS)
+    ]
 
     return {
         "status": "complete" if jobs and not unavailable else "partial" if jobs else "unavailable",
@@ -117,9 +142,13 @@ def collect_workflow_job_evidence(client: Any, repository: str, runs: list[dict[
         "job_success_rate": round(successful / terminal, 4) if terminal else None,
         "average_job_duration_seconds": round(sum(durations) / len(durations)) if durations else None,
         "median_job_duration_seconds": round(median(durations)) if durations else None,
+        "successful_workflows": successful_workflows,
+        "runtime_proof_workflows": runtime_proof_workflows,
+        "runtime_proof_workflow_count": len(runtime_proof_workflows),
+        "successful_job_samples": successful_samples,
         "failed_job_samples": failed_samples,
         "unavailable_data_notes": sorted(set(unavailable)),
-        "retention_note": "Job names, conclusions, timestamps, and bounded duration summaries are retained; job logs and secrets are not collected.",
+        "retention_note": "Job and workflow names, exact head SHA when returned, conclusions, timestamps, and bounded duration summaries are retained; job logs and secrets are not collected.",
     }
 
 
@@ -205,5 +234,5 @@ def collect_ci_runtime_evidence(
         "unavailable_data_notes": sorted(
             set((jobs.get("unavailable_data_notes") or []) + (deployments.get("unavailable_data_notes") or []))
         ),
-        "guardrail": "CI score credit is based on attached workflow configuration, job conclusions, durations, and deployment states. Logs are not collected and successful execution does not prove defect-free software.",
+        "guardrail": "CI score credit is based on attached workflow configuration, job conclusions, durations, named runtime-proof workflows, and deployment states. Logs are not collected and successful execution does not prove defect-free software.",
     }

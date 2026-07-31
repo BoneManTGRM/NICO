@@ -24,11 +24,7 @@ def test_verified_history_is_attached_to_history_scanner_result(monkeypatch, tmp
     workspace.repo_dir.mkdir()
     spec = ScannerToolSpec("trufflehog", ("trufflehog", "git", "."), "secret", scans_git_history=True)
 
-    monkeypatch.setattr(
-        scanner_history_truth,
-        "_ensure_full_history",
-        lambda _workspace: (True, "verified full history"),
-    )
+    monkeypatch.setattr(scanner_history_truth, "_ensure_full_history", lambda _workspace: (True, "verified full history"))
     monkeypatch.setattr(
         scanner_history_truth,
         "_ORIGINAL_RUN_SCANNER_TOOL",
@@ -44,8 +40,10 @@ def test_verified_history_is_attached_to_history_scanner_result(monkeypatch, tmp
 
     assert result["status"] == "completed"
     assert result["history_depth_verified"] is True
-    assert result["history_scope"] == "full_git_history"
+    assert result["history_scope"] == "reachable_ancestry_at_assessed_commit"
     assert result["history_verification_note"] == "verified full history"
+    assert result["immutable_head_selector"] == "HEAD"
+    assert result["descendant_refs_scanned"] is False
 
 
 def test_current_tree_scanner_does_not_require_history_probe(monkeypatch, tmp_path) -> None:
@@ -53,11 +51,7 @@ def test_current_tree_scanner_does_not_require_history_probe(monkeypatch, tmp_pa
     workspace.repo_dir.mkdir()
     spec = ScannerToolSpec("bandit", ("bandit", "-r", "."), "static", scans_git_history=False)
 
-    monkeypatch.setattr(
-        scanner_history_truth,
-        "_ensure_full_history",
-        lambda _workspace: (_ for _ in ()).throw(AssertionError("history probe should not run")),
-    )
+    monkeypatch.setattr(scanner_history_truth, "_ensure_full_history", lambda _workspace: (_ for _ in ()).throw(AssertionError("history probe should not run")))
     monkeypatch.setattr(
         scanner_history_truth,
         "_ORIGINAL_RUN_SCANNER_TOOL",
@@ -76,3 +70,4 @@ def test_installer_is_idempotent() -> None:
     assert first["status"] in {"installed", "already_installed"}
     assert second["status"] == "already_installed"
     assert "non-shallow git history" in second["rule"]
+    assert second["history_scope"] == "reachable_ancestry_at_assessed_commit"

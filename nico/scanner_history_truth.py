@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable
 
 import nico.scanner_tool_runners as tool_runners
+from nico.scanner_determinism_reentry_v2 import install_scanner_determinism_reentry
 from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
 
+# Patch the public installer before package initialization exposes it to other
+# compatibility modules and tests. The terminal bootstrap invokes it again last.
+SCANNER_DETERMINISM_REENTRY = install_scanner_determinism_reentry()
 _ORIGINAL_RUN_SCANNER_TOOL: Callable[..., dict[str, Any]] = tool_runners.run_scanner_tool
 
 
@@ -24,10 +29,20 @@ def _history_state(workspace: WorkerWorkspace) -> tuple[bool | None, str]:
         return None, "Git history depth could not be verified for the scanner workspace."
     value = (probe.stdout or "").strip().lower()
     if value == "false":
-        return True, "Full git history was verified."
+        return True, "All ancestry reachable from the assessed commit was verified as non-shallow git history."
     if value == "true":
         return False, "The scanner workspace is shallow."
     return None, "Git returned an unrecognized history-depth value."
+
+
+def _head_sha(workspace: WorkerWorkspace) -> str:
+    result = _git_result(workspace, ("git", "rev-parse", "HEAD"), 30)
+    value = (result.stdout or "").strip().casefold()
+    if result.timed_out or result.returncode != 0:
+        return ""
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        return ""
+    return value
 
 
 def _ensure_full_history(workspace: WorkerWorkspace) -> tuple[bool, str]:
@@ -37,16 +52,49 @@ def _ensure_full_history(workspace: WorkerWorkspace) -> tuple[bool, str]:
     if state is None:
         return False, note
 
-    fetch = _git_result(workspace, ("git", "fetch", "--unshallow", "--no-tags", "origin"), 180)
+    head_sha = _head_sha(workspace)
+    if not head_sha:
+        return False, "The immutable HEAD commit could not be resolved before history expansion."
+    fetch = _git_result(
+        workspace,
+        ("git", "fetch", "--unshallow", "--no-tags", "origin", head_sha),
+        180,
+    )
     if fetch.timed_out:
-        return False, "Full-history fetch timed out; history-aware scanner evidence is unavailable."
+        return False, "Exact-commit ancestry fetch timed out; history-aware scanner evidence is unavailable."
     if fetch.returncode != 0:
-        return False, "Full-history fetch failed; history-aware scanner evidence is unavailable."
+        return False, "Exact-commit ancestry fetch failed; history-aware scanner evidence is unavailable."
 
     verified, verify_note = _history_state(workspace)
     if verified is not True:
-        return False, f"Full-history fetch completed but depth verification failed: {verify_note}"
-    return True, "The shallow checkout was expanded and full git history was verified before history-aware scanning."
+        return False, f"Exact-commit ancestry fetch completed but depth verification failed: {verify_note}"
+    observed = _head_sha(workspace)
+    if observed != head_sha:
+        return False, "History expansion changed the assessed HEAD identity; history-aware scanner evidence is unavailable."
+    return True, "The shallow checkout was expanded only for non-shallow git history reachable from immutable assessed HEAD."
+
+
+def _force_option(command: tuple[str, ...], option: str, value: str) -> tuple[str, ...]:
+    parts = list(command)
+    if option in parts:
+        index = parts.index(option)
+        if index + 1 < len(parts):
+            parts[index + 1] = value
+        else:
+            parts.append(value)
+    else:
+        parts.extend((option, value))
+    return tuple(parts)
+
+
+def _head_scoped_spec(spec: ScannerToolSpec) -> ScannerToolSpec:
+    command = tuple(spec.command)
+    normalized = str(spec.name or "").casefold()
+    if normalized == "gitleaks":
+        command = _force_option(command, "--log-opts", "HEAD")
+    elif normalized == "trufflehog":
+        command = _force_option(command, "--branch", "HEAD")
+    return replace(spec, command=command) if command != tuple(spec.command) else spec
 
 
 def _unavailable_history_tool(spec: ScannerToolSpec, reason: str) -> dict[str, Any]:
@@ -69,7 +117,9 @@ def _unavailable_history_tool(spec: ScannerToolSpec, reason: str) -> dict[str, A
         "full_history_verified": False,
         "history_depth_verified": False,
         "history_scope": "unavailable",
-        "guardrail": "History-aware scanner completion credit requires a verified non-shallow repository checkout.",
+        "immutable_head_selector": "HEAD",
+        "descendant_refs_scanned": False,
+        "guardrail": "History-aware scanner completion credit requires verified non-shallow git history reachable from immutable assessed HEAD.",
     }
 
 
@@ -86,12 +136,16 @@ def run_scanner_tool_with_history_truth(
     if not verified:
         return _unavailable_history_tool(spec, note)
 
-    result = dict(_ORIGINAL_RUN_SCANNER_TOOL(spec, workspace, runner=runner))
+    scoped_spec = _head_scoped_spec(spec)
+    result = dict(_ORIGINAL_RUN_SCANNER_TOOL(scoped_spec, workspace, runner=runner))
     result["history_depth_verified"] = True
-    result["history_scope"] = "full_git_history"
+    result["history_scope"] = "reachable_ancestry_at_assessed_commit"
     result["history_verification_note"] = note
     result["history_depth"] = "full"
     result["full_history_verified"] = True
+    result["immutable_head_selector"] = "HEAD"
+    result["deterministic_head_selector_applied"] = True
+    result["descendant_refs_scanned"] = False
     return result
 
 
@@ -99,19 +153,20 @@ def install_scanner_history_truth() -> dict[str, Any]:
     installed = bool(getattr(tool_runners, "_nico_scanner_history_truth_installed", False))
     if not installed:
         global _ORIGINAL_RUN_SCANNER_TOOL
-        # Capture the complete wrapper chain at install time. This module is imported
-        # before several hosted scanner patches are installed, so import-time capture
-        # would bypass their current-run, parsing, and verification metadata.
         _ORIGINAL_RUN_SCANNER_TOOL = tool_runners.run_scanner_tool
         tool_runners.run_scanner_tool = run_scanner_tool_with_history_truth
         tool_runners._nico_scanner_history_truth_installed = True
     return {
         "status": "already_installed" if installed else "installed",
-        "rule": "Gitleaks, TruffleHog, and any future history-aware scanner may run only after NICO verifies a non-shallow git history; otherwise the tool remains explicitly unavailable.",
+        "rule": "Gitleaks, TruffleHog, and future history-aware scanners require verified non-shallow git history reachable from immutable HEAD; mutable descendant branches, remotes, and tags have no scan effect.",
+        "history_scope": "reachable_ancestry_at_assessed_commit",
+        "immutable_head_selector": "HEAD",
+        "descendant_refs_scanned": False,
     }
 
 
 __all__ = [
+    "SCANNER_DETERMINISM_REENTRY",
     "install_scanner_history_truth",
     "run_scanner_tool_with_history_truth",
 ]

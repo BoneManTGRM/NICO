@@ -141,7 +141,9 @@ def test_real_typescript_aware_eslint_configuration_is_retained() -> None:
     assert '@typescript-eslint/parser' in config
     assert 'js.configs.recommended' in config
     assert 'no-unreachable' in config
-    assert '@typescript-eslint/parser@8' in dockerfile
+    assert 'ARG NICO_ESLINT_VERSION=9.39.3' in dockerfile
+    assert 'ARG NICO_TYPESCRIPT_ESLINT_VERSION=8.65.0' in dockerfile
+    assert '"@typescript-eslint/parser@${NICO_TYPESCRIPT_ESLINT_VERSION}"' in dockerfile
     assert 'NICO_HISTORY_TOOL_TIMEOUT_SECONDS=600' in dockerfile
     assert 'NODE_PATH=/usr/local/lib/node_modules' in dockerfile
 

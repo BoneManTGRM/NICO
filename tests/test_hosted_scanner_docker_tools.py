@@ -11,7 +11,10 @@ def test_dockerfile_installs_hosted_scanner_tools_without_polluting_app_python()
     assert '"$NICO_SEMGREP_HOME/bin/pip" install --no-cache-dir "semgrep==${NICO_SEMGREP_VERSION}"' in dockerfile
     assert 'ln -s "$NICO_SEMGREP_HOME/bin/semgrep" /usr/local/bin/semgrep' in dockerfile
     assert "pip install --no-cache-dir pip-audit bandit semgrep coverage" not in dockerfile
-    assert "npm install -g eslint typescript" in dockerfile
+    assert "ARG NICO_ESLINT_VERSION=9.39.3" in dockerfile
+    assert "ARG NICO_TYPESCRIPT_VERSION=6.0.3" in dockerfile
+    assert '"eslint@${NICO_ESLINT_VERSION}"' in dockerfile
+    assert '"typescript@${NICO_TYPESCRIPT_VERSION}"' in dockerfile
     assert "install_hosted_scanner_binaries.py" in dockerfile
     assert "NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true" in dockerfile
     assert "NICO_ALLOW_PROJECT_COMMANDS=true" in dockerfile

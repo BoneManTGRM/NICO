@@ -98,7 +98,6 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey, ta
   useEffect(() => {
     if (refreshKey && adminToken.trim()) void loadRecovery(false);
     // The token is deliberately page-memory state. Re-load only when the parent completes a control-center refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
   useEffect(() => {

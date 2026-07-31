@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from nico import client_finding_remediation_register_v3 as v3
 from nico.client_assessment_truth_v3 import normalize_repository_path
 
-VERSION = "nico.client-finding-remediation-register.v7"
+VERSION = "nico.client-finding-remediation-register.v8"
 _DIRECT_FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -542,25 +542,13 @@ def synchronize_canonical_finding_surfaces(
 
 
 def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
-    markdown = v3.finding_register_markdown(register, spanish=spanish).rstrip()
-    rows: list[str] = []
-    findings = [
-        *[item for item in register.get("code_findings") or [] if isinstance(item, Mapping)],
-        *[item for item in register.get("operational_findings") or [] if isinstance(item, Mapping)],
-    ]
-    for item in findings:
-        finding_id = _text(item.get("finding_id") or item.get("id"))
-        aliases = [
-            alias
-            for alias in _dedupe(item.get("finding_aliases") or [])
-            if alias and alias != finding_id
-        ]
-        if finding_id and aliases:
-            rows.append(f"- `{finding_id}`: " + ", ".join(f"`{alias}`" for alias in aliases))
-    if not rows:
-        return markdown + "\n"
-    heading = "### Alias de identidad de hallazgos" if spanish else "### Finding identity aliases"
-    return "\n".join((markdown, "", heading, "", *rows, ""))
+    """Render only stable finding identities to client-facing Markdown.
+
+    Legacy aliases remain in canonical JSON for reconciliation and audit history, but
+    exposing them in the report makes one decision finding look like several defects.
+    """
+
+    return v3.finding_register_markdown(register, spanish=spanish).rstrip() + "\n"
 
 
 def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -> bytes:

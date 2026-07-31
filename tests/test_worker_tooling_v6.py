@@ -20,7 +20,10 @@ def test_dockerfile_installs_worker_runtime_dependencies_and_isolates_semgrep():
     assert "git" in dockerfile
     assert "nodejs" in dockerfile
     assert "npm" in dockerfile
-    assert "npm install -g eslint" in dockerfile
+    assert "ARG NICO_ESLINT_VERSION=9.39.3" in dockerfile
+    assert "ARG NICO_TYPESCRIPT_VERSION=6.0.3" in dockerfile
+    assert '"eslint@${NICO_ESLINT_VERSION}"' in dockerfile
+    assert '"typescript@${NICO_TYPESCRIPT_VERSION}"' in dockerfile
     assert "NICO_SEMGREP_HOME=/opt/nico-tools/semgrep" in dockerfile
     assert 'python -m venv "$NICO_SEMGREP_HOME"' in dockerfile
     assert '"semgrep==${NICO_SEMGREP_VERSION}"' in dockerfile
