@@ -67,6 +67,7 @@ module.exports = [
       "no-unsafe-finally": "error",
       "no-unsafe-negation": "error",
       "no-unsafe-optional-chaining": "error",
+      "no-useless-escape": "warn",
       "require-yield": "error",
       "use-isnan": "error",
       "valid-typeof": "error",
