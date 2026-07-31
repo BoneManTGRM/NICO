@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from nico.scanner_runtime_truth_v2 import install_scanner_runtime_truth_v2
+
 TRIAGE_AWARE_SCANNER_TRUTH_VERSION = "nico.triage_aware_scanner_finding_truth.v1"
 
 
@@ -175,9 +177,14 @@ def apply_triage_aware_scanner_finding_truth(
 def install_triage_aware_scanner_finding_truth() -> dict[str, Any]:
     from nico import full_assessment_scanner_contract as contract
 
+    scanner_runtime = install_scanner_runtime_truth_v2()
     current = contract.apply_scanner_finding_truth
     if getattr(current, "_nico_triage_aware_scanner_truth_v1", False):
-        return {"status": "already_installed", "version": TRIAGE_AWARE_SCANNER_TRUTH_VERSION}
+        return {
+            "status": "already_installed",
+            "version": TRIAGE_AWARE_SCANNER_TRUTH_VERSION,
+            "scanner_runtime_truth": scanner_runtime,
+        }
     setattr(apply_triage_aware_scanner_finding_truth, "_nico_triage_aware_scanner_truth_v1", True)
     setattr(apply_triage_aware_scanner_finding_truth, "_nico_previous", current)
     contract.apply_scanner_finding_truth = apply_triage_aware_scanner_finding_truth
@@ -187,6 +194,7 @@ def install_triage_aware_scanner_finding_truth() -> dict[str, Any]:
         "raw_finding_counts_used_as_material": False,
         "test_only_findings_score_blocking": False,
         "human_review_required": True,
+        "scanner_runtime_truth": scanner_runtime,
     }
 
 
