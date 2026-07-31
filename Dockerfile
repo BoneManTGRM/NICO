@@ -11,6 +11,10 @@ ENV NICO_MAX_SCANNER_PARSE_BYTES=268435456
 ENV NICO_SCANNER_RAW_ARTIFACT_ROOT=/data/scanner-artifacts
 ARG NICO_SCANNER_INSTALL_STRICT=true
 ARG NICO_SEMGREP_VERSION=1.170.0
+ARG NICO_ESLINT_VERSION=9.39.3
+ARG NICO_ESLINT_JS_VERSION=9.39.3
+ARG NICO_TYPESCRIPT_ESLINT_VERSION=8.65.0
+ARG NICO_TYPESCRIPT_VERSION=6.0.3
 ENV NICO_SCANNER_INSTALL_STRICT=${NICO_SCANNER_INSTALL_STRICT}
 ENV NICO_REQUIRE_DURABLE_DELIVERY_STORAGE=true
 ENV NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE=true
@@ -42,13 +46,16 @@ RUN apt-get update \
     && mkdir -p /data/reports /data/scanner-artifacts /opt/nico-tools \
     && chown -R nico:nico /data
 
-RUN npm install -g eslint typescript --no-audit --no-fund \
-    && npm install -g \
-        @eslint/js@9 \
-        @typescript-eslint/parser@8 \
-        @typescript-eslint/eslint-plugin@8 \
+RUN npm install -g \
+        "eslint@${NICO_ESLINT_VERSION}" \
+        "typescript@${NICO_TYPESCRIPT_VERSION}" \
+        "@eslint/js@${NICO_ESLINT_JS_VERSION}" \
+        "@typescript-eslint/parser@${NICO_TYPESCRIPT_ESLINT_VERSION}" \
+        "@typescript-eslint/eslint-plugin@${NICO_TYPESCRIPT_ESLINT_VERSION}" \
         --no-audit --no-fund \
-    && eslint --version \
+    && test "$(eslint --version)" = "v${NICO_ESLINT_VERSION}" \
+    && test "$(tsc --version)" = "Version ${NICO_TYPESCRIPT_VERSION}" \
+    && node -e "const js=require('@eslint/js/package.json').version; const parser=require('@typescript-eslint/parser/package.json').version; const plugin=require('@typescript-eslint/eslint-plugin/package.json').version; if (js !== process.env.NICO_ESLINT_JS_VERSION || parser !== process.env.NICO_TYPESCRIPT_ESLINT_VERSION || plugin !== process.env.NICO_TYPESCRIPT_ESLINT_VERSION) process.exit(1)" \
     && node -e "const parser=require.resolve('@typescript-eslint/parser'); if (!parser.endsWith('.js')) process.exit(1); require('@eslint/js')"
 
 COPY requirements.txt ./
@@ -61,7 +68,7 @@ RUN python -m pip install --upgrade pip \
     && "$NICO_SEMGREP_HOME/bin/python" -m pip install --upgrade pip \
     && "$NICO_SEMGREP_HOME/bin/pip" install --no-cache-dir "semgrep==${NICO_SEMGREP_VERSION}" \
     && ln -s "$NICO_SEMGREP_HOME/bin/semgrep" /usr/local/bin/semgrep \
-    && command -v semgrep \
+    && test "$(semgrep --version)" = "${NICO_SEMGREP_VERSION}" \
     && python scripts/install_hosted_scanner_binaries.py \
     && command -v osv-scanner \
     && command -v gitleaks \
