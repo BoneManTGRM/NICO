@@ -14,11 +14,12 @@ from nico.comprehensive_native_providers_v4 import install_native_comprehensive_
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import build_production_capability_executors
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
+from nico.comprehensive_score_truth_scope_v4 import install_score_truth_scope
 from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
 from nico.strategic_human_evidence_binding_v1 import install_strategic_human_evidence_binding
 from nico.v2_production_authority import install_v2_production_authority
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v15"
+VERSION = "nico.api.comprehensive_production_bootstrap.v16"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -60,6 +61,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     legacy_report_binding = report_binding
     report_binding = install_decision_grade_binding()
     accepted_edition_report_identity = install_accepted_edition_report_identity()
+    score_truth_scope = install_score_truth_scope()
     native_providers = install_native_comprehensive_providers(target)
     strategic_human_evidence = install_strategic_human_evidence_binding(target)
     scanner_execution_normalization = install_structured_scanner_executions(
@@ -84,6 +86,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     same_sha_score_deterministic = native_status.get("same_sha_score_deterministic") is True
     mutable_operational_history_affects_score = native_status.get("mutable_operational_history_affects_score") is True
     score_override_disabled = native_status.get("score_override_allowed") is False
+    score_truth_scope_bound = score_truth_scope.get("bound") is True
     ready = (
         controller is not None
         and runtime.get("configured") is True
@@ -97,6 +100,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("secret_category_isolated") is True
         and report_binding.get("score_band_separated_from_assurance") is True
         and accepted_edition_report_identity.get("bound") is True
+        and score_truth_scope_bound
         and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
@@ -116,6 +120,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         reason = "comprehensive_storage_not_container_replacement_safe"
     if not reason and accepted_edition_report_identity.get("bound") is not True:
         reason = "accepted_edition_report_identity_binding_incomplete"
+    if not reason and not score_truth_scope_bound:
+        reason = "score_truth_scope_binding_incomplete"
     if not reason and strategic_human_evidence.get("bound") is not True:
         reason = "strategic_human_evidence_binding_incomplete"
     if not reason and v2_production_authority.get("bound") is not True:
@@ -147,6 +153,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
         "accepted_edition_report_identity": accepted_edition_report_identity,
+        "score_truth_scope": score_truth_scope,
         "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
@@ -159,8 +166,11 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "category_specific_scoring_bound": category_specific_scoring_bound,
         "same_sha_score_deterministic": same_sha_score_deterministic,
         "mutable_operational_history_affects_score": mutable_operational_history_affects_score,
+        "score_truth_scope_bound": score_truth_scope_bound,
         "score_override_allowed": False,
         "report_binding_before_accepted_edition_identity": True,
+        "accepted_edition_identity_before_score_truth_scope": True,
+        "score_truth_scope_before_provider_install": True,
         "accepted_edition_identity_before_provider_install": True,
         "report_binding_before_provider_install": True,
         "provider_install_before_human_evidence_binding": True,
@@ -206,6 +216,8 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bou
     raise RuntimeError("Decision-grade Comprehensive scoring binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["accepted_edition_report_identity"].get("bound") is not True:
     raise RuntimeError("Accepted-edition report identity binding was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["score_truth_scope_bound"] is not True:
+    raise RuntimeError("Overall score alias synchronization scope was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound") is not True:
     raise RuntimeError("Strategic human-evidence binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound") is not True:
