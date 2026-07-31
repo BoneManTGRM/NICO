@@ -63,7 +63,9 @@ def _relative_path(value: Any, repo_dir: Path) -> str:
     for marker in ("/repo/", "/github/workspace/", "/workspace/"):
         if marker in raw:
             raw = raw.rsplit(marker, 1)[-1]
-    return raw.lstrip("./")
+    while raw.startswith("./"):
+        raw = raw[2:]
+    return raw.lstrip("/")
 
 
 def _raw_json(blob: Mapping[str, Any] | None) -> Any:
