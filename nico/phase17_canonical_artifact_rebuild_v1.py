@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from nico.canonical_section_status_v1 import normalize_report_package
-from nico.client_report_completion_v1 import (
+from nico.client_report_completion_v2 import (
     finalize_client_report_package,
     prepare_client_report_package,
 )
@@ -34,13 +34,14 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one client report from exact-source and applicability-aware truth."""
+    """Build one client report from canonical finding and scanner truth."""
 
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
     prepared = _reconcile(prepared)
-    # Scanner applicability and the structured remediation register must exist
-    # before the premium compiler derives stages, evidence health, and PDF content.
+    # Scanner applicability, scanner-outcome truth, canonical finding identity,
+    # and the structured remediation register must exist before the premium
+    # compiler derives stages, scores, executive findings, and artifact content.
     prepared = prepare_client_report_package(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
@@ -49,9 +50,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    # Reconcile once more after report-quality repair, then compile the final
-    # register/provenance pages from that exact canonical state. No downstream
-    # truth pass is allowed to silently replace the completed client artifacts.
+    # Reconcile once more after report-quality repair, then compile final
+    # cross-format artifacts from the exact authoritative canonical state.
     repaired = _reconcile(repaired)
     return finalize_client_report_package(repaired)
 
