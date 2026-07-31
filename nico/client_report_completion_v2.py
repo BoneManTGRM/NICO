@@ -10,11 +10,11 @@ from pypdf import PdfReader
 
 from nico import client_report_completion_v1 as legacy
 from nico.client_assessment_truth_v3 import normalize_client_assessment_truth
-from nico.client_finding_remediation_register_v3 import (
+from nico.client_finding_remediation_register_v4 import (
     build_finding_remediation_register,
-    canonical_findings_from_register,
     finding_register_markdown,
     render_finding_register_pdf,
+    synchronize_canonical_finding_surfaces,
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 from nico.v2_authoritative_premium_report import _html_from_markdown
@@ -27,19 +27,31 @@ def _text(value: Any, limit: int = 12000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
+    contract = deepcopy(dict(canonical.get("v2_pipeline_contract") or {}))
+    contract.update(
+        {
+            "client_report_completion_version": VERSION,
+            "canonical_finding_identity_uses_source_anchor_and_family": True,
+            "scanner_configuration_errors_are_not_code_findings": True,
+            "repository_relative_paths_only": True,
+            "finding_population_reconciled": True,
+            "unverified_tls_pattern_not_promoted": True,
+            "structured_finding_remediation_register": True,
+            "exact_source_locations_required_for_code_findings": True,
+            "scanner_not_applicable_separated_from_unavailable": True,
+            "stable_finding_alias_projection_idempotent": True,
+            "all_mirrored_finding_surfaces_synchronized": True,
+        }
+    )
+    canonical["v2_pipeline_contract"] = contract
+    return canonical
+
+
 def _install_register(canonical: dict[str, Any]) -> dict[str, Any]:
     register = build_finding_remediation_register(canonical)
-    canonical["client_finding_remediation_register"] = register
-    canonical["canonical_findings"] = canonical_findings_from_register(register)
-    summary = deepcopy(dict(register.get("summary") or {}))
-    canonical["finding_population"] = summary
-
-    assessment = deepcopy(dict(canonical.get("assessment") or {}))
-    assessment["finding_population"] = deepcopy(summary)
-    assessment["finding_register_count"] = int(summary.get("decision_finding_count") or 0)
-    assessment["canonical_finding_count"] = int(summary.get("decision_finding_count") or 0)
-    canonical["assessment"] = assessment
-    return canonical
+    synchronized = synchronize_canonical_finding_surfaces(canonical, register)
+    return _install_contract(synchronized)
 
 
 def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -60,21 +72,6 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     )
     canonical = _install_register(canonical)
 
-    contract = deepcopy(dict(canonical.get("v2_pipeline_contract") or {}))
-    contract.update(
-        {
-            "client_report_completion_version": VERSION,
-            "canonical_finding_identity_uses_source_anchor_and_family": True,
-            "scanner_configuration_errors_are_not_code_findings": True,
-            "repository_relative_paths_only": True,
-            "finding_population_reconciled": True,
-            "unverified_tls_pattern_not_promoted": True,
-            "structured_finding_remediation_register": True,
-            "exact_source_locations_required_for_code_findings": True,
-            "scanner_not_applicable_separated_from_unavailable": True,
-        }
-    )
-    canonical["v2_pipeline_contract"] = contract
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
         canonical["client_finding_remediation_register"]
@@ -126,6 +123,8 @@ def _validate_final_surfaces(
         raise ValueError("scanner configuration errors were promoted to code findings")
     if summary.get("unverified_tls_candidates_promoted_to_p1") is not False:
         raise ValueError("unverified TLS pattern candidates were promoted to P1")
+    if summary.get("stable_alias_projection_idempotent") is not True:
+        raise ValueError("canonical finding alias projection is not idempotent")
 
     code = [item for item in register.get("code_findings") or [] if isinstance(item, Mapping)]
     canonical_findings = [
@@ -165,6 +164,7 @@ def _validate_final_surfaces(
         "temporary_worker_paths_absent": True,
         "unknown_analyzer_rule_pairs_absent": True,
         "semantic_duplicate_code_anchors_absent": True,
+        "stable_finding_alias_projection_idempotent": True,
         "unverified_tls_candidates_not_promoted": True,
     }
 
