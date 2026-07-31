@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import styles from "./operations.module.css";
 
 type RecoveryItem = {
@@ -53,7 +53,7 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey, ta
   const [error, setError] = useState("");
   const [actor, setActor] = useState("operator");
 
-  async function loadRecovery(refresh = false) {
+  const loadRecovery = useCallback(async (refresh = false) => {
     if (!apiUrl || !adminToken.trim()) return;
     setLoading(true);
     setError("");
@@ -70,7 +70,7 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey, ta
     } finally {
       setLoading(false);
     }
-  }
+  }, [adminToken, apiUrl]);
 
   async function resume(scanId: string) {
     if (!scanId || !apiUrl || !adminToken.trim()) return;
@@ -97,9 +97,7 @@ export default function ScannerRecoveryPanel({apiUrl, adminToken, refreshKey, ta
 
   useEffect(() => {
     if (refreshKey && adminToken.trim()) void loadRecovery(false);
-    // The token is deliberately page-memory state. Re-load only when the parent completes a control-center refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [adminToken, loadRecovery, refreshKey]);
 
   useEffect(() => {
     if (!inventory || !targetScanId) return;
