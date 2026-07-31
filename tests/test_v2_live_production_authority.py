@@ -211,7 +211,9 @@ def test_production_bootstraps_bind_real_report_and_scanner_authorities():
     assert "install_v2_production_authority(target)" in comprehensive
     assert comprehensive.index("install_v2_production_authority(target)") < comprehensive.index("build_production_capability_executors(target)")
     assert "install_v2_snapshot_scanner_authority()" in terminal
+    assert "SCANNER_DETERMINISM = install_scanner_determinism()" in terminal
+    assert "snapshot_scanner_worker.clone_repository_at_snapshot = deterministic_snapshot_clone" in terminal
     assert "scanner_tool_runners.run_scanner_tool = canonical_snapshot_tool_runner" in scanner
-    assert "snapshot_scanner_worker.clone_repository_at_snapshot = full_history_snapshot_clone" in scanner
+    assert "snapshot_scanner_worker.clone_repository_at_snapshot = deterministic_clone" in scanner
     assert "raw_artifact_retention_complete" in scanner
     assert "exit_code" in scanner and "returncode" in scanner
