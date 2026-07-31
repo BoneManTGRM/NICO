@@ -15,6 +15,7 @@ from nico.comprehensive_assessment_hardening_v1 import (
     install_import_time_hardening,
 )
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
+from nico.scanner_determinism_v1 import install_scanner_determinism
 
 VERSION = "nico.comprehensive-native-providers.v3"
 
@@ -23,13 +24,7 @@ _PRE_HARDENING_SCORE_REPAIR = client_truth._repair_stale_report_contracts
 
 
 def _strict_review_candidate(item: Mapping[str, Any]) -> bool:
-    """Group only explicit dependency or secret review candidates.
-
-    Existing report polish remains authoritative for scanner runtime diagnostics,
-    confirmed P2 records, code candidates, and static-analysis candidates. This
-    prevents a generic candidate-volume layer from replacing more precise client
-    language or hiding a confirmed finding.
-    """
+    """Group only explicit dependency or secret review candidates."""
 
     category = str(item.get("category") or "").strip().casefold()
     if category not in {"dependency", "secret"}:
@@ -48,11 +43,12 @@ def _strict_review_candidate(item: Mapping[str, Any]) -> bool:
     )
     if not explicit:
         return False
-    title = str(item.get("title") or "").casefold()
-    fact = str(item.get("fact") or "").casefold()
-    evidence = str(item.get("evidence") or "").casefold()
-    runtime_diagnostic = any(
-        token in f"{title} {fact} {evidence}"
+    diagnostic = " ".join(
+        str(item.get(key) or "").casefold()
+        for key in ("title", "fact", "evidence", "location")
+    )
+    return not any(
+        token in diagnostic
         for token in (
             "resource limit",
             "failed to create new os thread",
@@ -62,7 +58,6 @@ def _strict_review_candidate(item: Mapping[str, Any]) -> bool:
             "scanner execution boundary",
         )
     )
-    return not runtime_diagnostic
 
 
 def _has_numeric_score_truth(canonical: Mapping[str, Any]) -> bool:
@@ -93,18 +88,20 @@ def _has_numeric_score_truth(canonical: Mapping[str, Any]) -> bool:
             score_contract.get(key)
             for key in ("technical_score", "evidence_adjusted_score")
         )
-    return any(isinstance(value, (int, float)) and not isinstance(value, bool) for value in candidates)
+    return any(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in candidates
+    )
 
 
 def _hybrid_score_truth_repair(canonical: dict[str, Any]) -> int:
-    """Use equality verification when score aliases exist, legacy repair otherwise."""
-
     if _has_numeric_score_truth(canonical):
         return hardening._repair_stale_report_contracts_hardened(canonical)
     return _PRE_HARDENING_SCORE_REPAIR(canonical)
 
 
 hardening._is_review_candidate = _strict_review_candidate
+SCANNER_DETERMINISM_STATUS = install_scanner_determinism()
 HARDENING_STATUS = install_import_time_hardening()
 client_truth._repair_stale_report_contracts = _hybrid_score_truth_repair
 if callable(_PRE_HARDENING_SCAN_FILES):
@@ -442,7 +439,11 @@ def install_native_comprehensive_providers(
     setattr(app.state, PROVIDER_STATE_KEY, providers)
 
     final_gate = install_final_publisher_gate()
-    hardening_status = {**HARDENING_STATUS, **final_gate}
+    hardening_status = {
+        **HARDENING_STATUS,
+        **SCANNER_DETERMINISM_STATUS,
+        **final_gate,
+    }
     app.state.nico_native_comprehensive_provider_status = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
@@ -454,21 +455,25 @@ def install_native_comprehensive_providers(
         "same_sha_score_deterministic": True,
         "mutable_operational_history_affects_score": False,
         "score_override_allowed": False,
+        "scanner_determinism_bound": (
+            SCANNER_DETERMINISM_STATUS.get("exact_commit_ancestry_clone_bound") is True
+        ),
         "source_signal_binding_compatible": (
-            hardening_status.get("source_signal_binding_compatible") is True
+            HARDENING_STATUS.get("source_signal_binding_compatible") is True
         ),
         "frozen_operational_evidence_bound": (
-            hardening_status.get("frozen_operational_evidence_bound") is True
+            HARDENING_STATUS.get("frozen_operational_evidence_bound") is True
         ),
         "production_manifest_scope_filter_bound": (
-            hardening_status.get("production_manifest_scope_filter_bound") is True
+            HARDENING_STATUS.get("production_manifest_scope_filter_bound") is True
         ),
         "review_candidate_summary_bound": (
-            hardening_status.get("review_candidate_summary_bound") is True
+            HARDENING_STATUS.get("review_candidate_summary_bound") is True
         ),
         "report_contract_publication_gate_bound": (
-            hardening_status.get("final_report_contract_publication_gate_bound") is True
+            final_gate.get("final_report_contract_publication_gate_bound") is True
         ),
+        "scanner_determinism_status": SCANNER_DETERMINISM_STATUS,
         "hardening_status": hardening_status,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -479,6 +484,7 @@ def install_native_comprehensive_providers(
 __all__ = [
     "VERSION",
     "HARDENING_STATUS",
+    "SCANNER_DETERMINISM_STATUS",
     "canonical_scoring_provider",
     "install_native_comprehensive_providers",
     "native_comprehensive_providers",
