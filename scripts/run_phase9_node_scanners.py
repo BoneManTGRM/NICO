@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +15,9 @@ REVISION = os.environ.get("PHASE9_REVISION") or subprocess.check_output(
     text=True,
 ).strip()
 ESLINT_AUDIT_PACKAGES = (
-    "eslint@9",
-    "@eslint/js@9",
-    "@typescript-eslint/parser@8",
+    "eslint@9.39.3",
+    "@eslint/js@9.39.3",
+    "@typescript-eslint/parser@8.65.0",
 )
 ESLINT_CONFIGS = (
     "eslint.config.js",
@@ -104,6 +103,8 @@ def _install_eslint_audit_client() -> dict[str, Any]:
         cwd=WEB,
         text=True,
     ).strip()
+    if version != "v9.39.3":
+        raise SystemExit(f"unexpected ESLint audit version: {version}")
     return {
         "packages": list(ESLINT_AUDIT_PACKAGES),
         "version": version,
