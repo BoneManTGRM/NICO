@@ -32,12 +32,12 @@ jobs:
     timeout-minutes: 90
     env:
       FROZEN_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
-      NICO_SCANNER_ARTIFACT_ROOT: ${{ runner.temp }}/nico-frozen-sha-scanner-artifacts
+      NICO_SCANNER_ARTIFACT_ROOT: ${{ github.workspace }}/.nico-runtime/frozen-sha-scanner-artifacts
       NICO_SCANNER_MAX_RETAINED_OUTPUT_BYTES: "268435456"
       NICO_SCANNER_NODE_HEAP_MB: "4096"
-      NICO_SCANNER_INSTALL_DIR: ${{ runner.temp }}/nico-scanners
+      NICO_SCANNER_INSTALL_DIR: ${{ github.workspace }}/.nico-runtime/scanners
       NICO_SCANNER_INSTALL_STRICT: "true"
-      NICO_SEMGREP_HOME: ${{ runner.temp }}/nico-semgrep
+      NICO_SEMGREP_HOME: ${{ github.workspace }}/.nico-runtime/semgrep
       GITHUB_TOKEN: ${{ github.token }}
 
     steps:
@@ -133,7 +133,7 @@ jobs:
           retention-days: 90
           path: |
             frozen-sha-scanner-qualification.json
-            ${{ runner.temp }}/nico-frozen-sha-scanner-artifacts/**
+            ${{ github.workspace }}/.nico-runtime/frozen-sha-scanner-artifacts/**
 
       - name: Publish observable qualification status
         if: always()
