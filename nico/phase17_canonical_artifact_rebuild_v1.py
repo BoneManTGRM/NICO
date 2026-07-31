@@ -7,6 +7,9 @@ from nico.client_report_completion_v2 import (
     finalize_client_report_package,
     prepare_client_report_package,
 )
+from nico.comprehensive_internal_readiness_v1 import (
+    reconcile_comprehensive_internal_readiness_package,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -39,6 +42,10 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
     prepared = _reconcile(prepared)
+    # Reconcile the actual final evidence before any premium renderer derives
+    # scorecards, executive findings, or detailed remediation cards. The
+    # reconciler is evidence-bound and never applies a target score.
+    prepared = reconcile_comprehensive_internal_readiness_package(prepared)
     # Scanner applicability, scanner-outcome truth, canonical finding identity,
     # and the structured remediation register must exist before the premium
     # compiler derives stages, scores, executive findings, and artifact content.
@@ -53,6 +60,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # Reconcile once more after report-quality repair, then compile final
     # cross-format artifacts from the exact authoritative canonical state.
     repaired = _reconcile(repaired)
+    repaired = reconcile_comprehensive_internal_readiness_package(repaired)
     return finalize_client_report_package(repaired)
 
 
