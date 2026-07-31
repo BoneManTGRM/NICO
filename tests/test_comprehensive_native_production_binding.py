@@ -41,7 +41,7 @@ def test_production_entrypoint_installs_providers_before_building_executors() ->
     runtime_install = source.index("controller = install_comprehensive_production_bootstrap(")
     assert provider_install < executor_build < runtime_install
     assert '"provider_install_before_executor_build": True' in source
-    assert '"category_specific_scoring_bound": True' in source
+    assert '"category_specific_scoring_bound": category_specific_scoring_bound' in source
     assert '"same_sha_score_deterministic": same_sha_score_deterministic' in source
     assert '"mutable_operational_history_affects_score": mutable_operational_history_affects_score' in source
     assert '"score_override_allowed": False' in source
