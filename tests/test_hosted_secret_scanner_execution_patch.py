@@ -42,6 +42,18 @@ def test_gitleaks_command_requires_binary(monkeypatch, tmp_path):
     assert "gitleaks is not installed" in reason
 
 
+def test_gitleaks_command_targets_immutable_head(monkeypatch, tmp_path):
+    ws = workspace(tmp_path)
+    monkeypatch.setattr("nico.hosted_secret_scanner_execution_patch.shutil.which", lambda name: "/usr/bin/gitleaks" if name == "gitleaks" else None)
+
+    command, cwd, reason = _gitleaks_command(ws)
+
+    assert reason is None
+    assert cwd == ws.repo_dir
+    assert command is not None
+    assert command[command.index("--log-opts") + 1] == "HEAD"
+
+
 def test_trufflehog_command_uses_file_url(monkeypatch, tmp_path):
     ws = workspace(tmp_path)
     monkeypatch.setattr("nico.hosted_secret_scanner_execution_patch.shutil.which", lambda name: "/usr/bin/trufflehog" if name == "trufflehog" else None)
@@ -50,8 +62,10 @@ def test_trufflehog_command_uses_file_url(monkeypatch, tmp_path):
 
     assert reason is None
     assert cwd == ws.repo_dir
+    assert command is not None
     assert command[:2] == ("trufflehog", "git")
     assert command[2] == f"file://{ws.repo_dir}"
+    assert command[command.index("--branch") + 1] == "HEAD"
 
 
 def test_history_metadata_detects_full_history(monkeypatch, tmp_path):
@@ -85,6 +99,7 @@ def test_patched_gitleaks_completed_requires_full_history(monkeypatch, tmp_path)
 
     def fake_runner(command, *, cwd, limits):
         assert command[0] == "gitleaks"
+        assert command[command.index("--log-opts") + 1] == "HEAD"
         return WorkerCommandResult(args=tuple(command), returncode=0, stdout="[]", stderr="")
 
     spec = ScannerToolSpec("gitleaks", ("gitleaks",), "secret", timeout_seconds=120, scans_git_history=True)
@@ -108,6 +123,7 @@ def test_patched_trufflehog_shallow_history_not_verified(monkeypatch, tmp_path):
 
     def fake_runner(command, *, cwd, limits):
         assert command[0] == "trufflehog"
+        assert command[command.index("--branch") + 1] == "HEAD"
         return WorkerCommandResult(args=tuple(command), returncode=0, stdout="", stderr="")
 
     spec = ScannerToolSpec("trufflehog", ("trufflehog",), "secret", timeout_seconds=120, scans_git_history=True)
