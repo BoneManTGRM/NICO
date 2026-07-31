@@ -7,10 +7,15 @@ from fastapi import FastAPI
 
 from nico import comprehensive_native_providers as legacy
 from nico import comprehensive_native_providers_v2 as v2
+from nico.comprehensive_assessment_hardening_v1 import (
+    install_final_publisher_gate,
+    install_import_time_hardening,
+)
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
 VERSION = "nico.comprehensive-native-providers.v3"
 
+HARDENING_STATUS = install_import_time_hardening()
 
 _IMMUTABLE_CONTROL_FIELDS = (
     "cache",
@@ -39,7 +44,10 @@ def _section_map(assessment: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def _immutable_ci_score(workflow: dict[str, Any], commit_sha: str) -> tuple[int, list[str], list[str], dict[str, Any]]:
+def _immutable_ci_score(
+    workflow: dict[str, Any],
+    commit_sha: str,
+) -> tuple[int, list[str], list[str], dict[str, Any]]:
     """Score only workflow configuration bound to the immutable repository commit.
 
     Job, run, and deployment history remains useful operational context, but it is
@@ -48,11 +56,19 @@ def _immutable_ci_score(workflow: dict[str, Any], commit_sha: str) -> tuple[int,
     """
 
     workflow_files = int(workflow.get("workflow_file_count") or 0)
-    configuration_sha = str(workflow.get("workflow_configuration_snapshot_sha") or "").casefold()
+    configuration_sha = str(
+        workflow.get("workflow_configuration_snapshot_sha") or ""
+    ).casefold()
     expected_sha = str(commit_sha or "").casefold()
-    exact_configuration = bool(expected_sha and configuration_sha == expected_sha)
+    exact_configuration = bool(
+        expected_sha and configuration_sha == expected_sha
+    )
     explicit_permissions = workflow.get("explicit_permissions_present") is True
-    controls = workflow.get("configuration_controls") if isinstance(workflow.get("configuration_controls"), dict) else {}
+    controls = (
+        workflow.get("configuration_controls")
+        if isinstance(workflow.get("configuration_controls"), dict)
+        else {}
+    )
     retained_controls = {
         name: controls.get(name) is True
         for name in _IMMUTABLE_CONTROL_FIELDS
@@ -64,15 +80,21 @@ def _immutable_ci_score(workflow: dict[str, Any], commit_sha: str) -> tuple[int,
     if workflow_files:
         score += 10
     else:
-        findings.append("No workflow configuration was retained at the assessed commit.")
+        findings.append(
+            "No workflow configuration was retained at the assessed commit."
+        )
     if exact_configuration:
         score += 10
     else:
-        findings.append("Workflow configuration was not proven against the exact assessed commit.")
+        findings.append(
+            "Workflow configuration was not proven against the exact assessed commit."
+        )
     if explicit_permissions:
         score += 10
     else:
-        findings.append("Explicit workflow permission boundaries were not proven at the assessed commit.")
+        findings.append(
+            "Explicit workflow permission boundaries were not proven at the assessed commit."
+        )
     score += min(25, control_count * 3)
 
     historical = {
@@ -81,8 +103,12 @@ def _immutable_ci_score(workflow: dict[str, Any], commit_sha: str) -> tuple[int,
         "jobs_observed": int(workflow.get("jobs_observed") or 0),
         "job_success_rate": workflow.get("job_success_rate"),
         "deployments_observed": int(workflow.get("deployments_observed") or 0),
-        "successful_deployments": int(workflow.get("successful_deployments") or 0),
-        "runtime_proof_workflows": list(workflow.get("runtime_proof_workflows") or []),
+        "successful_deployments": int(
+            workflow.get("successful_deployments") or 0
+        ),
+        "runtime_proof_workflows": list(
+            workflow.get("runtime_proof_workflows") or []
+        ),
         "score_effect": "none",
         "classification": "mutable_operational_trend",
     }
@@ -90,8 +116,14 @@ def _immutable_ci_score(workflow: dict[str, Any], commit_sha: str) -> tuple[int,
         f"Workflow files at assessed commit: {workflow_files}.",
         f"Workflow configuration exact-SHA match: {exact_configuration}.",
         f"Explicit permissions present: {explicit_permissions}.",
-        f"Immutable workflow controls present: {control_count}/{len(_IMMUTABLE_CONTROL_FIELDS)}.",
-        "Historical workflow, job, and deployment outcomes are retained as an unscored operational trend.",
+        (
+            "Immutable workflow controls present: "
+            f"{control_count}/{len(_IMMUTABLE_CONTROL_FIELDS)}."
+        ),
+        (
+            "Historical workflow, job, and deployment outcomes are retained "
+            "as an unscored operational trend."
+        ),
     ]
     contract = {
         "version": "nico.immutable-ci-score.v1",
@@ -124,12 +156,20 @@ def _immutable_delivery_score(
     evidence = [
         f"Architecture and technical-debt score: {architecture_score}/100.",
         f"Immutable CI configuration score: {ci_score}/100.",
-        "The delivery-capacity score is 60% architecture maintainability and 40% immutable workflow automation.",
-        "Commit, pull-request, merge, job, and deployment counts are retained as trend context and have no score effect.",
+        (
+            "The delivery-capacity score is 60% architecture maintainability "
+            "and 40% immutable workflow automation."
+        ),
+        (
+            "Commit, pull-request, merge, job, and deployment counts are "
+            "retained as trend context and have no score effect."
+        ),
     ]
     findings: list[str] = []
     if architecture_score < 75:
-        findings.append("Concentrated architecture or complexity risk constrains sustainable delivery capacity.")
+        findings.append(
+            "Concentrated architecture or complexity risk constrains sustainable delivery capacity."
+        )
     contract = {
         "version": "nico.immutable-delivery-capacity.v1",
         "architecture_weight": 0.60,
@@ -137,8 +177,12 @@ def _immutable_delivery_score(
         "mutable_activity_affects_technical_score": False,
         "operational_trend": {
             "commits_returned": int(activity.get("commits_returned") or 0),
-            "pull_requests_returned": int(activity.get("pull_requests_returned") or 0),
-            "merged_pull_requests": int(activity.get("merged_pull_requests") or 0),
+            "pull_requests_returned": int(
+                activity.get("pull_requests_returned") or 0
+            ),
+            "merged_pull_requests": int(
+                activity.get("merged_pull_requests") or 0
+            ),
             "jobs_observed": int(workflow.get("jobs_observed") or 0),
             "job_success_rate": workflow.get("job_success_rate"),
             "score_effect": "none",
@@ -154,16 +198,33 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     assessment = deepcopy(baseline.get("assessment") or {})
     sections = _section_map(assessment)
     repo = legacy._repo(context)
-    workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), dict) else {}
-    activity = repo.get("activity_evidence") if isinstance(repo.get("activity_evidence"), dict) else {}
+    workflow = (
+        repo.get("workflow_evidence")
+        if isinstance(repo.get("workflow_evidence"), dict)
+        else {}
+    )
+    activity = (
+        repo.get("activity_evidence")
+        if isinstance(repo.get("activity_evidence"), dict)
+        else {}
+    )
 
     architecture = sections.get("architecture_debt") or {}
-    architecture_score = int(architecture.get("presented_score") or architecture.get("score") or 0)
+    architecture_score = int(
+        architecture.get("presented_score")
+        or architecture.get("score")
+        or 0
+    )
     ci_score, ci_evidence, ci_findings, ci_contract = _immutable_ci_score(
         workflow,
         str(context.get("commit_sha") or ""),
     )
-    velocity_score, velocity_evidence, velocity_findings, velocity_contract = _immutable_delivery_score(
+    (
+        velocity_score,
+        velocity_evidence,
+        velocity_findings,
+        velocity_contract,
+    ) = _immutable_delivery_score(
         architecture_score,
         ci_score,
         activity,
@@ -174,7 +235,11 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         "ci_cd",
         "CI/CD Analysis",
         ci_score,
-        "CI/CD technical maturity is scored only from workflow configuration bound to the exact immutable commit; later operational outcomes are reported separately.",
+        (
+            "CI/CD technical maturity is scored only from workflow configuration "
+            "bound to the exact immutable commit; later operational outcomes are "
+            "reported separately."
+        ),
         ci_evidence,
         ci_findings,
     )
@@ -183,7 +248,11 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         "velocity_complexity",
         "Velocity / Complexity",
         velocity_score,
-        "Sustainable delivery capacity is derived from immutable architecture maintainability and workflow automation; mutable activity volume is unscored context.",
+        (
+            "Sustainable delivery capacity is derived from immutable architecture "
+            "maintainability and workflow automation; mutable activity volume is "
+            "unscored context."
+        ),
         velocity_evidence,
         velocity_findings,
     )
@@ -207,13 +276,23 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         if isinstance(item.get("presented_score"), int)
     ]
     technical_score = round(sum(scored) / len(scored)) if scored else 0
-    coverage = assessment.get("evidence_coverage") if isinstance(assessment.get("evidence_coverage"), dict) else {}
+    coverage = (
+        assessment.get("evidence_coverage")
+        if isinstance(assessment.get("evidence_coverage"), dict)
+        else {}
+    )
     analyzer_coverage = int(coverage.get("percent") or 0)
     evidence_adjusted = min(
         technical_score,
         round(technical_score * 0.85 + analyzer_coverage * 0.15),
     )
-    level = "Senior" if technical_score >= 82 else "Mid" if technical_score >= 58 else "Junior"
+    level = (
+        "Senior"
+        if technical_score >= 82
+        else "Mid"
+        if technical_score >= 58
+        else "Junior"
+    )
 
     assessment["technical_score"] = technical_score
     assessment["canonical_evidence_adjusted_score"] = evidence_adjusted
@@ -245,10 +324,11 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
     assessment["score_contract"] = score_contract
     assessment["executive_summary"] = (
-        f"Exact-SHA technical evidence for {context['repository']} produced an evidence-bound "
-        f"{level} maturity signal ({technical_score}/100) and evidence-adjusted score of "
-        f"{evidence_adjusted}/100. Mutable operational history is disclosed separately and "
-        "cannot change the score for this immutable commit."
+        f"Exact-SHA technical evidence for {context['repository']} produced an "
+        f"evidence-bound {level} maturity signal ({technical_score}/100) and "
+        f"evidence-adjusted score of {evidence_adjusted}/100. Mutable operational "
+        "history is disclosed separately and cannot change the score for this "
+        "immutable commit."
     )
 
     result = deepcopy(baseline)
@@ -265,7 +345,9 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
     result["evidence"] = evidence
     result["summary"] = (
-        "Canonical scoring completed from immutable code, workflow configuration, and exact-SHA scanner evidence; mutable operational trends were retained without affecting technical scores."
+        "Canonical scoring completed from immutable code, workflow configuration, "
+        "and exact-SHA scanner evidence; mutable operational trends were retained "
+        "without affecting technical scores."
     )
     return result
 
@@ -276,20 +358,43 @@ def native_comprehensive_providers() -> dict[str, legacy.Provider]:
     return providers
 
 
-def install_native_comprehensive_providers(app: FastAPI) -> dict[str, legacy.Provider]:
+def install_native_comprehensive_providers(
+    app: FastAPI,
+) -> dict[str, legacy.Provider]:
     existing = getattr(app.state, PROVIDER_STATE_KEY, None)
     providers = dict(existing) if isinstance(existing, dict) else {}
     providers.update(native_comprehensive_providers())
     setattr(app.state, PROVIDER_STATE_KEY, providers)
+
+    final_gate = install_final_publisher_gate()
+    hardening = {**HARDENING_STATUS, **final_gate}
     app.state.nico_native_comprehensive_provider_status = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "provider_count": len(providers),
         "providers": sorted(providers),
-        "category_specific_scoring_bound": providers.get("canonical_scoring") is canonical_scoring_provider,
+        "category_specific_scoring_bound": (
+            providers.get("canonical_scoring") is canonical_scoring_provider
+        ),
         "same_sha_score_deterministic": True,
         "mutable_operational_history_affects_score": False,
         "score_override_allowed": False,
+        "source_signal_binding_compatible": (
+            hardening.get("source_signal_binding_compatible") is True
+        ),
+        "frozen_operational_evidence_bound": (
+            hardening.get("frozen_operational_evidence_bound") is True
+        ),
+        "production_manifest_scope_filter_bound": (
+            hardening.get("production_manifest_scope_filter_bound") is True
+        ),
+        "review_candidate_summary_bound": (
+            hardening.get("review_candidate_summary_bound") is True
+        ),
+        "report_contract_publication_gate_bound": (
+            hardening.get("final_report_contract_publication_gate_bound") is True
+        ),
+        "hardening_status": hardening,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
