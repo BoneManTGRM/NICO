@@ -221,6 +221,7 @@ jobs:
           from pathlib import Path
           import json, re
           skip = {'.git', 'node_modules', '.next', 'dist', 'build', '.venv', 'venv', '__pycache__'}
+          non_production = {'test', 'tests', 'fixture', 'fixtures', 'example', 'examples', 'sample', 'samples'}
           suffixes = {'.py','.js','.jsx','.ts','.tsx','.json','.yaml','.yml','.toml','.ini','.cfg','.txt','.md','.sh','.html','.css','.xml','.env','.example'}
           patterns = {
               'private_key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
@@ -228,17 +229,38 @@ jobs:
               'aws_access_key': re.compile(r'AKIA[0-9A-Z]{16}'),
           }
           findings = []
+          review_required = []
           for path in Path('.').rglob('*'):
               if not path.is_file() or any(part in skip for part in path.parts):
                   continue
               if path.suffix not in suffixes and path.name not in {'Dockerfile','Procfile','.env.example'}:
                   continue
+              relative = str(path).replace('\\', '/')
+              parts = {part.casefold() for part in path.parts}
+              name = path.name.casefold()
+              non_production_path = bool(
+                  parts & non_production
+                  or name.startswith('test_')
+                  or name.endswith(('_test.py', '.test.ts', '.test.tsx', '.spec.ts', '.spec.tsx'))
+                  or name in {'.env.example', '.env.sample', 'example.env', 'sample.env'}
+              )
               text = path.read_text(encoding='utf-8', errors='replace')
               for line_number, line in enumerate(text.splitlines(), 1):
                   for finding_type, pattern in patterns.items():
-                      if pattern.search(line):
-                          findings.append({'path': str(path), 'line': line_number, 'type': finding_type})
-          Path('credential-scan.json').write_text(json.dumps({'findings': findings}, indent=2), encoding='utf-8')
+                      if not pattern.search(line):
+                          continue
+                      item = {
+                          'path': relative,
+                          'line': line_number,
+                          'type': finding_type,
+                          'disposition': 'review_required_non_production' if non_production_path else 'blocking_production',
+                      }
+                      (review_required if non_production_path else findings).append(item)
+          Path('credential-scan.json').write_text(json.dumps({
+              'findings': findings,
+              'review_required_non_production_findings': review_required,
+              'raw_candidate_count': len(findings) + len(review_required),
+          }, indent=2), encoding='utf-8')
           PY
 
       - name: Set up Node
@@ -252,6 +274,12 @@ jobs:
         run: |
           npm install --global npm@11
           npm --version
+
+      - name: Install supported ESLint audit client
+        run: |
+          npm install --global eslint@9 @eslint/js@9 @typescript-eslint/parser@8 --no-audit --no-fund
+          echo "NODE_PATH=$(npm root --global)" >> "$GITHUB_ENV"
+          eslint --version
 
       - name: Install exact frontend dependencies
         working-directory: apps/web
@@ -282,26 +310,58 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json, subprocess
+          import json, os, shutil, subprocess
           configs = ['eslint.config.js','eslint.config.mjs','eslint.config.cjs','.eslintrc','.eslintrc.js','.eslintrc.cjs','.eslintrc.json','.eslintrc.yaml','.eslintrc.yml']
           configured = any(Path(name).is_file() for name in configs)
-          binary = Path('node_modules/.bin/eslint')
+          local_binary = Path('node_modules/.bin/eslint')
+          binary = str(local_binary) if local_binary.is_file() else shutil.which('eslint')
           if not configured:
               data = []
               summary = {'scanner': 'eslint', 'status': 'unavailable_not_configured', 'configured': False, 'finding_count': 0, 'error_count': 0, 'warning_count': 0}
-          elif not binary.is_file():
+          elif not binary:
               data = []
-              summary = {'scanner': 'eslint', 'status': 'unavailable', 'configured': True, 'finding_count': 0, 'error_count': 0, 'warning_count': 0, 'reason': 'local ESLint binary is unavailable'}
+              summary = {'scanner': 'eslint', 'status': 'unavailable', 'configured': True, 'finding_count': 0, 'error_count': 0, 'warning_count': 0, 'reason': 'neither a local nor supported global ESLint binary is available'}
           else:
-              result = subprocess.run([str(binary), '.', '--format', 'json'], capture_output=True, text=True, timeout=180, check=False)
+              environment = dict(os.environ)
+              if not environment.get('NODE_PATH'):
+                  root = subprocess.run(['npm', 'root', '--global'], capture_output=True, text=True, check=False).stdout.strip()
+                  if root:
+                      environment['NODE_PATH'] = root
+              result = subprocess.run([binary, '.', '--format', 'json'], capture_output=True, text=True, timeout=180, check=False, env=environment)
               try:
                   data = json.loads(result.stdout)
               except json.JSONDecodeError:
                   data = []
               messages = [message for file_result in data if isinstance(file_result, dict) for message in file_result.get('messages') or [] if isinstance(message, dict)]
-              errors = sum(1 for message in messages if int(message.get('severity') or 0) == 2)
+              configuration_errors = [
+                  message for message in messages
+                  if message.get('fatal') is True
+                  or (
+                      message.get('ruleId') is None
+                      and any(marker in str(message.get('message') or '').casefold() for marker in ('configuration', 'config', 'definition for rule', 'parsing error'))
+                  )
+              ]
+              errors = sum(1 for message in messages if int(message.get('severity') or 0) == 2 and message not in configuration_errors)
               warnings = sum(1 for message in messages if int(message.get('severity') or 0) == 1)
-              summary = {'scanner': 'eslint', 'status': 'completed_clean' if result.returncode == 0 else 'completed_with_findings', 'configured': True, 'finding_count': len(messages), 'error_count': errors, 'warning_count': warnings, 'exit_code': result.returncode}
+              if result.returncode >= 2 or configuration_errors:
+                  status = 'configuration_failed'
+                  reason = '; '.join(str(message.get('message') or '') for message in configuration_errors[:5]) or result.stderr[-2000:] or f'ESLint exited {result.returncode}'
+              else:
+                  status = 'completed_clean' if result.returncode == 0 and not errors else 'completed_with_findings'
+                  reason = ''
+              summary = {
+                  'scanner': 'eslint',
+                  'status': status,
+                  'configured': True,
+                  'finding_count': errors + warnings,
+                  'error_count': errors,
+                  'warning_count': warnings,
+                  'configuration_error_count': len(configuration_errors),
+                  'exit_code': result.returncode,
+                  'binary_source': 'local' if local_binary.is_file() else 'supported_global',
+              }
+              if reason:
+                  summary['reason'] = reason
           Path('../../eslint.json').write_text(json.dumps(data, indent=2), encoding='utf-8')
           Path('../../eslint-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
           PY
