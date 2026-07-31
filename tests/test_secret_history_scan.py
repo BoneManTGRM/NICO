@@ -50,9 +50,9 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
     assert result["full_history_verified"] is True
     assert result["history_scope"] == "reachable_ancestry_at_assessed_commit"
     assert result["descendant_refs_scanned"] is False
-    assert calls[0][0:2] == ("trufflehog", "git")
-    assert calls[0][2] == f"file://{repo_dir}"
-    assert calls[0][calls[0].index("--branch") + 1] == "HEAD"
+    scanner_call = next(call for call in calls if call[0:2] == ("trufflehog", "git"))
+    assert scanner_call[2] == f"file://{repo_dir}"
+    assert scanner_call[scanner_call.index("--branch") + 1] == "HEAD"
 
 
 def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
@@ -84,7 +84,8 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
     assert result["history_scope"] == "reachable_ancestry_at_assessed_commit"
     assert result["descendant_refs_scanned"] is False
     assert result["findings"] == []
-    assert calls[0][calls[0].index("--log-opts") + 1] == "HEAD"
+    scanner_call = next(call for call in calls if call[0] == "gitleaks")
+    assert scanner_call[scanner_call.index("--log-opts") + 1] == "HEAD"
 
 
 def test_secret_history_scan_verification_clears_git_history_unavailable():
