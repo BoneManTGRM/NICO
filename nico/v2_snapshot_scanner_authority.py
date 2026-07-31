@@ -19,11 +19,12 @@ from nico.scanner_evidence_pipeline_v1 import (
     prepare_project_commands,
     redact_payload,
 )
+from nico.scanner_result_truth_v1 import reconcile_scanner_payload
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
 
-VERSION = "nico.v2.snapshot-scanner-authority.v1"
-_TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v1__"
-_CLONE_MARKER = "__nico_v2_full_history_clone_v1__"
+VERSION = "nico.v2.snapshot-scanner-authority.v2"
+_TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v2__"
+_CLONE_MARKER = "__nico_v2_full_history_clone_v2__"
 _PREPARATION_CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()
 
@@ -105,7 +106,7 @@ def _persist_raw_blob(
     artifacts = existing.get("artifacts") if isinstance(existing.get("artifacts"), dict) else {}
     artifacts[str(payload.get("tool") or "unknown")] = payload["raw_artifact"]
     manifest_payload = {
-        "schema": "nico.v2.snapshot-scanner-artifacts.v1",
+        "schema": "nico.v2.snapshot-scanner-artifacts.v2",
         "repository": repository,
         "commit_sha": commit_sha,
         "run_key": run_key,
@@ -134,6 +135,8 @@ def canonical_snapshot_tool_runner(
     payload = _run_problem_tool(spec, workspace, runner, prepared)
     if not isinstance(payload, dict):
         raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
+    raw_blob = payload.get("_raw_artifact_blob")
+    payload = reconcile_scanner_payload(spec.name, payload, raw_blob, workspace)
     blob = payload.pop("_raw_artifact_blob", None)
     if isinstance(blob, dict):
         try:
@@ -244,6 +247,9 @@ def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
         "bound": tool_bound and clone_bound,
         "snapshot_worker_uses_canonical_scanner_runner": tool_bound,
         "raw_artifacts_retained_before_workspace_deletion": tool_bound,
+        "source_aware_scanner_projection_bound": tool_bound,
+        "authoritative_osv_manifest_context_required": tool_bound,
+        "example_secret_placeholders_nonblocking_only_when_verified": tool_bound,
         "returncode_and_exit_code_both_exposed": tool_bound,
         "exact_commit_identity_exposed": tool_bound,
         "full_history_restoration_bound": clone_bound,
