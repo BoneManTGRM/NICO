@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v2 as runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v11"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v12"
 UI_BACKEND_RECONCILIATION_SECONDS = 120.0
 UI_BACKEND_RETRY_SECONDS = 2.0
 FORM_HYDRATION_TIMEOUT_MS = 30_000
@@ -361,14 +361,63 @@ def _backend_is_terminal(payload: dict[str, Any]) -> bool:
     return status in runtime.SUCCESS_STATUSES | runtime.FAILURE_STATUSES or terminal
 
 
+def _canonical_json(package: Any) -> dict[str, Any]:
+    if not isinstance(package, dict):
+        return {}
+    value = package.get("json")
+    return value if isinstance(value, dict) and value else {}
+
+
+def _canonical_truth_hash(package: Any) -> str:
+    if not isinstance(package, dict):
+        return ""
+    direct = acceptance.text(package.get("canonical_truth_sha256"), 128)
+    nested = acceptance.text(_canonical_json(package).get("canonical_truth_sha256"), 128)
+    values = {value for value in (direct, nested) if value}
+    if len(values) > 1:
+        raise AssertionError(
+            f"canonical truth hash drift inside report package: {sorted(values)}"
+        )
+    return next(iter(values), "")
+
+
+def _merge_report_packages(
+    canonical: dict[str, Any],
+    compatibility: dict[str, Any],
+) -> dict[str, Any]:
+    canonical_hash = _canonical_truth_hash(canonical)
+    compatibility_hash = _canonical_truth_hash(compatibility)
+    if canonical_hash and compatibility_hash and canonical_hash != compatibility_hash:
+        raise AssertionError(
+            "canonical truth hash drift between report packages: "
+            f"{sorted({canonical_hash, compatibility_hash})}"
+        )
+
+    merged = dict(compatibility)
+    for key, value in canonical.items():
+        if value not in (None, "", {}, []):
+            merged[key] = value
+    return merged
+
+
 def _report_package(service: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if service == "comprehensive":
-        reports = payload.get("reports")
-        if isinstance(reports, dict) and (
-            reports.get("markdown") or reports.get("html") or reports.get("pdf_base64")
-        ):
-            return reports
-    return _original_report_package(service, payload)
+    canonical = _original_report_package(service, payload)
+    if service != "comprehensive":
+        return canonical
+
+    reports = payload.get("reports")
+    compatibility = reports if isinstance(reports, dict) else {}
+    if _canonical_json(canonical):
+        return _merge_report_packages(canonical, compatibility)
+    if _canonical_json(compatibility):
+        return _merge_report_packages(compatibility, canonical)
+    if compatibility and (
+        compatibility.get("markdown")
+        or compatibility.get("html")
+        or compatibility.get("pdf_base64")
+    ):
+        return compatibility
+    return canonical
 
 
 def _status_error_summary(identity_payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
