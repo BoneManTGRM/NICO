@@ -222,7 +222,12 @@ def test_confirmed_p2_record_is_not_hidden_by_candidate_grouping() -> None:
     )
 
     assert compressed["findings_register"] == [confirmed]
-    assert "candidate_presentation_summary" not in compressed
+    assert compressed["candidate_presentation_summary"][
+        "raw_review_candidate_count"
+    ] == 0
+    assert compressed["candidate_presentation_summary"][
+        "client_candidate_group_count"
+    ] == 0
 
 
 def test_authoritative_manifest_filter_excludes_non_production_trees(
