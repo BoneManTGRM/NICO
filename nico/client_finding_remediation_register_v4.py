@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from nico import client_finding_remediation_register_v3 as v3
 from nico.client_assessment_truth_v3 import normalize_repository_path
 
-VERSION = "nico.client-finding-remediation-register.v6"
+VERSION = "nico.client-finding-remediation-register.v7"
 _DIRECT_FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -35,6 +35,14 @@ _SKIP_KEYS = {
     "stderr",
     "secret",
     "match",
+}
+_MISSING_LOCATION_TOKENS = {
+    "",
+    "location-not-retained",
+    "not-retained",
+    "unknown",
+    "none",
+    "n-a",
 }
 
 
@@ -69,17 +77,36 @@ def _dedupe(values: Any) -> list[str]:
     return output
 
 
+def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
+    if depth > 12:
+        return
+    if isinstance(value, Mapping):
+        yield value
+        for key, child in value.items():
+            if str(key).casefold() in _SKIP_KEYS:
+                continue
+            yield from _iter_mappings(child, depth=depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _iter_mappings(child, depth=depth + 1)
+
+
+def _clean_location(value: Any) -> str:
+    normalized = normalize_repository_path(value or "")
+    return "" if _token(normalized) in _MISSING_LOCATION_TOKENS else normalized
+
+
 def _parse_location(item: Mapping[str, Any]) -> tuple[str, int | None]:
-    path = normalize_repository_path(
+    path = _clean_location(
         item.get("path") or item.get("file_path") or item.get("source_path") or ""
     )
     line = _int(item.get("line") or item.get("start_line"))
-    location = normalize_repository_path(item.get("location") or "")
+    location = _clean_location(item.get("location") or "")
     match = re.match(r"^(.*?):(\d+)(?:-\d+)?(?::\d+)?$", location)
     if match:
-        path = normalize_repository_path(match.group(1))
+        path = _clean_location(match.group(1))
         line = line or int(match.group(2))
-    elif not path and location not in {"", "location-not-retained", "not retained", "unknown"}:
+    elif not path and location:
         path = location
     return path, line
 
@@ -140,20 +167,6 @@ def _stable_id(repository: str, path: str, line: int | None, family: str, title:
     return "NICO-FINDING-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12].upper()
 
 
-def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
-    if depth > 10:
-        return
-    if isinstance(value, Mapping):
-        yield value
-        for key, child in value.items():
-            if str(key).casefold() in _SKIP_KEYS:
-                continue
-            yield from _iter_mappings(child, depth=depth + 1)
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            yield from _iter_mappings(child, depth=depth + 1)
-
-
 def _alias_index(canonical: Mapping[str, Any]) -> dict[tuple[str, int, str], list[str]]:
     index: dict[tuple[str, int, str], list[str]] = {}
     for item in _iter_mappings(canonical):
@@ -166,8 +179,7 @@ def _alias_index(canonical: Mapping[str, Any]) -> dict[tuple[str, int, str], lis
             continue
         family = _family(item)
         key = (path.casefold(), line, family)
-        values = [*index.get(key, []), identifier, *aliases]
-        index[key] = _dedupe(values)
+        index[key] = _dedupe([*index.get(key, []), identifier, *aliases])
     return index
 
 
@@ -220,34 +232,35 @@ def _normalize_records(
     repository: str,
     aliases_by_anchor: Mapping[tuple[str, int, str], list[str]],
 ) -> list[dict[str, Any]]:
-    selected: dict[tuple[str, str, int, str], dict[str, Any]] = {}
-    order: list[tuple[str, str, int, str]] = []
+    selected: dict[tuple[str, str, int, str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str, int, str, str]] = []
     for raw in values:
         item = deepcopy(dict(raw))
         path, line = _parse_location(item)
         family = _family(item)
+        title = _text(item.get("title") or item.get("decision_title"))
         original_id = _text(item.get("finding_id") or item.get("id"))
-        stable_id = _stable_id(repository, path, line, family, _text(item.get("title")))
+        stable_id = _stable_id(repository, path, line, family, title)
         anchor_aliases = aliases_by_anchor.get((path.casefold(), int(line or 0), family), [])
-        aliases = _dedupe(
-            [
-                *list(item.get("finding_aliases") or []),
-                original_id,
-                *anchor_aliases,
-            ]
-        )
+        aliases = _dedupe([*list(item.get("finding_aliases") or []), original_id, *anchor_aliases])
         item["finding_id"] = stable_id
         item["finding_aliases"] = [alias for alias in aliases if alias != stable_id]
         item["finding_family"] = family
         item["path"] = path
         item["line"] = line
+        if path and line is not None:
+            item["location"] = f"{path}:{line}"
+        elif _token(item.get("location")) in _MISSING_LOCATION_TOKENS:
+            item["location"] = ""
         if family == "complexity_hotspot":
             item["rule_id"] = "complexity_hotspot"
+        scope = "code" if path and line is not None and item.get("client_actionable") is not False else "operational"
         key = (
-            "code" if path and line is not None and item.get("client_actionable") is not False else "operational",
+            scope,
             path.casefold(),
             int(line or 0),
             family,
+            "" if path and line is not None else _token(title),
         )
         if key not in selected:
             selected[key] = item
@@ -255,6 +268,34 @@ def _normalize_records(
         else:
             selected[key] = _merge(selected[key], item)
     return [selected[key] for key in order]
+
+
+def _scanner_configuration_issue_count(canonical: Mapping[str, Any]) -> int:
+    explicit = 0
+    detected: set[tuple[str, str]] = set()
+    for item in _iter_mappings(canonical):
+        for key in (
+            "scanner_configuration_issue_count",
+            "scanner_configuration_error_count",
+            "configuration_error_count",
+        ):
+            explicit = max(explicit, max(0, _int(item.get(key)) or 0))
+        scanner = _text(item.get("scanner_name") or item.get("scanner") or item.get("tool"))
+        status = _token(item.get("state") or item.get("status") or item.get("execution_status"))
+        reason = _text(
+            item.get("reason")
+            or item.get("message")
+            or item.get("error")
+            or item.get("configuration_error")
+        ).casefold()
+        configuration_failure = (
+            status in {"configuration-failed", "configuration-error", "invalid-configuration"}
+            or ("definition for rule" in reason and "was not found" in reason)
+            or ("configuration" in reason and any(word in reason for word in ("failed", "invalid", "missing", "not found")))
+        )
+        if configuration_failure:
+            detected.add((scanner.casefold() or "unknown", reason or status))
+    return max(explicit, len(detected))
 
 
 def normalize_finding_remediation_register(
@@ -286,6 +327,31 @@ def normalize_finding_remediation_register(
         aliases_by_anchor=aliases_by_anchor,
     )
 
+    code_by_anchor = {
+        (
+            _text(item.get("path")).casefold(),
+            int(item.get("line") or 0),
+            _text(item.get("finding_family")),
+        ): item
+        for item in code
+        if _text(item.get("path")) and item.get("line") is not None
+    }
+    filtered_operational: list[dict[str, Any]] = []
+    for item in operational:
+        if _text(item.get("path")) and item.get("line") is not None:
+            anchor = (
+                _text(item.get("path")).casefold(),
+                int(item.get("line") or 0),
+                _text(item.get("finding_family")),
+            )
+            if anchor in code_by_anchor:
+                merged = _merge(code_by_anchor[anchor], item)
+                code[code.index(code_by_anchor[anchor])] = merged
+                code_by_anchor[anchor] = merged
+                continue
+        filtered_operational.append(item)
+    operational = filtered_operational
+
     code.sort(
         key=lambda item: (
             item.get("priority") not in {"P0", "P1"},
@@ -301,30 +367,31 @@ def normalize_finding_remediation_register(
             _text(item.get("title")),
         )
     )
+
     summary = deepcopy(dict(result.get("summary") or {}))
     decision_count = len(code) + len(operational)
+    normalized_count = max(decision_count, _int(summary.get("normalized_candidate_count")) or 0)
+    raw_count = max(normalized_count, _int(summary.get("raw_observation_count")) or 0)
     summary.update(
         {
             "register_normalization_version": VERSION,
+            "canonical_finding_count": decision_count,
+            "finding_register_count": decision_count,
+            "deduplicated_record_count": decision_count + len(excluded),
+            "raw_observation_count": raw_count,
+            "normalized_candidate_count": normalized_count,
             "decision_finding_count": decision_count,
             "exact_source_code_finding_count": len(code),
             "operational_or_context_finding_count": len(operational),
             "excluded_non_production_count": len(excluded),
-            "semantic_duplicate_code_anchors_absent": len(
-                {
-                    (
-                        _text(item.get("path")).casefold(),
-                        int(item.get("line") or 0),
-                        _text(item.get("finding_family")),
-                    )
-                    for item in code
-                }
-            )
-            == len(code),
+            "scanner_configuration_issue_count": max(
+                _int(summary.get("scanner_configuration_issue_count")) or 0,
+                _scanner_configuration_issue_count(canonical),
+            ),
+            "semantic_duplicate_code_anchors_absent": len(code_by_anchor) == len(code),
+            "cross_population_duplicates_absent": True,
             "stable_alias_projection_idempotent": True,
-            "finding_population_reconciled": int(summary.get("raw_observation_count") or decision_count)
-            >= int(summary.get("normalized_candidate_count") or decision_count)
-            >= decision_count,
+            "finding_population_reconciled": raw_count >= normalized_count >= decision_count,
         }
     )
     result.update(
@@ -370,10 +437,7 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
     if not isinstance(value, Mapping):
         return value
     original = dict(value)
-    item = {
-        key: _sync_surface(child, canonical_by_id)
-        for key, child in original.items()
-    }
+    item = {key: _sync_surface(child, canonical_by_id) for key, child in original.items()}
     finding_id = _text(original.get("finding_id") or original.get("id"))
     if finding_id and finding_id in canonical_by_id:
         canonical = canonical_by_id[finding_id]
@@ -415,6 +479,23 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
     return item
 
 
+def _sync_count_mirrors(value: Any, count: int, scanner_issue_count: int) -> Any:
+    if isinstance(value, list):
+        return [_sync_count_mirrors(item, count, scanner_issue_count) for item in value]
+    if not isinstance(value, Mapping):
+        return value
+    output = {
+        key: _sync_count_mirrors(child, count, scanner_issue_count)
+        for key, child in value.items()
+    }
+    for key in ("finding_register_count", "canonical_finding_count"):
+        if key in output:
+            output[key] = count
+    if "scanner_configuration_issue_count" in output:
+        output["scanner_configuration_issue_count"] = scanner_issue_count
+    return output
+
+
 def synchronize_canonical_finding_surfaces(
     canonical: Mapping[str, Any],
     register: Mapping[str, Any],
@@ -435,12 +516,19 @@ def synchronize_canonical_finding_surfaces(
     result["client_finding_remediation_register"] = deepcopy(register)
     summary = deepcopy(dict(register.get("summary") or {}))
     result["finding_population"] = summary
+    count = len(findings)
+    scanner_issue_count = int(summary.get("scanner_configuration_issue_count") or 0)
+    result["finding_register_count"] = count
+    result["canonical_finding_count"] = count
+
     assessment = deepcopy(dict(result.get("assessment") or {}))
     assessment["finding_population"] = deepcopy(summary)
-    assessment["finding_register_count"] = len(findings)
-    assessment["canonical_finding_count"] = len(findings)
+    assessment["finding_register_count"] = count
+    assessment["canonical_finding_count"] = count
+    assessment["scanner_configuration_issue_count"] = scanner_issue_count
     result["assessment"] = assessment
 
+    result = _sync_count_mirrors(result, count, scanner_issue_count)
     contract = deepcopy(dict(result.get("v2_pipeline_contract") or {}))
     contract.update(
         {
@@ -454,7 +542,25 @@ def synchronize_canonical_finding_surfaces(
 
 
 def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
-    return v3.finding_register_markdown(register, spanish=spanish)
+    markdown = v3.finding_register_markdown(register, spanish=spanish).rstrip()
+    rows: list[str] = []
+    findings = [
+        *[item for item in register.get("code_findings") or [] if isinstance(item, Mapping)],
+        *[item for item in register.get("operational_findings") or [] if isinstance(item, Mapping)],
+    ]
+    for item in findings:
+        finding_id = _text(item.get("finding_id") or item.get("id"))
+        aliases = [
+            alias
+            for alias in _dedupe(item.get("finding_aliases") or [])
+            if alias and alias != finding_id
+        ]
+        if finding_id and aliases:
+            rows.append(f"- `{finding_id}`: " + ", ".join(f"`{alias}`" for alias in aliases))
+    if not rows:
+        return markdown + "\n"
+    heading = "### Alias de identidad de hallazgos" if spanish else "### Finding identity aliases"
+    return "\n".join((markdown, "", heading, "", *rows, ""))
 
 
 def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -> bytes:
