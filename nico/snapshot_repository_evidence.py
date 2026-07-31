@@ -15,9 +15,9 @@ from nico.hosted_assessment import (
     MAX_TEXT_FILES,
     GitHubAssessmentClient,
     collect_dependencies,
-    scan_files,
     should_fetch_path,
 )
+from nico.source_signal_analysis_v2 import analyze_source_signals
 from nico.storage import STORE, StorageAdapter
 
 DEFAULT_TIMEFRAME_DAYS = 180
@@ -239,7 +239,7 @@ def collect_snapshot_repository_evidence(
     bounded_commits, bounded_pulls = _bounded_commits(commits, captured_at), _bounded_pulls(pulls, captured_at)
     bounded_runs = [item for item in runs if (_parse_iso(item.get("created_at")) or captured_at) <= captured_at]
     ci = collect_ci_runtime_evidence(github, repository, workflows, bounded_runs)
-    file_scan, dependencies = scan_files(files), collect_dependencies(files)
+    file_scan, dependencies = analyze_source_signals(files), collect_dependencies(files)
     paths = profile["tree_paths"]
     source_paths = [path for path in paths if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")) and not path.startswith("tests/") and "test" not in path.rsplit("/", 1)[-1].lower()]
     notes = list(profile["unavailable"]) + workflow_unavailable + list(ci.get("unavailable_data_notes") or [])
@@ -254,7 +254,7 @@ def collect_snapshot_repository_evidence(
         "source": "github_api_snapshot_bound_read_only", "authorization_scope": context.get("authorization_scope") or "repository assessment only",
         "timeframe_days": timeframe_days, "snapshot_id": snapshot_id, "snapshot_commit_sha": snapshot_sha,
         "snapshot_tree_sha": snapshot.get("tree_sha") or "", "snapshot_captured_at": snapshot.get("captured_at") or "",
-        "code_evidence_scope": "File, manifest, workflow-configuration, code-signal, and complexity evidence is read from the exact captured commit.",
+        "code_evidence_scope": "File, manifest, workflow-configuration, executable code-signal, and complexity evidence is read from the exact captured commit.",
         "operational_evidence_scope": "Commit, PR, workflow-run, job, and deployment history is time-window evidence observed through capture time and is not exact-commit code evidence unless explicitly matched by SHA.",
         "repository_metadata": {"full_name": repository, "default_branch": snapshot.get("default_branch") or "", "visibility": snapshot.get("repository_visibility") or "unknown", "pushed_at": snapshot.get("repository_pushed_at") or "", "commit_sha": snapshot_sha, "tree_sha": snapshot.get("tree_sha") or ""},
         "file_evidence": {"files_profiled": len(files), "tree_paths_seen": len(paths), "sampled_paths": sorted(files)[:40], "top_level_items": sorted(profile["root_items"])[:40], "snapshot_commit_sha": snapshot_sha},
@@ -262,7 +262,20 @@ def collect_snapshot_repository_evidence(
         "dependency_evidence": {"manifest_paths": sorted(path for path in files if path.rsplit("/", 1)[-1] in DEPENDENCY_MANIFEST_NAMES), "lockfile_paths": sorted(path for path in files if path.rsplit("/", 1)[-1] in LOCKFILE_NAMES), "dependency_entries": len(dependencies), "ecosystems": sorted({str(item.get("ecosystem") or "unknown") for item in dependencies}), "snapshot_commit_sha": snapshot_sha},
         "activity_evidence": {"status": "time_window_operational_evidence", "captured_through": _iso(captured_at), "commits_returned": len(bounded_commits), "pull_requests_returned": len(bounded_pulls), "merged_pull_requests": sum(bool(item.get("merged_at")) for item in bounded_pulls), "open_pull_requests": sum(item.get("state") == "open" for item in bounded_pulls), "sample_commits": [{"sha": str(item.get("sha") or "")[:12], "date": ((item.get("commit") or {}).get("author") or {}).get("date") or "", "message": _short((item.get("commit") or {}).get("message"), 160)} for item in bounded_commits[:10]], "sample_pull_requests": [{"number": item.get("number"), "state": item.get("state") or "unknown", "merged": bool(item.get("merged_at")), "updated_at": item.get("updated_at") or "", "title": _short(item.get("title"), 160)} for item in bounded_pulls[:10]]},
         "workflow_evidence": _workflow_summary(workflows, bounded_runs, ci, snapshot_sha),
-        "code_signal_evidence": {"todo_fixme_security_notes": len(file_scan.get("todos") or []), "risk_pattern_hits": len(file_scan.get("risks") or []), "potential_secret_pattern_hits": len(file_scan.get("secrets") or []), "test_files_profiled": len(file_scan.get("test_paths") or []), "documentation_files_profiled": len(file_scan.get("docs") or []), "snapshot_commit_sha": snapshot_sha},
+        "code_signal_evidence": {
+            "todo_fixme_security_notes": len(file_scan.get("todos") or []),
+            "risk_pattern_hits": len(file_scan.get("risks") or []),
+            "risk_records": list(file_scan.get("risk_records") or [])[:50],
+            "excluded_non_production_risk_count": len(file_scan.get("excluded_non_production_risks") or []),
+            "potential_secret_pattern_hits": len(file_scan.get("secrets") or []),
+            "verified_example_placeholder_secret_count": len(file_scan.get("verified_example_placeholder_secrets") or []),
+            "test_files_profiled": len(file_scan.get("test_paths") or []),
+            "documentation_files_profiled": len(file_scan.get("docs") or []),
+            "analysis_version": file_scan.get("analysis_version"),
+            "executable_source_only": file_scan.get("executable_source_only") is True,
+            "comments_and_strings_excluded": file_scan.get("comments_and_strings_excluded") is True,
+            "snapshot_commit_sha": snapshot_sha,
+        },
         "unavailable_data_notes": sorted({str(note) for note in notes if str(note).strip()}),
         "retention_note": "Only summarized repository evidence and bounded sampled-file analysis are retained; credentials and raw CI logs are not retained.",
         "idempotent_reuse": False, "human_review_required": True,
