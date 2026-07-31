@@ -1,14 +1,40 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable
 
 from nico import scanner_determinism_v1 as determinism
 
-VERSION = "nico.scanner-determinism-reentry.v3"
-_MARKER = "__nico_scanner_determinism_reentry_v3__"
-_HISTORY_MARKER = "__nico_exact_sha_history_metadata_v1__"
-_ORIGINAL_ATTR = "_nico_scanner_determinism_original_installer_v3"
+VERSION = "nico.scanner-determinism-reentry.v4"
+_MARKER = "__nico_scanner_determinism_reentry_v4__"
+_HISTORY_MARKER = "__nico_exact_sha_history_metadata_v2__"
+_ORIGINAL_ATTR = "_nico_scanner_determinism_original_installer_v4"
+
+
+def _force_option(command: tuple[str, ...], option: str, value: str) -> tuple[str, ...]:
+    parts = list(command)
+    if option in parts:
+        index = parts.index(option)
+        if index + 1 < len(parts):
+            parts[index + 1] = value
+        else:
+            parts.append(value)
+    else:
+        parts.extend((option, value))
+    return tuple(parts)
+
+
+def _head_scoped_spec(spec: Any) -> Any:
+    command = tuple(getattr(spec, "command", ()) or ())
+    name = str(getattr(spec, "name", "") or "").casefold()
+    if name == "gitleaks":
+        command = _force_option(command, "--log-opts", "HEAD")
+    elif name == "trufflehog":
+        command = _force_option(command, "--branch", "HEAD")
+    if command == tuple(getattr(spec, "command", ()) or ()):
+        return spec
+    return replace(spec, command=command)
 
 
 def _bind_history_metadata() -> None:
@@ -20,8 +46,9 @@ def _bind_history_metadata() -> None:
 
     @wraps(current)
     def exact_sha_history_metadata(spec: Any, workspace: Any, *args: Any, **kwargs: Any):
-        result = current(spec, workspace, *args, **kwargs)
-        if not isinstance(result, dict) or not bool(getattr(spec, "scans_git_history", False)):
+        scoped_spec = _head_scoped_spec(spec) if bool(getattr(spec, "scans_git_history", False)) else spec
+        result = current(scoped_spec, workspace, *args, **kwargs)
+        if not isinstance(result, dict) or not bool(getattr(scoped_spec, "scans_git_history", False)):
             return result
         output = dict(result)
         completed = str(output.get("status") or "").casefold() == "completed"
@@ -47,9 +74,6 @@ def install_scanner_determinism_reentry() -> dict[str, Any]:
 
         @wraps(original)
         def reentrant_install() -> dict[str, Any]:
-            # Original wrapper markers remain authoritative; only the process-wide
-            # early-return flag is cleared so late compatibility replacements can
-            # be repaired without stacking duplicate deterministic wrappers.
             determinism._INSTALLED = False
             status = dict(original())
             _bind_history_metadata()
