@@ -125,6 +125,8 @@ def test_clone_repository_at_snapshot_verifies_exact_head(monkeypatch):
             return subprocess.CompletedProcess(command, 0, "cloned", "")
         if command[1] == "rev-parse":
             return subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", "")
+        if command[1] == "for-each-ref":
+            return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     monkeypatch.setattr(snapshot_scanner, "_git", fake_git)
