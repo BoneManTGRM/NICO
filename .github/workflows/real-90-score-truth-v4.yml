@@ -9,6 +9,7 @@ on:
       - "nico/api/comprehensive_production_bootstrap.py"
       - "tests/test_comprehensive_native_providers_v4.py"
       - "tests/test_comprehensive_score_truth_scope_v4.py"
+      - "tests/test_real_90_publication_gate_v4.py"
       - "docs/real-90-scoring-contract-v4.md"
       - ".github/workflows/real-90-score-truth-v4.yml"
   push:
@@ -19,6 +20,7 @@ on:
       - "nico/api/comprehensive_production_bootstrap.py"
       - "tests/test_comprehensive_native_providers_v4.py"
       - "tests/test_comprehensive_score_truth_scope_v4.py"
+      - "tests/test_real_90_publication_gate_v4.py"
       - "docs/real-90-scoring-contract-v4.md"
       - ".github/workflows/real-90-score-truth-v4.yml"
   workflow_dispatch:
@@ -53,13 +55,15 @@ jobs:
             nico/comprehensive_score_truth_scope_v4.py \
             nico/api/comprehensive_production_bootstrap.py \
             tests/test_comprehensive_native_providers_v4.py \
-            tests/test_comprehensive_score_truth_scope_v4.py
+            tests/test_comprehensive_score_truth_scope_v4.py \
+            tests/test_real_90_publication_gate_v4.py
 
       - name: Run focused score and report truth regressions
         run: |
           python -m pytest -q \
             tests/test_comprehensive_native_providers_v4.py \
             tests/test_comprehensive_score_truth_scope_v4.py \
+            tests/test_real_90_publication_gate_v4.py \
             tests/test_comprehensive_native_providers_v2.py \
             tests/test_comprehensive_assessment_hardening_v1.py \
             tests/test_comprehensive_native_production_binding.py
