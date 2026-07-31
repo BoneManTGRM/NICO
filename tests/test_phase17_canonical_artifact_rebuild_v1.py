@@ -86,7 +86,12 @@ def test_phase17_renders_repaired_canonical_truth_not_stale_artifacts() -> None:
 
     assert len(canonical["canonical_findings"]) == 1
     assert len(canonical["canonical_findings"][0]["acceptance_criteria"]) == 1
-    assert package["markdown"].count("### P1 - Reduce complexity in page.tsx") == 1
+    assert package["markdown"].count("## Finding and Remediation Register") == 1
+    assert package["markdown"].count("apps/web/app/operations/page.tsx:177") >= 1
+    assert package["markdown"].count("Target complexity is at most 30") == 1
+    register = canonical["client_finding_remediation_register"]
+    assert register["summary"]["semantic_duplicate_code_anchors_absent"] is True
+    assert register["summary"]["verification_and_exit_criteria_distinct"] is True
     assert "RISK-LEGACY" not in package["markdown"] or "RISK-P1-CANONICAL" not in package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     assert package["phase17_artifact_rebuild"]["rebuilt_from_repaired_canonical_truth"] is True

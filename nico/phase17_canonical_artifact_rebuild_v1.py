@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from nico.canonical_section_status_v1 import normalize_report_package
+from nico.client_report_completion_v1 import (
+    finalize_client_report_package,
+    prepare_client_report_package,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -30,10 +34,14 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one premium report from reconciled authoritative production evidence."""
+    """Build one client report from exact-source and applicability-aware truth."""
+
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
     prepared = _reconcile(prepared)
+    # Scanner applicability and the structured remediation register must exist
+    # before the premium compiler derives stages, evidence health, and PDF content.
+    prepared = prepare_client_report_package(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
@@ -41,7 +49,11 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    return _reconcile(repaired)
+    # Reconcile once more after report-quality repair, then compile the final
+    # register/provenance pages from that exact canonical state. No downstream
+    # truth pass is allowed to silently replace the completed client artifacts.
+    repaired = _reconcile(repaired)
+    return finalize_client_report_package(repaired)
 
 
 __all__ = [
