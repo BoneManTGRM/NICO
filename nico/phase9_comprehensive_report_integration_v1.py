@@ -3,13 +3,17 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
+from nico.client_finding_remediation_register_v4 import (
+    build_finding_remediation_register,
+    synchronize_canonical_finding_surfaces,
+)
 from nico.phase15_production_integration_v1 import integrate_production_truth
 from nico.phase16_client_delivery_verification_v1 import repair_client_delivery_package
 from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize_findings
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v5"
+VERSION = "nico.v2.comprehensive.finalizer.v6"
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -59,7 +63,8 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
 
 
 def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one scanner population and one semantic finding population before rendering."""
+    """Build one scanner population and one stable semantic finding population."""
+
     original_findings = _findings_from(report)
     normalized = reconcile_scanner_records(integrate_production_truth(report))
     source_findings = [*original_findings, *_findings_from(normalized)]
@@ -82,15 +87,30 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     ):
         if surface in normalized:
             normalized[surface] = _sync_surface(normalized[surface], by_id)
+
+    # The legacy canonicalizer intentionally preserves pre-existing IDs. Convert
+    # those aliases into the final source-anchor/finding-family identity before
+    # any report, roadmap, backlog, or stage projection is generated. This makes
+    # first and repeated publication passes byte-stable at the canonical JSON
+    # boundary instead of relying on a later rendering repair.
+    register = build_finding_remediation_register(normalized)
+    normalized = synchronize_canonical_finding_surfaces(normalized, register)
+    stable_findings = [
+        item for item in normalized.get("canonical_findings") or []
+        if isinstance(item, Mapping)
+    ]
+
     normalized["v2_prepublication_contract"] = {
         "version": VERSION,
-        "canonical_finding_count": len(findings),
+        "canonical_finding_count": len(stable_findings),
         "scanner_result_count": len(normalized.get("scanner_execution_records") or []),
         "legacy_post_generation_mutation_disabled": True,
         "single_v2_publisher": True,
         "phase16_repair_runs_before_v2_rendering": True,
         "repaired_json_preserved_for_rendering": True,
         "pre_integration_finding_aliases_preserved": True,
+        "stable_finding_identity_before_rendering": True,
+        "all_mirrored_finding_surfaces_synchronized": True,
     }
     return normalized
 
@@ -102,6 +122,7 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     is rebuilt afterward from the repaired canonical JSON and no later layer may
     mutate the client-facing population.
     """
+
     finalized = deepcopy(dict(result))
     package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else finalized.get("canonical_report")
