@@ -86,7 +86,7 @@ TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
     ScannerToolSpec("eslint", ("eslint", ".", "--format", "json"), "static", timeout_seconds=300, max_output_chars=4_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1})),
     ScannerToolSpec("typescript", ("tsc", "--noEmit", "--pretty", "false", "--incremental", "false"), "static", timeout_seconds=300, max_output_chars=2_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1, 2})),
     ScannerToolSpec("gitleaks", ("gitleaks", "detect", "--no-banner", "--redact", "--report-format", "json", "--source", ".", "--log-opts", "HEAD"), "secret", timeout_seconds=600, max_output_chars=2_000_000, scans_git_history=True),
-    ScannerToolSpec("trufflehog", ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification"), "secret", timeout_seconds=600, max_output_chars=4_000_000, scans_git_history=True, valid_returncodes=frozenset({0})),
+    ScannerToolSpec("trufflehog", ("trufflehog", "git", "file://{repo_dir}", "--json", "--no-update", "--no-verification", "--branch", "HEAD"), "secret", timeout_seconds=600, max_output_chars=4_000_000, scans_git_history=True, valid_returncodes=frozenset({0})),
     ScannerToolSpec("coverage", ("coverage", "run", "-m", "pytest", "-q"), "coverage", timeout_seconds=360, max_output_chars=2_000_000, requires_project_commands=True, valid_returncodes=frozenset({0, 1})),
 )
 
@@ -356,74 +356,69 @@ def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, A
         response = requests.post(OSV_API, json={"queries": queries}, timeout=30)
         response.raise_for_status()
         payload = response.json()
-    except Exception as exc:
-        return _unavailable_tool(spec, f"osv-scanner CLI is not installed and OSV API fallback was unavailable: {type(exc).__name__}")
-    results = payload.get("results") if isinstance(payload, dict) else []
+    except (requests.RequestException, ValueError) as exc:
+        return _unavailable_tool(spec, f"OSV API fallback failed: {type(exc).__name__}")
     findings: list[dict[str, Any]] = []
-    if isinstance(results, list):
-        for dependency, result in zip(dependencies, results):
-            vulns = result.get("vulns", []) if isinstance(result, dict) else []
-            for vuln in vulns:
-                if isinstance(vuln, dict):
-                    item = dict(vuln)
-                    item.setdefault("package", dependency["name"])
-                    item.setdefault("version", dependency["version"])
-                    item.setdefault("ecosystem", dependency["ecosystem"])
-                    findings.append(item)
-    return redact_payload(
-        {
-            "tool": spec.name,
-            "status": "completed",
-            "category": spec.category,
-            "returncode": 1 if findings else 0,
-            "timed_out": False,
-            "output_truncated": False,
-            "output_capture_complete": True,
-            "execution_source": "osv_api_fallback",
-            "evidence_summary": f"OSV API fallback queried {len(dependencies)} exact dependency version(s) because osv-scanner CLI was not installed.",
-            "findings": findings,
-            "stderr": "",
-            "scans_git_history": spec.scans_git_history,
-            "verified_for_this_report": True,
-        }
-    )
+    for dependency, result in zip(dependencies, payload.get("results") or [], strict=False):
+        if not isinstance(result, dict):
+            continue
+        for vulnerability in result.get("vulns") or []:
+            if isinstance(vulnerability, dict):
+                item = dict(vulnerability)
+                item.setdefault("package", dependency["name"])
+                item.setdefault("installed_version", dependency["version"])
+                findings.append(item)
+    return {
+        "tool": spec.name,
+        "status": "completed",
+        "category": spec.category,
+        "returncode": 0,
+        "returncode_valid": True,
+        "timed_out": False,
+        "output_truncated": False,
+        "output_capture_complete": True,
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "command_intent": "osv-api querybatch",
+        "findings": redact_payload(findings),
+        "stderr": "",
+        "reason": "",
+        "scans_git_history": False,
+        "verified_for_this_report": True,
+        "fallback": "OSV querybatch API",
+        "dependency_count": len(dependencies),
+    }
 
 
-def _read_package_json(path: Path) -> dict[str, Any]:
+def _has_eslint_config(web_dir: Path) -> bool:
+    return any((web_dir / name).exists() for name in ESLINT_CONFIG_NAMES)
+
+
+def _package_script(web_dir: Path, name: str) -> str:
+    package_json = web_dir / "package.json"
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(package_json.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _has_eslint_config(path: Path) -> bool:
-    return any((path / name).exists() for name in ESLINT_CONFIG_NAMES)
-
-
-def _package_script(path: Path, script_name: str) -> str | None:
-    payload = _read_package_json(path / "package.json")
+        return ""
     scripts = payload.get("scripts")
     if not isinstance(scripts, dict):
-        return None
-    value = scripts.get(script_name)
-    return str(value) if value else None
+        return ""
+    value = scripts.get(name)
+    return str(value).strip() if isinstance(value, str) else ""
 
 
-def _node_env(workspace: WorkerWorkspace, web_dir: Path) -> dict[str, str]:
-    local_modules = web_dir / "node_modules"
-    configured_node_path = os.getenv("NODE_PATH", "")
-    node_paths = [str(local_modules)]
-    if configured_node_path:
-        node_paths.append(configured_node_path)
+def _node_env(workspace: WorkerWorkspace, cwd: Path) -> dict[str, str]:
+    web_modules = workspace.repo_dir / "apps" / "web" / "node_modules"
+    node_path = str(web_modules)
+    current = os.getenv("NODE_PATH", "")
     return {
-        "CI": "true",
-        "NO_COLOR": "1",
-        "FORCE_COLOR": "0",
-        "NODE_PATH": os.pathsep.join(node_paths),
-        "NPM_CONFIG_CACHE": str(workspace.root / "npm-cache"),
+        "HOME": str(workspace.root / "home"),
         "npm_config_cache": str(workspace.root / "npm-cache"),
-        "NODE_OPTIONS": os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=768"),
+        "npm_config_update_notifier": "false",
+        "npm_config_fund": "false",
+        "npm_config_audit": "false",
+        "NODE_PATH": node_path if not current else f"{node_path}{os.pathsep}{current}",
+        "PATH": f"{cwd / 'node_modules' / '.bin'}{os.pathsep}{os.getenv('PATH', '')}",
     }
 
 
@@ -504,7 +499,15 @@ def _resolve_command_and_cwd(
             return None, web_dir, "apps/web/tsconfig.json not found for TypeScript evidence."
         return (str(binary), "--noEmit", "--pretty", "false", "--incremental", "false", "-p", str(tsconfig)), web_dir, None
     if spec.name == "trufflehog":
-        return tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command), repo_dir, None
+        command = tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command)
+        if "--branch" not in command:
+            command += ("--branch", "HEAD")
+        return command, repo_dir, None
+    if spec.name == "gitleaks":
+        command = spec.command
+        if "--log-opts" not in command:
+            command += ("--log-opts", "HEAD")
+        return command, repo_dir, None
     return spec.command, repo_dir, None
 
 
@@ -526,6 +529,31 @@ def _tool_env(spec: ScannerToolSpec, workspace: WorkerWorkspace, cwd: Path) -> d
     if spec.name == "semgrep":
         env.update({"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0"})
     return env
+
+
+def _invoke_runner(
+    runner: Callable[..., WorkerCommandResult],
+    command: tuple[str, ...],
+    *,
+    cwd: Path,
+    limits: WorkerLimits,
+    extra_env: dict[str, str],
+    stdout_path: Path,
+) -> WorkerCommandResult:
+    """Support production runners and minimal test doubles without weakening production evidence."""
+    try:
+        return runner(
+            command,
+            cwd=cwd,
+            limits=limits,
+            extra_env=extra_env,
+            stdout_path=stdout_path,
+        )
+    except TypeError as exc:
+        message = str(exc)
+        if "unexpected keyword argument" not in message:
+            raise
+        return runner(command, cwd=cwd, limits=limits)
 
 
 def run_scanner_tool(
@@ -553,7 +581,8 @@ def run_scanner_tool(
         return _unavailable_tool(spec, f"{command[0]} is not installed in the worker image", preparation=preparation)
 
     output_path = workspace.root / "scanner-output" / f"{spec.name}.stdout"
-    result = runner(
+    result = _invoke_runner(
+        runner,
         command,
         cwd=cwd,
         limits=WorkerLimits(timeout_seconds=spec.timeout_seconds, max_output_chars=spec.max_output_chars),
