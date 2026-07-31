@@ -42,7 +42,7 @@ def test_example_environment_placeholders_are_separate_from_secret_risk() -> Non
     result = analyze_source_signals(
         {
             ".env.example": "DATABASE_URL=postgresql://user:password@localhost:5432/nico\n",
-            "nico/settings.py": "TOKEN='ghp_abcdefghijklmnopqrstuvwxyz'\n",
+            "nico/settings.py": "TOKEN='this-is-a-long-secret-value'\n",
         }
     )
 
