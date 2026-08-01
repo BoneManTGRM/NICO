@@ -44,6 +44,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.evidence_ledger_typescript_truth_v1 import (
+        install_evidence_ledger_typescript_truth_v1,
+    )
     from nico.osv_api_fallback_truth_v1 import install_osv_api_fallback_truth_v1
     from nico.scorecard_extraction_validation_v1 import (
         install_scorecard_extraction_validation,
@@ -52,6 +55,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     return {
         "scorecard_extraction_validation": install_scorecard_extraction_validation(),
         "osv_api_fallback_truth": install_osv_api_fallback_truth_v1(),
+        "evidence_ledger_typescript_truth": (
+            install_evidence_ledger_typescript_truth_v1()
+        ),
     }
 
 
@@ -69,8 +75,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
     controller_module._report_outputs = _report_outputs
 
     # This installer is the final report-related call in nico.__init__. Bind the
-    # extraction-safe scorecard validator and scanner source-truth contracts here
-    # so no earlier compatibility module can replace them afterward.
+    # extraction-safe scorecard validator, scanner source-truth, and evidence
+    # classification contracts here so no earlier compatibility module can
+    # replace them afterward.
     final_runtime_truth = _install_final_runtime_truth()
     _INSTALLED = True
     return {
