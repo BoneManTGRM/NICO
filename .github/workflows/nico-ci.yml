@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v5
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v6
   cancel-in-progress: true
 
 jobs:
@@ -172,6 +172,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         import os
+        import signal
         import subprocess
         import sys
 
@@ -199,20 +200,42 @@ jobs:
             f"{len(selected)} files, source bytes={loads[shard]}"
         )
 
+        # pytest can return successfully while a leaked non-daemon thread or
+        # descendant process keeps the interpreter alive. Run it in a dedicated
+        # process group, exit immediately after pytest returns, and kill the
+        # complete group at the diagnostic boundary if it does not return.
+        runner = (
+            "import os, sys, pytest; "
+            "code = pytest.main(sys.argv[1:]); "
+            "sys.stdout.flush(); sys.stderr.flush(); os._exit(int(code))"
+        )
         command = [
-            "timeout",
-            "--signal=SIGABRT",
-            "--kill-after=15s",
-            "18m",
             sys.executable,
-            "-m",
-            "pytest",
+            "-c",
+            runner,
             *(str(path) for path in selected),
             "-v",
             "--tb=short",
             f"--junitxml=pytest-results-{shard}.xml",
         ]
-        raise SystemExit(subprocess.call(command))
+        process = subprocess.Popen(command, start_new_session=True)
+        try:
+            returncode = process.wait(timeout=18 * 60)
+        except subprocess.TimeoutExpired:
+            diagnostic = Path(f"pytest-timeout-{shard}.txt")
+            diagnostic.write_text(
+                "The isolated pytest process group exceeded 18 minutes and was terminated.\n"
+                f"shard={shard}\nfiles={len(selected)}\n",
+                encoding="utf-8",
+            )
+            os.killpg(process.pid, signal.SIGABRT)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=15)
+            returncode = 124
+        raise SystemExit(returncode)
         PY
 
     - name: Upload shard results
@@ -223,6 +246,7 @@ jobs:
         path: |
           pytest-results-${{ matrix.shard }}.xml
           pytest-shard-${{ matrix.shard }}.txt
+          pytest-timeout-${{ matrix.shard }}.txt
 
   test:
     name: test
