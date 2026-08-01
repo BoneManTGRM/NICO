@@ -9,17 +9,24 @@ from nico.api.production_bootstrap import app as production_app
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_core_report_readiness_v1 import install_comprehensive_core_report_readiness
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
+from nico.comprehensive_final_artifact_truth_v53 import (
+    install_comprehensive_final_artifact_truth_v53,
+)
 from nico.comprehensive_final_report_execution_v1 import install_comprehensive_final_report_execution
 from nico.comprehensive_native_providers_v4 import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
-from nico.comprehensive_production_capabilities import build_production_capability_executors
+from nico.comprehensive_production_capabilities import (
+    PROVIDER_STATE_KEY,
+    build_production_capability_executors,
+)
 from nico.comprehensive_report_appendix_v3 import install_native_provider_binding
+from nico.comprehensive_report_truth_v53 import install_comprehensive_report_truth_v53
 from nico.comprehensive_score_truth_scope_v4 import install_score_truth_scope
 from nico.decision_grade_scanner_executions_v1 import install_structured_scanner_executions
 from nico.strategic_human_evidence_binding_v1 import install_strategic_human_evidence_binding
 from nico.v2_production_authority import install_v2_production_authority
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v16"
+VERSION = "nico.api.comprehensive_production_bootstrap.v17"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -62,6 +69,10 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     report_binding = install_decision_grade_binding()
     accepted_edition_report_identity = install_accepted_edition_report_identity()
     score_truth_scope = install_score_truth_scope()
+
+    # Install the authoritative pre-render truth wrapper after every decision-grade
+    # report builder has been composed, but before production providers are registered.
+    report_truth = install_comprehensive_report_truth_v53()
     native_providers = install_native_comprehensive_providers(target)
     strategic_human_evidence = install_strategic_human_evidence_binding(target)
     scanner_execution_normalization = install_structured_scanner_executions(
@@ -69,6 +80,27 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     )
     core_report_readiness = install_comprehensive_core_report_readiness(target)
     final_report_execution = install_comprehensive_final_report_execution(target)
+
+    # Bind full-package truth verification after the final report provider has
+    # replaced the registry's cross-format verifier. Rebind that exact wrapper into
+    # the target registry so production cannot retain the earlier verifier by value.
+    final_artifact_truth = install_comprehensive_final_artifact_truth_v53()
+    provider_module = __import__(
+        "nico.comprehensive_native_providers",
+        fromlist=["cross_format_verification_provider"],
+    )
+    provider_registry = getattr(target.state, PROVIDER_STATE_KEY, None)
+    if isinstance(provider_registry, dict):
+        provider_registry["cross_format_verification"] = (
+            provider_module.cross_format_verification_provider
+        )
+        setattr(target.state, PROVIDER_STATE_KEY, provider_registry)
+    final_artifact_registry_bound = (
+        isinstance(provider_registry, dict)
+        and provider_registry.get("cross_format_verification")
+        is provider_module.cross_format_verification_provider
+    )
+
     v2_production_authority = install_v2_production_authority(target)
     executors = build_production_capability_executors(target)
     controller = install_comprehensive_production_bootstrap(target, capability_executors=executors)
@@ -101,10 +133,13 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and report_binding.get("score_band_separated_from_assurance") is True
         and accepted_edition_report_identity.get("bound") is True
         and score_truth_scope_bound
+        and report_truth.get("bound") is True
         and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
         and final_report_execution.get("bound") is True
+        and final_artifact_truth.get("bound") is True
+        and final_artifact_registry_bound
         and v2_production_authority.get("bound") is True
         and v2_production_authority.get("v2_finalizer_invoked_by_real_provider") is True
         and category_specific_scoring_bound
@@ -122,8 +157,14 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         reason = "accepted_edition_report_identity_binding_incomplete"
     if not reason and not score_truth_scope_bound:
         reason = "score_truth_scope_binding_incomplete"
+    if not reason and report_truth.get("bound") is not True:
+        reason = "pre_render_report_truth_binding_incomplete"
     if not reason and strategic_human_evidence.get("bound") is not True:
         reason = "strategic_human_evidence_binding_incomplete"
+    if not reason and final_artifact_truth.get("bound") is not True:
+        reason = "final_artifact_truth_binding_incomplete"
+    if not reason and not final_artifact_registry_bound:
+        reason = "final_artifact_truth_registry_binding_incomplete"
     if not reason and v2_production_authority.get("bound") is not True:
         reason = "v2_production_authority_binding_incomplete"
     if not reason and not category_specific_scoring_bound:
@@ -154,10 +195,13 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "report_binding": report_binding,
         "accepted_edition_report_identity": accepted_edition_report_identity,
         "score_truth_scope": score_truth_scope,
+        "report_truth": report_truth,
         "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
         "final_report_execution": final_report_execution,
+        "final_artifact_truth": final_artifact_truth,
+        "final_artifact_registry_bound": final_artifact_registry_bound,
         "v2_production_authority": v2_production_authority,
         "native_provider_status": native_status,
         "capability_provider_status": provider_status,
@@ -170,6 +214,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "score_override_allowed": False,
         "report_binding_before_accepted_edition_identity": True,
         "accepted_edition_identity_before_score_truth_scope": True,
+        "score_truth_scope_before_report_truth": True,
+        "report_truth_before_provider_install": True,
         "score_truth_scope_before_provider_install": True,
         "accepted_edition_identity_before_provider_install": True,
         "report_binding_before_provider_install": True,
@@ -179,12 +225,17 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "scanner_execution_normalization_before_executor_build": True,
         "provider_install_before_core_report_readiness": True,
         "provider_install_before_final_report_execution": True,
+        "final_report_execution_before_final_artifact_truth": True,
+        "final_artifact_truth_before_v2_production_authority": True,
         "final_report_execution_before_v2_production_authority": True,
         "v2_production_authority_before_executor_build": True,
         "core_report_readiness_before_executor_build": True,
         "final_report_execution_before_executor_build": True,
+        "final_artifact_truth_before_executor_build": True,
         "provider_install_before_executor_build": True,
         "single_final_publication_boundary": True,
+        "pre_render_truth_reconciliation": True,
+        "full_pdf_text_validation": True,
         "review_route": "/assessment/comprehensive-run/{run_id}/review",
         "review_regenerates_report": False,
         "diagnostics_route": COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
@@ -218,6 +269,8 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["accepted_edition_report_identity"].get("bou
     raise RuntimeError("Accepted-edition report identity binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["score_truth_scope_bound"] is not True:
     raise RuntimeError("Overall score alias synchronization scope was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["report_truth"].get("bound") is not True:
+    raise RuntimeError("Pre-render Comprehensive report truth was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound") is not True:
     raise RuntimeError("Strategic human-evidence binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound") is not True:
@@ -226,6 +279,10 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["core_report_readiness"].get("bound") is not
     raise RuntimeError("Comprehensive core-report artifact readiness was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["final_report_execution"].get("bound") is not True:
     raise RuntimeError("Comprehensive final-report execution readiness was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["final_artifact_truth"].get("bound") is not True:
+    raise RuntimeError("Comprehensive final-artifact truth verification was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["final_artifact_registry_bound"] is not True:
+    raise RuntimeError("Final-artifact truth verifier was not bound into the production registry")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["v2_production_authority"].get("bound") is not True:
     raise RuntimeError("V2 production authority was not installed on the final report provider")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["category_specific_scoring_bound"] is not True:
