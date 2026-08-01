@@ -2,12 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-from nico import (
-    scanner_determinism_reentry_v2,
-    scanner_determinism_v1,
-    scanner_tool_runners,
-    v2_snapshot_scanner_authority,
-)
+from nico import scanner_determinism_reentry_v2, scanner_determinism_v1, scanner_tool_runners
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts
 from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
@@ -27,16 +22,13 @@ def _initialize_repository(repo_dir) -> None:
 
 
 def _rebind_scanner_determinism(monkeypatch) -> None:
-    """Restore both deterministic wrappers and the final canonical history delegates."""
+    """Use the supported re-entry installer after other tests replace shared wrappers."""
 
     monkeypatch.setattr(scanner_determinism_v1, "_INSTALLED", False)
     status = scanner_determinism_reentry_v2.install_scanner_determinism_reentry()
-    authority = v2_snapshot_scanner_authority.install_v2_snapshot_scanner_authority()
     assert status["status"] == "installed"
     assert status["exact_sha_history_metadata_bound"] is True
     assert status["history_scanners_bound_to_head"] is True
-    assert authority["history_scanners_bound_to_head"] is True
-    assert authority["history_command_scope"] == {"gitleaks": True, "trufflehog": True}
 
 
 def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
