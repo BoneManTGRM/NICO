@@ -52,10 +52,44 @@ def _raise(result: dict[str, Any], default_message: str) -> None:
         )
 
 
+def _attach_review_disposition_truth(
+    result: dict[str, Any],
+    approval_id: str,
+    admin_token: str,
+) -> dict[str, Any]:
+    """Expose the exact item-level review digest without leaking private records."""
+
+    approval = result.get("approval")
+    if not isinstance(approval, dict) or not approval_id:
+        return result
+    review_result = get_mid_review_dispositions(
+        approval_id,
+        admin_token=admin_token,
+    )
+    if review_result.get("status") in {"blocked", "not_found"}:
+        return result
+    summary = review_result.get("review_dispositions")
+    if not isinstance(summary, dict):
+        return result
+    approval["review_disposition_set_sha256"] = str(
+        summary.get("disposition_set_sha256") or ""
+    )
+    approval["review_disposition_status"] = str(summary.get("status") or "")
+    approval["review_disposition_approval_ready"] = bool(
+        summary.get("approval_ready")
+    )
+    return result
+
+
 def mid_approval_request_response(run_id: str, req: MidApprovalRequest, x_nico_admin_token: str = Header(default="")) -> dict[str, Any]:
     result = request_mid_approval(run_id, req.customer_id, req.project_id, admin_token=x_nico_admin_token)
     _raise(result, "Mid approval request was unavailable.")
-    return result
+    approval = result.get("approval") if isinstance(result.get("approval"), dict) else {}
+    return _attach_review_disposition_truth(
+        result,
+        str(approval.get("approval_id") or ""),
+        x_nico_admin_token,
+    )
 
 
 def mid_approval_status_response(
@@ -66,7 +100,12 @@ def mid_approval_status_response(
 ) -> dict[str, Any]:
     result = mid_approval_status(run_id, customer_id, project_id, admin_token=x_nico_admin_token)
     _raise(result, "Mid Assessment run not found.")
-    return result
+    approval = result.get("approval") if isinstance(result.get("approval"), dict) else {}
+    return _attach_review_disposition_truth(
+        result,
+        str(approval.get("approval_id") or ""),
+        x_nico_admin_token,
+    )
 
 
 def mid_approval_decision_response(
@@ -84,7 +123,11 @@ def mid_approval_decision_response(
         admin_token=x_nico_admin_token,
     )
     _raise(result, "Mid approval not found.")
-    return result
+    return _attach_review_disposition_truth(
+        result,
+        approval_id,
+        x_nico_admin_token,
+    )
 
 
 def mid_review_dispositions_response(
