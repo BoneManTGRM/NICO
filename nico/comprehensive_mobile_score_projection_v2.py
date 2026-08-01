@@ -43,29 +43,42 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
     return report, _canonical_assessment_from_report(report)
 
 
+def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.osv_api_fallback_truth_v1 import install_osv_api_fallback_truth_v1
+    from nico.scorecard_extraction_validation_v1 import (
+        install_scorecard_extraction_validation,
+    )
+
+    return {
+        "scorecard_extraction_validation": install_scorecard_extraction_validation(),
+        "osv_api_fallback_truth": install_osv_api_fallback_truth_v1(),
+    }
+
+
 def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
     global _INSTALLED, _ORIGINAL_REPORT_OUTPUTS
     if _INSTALLED:
-        return {"status": "already_installed", "version": VERSION}
+        final_runtime_truth = _install_final_runtime_truth()
+        return {
+            "status": "already_installed",
+            "version": VERSION,
+            **final_runtime_truth,
+        }
 
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
 
     # This installer is the final report-related call in nico.__init__. Bind the
-    # extraction-safe scorecard validator here so no earlier compatibility module
-    # can restore the brittle raw-substring row check afterward.
-    from nico.scorecard_extraction_validation_v1 import (
-        install_scorecard_extraction_validation,
-    )
-
-    scorecard_validation = install_scorecard_extraction_validation()
+    # extraction-safe scorecard validator and scanner source-truth contracts here
+    # so no earlier compatibility module can replace them afterward.
+    final_runtime_truth = _install_final_runtime_truth()
     _INSTALLED = True
     return {
         "status": "installed",
         "version": VERSION,
         "canonical_assessment_fallback": "report.json.assessment",
         "full_report_embedded": False,
-        "scorecard_extraction_validation": scorecard_validation,
+        **final_runtime_truth,
         "wrapped_control_labels_supported": True,
         "all_canonical_rows_and_scores_required": True,
         "human_review_required": True,
