@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v4
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v5
   cancel-in-progress: true
 
 jobs:
