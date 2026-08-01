@@ -27,10 +27,12 @@ install_comprehensive_pdf_outline_truth_v1()
 def stub_live_full_run_repository_evidence(monkeypatch):
     """Keep tests deterministic while production full-runs use authorized GitHub read APIs."""
 
-    # Collection imports can replace compatibility functions after conftest was
-    # first loaded. Rebind the canonical production contract immediately before
-    # every test rather than relying on module collection order.
+    # Collection imports and compatibility installers can replace canonical
+    # functions after conftest first loads. Rebind the final production contracts
+    # immediately before every isolated test instead of relying on module order.
     install_full_assessment_secret_history_confidence_v1()
+    install_comprehensive_pdf_outline_truth_v1()
+    install_snapshot_scanner_heartbeat()
 
     def collect(context):
         return {
