@@ -130,6 +130,8 @@ def _gitleaks_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | Non
         "json",
         "--source",
         ".",
+        "--log-opts",
+        "HEAD",
     ), workspace.repo_dir, None
 
 
@@ -143,6 +145,8 @@ def _trufflehog_command(workspace: WorkerWorkspace) -> tuple[tuple[str, ...] | N
         "--json",
         "--no-update",
         "--no-verification",
+        "--branch",
+        "HEAD",
     ), workspace.repo_dir, None
 
 
