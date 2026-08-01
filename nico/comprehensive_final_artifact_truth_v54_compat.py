@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_final_artifact_truth_v54_compat.v2"
+VERSION = "nico.comprehensive_final_artifact_truth_v54_compat.v3"
 _MARKER = "_nico_comprehensive_final_artifact_truth_v54_compat_v1"
 
 
@@ -20,8 +20,16 @@ def _install_projection_truth() -> dict[str, Any]:
     from nico.comprehensive_canonical_projection_truth_v55 import (
         install_comprehensive_canonical_projection_truth_v55,
     )
+    from nico.comprehensive_scanner_completion_projection_v56 import (
+        install_comprehensive_scanner_completion_projection_v56,
+    )
 
-    return install_comprehensive_canonical_projection_truth_v55()
+    canonical_projection = install_comprehensive_canonical_projection_truth_v55()
+    scanner_completion = install_comprehensive_scanner_completion_projection_v56()
+    return {
+        "canonical_projection": canonical_projection,
+        "scanner_completion_projection": scanner_completion,
+    }
 
 
 def install_comprehensive_final_artifact_truth_v54_compat() -> dict[str, Any]:
@@ -37,7 +45,7 @@ def install_comprehensive_final_artifact_truth_v54_compat() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
-            "canonical_projection_truth": _install_projection_truth(),
+            "projection_truth": _install_projection_truth(),
         }
 
     @wraps(current)
@@ -64,7 +72,7 @@ def install_comprehensive_final_artifact_truth_v54_compat() -> dict[str, Any]:
         "bound": artifact_truth.weighted_score_diagnostics is compatible,
         "legacy_packages_without_weight_rows_supported": True,
         "new_truth_packages_require_recomputable_weights": True,
-        "canonical_projection_truth": _install_projection_truth(),
+        "projection_truth": _install_projection_truth(),
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
