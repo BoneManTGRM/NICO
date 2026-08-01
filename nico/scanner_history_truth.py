@@ -4,6 +4,9 @@ from dataclasses import replace
 from typing import Any, Callable
 
 import nico.scanner_tool_runners as tool_runners
+from nico.full_assessment_secret_history_confidence_v1 import (
+    install_full_assessment_secret_history_confidence_v1,
+)
 from nico.scanner_determinism_reentry_v2 import install_scanner_determinism_reentry
 from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
@@ -12,6 +15,9 @@ from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorks
 # Patch the public installer before package initialization exposes it to other
 # compatibility modules and tests. The terminal bootstrap invokes it again last.
 SCANNER_DETERMINISM_REENTRY = install_scanner_determinism_reentry()
+FULL_ASSESSMENT_SECRET_HISTORY_CONFIDENCE = (
+    install_full_assessment_secret_history_confidence_v1()
+)
 _ORIGINAL_RUN_SCANNER_TOOL: Callable[..., dict[str, Any]] = tool_runners.run_scanner_tool
 
 
@@ -156,16 +162,19 @@ def install_scanner_history_truth() -> dict[str, Any]:
         _ORIGINAL_RUN_SCANNER_TOOL = tool_runners.run_scanner_tool
         tool_runners.run_scanner_tool = run_scanner_tool_with_history_truth
         tool_runners._nico_scanner_history_truth_installed = True
+    confidence = install_full_assessment_secret_history_confidence_v1()
     return {
         "status": "already_installed" if installed else "installed",
         "rule": "Gitleaks, TruffleHog, and future history-aware scanners require verified non-shallow git history reachable from immutable HEAD; mutable descendant branches, remotes, and tags have no scan effect.",
         "history_scope": "reachable_ancestry_at_assessed_commit",
         "immutable_head_selector": "HEAD",
         "descendant_refs_scanned": False,
+        "full_assessment_secret_history_confidence": confidence,
     }
 
 
 __all__ = [
+    "FULL_ASSESSMENT_SECRET_HISTORY_CONFIDENCE",
     "SCANNER_DETERMINISM_REENTRY",
     "install_scanner_history_truth",
     "run_scanner_tool_with_history_truth",
