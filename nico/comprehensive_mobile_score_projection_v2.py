@@ -43,6 +43,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
+    from nico.comprehensive_report_truth_v53 import (
+        install_comprehensive_report_truth_v53,
+    )
     from nico.evidence_ledger_typescript_truth_v1 import (
         install_evidence_ledger_typescript_truth_v1,
     )
@@ -51,9 +54,11 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
-    report_truth = install_comprehensive_report_truth_stabilization_v52()
+    compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
+    report_truth = install_comprehensive_report_truth_v53()
     final_artifact_truth = install_comprehensive_final_artifact_truth_v53()
     return {
+        "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
         "final_artifact_truth": final_artifact_truth,
         "scorecard_extraction_validation": install_scorecard_extraction_validation(),
