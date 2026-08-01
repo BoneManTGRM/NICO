@@ -1,0 +1,48 @@
+name: Railway Docker Build Proof
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  railway_docker_build:
+    name: Build production image without GitHub credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+    - name: Check out exact commit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Build production image with Railway-equivalent credentials
+      env:
+        DOCKER_BUILDKIT: "1"
+      run: |
+        test -z "${GITHUB_TOKEN:-}"
+        docker build --no-cache -t nico-railway-proof:${GITHUB_SHA} .
+
+    - name: Verify production scanner and API runtime
+      run: |
+        docker run --rm --entrypoint sh nico-railway-proof:${GITHUB_SHA} -c '
+          set -eu
+          command -v osv-scanner
+          command -v gitleaks
+          command -v trufflehog
+          command -v nico
+          command -v nico-api
+          python -c "from nico.api.terminal_authority_bootstrap import app; assert app"
+        '
+
+    - name: Verify no release API dependency remains
+      run: |
+        ! grep -q "api.github.com" scripts/install_hosted_scanner_binaries.py
+        grep -q "releases/download" scripts/install_hosted_scanner_binaries.py
+        grep -q "SHA-256 mismatch" scripts/install_hosted_scanner_binaries.py
