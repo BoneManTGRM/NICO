@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v10
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v11
   cancel-in-progress: true
 
 jobs:
@@ -135,11 +135,11 @@ jobs:
   test_shards:
     name: test-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,21 +162,24 @@ jobs:
         pip install --no-deps -e .
         cd apps/web && npm install --legacy-peer-deps
 
-    - name: Run balanced test shard
+    - name: Run isolated test files
       env:
         NICO_TEST_SHARD: ${{ matrix.shard }}
-        NICO_TEST_SHARDS: "8"
+        NICO_TEST_SHARDS: "12"
         PYTHONHASHSEED: "0"
         PYTHONFAULTHANDLER: "1"
         PYTHONUNBUFFERED: "1"
       run: |
         python - <<'PY'
+        from __future__ import annotations
+
         from pathlib import Path
+        import hashlib
+        import json
         import os
         import signal
         import subprocess
         import sys
-        import threading
 
         shard = int(os.environ["NICO_TEST_SHARD"])
         total = int(os.environ["NICO_TEST_SHARDS"])
@@ -194,76 +197,99 @@ jobs:
             buckets[target].append(path)
             loads[target] += path.stat().st_size
 
+        assigned = [path for bucket in buckets for path in bucket]
+        if len(assigned) != len(files) or len(set(assigned)) != len(files) or set(assigned) != set(files):
+            raise SystemExit("NICO test sharding did not assign every file exactly once")
+
         selected = sorted(buckets[shard], key=str)
         manifest = Path(f"pytest-shard-{shard}.txt")
         manifest.write_text("\n".join(str(path) for path in selected) + "\n", encoding="utf-8")
+        result_dir = Path(f"pytest-file-results-{shard}")
+        result_dir.mkdir(parents=True, exist_ok=True)
+        log_path = Path(f"pytest-shard-{shard}.log")
+        timeout_path = Path(f"pytest-timeout-{shard}.txt")
+        summary_path = Path(f"pytest-summary-{shard}.json")
+
         print(
             f"Running NICO test shard {shard + 1}/{total}: "
-            f"{len(selected)} files, source bytes={loads[shard]}",
+            f"{len(selected)} isolated files, source bytes={loads[shard]}",
             flush=True,
         )
 
-        # pytest can return successfully while a leaked non-daemon thread or
-        # descendant process keeps the interpreter alive. Run it in a dedicated
-        # process group, exit immediately after pytest returns, and kill the
-        # complete group at the diagnostic boundary if it does not return.
-        runner = (
-            "import os, sys, pytest; "
-            "code = pytest.main(sys.argv[1:]); "
-            "sys.stdout.flush(); sys.stderr.flush(); os._exit(int(code))"
-        )
-        command = [
-            sys.executable,
-            "-c",
-            runner,
-            *(str(path) for path in selected),
-            "-v",
-            "--tb=short",
-            f"--junitxml=pytest-results-{shard}.xml",
-        ]
-        log_path = Path(f"pytest-shard-{shard}.log")
+        failures: list[dict[str, object]] = []
+        completed: list[dict[str, object]] = []
         with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
-            process = subprocess.Popen(
-                command,
-                start_new_session=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-
-            def stream_output() -> None:
-                assert process.stdout is not None
-                for line in process.stdout:
-                    print(line, end="", flush=True)
-                    log_file.write(line)
-
-            output_thread = threading.Thread(
-                target=stream_output,
-                daemon=True,
-                name=f"pytest-shard-{shard}-output",
-            )
-            output_thread.start()
-            try:
-                returncode = process.wait(timeout=10 * 60)
-            except subprocess.TimeoutExpired:
-                diagnostic = Path(f"pytest-timeout-{shard}.txt")
-                diagnostic.write_text(
-                    "The isolated pytest process group exceeded 10 minutes and was terminated.\n"
-                    f"shard={shard}\nfiles={len(selected)}\n"
-                    f"log={log_path}\n",
-                    encoding="utf-8",
+            for index, path in enumerate(selected, start=1):
+                identity = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
+                junit_path = result_dir / f"{index:04d}-{identity}.xml"
+                marker = f"[{index}/{len(selected)}] {path}"
+                print(marker, flush=True)
+                log_file.write(f"\n===== {marker} =====\n")
+                log_file.flush()
+                command = [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    str(path),
+                    "-v",
+                    "--tb=short",
+                    f"--junitxml={junit_path}",
+                ]
+                process = subprocess.Popen(
+                    command,
+                    start_new_session=True,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                 )
-                os.killpg(process.pid, signal.SIGABRT)
+                timed_out = False
                 try:
-                    process.wait(timeout=15)
+                    returncode = process.wait(timeout=5 * 60)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=15)
-                returncode = 124
-            finally:
-                output_thread.join(timeout=10)
-        raise SystemExit(returncode)
+                    timed_out = True
+                    timeout_note = (
+                        f"TIMEOUT file={path} limit_seconds=300 process_group={process.pid}\n"
+                    )
+                    with timeout_path.open("a", encoding="utf-8") as timeout_file:
+                        timeout_file.write(timeout_note)
+                    log_file.write(timeout_note)
+                    log_file.flush()
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=10)
+                    returncode = 124
+
+                record = {
+                    "file": str(path),
+                    "returncode": int(returncode),
+                    "timed_out": timed_out,
+                    "junit": str(junit_path),
+                }
+                completed.append(record)
+                if returncode != 0:
+                    failures.append(record)
+                print(
+                    f"{marker} -> {'TIMEOUT' if timed_out else returncode}",
+                    flush=True,
+                )
+
+        summary = {
+            "shard": shard,
+            "shards": total,
+            "assigned_files": len(selected),
+            "completed_files": len(completed),
+            "failed_files": failures,
+            "coverage_complete": len(completed) == len(selected),
+        }
+        summary_path.write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if failures or len(completed) != len(selected):
+            raise SystemExit(1)
         PY
 
     - name: Upload shard results
@@ -272,9 +298,10 @@ jobs:
       with:
         name: pytest-results-${{ matrix.shard }}
         path: |
-          pytest-results-${{ matrix.shard }}.xml
+          pytest-file-results-${{ matrix.shard }}/
           pytest-shard-${{ matrix.shard }}.txt
           pytest-shard-${{ matrix.shard }}.log
+          pytest-summary-${{ matrix.shard }}.json
           pytest-timeout-${{ matrix.shard }}.txt
 
   test:
@@ -291,4 +318,4 @@ jobs:
       run: |
         test "$QUALITY_RESULT" = "success"
         test "$SHARDS_RESULT" = "success"
-        echo "NICO quality checks and every isolated test shard passed."
+        echo "NICO quality checks and every isolated test file passed."
