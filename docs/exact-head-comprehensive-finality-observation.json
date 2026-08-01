@@ -1,0 +1,27 @@
+{
+  "artifact_schema": "nico.completion.work_package_state.v1",
+  "workstream": 1,
+  "work_package": "exact_head_comprehensive_finality_repair",
+  "dependency_state": "first_incomplete",
+  "release_base_sha": "1eba1fbdf5f38d9a8be863548584e7ffbe1d5ce2",
+  "state": "diagnosing",
+  "observed": {
+    "main_deployed_to_vercel": true,
+    "main_deployed_to_railway": true,
+    "two_service_production_acceptance": "failed",
+    "mobile_restart_production_proof": "failed",
+    "ios_webkit_paint_proof": "failed",
+    "terminal_stage": "cross_format_truth_verification",
+    "terminal_reason": "final_artifact_truth_verification_failed"
+  },
+  "gates": {
+    "preserve_report_truth": true,
+    "preserve_security_boundaries": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "merge_requires_all_pr_checks": true,
+    "merge_requires_no_unresolved_review_threads": true,
+    "post_merge_exact_deployment_identity_required": true,
+    "post_merge_live_production_proofs_required": true
+  }
+}
