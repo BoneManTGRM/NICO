@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v6
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v7
   cancel-in-progress: true
 
 jobs:
@@ -168,6 +168,7 @@ jobs:
         NICO_TEST_SHARDS: "8"
         PYTHONHASHSEED: "0"
         PYTHONFAULTHANDLER: "1"
+        PYTHONUNBUFFERED: "1"
       run: |
         python - <<'PY'
         from pathlib import Path
@@ -175,6 +176,7 @@ jobs:
         import signal
         import subprocess
         import sys
+        import threading
 
         shard = int(os.environ["NICO_TEST_SHARD"])
         total = int(os.environ["NICO_TEST_SHARDS"])
@@ -197,7 +199,8 @@ jobs:
         manifest.write_text("\n".join(str(path) for path in selected) + "\n", encoding="utf-8")
         print(
             f"Running NICO test shard {shard + 1}/{total}: "
-            f"{len(selected)} files, source bytes={loads[shard]}"
+            f"{len(selected)} files, source bytes={loads[shard]}",
+            flush=True,
         )
 
         # pytest can return successfully while a leaked non-daemon thread or
@@ -218,23 +221,48 @@ jobs:
             "--tb=short",
             f"--junitxml=pytest-results-{shard}.xml",
         ]
-        process = subprocess.Popen(command, start_new_session=True)
-        try:
-            returncode = process.wait(timeout=18 * 60)
-        except subprocess.TimeoutExpired:
-            diagnostic = Path(f"pytest-timeout-{shard}.txt")
-            diagnostic.write_text(
-                "The isolated pytest process group exceeded 18 minutes and was terminated.\n"
-                f"shard={shard}\nfiles={len(selected)}\n",
-                encoding="utf-8",
+        log_path = Path(f"pytest-shard-{shard}.log")
+        with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
+            process = subprocess.Popen(
+                command,
+                start_new_session=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
-            os.killpg(process.pid, signal.SIGABRT)
+
+            def stream_output() -> None:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    print(line, end="", flush=True)
+                    log_file.write(line)
+
+            output_thread = threading.Thread(
+                target=stream_output,
+                daemon=True,
+                name=f"pytest-shard-{shard}-output",
+            )
+            output_thread.start()
             try:
-                process.wait(timeout=15)
+                returncode = process.wait(timeout=10 * 60)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=15)
-            returncode = 124
+                diagnostic = Path(f"pytest-timeout-{shard}.txt")
+                diagnostic.write_text(
+                    "The isolated pytest process group exceeded 10 minutes and was terminated.\n"
+                    f"shard={shard}\nfiles={len(selected)}\n"
+                    f"log={log_path}\n",
+                    encoding="utf-8",
+                )
+                os.killpg(process.pid, signal.SIGABRT)
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=15)
+                returncode = 124
+            finally:
+                output_thread.join(timeout=10)
         raise SystemExit(returncode)
         PY
 
@@ -246,6 +274,7 @@ jobs:
         path: |
           pytest-results-${{ matrix.shard }}.xml
           pytest-shard-${{ matrix.shard }}.txt
+          pytest-shard-${{ matrix.shard }}.log
           pytest-timeout-${{ matrix.shard }}.txt
 
   test:
