@@ -9,6 +9,7 @@ from nico.full_assessment_secret_history_confidence_v1 import (
 )
 from nico.scanner_determinism_reentry_v2 import install_scanner_determinism_reentry
 from nico.scanner_tool_runners import ScannerToolSpec
+from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
 
@@ -155,14 +156,33 @@ def run_scanner_tool_with_history_truth(
     return result
 
 
+def _without_heartbeat_wrapper(delegate: Callable[..., Any]) -> Callable[..., Any]:
+    """Unwrap a prior heartbeat layer before rebuilding the canonical runner stack."""
+
+    if any(
+        bool(getattr(delegate, marker, False))
+        for marker in (
+            "_nico_snapshot_scanner_heartbeat_tool_v3",
+            "_nico_snapshot_scanner_heartbeat_tool_v2",
+        )
+    ):
+        previous = getattr(delegate, "_nico_previous", None)
+        if callable(previous):
+            return previous
+    return delegate
+
+
 def install_scanner_history_truth() -> dict[str, Any]:
     installed = bool(getattr(tool_runners, "_nico_scanner_history_truth_installed", False))
     if not installed:
         global _ORIGINAL_RUN_SCANNER_TOOL
-        _ORIGINAL_RUN_SCANNER_TOOL = tool_runners.run_scanner_tool
+        _ORIGINAL_RUN_SCANNER_TOOL = _without_heartbeat_wrapper(
+            tool_runners.run_scanner_tool
+        )
         tool_runners.run_scanner_tool = run_scanner_tool_with_history_truth
         tool_runners._nico_scanner_history_truth_installed = True
     confidence = install_full_assessment_secret_history_confidence_v1()
+    heartbeat = install_snapshot_scanner_heartbeat()
     return {
         "status": "already_installed" if installed else "installed",
         "rule": "Gitleaks, TruffleHog, and future history-aware scanners require verified non-shallow git history reachable from immutable HEAD; mutable descendant branches, remotes, and tags have no scan effect.",
@@ -170,6 +190,11 @@ def install_scanner_history_truth() -> dict[str, Any]:
         "immutable_head_selector": "HEAD",
         "descendant_refs_scanned": False,
         "full_assessment_secret_history_confidence": confidence,
+        "snapshot_scanner_heartbeat": heartbeat,
+        "heartbeat_wrapper_restored_after_history_binding": heartbeat.get(
+            "source_runner_binding_installed"
+        )
+        is True,
     }
 
 
