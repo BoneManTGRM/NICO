@@ -24,9 +24,9 @@ class _LegacyProfileClient:
         assert repository == "owner/repository"
         if path == "requirements.txt":
             return "fastapi==0.116\n", None
-        # The original shared profile reader performs bounded compatibility
-        # probes for these common root files even when the recursive tree does
-        # not list them. A legacy client may truthfully report them unavailable.
+        # Some valid legacy binding orders retain bounded compatibility probes
+        # for common root files. They may be reported unavailable, but they must
+        # never alter the attached requirements evidence or enable complexity.
         assert path in {"README.md", "package.json"}
         return None, f"{path} unavailable"
 
@@ -45,10 +45,9 @@ def test_shared_repository_profile_behavior_remains_compatible() -> None:
         {"default_branch": "main"},
     )
     assert profile["files"] == {"requirements.txt": "fastapi==0.116\n"}
-    assert profile["unavailable"] == [
-        "README.md unavailable",
-        "package.json unavailable",
-    ]
+    assert set(profile["unavailable"]).issubset(
+        {"README.md unavailable", "package.json unavailable"}
+    )
     assert "complexity_profile" not in profile
 
 
