@@ -126,27 +126,13 @@ jobs:
 
     - name: Run all tests
       timeout-minutes: 15
+      env:
+        PYTHONFAULTHANDLER: "1"
       run: |
-        python - <<'PY'
-        import faulthandler
-        import pytest
-
-        faulthandler.enable(all_threads=True)
-        faulthandler.dump_traceback_later(600, repeat=True)
-        raise SystemExit(
-            pytest.main(
-                [
-                    "tests/",
-                    "-v",
-                    "--tb=short",
-                    "--timeout=300",
-                    "--timeout-method=signal",
-                    "--durations=25",
-                    "--junitxml=pytest-results.xml",
-                ]
-            )
-        )
-        PY
+        timeout --signal=SIGABRT --kill-after=15s 12m \
+          python -m pytest tests/ -v --tb=short \
+            --timeout=300 --timeout-method=signal --durations=25 \
+            --junitxml=pytest-results.xml
 
     - name: Upload pytest results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
