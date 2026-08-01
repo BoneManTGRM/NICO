@@ -77,4 +77,4 @@ def test_partial_record_is_not_promoted() -> None:
     rebuilt_record = rebuilt["scanner_execution_records"][0]
     assert rebuilt_record["completed"] is False
     assert rebuilt_record["verified"] is False
-    assert rebuilt_record["state"] == "failed"
+    assert rebuilt_record["state"] == "partial"
