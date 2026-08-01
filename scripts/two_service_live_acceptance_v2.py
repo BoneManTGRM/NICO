@@ -15,6 +15,10 @@ from bounded_terminal_reconnect_v1 import install as install_bounded_terminal_re
 # acceptance.run_service = run_service
 # return f"{parsed.scheme}://{parsed.netloc}{path}"
 # APIRequestContext: Invalid URL
+# COMPREHENSIVE_HARD_EXTENSION_SECONDS
+# COMPREHENSIVE_STALE_SECONDS
+# backend_status_history
+# runtime-diagnostic.json
 _LEGACY_MODULE_NAME = "_nico_two_service_live_acceptance_v2_legacy"
 _LEGACY_PATH = Path(__file__).with_name("two_service_live_acceptance_v2_legacy.py")
 
