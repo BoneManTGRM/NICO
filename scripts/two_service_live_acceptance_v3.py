@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+# This helper is loaded both as a command and directly from its repository path
+# by release-verification tests. Resolve sibling helper modules without requiring
+# callers to preconfigure PYTHONPATH.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3_impl as _impl
