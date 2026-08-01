@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from nico.express_async_api import register_express_async_routes
 from nico.express_backend_diagnostics import install_express_backend_diagnostics
+from nico.express_failure_stage_truth_v1 import install_express_failure_stage_truth_v1
 from nico.express_final_truth_repair_v34 import install_express_final_truth_repair_v34
 from nico.express_recovery_compat import install_express_recovery_compatibility
 from nico.express_safe_trace_diagnostics import install_express_safe_trace_diagnostics
@@ -101,6 +102,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         api_main.safe_blocked_exception = actionable_blocked_exception
     scanner_redaction = install_cycle_safe_scanner_redaction()
     express_diagnostics = install_express_backend_diagnostics()
+    express_failure_stage_truth = install_express_failure_stage_truth_v1()
     express_safe_trace = install_express_safe_trace_diagnostics()
     express_async = register_express_async_routes(api_main.app)
     express_recovery = install_express_recovery_compatibility()
@@ -111,6 +113,7 @@ def install_assessment_block_messages() -> dict[str, Any]:
         "classified_codes": sorted(_BLOCK_MESSAGES),
         "scanner_redaction_cycle_guard": scanner_redaction,
         "express_backend_diagnostics": express_diagnostics,
+        "express_failure_stage_truth": express_failure_stage_truth,
         "express_safe_trace_diagnostics": express_safe_trace,
         "express_async": express_async,
         "express_recovery": express_recovery,

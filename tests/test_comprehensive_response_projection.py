@@ -127,8 +127,12 @@ def test_active_response_omits_generated_report_and_large_stage_payloads() -> No
 
 
 def test_terminal_response_attaches_one_report_package_outside_projected_record() -> None:
+    record = _record(terminal=True)
+    persisted_json = record["stage_results"][
+        "final_comprehensive_report_generation"
+    ]["report_package"]["json"]
     response = ComprehensiveApiController._response(
-        _record(terminal=True),
+        record,
         operation="status",
     )
 
@@ -136,9 +140,10 @@ def test_terminal_response_attaches_one_report_package_outside_projected_record(
     assert response["status"] == "review_required"
     assert response["reports"]["service_id"] == "comprehensive"
     assert response["reports"]["pdf_base64"] == "x" * (2 * 1024 * 1024)
-    assert response["reports"]["json"] == {
-        "canonical_truth_sha256": "a" * 64
-    }
+    assert response["reports"]["json"] == persisted_json
+    assert response["reports"]["json"] is not persisted_json
+    assert response["reports"]["json"]["canonical_truth_sha256"] == "a" * 64
+    assert response["reports"]["json"]["raw"] == "x" * (2 * 1024 * 1024)
     assert response["assessment"]["maturity_signal"]["presented_score"] == 86
     assert response["assessment"]["sections"][0]["label"] == "Architecture"
     assert len(response["assessment"]["sections"][0]["evidence"][0]) <= 4_001

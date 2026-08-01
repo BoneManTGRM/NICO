@@ -8,9 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v11
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quality:
+    name: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 35
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -107,24 +113,17 @@ jobs:
         command -v trufflehog
 
     - name: Run Docker build check
+      timeout-minutes: 20
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        DOCKER_BUILDKIT: "1"
       run: |
-        docker build -t nico-ci:ci .
+        docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
         docker run --rm --entrypoint sh nico-ci:ci -c 'test -w /data && command -v nico && command -v nico-api && python -c "from nico.api.production import app; assert app"'
 
     - name: Run file integrity regression test
       run: |
         python -m pytest tests/test_phase3_file_integrity.py -v
-
-    - name: Run all tests
-      run: |
-        python -m pytest tests/ -v --tb=short --junitxml=pytest-results.xml
-
-    - name: Upload pytest results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      if: always()
-      with:
-        name: pytest-results
-        path: pytest-results.xml
 
     - name: Upload audit results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -132,3 +131,191 @@ jobs:
       with:
         name: audit-results
         path: audit-results/
+
+  test_shards:
+    name: test-shard-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.11"
+
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: "20"
+
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install --no-deps -e .
+        cd apps/web && npm install --legacy-peer-deps
+
+    - name: Run isolated test files
+      env:
+        NICO_TEST_SHARD: ${{ matrix.shard }}
+        NICO_TEST_SHARDS: "12"
+        PYTHONHASHSEED: "0"
+        PYTHONFAULTHANDLER: "1"
+        PYTHONUNBUFFERED: "1"
+      run: |
+        python - <<'PY'
+        from __future__ import annotations
+
+        from pathlib import Path
+        import hashlib
+        import json
+        import os
+        import signal
+        import subprocess
+        import sys
+
+        shard = int(os.environ["NICO_TEST_SHARD"])
+        total = int(os.environ["NICO_TEST_SHARDS"])
+        files = sorted(
+            Path("tests").rglob("test_*.py"),
+            key=lambda path: (-path.stat().st_size, str(path)),
+        )
+        if not files:
+            raise SystemExit("No NICO test files were discovered")
+
+        buckets: list[list[Path]] = [[] for _ in range(total)]
+        loads = [0 for _ in range(total)]
+        for path in files:
+            target = min(range(total), key=lambda index: (loads[index], index))
+            buckets[target].append(path)
+            loads[target] += path.stat().st_size
+
+        assigned = [path for bucket in buckets for path in bucket]
+        if len(assigned) != len(files) or len(set(assigned)) != len(files) or set(assigned) != set(files):
+            raise SystemExit("NICO test sharding did not assign every file exactly once")
+
+        selected = sorted(buckets[shard], key=str)
+        manifest = Path(f"pytest-shard-{shard}.txt")
+        manifest.write_text("\n".join(str(path) for path in selected) + "\n", encoding="utf-8")
+        result_dir = Path(f"pytest-file-results-{shard}")
+        result_dir.mkdir(parents=True, exist_ok=True)
+        log_path = Path(f"pytest-shard-{shard}.log")
+        timeout_path = Path(f"pytest-timeout-{shard}.txt")
+        summary_path = Path(f"pytest-summary-{shard}.json")
+
+        print(
+            f"Running NICO test shard {shard + 1}/{total}: "
+            f"{len(selected)} isolated files, source bytes={loads[shard]}",
+            flush=True,
+        )
+
+        failures: list[dict[str, object]] = []
+        completed: list[dict[str, object]] = []
+        with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
+            for index, path in enumerate(selected, start=1):
+                identity = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
+                junit_path = result_dir / f"{index:04d}-{identity}.xml"
+                marker = f"[{index}/{len(selected)}] {path}"
+                print(marker, flush=True)
+                log_file.write(f"\n===== {marker} =====\n")
+                log_file.flush()
+                command = [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    str(path),
+                    "-v",
+                    "--tb=short",
+                    f"--junitxml={junit_path}",
+                ]
+                process = subprocess.Popen(
+                    command,
+                    start_new_session=True,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                timed_out = False
+                try:
+                    returncode = process.wait(timeout=5 * 60)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    timeout_note = (
+                        f"TIMEOUT file={path} limit_seconds=300 process_group={process.pid}\n"
+                    )
+                    with timeout_path.open("a", encoding="utf-8") as timeout_file:
+                        timeout_file.write(timeout_note)
+                    log_file.write(timeout_note)
+                    log_file.flush()
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=10)
+                    returncode = 124
+
+                record = {
+                    "file": str(path),
+                    "returncode": int(returncode),
+                    "timed_out": timed_out,
+                    "junit": str(junit_path),
+                }
+                completed.append(record)
+                if returncode != 0:
+                    failures.append(record)
+                print(
+                    f"{marker} -> {'TIMEOUT' if timed_out else returncode}",
+                    flush=True,
+                )
+
+        summary = {
+            "shard": shard,
+            "shards": total,
+            "assigned_files": len(selected),
+            "completed_files": len(completed),
+            "failed_files": failures,
+            "coverage_complete": len(completed) == len(selected),
+        }
+        summary_path.write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if failures or len(completed) != len(selected):
+            raise SystemExit(1)
+        PY
+
+    - name: Upload shard results
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: always()
+      with:
+        name: pytest-results-${{ matrix.shard }}
+        path: |
+          pytest-file-results-${{ matrix.shard }}/
+          pytest-shard-${{ matrix.shard }}.txt
+          pytest-shard-${{ matrix.shard }}.log
+          pytest-summary-${{ matrix.shard }}.json
+          pytest-timeout-${{ matrix.shard }}.txt
+
+  test:
+    name: test
+    needs: [quality, test_shards]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require every NICO CI boundary
+      env:
+        QUALITY_RESULT: ${{ needs.quality.result }}
+        SHARDS_RESULT: ${{ needs.test_shards.result }}
+      run: |
+        test "$QUALITY_RESULT" = "success"
+        test "$SHARDS_RESULT" = "success"
+        echo "NICO quality checks and every isolated test file passed."

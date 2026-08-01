@@ -79,7 +79,11 @@ def _append_preserving_outline(
 
 def install_comprehensive_code_remediation_outline_v1() -> dict[str, Any]:
     from nico import comprehensive_code_remediation_appendix_v1 as appendix
+    from nico.comprehensive_pdf_outline_truth_v1 import (
+        install_comprehensive_pdf_outline_truth_v1,
+    )
 
+    pdf_outline_truth = install_comprehensive_pdf_outline_truth_v1()
     current = appendix._append_code_pages
     if getattr(current, _PATCH_MARKER, False):
         return {
@@ -88,6 +92,7 @@ def install_comprehensive_code_remediation_outline_v1() -> dict[str, Any]:
             "base_outline_preserved": True,
             "appendix_outline_added_when_supported": True,
             "final_page_count_preserved": True,
+            "pdf_outline_truth": pdf_outline_truth,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -101,6 +106,7 @@ def install_comprehensive_code_remediation_outline_v1() -> dict[str, Any]:
         "base_outline_preserved": True,
         "appendix_outline_added_when_supported": True,
         "final_page_count_preserved": True,
+        "pdf_outline_truth": pdf_outline_truth,
         "automatic_merge_allowed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,

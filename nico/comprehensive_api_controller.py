@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v5"
+VERSION = "nico.comprehensive_api_controller.v6"
 MAX_PROJECTED_STRING_CHARS = 4_000
 MAX_PROJECTED_LIST_ITEMS = 80
 MAX_PROJECTED_OBJECT_ITEMS = 80
@@ -285,12 +286,19 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Attach the exact terminal report artifacts without mutating persisted truth.
+
+    Active-stage records remain bounded, but a terminal Comprehensive response is the
+    artifact-delivery boundary. Markdown, HTML, PDF, and canonical JSON must therefore
+    remain available from the same package. Returning only the JSON truth hash made the
+    public response claim that the report was attached while silently omitting the
+    canonical JSON assessment required to verify cross-format score and scanner parity.
+    """
+
     projected = {key: report[key] for key in _REPORT_KEYS if key in report}
     json_value = report.get("json")
-    if isinstance(json_value, dict) and json_value.get("canonical_truth_sha256"):
-        projected["json"] = {
-            "canonical_truth_sha256": json_value["canonical_truth_sha256"]
-        }
+    if isinstance(json_value, dict) and json_value:
+        projected["json"] = deepcopy(json_value)
     return projected
 
 
@@ -456,6 +464,7 @@ class ComprehensiveApiController:
                 "version": VERSION,
                 "bounded": True,
                 "terminal_report_attached": terminal,
+                "terminal_canonical_json_attached": terminal,
                 "full_record_persisted": True,
                 "large_stage_payloads_omitted": True,
             },
