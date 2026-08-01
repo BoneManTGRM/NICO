@@ -53,7 +53,7 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     shards = workflow.split("  test_shards:", maxsplit=1)[1]
     shards, gate = shards.split("  test:\n", maxsplit=1)
 
-    assert "-stable-v6" in workflow
+    assert "-stable-v7" in workflow
     assert _timeout_minutes(quality) == 35
     docker_step = quality.split("- name: Run Docker build check", maxsplit=1)[1]
     docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
@@ -64,13 +64,18 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     assert "shard: [0, 1, 2, 3, 4, 5, 6, 7]" in shards
     assert 'NICO_TEST_SHARDS: "8"' in shards
     assert 'Path("tests").rglob("test_*.py")' in shards
-    assert "subprocess.Popen(command, start_new_session=True)" in shards
+    assert "subprocess.Popen(" in shards
+    assert "start_new_session=True" in shards
     assert "pytest.main(sys.argv[1:])" in shards
     assert "os._exit(int(code))" in shards
-    assert "process.wait(timeout=18 * 60)" in shards
+    assert "process.wait(timeout=10 * 60)" in shards
     assert "os.killpg(process.pid, signal.SIGABRT)" in shards
     assert "os.killpg(process.pid, signal.SIGKILL)" in shards
     assert "pytest-timeout-${{ matrix.shard }}.txt" in shards
+    assert "pytest-shard-${{ matrix.shard }}.log" in shards
+    assert 'PYTHONUNBUFFERED: "1"' in shards
+    assert "stdout=subprocess.PIPE" in shards
+    assert "stderr=subprocess.STDOUT" in shards
 
     # The shard boundary is implemented by the parent process group, not by a
     # pytest timeout plugin that could alter individual test semantics.
@@ -79,7 +84,7 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     assert "--timeout-method=" not in workflow
 
     # The process-group timeout must finish before the job ceiling so the
-    # manifest, JUnit evidence, and bounded timeout diagnostic survive a leak.
+    # manifest, streamed log, JUnit evidence, and bounded timeout diagnostic survive.
     assert 'PYTHONFAULTHANDLER: "1"' in shards
     assert "if: always()" in shards
     assert "pytest-shard-${{ matrix.shard }}.txt" in shards
