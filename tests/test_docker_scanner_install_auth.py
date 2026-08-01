@@ -43,7 +43,7 @@ def test_nico_ci_passes_repository_token_only_as_a_docker_build_secret() -> None
     assert "--build-arg GITHUB_TOKEN" not in docker_step
 
 
-def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> None:
+def test_nico_ci_isolates_every_test_file_and_preserves_one_final_gate() -> None:
     workflow = (ROOT / ".github" / "workflows" / "nico-ci.yml").read_text(
         encoding="utf-8"
     )
@@ -53,38 +53,46 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     shards = workflow.split("  test_shards:", maxsplit=1)[1]
     shards, gate = shards.split("  test:\n", maxsplit=1)
 
-    assert "-stable-v10" in workflow
+    assert "-stable-v11" in workflow
     assert _timeout_minutes(quality) == 35
     docker_step = quality.split("- name: Run Docker build check", maxsplit=1)[1]
     docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
     assert _timeout_minutes(docker_step) == 20
 
     assert "name: test-shard-${{ matrix.shard }}" in shards
-    assert _timeout_minutes(shards) == 25
-    assert "shard: [0, 1, 2, 3, 4, 5, 6, 7]" in shards
-    assert 'NICO_TEST_SHARDS: "8"' in shards
+    assert _timeout_minutes(shards) == 35
+    assert "shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]" in shards
+    assert 'NICO_TEST_SHARDS: "12"' in shards
     assert 'Path("tests").rglob("test_*.py")' in shards
-    assert "subprocess.Popen(" in shards
+    assert "set(assigned) != set(files)" in shards
+    assert "NICO test sharding did not assign every file exactly once" in shards
+
+    # Every selected test file runs in a fresh process. This prevents cumulative
+    # interpreter state, leaked descendants, or one blocked file from wedging a
+    # complete multi-file shard without identifying the responsible file.
+    assert "for index, path in enumerate(selected, start=1):" in shards
+    assert '"-m",\n                    "pytest"' in shards
+    assert "str(path)" in shards
     assert "start_new_session=True" in shards
-    assert "pytest.main(sys.argv[1:])" in shards
-    assert "os._exit(int(code))" in shards
-    assert "process.wait(timeout=10 * 60)" in shards
-    assert "os.killpg(process.pid, signal.SIGABRT)" in shards
+    assert "process.wait(timeout=5 * 60)" in shards
+    assert "os.killpg(process.pid, signal.SIGTERM)" in shards
     assert "os.killpg(process.pid, signal.SIGKILL)" in shards
+    assert "pytest-file-results-${{ matrix.shard }}/" in shards
+    assert "pytest-summary-${{ matrix.shard }}.json" in shards
     assert "pytest-timeout-${{ matrix.shard }}.txt" in shards
     assert "pytest-shard-${{ matrix.shard }}.log" in shards
     assert 'PYTHONUNBUFFERED: "1"' in shards
-    assert "stdout=subprocess.PIPE" in shards
-    assert "stderr=subprocess.STDOUT" in shards
+    assert '"coverage_complete": len(completed) == len(selected)' in shards
+    assert "if failures or len(completed) != len(selected):" in shards
 
-    # The shard boundary is implemented by the parent process group, not by a
-    # pytest timeout plugin that could alter individual test semantics.
+    # The process boundary is external to pytest. No per-test timeout plugin,
+    # skip rule, threshold reduction, or early max-fail shortcut is introduced.
     assert "pip install pytest-timeout" not in workflow
     assert "--timeout=" not in workflow
     assert "--timeout-method=" not in workflow
+    assert "--maxfail" not in workflow
+    assert "-x" not in workflow
 
-    # The process-group timeout must finish before the job ceiling so the
-    # manifest, streamed log, JUnit evidence, and bounded timeout diagnostic survive.
     assert 'PYTHONFAULTHANDLER: "1"' in shards
     assert "if: always()" in shards
     assert "pytest-shard-${{ matrix.shard }}.txt" in shards
