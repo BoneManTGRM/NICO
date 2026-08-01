@@ -1,0 +1,19 @@
+{
+  "scenario": "NICO exact-SHA scanner evidence with zero verified material dependency, secret, or static findings",
+  "expected_minimums": {
+    "technical_score": 90,
+    "evidence_adjusted_score": 90,
+    "dependency_health": 90,
+    "secrets_review": 90,
+    "static_analysis": 90
+  },
+  "non_negotiable_contracts": {
+    "target_score_used_as_input": false,
+    "score_override_allowed": false,
+    "unverified_candidate_volume_affects_technical_score": false,
+    "verified_material_findings_affect_technical_score": true,
+    "real_score_disagreement_remains_blocked": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
