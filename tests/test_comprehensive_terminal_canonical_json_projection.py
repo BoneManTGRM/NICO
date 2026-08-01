@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 
 from nico.comprehensive_api_controller import _project_report
 
@@ -74,3 +75,17 @@ def test_terminal_report_projection_does_not_mutate_persisted_canonical_artifact
     projected["json"]["assessment"]["technical_score"] = 99
 
     assert canonical == persisted
+
+
+def test_terminal_report_projection_remains_json_serializable() -> None:
+    canonical = _canonical_json()
+
+    projected = _project_report({"json": canonical})
+    encoded = json.dumps(projected, sort_keys=True)
+
+    assert json.loads(encoded)["json"] == canonical
+
+
+def test_terminal_report_projection_omits_invalid_json_payloads() -> None:
+    for value in (None, {}, [], "not-an-object"):
+        assert "json" not in _project_report({"json": value})
