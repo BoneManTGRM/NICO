@@ -4,6 +4,9 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico.comprehensive_approved_delivery_v1 import attach_approved_delivery_package
+from nico.comprehensive_blocked_run_recovery_v1 import (
+    rewind_blocked_run_for_final_artifact_recovery,
+)
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
@@ -14,7 +17,7 @@ from nico.comprehensive_run_record import (
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
 
-VERSION = "nico.comprehensive_run_service.v4"
+VERSION = "nico.comprehensive_run_service.v5"
 
 
 class ComprehensiveRunService:
@@ -73,7 +76,13 @@ class ComprehensiveRunService:
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         if record.get("terminal"):
-            return record
+            recovered = rewind_blocked_run_for_final_artifact_recovery(record)
+            if recovered == record:
+                return record
+            record = self._store.save(
+                recovered,
+                expected_revision=int(record["revision"]),
+            )
 
         remaining = len(COMPREHENSIVE_STAGES) - len(
             record.get("completed_stages") or []
