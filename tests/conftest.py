@@ -5,6 +5,9 @@ import pytest
 from nico.comprehensive_pdf_outline_truth_v1 import (
     install_comprehensive_pdf_outline_truth_v1,
 )
+from nico.evidence_ledger_typescript_truth_v1 import (
+    install_evidence_ledger_typescript_truth_v1,
+)
 from nico.express_failure_stage_truth_v1 import install_express_failure_stage_truth_v1
 from nico.full_assessment_secret_history_confidence_v1 import (
     install_full_assessment_secret_history_confidence_v1,
@@ -23,6 +26,7 @@ install_snapshot_scanner_heartbeat()
 install_full_assessment_secret_history_confidence_v1()
 install_comprehensive_pdf_outline_truth_v1()
 install_osv_api_fallback_truth_v1()
+install_evidence_ledger_typescript_truth_v1()
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +40,7 @@ def stub_live_full_run_repository_evidence(monkeypatch):
     install_comprehensive_pdf_outline_truth_v1()
     install_snapshot_scanner_heartbeat()
     install_osv_api_fallback_truth_v1()
+    install_evidence_ledger_typescript_truth_v1()
 
     def collect(context):
         return {
