@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import stat
 import tarfile
@@ -11,8 +12,16 @@ import pytest
 from scripts import install_hosted_scanner_binaries as installer
 
 
-def test_validated_https_url_rejects_untrusted_schemes_and_hosts() -> None:
-    assert installer._validated_https_url("https://api.github.com/repos/google/osv-scanner/releases/tags/v2.3.8").startswith("https://")
+def test_validated_https_url_rejects_untrusted_schemes_hosts_and_api() -> None:
+    direct = (
+        "https://github.com/google/osv-scanner/releases/download/"
+        "v2.3.8/osv-scanner_linux_amd64"
+    )
+    assert installer._validated_https_url(direct) == direct
+    with pytest.raises(RuntimeError):
+        installer._validated_https_url(
+            "https://api.github.com/repos/google/osv-scanner/releases/tags/v2.3.8"
+        )
     with pytest.raises(RuntimeError):
         installer._validated_https_url("file:///tmp/scanner")
     with pytest.raises(RuntimeError):
@@ -39,32 +48,27 @@ def test_default_scanner_release_tags_are_explicit_and_overrideable(monkeypatch)
         installer._release_tag(gitleaks)
 
 
-def test_release_lookup_uses_exact_tag_and_rejects_mismatch(monkeypatch) -> None:
-    seen: list[str] = []
-
-    class Response(io.BytesIO):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-    def fake_urlopen(request, timeout):
-        seen.append(request.full_url)
-        return Response(b'{"tag_name":"v2.3.8","assets":[]}')
-
-    monkeypatch.setattr(installer.urllib.request, "urlopen", fake_urlopen)
-    release = installer._release("google/osv-scanner", "v2.3.8")
-
-    assert release["tag_name"] == "v2.3.8"
-    assert seen == ["https://api.github.com/repos/google/osv-scanner/releases/tags/v2.3.8"]
-
-    def mismatched_urlopen(request, timeout):
-        return Response(b'{"tag_name":"v2.3.0","assets":[]}')
-
-    monkeypatch.setattr(installer.urllib.request, "urlopen", mismatched_urlopen)
-    with pytest.raises(RuntimeError, match="release tag mismatch"):
-        installer._release("google/osv-scanner", "v2.3.8")
+def test_direct_asset_identity_uses_exact_repository_tag_and_name() -> None:
+    assert installer._asset_url(
+        "google/osv-scanner",
+        "v2.3.8",
+        "osv-scanner_linux_amd64",
+    ) == (
+        "https://github.com/google/osv-scanner/releases/download/"
+        "v2.3.8/osv-scanner_linux_amd64"
+    )
+    with pytest.raises(RuntimeError):
+        installer._asset_url(
+            "google/osv-scanner",
+            "../../latest",
+            "osv-scanner_linux_amd64",
+        )
+    with pytest.raises(RuntimeError):
+        installer._asset_url(
+            "google/osv-scanner",
+            "v2.3.8",
+            "../scanner",
+        )
 
 
 def test_safe_zip_extraction_blocks_traversal_and_symlinks(tmp_path: Path) -> None:
@@ -110,12 +114,23 @@ def test_bounded_download_rejects_oversized_payload() -> None:
         installer._read_bounded(io.BytesIO(b"12345"), limit=4)
 
 
-def test_install_tool_verifies_configured_directory_without_requiring_path(monkeypatch, tmp_path: Path) -> None:
+def test_install_tool_verifies_configured_directory_without_requiring_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     install_dir = tmp_path / "scanners"
+    archive_bytes = b"archive"
     monkeypatch.setattr(installer, "INSTALL_DIR", install_dir)
-    monkeypatch.setattr(installer, "_release", lambda _repository, tag: {"tag_name": tag, "assets": [{}]})
-    monkeypatch.setattr(installer, "_select_asset", lambda _release, _markers: {"name": "tool.tar.gz"})
-    monkeypatch.setattr(installer, "_download", lambda _asset, destination: destination.write_bytes(b"archive"))
+    monkeypatch.setattr(
+        installer,
+        "_download",
+        lambda _url, destination: destination.write_bytes(archive_bytes),
+    )
+    monkeypatch.setattr(
+        installer,
+        "_expected_sha256",
+        lambda _tool, _tag, _asset_name: hashlib.sha256(archive_bytes).hexdigest(),
+    )
 
     def fake_install(_archive: Path, _asset_name: str, binary: str) -> None:
         install_dir.mkdir(parents=True, exist_ok=True)
@@ -130,7 +145,8 @@ def test_install_tool_verifies_configured_directory_without_requiring_path(monke
             "repository": "owner/repository",
             "version_env": "",
             "default_tag": "v1.0.0",
-            "asset_markers": ("linux",),
+            "asset_name_template": "example_{version}_linux_amd64.tar.gz",
+            "asset_sha256": hashlib.sha256(archive_bytes).hexdigest(),
             "binary": "example",
         }
     )
