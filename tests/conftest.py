@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from nico.express_failure_stage_truth_v1 import install_express_failure_stage_truth_v1
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
 
 # Test shards run in isolated Python processes. Install the same canonical
-# TypeScript AST complexity binding explicitly instead of depending on an
-# unrelated test module's import order.
+# bindings explicitly instead of depending on unrelated test-module import order.
 install_typescript_ast_complexity_v1()
+install_express_failure_stage_truth_v1()
 
 
 @pytest.fixture(autouse=True)
