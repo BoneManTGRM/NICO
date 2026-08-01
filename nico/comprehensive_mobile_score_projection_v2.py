@@ -49,6 +49,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_final_artifact_truth_v54 import (
         install_comprehensive_final_artifact_truth_v54,
     )
+    from nico.comprehensive_final_artifact_truth_v54_compat import (
+        install_comprehensive_final_artifact_truth_v54_compat,
+    )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
@@ -72,6 +75,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_truth_v53 = install_comprehensive_final_artifact_truth_v53()
     final_artifact_compat = install_comprehensive_final_artifact_truth_compat_v54()
     final_artifact_truth = install_comprehensive_final_artifact_truth_v54()
+    final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
     return {
         "scoring_manifest": scoring_manifest,
@@ -80,6 +84,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "final_artifact_truth_v53": final_artifact_truth_v53,
         "final_artifact_compat": final_artifact_compat,
         "final_artifact_truth": final_artifact_truth,
+        "final_artifact_v54_compat": final_artifact_v54_compat,
         "failure_diagnostics": failure_diagnostics,
         "scorecard_extraction_validation": install_scorecard_extraction_validation(),
         "osv_api_fallback_truth": install_osv_api_fallback_truth_v1(),
