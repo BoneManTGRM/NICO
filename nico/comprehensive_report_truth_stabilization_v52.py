@@ -52,9 +52,8 @@ def _source_identity(item: dict[str, Any]) -> tuple[str, str, str, str]:
 
 
 def _is_finding(item: dict[str, Any]) -> bool:
-    keys = set(item)
     return bool(
-        keys.intersection(
+        set(item).intersection(
             {
                 "finding_id",
                 "finding_type",
@@ -72,8 +71,9 @@ def _is_finding(item: dict[str, Any]) -> bool:
 def _prefer_richer(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     left_score = len(str(left)) + len(left)
     right_score = len(str(right)) + len(right)
-    winner = deepcopy(right if right_score > left_score else left)
-    loser = left if winner is not left else right
+    use_right = right_score > left_score
+    winner = deepcopy(right if use_right else left)
+    loser = left if use_right else right
     for key, value in loser.items():
         if key not in winner or winner.get(key) in (None, "", [], {}):
             winner[key] = deepcopy(value)
@@ -103,8 +103,12 @@ def _dedupe_finding_list(values: list[Any]) -> list[Any]:
 def _completed_scanners(node: Any) -> set[str]:
     completed: set[str] = set()
     if isinstance(node, dict):
-        name = _normalized_text(node.get("scanner_name") or node.get("tool") or node.get("analyzer"))
-        state = _normalized_text(node.get("status") or node.get("state") or node.get("execution_status"))
+        name = _normalized_text(
+            node.get("scanner_name") or node.get("tool") or node.get("analyzer")
+        )
+        state = _normalized_text(
+            node.get("status") or node.get("state") or node.get("execution_status")
+        )
         exact = node.get("exact_commit_match", node.get("exact_sha", node.get("exact_commit")))
         if name and state in _COMPLETED_SCANNER_STATES and exact is not False:
             completed.add(name)
@@ -154,7 +158,11 @@ def _scores(node: Any) -> tuple[int | None, int | None]:
     return technical, adjusted
 
 
-def _repair_node(node: Any, completed: set[str], scores: tuple[int | None, int | None]) -> Any:
+def _repair_node(
+    node: Any,
+    completed: set[str],
+    scores: tuple[int | None, int | None],
+) -> Any:
     if isinstance(node, list):
         repaired = [_repair_node(value, completed, scores) for value in node]
         return _dedupe_finding_list(repaired)
@@ -168,7 +176,8 @@ def _repair_node(node: Any, completed: set[str], scores: tuple[int | None, int |
         repaired["incomplete_analyzers"] = [
             value for value in incomplete if _normalized_text(value) not in completed
         ]
-        repaired["analyzer_execution_coverage"] = 100 if not repaired["incomplete_analyzers"] else repaired.get("analyzer_execution_coverage")
+        if not repaired["incomplete_analyzers"]:
+            repaired["analyzer_execution_coverage"] = 100
 
     technical, adjusted = scores
     canonical_adjusted = _score(repaired.get("canonical_evidence_adjusted_score"))
@@ -183,7 +192,11 @@ def _repair_node(node: Any, completed: set[str], scores: tuple[int | None, int |
     if reason == "canonical_evidence_adjusted_score_mismatch" and scores_match:
         repaired["report_contract_reason"] = ""
         repaired["report_contract_status"] = "ready_for_human_review"
-    if repaired.get("status") == "blocked" and reason == "canonical_evidence_adjusted_score_mismatch" and scores_match:
+    if (
+        repaired.get("status") == "blocked"
+        and reason == "canonical_evidence_adjusted_score_mismatch"
+        and scores_match
+    ):
         repaired["status"] = "ready_for_human_review"
 
     if technical is not None:
@@ -219,8 +232,10 @@ def _finding_count(node: Any) -> int:
 
 def _repair_text(value: str, count: int) -> str:
     replacements = {
-        "span ish_pdf": "spanish_pdf",
-        "span ish_markdown": "spanish_markdown",
+        "_ span ish_pdf": "_spanish_pdf",
+        "span ish_pdf": "_spanish_pdf",
+        "_ span ish_markdown": "_spanish_markdown",
+        "span ish_markdown": "_spanish_markdown",
         "co llect_snapshot_repository_evidence": "collect_snapshot_repository_evidence",
         "co llect_complexity_evidence": "collect_complexity_evidence",
         "appy_ l scanner_artifact_scoring": "apply_scanner_artifact_scoring",
@@ -231,8 +246,11 @@ def _repair_text(value: str, count: int) -> str:
     }
     for broken, fixed in replacements.items():
         value = value.replace(broken, fixed)
-    value = re.sub(r"The canonical register contains \d+ unique decision-grade findings", f"The canonical register contains {count} unique decision-grade findings", value)
-    return value
+    return re.sub(
+        r"The canonical register contains \d+ unique decision-grade findings",
+        f"The canonical register contains {count} unique decision-grade findings",
+        value,
+    )
 
 
 def stabilize_report_package(result: dict[str, Any]) -> dict[str, Any]:
