@@ -156,7 +156,9 @@ def _score_stage_consistent(canonical: dict[str, Any]) -> bool:
 
 def _weighted_scores_recompute(canonical: dict[str, Any]) -> bool:
     assessment = _dict(canonical.get("assessment"))
-    rows = [row for row in _list(assessment.get("scoring_weights")) if isinstance(row, dict)]
+    reconciliation = _dict(assessment.get("score_reconciliation"))
+    source_rows = reconciliation.get("rows") or assessment.get("scoring_weights")
+    rows = [row for row in _list(source_rows) if isinstance(row, dict)]
     included = [
         row
         for row in rows
@@ -185,11 +187,9 @@ def _weighted_scores_recompute(canonical: dict[str, Any]) -> bool:
 
 
 def _scanner_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, bool]:
-    from nico.comprehensive_report_truth_stabilization_v52 import (
-        _authoritative_completed_scanners,
-    )
+    from nico.comprehensive_report_truth_v53 import authoritative_completed_scanners
 
-    completed = _authoritative_completed_scanners(canonical)
+    completed = authoritative_completed_scanners(canonical)
     incomplete_values: set[str] = set()
     for value in _walk_key_values(canonical, "incomplete_analyzers"):
         if isinstance(value, list):
@@ -208,11 +208,17 @@ def _scanner_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, bool]:
     return not stale, coverage_consistent, coverage_complete_when_all_complete
 
 
+def _finding_identity(item: Any) -> tuple[Any, ...] | None:
+    from nico import comprehensive_report_truth_stabilization_v52 as legacy
+
+    if not isinstance(item, dict) or not legacy._is_finding(item):
+        return None
+    identity = legacy._source_identity(item)
+    return identity if identity and identity[0] and identity[1] else None
+
+
 def _finding_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, int]:
-    from nico.comprehensive_report_truth_stabilization_v52 import (
-        _finding_identity,
-        _finding_metrics,
-    )
+    from nico.comprehensive_report_truth_stabilization_v52 import _finding_metrics
 
     register = canonical.get("findings_register")
     if not isinstance(register, list):
