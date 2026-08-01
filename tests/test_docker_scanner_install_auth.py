@@ -41,7 +41,7 @@ def test_nico_ci_passes_repository_token_only_as_a_docker_build_secret() -> None
     assert "--build-arg GITHUB_TOKEN" not in docker_step
 
 
-def test_nico_ci_timeout_budget_keeps_expensive_steps_bounded_without_preempting_them() -> None:
+def test_nico_ci_uses_proven_full_suite_command_with_bounded_job_budget() -> None:
     workflow = (ROOT / ".github" / "workflows" / "nico-ci.yml").read_text(
         encoding="utf-8"
     )
@@ -52,10 +52,14 @@ def test_nico_ci_timeout_budget_keeps_expensive_steps_bounded_without_preempting
     test_step = workflow.split("- name: Run all tests", maxsplit=1)[1]
     test_step = test_step.split("- name: Upload pytest results", maxsplit=1)[0]
 
-    job_timeout = _timeout_minutes(job_header)
-    docker_timeout = _timeout_minutes(docker_step)
-    test_timeout = _timeout_minutes(test_step)
-
-    assert docker_timeout == 20
-    assert test_timeout == 15
-    assert job_timeout >= docker_timeout + test_timeout + 10
+    assert _timeout_minutes(job_header) == 45
+    assert _timeout_minutes(docker_step) == 20
+    assert "pip install pytest\n" in workflow
+    assert "pytest-timeout" not in workflow
+    assert (
+        "python -m pytest tests/ -v --tb=short --junitxml=pytest-results.xml"
+        in test_step
+    )
+    assert "timeout --signal" not in test_step
+    assert "--timeout=" not in test_step
+    assert "SIGABRT" not in test_step
