@@ -27,7 +27,7 @@ def test_compose_uses_fail_closed_production_bootstrap_and_verified_named_volume
     assert "NICO_DB_PATH" not in source
 
 
-def test_hosted_binary_scanners_use_explicit_release_tags_not_latest_resolution() -> None:
+def test_hosted_binary_scanners_use_explicit_verified_release_assets() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 
     assert '"default_tag": "v2.3.8"' in source
@@ -36,9 +36,13 @@ def test_hosted_binary_scanners_use_explicit_release_tags_not_latest_resolution(
     assert '"NICO_OSV_SCANNER_VERSION"' in source
     assert '"NICO_GITLEAKS_VERSION"' in source
     assert '"NICO_TRUFFLEHOG_VERSION"' in source
-    assert "/releases/tags/{tag}" in source
+    assert "releases/download" in source
+    assert "api.github.com" not in source
     assert "/releases/latest" not in source
-    assert "Scanner release tag mismatch" in source
+    assert '"asset_sha256"' in source
+    assert '"checksum_name_template"' in source
+    assert "_verify_sha256" in source
+    assert "Scanner release asset SHA-256 mismatch" in source
 
 
 def test_readme_states_current_provider_and_package_scope_truthfully() -> None:
