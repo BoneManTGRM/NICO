@@ -4,7 +4,8 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v4"
+VERSION = "nico.comprehensive_mobile_score_projection.v3"
+RUNTIME_REVISION = "v54-final-artifact-recovery"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -78,6 +79,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
     return {
+        "runtime_revision": RUNTIME_REVISION,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
@@ -136,6 +138,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
 
 
 __all__ = [
+    "RUNTIME_REVISION",
     "VERSION",
     "install_comprehensive_mobile_score_projection_v2",
 ]
