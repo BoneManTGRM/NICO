@@ -71,7 +71,12 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     assert "os.killpg(process.pid, signal.SIGABRT)" in shards
     assert "os.killpg(process.pid, signal.SIGKILL)" in shards
     assert "pytest-timeout-${{ matrix.shard }}.txt" in shards
-    assert "pytest-timeout" not in workflow
+
+    # The shard boundary is implemented by the parent process group, not by a
+    # pytest timeout plugin that could alter individual test semantics.
+    assert "pip install pytest-timeout" not in workflow
+    assert "--timeout=" not in workflow
+    assert "--timeout-method=" not in workflow
 
     # The process-group timeout must finish before the job ceiling so the
     # manifest, JUnit evidence, and bounded timeout diagnostic survive a leak.
