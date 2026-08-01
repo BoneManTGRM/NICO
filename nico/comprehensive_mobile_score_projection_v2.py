@@ -37,6 +37,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.comprehensive_final_artifact_truth_compat_v54 import (
+        install_comprehensive_final_artifact_truth_compat_v54,
+    )
     from nico.comprehensive_final_artifact_truth_v53 import (
         install_comprehensive_final_artifact_truth_v53,
     )
@@ -57,10 +60,12 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
     report_truth = install_comprehensive_report_truth_v53()
     final_artifact_truth = install_comprehensive_final_artifact_truth_v53()
+    final_artifact_compat = install_comprehensive_final_artifact_truth_compat_v54()
     return {
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
         "final_artifact_truth": final_artifact_truth,
+        "final_artifact_compat": final_artifact_compat,
         "scorecard_extraction_validation": install_scorecard_extraction_validation(),
         "osv_api_fallback_truth": install_osv_api_fallback_truth_v1(),
         "evidence_ledger_typescript_truth": (
@@ -98,6 +103,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "pre_render_truth_reconciliation": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
+        "legacy_final_artifact_fixtures_supported": True,
         "finding_register_deduplicated": True,
         "scanner_state_reconciled": True,
         "canonical_score_contract_reconciled": True,
