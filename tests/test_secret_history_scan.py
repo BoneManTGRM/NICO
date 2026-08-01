@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import subprocess
 
-from nico import scanner_determinism_v1, scanner_tool_runners
+from nico import scanner_determinism_reentry_v2, scanner_determinism_v1, scanner_tool_runners
 from nico.hosted_scanner_artifacts import attach_scanner_worker_artifacts
-from nico.scanner_determinism_v1 import install_scanner_determinism
 from nico.scanner_tool_runners import ScannerToolSpec
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
@@ -23,9 +22,13 @@ def _initialize_repository(repo_dir) -> None:
 
 
 def _rebind_scanner_determinism(monkeypatch) -> None:
-    """Rebind after other installer tests replace the shared scanner runner."""
+    """Use the supported re-entry installer after other tests replace shared wrappers."""
+
     monkeypatch.setattr(scanner_determinism_v1, "_INSTALLED", False)
-    install_scanner_determinism()
+    status = scanner_determinism_reentry_v2.install_scanner_determinism_reentry()
+    assert status["status"] == "installed"
+    assert status["exact_sha_history_metadata_bound"] is True
+    assert status["history_scanners_bound_to_head"] is True
 
 
 def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
@@ -55,6 +58,8 @@ def test_trufflehog_git_command_targets_repo_history(monkeypatch, tmp_path):
     assert result["history_depth_verified"] is True
     assert result["full_history_verified"] is True
     assert result["history_scope"] == "reachable_ancestry_at_assessed_commit"
+    assert result["immutable_head_selector"] == "HEAD"
+    assert result["deterministic_head_selector_applied"] is True
     assert result["descendant_refs_scanned"] is False
     scanner_call = next(call for call in calls if call[0:2] == ("trufflehog", "git"))
     assert scanner_call[2] == f"file://{repo_dir}"
@@ -88,6 +93,8 @@ def test_gitleaks_history_metadata_is_preserved(monkeypatch, tmp_path):
     assert result["history_depth_verified"] is True
     assert result["full_history_verified"] is True
     assert result["history_scope"] == "reachable_ancestry_at_assessed_commit"
+    assert result["immutable_head_selector"] == "HEAD"
+    assert result["deterministic_head_selector_applied"] is True
     assert result["descendant_refs_scanned"] is False
     assert result["findings"] == []
     scanner_call = next(call for call in calls if call[0] == "gitleaks")
