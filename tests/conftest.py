@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
+
+
+# Test shards run in isolated Python processes. Install the same canonical
+# TypeScript AST complexity binding explicitly instead of depending on an
+# unrelated test module's import order.
+install_typescript_ast_complexity_v1()
+
 
 @pytest.fixture(autouse=True)
 def stub_live_full_run_repository_evidence(monkeypatch):
