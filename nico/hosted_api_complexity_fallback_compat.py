@@ -12,6 +12,7 @@ import nico.hosted_assessment as hosted
 
 SOURCE_BOOTSTRAP_FILES = 12
 MAX_REPORTED_SOURCE_FAILURES = 6
+_SHARED_COMPATIBILITY_PROBES = ("README.md", "requirements.txt", "package.json")
 _EXPRESS_PROFILE_ENABLED: ContextVar[bool] = ContextVar(
     "nico_express_api_complexity_profile_enabled",
     default=False,
@@ -238,6 +239,41 @@ def _install_unavailable_detail_bridge() -> bool:
     return True
 
 
+def _preserve_shared_profile_compatibility(
+    delegate: Callable[[Any, str, dict[str, Any]], dict[str, Any]],
+    client: Any,
+    repository: str,
+    repo_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Retain the historical bounded root probes regardless of wrapper order.
+
+    Several production compatibility layers wrap ``fetch_repository_profile``.
+    The shared non-Express path must still probe the three common root files
+    that the original contract checked even when they were absent from the
+    recursive tree. Missing probes remain explicit evidence limitations.
+    """
+
+    profile = delegate(client, repository, repo_meta)
+    if not isinstance(profile, dict):
+        return profile
+    output = dict(profile)
+    files = dict(output.get("files") or {})
+    unavailable = list(output.get("unavailable") or [])
+    get_text_file = getattr(client, "get_text_file", None)
+    if callable(get_text_file):
+        for path in _SHARED_COMPATIBILITY_PROBES:
+            if path in files:
+                continue
+            text, error = get_text_file(repository, path)
+            if text is not None:
+                files[path] = text
+            elif error and error not in unavailable:
+                unavailable.append(str(error))
+    output["files"] = files
+    output["unavailable"] = unavailable
+    return output
+
+
 def _bind_runtime(
     profile_dispatcher: Callable[[Any, str, dict[str, Any]], dict[str, Any]],
     assessment_runner: Callable[[dict[str, Any]], dict[str, Any]],
@@ -274,6 +310,7 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
             "concurrent_express_requests_supported": True,
             "source_bootstrap_files": SOURCE_BOOTSTRAP_FILES,
             "fetch_provenance_retained": True,
+            "shared_profile_compatibility_probes": list(_SHARED_COMPATIBILITY_PROBES),
             "unavailable_detail_bridge_installed": detail_bridge_installed,
             "runtime_binding_repaired": binding_repaired,
         }
@@ -294,7 +331,12 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
     def profile_dispatcher(client: Any, repository: str, repo_meta: dict[str, Any]) -> dict[str, Any]:
         if _EXPRESS_PROFILE_ENABLED.get():
             return fetch_repository_profile_with_budget_provenance(client, repository, repo_meta)
-        return original_profile_fetcher(client, repository, repo_meta)
+        return _preserve_shared_profile_compatibility(
+            original_profile_fetcher,
+            client,
+            repository,
+            repo_meta,
+        )
 
     def run_github_assessment_with_api_complexity(payload: dict[str, Any]) -> dict[str, Any]:
         capture_token = fallback._CAPTURED_PROFILE.set(None)
@@ -321,6 +363,7 @@ def install_hosted_api_complexity_fallback() -> dict[str, Any]:
         "concurrent_express_requests_supported": True,
         "source_bootstrap_files": SOURCE_BOOTSTRAP_FILES,
         "fetch_provenance_retained": True,
+        "shared_profile_compatibility_probes": list(_SHARED_COMPATIBILITY_PROBES),
         "unavailable_detail_bridge_installed": detail_bridge_installed,
         "runtime_binding_repaired": False,
         "truth_boundary": "A bounded source bootstrap is attempted before manifest-heavy requests. Positive measurements can support scoring; failed fetches remain explicit and never force a score lift.",
