@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v3
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v4
   cancel-in-progress: true
 
 jobs:
@@ -135,11 +135,11 @@ jobs:
   test_shards:
     name: test-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,8 +165,9 @@ jobs:
     - name: Run balanced test shard
       env:
         NICO_TEST_SHARD: ${{ matrix.shard }}
-        NICO_TEST_SHARDS: "4"
+        NICO_TEST_SHARDS: "8"
         PYTHONHASHSEED: "0"
+        PYTHONFAULTHANDLER: "1"
       run: |
         python - <<'PY'
         from pathlib import Path
@@ -199,6 +200,10 @@ jobs:
         )
 
         command = [
+            "timeout",
+            "--signal=SIGABRT",
+            "--kill-after=15s",
+            "18m",
             sys.executable,
             "-m",
             "pytest",
