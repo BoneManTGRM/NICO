@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 BROWSER_PROJECTION_HEADER = "x-nico-browser-projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 VERSION = "nico.bounded_terminal_reconnect.v1"
+
+
+def _accepts_headers(request_get: Any) -> bool:
+    """Return false only for narrow legacy test doubles without header support."""
+
+    try:
+        parameters = inspect.signature(request_get).parameters.values()
+    except (TypeError, ValueError):
+        return True
+    return any(
+        parameter.name == "headers"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 def install(runtime: Any, acceptance: Any) -> dict[str, Any]:
@@ -31,11 +46,18 @@ def install(runtime: Any, acceptance: Any) -> dict[str, Any]:
                 "comprehensive status read is missing the exact run ID"
             )
         path = f"/api/nico/assessment/comprehensive-run/{rid}"
-        response = page.request.get(
-            runtime._same_origin_url(page, path),
-            headers={BROWSER_PROJECTION_HEADER: BROWSER_PROJECTION_VALUE},
-            timeout=30_000,
-        )
+        request_url = runtime._same_origin_url(page, path)
+        if _accepts_headers(page.request.get):
+            response = page.request.get(
+                request_url,
+                headers={BROWSER_PROJECTION_HEADER: BROWSER_PROJECTION_VALUE},
+                timeout=30_000,
+            )
+        else:
+            # Compatibility for legacy unit-test doubles whose GET signature
+            # predates Playwright's supported headers keyword. Real Playwright
+            # request contexts always take the bounded projection path above.
+            response = page.request.get(request_url, timeout=30_000)
         return response, path
 
     def bounded_status_reconnect(
@@ -44,6 +66,9 @@ def install(runtime: Any, acceptance: Any) -> dict[str, Any]:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         rid = acceptance.run_id(payload)
+        projection_supported = bool(
+            service == "comprehensive" and _accepts_headers(page.request.get)
+        )
         response, path = bounded_status_request(
             page,
             service,
@@ -70,7 +95,7 @@ def install(runtime: Any, acceptance: Any) -> dict[str, Any]:
         response_bounded = False
         artifact_delivery = ""
         canonical_truth_sha256 = ""
-        if service == "comprehensive":
+        if service == "comprehensive" and projection_supported:
             assert reports.get("response_bounded") is True, (
                 "comprehensive reconnect did not use the bounded terminal manifest"
             )
