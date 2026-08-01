@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nico.comprehensive_report_truth_stabilization_v52 import (
+from nico.comprehensive_report_truth_v53 import (
     prepare_report_stage_results,
     stabilize_report_package,
 )
