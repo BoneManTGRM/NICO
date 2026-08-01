@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.express_async_api as express
 import nico.express_backend_diagnostics as diagnostics
 
-VERSION = "nico.express_failure_stage_truth.v1"
+VERSION = "nico.express_failure_stage_truth.v2"
 _PATCH_MARKER = "_nico_express_failure_stage_truth_v1"
 
 _BACKEND_TO_UI_STAGE = {
@@ -37,6 +37,35 @@ def failure_ui_stage(backend_stage: str) -> str:
     return _BACKEND_TO_UI_STAGE.get(str(backend_stage or ""), "repository_evidence")
 
 
+def _preserve_terminal_failure_summary(
+    progress: list[dict[str, Any]],
+    *,
+    message: str,
+    evidence: dict[str, Any],
+) -> None:
+    """Retain the historical bounded failure summary without losing stage truth.
+
+    The original diagnostics contract placed the terminal failure message in the
+    first progress item because the synthetic ``failed`` stage was not part of the
+    workflow stage list. The stage-truth repair correctly preserves the actual UI
+    stage, but existing clients and tests still read the first item for the safe
+    diagnostic identifier. Copy only the bounded public summary and redacted
+    evidence there; keep the real failing stage and its status in the canonical
+    stage entry later in the same progress array.
+    """
+
+    if not progress or not isinstance(progress[0], dict):
+        return
+    first = progress[0]
+    first["message"] = message
+    first_evidence = (
+        first.get("evidence") if isinstance(first.get("evidence"), dict) else {}
+    )
+    first_evidence.update(evidence)
+    first_evidence["terminal_failure_summary"] = True
+    first["evidence"] = first_evidence
+
+
 def install_express_failure_stage_truth_v1() -> dict[str, Any]:
     """Keep terminal status separate from the workflow stage that actually failed."""
 
@@ -50,6 +79,7 @@ def install_express_failure_stage_truth_v1() -> dict[str, Any]:
             "terminal_status_preserved": True,
             "failure_ui_stage_preserved": True,
             "backend_failure_stage_preserved": True,
+            "first_progress_diagnostic_preserved": True,
         }
 
     def diagnostic_failure(
@@ -80,12 +110,18 @@ def install_express_failure_stage_truth_v1() -> dict[str, Any]:
         failure["failure_stage"] = backend_stage
         failure["failure_ui_stage"] = ui_stage
         failure["progress_percent"] = 100
-        failure["progress"] = express._stage_progress(
+        progress = express._stage_progress(
             ui_stage,
             "failed",
             message,
             evidence=evidence,
         )
+        _preserve_terminal_failure_summary(
+            progress,
+            message=message,
+            evidence=evidence,
+        )
+        failure["progress"] = progress
         return diagnostics._attach_failure_stage(failure, backend_stage)
 
     setattr(diagnostic_failure, _PATCH_MARKER, True)
@@ -97,6 +133,7 @@ def install_express_failure_stage_truth_v1() -> dict[str, Any]:
         "terminal_status_preserved": True,
         "failure_ui_stage_preserved": True,
         "backend_failure_stage_preserved": True,
+        "first_progress_diagnostic_preserved": True,
         "private_exception_text_exposed": False,
         "replacement_run_allowed": False,
     }
