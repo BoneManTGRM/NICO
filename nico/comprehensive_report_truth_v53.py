@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
@@ -146,10 +147,13 @@ def _dedupe_string_findings(values: list[Any]) -> list[Any]:
         key = legacy._finding_identity(value) if hasattr(legacy, "_finding_identity") else None
         if key is None and isinstance(value, str) and "NICO-FINDING-" in value:
             repaired = legacy._repair_text(value)
-            path = legacy._source_path(repaired) if hasattr(legacy, "_source_path") else ""
+            source_match = re.search(
+                r"([A-Za-z0-9_.\-/]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))",
+                repaired,
+                re.I,
+            )
+            path = source_match.group(1).casefold() if source_match else ""
             function = ""
-            import re
-
             match = re.search(r"reduce\s+complexity\s+in\s+([^·\n]+)", repaired, re.I)
             if match:
                 function = _text(match.group(1).strip(" `.:"))
