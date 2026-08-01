@@ -142,7 +142,9 @@ def test_non_browser_status_preserves_full_report_for_existing_consumers() -> No
     report = response.json()["reports"]
     assert report["markdown"].startswith("# NICO Comprehensive")
     assert base64.b64decode(report["pdf_base64"]).startswith(b"%PDF")
-    assert report["json"] == {"canonical_truth_sha256": "a" * 64}
+    assert report["json"]["canonical_truth_sha256"] == "a" * 64
+    assert report["json"]["assessment"]["maturity_signal"]["presented_score"] == 91
+    assert len(report["json"]["large"]) == 2 * 1024 * 1024
 
 
 def test_exact_run_artifact_routes_stream_canonical_content() -> None:
