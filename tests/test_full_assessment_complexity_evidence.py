@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+from nico import full_assessment_complexity_evidence as complexity
+from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
+
+
+def _collect(files: dict[str, str]) -> dict:
+    # Later compatibility modules can replace the public collector during test
+    # collection. Reinstall the canonical AST binding immediately before use so
+    # these assertions verify the live production export, not a stale import.
+    install_typescript_ast_complexity_v1()
+    return complexity.collect_complexity_evidence(files)
 
 
 def test_complexity_evidence_measures_ast_hotspots_coupling_and_duplicates() -> None:
@@ -48,7 +57,7 @@ export function choose(value: number) {
         "README.md": "# ignored",
     }
 
-    result = collect_complexity_evidence(files)
+    result = _collect(files)
 
     assert result["status"] == "attached"
     assert result["files_considered"] == 3
@@ -73,7 +82,7 @@ export function choose(value: number) {
 
 
 def test_python_parse_failure_is_disclosed_and_excluded() -> None:
-    result = collect_complexity_evidence(
+    result = _collect(
         {
             "nico/good.py": "def good(value):\n    return value\n",
             "nico/bad.py": "def broken(:\n    return 1\n",
@@ -89,7 +98,7 @@ def test_python_parse_failure_is_disclosed_and_excluded() -> None:
 
 
 def test_no_eligible_source_files_returns_unavailable_evidence() -> None:
-    result = collect_complexity_evidence(
+    result = _collect(
         {
             "README.md": "# docs",
             "tests/test_only.py": "def test_only():\n    assert True\n",
