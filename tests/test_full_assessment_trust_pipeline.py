@@ -104,13 +104,8 @@ def test_prepare_trust_attaches_real_ledger_and_preserves_weighted_score() -> No
     assert prepared["trust_report_display"]["version"] == "trust-report-display-v1"
     assert prepared["evidence_ledger"]["entry_count"] > 0
     assert coverage["dependency_health"]["complete"] is True
-    assert coverage["static_analysis"]["verified_required_tools"] == [
-        "bandit",
-        "semgrep",
-        "eslint",
-        "typescript",
-    ]
-    assert coverage["static_analysis"]["missing_required_tools"] == []
+    assert coverage["static_analysis"]["verified_required_tools"] == ["bandit", "semgrep", "eslint"]
+    assert coverage["static_analysis"]["missing_required_tools"] == ["typescript"]
     assert coverage["secrets_review"]["missing_required_tools"] == ["gitleaks", "trufflehog"]
     assert by_id["dependency_health"]["score"] == original_dependency
     assert by_id["static_analysis"]["score"] == original_static
@@ -174,36 +169,54 @@ def test_export_contradiction_becomes_review_required_without_destroying_artifac
         "customer_id": "cust-trust",
         "project_id": "proj-trust",
         "run_id": run_id,
-        "scan_id": f"scan_{run_id}",
-        "assessment": contradictory,
-        "formats": {"markdown": "# Full Assessment", "html": "<h1>Full Assessment</h1>"},
+        "idempotency_key": "fullrun-export-review",
+        "idempotent_reuse": False,
+        "formats": {
+            "markdown": "# Full Assessment draft\n\nDependency / Library Ecosystem — GREEN\n",
+            "html": "<html><body>Full Assessment draft</body></html>",
+            "json": contradictory,
+            "pdf": None,
+        },
     }
 
     finalized = finalize_full_assessment_exports(contradictory, package)
+    gate = finalized["assessment"]["export_truth_gate"]
 
-    assert finalized["assessment"]["export_truth_gate"]["status"] == "review_required"
-    assert finalized["assessment"]["export_truth_gate"]["client_delivery_allowed"] is False
-    assert finalized["reports"]["formats"]["markdown"] == "# Full Assessment"
-    assert finalized["reports"]["formats"]["html"] == "<h1>Full Assessment</h1>"
+    assert gate["status"] == "review_required"
+    assert gate["draft_only"] is True
+    assert gate["export_allowed"] is True
+    assert gate["client_delivery_allowed"] is False
+    assert finalized["reports"]["markdown"]
+    assert finalized["reports"]["html"]
+    assert finalized["reports"]["report_finality"] == "final"
+    assert finalized["reports"]["review_status"] == "pending_human_approval"
+    assert finalized["reports"]["delivery_status"] == "blocked_pending_human_approval"
+    assert finalized["reports"]["draft_only"] is False
 
 
 def test_api_truth_summary_surfaces_nested_gate_state_without_changing_delivery_rule() -> None:
-    assessment = _assessment("fullrun_api_truth")
-    assessment["export_truth_gate"] = {
+    run_id = "fullrun_truth_summary"
+    prepared = prepare_full_assessment_trust(_assessment(run_id), _scanner(run_id))
+    prepared["export_truth_gate"] = {
         "status": "review_required",
-        "reason": "One cross-format inconsistency requires review.",
         "client_delivery_allowed": False,
+        "draft_only": True,
     }
-    payload = _attach_assessment_truth_summary(
-        {
-            "status": "complete",
-            "assessment": assessment,
-            "human_review_required": True,
-            "client_ready": False,
-        }
-    )
+    result = {
+        "status": "complete",
+        "run_id": run_id,
+        "assessment": prepared,
+        "reports": {"markdown": "# report"},
+        "human_review_required": False,
+        "client_ready": True,
+    }
 
-    assert payload["assessment_truth_summary"]["export_truth_status"] == "review_required"
-    assert payload["assessment_truth_summary"]["client_delivery_allowed"] is False
-    assert payload["human_review_required"] is True
-    assert payload["client_ready"] is False
+    updated = _attach_assessment_truth_summary(result)
+
+    assert updated["trust_level"] == prepared["trust_level"]
+    assert updated["evidence_ledger"]["report_run_id"] == run_id
+    assert updated["export_truth_gate"]["status"] == "review_required"
+    assert updated["delivery_verdict"] == "human_review_required"
+    assert updated["human_review_required"] is True
+    assert updated["client_ready"] is False
+    assert updated["reports"]["client_delivery_allowed"] is False
