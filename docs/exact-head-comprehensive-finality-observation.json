@@ -4,7 +4,7 @@
   "work_package": "exact_head_comprehensive_finality_repair",
   "dependency_state": "first_incomplete",
   "release_base_sha": "1eba1fbdf5f38d9a8be863548584e7ffbe1d5ce2",
-  "state": "diagnosing",
+  "state": "implementation_complete_awaiting_post_merge_proof",
   "observed": {
     "main_deployed_to_vercel": true,
     "main_deployed_to_railway": true,
@@ -12,7 +12,35 @@
     "mobile_restart_production_proof": "failed",
     "ios_webkit_paint_proof": "failed",
     "terminal_stage": "cross_format_truth_verification",
-    "terminal_reason": "final_artifact_truth_verification_failed"
+    "terminal_reason": "final_artifact_truth_verification_failed",
+    "failed_checks": [
+      "analyzer_coverage_values_consistent",
+      "completed_scanners_not_incomplete",
+      "finding_register_has_no_equivalent_duplicates",
+      "stated_unique_finding_count_matches_register"
+    ],
+    "technical_score": 92,
+    "evidence_adjusted_score": 90,
+    "weighted_score_recalculation_matches": true,
+    "completed_exact_commit_scanner_count": 9,
+    "stale_analyzer_coverage_values": [
+      88,
+      89,
+      100
+    ],
+    "duplicate_source_conditions": 8,
+    "pre_reconciliation_register_count": 88,
+    "post_reconciliation_register_count": 80
+  },
+  "implementation": {
+    "canonical_scanner_population_authoritative": true,
+    "nested_scanner_projection_synchronized": true,
+    "source_anchor_finding_deduplication": true,
+    "former_finding_ids_retained_as_aliases": true,
+    "canonical_register_count_authoritative": true,
+    "genuine_incomplete_scanners_remain_fail_closed": true,
+    "scores_changed_to_satisfy_gate": false,
+    "temporary_production_diagnostic_removed": true
   },
   "gates": {
     "preserve_report_truth": true,
