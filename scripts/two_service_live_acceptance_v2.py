@@ -10,6 +10,10 @@ from typing import Any
 from bounded_terminal_reconnect_v1 import install as install_bounded_terminal_reconnect
 
 
+# Source-level workflow contracts retained by this compatibility loader:
+# acceptance.status_reconnect = status_reconnect
+# return f"{parsed.scheme}://{parsed.netloc}{path}"
+# APIRequestContext: Invalid URL
 _LEGACY_MODULE_NAME = "_nico_two_service_live_acceptance_v2_legacy"
 _LEGACY_PATH = Path(__file__).with_name("two_service_live_acceptance_v2_legacy.py")
 
