@@ -214,11 +214,12 @@ def test_quality_contract_requires_decision_grade_chapters_and_boundaries() -> N
 
 def test_native_provider_binding_replaces_the_report_builder() -> None:
     from nico import comprehensive_native_providers as providers
+    from nico import comprehensive_report_appendix_v3 as appendix
 
-    status = install_native_provider_binding()
+    status = appendix.install_native_provider_binding()
 
     assert status["bound"] is True
-    assert providers.build_comprehensive_report_package is build_comprehensive_report_package
+    assert providers.build_comprehensive_report_package is appendix.build_comprehensive_report_package
     assert status["markdown_evidence_appendix"] is True
     assert status["html_evidence_appendix"] is True
     assert status["pdf_evidence_appendix"] is True
