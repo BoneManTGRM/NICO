@@ -32,7 +32,9 @@ def test_nico_ci_passes_repository_token_only_as_a_docker_build_secret() -> None
         encoding="utf-8"
     )
 
-    docker_step = workflow.split("- name: Run Docker build check", maxsplit=1)[1]
+    quality = workflow.split("  quality:", maxsplit=1)[1]
+    quality = quality.split("  test_shards:", maxsplit=1)[0]
+    docker_step = quality.split("- name: Run Docker build check", maxsplit=1)[1]
     docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
 
     assert "GITHUB_TOKEN: ${{ github.token }}" in docker_step
@@ -41,25 +43,34 @@ def test_nico_ci_passes_repository_token_only_as_a_docker_build_secret() -> None
     assert "--build-arg GITHUB_TOKEN" not in docker_step
 
 
-def test_nico_ci_uses_proven_full_suite_command_with_bounded_job_budget() -> None:
+def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> None:
     workflow = (ROOT / ".github" / "workflows" / "nico-ci.yml").read_text(
         encoding="utf-8"
     )
 
-    job_header = workflow.split("    steps:", maxsplit=1)[0]
-    docker_step = workflow.split("- name: Run Docker build check", maxsplit=1)[1]
-    docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
-    test_step = workflow.split("- name: Run all tests", maxsplit=1)[1]
-    test_step = test_step.split("- name: Upload pytest results", maxsplit=1)[0]
+    quality = workflow.split("  quality:", maxsplit=1)[1]
+    quality = quality.split("  test_shards:", maxsplit=1)[0]
+    shards = workflow.split("  test_shards:", maxsplit=1)[1]
+    shards, gate = shards.split("  test:\n", maxsplit=1)
 
-    assert _timeout_minutes(job_header) == 45
+    assert "-stable-v3" in workflow
+    assert _timeout_minutes(quality) == 35
+    docker_step = quality.split("- name: Run Docker build check", maxsplit=1)[1]
+    docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
     assert _timeout_minutes(docker_step) == 20
-    assert "pip install pytest\n" in workflow
+
+    assert "name: test-shard-${{ matrix.shard }}" in shards
+    assert "shard: [0, 1, 2, 3]" in shards
+    assert 'Path("tests").rglob("test_*.py")' in shards
+    assert "subprocess.call(command)" in shards
+    assert '"-m",\n            "pytest"' in shards
     assert "pytest-timeout" not in workflow
-    assert (
-        "python -m pytest tests/ -v --tb=short --junitxml=pytest-results.xml"
-        in test_step
-    )
-    assert "timeout --signal" not in test_step
-    assert "--timeout=" not in test_step
-    assert "SIGABRT" not in test_step
+    assert "SIGABRT" not in workflow
+    assert "timeout --signal" not in workflow
+
+    assert "name: test" in gate
+    assert "needs: [quality, test_shards]" in gate
+    assert "QUALITY_RESULT: ${{ needs.quality.result }}" in gate
+    assert "SHARDS_RESULT: ${{ needs.test_shards.result }}" in gate
+    assert 'test "$QUALITY_RESULT" = "success"' in gate
+    assert 'test "$SHARDS_RESULT" = "success"' in gate
