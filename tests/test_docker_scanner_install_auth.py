@@ -53,7 +53,7 @@ def test_nico_ci_isolates_the_full_suite_and_preserves_one_final_test_gate() -> 
     shards = workflow.split("  test_shards:", maxsplit=1)[1]
     shards, gate = shards.split("  test:\n", maxsplit=1)
 
-    assert "-stable-v8" in workflow
+    assert "-stable-v9" in workflow
     assert _timeout_minutes(quality) == 35
     docker_step = quality.split("- name: Run Docker build check", maxsplit=1)[1]
     docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
