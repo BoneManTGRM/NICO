@@ -3,6 +3,9 @@ from __future__ import annotations
 import pytest
 
 from nico.express_failure_stage_truth_v1 import install_express_failure_stage_truth_v1
+from nico.full_assessment_secret_history_confidence_v1 import (
+    install_full_assessment_secret_history_confidence_v1,
+)
 from nico.snapshot_scanner_heartbeat_patch import install_snapshot_scanner_heartbeat
 from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
 
@@ -13,6 +16,7 @@ from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_
 install_typescript_ast_complexity_v1()
 install_express_failure_stage_truth_v1()
 install_snapshot_scanner_heartbeat()
+install_full_assessment_secret_history_confidence_v1()
 
 
 @pytest.fixture(autouse=True)
