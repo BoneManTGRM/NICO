@@ -8,6 +8,7 @@ from nico.comprehensive_pdf_outline_truth_v1 import (
 from nico.evidence_ledger_typescript_truth_v1 import (
     install_evidence_ledger_typescript_truth_v1,
 )
+from nico.express_backend_diagnostics import install_express_backend_diagnostics
 from nico.express_failure_stage_truth_v1 import install_express_failure_stage_truth_v1
 from nico.full_assessment_secret_history_confidence_v1 import (
     install_full_assessment_secret_history_confidence_v1,
@@ -21,6 +22,7 @@ from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_
 # production bindings explicitly instead of depending on unrelated test-module
 # import order.
 install_typescript_ast_complexity_v1()
+install_express_backend_diagnostics()
 install_express_failure_stage_truth_v1()
 install_snapshot_scanner_heartbeat()
 install_full_assessment_secret_history_confidence_v1()
@@ -33,9 +35,12 @@ install_evidence_ledger_typescript_truth_v1()
 def stub_live_full_run_repository_evidence(monkeypatch):
     """Keep tests deterministic while production full-runs use authorized GitHub read APIs."""
 
-    # Collection imports and compatibility installers can replace canonical
-    # functions after conftest first loads. Rebind the final production contracts
-    # immediately before every isolated test instead of relying on module order.
+    # Collection imports, module reloads, and compatibility installers can
+    # replace canonical functions after conftest first loads. Rebind the final
+    # production contracts immediately before every isolated test instead of
+    # relying on module order.
+    install_express_backend_diagnostics()
+    install_express_failure_stage_truth_v1()
     install_full_assessment_secret_history_confidence_v1()
     install_comprehensive_pdf_outline_truth_v1()
     install_snapshot_scanner_heartbeat()
