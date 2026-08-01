@@ -24,7 +24,7 @@ from nico.scanner_evidence_pipeline_v1 import (
 from nico.scanner_result_truth_v1 import reconcile_scanner_payload
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
 
-VERSION = "nico.v2.snapshot-scanner-authority.v3"
+VERSION = "nico.v2.snapshot-scanner-authority.v4"
 _TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v2__"
 _CLONE_MARKER = "__nico_v2_full_history_clone_v2__"
 _HISTORY_COMMAND_MARKER = "__nico_v2_exact_sha_history_commands_v1__"
@@ -212,7 +212,16 @@ def canonical_snapshot_tool_runner(
     prepared = preparation
     if spec.name in {"eslint", "typescript"} and prepared is None:
         prepared = _preparation(workspace, runner)
-    payload = _run_problem_tool(spec, workspace, runner, prepared)
+
+    # Enforce immutable HEAD selection at the final runner boundary. This remains
+    # effective even when test or compatibility installers replace the named
+    # scanner delegates while preserving the canonical snapshot authority.
+    effective_runner = (
+        _head_scoped_runner(spec.name, runner)
+        if bool(spec.scans_git_history)
+        else runner
+    )
+    payload = _run_problem_tool(spec, workspace, effective_runner, prepared)
     if not isinstance(payload, dict):
         raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
     raw_blob = payload.get("_raw_artifact_blob")
@@ -342,6 +351,7 @@ def install_v2_snapshot_scanner_authority() -> dict[str, Any]:
         "mutable_branch_remote_and_tag_refs_excluded": clone_bound,
         "history_scanners_bound_to_head": history_commands_bound,
         "history_command_scope": history_scope,
+        "final_runner_head_scope_bound": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
