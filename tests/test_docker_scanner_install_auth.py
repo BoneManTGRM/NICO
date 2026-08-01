@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _timeout_minutes(block: str) -> int:
+    match = re.search(r"(?m)^\s+timeout-minutes:\s*(\d+)\s*$", block)
+    assert match is not None
+    return int(match.group(1))
 
 
 def test_docker_scanner_install_uses_ephemeral_buildkit_secret() -> None:
@@ -32,3 +39,23 @@ def test_nico_ci_passes_repository_token_only_as_a_docker_build_secret() -> None
     assert 'DOCKER_BUILDKIT: "1"' in docker_step
     assert "--secret id=github_token,env=GITHUB_TOKEN" in docker_step
     assert "--build-arg GITHUB_TOKEN" not in docker_step
+
+
+def test_nico_ci_timeout_budget_keeps_expensive_steps_bounded_without_preempting_them() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "nico-ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    job_header = workflow.split("    steps:", maxsplit=1)[0]
+    docker_step = workflow.split("- name: Run Docker build check", maxsplit=1)[1]
+    docker_step = docker_step.split("- name: Run file integrity regression test", maxsplit=1)[0]
+    test_step = workflow.split("- name: Run all tests", maxsplit=1)[1]
+    test_step = test_step.split("- name: Upload pytest results", maxsplit=1)[0]
+
+    job_timeout = _timeout_minutes(job_header)
+    docker_timeout = _timeout_minutes(docker_step)
+    test_timeout = _timeout_minutes(test_step)
+
+    assert docker_timeout == 20
+    assert test_timeout == 15
+    assert job_timeout >= docker_timeout + test_timeout + 10
