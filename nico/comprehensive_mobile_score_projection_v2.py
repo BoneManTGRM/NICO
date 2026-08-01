@@ -37,6 +37,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.comprehensive_final_artifact_truth_v53 import (
+        install_comprehensive_final_artifact_truth_v53,
+    )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
@@ -48,10 +51,11 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    report_truth = install_comprehensive_report_truth_stabilization_v52()
+    final_artifact_truth = install_comprehensive_final_artifact_truth_v53()
     return {
-        "report_truth_stabilization": (
-            install_comprehensive_report_truth_stabilization_v52()
-        ),
+        "report_truth_stabilization": report_truth,
+        "final_artifact_truth": final_artifact_truth,
         "scorecard_extraction_validation": install_scorecard_extraction_validation(),
         "osv_api_fallback_truth": install_osv_api_fallback_truth_v1(),
         "evidence_ledger_typescript_truth": (
@@ -73,8 +77,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
 
-    # This is the final report-related installer in nico.__init__. Bind report
-    # truth stabilization here so no earlier compatibility layer can replace it.
+    # This is the final report-related installer in nico.__init__. Bind pre-render
+    # report reconciliation and full-artifact verification here so no earlier
+    # compatibility layer can replace either boundary afterward.
     final_runtime_truth = _install_final_runtime_truth()
     _INSTALLED = True
     return {
@@ -85,6 +90,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         **final_runtime_truth,
         "wrapped_control_labels_supported": True,
         "all_canonical_rows_and_scores_required": True,
+        "pre_render_truth_reconciliation": True,
+        "full_pdf_text_validated": True,
+        "weighted_score_recalculation_required": True,
         "finding_register_deduplicated": True,
         "scanner_state_reconciled": True,
         "canonical_score_contract_reconciled": True,
