@@ -29,8 +29,59 @@ jobs:
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pip install --disable-pip-version-check --no-deps -e .
 
-      - name: Run exact production-authority regression with full diagnostics
+      - name: Expose exact canonical coverage and incomplete paths
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest tests/test_v2_live_production_authority.py -vv --tb=long -s
+          python - <<'PY'
+          from __future__ import annotations
+
+          import importlib.util
+          import json
+          from pathlib import Path
+          from typing import Any
+
+          path = Path("tests/test_v2_live_production_authority.py")
+          spec = importlib.util.spec_from_file_location("v2_fixture", path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+
+          from nico import comprehensive_native_providers as providers
+
+          providers._scan = lambda context: module._scan_payload()
+
+          def values(node: Any, target: str, prefix: str = "json") -> list[dict[str, Any]]:
+              output: list[dict[str, Any]] = []
+              if isinstance(node, dict):
+                  for key, child in node.items():
+                      location = f"{prefix}.{key}"
+                      if str(key) == target:
+                          output.append({"path": location, "value": child})
+                      output.extend(values(child, target, location))
+              elif isinstance(node, list):
+                  for index, child in enumerate(node):
+                      output.extend(values(child, target, f"{prefix}[{index}]"))
+              return output
+
+          for locale in ("en", "es-MX"):
+              provider = module.wrap_final_report_publication(lambda context: module._source())
+              context = module._context(locale)
+              output = provider(context)
+              package = output["report_package"]
+              canonical = package["json"]
+              payload = {
+                  "locale": locale,
+                  "coverage_paths": values(canonical, "analyzer_execution_coverage"),
+                  "scanner_coverage_paths": values(canonical, "scanner_execution_coverage"),
+                  "incomplete_paths": values(canonical, "incomplete_analyzers"),
+                  "client_readiness_contract": canonical.get("client_readiness_contract"),
+                  "top_level_scanner_records": canonical.get("scanner_execution_records"),
+                  "live_scanner_evidence": canonical.get("live_scanner_evidence"),
+              }
+              print(json.dumps(payload, indent=2, sort_keys=True, default=str), flush=True)
+              verification = providers.cross_format_verification_provider(
+                  {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
+              )
+              print(json.dumps({"locale": locale, "verification": verification}, indent=2, sort_keys=True, default=str), flush=True)
+          PY
