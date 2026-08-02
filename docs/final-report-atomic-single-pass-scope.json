@@ -1,0 +1,24 @@
+{
+  "artifact_schema": "nico.final_report_atomic_single_pass_scope.v1",
+  "base_sha": "f457ed47fc374358fe47e23128066c771db4f261",
+  "work_package": "exact_head_client_report_accuracy",
+  "changes": {
+    "final_report_removed_from_generic_background_dispatch": true,
+    "atomic_run_store_publication": true,
+    "exact_artifact_validation": true,
+    "copy_on_write_scanner_truth": true,
+    "duplicate_canonicalization_skipped": true,
+    "bounded_report_flatten_traversal": true,
+    "full_final_context_second_deepcopy_skipped": true
+  },
+  "preserved": {
+    "scores": true,
+    "scanner_findings": true,
+    "renderer": true,
+    "visual_design": true,
+    "section_order": true,
+    "pdf_composition": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
