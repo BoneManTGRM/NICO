@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v54-final-artifact-recovery"
+RUNTIME_REVISION = "v59-client-readiness"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -38,6 +38,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.comprehensive_client_readiness_v59 import (
+        install_comprehensive_client_readiness_v59,
+    )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
     )
@@ -78,6 +81,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
 
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     final_publication_truth = install_comprehensive_final_publication_truth_v58()
+    client_readiness = install_comprehensive_client_readiness_v59()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
     report_truth = install_comprehensive_report_truth_v53()
@@ -90,6 +94,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "runtime_revision": RUNTIME_REVISION,
         "source_anchor_location": source_anchor_location,
         "final_publication_truth": final_publication_truth,
+        "client_readiness": client_readiness,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
@@ -119,9 +124,6 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
     _ORIGINAL_REPORT_OUTPUTS = controller_module._report_outputs
     controller_module._report_outputs = _report_outputs
 
-    # This is the final report-related installer in nico.__init__. Bind pre-render
-    # report reconciliation and full-artifact verification here so no earlier
-    # compatibility layer can replace either boundary afterward.
     final_runtime_truth = _install_final_runtime_truth()
     _INSTALLED = True
     return {
@@ -144,6 +146,10 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "finding_register_deduplicated": True,
         "ranged_source_anchor_paths_canonicalized": True,
         "scanner_state_reconciled": True,
+        "analyzer_coverage_canonicalized": True,
+        "maturity_terminology_unified": True,
+        "identifier_integrity_repaired_before_render": True,
+        "limited_evidence_status_separated_from_execution_status": True,
         "canonical_score_contract_reconciled": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
