@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def _executors() -> dict[str, object]:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            output = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
@@ -31,7 +32,38 @@ def _executors() -> dict[str, object]:
                 "commit_sha": context["commit_sha"],
                 "evidence_ledger_id": context["evidence_ledger_id"],
                 "prior_count": len(context["prior_stage_results"]),
+                "human_review_required": True,
+                "client_delivery_allowed": False,
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    key: context[key]
+                    for key in (
+                        "run_id",
+                        "repository",
+                        "commit_sha",
+                        "evidence_ledger_id",
+                    )
+                }
+                output["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": (
+                        "# NICO Comprehensive Technical Assessment\n"
+                        "CLIENT DELIVERY NOT AUTHORIZED"
+                    ),
+                    "html": (
+                        "<html><body>NICO Comprehensive Technical Assessment</body></html>"
+                    ),
+                    "pdf_base64": base64.b64encode(
+                        b"%PDF-1.4\n%%EOF\n"
+                    ).decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                }
+            return output
 
         result[capability] = execute
     return result
@@ -68,6 +100,10 @@ def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -
     assert final["progress_percent"] == 100.0
     assert final["human_review_required"] is True
     assert final["client_delivery_allowed"] is False
+    final_report = final["stage_results"]["final_comprehensive_report_generation"]
+    assert final_report["report_package"]["report_id"] == "report_comprun_001"
+    assert final_report["stage_execution"]["mode"] == "atomic_final_report_publication"
+    assert final_report["stage_execution"]["detached_background_execution"] is False
 
 
 def test_prior_stage_evidence_is_forwarded_in_order(tmp_path: Path) -> None:
@@ -92,7 +128,9 @@ def test_missing_capability_blocks_without_false_progress(tmp_path: Path) -> Non
     assert blocked["terminal"] is True
     assert blocked["completed_stages"] == []
     assert blocked["progress_percent"] == 0.0
-    assert blocked["stage_results"][COMPREHENSIVE_STAGES[0]]["reason"].startswith("missing_executor:")
+    assert blocked["stage_results"][COMPREHENSIVE_STAGES[0]]["reason"].startswith(
+        "missing_executor:"
+    )
     assert blocked["client_delivery_allowed"] is False
 
 
