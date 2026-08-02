@@ -1,0 +1,81 @@
+name: Diagnose exact production run 8438671
+
+on:
+  push:
+    branches:
+      - diagnostics/live-run-8438671
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query exact production run
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          RUN_ID='comprun_8438671f276445ed87b81c7d25056652'
+          BASE='https://app.nicoaudit.com/api/nico'
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            -H 'Accept: application/json' \
+            -H 'Cache-Control: no-store' \
+            -H 'X-NICO-Browser-Projection: compact-mobile' \
+            "$BASE/assessment/comprehensive-run/$RUN_ID" \
+            -D diagnostics/run-headers.txt \
+            -o diagnostics/run.json
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            -H 'Accept: application/json' \
+            -H 'Cache-Control: no-store' \
+            "$BASE/diagnostics/comprehensive-runtime" \
+            -D diagnostics/runtime-headers.txt \
+            -o diagnostics/runtime.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('diagnostics/run.json').read_text())
+          record = data.get('record') if isinstance(data.get('record'), dict) else {}
+          stage_results = record.get('stage_results') if isinstance(record.get('stage_results'), dict) else {}
+          stage = data.get('current_stage') or record.get('current_stage')
+          result = stage_results.get(stage) if isinstance(stage_results.get(stage), dict) else {}
+          execution = result.get('stage_execution') if isinstance(result.get('stage_execution'), dict) else {}
+          report = result.get('report_package') if isinstance(result.get('report_package'), dict) else {}
+          summary = {
+              'run_id': data.get('run_id') or record.get('identity', {}).get('run_id'),
+              'repository': data.get('repository'),
+              'commit_sha': data.get('commit_sha'),
+              'status': data.get('status') or record.get('status'),
+              'terminal': data.get('terminal') if 'terminal' in data else record.get('terminal'),
+              'current_stage': stage,
+              'progress_percent': data.get('progress_percent'),
+              'canonical_progress_percent': data.get('canonical_progress_percent'),
+              'active_stage_progress_percent': data.get('active_stage_progress_percent'),
+              'revision': data.get('revision') or record.get('revision'),
+              'completed_stage_count': len(record.get('completed_stages') or []),
+              'current_stage_status': result.get('status'),
+              'current_stage_reason': result.get('reason'),
+              'current_stage_error_code': result.get('error_code'),
+              'stage_execution': execution,
+              'report_id': report.get('report_id'),
+              'pdf_available': bool(report.get('pdf_base64') or report.get('pdf_available')),
+              'pdf_page_count': report.get('pdf_page_count'),
+              'human_review_required': data.get('human_review_required', record.get('human_review_required')),
+              'client_delivery_allowed': data.get('client_delivery_allowed', record.get('client_delivery_allowed')),
+              'blockers': record.get('blockers') or [],
+              'response_projection': data.get('response_projection') or {},
+          }
+          Path('diagnostics/summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True))
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload exact-run diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-run-8438671-diagnostic
+          path: diagnostics
+          if-no-files-found: error
+          retention-days: 7
