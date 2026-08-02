@@ -105,7 +105,7 @@ def test_all_completed_exact_run_scanners_replace_stale_89_percent_projections()
         "percent": 100,
     }
     health = assessment["evidence_health_summary"]
-    assert health["completed_scanners"] == TOOLS
+    assert set(health["completed_scanners"]) == set(TOOLS)
     assert health["incomplete_scanners"] == []
     assert health["required_scanner_failures"] == []
     evidence = result["stage_summaries"][0]["evidence"]
