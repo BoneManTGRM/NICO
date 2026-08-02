@@ -37,6 +37,43 @@ def _finding(identifier: str, *, enriched: bool) -> dict:
     return item
 
 
+def _scan_payload() -> dict:
+    return {
+        "scan_id": "scan-v2",
+        "snapshot_commit_sha": SHA,
+        "actual_commit_sha": SHA,
+        "snapshot_match": True,
+        "tools_requested": ["bandit", "eslint"],
+        "tools_run": ["bandit", "eslint"],
+        "scanner_results": [
+            {
+                "tool": "bandit",
+                "status": "completed",
+                "returncode": 1,
+                "findings": [{"test_id": "B101"}],
+                "artifact_hash": "b" * 64,
+                "raw_artifact_retention_complete": True,
+                "verified_for_this_report": True,
+                "commit_sha": SHA,
+                "snapshot_commit_sha": SHA,
+                "exact_commit_match": True,
+            },
+            {
+                "tool": "eslint",
+                "status": "completed",
+                "returncode": 1,
+                "findings": [{"ruleId": "complexity"}],
+                "artifact_hash": "e" * 64,
+                "raw_artifact_retention_complete": True,
+                "verified_for_this_report": True,
+                "commit_sha": SHA,
+                "snapshot_commit_sha": SHA,
+                "exact_commit_match": True,
+            },
+        ],
+    }
+
+
 def _source() -> dict:
     legacy = _finding("RISK-LEGACY-123", enriched=False)
     prioritized = _finding("RISK-P1-CANONICAL", enriched=True)
@@ -62,6 +99,7 @@ def _source() -> dict:
                     "maturity_signal": {"score": 81},
                     "sections": [],
                 },
+                "scanner_execution_records": _scan_payload()["scanner_results"],
                 "canonical_findings": [legacy, prioritized],
                 "findings_register": [legacy, prioritized],
             },
@@ -85,43 +123,14 @@ def _context(language: str = "en") -> dict:
     }
 
 
-def _scan_payload() -> dict:
-    return {
-        "scan_id": "scan-v2",
-        "snapshot_commit_sha": SHA,
-        "actual_commit_sha": SHA,
-        "snapshot_match": True,
-        "tools_requested": ["bandit", "eslint"],
-        "tools_run": ["bandit", "eslint"],
-        "scanner_results": [
-            {
-                "tool": "bandit",
-                "status": "completed",
-                "returncode": 1,
-                "findings": [{"test_id": "B101"}],
-                "artifact_hash": "b" * 64,
-                "raw_artifact_retention_complete": True,
-                "verified_for_this_report": True,
-            },
-            {
-                "tool": "eslint",
-                "status": "completed",
-                "returncode": 1,
-                "findings": [{"ruleId": "complexity"}],
-                "artifact_hash": "e" * 64,
-                "raw_artifact_retention_complete": True,
-                "verified_for_this_report": True,
-            },
-        ],
-    }
-
-
 def _assert_shared_truth(output: dict) -> None:
     package = output["report_package"]
     canonical = package["json"]
     assert output["status"] == "complete"
     assert output["assessment_state"] == "review_required"
     assert output["v2_production_authority"]["single_final_publication_boundary"] is True
+    assert output["v2_production_authority"]["final_stage_scanner_store_read"] is False
+    assert output["v2_production_authority"]["final_stage_scanner_execution"] is False
     assert len(canonical["canonical_findings"]) == 1
     finding = canonical["canonical_findings"][0]
     assert finding["finding_id"] == "RISK-P1-CANONICAL"
@@ -153,10 +162,17 @@ def _assert_shared_truth(output: dict) -> None:
     assert len(hashes) == 1
 
 
-def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
+def _forbid_final_stage_scan(monkeypatch) -> None:
     from nico import comprehensive_native_providers as providers
 
-    monkeypatch.setattr(providers, "_scan", lambda context: _scan_payload())
+    def forbidden(_context):
+        raise AssertionError("final report publication must not reopen the scanner store")
+
+    monkeypatch.setattr(providers, "_scan", forbidden)
+
+
+def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
+    _forbid_final_stage_scan(monkeypatch)
     provider = wrap_final_report_publication(lambda context: _source())
     context = _context("en")
     output = provider(context)
@@ -168,6 +184,8 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     assert "CLIENT DELIVERY BLOCKED" in package["markdown"]
     assert "Reduce complexity in page.tsx" in package["markdown"]
 
+    from nico import comprehensive_native_providers as providers
+
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
@@ -175,9 +193,7 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
 
 
 def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(monkeypatch):
-    from nico import comprehensive_native_providers as providers
-
-    monkeypatch.setattr(providers, "_scan", lambda context: _scan_payload())
+    _forbid_final_stage_scan(monkeypatch)
     provider = wrap_final_report_publication(lambda context: _source())
     context = _context("es-MX")
     output = provider(context)
@@ -196,6 +212,8 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     assert "DESCONOCIDO" not in package["markdown"]
     assert "bandit" in package["markdown"]
     assert "eslint" in package["markdown"]
+
+    from nico import comprehensive_native_providers as providers
 
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}

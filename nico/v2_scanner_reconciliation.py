@@ -81,6 +81,11 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     item["snapshot_commit_sha"] = observed
     item["exact_commit_match"] = bool(expected and observed == expected)
     item["findings"] = list(item.get("findings") or item.get("issues") or item.get("results") or [])
+    try:
+        finding_count = max(0, int(item.get("finding_count") or len(item["findings"])))
+    except (TypeError, ValueError):
+        finding_count = len(item["findings"])
+    item["finding_count"] = finding_count
     raw_exit = item.get("exit_code") if item.get("exit_code") is not None else item.get("returncode")
     exit_code = raw_exit if isinstance(raw_exit, int) else None
     item["exit_code"] = exit_code
@@ -102,7 +107,11 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     verified = bool(completed and retention_valid and (verified_signal if verification_declared else retained_result))
 
     if completed:
-        item["status"] = "completed_with_findings" if item["findings"] or findings_exit else "completed"
+        item["status"] = (
+            "completed_with_findings"
+            if item["findings"] or finding_count > 0 or findings_exit
+            else "completed"
+        )
         item["completed"] = True
         item["verified"] = verified
         item["verified_complete"] = verified
@@ -162,7 +171,7 @@ def reconcile_scanner_records(canonical: Mapping[str, Any]) -> dict[str, Any]:
             int(value.get("completed") is True),
             int(value.get("raw_artifact_retention_complete") is True),
             int(bool(value.get("artifact_hash"))),
-            len(value.get("findings") or []),
+            int(value.get("finding_count") or len(value.get("findings") or [])),
             len(_text(value.get("stdout"))) + len(_text(value.get("stderr"))),
         )
         if current is None or richness(normalized) > richness(current):
@@ -180,6 +189,7 @@ def reconcile_scanner_records(canonical: Mapping[str, Any]) -> dict[str, Any]:
         "completed_count": sum(item.get("completed") is True for item in records),
         "incomplete_count": sum(item.get("completed") is not True for item in records),
         "returncode_alias_supported": True,
+        "finding_count_alias_supported": True,
         "exact_sha_artifact_required": True,
         "retained_exact_sha_artifact_is_verification_default": True,
     }

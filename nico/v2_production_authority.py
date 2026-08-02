@@ -11,6 +11,8 @@ from nico.comprehensive_canonical_report_source_v1 import (
     build_canonical_report_source,
 )
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
+from nico.comprehensive_retained_scanner_evidence_v1 import retained_scanner_payload
+from nico.comprehensive_scanner_stage_retention_v1 import install_scanner_stage_retention
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
 VERSION = "nico.v2.production-authority.v5"
@@ -49,11 +51,32 @@ def _install_spanish_vocabulary() -> None:
     )
 
 
+def _existing_scanner_records(
+    canonical: Mapping[str, Any],
+    assessment: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    for value in (
+        canonical.get("scanner_execution_records"),
+        assessment.get("scanner_execution_records"),
+    ):
+        if isinstance(value, list):
+            records = [dict(item) for item in value if isinstance(item, Mapping)]
+            if records:
+                return records
+    return []
+
+
 def _inject_live_runtime_truth(
     source: Mapping[str, Any],
     context: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Attach live scanner and language truth with bounded copy-on-write updates."""
+    """Attach retained scanner and language truth with bounded copy-on-write updates.
+
+    Scanner execution belongs to the earlier dependency/security stage. Final report
+    publication must never reopen the scanner store, clone the repository, or import
+    full raw findings and output previews. It consumes compact exact-SHA records already
+    retained by this run and remains fail-closed when those records are unavailable.
+    """
 
     output = dict(source)
     raw_package = source.get("report_package")
@@ -77,53 +100,63 @@ def _inject_live_runtime_truth(
     assessment["report_language"] = language
     assessment["locale"] = language
 
-    try:
-        from nico import comprehensive_native_providers as providers
+    retained = retained_scanner_payload(context)
+    records = [
+        dict(item)
+        for item in retained.get("scanner_execution_records") or []
+        if isinstance(item, Mapping)
+    ]
+    if not records:
+        records = _existing_scanner_records(canonical, assessment)
+        if records:
+            retained = {
+                **retained,
+                "source": "canonical_source_scanner_records",
+                "scanner_execution_records": records,
+                "record_count": len(records),
+            }
 
-        scan = providers._scan(dict(context))
-    except Exception:
-        scan = {}
-    records = (
-        scan.get("scanner_results")
-        if isinstance(scan, Mapping) and isinstance(scan.get("scanner_results"), list)
-        else []
-    )
     if records:
-        commit_sha = _text(identity.get("commit_sha") or context.get("commit_sha")).casefold()
-        enriched: list[dict[str, Any]] = []
-        for raw in records:
-            if not isinstance(raw, Mapping):
-                continue
-            item = dict(raw)
-            item.setdefault("scanner_name", item.get("tool") or item.get("scanner"))
-            item.setdefault("commit_sha", commit_sha)
-            item.setdefault("snapshot_commit_sha", commit_sha)
-            item.setdefault(
-                "exact_commit_match",
-                _text(item.get("commit_sha")).casefold() == commit_sha,
-            )
-            if item.get("exit_code") is None and isinstance(item.get("returncode"), int):
-                item["exit_code"] = item["returncode"]
-            enriched.append(item)
-        canonical["scanner_execution_records"] = enriched
-        assessment["scanner_execution_records"] = [dict(item) for item in enriched]
-        assessment["scanner_execution_summary"] = dict(
-            scan.get("scanner_execution_summary") or {}
-        )
-        canonical["live_scanner_evidence"] = {
-            "scan_id": scan.get("scan_id"),
-            "snapshot_commit_sha": scan.get("snapshot_commit_sha"),
-            "actual_commit_sha": scan.get("actual_commit_sha"),
-            "snapshot_match": scan.get("snapshot_match") is True,
-            "tools_requested": list(scan.get("tools_requested") or []),
-            "tools_run": list(scan.get("tools_run") or []),
-            "failed_tools": list(scan.get("failed_tools") or []),
-            "unavailable_tools": list(scan.get("unavailable_tools") or []),
-            "timed_out_tools": list(scan.get("timed_out_tools") or []),
-            "full_history_verified_tools": list(
-                scan.get("full_history_verified_tools") or []
+        canonical["scanner_execution_records"] = [dict(item) for item in records]
+        assessment["scanner_execution_records"] = [dict(item) for item in records]
+        assessment["scanner_execution_summary"] = {
+            "record_count": len(records),
+            "completed_count": sum(item.get("completed") is True for item in records),
+            "verified_count": sum(
+                item.get("verified_complete") is True for item in records
             ),
+            "incomplete_count": sum(item.get("completed") is not True for item in records),
+            "source": retained.get("source"),
+            "compact_records_only": True,
         }
+
+    canonical["live_scanner_evidence"] = {
+        "scan_id": retained.get("scan_id"),
+        "snapshot_commit_sha": retained.get("snapshot_commit_sha"),
+        "actual_commit_sha": retained.get("actual_commit_sha"),
+        "snapshot_match": retained.get("snapshot_match") is True,
+        "tools_requested": list(retained.get("tools_requested") or []),
+        "tools_run": list(retained.get("tools_run") or []),
+        "failed_tools": list(retained.get("failed_tools") or []),
+        "unavailable_tools": list(retained.get("unavailable_tools") or []),
+        "timed_out_tools": list(retained.get("timed_out_tools") or []),
+        "finding_summary": dict(retained.get("finding_summary") or {}),
+        "source": retained.get("source"),
+        "compact_record_count": len(records),
+        "final_stage_scanner_store_read": False,
+        "final_stage_scanner_execution": False,
+        "raw_scanner_outputs_embedded": False,
+    }
+    canonical["final_report_scanner_evidence_contract"] = {
+        "version": retained.get("version"),
+        "source": retained.get("source"),
+        "retained_exact_run_records_only": True,
+        "scanner_store_read_during_final_report": False,
+        "scanner_execution_during_final_report": False,
+        "raw_finding_payload_embedded": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
 
     canonical["assessment"] = assessment
     package["json"] = canonical
@@ -142,6 +175,7 @@ def _inject_live_runtime_truth(
     output["canonical_report"] = canonical
     output["report_language"] = language
     output["locale"] = language
+    output["retained_scanner_evidence"] = retained
     return output
 
 
@@ -177,9 +211,6 @@ def wrap_final_report_publication(
             source.get("report_package"), dict
         )
         if not canonical_only:
-            # Compatibility fallback for synthetic callers that do not supply the
-            # canonical Comprehensive stage context. Production must take the canonical
-            # path and is verified through the retained publication contract below.
             source = delegate(context)
             report_context = dict(context)
             if not isinstance(source, dict):
@@ -212,6 +243,8 @@ def wrap_final_report_publication(
                         "canonical_only_source_used": canonical_only,
                         "legacy_delegate_render_skipped": canonical_only,
                         "legacy_artifacts_published": False,
+                        "final_stage_scanner_store_read": False,
+                        "final_stage_scanner_execution": False,
                         "human_review_required": True,
                         "client_delivery_allowed": False,
                     },
@@ -240,6 +273,10 @@ def wrap_final_report_publication(
             "legacy_html_rendered": not canonical_only,
             "legacy_pdf_rendered": not canonical_only,
             "live_scanner_truth_injected_before_canonicalization": True,
+            "retained_exact_run_scanner_truth_used": True,
+            "final_stage_scanner_store_read": False,
+            "final_stage_scanner_execution": False,
+            "raw_scanner_outputs_embedded": False,
             "report_language_bound_before_rendering": True,
             "localized_filename_bound_before_rendering": True,
             "spanish_vocabulary_bound_before_rendering": True,
@@ -274,6 +311,9 @@ def wrap_final_report_publication(
                     or _report_language(report_context)
                 ),
                 "final_artifact_generation_complete": True,
+                "retained_exact_run_scanner_truth_used": True,
+                "final_stage_scanner_store_read": False,
+                "final_stage_scanner_execution": False,
                 "publication_timing_seconds": {
                     "canonical_source": canonical_elapsed,
                     "runtime_truth_injection": injection_elapsed,
@@ -303,6 +343,20 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+
+    scanner_retention = install_scanner_stage_retention(app)
+    providers = getattr(app.state, PROVIDER_STATE_KEY, None)
+    if not isinstance(providers, dict):
+        return {
+            "status": "blocked",
+            "version": VERSION,
+            "bound": False,
+            "reason": "comprehensive_provider_registry_unavailable_after_scanner_retention",
+            "scanner_stage_retention": scanner_retention,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+
     current = providers.get("final_report_generation")
     if not callable(current):
         return {
@@ -310,22 +364,30 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
             "version": VERSION,
             "bound": False,
             "reason": "final_report_provider_unavailable",
+            "scanner_stage_retention": scanner_retention,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
     wrapped = wrap_final_report_publication(current)
     providers["final_report_generation"] = wrapped
     setattr(app.state, PROVIDER_STATE_KEY, providers)
-    bound = providers.get("final_report_generation") is wrapped
+    final_bound = providers.get("final_report_generation") is wrapped
+    bound = final_bound and scanner_retention.get("bound") is True
     return {
         "status": "installed" if wrapped is not current else "already_installed",
         "version": VERSION,
         "bound": bound,
+        "final_report_provider_bound": final_bound,
+        "scanner_stage_retention": scanner_retention,
         "single_final_publication_boundary": True,
         "canonical_only_source_enabled": True,
         "legacy_delegate_render_skipped_in_production": True,
         "v2_finalizer_invoked_by_real_provider": True,
         "live_scanner_truth_injected_before_canonicalization": True,
+        "retained_exact_run_scanner_truth_used": True,
+        "final_stage_scanner_store_read": False,
+        "final_stage_scanner_execution": False,
+        "raw_scanner_outputs_embedded": False,
         "report_language_bound_before_rendering": True,
         "localized_filename_bound_before_rendering": True,
         "spanish_vocabulary_bound_before_rendering": True,
