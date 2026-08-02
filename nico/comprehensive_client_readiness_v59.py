@@ -18,9 +18,22 @@ _COMPLETED = {
     "success",
     "succeeded",
 }
-_COVERAGE_KEY_RE = re.compile(r"(?:analy[sz]er|scanner).*(?:coverage|completion)|(?:coverage|completion).*(?:analy[sz]er|scanner)", re.I)
+_COVERAGE_KEY_RE = re.compile(
+    r"(?:analy[sz]er|scanner).*(?:coverage|completion)|"
+    r"(?:coverage|completion).*(?:analy[sz]er|scanner)",
+    re.I,
+)
 _COVERAGE_TEXT_RE = re.compile(
-    r"(?P<label>(?:analy[sz]er|scanner)(?:\s+execution)?\s+(?:coverage|completion)\s*[:=]\s*)\d{1,3}(?P<pct>\s*%)?",
+    r"(?P<label>(?:analy[sz]er|scanner)(?:\s+execution)?\s+"
+    r"(?:coverage|completion)\s*)(?P<join>is\s+|[:=]\s*)"
+    r"\d{1,3}(?P<pct>\s*%)?",
+    re.I,
+)
+_COVERAGE_PREFIX_RE = re.compile(
+    r"\b\d{1,3}(?P<pct>\s*%)"
+    r"(?P<tail>\s+(?:accepted\s+)?(?:applicable[- ]?)?"
+    r"(?:analy[sz]er|scanner)(?:\s+execution)?\s+"
+    r"(?:coverage|completion))",
     re.I,
 )
 _KNOWN_IDENTIFIER_REPAIRS = {
@@ -32,9 +45,12 @@ _KNOWN_IDENTIFIER_REPAIRS = {
     " span ish_markdown": "_spanish_markdown",
     "span ish_markdown": "_spanish_markdown",
     "_ span ish_markdown": "_spanish_markdown",
+    "co llect_complexity_evidence": "collect_complexity_evidence",
     "co llect_snapshot_repository_evidence": "collect_snapshot_repository_evidence",
     "eva luate_report_payload": "evaluate_report_payload",
     "mar kdown_report": "markdown_report",
+    "reso lve_repository_commit": "resolve_repository_commit",
+    "install_comprehensive_on_production_ app": "install_comprehensive_on_production_app",
     "production_ app": "production_app",
 }
 
@@ -44,6 +60,14 @@ def _text(value: Any) -> str:
 
 
 def _tool(value: Any) -> str:
+    if isinstance(value, Mapping):
+        value = (
+            value.get("scanner_name")
+            or value.get("scanner")
+            or value.get("tool")
+            or value.get("analyzer")
+            or value.get("name")
+        )
     normalized = _text(value).casefold().replace("_", "-")
     aliases = {
         "npm audit": "npm-audit",
@@ -68,47 +92,120 @@ def _truthy(value: Any) -> bool:
     }
 
 
-def _scanner_truth(node: Any) -> dict[str, dict[str, Any]]:
+def _direct_scanner_records(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Select the exact-run scanner population without walking stale projections."""
+
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    candidates = (
+        canonical.get("scanner_execution_records"),
+        assessment.get("scanner_execution_records"),
+        canonical.get("live_scanner_evidence"),
+        assessment.get("live_scanner_evidence"),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            records = [deepcopy(dict(item)) for item in candidate if isinstance(item, Mapping)]
+            if records:
+                return records
+        if isinstance(candidate, Mapping):
+            nested = candidate.get("records") or candidate.get("scanners") or candidate.get("tools")
+            if isinstance(nested, list):
+                records = [deepcopy(dict(item)) for item in nested if isinstance(item, Mapping)]
+                if records:
+                    return records
+            if isinstance(nested, Mapping):
+                records = []
+                for name, item in nested.items():
+                    if not isinstance(item, Mapping):
+                        continue
+                    record = deepcopy(dict(item))
+                    record.setdefault("scanner_name", name)
+                    records.append(record)
+                if records:
+                    return records
+    return []
+
+
+def _scanner_state(record: Mapping[str, Any]) -> dict[str, Any] | None:
+    name = _tool(record)
+    if not name:
+        return None
+    status = _text(
+        record.get("status") or record.get("state") or record.get("execution_status")
+    ).casefold().replace("-", "_")
+    exact = any(
+        _truthy(record.get(key))
+        for key in (
+            "exact_commit_match",
+            "exact_sha",
+            "exact_commit",
+            "snapshot_match",
+            "commit_match",
+        )
+    )
+    explicit_completed = record.get("completed")
+    completed = (
+        explicit_completed is True
+        if isinstance(explicit_completed, bool)
+        else status in _COMPLETED
+    )
+    verified_values = (
+        record.get("verified"),
+        record.get("verified_complete"),
+        record.get("verified_for_this_report"),
+    )
+    verification_declared = any(value is not None for value in verified_values)
+    verified = any(_truthy(value) for value in verified_values)
+    completed = bool(completed and exact and (verified or not verification_declared))
+    findings = record.get("findings")
+    if isinstance(findings, list):
+        finding_count = len(findings)
+    else:
+        try:
+            finding_count = int(record.get("finding_count", record.get("findings_count", 0)) or 0)
+        except (TypeError, ValueError):
+            finding_count = 0
+    canonical_status = (
+        "completed_with_findings"
+        if completed and finding_count > 0
+        else "completed"
+        if completed
+        else status or "failed"
+    )
+    reason = _text(
+        record.get("failure_reason")
+        or record.get("failure_or_unavailable_reason")
+        or record.get("reason")
+    )
+    return {
+        "scanner_name": name,
+        "status": canonical_status,
+        "completed": completed,
+        "verified": bool(completed and (verified or not verification_declared)),
+        "exact_commit_match": exact,
+        "artifact_retained": bool(
+            record.get("artifact_retained")
+            or record.get("artifact_hash")
+            or record.get("raw_artifact")
+            or record.get("raw_artifact_sha256")
+        ),
+        "finding_count": finding_count,
+        "failure_reason": "" if completed else reason,
+    }
+
+
+def _authoritative_scanner_truth(
+    canonical: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
     truth: dict[str, dict[str, Any]] = {}
-    if isinstance(node, Mapping):
-        name = _tool(
-            node.get("scanner_name")
-            or node.get("scanner")
-            or node.get("tool")
-            or node.get("analyzer")
-        )
-        state = _text(
-            node.get("status") or node.get("state") or node.get("execution_status")
-        ).casefold().replace("-", "_")
-        exact = any(
-            _truthy(node.get(key))
-            for key in (
-                "exact_commit_match",
-                "exact_sha",
-                "exact_commit",
-                "snapshot_match",
-                "commit_match",
-            )
-        )
-        if name and exact and state in _COMPLETED:
-            current = truth.get(name, {})
-            truth[name] = {
-                **current,
-                "scanner_name": name,
-                "status": state,
-                "exact_commit_match": True,
-                "artifact_retained": bool(
-                    node.get("artifact_retained")
-                    or node.get("artifact_hash")
-                    or node.get("artifact")
-                ),
-                "finding_count": node.get("finding_count", node.get("findings", 0)),
-            }
-        for value in node.values():
-            truth.update(_scanner_truth(value))
-    elif isinstance(node, list):
-        for value in node:
-            truth.update(_scanner_truth(value))
+    for record in _direct_scanner_records(canonical):
+        state = _scanner_state(record)
+        if state is not None:
+            truth[state["scanner_name"]] = state
     return truth
 
 
@@ -174,20 +271,80 @@ def _repair_symbols(text: str, symbols: set[str], coverage: int) -> str:
     for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items():
         repaired = re.sub(re.escape(broken), canonical, repaired, flags=re.IGNORECASE)
     for symbol in sorted(symbols, key=len, reverse=True):
-        pattern = r"(?<![A-Za-z0-9_])" + r"\s*".join(map(re.escape, symbol)) + r"(?![A-Za-z0-9_])"
+        pattern = (
+            r"(?<![A-Za-z0-9_])"
+            + r"\s*".join(map(re.escape, symbol))
+            + r"(?![A-Za-z0-9_])"
+        )
         repaired = re.sub(pattern, symbol, repaired, flags=re.IGNORECASE)
     repaired = re.sub(r"\bS\s+p\s+ecific correction\b", "Specific correction", repaired)
     repaired = _COVERAGE_TEXT_RE.sub(
-        lambda match: f"{match.group('label')}{coverage}{match.group('pct') or ''}",
+        lambda match: (
+            f"{match.group('label')}{match.group('join')}{coverage}"
+            f"{match.group('pct') or ''}"
+        ),
+        repaired,
+    )
+    repaired = _COVERAGE_PREFIX_RE.sub(
+        lambda match: f"{coverage}{match.group('pct')}{match.group('tail')}",
         repaired,
     )
     return repaired
 
 
+def _filter_scanner_entries(
+    values: list[Any],
+    *,
+    allowed: set[str],
+) -> list[Any]:
+    output: list[Any] = []
+    for value in values:
+        name = _tool(value)
+        if not name or name in allowed:
+            output.append(value)
+    return output
+
+
+def _synchronize_scanner_row(
+    output: dict[str, Any],
+    truth: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    name = _tool(output)
+    if not name or name not in truth:
+        return output
+    state = truth[name]
+    for key in ("status", "state", "execution_status"):
+        if key in output:
+            output[key] = state["status"]
+    for key in ("completed", "execution_complete"):
+        if key in output:
+            output[key] = state["completed"]
+    for key in ("verified", "verified_complete", "verified_for_this_report"):
+        if key in output:
+            output[key] = state["verified"]
+    if "exact_commit_match" in output:
+        output["exact_commit_match"] = state["exact_commit_match"]
+    if state["completed"]:
+        for key in (
+            "failure_reason",
+            "failure_or_unavailable_reason",
+            "reason",
+        ):
+            if key in output:
+                output[key] = ""
+    elif state["failure_reason"]:
+        for key in ("failure_reason", "failure_or_unavailable_reason", "reason"):
+            if key in output:
+                output[key] = state["failure_reason"]
+    return output
+
+
 def _normalize_tree(
     node: Any,
     *,
+    truth: Mapping[str, Mapping[str, Any]],
     completed: set[str],
+    incomplete: set[str],
     requested: int,
     symbols: set[str],
     technical_score: int | None,
@@ -197,7 +354,9 @@ def _normalize_tree(
         return [
             _normalize_tree(
                 value,
+                truth=truth,
                 completed=completed,
+                incomplete=incomplete,
                 requested=requested,
                 symbols=symbols,
                 technical_score=technical_score,
@@ -212,28 +371,37 @@ def _normalize_tree(
     output = {
         key: _normalize_tree(
             value,
+            truth=truth,
             completed=completed,
+            incomplete=incomplete,
             requested=requested,
             symbols=symbols,
             technical_score=technical_score,
         )
         for key, value in node.items()
     }
+    output = _synchronize_scanner_row(output, truth)
 
-    incomplete = output.get("incomplete_analyzers")
-    if isinstance(incomplete, list):
-        output["incomplete_analyzers"] = [
-            value for value in incomplete if _tool(value) not in completed
-        ]
-    incomplete_scanners = output.get("incomplete_scanners")
-    if isinstance(incomplete_scanners, list):
-        output["incomplete_scanners"] = [
-            value for value in incomplete_scanners if _tool(value) not in completed
-        ]
+    for field in (
+        "incomplete_analyzers",
+        "incomplete_scanners",
+        "failed_analyzers",
+        "failed_scanners",
+        "analyzer_evidence_blockers",
+        "scanner_evidence_blockers",
+    ):
+        value = output.get(field)
+        if isinstance(value, list):
+            output[field] = _filter_scanner_entries(value, allowed=incomplete)
 
     if requested > 0:
         for key in list(output):
-            if _COVERAGE_KEY_RE.search(str(key)) and isinstance(output.get(key), (int, float)) and not isinstance(output.get(key), bool):
+            value = output.get(key)
+            if (
+                _COVERAGE_KEY_RE.search(str(key))
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            ):
                 output[key] = coverage
         if "completed_applicable_analyzers" in output:
             output["completed_applicable_analyzers"] = len(completed)
@@ -266,10 +434,10 @@ def _normalize_tree(
 
 def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
     output = deepcopy(dict(canonical))
-    truth = _scanner_truth(output)
-    completed = set(truth)
-
-    requested = max(_requested_analyzer_count(output), len(completed))
+    truth = _authoritative_scanner_truth(output)
+    completed = {name for name, state in truth.items() if state["completed"]}
+    known_incomplete = {name for name, state in truth.items() if not state["completed"]}
+    requested = max(_requested_analyzer_count(output), len(truth))
 
     assessment = output.get("assessment") if isinstance(output.get("assessment"), Mapping) else {}
     technical = assessment.get("technical_score") or output.get("technical_score")
@@ -281,7 +449,9 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
     symbols = _symbols(output)
     output = _normalize_tree(
         output,
+        truth=truth,
         completed=completed,
+        incomplete=known_incomplete,
         requested=requested,
         symbols=symbols,
         technical_score=technical_score,
@@ -298,8 +468,19 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
         "analyzer_execution_coverage": coverage,
         "coverage_numerator": len(completed),
         "coverage_denominator": requested,
+        "authoritative_scanner_record_count": len(truth),
         "completed_exact_commit_scanners": sorted(completed),
-        "incomplete_analyzers": [],
+        "incomplete_analyzers": sorted(known_incomplete),
+        "scanner_states": {
+            name: {
+                "status": state["status"],
+                "completed": state["completed"],
+                "verified": state["verified"],
+                "finding_count": state["finding_count"],
+                "failure_reason": state["failure_reason"],
+            }
+            for name, state in sorted(truth.items())
+        },
         "maturity_label": _maturity_label(technical_score),
         "technical_maturity_is_not_operational_readiness": True,
         "human_review_required": True,
@@ -334,6 +515,7 @@ def install_comprehensive_client_readiness_v59() -> dict[str, Any]:
         "version": VERSION,
         "bound": completion._install_register is install_register,
         "scanner_state_canonicalized": True,
+        "authoritative_scanner_records_only": True,
         "coverage_denominator_explicit": True,
         "all_coverage_aliases_synchronized": True,
         "maturity_terminology_unified": True,

@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v60-client-ready-accuracy"
+RUNTIME_REVISION = "v61-client-ready-accuracy"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -38,6 +38,7 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _install_final_runtime_truth() -> dict[str, Any]:
+    from nico.bandit_json_execution_v61 import install_bandit_json_execution_v61
     from nico.comprehensive_client_readiness_v59 import (
         install_comprehensive_client_readiness_v59,
     )
@@ -82,6 +83,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     final_publication_truth = install_comprehensive_final_publication_truth_v58()
     client_readiness = install_comprehensive_client_readiness_v59()
@@ -96,6 +98,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
     return {
         "runtime_revision": RUNTIME_REVISION,
+        "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "final_publication_truth": final_publication_truth,
         "client_readiness": client_readiness,
@@ -148,6 +151,8 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "existing_section_order_preserved": True,
         "report_redesign_performed": False,
         "production_pdf_is_accuracy_acceptance_artifact": True,
+        "bandit_csv_parser_dependency_removed": True,
+        "bandit_json_artifact_required": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,
@@ -156,6 +161,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "finding_register_deduplicated": True,
         "ranged_source_anchor_paths_canonicalized": True,
         "scanner_state_reconciled": True,
+        "authoritative_scanner_records_only": True,
         "analyzer_coverage_canonicalized": True,
         "maturity_terminology_unified": True,
         "identifier_integrity_repaired_before_render": True,

@@ -61,7 +61,7 @@ def _canonical() -> dict[str, object]:
             "maturity": "Exceptional",
             "analyzer_execution_coverage": 88,
         },
-        "scanner_records": scanners,
+        "scanner_execution_records": scanners,
         "stage_summaries": [
             {
                 "stage_id": "decision_report_generation",

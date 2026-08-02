@@ -28,13 +28,30 @@ def _workspace(tmp_path: Path) -> WorkerWorkspace:
 
 def test_bandit_complete_file_capture_survives_truncated_preview(monkeypatch, tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    monkeypatch.setattr("nico.scanner_evidence_pipeline_v1.shutil.which", lambda name: f"/tools/{name}")
+    monkeypatch.setattr("nico.bandit_json_execution_v61.shutil.which", lambda name: f"/tools/{name}")
 
     def runner(args, *, cwd, limits, stdout_path, extra_env):
         del cwd, limits, extra_env
         Path(args[args.index("-o") + 1]).write_text(
-            "filename,test_name,test_id,issue_severity,issue_confidence,issue_cwe,more_info,line_number,col_offset,end_col_offset,code\n"
-            "nico/example.py,assert_used,B101,LOW,HIGH,,https://example.invalid,9,1,2,assert value\n",
+            json.dumps(
+                {
+                    "errors": [],
+                    "metrics": {},
+                    "results": [
+                        {
+                            "filename": "nico/example.py",
+                            "test_name": "assert_used",
+                            "test_id": "B101",
+                            "issue_severity": "LOW",
+                            "issue_confidence": "HIGH",
+                            "issue_text": "Use of assert detected",
+                            "line_number": 9,
+                            "line_range": [9],
+                            "code": "assert value",
+                        }
+                    ],
+                }
+            ),
             encoding="utf-8",
         )
         stdout_path.write_text("Bandit preview only", encoding="utf-8")
@@ -58,8 +75,10 @@ def test_bandit_complete_file_capture_survives_truncated_preview(monkeypatch, tm
     assert result["output_truncated"] is True
     assert result["output_capture_complete"] is True
     assert result["raw_artifact_capture_complete"] is True
+    assert result["raw_artifact_format"] == "json"
     assert result["findings_count"] == 1
-    assert result["execution_source"] == "canonical_bandit_csv"
+    assert result["execution_source"] == "canonical_bandit_json_v61"
+    assert result["bandit_csv_parser_used"] is False
 
 
 def test_osv_uses_v2_source_scan_before_legacy_fallback(monkeypatch, tmp_path: Path) -> None:
