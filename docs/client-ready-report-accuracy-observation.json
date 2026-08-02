@@ -9,7 +9,7 @@
   "current_main_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
   "continuation_branch": "codex/exact-head-client-report-coverage-v63",
   "continuation_pr": 980,
-  "state": "post_merge_verification_running_targeted_report_projection_repair_in_progress",
+  "state": "post_merge_mobile_proof_failed_targeted_report_projection_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -27,13 +27,15 @@
       "ui_contract": "expert-engagement-v2"
     },
     "current_main_post_merge_proofs": {
-      "mobile_restart": "running",
+      "mobile_restart": "failed",
       "ios_webkit": "running",
       "two_service_production_acceptance": "running"
     },
-    "retained_final_report_failure": {
-      "run_id": "comprun_0b77c5b34d984eb0bcdbb44328e80c19",
+    "current_main_mobile_failure": {
+      "workflow_run_id": 30750236640,
+      "run_id": "comprun_35af75b0509d4ae8aa52eed3427a99d2",
       "terminal_stage": "final_comprehensive_report_generation",
+      "canonical_progress_percent": 82.61,
       "technical_score": 93,
       "evidence_adjusted_score": 90,
       "final_artifact_generation_complete": true,
@@ -41,7 +43,13 @@
       "client_delivery_allowed": false,
       "reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]",
       "markdown_artifact_retained": true,
-      "pdf_artifact_retained": true
+      "pdf_artifact_retained": true,
+      "diagnostic_artifact_id": 8834324894
+    },
+    "earlier_retained_final_report_failure": {
+      "run_id": "comprun_0b77c5b34d984eb0bcdbb44328e80c19",
+      "terminal_stage": "final_comprehensive_report_generation",
+      "reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]"
     },
     "exact_run_scanner_truth": {
       "requested_scanners": 9,
