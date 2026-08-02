@@ -3,8 +3,8 @@
   "workstream": 1,
   "work_package": "exact_head_comprehensive_finality_repair",
   "dependency_state": "first_incomplete",
-  "release_base_sha": "8560cf37e34a04463990ef84f0c574a3e74d6c27",
-  "continuation_pr": 967,
+  "release_base_sha": "c38133946f11dd899e62542d83e0fa8c5f7662cd",
+  "continuation_pr": 968,
   "state": "implementation_complete_awaiting_exact_head_checks",
   "observed": {
     "main_deployed_to_vercel": true,
@@ -12,11 +12,13 @@
     "two_service_production_acceptance": "failed",
     "mobile_restart_production_proof": "failed",
     "ios_webkit_paint_proof": "failed",
-    "live_run_id": "comprun_d8f9ae4b3400430b8e0299e446063ec2",
+    "live_run_ids": [
+      "comprun_34f1301a6be4491daa5d3d858ff618d7",
+      "comprun_696d5411a63c447380feb75b45840f8b"
+    ],
     "terminal_stage": "cross_format_truth_verification",
     "terminal_reason": "final_artifact_truth_verification_failed",
     "failed_checks": [
-      "finding_register_has_no_equivalent_duplicates",
       "stated_unique_finding_count_matches_register"
     ],
     "technical_score": 92,
@@ -24,11 +26,13 @@
     "weighted_score_recalculation_matches": true,
     "completed_exact_commit_scanner_count": 9,
     "analyzer_execution_coverage": 100,
-    "duplicate_source_conditions": 8,
-    "published_register_count": 88,
-    "source_anchor_identity_count": 80,
+    "equivalent_duplicate_findings_absent": true,
+    "published_register_count": 80,
+    "canonical_finding_count": 80,
+    "calculated_unique_finding_count": 80,
     "stale_unique_finding_count": 79,
-    "root_cause": "ranged_source_location_was_retained_inside_repository_path_during_final_remediation_register_rebuild"
+    "stale_legacy_score_contract_value": 86,
+    "root_cause": "the_final_client_report_completion_pass_rebuilt_the_canonical_register_after_the_earlier_projection_pass_but_did_not_rerun_count_and_legacy_score_alias_reconciliation_before_rendering"
   },
   "implementation": {
     "canonical_scanner_population_authoritative": true,
@@ -38,6 +42,9 @@
     "source_range_retained_as_metadata": true,
     "final_register_rebuild_uses_canonical_repository_path": true,
     "former_finding_ids_retained_as_aliases": true,
+    "final_register_count_synchronized_before_render": true,
+    "legacy_score_contract_reconciled_before_render": true,
+    "final_artifacts_rebuilt_from_reconciled_canonical_truth": true,
     "canonical_register_count_authoritative": true,
     "genuine_invariant_failures_remain_fail_closed": true,
     "scores_changed_to_satisfy_gate": false,
