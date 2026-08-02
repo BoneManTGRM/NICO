@@ -20,15 +20,30 @@ DEFAULT_MAX_NO_PROGRESS_ATTEMPTS = 120
 DEFAULT_STALL_TIMEOUT_SECONDS = 600
 MAX_RECOVERY_ATTEMPTS = 1
 
+# These fields are injected by orchestration or change on every poll. They do not
+# represent scanner or report-stage progress and must not reset the stall clock.
 _TRANSIENT_SIGNAL_KEYS = {
+    "artifact_schema",
+    "assessment_depth",
     "checked_at",
+    "client_delivery_allowed",
+    "commit_sha",
     "created_at",
+    "customer_id",
+    "evidence_ledger_id",
     "heartbeat_at",
+    "human_review_required",
     "last_checked_at",
     "last_poll_at",
     "polled_at",
+    "project_id",
+    "report_language",
+    "repository",
     "request_id",
     "revision",
+    "run_id",
+    "service_id",
+    "stage_id",
     "timestamp",
     "updated_at",
     "watchdog",
