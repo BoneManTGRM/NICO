@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v60-client-ready-render"
+RUNTIME_REVISION = "v60-client-ready-accuracy"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -143,9 +143,11 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "pre_render_truth_reconciliation": True,
         "final_register_count_synchronized_before_render": True,
         "legacy_score_contract_reconciled_before_render": True,
-        "premium_core_rebuilt_after_reconciliation": True,
-        "production_pdf_is_acceptance_artifact": True,
-        "single_detailed_register_enforced": True,
+        "existing_report_renderer_preserved": True,
+        "existing_visual_design_preserved": True,
+        "existing_section_order_preserved": True,
+        "report_redesign_performed": False,
+        "production_pdf_is_accuracy_acceptance_artifact": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,
