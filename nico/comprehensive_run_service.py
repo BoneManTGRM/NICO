@@ -16,8 +16,12 @@ from nico.comprehensive_run_record import (
 )
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
+from nico.comprehensive_stage_watchdog_v1 import (
+    apply_stage_watchdog,
+    rewind_stalled_stage_for_retry,
+)
 
-VERSION = "nico.comprehensive_run_service.v5"
+VERSION = "nico.comprehensive_run_service.v6"
 
 
 class ComprehensiveRunService:
@@ -27,6 +31,11 @@ class ComprehensiveRunService:
     the same optimistic-concurrency store. Approval binds the exact existing artifacts;
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
+
+    Active stages are also guarded by a durable progress watchdog. Repeated continuation
+    calls that only mutate revision or timestamps cannot remain `running` forever. A
+    stalled stage becomes a truthful, evidence-preserving terminal block and may be
+    explicitly retried once without rerunning any previously completed stage.
     """
 
     def __init__(
@@ -77,6 +86,8 @@ class ComprehensiveRunService:
         record = self._store.load(run_id)
         if record.get("terminal"):
             recovered = rewind_blocked_run_for_final_artifact_recovery(record)
+            if recovered == record:
+                recovered = rewind_stalled_stage_for_retry(record)
             if recovered == record:
                 return record
             record = self._store.save(
@@ -141,6 +152,10 @@ class ComprehensiveRunService:
             result: dict[str, Any] = {
                 "status": "blocked",
                 "reason": f"missing_executor:{stage_id}",
+                "error_code": "comprehensive_stage_executor_missing",
+                "error_message": f"No executor is bound for stage {stage_id}.",
+                "retryable": False,
+                "cancelable": True,
             }
         else:
             context = {
@@ -163,7 +178,11 @@ class ComprehensiveRunService:
             raw = executor(context)
             if not isinstance(raw, dict):
                 raise TypeError(f"stage_executor_must_return_dict:{stage_id}")
-            result = raw
+            result = apply_stage_watchdog(
+                record,
+                stage_id=stage_id,
+                result=raw,
+            )
 
         previous_revision = int(record["revision"])
         updated = apply_comprehensive_stage_result(
