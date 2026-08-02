@@ -10,7 +10,7 @@ from playwright.sync_api import Browser, Page, sync_playwright
 import mobile_failure_layout_probe as failure_layout
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.webkit.v5"
+VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"
 OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
