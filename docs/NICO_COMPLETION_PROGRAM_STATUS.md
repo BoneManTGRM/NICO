@@ -30,7 +30,7 @@ Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete 
 
 Current production main: `f457ed47fc374358fe47e23128066c771db4f261`
 
-Current continuation branch: `codex/final-report-atomic-single-pass`.
+Current continuation: PR #992, branch `codex/final-report-atomic-single-pass`.
 
 No later work package may begin before this package is post-merge verified.
 
@@ -61,7 +61,7 @@ The production final-report path also performed scanner-truth traversal at the p
 
 ## Active continuation
 
-The current branch implements one linked repair:
+PR #992 implements one linked repair:
 
 - dispatch final report generation before the generic background-stage branch;
 - execute it through a bounded atomic publication boundary;
@@ -80,7 +80,7 @@ The current branch implements one linked repair:
 
 This package cannot be marked complete until:
 
-- every exact-head CI, security, frontend, Mobile Restart, iOS WebKit, Postgres, resilience, report, and production-acceptance check passes;
+- every PR #992 exact-head CI, security, frontend, Mobile Restart, iOS WebKit, Postgres, resilience, report, and production-acceptance check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - post-merge Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass;
