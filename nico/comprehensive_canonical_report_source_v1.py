@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_maturity_label_truth_v1 import (
+    synchronize_maturity_label_truth,
+)
 from nico.comprehensive_report_package import (
     VERSION as SOURCE_VERSION,
     _assessment,
@@ -12,7 +16,7 @@ from nico.comprehensive_report_package import (
     _text,
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v1"
+VERSION = "nico.comprehensive_canonical_report_source.v2"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -32,6 +36,11 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     rewrite, parse, and hash large artifacts twice. This source reuses the same native
     identity, assessment, stage-summary, and decision-summary functions while omitting
     all pre-v2 artifact rendering.
+
+    Before stage evidence is flattened, one client-readiness maturity taxonomy is also
+    projected into every explicit maturity alias. This prevents older internal labels
+    such as ``maturity_level: Senior`` from contradicting a canonical client label such
+    as ``Exceptional`` in Markdown, HTML, JSON, or PDF.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -62,23 +71,26 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
             "client_delivery_allowed": False,
         }
 
+    stages, maturity_truth = synchronize_maturity_label_truth(raw_stages)
     ordered = [
         _stage_summary(str(stage_id), result)
-        for stage_id, result in raw_stages.items()
+        for stage_id, result in stages.items()
         if isinstance(result, Mapping) and str(stage_id) != _FINAL_STAGE_ID
     ]
-    assessment = _assessment(dict(raw_stages))
+    assessment = _assessment(dict(stages))
     assessment = dict(assessment)
     assessment["repository"] = identity["repository"]
     assessment["commit_sha"] = identity["commit_sha"]
     assessment["run_id"] = identity["run_id"]
     assessment["executive_summary"] = _decision_summary(identity, assessment, ordered)
+    assessment["maturity_label_truth"] = deepcopy(maturity_truth)
 
     canonical = {
         "service_id": "comprehensive",
         "identity": identity,
         "assessment": assessment,
         "stage_summaries": ordered,
+        "maturity_label_truth": deepcopy(maturity_truth),
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -95,6 +107,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_truth_sha256": truth_sha,
         "source_artifact_schema": SOURCE_VERSION,
         "canonical_only_source": True,
+        "maturity_label_truth": deepcopy(maturity_truth),
         "legacy_markdown_rendered": False,
         "legacy_html_rendered": False,
         "legacy_pdf_rendered": False,
@@ -112,6 +125,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_report": canonical,
         "assessment": assessment,
         "stage_summaries": ordered,
+        "maturity_label_truth": deepcopy(maturity_truth),
         "canonical_truth_sha256": truth_sha,
         "canonical_only_source": True,
         "single_artifact_render_required": True,
