@@ -6,15 +6,7 @@ The machine-readable source of truth for the active package is:
 
 `docs/client-ready-report-accuracy-observation.json`
 
-The exact current production failure evidence is:
-
-`docs/production-final-report-background-timeout-f457.json`
-
-Earlier retained observations remain available in:
-
-- `docs/production-final-report-scanner-truth-failure.json`
-- `docs/production-dependency-stage-timeout-observation.json`
-- `docs/production-final-report-stage-stall-observation.json`
+Earlier exact production observations remain available in the `docs/production-*observation.json` files and immutable workflow artifacts.
 
 The previously completed dependency remains recorded in:
 
@@ -22,71 +14,67 @@ The previously completed dependency remains recorded in:
 
 ## Completed dependency
 
-Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and post-merge verified. Its exact-commit, evidence-retention, human-review, report-preservation, and blocked-delivery boundaries remain mandatory.
+Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and post-merge verified. Its exact-commit, evidence-retention, human-review, report-preservation, security, and blocked-delivery boundaries remain mandatory.
 
 ## First incomplete package
 
 Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete dependency-ordered package.
 
-Current production main: `f457ed47fc374358fe47e23128066c771db4f261`
+Current production main: `9db8f1e7dad4324e86240ff2104a953a559d1a6f`
 
-Current continuation: PR #992, branch `codex/final-report-atomic-single-pass`.
+Current continuation: PR #996, branch `codex/single-render-final-report-v1`.
 
 No later work package may begin before this package is post-merge verified.
 
-## Exact post-merge production failure
+## Exact post-merge production failures
 
-PR #991 merged as `f457ed47fc374358fe47e23128066c771db4f261`. Exact Vercel and Railway production identity were verified.
+PR #992 passed every exact-head check with zero unresolved review threads and merged as `9db8f1e7dad4324e86240ff2104a953a559d1a6f`. Exact Vercel and Railway production identity were verified.
 
-The mandatory post-merge Mobile Restart proof created run `comprun_33925b5a68994333ab148ec925d5bd2f` against that exact release.
+Mobile Restart created exact run `comprun_7474de8e01814ed592659eee68b6a715`. It completed 19 stages, reached `final_comprehensive_report_generation` at 82.61 percent, and terminated with:
 
-The run completed 19 stages and reached `final_comprehensive_report_generation` at 82.61 percent. It then failed with:
+`final_report_execution_timeout`
 
-`background_stage_execution_timeout:stage=final_comprehensive_report_generation:task_id=comprehensive_stage_83fcc878a480cb96e397165c6ada:elapsed_seconds=908.093`
+The retained error states that final report generation exceeded the 240-second bounded publication window. No final artifact was retained, human review was not reached, and client delivery remained blocked.
 
-The retained state proves:
+Two-Service Production Acceptance independently created run `comprun_b60488fd729b41bea5263aa1e18ce881` and also terminated as blocked at the final report stage.
 
-- the final provider exceeded the generic 900-second detached background boundary;
-- no final report package was retained;
-- no report ID or PDF was available;
-- human review was not reached;
-- client delivery remained blocked;
-- the prior completed-analyzer semantic contradiction was not the current failure.
+## Verified duplicate publication architecture
 
-## Verified current root cause
+The current provider still performs two complete artifact passes:
 
-Final report publication still depended on the generic background-stage mechanism. That path combines process-local execution with task telemetry and performs repeated large-evidence processing before final rendering.
+1. the native delegate builds Markdown, HTML, JSON, and a draft PDF;
+2. the production execution wrapper parses and semantically finalizes that PDF;
+3. `v2_production_authority` then copies the result and calls `finalize_report_package`, rebuilding the authoritative Markdown, HTML, JSON, and PDF.
 
-The production final-report path also performed scanner-truth traversal at the provider boundary and again in the patched report builder. The native report detail flattener had an emitted-line limit but no shared node-visit limit, so deeply nested evidence that emitted few lines could still consume an unbounded amount of work.
+The exact runtime proof establishes that the combined provider path exceeds the atomic boundary. The source establishes the duplicate render. PR #996 removes the duplicate instead of increasing the timeout.
 
 ## Active continuation
 
-PR #992 implements one linked repair:
+PR #996:
 
-- dispatch final report generation before the generic background-stage branch;
-- execute it through a bounded atomic publication boundary;
-- avoid another full evidence-tree deepcopy inside the final worker;
-- canonicalize scanner truth through bounded copy-on-write traversal;
-- embed a manifest that causes the report builder to skip duplicate canonicalization;
-- bound recursive report evidence flattening with one shared visit budget;
-- validate report ID, Markdown, HTML, canonical JSON, PDF signature, hashes, and exact run identity;
-- persist the complete validated result through the canonical Comprehensive run-store transaction;
-- keep scanner, triage, and executive-analysis background execution unchanged;
-- keep the final semantic verifier strict;
-- preserve scores, findings, report design, renderer, section order, and PDF composition;
-- preserve human review and blocked client delivery.
+- builds a canonical-only source from the same native identity, assessment, stage-summary, decision-summary, and canonical-hash functions;
+- skips legacy Markdown, HTML, and PDF rendering for real Comprehensive stage contexts;
+- invokes the authoritative v2 renderer exactly once after scanner, score, language, lifecycle, and approval truth are bound;
+- uses copy-on-write runtime-truth injection instead of deep-copying the report package;
+- retains phase timing for canonical construction, runtime-truth injection, authoritative rendering, and total publication;
+- preserves a delegate fallback only for synthetic callers without canonical stage context;
+- requires explicit run, repository, commit, and evidence-ledger identity in the final canonical JSON;
+- requires a retained canonical truth hash;
+- keeps strict semantic and cross-format validation;
+- changes no score, scanner result, finding, report design, renderer, section order, or PDF composition;
+- keeps human review mandatory and client delivery blocked.
 
 ## Completion gate
 
 This package cannot be marked complete until:
 
-- every PR #992 exact-head CI, security, frontend, Mobile Restart, iOS WebKit, Postgres, resilience, report, and production-acceptance check passes;
+- every PR #996 exact-head CI, CodeQL, security, frontend, Postgres, resilience, report, Mobile Restart, iOS WebKit, and production-acceptance check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - post-merge Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass;
-- two distinct live Comprehensive runs reach expert review without manual stage recovery;
+- two distinct fresh Comprehensive runs reach expert review without manual stage recovery;
+- final report generation completes inside the atomic boundary with one authoritative render;
 - their existing-design PDFs contain one canonical analyzer-coverage value;
 - no completed analyzer is listed as incomplete;
-- final report generation completes inside the bounded atomic publication path;
 - no stale blocked or running contract is presented as current truth;
 - all approval and client-delivery boundaries remain visible.
