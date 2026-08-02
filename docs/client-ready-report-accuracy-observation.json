@@ -4,11 +4,10 @@
   "workstream_name": "client_readiness",
   "work_package": "exact_head_client_report_accuracy",
   "dependency_state": "first_incomplete",
-  "state": "retained_scanner_boundary_verified_new_maturity_contradiction_repair_in_progress",
-  "current_main_sha": "9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130",
-  "continuation_branch": "codex/canonical-maturity-label-truth",
-  "continuation_pr": 998,
-  "superseded_unmerged_prs": [977, 990, 993, 995],
+  "state": "pre_flatten_maturity_repair_insufficient_post_readiness_repair_in_progress",
+  "current_main_sha": "d19df900b178593669cd971575975898a29f3ec1",
+  "continuation_branch": "codex/post-readiness-maturity-text-truth",
+  "continuation_pr": 999,
   "completed_repair_chain": {
     "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
     "run_recovery_merge_sha": "116a896f031f258426b7f93759323667867c34ee",
@@ -23,7 +22,8 @@
     "production_final_context_truth_merge_sha": "f457ed47fc374358fe47e23128066c771db4f261",
     "atomic_final_publication_merge_sha": "9db8f1e7dad4324e86240ff2104a953a559d1a6f",
     "single_render_publication_merge_sha": "494c274bb455a39190b0e00c52fc3aa9f4de892e",
-    "retained_scanner_publication_merge_sha": "9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130"
+    "retained_scanner_publication_merge_sha": "9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130",
+    "pre_flatten_maturity_truth_merge_sha": "d19df900b178593669cd971575975898a29f3ec1"
   },
   "prior_completed_dependency": {
     "workstream": 1,
@@ -32,7 +32,7 @@
     "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
   },
   "current_production_identity": {
-    "release_sha": "9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130",
+    "release_sha": "d19df900b178593669cd971575975898a29f3ec1",
     "vercel": "verified_success",
     "railway": "verified_success",
     "deployment_environment": "production",
@@ -40,16 +40,17 @@
   },
   "exact_current_failure": {
     "workflow": "Mobile Restart Production Proof",
-    "workflow_run_id": 30768701530,
-    "workflow_artifact_id": 8839868897,
-    "run_id": "comprun_07f23ee3e93341e9b2508b5881f4e0cd",
+    "workflow_run_id": 30769480932,
+    "workflow_artifact_id": 8840080773,
+    "run_id": "comprun_294f80dd7b5746b9858a702788da521c",
     "repository": "BoneManTGRM/NICO",
-    "commit_sha": "9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130",
+    "commit_sha": "d19df900b178593669cd971575975898a29f3ec1",
     "stage": "final_comprehensive_report_generation",
     "canonical_progress_percent": 82.61,
     "terminal": true,
     "lifecycle_status": "blocked",
-    "canonical_source_timing_seconds": 0.004,
+    "canonical_source_schema": "nico.comprehensive_canonical_report_source.v2",
+    "canonical_source_timing_seconds": 0.015,
     "response_bounded": true,
     "technical_reason": "v2_production_publication_failed:ValueError:client report retained a maturity label conflicting with Exceptional: maturity_level: Senior",
     "canonical_maturity_label": "Exceptional",
@@ -58,36 +59,21 @@
     "human_review_required": true,
     "client_delivery_allowed": false
   },
-  "post_merge_proof_status": {
-    "mobile_restart": "failed_semantic_maturity_contradiction",
-    "ios_webkit": "failed_same_release_boundary",
-    "two_service": "failed_final_report_generation",
-    "former_scanner_store_timeout_is_current_root_cause": false,
-    "final_stage_scanner_store_read_removed": true,
-    "final_stage_scanner_execution_removed": true,
-    "canonical_source_is_bounded": true
-  },
   "verified_root_cause": {
-    "id": "stale_internal_maturity_alias_flattened_before_final_render",
-    "evidence_status": "verified_by_exact_post_merge_artifact",
-    "effect": "The client-readiness contract classifies the report as Exceptional while prior stage evidence still renders the older explicit alias maturity_level: Senior. The strict semantic gate blocks the contradictory package.",
-    "repair_boundary": "Canonicalize explicit maturity aliases in prior stage results before comprehensive canonical stage summaries are flattened and rendered."
+    "id": "final_maturity_contract_created_after_pre_flatten_reconciliation",
+    "evidence_status": "verified_by_exact_post_merge_artifact_and_source",
+    "effect": "The preliminary stage synchronizer runs before the final client-readiness contract exists. comprehensive_client_readiness_v59 later derives Exceptional from technical score and normalizes structured fields, but flattened explicit strings such as maturity_level: Senior remain unchanged.",
+    "repair_boundary": "Wrap comprehensive_client_readiness_v59.reconcile_client_readiness and synchronize explicit maturity aliases after client_readiness_contract.maturity_label exists but before authoritative report rendering."
   },
   "active_continuation": {
-    "canonical_maturity_source": "client_readiness_contract.maturity_label",
-    "explicit_structured_aliases_synchronized": [
-      "maturity_label",
-      "maturity_level",
-      "maturity_rating",
-      "maturity_tier",
-      "maturity_signal.level",
-      "maturity_signal.label"
-    ],
+    "post_readiness_wrapper_installed": true,
+    "canonical_source": "client_readiness_contract.maturity_label",
+    "explicit_structured_aliases_synchronized": true,
     "explicit_text_aliases_synchronized": true,
     "general_word_senior_replacement": false,
     "unrelated_role_seniority_preserved": true,
-    "source_stage_results_mutated": false,
-    "report_artifacts_traversed_before_render": false,
+    "unscored_maturity_left_unchanged": true,
+    "source_readiness_logic_replaced": false,
     "strict_semantic_validator_remains_enabled": true,
     "single_authoritative_v2_renderer_preserved": true,
     "atomic_final_report_publication_preserved": true,
