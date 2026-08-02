@@ -5,7 +5,10 @@ from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol
 
-from nico.comprehensive_run_record import restore_comprehensive_run_record, validate_comprehensive_run_record
+from nico.comprehensive_run_record import (
+    restore_comprehensive_run_record,
+    validate_comprehensive_run_record,
+)
 
 VERSION = "nico.comprehensive_run_store.v1"
 
@@ -35,9 +38,18 @@ class ComprehensiveRunStore:
     overwrite the same run. Payload integrity is revalidated on every write
     and read. The SQL is intentionally limited to portable DB-API operations;
     production can use a psycopg connection factory with ``dialect='postgres'``.
+
+    The final-report lease store intentionally uses the same adapter. Read-only
+    properties expose that adapter without requiring worker code to depend on private
+    attributes or duplicate environment parsing.
     """
 
-    def __init__(self, connection_factory: ConnectionFactory, *, dialect: str = "sqlite") -> None:
+    def __init__(
+        self,
+        connection_factory: ConnectionFactory,
+        *,
+        dialect: str = "sqlite",
+    ) -> None:
         normalized = dialect.strip().lower()
         if normalized not in {"sqlite", "postgres"}:
             raise ValueError("unsupported_dialect")
@@ -47,6 +59,14 @@ class ComprehensiveRunStore:
     @property
     def placeholder(self) -> str:
         return "%s" if self._dialect == "postgres" else "?"
+
+    @property
+    def connection_factory(self) -> ConnectionFactory:
+        return self._connection_factory
+
+    @property
+    def dialect(self) -> str:
+        return self._dialect
 
     @contextmanager
     def _connection(self) -> Iterator[ConnectionLike]:
@@ -101,7 +121,9 @@ class ComprehensiveRunStore:
                 cursor.execute(statement, values)
             except Exception as exc:
                 connection.rollback()
-                raise ComprehensiveRunConflict(f"run_already_exists:{identity['run_id']}") from exc
+                raise ComprehensiveRunConflict(
+                    f"run_already_exists:{identity['run_id']}"
+                ) from exc
             connection.commit()
         return deepcopy(canonical)
 
@@ -110,87 +132,107 @@ class ComprehensiveRunStore:
         if not normalized:
             raise ValueError("run_id_required")
         p = self.placeholder
+        statement = f"""
+        SELECT payload FROM nico_comprehensive_runs WHERE run_id = {p}
+        """
         with self._connection() as connection:
             cursor = connection.cursor()
-            cursor.execute(f"SELECT payload FROM nico_comprehensive_runs WHERE run_id = {p}", (normalized,))
+            cursor.execute(statement, (normalized,))
             row = cursor.fetchone()
         if row is None:
             raise ComprehensiveRunNotFound(normalized)
-        payload = row[0]
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        if not isinstance(payload, dict):
-            raise ValueError("persisted_payload_must_be_object")
-        return restore_comprehensive_run_record(payload)
+        payload = self._decode_payload(row[0])
+        restored = restore_comprehensive_run_record(payload)
+        return self._validated_copy(restored)
 
-    def save(self, record: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
+    def save(
+        self,
+        record: dict[str, Any],
+        *,
+        expected_revision: int,
+    ) -> dict[str, Any]:
         canonical = self._validated_copy(record)
         identity = canonical["identity"]
-        current_revision = int(canonical["revision"])
-        if current_revision != int(expected_revision) + 1:
-            raise ComprehensiveRunConflict(
-                f"revision_must_advance_once:expected:{int(expected_revision) + 1}:actual:{current_revision}"
-            )
         p = self.placeholder
         statement = f"""
-        UPDATE nico_comprehensive_runs SET
-            customer_id = {p}, project_id = {p}, repository = {p}, commit_sha = {p},
-            evidence_ledger_id = {p}, status = {p}, revision = {p}, terminal = {p},
-            integrity_sha256 = {p}, updated_at = {p}, payload = {p}
+        UPDATE nico_comprehensive_runs
+        SET customer_id = {p}, project_id = {p}, repository = {p},
+            commit_sha = {p}, evidence_ledger_id = {p}, status = {p},
+            revision = {p}, terminal = {p}, integrity_sha256 = {p},
+            updated_at = {p}, payload = {p}
         WHERE run_id = {p} AND revision = {p}
         """
-        values = self._row_values(canonical)[1:] + (identity["run_id"], int(expected_revision))
+        values = (
+            identity["customer_id"],
+            identity["project_id"],
+            identity["repository"],
+            identity["commit_sha"],
+            identity["evidence_ledger_id"],
+            canonical["status"],
+            int(canonical["revision"]),
+            bool(canonical["terminal"]),
+            canonical["integrity_sha256"],
+            canonical["updated_at"],
+            self._encode_payload(canonical),
+            identity["run_id"],
+            int(expected_revision),
+        )
         with self._connection() as connection:
             cursor = connection.cursor()
             cursor.execute(statement, values)
             if int(cursor.rowcount or 0) != 1:
                 connection.rollback()
                 raise ComprehensiveRunConflict(
-                    f"stale_revision:{identity['run_id']}:expected:{int(expected_revision)}"
+                    f"revision_conflict:{identity['run_id']}:{expected_revision}"
                 )
             connection.commit()
         return deepcopy(canonical)
 
-    def list_recent(self, *, customer_id: str, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        customer = str(customer_id or "").strip()
-        project = str(project_id or "").strip()
-        if not customer or not project:
-            raise ValueError("customer_and_project_required")
-        bounded_limit = max(1, min(200, int(limit)))
-        p = self.placeholder
-        statement = f"""
-        SELECT payload FROM nico_comprehensive_runs
-        WHERE customer_id = {p} AND project_id = {p}
-        ORDER BY updated_at DESC, run_id DESC
-        LIMIT {p}
-        """
-        with self._connection() as connection:
-            cursor = connection.cursor()
-            cursor.execute(statement, (customer, project, bounded_limit))
-            rows = cursor.fetchall()
-        records: list[dict[str, Any]] = []
-        for row in rows:
-            payload = row[0]
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            records.append(restore_comprehensive_run_record(payload))
-        return records
-
     def _validated_copy(self, record: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(record, dict):
-            raise TypeError("run_record_must_be_object")
-        canonical = deepcopy(record)
-        validation = validate_comprehensive_run_record(canonical)
+        candidate = deepcopy(record)
+        validation = validate_comprehensive_run_record(candidate)
         if validation["status"] != "valid":
-            raise ValueError("invalid_run_record:" + ",".join(validation["violations"]))
-        return canonical
+            raise ValueError(
+                "invalid_comprehensive_run_record:"
+                + ",".join(validation["violations"])
+            )
+        return candidate
+
+    def _encode_payload(self, record: dict[str, Any]) -> Any:
+        if self._dialect == "postgres":
+            try:
+                from psycopg.types.json import Jsonb
+
+                return Jsonb(record)
+            except ImportError:
+                return json.dumps(
+                    record,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+        return json.dumps(
+            record,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+
+    @staticmethod
+    def _decode_payload(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return deepcopy(value)
+        if isinstance(value, (bytes, bytearray)):
+            value = value.decode("utf-8")
+        if isinstance(value, str):
+            decoded = json.loads(value)
+            if not isinstance(decoded, dict):
+                raise ValueError("stored_payload_must_be_object")
+            return decoded
+        raise ValueError("stored_payload_unreadable")
 
     def _row_values(self, record: dict[str, Any]) -> tuple[Any, ...]:
         identity = record["identity"]
-        payload: Any = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        if self._dialect == "postgres":
-            # psycopg accepts serialized JSON for JSONB columns without requiring a hard dependency here.
-            payload = payload
         return (
             identity["run_id"],
             identity["customer_id"],
@@ -203,7 +245,7 @@ class ComprehensiveRunStore:
             bool(record["terminal"]),
             record["integrity_sha256"],
             record["updated_at"],
-            payload,
+            self._encode_payload(record),
         )
 
 
