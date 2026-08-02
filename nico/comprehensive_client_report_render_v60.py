@@ -9,11 +9,14 @@ from typing import Any, Callable, Mapping
 
 from pypdf import PdfReader
 
-from nico.comprehensive_client_readiness_v59 import reconcile_client_readiness
+from nico.comprehensive_authoritative_scanner_truth_v62 import (
+    reconcile_authoritative_scanner_truth,
+)
 
-VERSION = "nico.comprehensive_client_report_render.v60"
+VERSION = "nico.comprehensive_client_report_render.v62"
 _PREPARE_MARKER = "_nico_comprehensive_client_report_prepare_v60"
 _FINALIZE_MARKER = "_nico_comprehensive_client_report_finalize_v60"
+_PROJECT_MARKER = "_nico_comprehensive_client_report_project_v62"
 
 _DIAGNOSTIC_KEYS = {
     "report_contract_status",
@@ -73,11 +76,7 @@ def _extract_internal_diagnostics(
     *,
     path: str = "json",
 ) -> tuple[Any, list[dict[str, Any]]]:
-    """Move only superseded diagnostics out of current client-facing truth.
-
-    Reconciled and passing contract states remain in canonical JSON. Historical blocked
-    states and their obsolete reasons remain retained in a package-level audit envelope.
-    """
+    """Move superseded pre-finalization diagnostics outside current report truth."""
 
     audit: list[dict[str, Any]] = []
     if isinstance(node, list):
@@ -118,11 +117,11 @@ def _extract_internal_diagnostics(
 def reconcile_before_existing_report_renderer(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Correct canonical truth without replacing any rendered report surface."""
+    """Correct exact-run truth without replacing any rendered report surface."""
 
     result = deepcopy(dict(package))
     canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
-    reconciled = reconcile_client_readiness(canonical)
+    reconciled = reconcile_authoritative_scanner_truth(canonical)
     client_truth, audit = _extract_internal_diagnostics(reconciled)
     result["json"] = client_truth
     if audit:
@@ -214,9 +213,6 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
     )
     combined = "\n".join((markdown, rendered_html, extracted))
     coverage, incomplete, maturity, denominator = _expected_truth(package)
-    # Production Comprehensive runs request the full nine-analyzer set. Smaller
-    # synthetic fixtures remain useful for compatibility tests but are not commercial
-    # client reports and therefore do not need to contain every premium evidence row.
     scanner_backed_report = denominator >= 9
 
     observed_coverage = _coverage_values(combined)
@@ -286,12 +282,32 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
     }
 
 
+def _bind_single_pass_projection() -> bool:
+    """Reapply exact-run truth after the renderer's authoritative projection pass."""
+
+    from nico import v2_single_pass_premium_report as single_pass
+
+    current = single_pass.project_authoritative_canonical
+    if getattr(current, _PROJECT_MARKER, False):
+        return True
+
+    @wraps(current)
+    def project(value: Mapping[str, Any]) -> dict[str, Any]:
+        return reconcile_authoritative_scanner_truth(current(value))
+
+    setattr(project, _PROJECT_MARKER, True)
+    setattr(project, "_nico_previous", current)
+    single_pass.project_authoritative_canonical = project
+    return single_pass.project_authoritative_canonical is project
+
+
 def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
-    """Bind truth correction before, and validation after, the approved renderer."""
+    """Bind truth correction before, during, and after the approved renderer."""
 
     from nico import client_report_completion_v2 as completion
     from nico import phase17_canonical_artifact_rebuild_v1 as phase17
 
+    projection_bound = _bind_single_pass_projection()
     current_prepare: Callable[[Mapping[str, Any]], dict[str, Any]] = (
         completion.prepare_client_report_package
     )
@@ -307,25 +323,21 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
         phase17.prepare_client_report_package = current_prepare
         phase17.finalize_client_report_package = current_finalize
         return {
-            "status": "already_installed",
+            "status": "already_installed" if projection_bound else "blocked",
             "version": VERSION,
             "prepare_bound": True,
             "finalize_bound": True,
+            "single_pass_projection_bound": projection_bound,
             "existing_renderer_preserved": True,
         }
 
     @wraps(current_prepare)
     def prepare(package: Mapping[str, Any]) -> dict[str, Any]:
-        # Let the existing completion layer reconcile its legacy report contract first,
-        # then apply current scanner, coverage, maturity, and identifier truth before
-        # Phase 17 invokes the unchanged premium renderer.
         prepared = current_prepare(package)
         return reconcile_before_existing_report_renderer(prepared)
 
     @wraps(current_finalize)
     def finalize(package: Mapping[str, Any]) -> dict[str, Any]:
-        # The existing finalizer calls the patched prepare function internally, so the
-        # approved renderer receives reconciled canonical truth without any redesign.
         result = current_finalize(package)
         result = reconcile_before_existing_report_renderer(result)
         validation = validate_existing_report_accuracy(result)
@@ -344,21 +356,30 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
 
     completion.prepare_client_report_package = prepare
     completion.finalize_client_report_package = finalize
-    # Phase 17 imported these functions by value. Rebind those production aliases
-    # explicitly so live Comprehensive runs use the corrected pre-render truth.
     phase17.prepare_client_report_package = prepare
     phase17.finalize_client_report_package = finalize
 
+    bound = all(
+        (
+            completion.prepare_client_report_package is prepare,
+            completion.finalize_client_report_package is finalize,
+            phase17.prepare_client_report_package is prepare,
+            phase17.finalize_client_report_package is finalize,
+            projection_bound,
+        )
+    )
     return {
-        "status": "installed",
+        "status": "installed" if bound else "blocked",
         "version": VERSION,
         "prepare_bound": completion.prepare_client_report_package is prepare,
         "finalize_bound": completion.finalize_client_report_package is finalize,
         "phase17_prepare_alias_bound": phase17.prepare_client_report_package is prepare,
         "phase17_finalize_alias_bound": phase17.finalize_client_report_package is finalize,
+        "single_pass_projection_bound": projection_bound,
         "existing_renderer_preserved": True,
         "existing_visual_design_preserved": True,
         "canonical_truth_reconciled_before_existing_renderer": True,
+        "canonical_truth_reconciled_after_authoritative_projection": True,
         "production_pdf_is_accuracy_acceptance_artifact": True,
         "redesign_performed": False,
         "human_review_required": True,
