@@ -31,7 +31,7 @@ def test_guard_exposes_mobile_safe_recovery_controls() -> None:
     source = GUARD.read_text(encoding="utf-8")
     assert 'data-comprehensive-stuck-run-recovery="true"' in source
     assert 'data-clear-stuck-comprehensive-run="true"' in source
-    assert "Retry saved run" in source
+    assert "Retry exact run" in source
     assert "Clear stuck run and start new" in source
     assert "Keep waiting" in source
     assert "env(safe-area-inset-bottom)" in source
@@ -45,7 +45,6 @@ def test_guard_does_not_treat_every_active_run_as_stuck() -> None:
     assert "const stale = Boolean(" in source
     assert "const timedOut = Boolean(" in source
     assert "if (dismissed || (!stale && !timedOut))" in source
-    assert "timedOutRunId.current = currentRunId()" in source
 
 
 def test_keep_waiting_dismisses_the_current_run_until_identity_changes() -> None:
@@ -55,6 +54,32 @@ def test_keep_waiting_dismisses_the_current_run_until_identity_changes() -> None
     assert 'timedOutRunId.current = ""' in source
     assert "onClick={keepWaiting}" in source
     assert "dismissedRunId.current !== runId" in source
+
+
+def test_timeout_recovers_run_identity_from_the_exact_request_path() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "function runIdFromLifecyclePath(path: string)" in source
+    assert "const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path)" in source
+    assert "retainExactRunIdentity(timeoutRunId)" in source
+    assert 'url.searchParams.set(ACTIVE_RUN_QUERY_KEY, exactRunId)' in source
+    assert 'window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY' in source
+    assert "setRecoveryRunId(timeoutRunId)" in source
+
+
+def test_readiness_timeout_without_an_accepted_run_does_not_show_recovery() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "if (!timeoutRunId)" in source
+    assert 'setRecoveryRunId("")' in source
+    assert "setVisible(false)" in source
+    assert "Recovery controls are shown only when NICO can retain" in source
+
+
+def test_retry_action_restores_exact_identity_before_reload() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "const retryExactRun = () =>" in source
+    assert "retainExactRunIdentity(runId)" in source
+    assert "window.location.reload()" in source
+    assert "onClick={retryExactRun}" in source
 
 
 def test_guard_is_mounted_before_assessment_transport_bridges() -> None:

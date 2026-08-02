@@ -16,12 +16,13 @@ from nico.comprehensive_run_record import (
 )
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
+from nico.comprehensive_stage_execution_timeout_v1 import execute_stage_with_timeout
 from nico.comprehensive_stage_watchdog_v1 import (
     apply_stage_watchdog,
     rewind_stalled_stage_for_retry,
 )
 
-VERSION = "nico.comprehensive_run_service.v6"
+VERSION = "nico.comprehensive_run_service.v7"
 
 
 class ComprehensiveRunService:
@@ -32,10 +33,12 @@ class ComprehensiveRunService:
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
 
-    Active stages are also guarded by a durable progress watchdog. Repeated continuation
-    calls that only mutate revision or timestamps cannot remain `running` forever. A
-    stalled stage becomes a truthful, evidence-preserving terminal block and may be
-    explicitly retried once without rerunning any previously completed stage.
+    Every provider execution has a server-side response boundary. Active stages are
+    also guarded by a durable progress watchdog. A provider that does not return cannot
+    hold the API worker indefinitely, and repeated continuation calls that only mutate
+    revision or timestamps cannot remain `running` forever. Both conditions become a
+    truthful, evidence-preserving terminal block that may be explicitly retried once
+    without rerunning any previously completed stage.
     """
 
     def __init__(
@@ -175,9 +178,11 @@ class ComprehensiveRunService:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
-            raw = executor(context)
-            if not isinstance(raw, dict):
-                raise TypeError(f"stage_executor_must_return_dict:{stage_id}")
+            raw = execute_stage_with_timeout(
+                executor,
+                context,
+                stage_id=stage_id,
+            )
             result = apply_stage_watchdog(
                 record,
                 stage_id=stage_id,

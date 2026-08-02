@@ -1,0 +1,46 @@
+{
+  "artifact_schema": "nico.production_run_timeout_observation.v1",
+  "observed_at": "2026-08-02T09:06:00-06:00",
+  "production_main_sha": "671d213ca70d612e1f0386cb05d86b138da0df81",
+  "repository": "BoneManTGRM/NICO",
+  "run_id": "comprun_89d388dcc1794635aed95707f16ab5e3",
+  "observed_sequence": [
+    {
+      "stage": "risk_reduction_and_executive_briefing",
+      "canonical_progress_percent": 83,
+      "elapsed_display": "32:09",
+      "status": "assessment_in_progress",
+      "assessment_package": "awaiting_scanner_completion"
+    },
+    {
+      "action": "browser_refresh",
+      "displayed_state": "checking_readiness",
+      "displayed_message": "Verifying assessment service readiness and durable storage."
+    },
+    {
+      "recovery_overlay": "shown",
+      "reason": "bounded_request_timeout",
+      "displayed_message": "The assessment service did not respond before the bounded request timeout."
+    }
+  ],
+  "verified_defects": [
+    "an individual stage executor can hold the continuation request longer than the browser response boundary",
+    "a refresh can time out while retrieving the saved exact run",
+    "the timeout overlay can lose the visible run identity even though the timed-out request path contains it"
+  ],
+  "repair_scope": {
+    "server_side_stage_execution_timeout": true,
+    "default_stage_execution_timeout_seconds": 240,
+    "exact_run_identity_extracted_from_timeout_path": true,
+    "exact_run_identity_retained_in_storage_and_url": true,
+    "readiness_timeout_without_accepted_run_uses_normal_error_ui": true,
+    "completed_stage_evidence_preserved": true,
+    "one_explicit_stage_retry": true,
+    "unlimited_retries_allowed": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "scores_changed": false,
+    "scanner_findings_changed": false,
+    "report_design_changed": false
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
@@ -9,8 +9,14 @@ const STALE_CHECK_INTERVAL_MS = 30_000;
 const SHORT_REQUEST_TIMEOUT_MS = 45_000;
 const LONG_REQUEST_TIMEOUT_MS = 300_000;
 const LIFECYCLE_PATH = /^\/api\/nico\/(?:diagnostics\/comprehensive-runtime|assessment\/comprehensive-(?:intake|run\/[^/?#]+(?:\/continue)?))(?:[?#]|$)/;
+const RUN_PATH = /\/assessment\/comprehensive-run\/([^/?#]+)/;
 
 const activeControllers = new Set<AbortController>();
+
+type TimeoutDetail = {
+  path?: string;
+  method?: string;
+};
 
 function requestPath(input: RequestInfo | URL): string {
   if (typeof input === "string") return new URL(input, window.location.origin).pathname;
@@ -21,6 +27,16 @@ function requestPath(input: RequestInfo | URL): string {
 function requestTimeout(path: string, method: string): number {
   if (method === "GET" || path.includes("/diagnostics/comprehensive-runtime")) return SHORT_REQUEST_TIMEOUT_MS;
   return LONG_REQUEST_TIMEOUT_MS;
+}
+
+function runIdFromLifecyclePath(path: string): string {
+  const match = String(path || "").match(RUN_PATH);
+  if (!match?.[1]) return "";
+  try {
+    return decodeURIComponent(match[1]).trim();
+  } catch {
+    return match[1].trim();
+  }
 }
 
 function combinedRequest(
@@ -48,7 +64,9 @@ function combinedRequest(
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
   const timeout = window.setTimeout(() => {
     controller.abort(new DOMException("NICO assessment request timed out.", "TimeoutError"));
-    window.dispatchEvent(new CustomEvent("nico:comprehensive-request-timeout", {detail: {path, method}}));
+    window.dispatchEvent(new CustomEvent<TimeoutDetail>("nico:comprehensive-request-timeout", {
+      detail: {path, method},
+    }));
   }, requestTimeout(path, method));
 
   const boundedInit: RequestInit = {...init, signal: controller.signal, cache: "no-store"};
@@ -91,6 +109,28 @@ function currentRunId(): string {
     || "";
 }
 
+function retainExactRunIdentity(runId: string): void {
+  const exactRunId = String(runId || "").trim();
+  if (!exactRunId) return;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, JSON.stringify({
+      ...existing,
+      version: 1,
+      runId: exactRunId,
+      startedAt: Number(existing.startedAt) > 0 ? Number(existing.startedAt) : Date.now(),
+    }));
+  } catch {
+    // The URL remains the exact-run recovery source when storage is unavailable.
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set("tier", "comprehensive");
+  url.searchParams.set(ACTIVE_RUN_QUERY_KEY, exactRunId);
+  url.hash = "assessment";
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 function clearRunIdentity(): void {
   activeControllers.forEach((controller) => controller.abort(new DOMException("Assessment recovery canceled.", "AbortError")));
   activeControllers.clear();
@@ -110,6 +150,7 @@ function clearRunIdentity(): void {
 export default function ComprehensiveStuckRunRecovery() {
   const [visible, setVisible] = useState(false);
   const [reason, setReason] = useState("");
+  const [recoveryRunId, setRecoveryRunId] = useState("");
   const timedOutRunId = useRef("");
   const dismissedRunId = useRef("");
 
@@ -127,6 +168,7 @@ export default function ComprehensiveStuckRunRecovery() {
       const stored = readStoredRun();
       const runId = stored?.runId
         || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+        || recoveryRunId
         || "";
       if (dismissedRunId.current && dismissedRunId.current !== runId) {
         dismissedRunId.current = "";
@@ -144,20 +186,41 @@ export default function ComprehensiveStuckRunRecovery() {
         return;
       }
       if (stale) {
+        setRecoveryRunId(runId);
         setReason("The saved assessment is older than the recovery limit.");
         setVisible(true);
         return;
       }
       if (timedOut) {
-        setReason("The assessment service did not respond before the bounded request timeout.");
+        setRecoveryRunId(runId);
         setVisible(true);
       }
     };
 
-    const timeoutListener = () => {
-      timedOutRunId.current = currentRunId();
+    const timeoutListener = (event: Event) => {
+      const detail = (event as CustomEvent<TimeoutDetail>).detail || {};
+      const path = String(detail.path || "");
+      const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path);
+
+      // A readiness request without an accepted exact run belongs in the normal
+      // assessment error UI. Recovery controls are shown only when NICO can retain
+      // and retry a concrete run identity.
+      if (!timeoutRunId) {
+        timedOutRunId.current = "";
+        setRecoveryRunId("");
+        setVisible(false);
+        return;
+      }
+
+      retainExactRunIdentity(timeoutRunId);
+      timedOutRunId.current = timeoutRunId;
       dismissedRunId.current = "";
-      setReason("The assessment service did not respond before the bounded request timeout.");
+      setRecoveryRunId(timeoutRunId);
+      setReason(
+        path.endsWith("/continue")
+          ? "The current assessment stage exceeded the bounded response time. The exact run was retained and can be retried."
+          : "The exact saved run did not respond before the bounded status timeout. Its identity was retained for recovery.",
+      );
       setVisible(true);
     };
     const interval = window.setInterval(inspect, STALE_CHECK_INTERVAL_MS);
@@ -171,19 +234,19 @@ export default function ComprehensiveStuckRunRecovery() {
       activeControllers.forEach((controller) => controller.abort());
       activeControllers.clear();
     };
-  }, []);
-
-  const runId = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return currentRunId();
-  }, [visible]);
+  }, [recoveryRunId]);
 
   if (!visible) return null;
 
+  const runId = recoveryRunId || currentRunId();
   const keepWaiting = () => {
     dismissedRunId.current = runId;
     timedOutRunId.current = "";
     setVisible(false);
+  };
+  const retryExactRun = () => {
+    retainExactRunIdentity(runId);
+    window.location.reload();
   };
 
   return <aside
@@ -210,7 +273,7 @@ export default function ComprehensiveStuckRunRecovery() {
     <p style={{margin: "8px 0 12px", color: "#b9c9dc"}}>{reason}</p>
     {runId ? <code style={{display: "block", marginBottom: 12, overflowWrap: "anywhere"}}>Run: {runId}</code> : null}
     <div style={{display: "flex", gap: 10, flexWrap: "wrap"}}>
-      <button type="button" onClick={() => window.location.reload()}>Retry saved run</button>
+      <button type="button" onClick={retryExactRun} disabled={!runId}>Retry exact run</button>
       <button type="button" onClick={clearRunIdentity} data-clear-stuck-comprehensive-run="true">Clear stuck run and start new</button>
       <button type="button" onClick={keepWaiting}>Keep waiting</button>
     </div>
