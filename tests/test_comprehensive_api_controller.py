@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -20,14 +21,45 @@ def _controller(path: Path) -> ComprehensiveApiController:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            result = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
                 "repository": context["repository"],
                 "commit_sha": context["commit_sha"],
                 "evidence_ledger_id": context["evidence_ledger_id"],
+                "human_review_required": True,
+                "client_delivery_allowed": False,
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    key: context[key]
+                    for key in (
+                        "run_id",
+                        "repository",
+                        "commit_sha",
+                        "evidence_ledger_id",
+                    )
+                }
+                result["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": (
+                        "# NICO Comprehensive Technical Assessment\n"
+                        "CLIENT DELIVERY NOT AUTHORIZED"
+                    ),
+                    "html": (
+                        "<html><body>NICO Comprehensive Technical Assessment</body></html>"
+                    ),
+                    "pdf_base64": base64.b64encode(
+                        b"%PDF-1.4\n%%EOF\n"
+                    ).decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                }
+            return result
 
         executors[capability] = execute
     return ComprehensiveApiController(ComprehensiveRunService(store, executors))
@@ -104,11 +136,15 @@ def test_continue_without_bound_runs_to_human_review(tmp_path: Path) -> None:
     assert response["progress_percent"] == 100.0
     assert response["completed_stages"] == list(COMPREHENSIVE_STAGES)
     assert response["terminal"] is True
+    assert response["reports"]["report_id"] == "report_comprun_api_001"
+    assert response["reports"]["pdf_base64"].startswith("JVBER")
     assert response["human_review_required"] is True
     assert response["client_delivery_allowed"] is False
 
 
-def test_request_validation_rejects_missing_identity_and_invalid_bounds(tmp_path: Path) -> None:
+def test_request_validation_rejects_missing_identity_and_invalid_bounds(
+    tmp_path: Path,
+) -> None:
     controller = _controller(tmp_path / "runs.db")
     payload = _payload()
     payload["commit_sha"] = ""
