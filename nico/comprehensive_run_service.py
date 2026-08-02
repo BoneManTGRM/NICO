@@ -23,6 +23,7 @@ from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
 )
+from nico.comprehensive_report_flatten_bound_v1 import install_bounded_report_flatten
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
     apply_comprehensive_review_decision,
@@ -38,6 +39,7 @@ from nico.comprehensive_stage_watchdog_v1 import (
 )
 
 install_background_terminal_ordering()
+install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
 VERSION = "nico.comprehensive_run_service.v11"
@@ -59,9 +61,10 @@ class ComprehensiveRunService:
     timeouts for complete or nearly complete report work.
 
     Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    The report builder recognizes the retained manifest and skips duplicate full-tree
-    work. Scores, scanner findings, report design, human review, and blocked client
-    delivery remain unchanged.
+    Evidence flattening also carries one bounded visit budget across recursion, and the
+    report builder recognizes the retained manifest to skip duplicate full-tree work.
+    Scores, scanner findings, report design, human review, and blocked client delivery
+    remain unchanged.
     """
 
     def __init__(
