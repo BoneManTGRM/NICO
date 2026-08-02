@@ -5,6 +5,8 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Mapping
 
+from nico import comprehensive_report_truth_stabilization_v52 as legacy_truth
+
 VERSION = "nico.comprehensive_client_readiness.v59"
 _MARKER = "_nico_comprehensive_client_readiness_v59"
 _COMPLETED = {
@@ -15,6 +17,25 @@ _COMPLETED = {
     "passed",
     "success",
     "succeeded",
+}
+_COVERAGE_KEY_RE = re.compile(r"(?:analy[sz]er|scanner).*(?:coverage|completion)|(?:coverage|completion).*(?:analy[sz]er|scanner)", re.I)
+_COVERAGE_TEXT_RE = re.compile(
+    r"(?P<label>(?:analy[sz]er|scanner)(?:\s+execution)?\s+(?:coverage|completion)\s*[:=]\s*)\d{1,3}(?P<pct>\s*%)?",
+    re.I,
+)
+_KNOWN_IDENTIFIER_REPAIRS = {
+    "appy_ l scanner_artifact_scoring": "apply_scanner_artifact_scoring",
+    "appy_l scanner_artifact_scoring": "apply_scanner_artifact_scoring",
+    " span ish_pdf": "_spanish_pdf",
+    "span ish_pdf": "_spanish_pdf",
+    "_ span ish_pdf": "_spanish_pdf",
+    " span ish_markdown": "_spanish_markdown",
+    "span ish_markdown": "_spanish_markdown",
+    "_ span ish_markdown": "_spanish_markdown",
+    "co llect_snapshot_repository_evidence": "collect_snapshot_repository_evidence",
+    "eva luate_report_payload": "evaluate_report_payload",
+    "mar kdown_report": "markdown_report",
+    "production_ app": "production_app",
 }
 
 
@@ -91,6 +112,32 @@ def _scanner_truth(node: Any) -> dict[str, dict[str, Any]]:
     return truth
 
 
+def _requested_analyzer_count(node: Any) -> int:
+    candidates: list[int] = []
+    if isinstance(node, Mapping):
+        for key, value in node.items():
+            normalized = str(key).casefold()
+            if normalized in {
+                "requested_analyzers",
+                "applicable_analyzers",
+                "requested_scanners",
+                "applicable_scanners",
+                "applicable_analyzer_count",
+                "requested_analyzer_count",
+                "applicable_scanner_count",
+                "requested_scanner_count",
+            }:
+                if isinstance(value, int) and not isinstance(value, bool):
+                    candidates.append(value)
+                elif isinstance(value, list):
+                    candidates.append(len(value))
+            candidates.append(_requested_analyzer_count(value))
+    elif isinstance(node, list):
+        for value in node:
+            candidates.append(_requested_analyzer_count(value))
+    return max(candidates, default=0)
+
+
 def _maturity_label(score: Any) -> str:
     try:
         value = int(round(float(score)))
@@ -122,12 +169,18 @@ def _symbols(node: Any) -> set[str]:
     return output
 
 
-def _repair_symbols(text: str, symbols: set[str]) -> str:
-    repaired = text
+def _repair_symbols(text: str, symbols: set[str], coverage: int) -> str:
+    repaired = legacy_truth._repair_text(text) if hasattr(legacy_truth, "_repair_text") else text
+    for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items():
+        repaired = re.sub(re.escape(broken), canonical, repaired, flags=re.IGNORECASE)
     for symbol in sorted(symbols, key=len, reverse=True):
         pattern = r"(?<![A-Za-z0-9_])" + r"\s*".join(map(re.escape, symbol)) + r"(?![A-Za-z0-9_])"
         repaired = re.sub(pattern, symbol, repaired, flags=re.IGNORECASE)
     repaired = re.sub(r"\bS\s+p\s+ecific correction\b", "Specific correction", repaired)
+    repaired = _COVERAGE_TEXT_RE.sub(
+        lambda match: f"{match.group('label')}{coverage}{match.group('pct') or ''}",
+        repaired,
+    )
     return repaired
 
 
@@ -139,6 +192,7 @@ def _normalize_tree(
     symbols: set[str],
     technical_score: int | None,
 ) -> Any:
+    coverage = round(100 * len(completed) / requested) if requested else 0
     if isinstance(node, list):
         return [
             _normalize_tree(
@@ -151,7 +205,7 @@ def _normalize_tree(
             for value in node
         ]
     if isinstance(node, str):
-        return _repair_symbols(node, symbols)
+        return _repair_symbols(node, symbols, coverage)
     if not isinstance(node, Mapping):
         return node
 
@@ -171,20 +225,24 @@ def _normalize_tree(
         output["incomplete_analyzers"] = [
             value for value in incomplete if _tool(value) not in completed
         ]
+    incomplete_scanners = output.get("incomplete_scanners")
+    if isinstance(incomplete_scanners, list):
+        output["incomplete_scanners"] = [
+            value for value in incomplete_scanners if _tool(value) not in completed
+        ]
 
     if requested > 0:
-        coverage = round(100 * len(completed) / requested)
-        for key in (
-            "analyzer_execution_coverage",
-            "analyzer_coverage",
-            "scanner_execution_coverage",
-        ):
-            if key in output:
+        for key in list(output):
+            if _COVERAGE_KEY_RE.search(str(key)) and isinstance(output.get(key), (int, float)) and not isinstance(output.get(key), bool):
                 output[key] = coverage
         if "completed_applicable_analyzers" in output:
             output["completed_applicable_analyzers"] = len(completed)
+        if "completed_applicable_scanners" in output:
+            output["completed_applicable_scanners"] = len(completed)
         if "incomplete_applicable_analyzers" in output:
             output["incomplete_applicable_analyzers"] = max(0, requested - len(completed))
+        if "incomplete_applicable_scanners" in output:
+            output["incomplete_applicable_scanners"] = max(0, requested - len(completed))
 
     if technical_score is not None:
         label = _maturity_label(technical_score)
@@ -211,14 +269,7 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
     truth = _scanner_truth(output)
     completed = set(truth)
 
-    requested = 0
-    for key in ("requested_analyzers", "applicable_analyzers"):
-        value = output.get(key)
-        if isinstance(value, int) and not isinstance(value, bool):
-            requested = max(requested, value)
-        elif isinstance(value, list):
-            requested = max(requested, len(value))
-    requested = requested or len(completed)
+    requested = max(_requested_analyzer_count(output), len(completed))
 
     assessment = output.get("assessment") if isinstance(output.get("assessment"), Mapping) else {}
     technical = assessment.get("technical_score") or output.get("technical_score")
@@ -237,9 +288,16 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
     )
 
     coverage = round(100 * len(completed) / requested) if requested else 0
+    output["analyzer_execution_coverage"] = coverage
+    output["scanner_execution_coverage"] = coverage
+    output["completed_applicable_analyzers"] = len(completed)
+    output["incomplete_applicable_analyzers"] = max(0, requested - len(completed))
     output["client_readiness_contract"] = {
         "version": VERSION,
         "scanner_execution_completion": coverage,
+        "analyzer_execution_coverage": coverage,
+        "coverage_numerator": len(completed),
+        "coverage_denominator": requested,
         "completed_exact_commit_scanners": sorted(completed),
         "incomplete_analyzers": [],
         "maturity_label": _maturity_label(technical_score),
@@ -277,6 +335,7 @@ def install_comprehensive_client_readiness_v59() -> dict[str, Any]:
         "bound": completion._install_register is install_register,
         "scanner_state_canonicalized": True,
         "coverage_denominator_explicit": True,
+        "all_coverage_aliases_synchronized": True,
         "maturity_terminology_unified": True,
         "identifier_integrity_repaired_before_render": True,
         "limited_evidence_status_separated_from_execution_status": True,
