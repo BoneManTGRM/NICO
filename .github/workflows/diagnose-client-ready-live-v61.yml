@@ -16,6 +16,26 @@ jobs:
       ORIGIN: https://app.nicoaudit.com
       RUN_ID: comprun_f65df0e04b884a4cbc56942bce403727
     steps:
+      - name: Check out exact diagnostic head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Retain scanner and report implementation sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic/source
+          cp -a .bandit diagnostic/source/ 2>/dev/null || true
+          grep -RIl --include='*.py' \
+            -e '_run_bandit' \
+            -e 'bandit_header_normalized' \
+            -e 'Bandit CSV output could not be parsed' \
+            -e 'reconcile_client_readiness' \
+            -e 'finalize_client_report_package' \
+            nico tests | while read -r path; do
+              mkdir -p "diagnostic/source/$(dirname "${path}")"
+              cp "${path}" "diagnostic/source/${path}"
+            done
+
       - name: Fetch persisted run and report endpoints
         shell: bash
         run: |
