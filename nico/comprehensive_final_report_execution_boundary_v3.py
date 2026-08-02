@@ -9,6 +9,7 @@ from nico.comprehensive_stage_execution_timeout_v1 import execute_stage_with_tim
 
 VERSION = "nico.comprehensive_final_report_execution_boundary.v3"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
+_IDENTITY_FIELDS = ("run_id", "repository", "commit_sha", "evidence_ledger_id")
 
 
 def _text(value: Any) -> str:
@@ -50,11 +51,17 @@ def _blocked(
 def _exact_identity_matches(
     value: Mapping[str, Any],
     context: Mapping[str, Any],
+    *,
+    require_present: bool,
 ) -> bool:
-    for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
+    for field in _IDENTITY_FIELDS:
         expected = _text(context.get(field))
         observed = _text(value.get(field))
-        if expected and observed and expected != observed:
+        if not expected:
+            return False
+        if require_present and not observed:
+            return False
+        if observed and observed != expected:
             return False
     return True
 
@@ -68,6 +75,7 @@ def _validate_package(
     rendered_html = str(package.get("html") or "")
     pdf_base64 = _text(package.get("pdf_base64"))
     canonical_json = package.get("json")
+    canonical_truth_sha256 = _text(package.get("canonical_truth_sha256"))
 
     if not report_id:
         return False, "final_report_id_missing", {}
@@ -77,6 +85,8 @@ def _validate_package(
         return False, "final_report_html_missing", {}
     if not isinstance(canonical_json, Mapping):
         return False, "final_report_json_missing", {}
+    if not canonical_truth_sha256:
+        return False, "final_report_canonical_hash_missing", {}
     if not pdf_base64:
         return False, "final_report_pdf_missing", {}
     try:
@@ -91,7 +101,9 @@ def _validate_package(
         if isinstance(canonical_json.get("identity"), Mapping)
         else canonical_json
     )
-    if isinstance(identity, Mapping) and not _exact_identity_matches(identity, context):
+    if not isinstance(identity, Mapping):
+        return False, "final_report_identity_missing", {}
+    if not _exact_identity_matches(identity, context, require_present=True):
         return False, "final_report_identity_mismatch", {}
 
     evidence = {
@@ -103,8 +115,11 @@ def _validate_package(
         or hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         "html_sha256": _text(package.get("html_sha256"))
         or hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
-        "canonical_truth_sha256": _text(package.get("canonical_truth_sha256")),
+        "canonical_truth_sha256": canonical_truth_sha256,
         "exact_run_identity_verified": True,
+        "exact_repository_identity_verified": True,
+        "exact_commit_identity_verified": True,
+        "exact_evidence_ledger_identity_verified": True,
         "pdf_valid": True,
         "markdown_available": True,
         "html_available": True,
@@ -124,7 +139,8 @@ def execute_final_report_stage(
     Final report artifacts can be large. They must not depend on a process-local daemon
     thread or on storing the complete PDF/HTML/Markdown payload in generic background
     telemetry. The provider runs behind the existing bounded timeout, and only a
-    complete, identity-bound artifact package is returned to the run-store transaction.
+    complete, explicitly identity-bound artifact package is returned to the run-store
+    transaction.
     """
 
     raw = execute_stage_with_timeout(
@@ -163,7 +179,7 @@ def execute_final_report_stage(
         }
         return output
 
-    if not _exact_identity_matches(output, context):
+    if not _exact_identity_matches(output, context, require_present=False):
         return _blocked(
             context,
             reason="final_report_result_identity_mismatch",
