@@ -72,7 +72,7 @@ def test_bandit_retains_complete_parseable_json(monkeypatch, tmp_path: Path) -> 
     assert payload["raw_artifact_format"] == "json"
     assert payload["findings_count"] == 1
     assert payload["findings"][0]["line_number"] == 14
-    assert payload["execution_source"] == "canonical_bandit_json_v61"
+    assert payload["execution_source"] == "canonical_bandit_json_v62"
     assert payload["bandit_csv_parser_used"] is False
     assert payload["compact_complete_result"] is True
     assert payload["failure_or_unavailable_reason"] == ""

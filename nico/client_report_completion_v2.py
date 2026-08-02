@@ -16,6 +16,9 @@ from nico.client_finding_remediation_register_v5 import (
     render_finding_register_pdf,
     synchronize_canonical_finding_surfaces,
 )
+from nico.comprehensive_authoritative_scanner_truth_v62 import (
+    reconcile_authoritative_scanner_truth,
+)
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 from nico.v2_authoritative_premium_report import _html_from_markdown
 
@@ -42,6 +45,7 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
             "scanner_not_applicable_separated_from_unavailable": True,
             "stable_finding_alias_projection_idempotent": True,
             "all_mirrored_finding_surfaces_synchronized": True,
+            "exact_run_scanner_truth_reconciled_in_core_finalizer": True,
         }
     )
     canonical["v2_pipeline_contract"] = contract
@@ -71,6 +75,11 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
     canonical = _install_register(canonical)
+    # This call is intentionally part of the core finalizer rather than relying
+    # only on installer rebinding. Every production and fixture path therefore
+    # reaches the existing renderer with one exact-run scanner population and one
+    # explicit coverage denominator.
+    canonical = reconcile_authoritative_scanner_truth(canonical)
 
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
@@ -166,6 +175,7 @@ def _validate_final_surfaces(
         "semantic_duplicate_code_anchors_absent": True,
         "stable_finding_alias_projection_idempotent": True,
         "unverified_tls_candidates_not_promoted": True,
+        "exact_run_scanner_truth_reconciled": True,
     }
 
 
@@ -181,6 +191,9 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
     canonical = _install_register(canonical)
+    # Legacy completion can add or restore nested report surfaces. Reconcile again
+    # at the last canonical boundary before Markdown, HTML, and PDF are composed.
+    canonical = reconcile_authoritative_scanner_truth(canonical)
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 

@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v61-client-ready-accuracy"
+RUNTIME_REVISION = "v62-client-ready-exact-run-truth"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -63,11 +63,17 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_final_publication_truth_v58 import (
         install_comprehensive_final_publication_truth_v58,
     )
+    from nico.comprehensive_final_register_scanner_truth_v62 import (
+        install_comprehensive_final_register_scanner_truth_v62,
+    )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
     from nico.comprehensive_report_truth_v53 import (
         install_comprehensive_report_truth_v53,
+    )
+    from nico.comprehensive_requested_scanner_projection_v62 import (
+        install_comprehensive_requested_scanner_projection_v62,
     )
     from nico.comprehensive_scoring_manifest_v54 import (
         install_comprehensive_scoring_manifest_v54,
@@ -85,8 +91,14 @@ def _install_final_runtime_truth() -> dict[str, Any]:
 
     bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
+    requested_scanner_projection = (
+        install_comprehensive_requested_scanner_projection_v62()
+    )
     final_publication_truth = install_comprehensive_final_publication_truth_v58()
     client_readiness = install_comprehensive_client_readiness_v59()
+    final_register_scanner_truth = (
+        install_comprehensive_final_register_scanner_truth_v62()
+    )
     client_report_render = install_comprehensive_client_report_render_v60()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
@@ -100,8 +112,10 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "runtime_revision": RUNTIME_REVISION,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
+        "requested_scanner_projection": requested_scanner_projection,
         "final_publication_truth": final_publication_truth,
         "client_readiness": client_readiness,
+        "final_register_scanner_truth": final_register_scanner_truth,
         "client_report_render": client_report_render,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
@@ -145,6 +159,8 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "explicit_assurance_factors_retained": True,
         "pre_render_truth_reconciliation": True,
         "final_register_count_synchronized_before_render": True,
+        "final_register_scanner_truth_reconciled": True,
+        "requested_scanner_projection_bound": True,
         "legacy_score_contract_reconciled_before_render": True,
         "existing_report_renderer_preserved": True,
         "existing_visual_design_preserved": True,
@@ -153,6 +169,11 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "production_pdf_is_accuracy_acceptance_artifact": True,
         "bandit_csv_parser_dependency_removed": True,
         "bandit_json_artifact_required": True,
+        "bandit_problem_dispatch_bound": True,
+        "live_scanner_manifest_authoritative": True,
+        "unrequested_stale_scanners_excluded_from_coverage": True,
+        "missing_requested_scanners_retained_as_incomplete": True,
+        "post_authoritative_projection_truth_reconciled": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,

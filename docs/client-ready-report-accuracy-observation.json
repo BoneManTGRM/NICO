@@ -1,0 +1,82 @@
+{
+  "artifact_schema": "nico.completion.work_package_state.v1",
+  "workstream": 2,
+  "workstream_name": "client_readiness",
+  "work_package": "exact_head_client_report_accuracy",
+  "dependency_state": "first_incomplete",
+  "release_base_sha": "78c8a62393446a9a70a675d905c7a9201a8d21b5",
+  "continuation_pr": 974,
+  "state": "implementation_complete_awaiting_exact_head_checks",
+  "prior_completed_dependency": {
+    "workstream": 1,
+    "work_package": "exact_head_comprehensive_finality_repair",
+    "state": "post_merge_verified",
+    "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
+  },
+  "observed": {
+    "main_deployed_to_vercel": true,
+    "main_deployed_to_railway": true,
+    "pull_request_972_exact_head_checks": "passed",
+    "pull_request_972_unresolved_review_threads": 0,
+    "post_merge_two_service_production_acceptance": "failed",
+    "post_merge_mobile_restart_production_proof": "failed",
+    "post_merge_ios_webkit_paint_proof": "failed",
+    "live_run_ids": [
+      "comprun_fb0c5fad584644a2be3a29d4530939ec",
+      "comprun_b29d68d81b6341a99eedc48b08fa1ec4"
+    ],
+    "terminal_stage": "final_comprehensive_report_generation",
+    "terminal_reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [78, 100]",
+    "exact_run_tools_requested": 9,
+    "exact_run_tools_completed": 8,
+    "exact_run_failed_tools": [
+      "bandit"
+    ],
+    "stage_analyzer_execution_coverage": 89,
+    "failed_bandit_execution_source": "canonical_bandit_csv_v2",
+    "failed_bandit_reason": "Bandit CSV output could not be parsed: Error",
+    "stale_report_coverage_values": [
+      78,
+      100
+    ],
+    "root_causes": [
+      "bandit_json_was_not_bound_at_the_authoritative_problem_tool_dispatch_imported_by_the_snapshot_scanner_runtime",
+      "final_report_projection_recomputed_coverage_from_stale_or_filtered_scanner_surfaces_instead_of_the_exact_run_manifest_and_direct_scanner_records"
+    ]
+  },
+  "implementation": {
+    "bandit_json_bound_at_named_delegate": true,
+    "bandit_json_bound_at_authoritative_problem_dispatch": true,
+    "legacy_csv_delegate_bypassed_even_if_restored": true,
+    "exact_run_tools_requested_manifest_authoritative": true,
+    "failed_missing_or_timed_out_requested_tools_retained": true,
+    "recursive_stale_projection_counts_ignored": true,
+    "truth_reconciled_before_existing_renderer": true,
+    "truth_reconciled_after_authoritative_projection": true,
+    "existing_renderer_preserved": true,
+    "existing_visual_design_preserved": true,
+    "existing_section_order_preserved": true,
+    "existing_pdf_composition_preserved": true,
+    "report_redesign_performed": false,
+    "scores_changed_to_satisfy_gate": false,
+    "temporary_production_diagnostic_removed": true
+  },
+  "gates": {
+    "preserve_report_design": true,
+    "preserve_report_truth": true,
+    "preserve_security_boundaries": true,
+    "preserve_commercial_readiness_boundaries": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "merge_requires_all_pr_checks": true,
+    "merge_requires_no_unresolved_review_threads": true,
+    "post_merge_exact_deployment_identity_required": true,
+    "post_merge_live_production_proofs_required": true,
+    "two_distinct_live_comprehensive_runs_required": true,
+    "new_live_pdf_must_preserve_approved_design": true,
+    "new_live_pdf_must_have_one_canonical_coverage_value": true,
+    "new_live_pdf_must_not_list_completed_scanners_as_incomplete": true
+  },
+  "next_work_package": null,
+  "next_work_package_state": "blocked_until_this_package_is_post_merge_verified"
+}

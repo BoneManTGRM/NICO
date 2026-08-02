@@ -188,6 +188,25 @@ def validate_final_report_package(package: dict[str, Any]) -> dict[str, Any]:
     return validation
 
 
+def _failure_summary(validation: dict[str, Any]) -> str:
+    scanner = _dict(validation.get("scanner_consistency"))
+    details: list[str] = []
+    if "analyzer_coverage_values_consistent" in validation.get("failed_checks", []):
+        details.append(
+            "coverage_values=" + repr(scanner.get("coverage_values"))
+        )
+    if "incomplete_analyzer_counts_consistent" in validation.get("failed_checks", []):
+        details.append(
+            "incomplete_count_values=" + repr(scanner.get("incomplete_count_values"))
+        )
+    suffix = "; " + "; ".join(details) if details else ""
+    return (
+        "Final artifact truth verification failed: "
+        + ", ".join(validation.get("failed_checks", []))
+        + suffix
+    )
+
+
 def install_comprehensive_final_artifact_truth_v54() -> dict[str, Any]:
     from nico import comprehensive_cross_format_finality_v49 as cross_format
     from nico import comprehensive_native_providers as providers
@@ -222,16 +241,14 @@ def install_comprehensive_final_artifact_truth_v54() -> dict[str, Any]:
                 context,
                 "blocked",
                 reason="final_artifact_truth_verification_failed",
-                summary=(
-                    "Final artifact truth verification failed: "
-                    + ", ".join(validation["failed_checks"])
-                ),
+                summary=_failure_summary(validation),
                 report_package_source=source,
                 final_artifact_truth=validation,
                 failed_checks=validation["failed_checks"],
                 evidence={
                     "failed_checks": validation["failed_checks"],
                     "score_recalculation": validation["score_recalculation"],
+                    "scanner_consistency": validation.get("scanner_consistency"),
                 },
             )
         output = deepcopy(base)
@@ -240,6 +257,7 @@ def install_comprehensive_final_artifact_truth_v54() -> dict[str, Any]:
         evidence = _dict(output.get("evidence"))
         evidence.update(validation["checks"])
         evidence["score_recalculation"] = validation["score_recalculation"]
+        evidence["scanner_consistency"] = validation.get("scanner_consistency")
         output["evidence"] = evidence
         return output
 
@@ -257,6 +275,7 @@ def install_comprehensive_final_artifact_truth_v54() -> dict[str, Any]:
         "missing_factor_never_defaults_to_verified": True,
         "retained_assurance_status_recalculation_supported": True,
         "failed_checks_exposed": True,
+        "scanner_consistency_diagnostics_exposed": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }

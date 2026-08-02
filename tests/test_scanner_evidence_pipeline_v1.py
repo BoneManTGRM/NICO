@@ -77,7 +77,7 @@ def test_bandit_complete_file_capture_survives_truncated_preview(monkeypatch, tm
     assert result["raw_artifact_capture_complete"] is True
     assert result["raw_artifact_format"] == "json"
     assert result["findings_count"] == 1
-    assert result["execution_source"] == "canonical_bandit_json_v61"
+    assert result["execution_source"] == "canonical_bandit_json_v62"
     assert result["bandit_csv_parser_used"] is False
 
 
