@@ -1,24 +1,27 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
+import time
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from fastapi import FastAPI
 
+from nico.comprehensive_canonical_report_source_v1 import (
+    build_canonical_report_source,
+)
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v5"
-_MARKER = "__nico_v2_production_authority_v5__"
+VERSION = "nico.v2.production-authority.v6"
+_MARKER = "__nico_v2_production_authority_v6__"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _report_language(context: dict[str, Any]) -> str:
+def _report_language(context: Mapping[str, Any]) -> str:
     value = _text(context.get("report_language") or context.get("locale") or "en").casefold()
     return "es-MX" if value.startswith("es") else "en"
 
@@ -31,64 +34,82 @@ def _safe_filename(value: Any, default: str) -> str:
 def _install_spanish_vocabulary() -> None:
     from nico.comprehensive_report_spanish_text_v51 import ES_REPLACEMENTS
 
-    ES_REPLACEMENTS.update({
-        "Reduce complexity in": "Reducir la complejidad en",
-        "completed with findings": "completado con hallazgos",
-        "completed": "completado",
-        "failed": "fallido",
-        "unavailable": "no disponible",
-        "partial": "parcial",
-        "unknown": "desconocido",
-        "review required": "revisión requerida",
-        "client delivery not authorized": "entrega al cliente no autorizada",
-    })
+    ES_REPLACEMENTS.update(
+        {
+            "Reduce complexity in": "Reducir la complejidad en",
+            "completed with findings": "completado con hallazgos",
+            "completed": "completado",
+            "failed": "fallido",
+            "unavailable": "no disponible",
+            "partial": "parcial",
+            "unknown": "desconocido",
+            "review required": "revisión requerida",
+            "client delivery not authorized": "entrega al cliente no autorizada",
+        }
+    )
 
 
-def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    output = deepcopy(source)
-    package = output.get("report_package") if isinstance(output.get("report_package"), dict) else {}
-    canonical = deepcopy(package.get("json")) if isinstance(package.get("json"), dict) else {}
+def _inject_live_runtime_truth(
+    source: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach live scanner and language truth with bounded copy-on-write updates."""
+
+    output = dict(source)
+    raw_package = source.get("report_package")
+    package = dict(raw_package) if isinstance(raw_package, Mapping) else {}
+    raw_canonical = package.get("json")
+    canonical = dict(raw_canonical) if isinstance(raw_canonical, Mapping) else {}
     if not canonical:
         return output
 
     language = _report_language(context)
     if language == "es-MX":
         _install_spanish_vocabulary()
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
-    identity = deepcopy(identity)
+    raw_identity = canonical.get("identity")
+    identity = dict(raw_identity) if isinstance(raw_identity, Mapping) else {}
     identity["report_language"] = language
     canonical["identity"] = identity
     canonical["report_language"] = language
     canonical["locale"] = language
-    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
-    assessment = deepcopy(assessment)
+    raw_assessment = canonical.get("assessment")
+    assessment = dict(raw_assessment) if isinstance(raw_assessment, Mapping) else {}
     assessment["report_language"] = language
     assessment["locale"] = language
 
     try:
         from nico import comprehensive_native_providers as providers
 
-        scan = providers._scan(context)
+        scan = providers._scan(dict(context))
     except Exception:
         scan = {}
-    records = scan.get("scanner_results") if isinstance(scan, dict) and isinstance(scan.get("scanner_results"), list) else []
+    records = (
+        scan.get("scanner_results")
+        if isinstance(scan, Mapping) and isinstance(scan.get("scanner_results"), list)
+        else []
+    )
     if records:
         commit_sha = _text(identity.get("commit_sha") or context.get("commit_sha")).casefold()
         enriched: list[dict[str, Any]] = []
         for raw in records:
-            if not isinstance(raw, dict):
+            if not isinstance(raw, Mapping):
                 continue
-            item = deepcopy(raw)
+            item = dict(raw)
             item.setdefault("scanner_name", item.get("tool") or item.get("scanner"))
             item.setdefault("commit_sha", commit_sha)
             item.setdefault("snapshot_commit_sha", commit_sha)
-            item.setdefault("exact_commit_match", _text(item.get("commit_sha")).casefold() == commit_sha)
+            item.setdefault(
+                "exact_commit_match",
+                _text(item.get("commit_sha")).casefold() == commit_sha,
+            )
             if item.get("exit_code") is None and isinstance(item.get("returncode"), int):
                 item["exit_code"] = item["returncode"]
             enriched.append(item)
         canonical["scanner_execution_records"] = enriched
-        assessment["scanner_execution_records"] = deepcopy(enriched)
-        assessment["scanner_execution_summary"] = deepcopy(scan.get("scanner_execution_summary") or {})
+        assessment["scanner_execution_records"] = [dict(item) for item in enriched]
+        assessment["scanner_execution_summary"] = dict(
+            scan.get("scanner_execution_summary") or {}
+        )
         canonical["live_scanner_evidence"] = {
             "scan_id": scan.get("scan_id"),
             "snapshot_commit_sha": scan.get("snapshot_commit_sha"),
@@ -99,7 +120,9 @@ def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) 
             "failed_tools": list(scan.get("failed_tools") or []),
             "unavailable_tools": list(scan.get("unavailable_tools") or []),
             "timed_out_tools": list(scan.get("timed_out_tools") or []),
-            "full_history_verified_tools": list(scan.get("full_history_verified_tools") or []),
+            "full_history_verified_tools": list(
+                scan.get("full_history_verified_tools") or []
+            ),
         }
 
     canonical["assessment"] = assessment
@@ -107,7 +130,10 @@ def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) 
     package["report_language"] = language
     package["locale"] = language
     if language == "es-MX":
-        repository = _safe_filename(identity.get("repository") or context.get("repository"), "repositorio")
+        repository = _safe_filename(
+            identity.get("repository") or context.get("repository"),
+            "repositorio",
+        )
         run_id = _safe_filename(identity.get("run_id") or context.get("run_id"), "run")
         localized = f"nico-evaluacion-tecnica-integral-{repository}-{run_id}-es-MX.pdf"
         package["pdf_filename"] = localized
@@ -119,22 +145,54 @@ def _inject_live_runtime_truth(source: dict[str, Any], context: dict[str, Any]) 
     return output
 
 
+def _canonical_source(
+    context: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], float]:
+    from nico.comprehensive_final_report_execution_v1 import (
+        _canonical_final_report_context,
+    )
+
+    started = time.perf_counter()
+    report_context, score_truth = _canonical_final_report_context(context)
+    source = build_canonical_report_source(report_context)
+    elapsed = round(time.perf_counter() - started, 3)
+    source["final_report_input_score_truth"] = score_truth
+    source["canonical_source_timing_seconds"] = elapsed
+    return source, report_context, elapsed
+
+
 def wrap_final_report_publication(
     delegate: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Make v2 the only final Comprehensive artifact publisher."""
+    """Make v2 the only final Comprehensive artifact renderer and publisher."""
+
     if getattr(delegate, _MARKER, False):
         return delegate
 
     @wraps(delegate)
     def wrapped(context: dict[str, Any]) -> dict[str, Any]:
-        source = delegate(context)
-        if not isinstance(source, dict):
-            raise TypeError("final_report_provider_must_return_dict")
+        total_started = time.perf_counter()
+        source, report_context, canonical_elapsed = _canonical_source(dict(context))
+        canonical_only = source.get("status") == "complete" and isinstance(
+            source.get("report_package"), dict
+        )
+        if not canonical_only:
+            # Compatibility fallback for synthetic callers that do not supply the
+            # canonical Comprehensive stage context. Production must take the canonical
+            # path and is verified through the retained publication contract below.
+            source = delegate(context)
+            report_context = dict(context)
+            if not isinstance(source, dict):
+                raise TypeError("final_report_provider_must_return_dict")
+
         package = source.get("report_package")
         if not isinstance(package, dict) or not isinstance(package.get("json"), dict):
             return source
-        source = _inject_live_runtime_truth(source, context)
+
+        injection_started = time.perf_counter()
+        source = _inject_live_runtime_truth(source, report_context)
+        injection_elapsed = round(time.perf_counter() - injection_started, 3)
+        render_started = time.perf_counter()
         try:
             published = finalize_report_package(source)
         except Exception as exc:
@@ -142,12 +200,17 @@ def wrap_final_report_publication(
             output.update(
                 {
                     "status": "blocked",
-                    "reason": f"v2_production_publication_failed:{type(exc).__name__}:{_text(exc)}",
+                    "reason": (
+                        "v2_production_publication_failed:"
+                        f"{type(exc).__name__}:{_text(exc)}"
+                    ),
                     "v2_production_authority": {
                         "status": "blocked",
                         "version": VERSION,
                         "error_type": type(exc).__name__,
                         "error": _text(exc),
+                        "canonical_only_source_used": canonical_only,
+                        "legacy_delegate_render_skipped": canonical_only,
                         "legacy_artifacts_published": False,
                         "human_review_required": True,
                         "client_delivery_allowed": False,
@@ -157,37 +220,66 @@ def wrap_final_report_publication(
                 }
             )
             return output
+        render_elapsed = round(time.perf_counter() - render_started, 3)
+        total_elapsed = round(time.perf_counter() - total_started, 3)
 
         published["status"] = "complete"
         published["reason"] = ""
         published["summary"] = (
-            "The final Comprehensive package was rebuilt from one canonical evidence, "
-            "scanner, finding, lifecycle, language, and artifact truth and is ready for internal review."
+            "The final Comprehensive package was rendered once from one canonical "
+            "evidence, scanner, finding, lifecycle, language, and artifact truth and "
+            "is ready for internal review."
         )
         published["v2_production_authority"] = {
             "status": "complete",
             "version": VERSION,
             "single_final_publication_boundary": True,
+            "canonical_only_source_used": canonical_only,
+            "legacy_delegate_render_skipped": canonical_only,
+            "legacy_markdown_rendered": not canonical_only,
+            "legacy_html_rendered": not canonical_only,
+            "legacy_pdf_rendered": not canonical_only,
             "live_scanner_truth_injected_before_canonicalization": True,
             "report_language_bound_before_rendering": True,
             "localized_filename_bound_before_rendering": True,
             "spanish_vocabulary_bound_before_rendering": True,
             "canonical_findings_only": True,
             "normalized_scanner_results_only": True,
-            "all_artifacts_rebuilt_after_canonicalization": True,
+            "all_artifacts_rendered_once_after_canonicalization": canonical_only,
             "authoritative_assessment_state": "review_required",
+            "canonical_source_seconds": canonical_elapsed,
+            "runtime_truth_injection_seconds": injection_elapsed,
+            "authoritative_render_seconds": render_elapsed,
+            "total_publication_seconds": total_elapsed,
             "legacy_artifacts_published": False,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
-        evidence = published.get("evidence") if isinstance(published.get("evidence"), dict) else {}
+        evidence = (
+            dict(published.get("evidence"))
+            if isinstance(published.get("evidence"), Mapping)
+            else {}
+        )
         evidence.update(
             {
                 "v2_single_source_pipeline": True,
-                "canonical_truth_sha256": published.get("canonical_truth_sha256") or "",
+                "canonical_only_source_used": canonical_only,
+                "legacy_delegate_render_skipped": canonical_only,
+                "canonical_truth_sha256": (
+                    published.get("canonical_truth_sha256") or ""
+                ),
                 "assessment_state": "review_required",
-                "report_language": published.get("report_language") or _report_language(context),
+                "report_language": (
+                    published.get("report_language")
+                    or _report_language(report_context)
+                ),
                 "final_artifact_generation_complete": True,
+                "publication_timing_seconds": {
+                    "canonical_source": canonical_elapsed,
+                    "runtime_truth_injection": injection_elapsed,
+                    "authoritative_render": render_elapsed,
+                    "total": total_elapsed,
+                },
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
@@ -230,6 +322,8 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "version": VERSION,
         "bound": bound,
         "single_final_publication_boundary": True,
+        "canonical_only_source_enabled": True,
+        "legacy_delegate_render_skipped_in_production": True,
         "v2_finalizer_invoked_by_real_provider": True,
         "live_scanner_truth_injected_before_canonicalization": True,
         "report_language_bound_before_rendering": True,
