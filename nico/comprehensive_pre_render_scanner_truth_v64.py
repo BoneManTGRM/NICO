@@ -11,21 +11,18 @@ from nico import comprehensive_client_readiness_v59 as v59
 VERSION = "nico.comprehensive_pre_render_scanner_truth.v64"
 _INSTALL_MARKER = "_nico_pre_render_scanner_truth_v64"
 
-_INCOMPLETE_LIST_FIELDS = frozenset(
+_STRICT_INCOMPLETE_LIST_FIELDS = frozenset(
     {
         "incomplete_analyzers",
         "incomplete_scanners",
         "failed_analyzers",
         "failed_scanners",
-        "analyzer_evidence_blockers",
-        "scanner_evidence_blockers",
     }
 )
-_COMPLETED_LIST_FIELDS = frozenset(
+_BLOCKER_LIST_FIELDS = frozenset(
     {
-        "completed_analyzers",
-        "completed_scanners",
-        "completed_exact_commit_scanners",
+        "analyzer_evidence_blockers",
+        "scanner_evidence_blockers",
     }
 )
 _INCOMPLETE_COUNT_FIELDS = frozenset(
@@ -44,6 +41,8 @@ _COMPLETED_COUNT_FIELDS = frozenset(
         "completed_scanner_count",
     }
 )
+_HEAVY_TEXT_FIELDS = frozenset({"pdf_base64", "html", "markdown"})
+_PASSTHROUGH_FIELDS = frozenset({"report_package", "reports"})
 _COVERAGE_KEY_RE = re.compile(
     r"(?:analy[sz]er|scanner).*(?:coverage|completion)|"
     r"(?:coverage|completion).*(?:analy[sz]er|scanner)",
@@ -78,6 +77,13 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _names(value: Any) -> set[str]:
     if not isinstance(value, (list, tuple, set)):
         return set()
@@ -93,8 +99,11 @@ def _nested_mappings(node: Any, key_name: str) -> list[Mapping[str, Any]]:
     output: list[Mapping[str, Any]] = []
     if isinstance(node, Mapping):
         for key, value in node.items():
-            if str(key) == key_name and isinstance(value, Mapping):
+            normalized = str(key)
+            if normalized == key_name and isinstance(value, Mapping):
                 output.append(value)
+            if normalized in _HEAVY_TEXT_FIELDS:
+                continue
             output.extend(_nested_mappings(value, key_name))
     elif isinstance(node, list):
         for value in node:
@@ -106,10 +115,13 @@ def _scanner_record_lists(node: Any) -> list[list[Mapping[str, Any]]]:
     output: list[list[Mapping[str, Any]]] = []
     if isinstance(node, Mapping):
         for key, value in node.items():
-            if str(key) == "scanner_execution_records" and isinstance(value, list):
+            normalized = str(key)
+            if normalized == "scanner_execution_records" and isinstance(value, list):
                 records = [item for item in value if isinstance(item, Mapping)]
                 if records:
                     output.append(records)
+            if normalized in _HEAVY_TEXT_FIELDS:
+                continue
             output.extend(_scanner_record_lists(value))
     elif isinstance(node, list):
         for value in node:
@@ -124,7 +136,7 @@ def _best_contract(stage_results: Mapping[str, Any]) -> Mapping[str, Any]:
 
     def quality(contract: Mapping[str, Any]) -> tuple[int, int, int]:
         source = _text(contract.get("authoritative_source"))
-        denominator = int(contract.get("coverage_denominator") or 0)
+        denominator = _safe_int(contract.get("coverage_denominator"))
         named = len(_names(contract.get("requested_exact_run_scanners")))
         return (1 if source else 0, denominator, named)
 
@@ -220,8 +232,6 @@ def derive_authoritative_scanner_truth(
     completed -= hard_incomplete
     incomplete = hard_incomplete | (soft_incomplete - completed) | (requested - completed)
 
-    # The production Comprehensive scanner population is intentionally fixed when all
-    # known required tools are represented. Preserve the canonical order downstream.
     if requested == _REQUIRED_TOOLS:
         requested = set(_REQUIRED_TOOLS)
 
@@ -239,12 +249,18 @@ def derive_authoritative_scanner_truth(
     }
 
 
-def _tool_from_flattened_value(value: str, requested: set[str]) -> str:
-    normalized = value.casefold().replace("_", "-")
-    for name in sorted(requested, key=len, reverse=True):
-        if re.search(rf"(?<![a-z0-9-]){re.escape(name)}(?![a-z0-9-])", normalized):
-            return name
-    return v59._tool(value)
+def _entry_tool(value: Any, requested: set[str]) -> str:
+    name = v59._tool(value)
+    if name in requested:
+        return name
+    text = _text(value).casefold().replace("_", "-")
+    for candidate in sorted(requested, key=len, reverse=True):
+        if re.search(
+            rf"(?<![a-z0-9-]){re.escape(candidate)}(?![a-z0-9-])",
+            text,
+        ):
+            return candidate
+    return ""
 
 
 def _sanitize_text(
@@ -258,8 +274,8 @@ def _sanitize_text(
     match = _STALE_FLATTENED_PATH_RE.search(value)
     if not match or not requested:
         return value
-    name = _tool_from_flattened_value(match.group("value"), requested)
-    if name in incomplete:
+    name = _entry_tool(match.group("value"), requested)
+    if name in incomplete or (not name and incomplete):
         return value
     removed.append(path or "<flattened-text>")
     return _DROP
@@ -307,10 +323,20 @@ def _sanitize_node(
         normalized = key.casefold()
         current_path = f"{path}.{key}"
 
-        if normalized in _INCOMPLETE_LIST_FIELDS and isinstance(raw_value, list) and requested:
+        # Large prior report artifacts are ignored by the native stage flattener. Keep
+        # them by reference rather than copying or scanning megabytes of base64/text.
+        if normalized in _HEAVY_TEXT_FIELDS or normalized in _PASSTHROUGH_FIELDS:
+            output[key] = raw_value
+            continue
+
+        if (
+            normalized in _STRICT_INCOMPLETE_LIST_FIELDS
+            and isinstance(raw_value, list)
+            and requested
+        ):
             retained: list[Any] = []
             for index, item in enumerate(raw_value):
-                name = v59._tool(item)
+                name = _entry_tool(item, requested)
                 if name in incomplete or (not name and incomplete):
                     sanitized = _sanitize_node(
                         item,
@@ -328,8 +354,25 @@ def _sanitize_node(
             output[key] = retained
             continue
 
-        if normalized in _COMPLETED_LIST_FIELDS and isinstance(raw_value, list) and requested:
-            output[key] = sorted(completed)
+        if normalized in _BLOCKER_LIST_FIELDS and isinstance(raw_value, list) and requested:
+            retained = []
+            for index, item in enumerate(raw_value):
+                name = _entry_tool(item, requested)
+                if name and name not in incomplete:
+                    removed.append(f"{current_path}[{index}]")
+                    continue
+                sanitized = _sanitize_node(
+                    item,
+                    requested=requested,
+                    completed=completed,
+                    incomplete=incomplete,
+                    coverage=coverage,
+                    removed=removed,
+                    path=f"{current_path}[{index}]",
+                )
+                if sanitized is not _DROP:
+                    retained.append(sanitized)
+            output[key] = retained
             continue
 
         if normalized in _INCOMPLETE_COUNT_FIELDS and requested:
@@ -368,7 +411,7 @@ def canonicalize_stage_results_before_render(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     truth = derive_authoritative_scanner_truth(stage_results)
     if truth["truth_available"] is not True:
-        return deepcopy(dict(stage_results)), {
+        return dict(stage_results), {
             **truth,
             "status": "not_applied_no_authoritative_scanner_population",
             "removed_stale_alias_count": 0,
@@ -395,6 +438,8 @@ def canonicalize_stage_results_before_render(
         "removed_stale_alias_count": len(removed),
         "removed_stale_alias_paths": removed[:100],
         "pre_flatten_truth_enforced": True,
+        "unknown_evidence_preserved_fail_closed": True,
+        "large_artifacts_not_copied_or_scanned": True,
         "raw_stage_evidence_mutated": False,
         "report_design_changed": False,
         "scores_changed": False,
@@ -406,17 +451,26 @@ def canonicalize_stage_results_before_render(
 
 
 def _attach_manifest(result: dict[str, Any], manifest: Mapping[str, Any]) -> dict[str, Any]:
-    output = deepcopy(result)
-    output["pre_render_scanner_truth"] = deepcopy(dict(manifest))
+    manifest_copy = deepcopy(dict(manifest))
+    output = dict(result)
+    output["pre_render_scanner_truth"] = manifest_copy
+
     package = output.get("report_package")
-    if isinstance(package, dict):
-        package["pre_render_scanner_truth"] = deepcopy(dict(manifest))
-        canonical = package.get("json")
-        if isinstance(canonical, dict):
-            canonical["pre_render_scanner_truth"] = deepcopy(dict(manifest))
+    if isinstance(package, Mapping):
+        package_copy = dict(package)
+        package_copy["pre_render_scanner_truth"] = deepcopy(manifest_copy)
+        canonical = package_copy.get("json")
+        if isinstance(canonical, Mapping):
+            canonical_copy = dict(canonical)
+            canonical_copy["pre_render_scanner_truth"] = deepcopy(manifest_copy)
+            package_copy["json"] = canonical_copy
+        output["report_package"] = package_copy
+
     assessment = output.get("assessment")
-    if isinstance(assessment, dict):
-        assessment["pre_render_scanner_truth"] = deepcopy(dict(manifest))
+    if isinstance(assessment, Mapping):
+        assessment_copy = dict(assessment)
+        assessment_copy["pre_render_scanner_truth"] = deepcopy(manifest_copy)
+        output["assessment"] = assessment_copy
     return output
 
 
