@@ -275,7 +275,7 @@ def _sanitize_text(
     if not match or not requested:
         return value
     name = _entry_tool(match.group("value"), requested)
-    if name in incomplete or (not name and incomplete):
+    if not name or name in incomplete:
         return value
     removed.append(path or "<flattened-text>")
     return _DROP
@@ -337,7 +337,7 @@ def _sanitize_node(
             retained: list[Any] = []
             for index, item in enumerate(raw_value):
                 name = _entry_tool(item, requested)
-                if name in incomplete or (not name and incomplete):
+                if not name or name in incomplete:
                     sanitized = _sanitize_node(
                         item,
                         requested=requested,
