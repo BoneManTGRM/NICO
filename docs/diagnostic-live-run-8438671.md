@@ -1,0 +1,1 @@
+Temporary non-merge diagnostic branch for production run `comprun_8438671f276445ed87b81c7d25056652`. This branch queries only the public read-only status and runtime diagnostic endpoints, uploads a bounded artifact, and must be closed without merge after the exact run state is captured.
