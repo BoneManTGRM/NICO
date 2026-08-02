@@ -35,8 +35,9 @@ Relevant merged repairs:
 - long-stage background execution: `62b53749ca1c3e877187de092fbb5cef4245b0b1`
 - background terminal ordering: `53923aa5db6d96ca5be73f37dee376b49d5fd092`
 - permanent active-run reset control: `c00a715627ff59bc0a35f6e1a3134b854a69b80e`
+- pre-render scanner truth canonicalization: `a8e42b4874a31a6defc43f05f6d22c5623f379c7`
 
-Current continuation: branch `codex/atomic-final-report-publication`.
+Current continuation: PR #989, branch `codex/atomic-final-report-publication`.
 
 ## Exact fresh-run failure
 
@@ -77,7 +78,7 @@ The evidence verifies the architectural failure. The public diagnostic does not 
 
 ## Active continuation
 
-The active repair:
+PR #989:
 
 - removes `final_comprehensive_report_generation` from detached background execution at the run-service dispatch boundary;
 - generates the final report within the existing bounded request execution boundary;
@@ -96,7 +97,7 @@ The active repair:
 
 This package cannot be marked complete until:
 
-- every continuation PR exact-head check passes;
+- every PR #989 exact-head check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - a fresh public assessment passes the final-report stage without manual retry;
