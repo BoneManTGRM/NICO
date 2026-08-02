@@ -61,6 +61,7 @@ def test_valid_final_report_is_returned_for_canonical_run_write() -> None:
     assert result["stage_execution"]["detached_background_execution"] is False
     assert result["stage_execution"]["artifact_validation_complete"] is True
     assert result["evidence"]["exact_run_identity_verified"] is True
+    assert result["evidence"]["exact_evidence_ledger_identity_verified"] is True
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
     assert source == original
@@ -99,6 +100,26 @@ def test_missing_or_mismatched_artifacts_fail_closed() -> None:
     assert mismatch["status"] == "blocked"
     assert mismatch["reason"] == "final_report_identity_mismatch"
     assert mismatch["client_delivery_allowed"] is False
+
+
+def test_missing_identity_or_canonical_hash_fails_closed() -> None:
+    def missing_identity(context: dict) -> dict:
+        result = _valid_result(context)
+        result["report_package"]["json"]["identity"].pop("evidence_ledger_id")
+        return result
+
+    identity_result = execute_final_report_stage(missing_identity, _context())
+    assert identity_result["status"] == "blocked"
+    assert identity_result["reason"] == "final_report_identity_mismatch"
+
+    def missing_hash(context: dict) -> dict:
+        result = _valid_result(context)
+        result["report_package"].pop("canonical_truth_sha256")
+        return result
+
+    hash_result = execute_final_report_stage(missing_hash, _context())
+    assert hash_result["status"] == "blocked"
+    assert hash_result["reason"] == "final_report_canonical_hash_missing"
 
 
 def test_nonreturning_provider_becomes_explicit_timeout(monkeypatch) -> None:
