@@ -1,0 +1,74 @@
+{
+  "artifact_schema": "nico.production.final_report_scanner_truth_failure.v1",
+  "captured_at": "2026-08-02T17:14:51Z",
+  "production_release_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+  "production_identity": {
+    "frontend": "verified",
+    "backend": "verified",
+    "deployment_environment": "production",
+    "ui_contract": "expert-engagement-v2"
+  },
+  "exact_run": {
+    "run_id": "comprun_94b29a7df4514b6aa45bf92d061f4d5e",
+    "repository": "BoneManTGRM/NICO",
+    "commit_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+    "current_stage": "final_comprehensive_report_generation",
+    "canonical_progress_percent": 82.61,
+    "revision": 132,
+    "lifecycle_status": "blocked",
+    "terminal": true,
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "retained_final_artifacts": {
+    "final_artifact_generation_complete": true,
+    "report_id": "comprehensive_report_90a8553e77d71db54736",
+    "pdf_page_count": 20,
+    "markdown_available": true,
+    "pdf_available": true,
+    "canonical_truth_sha256": "a8da23f3586d8da9932ad5e6409686f693ade6a31d763a94725bc66a1294d651"
+  },
+  "semantic_contract_failure": {
+    "status": "blocked",
+    "report_contract_status": "blocked",
+    "report_contract_reason": "comprehensive_final_report_semantic_contract_failed",
+    "technical_reason": "v2_production_publication_failed:ValueError:client report listed completed analyzers as incomplete",
+    "truth_boundary": "The report artifacts existed and were retained. Publication was blocked because a client-visible incomplete_analyzers indexed alias remained while canonical exact-run truth classified the applicable analyzers as complete."
+  },
+  "separate_user_observation": {
+    "run_id": "comprun_8438671f276445ed87b81c7d25056652",
+    "stage": "final_comprehensive_report_generation",
+    "displayed_progress_percent": 83,
+    "behavior": "A newly started assessment repeated the final-report stage behavior after the terminal-ordering repair.",
+    "evidence_scope": "Screenshot and user observation; the exact technical reason is grounded by the separate production proof run above."
+  },
+  "root_cause": {
+    "id": "stale_incomplete_scanner_alias_flattened_before_canonical_reconciliation",
+    "evidence_status": "verified",
+    "mechanism": [
+      "Raw stage evidence contains recursively copied incomplete analyzer or scanner aliases.",
+      "comprehensive_report_package flattens raw evidence into client-visible strings before final canonical scanner reconciliation.",
+      "Later reconciliation corrects canonical JSON but cannot change strings already rendered into Markdown, HTML, and PDF.",
+      "The strict final validator detects incomplete_analyzers[index] while canonical incomplete_applicable_analyzers equals zero and blocks publication."
+    ]
+  },
+  "required_repair": {
+    "canonicalize_before_flattening": true,
+    "preserve_genuine_incomplete_tools": true,
+    "remove_only_stale_completed_tool_aliases": true,
+    "cross_format_consistency_required": true,
+    "final_validator_remains_strict": true,
+    "report_redesign_allowed": false,
+    "score_changes_allowed": false,
+    "scanner_result_changes_allowed": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "source_evidence": {
+    "workflow_run_id": 30757614936,
+    "workflow_job_id": 91523250895,
+    "workflow_artifact_id": 8836671504,
+    "artifact_sha256": "a885a7fc370ce489acb3ece48d6d1ca83a701c62e51d0cd81c4c7198f1ec8683"
+  }
+}

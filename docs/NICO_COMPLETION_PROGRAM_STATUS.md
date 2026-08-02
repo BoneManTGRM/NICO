@@ -6,7 +6,11 @@ The machine-readable source of truth for the active package is:
 
 `docs/client-ready-report-accuracy-observation.json`
 
-The current production observations are:
+The current exact production failure evidence is:
+
+`docs/production-final-report-scanner-truth-failure.json`
+
+Earlier retained observations remain available in:
 
 - `docs/production-dependency-stage-timeout-observation.json`
 - `docs/production-final-report-stage-stall-observation.json`
@@ -23,58 +27,70 @@ Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and 
 
 Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete dependency-ordered package.
 
-Relevant merged repairs:
+Current production main: `c00a715627ff59bc0a35f6e1a3134b854a69b80e`
 
-- finality and exact-run continuation: `ccc399f4766d455a78adf690a1f7f43c1e7c6e3d`
-- durable run recovery: `116a896f031f258426b7f93759323667867c34ee`
-- stage watchdog and WebKit transport: `ff239fbba71a917ef164848bbe6b1a86d760d546`
-- canonical report coverage synchronization: `010263d0db823e46ff1c47ee21f89bef84af5f86`
-- false recovery-overlay removal: `671d213ca70d612e1f0386cb05d86b138da0df81`
-- bounded individual stage execution: `62354ea2db1f62f09eeba373e50efedbcb50c598`
-- durable long-stage background execution: `62b53749ca1c3e877187de092fbb5cef4245b0b1`
+Current continuation: PR #988, branch `codex/pre-render-authoritative-scanner-truth`.
 
-Current continuation: PR #985, branch `codex/final-report-terminal-state-ordering`.
+No later work package may begin before this package is post-merge verified.
 
-## Exact retained failure
+## Exact retained production failure
 
-The retained production assessment advanced past the prior dependency/security failure and reached `Final assessment report` at 83 percent. At 13:30 elapsed, the stage remained active and the report package had not been consumed into the run.
+The post-merge Mobile Restart proof created exact run `comprun_94b29a7df4514b6aa45bf92d061f4d5e` against deployed main `c00a715627ff59bc0a35f6e1a3134b854a69b80e`.
 
-This proves PR #984 improved the earlier 16 percent failure: long-stage work no longer held the browser request open until its bounded timeout. The package remains incomplete because final-report task completion was not reliably visible across request processes.
+The run reached `final_comprehensive_report_generation` at 82.61 percent. The final artifacts existed and were retained:
 
-## Root cause boundary
+- Markdown available;
+- PDF available;
+- 20 PDF pages;
+- canonical truth hash retained;
+- client delivery still blocked;
+- human review not reached.
 
-The live screenshot does not directly expose the background task row or thread ordering. Source inspection identified a concrete race consistent with the observed behavior:
+The semantic publication gate stopped the run with:
 
-- the provider thread and heartbeat thread persisted the same `client_jobs` task record;
-- their writes were not serialized per task;
-- a delayed heartbeat could write `running` after a provider wrote `complete`;
-- another request process could then continue observing a live task even though the completed report existed locally.
+`v2_production_publication_failed:ValueError:client report listed completed analyzers as incomplete`
 
-The race is verified in the code path and reproduced by a deterministic regression test. Its production causality is a strong match but is not claimed solely from the screenshot.
+A separately started user run, `comprun_8438671f276445ed87b81c7d25056652`, repeated the 83 percent final-report behavior after the earlier heartbeat-ordering repair.
+
+## Verified root cause
+
+The prior heartbeat race was real and was remediated, but it was not the complete cause of the 83 percent behavior.
+
+The exact report failure is caused by ordering inside the report pipeline:
+
+1. Raw stage evidence can retain recursively copied fields such as `incomplete_analyzers`.
+2. `comprehensive_report_package` flattens that stage evidence into client-visible strings before the final canonical scanner reconciliation pass.
+3. Later reconciliation corrects canonical JSON but cannot correct strings already rendered into Markdown, HTML, and PDF.
+4. The final validator sees an indexed `incomplete_analyzers[n]` path while authoritative exact-run truth says the applicable scanners completed and the incomplete count is zero.
+5. The validator correctly blocks publication rather than delivering a contradictory report.
+
+This is a report-truth sequencing defect, not a reason to weaken the semantic gate.
 
 ## Active continuation
 
-PR #985:
+PR #988:
 
-- installs monotonic durable status ordering for Comprehensive background tasks;
-- serializes heartbeat and terminal writes per exact task ID;
-- prohibits transitions from `complete`, `failed`, or `timed_out` back to `running`;
-- recovers an existing durable terminal result before accepting a later heartbeat;
-- preserves the full final-report provider result for another request process;
-- proves cross-process recovery after clearing all process-local task state;
-- keeps the background timeout, orphan recovery, duplicate prevention, exact identity, and one-retry contracts;
-- changes no score, scanner finding, report layout, renderer, section order, or PDF composition;
+- derives one pre-render scanner population from direct exact-commit records, the live scanner manifest, and the authoritative client-readiness contract;
+- gives current explicit failures precedence over completion;
+- gives current exact completion precedence over stale copied incomplete aliases;
+- removes only false incomplete-analyzer and incomplete-scanner aliases before stage evidence is flattened;
+- preserves genuine failed, unavailable, timed-out, missing, and review-required scanner states;
+- synchronizes analyzer counts and coverage before Markdown, HTML, JSON, and PDF are built;
+- retains an auditable `pre_render_scanner_truth` manifest, including the exact requested, completed, incomplete, and removed-path populations;
+- leaves the final semantic validator strict;
+- changes no scanner result, score, finding, report layout, renderer, section order, or PDF composition;
 - keeps human review mandatory and client delivery blocked.
 
 ## Completion gate
 
 This package cannot be marked complete until:
 
-- every PR #985 exact-head check passes;
+- every PR #988 exact-head check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass post-merge;
 - two distinct live Comprehensive runs reach expert review without manual stage recovery;
-- their existing-design PDFs contain one canonical analyzer-coverage value, no false incomplete scanner classification, no stale blocked contract presented as current truth, and all required approval and delivery boundaries.
-
-No later work package may begin before this package is post-merge verified.
+- their existing-design PDFs contain one canonical analyzer-coverage value;
+- no completed analyzer is listed as incomplete;
+- no stale blocked contract is presented as current truth;
+- all required approval and client-delivery boundaries remain visible.
