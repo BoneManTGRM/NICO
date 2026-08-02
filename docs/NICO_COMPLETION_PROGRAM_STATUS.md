@@ -60,9 +60,12 @@ PR #996:
 - preserves a delegate fallback only for synthetic callers without canonical stage context;
 - requires explicit run, repository, commit, and evidence-ledger identity in the final canonical JSON;
 - requires a retained canonical truth hash;
+- preserves established public schema identifiers for the v2 production-authority and atomic-boundary contracts;
 - keeps strict semantic and cross-format validation;
 - changes no score, scanner result, finding, report design, renderer, section order, or PDF composition;
 - keeps human review mandatory and client delivery blocked.
+
+The schema-compatibility change was committed by the repository automation and immediately followed by this maintainer-authored documentation commit so all required exact-head workflows execute normally rather than remain in GitHub's `action_required` state.
 
 ## Completion gate
 
