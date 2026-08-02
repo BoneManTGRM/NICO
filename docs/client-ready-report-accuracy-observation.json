@@ -14,10 +14,11 @@
   "background_stage_execution_merge_sha": "62b53749ca1c3e877187de092fbb5cef4245b0b1",
   "background_terminal_ordering_merge_sha": "53923aa5db6d96ca5be73f37dee376b49d5fd092",
   "active_run_escape_hatch_merge_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
-  "current_main_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
-  "continuation_branch": "codex/pre-render-authoritative-scanner-truth",
-  "continuation_pr": 988,
-  "state": "verified_final_report_scanner_truth_failure_pre_render_repair_in_progress",
+  "pre_render_builder_truth_merge_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
+  "current_main_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
+  "continuation_branch": "codex/production-final-context-scanner-truth",
+  "continuation_pr": 991,
+  "state": "post_merge_pre_render_builder_bypassed_production_boundary_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -25,26 +26,25 @@
     "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
   },
   "observed": {
-    "pull_request_981_exact_head_checks": "passed",
-    "pull_request_982_exact_head_checks": "passed",
-    "pull_request_983_exact_head_checks": "passed",
-    "pull_request_984_exact_head_checks": "passed",
-    "pull_request_985_exact_head_checks": "passed",
-    "pull_request_986_exact_head_checks": "passed",
+    "pull_request_988_exact_head_checks": "passed",
+    "pull_request_988_unresolved_review_threads": 0,
     "current_main_exact_deployment_identity": {
       "vercel": "verified",
       "railway": "verified",
-      "release_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+      "release_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
       "deployment_environment": "production",
       "ui_contract": "expert-engagement-v2"
     },
-    "exact_production_semantic_failure": {
-      "run_id": "comprun_94b29a7df4514b6aa45bf92d061f4d5e",
+    "post_merge_mobile_restart_failure": {
+      "workflow_run_id": 30759617998,
+      "workflow_job_id": 91527809057,
+      "workflow_artifact_id": 8837251893,
+      "run_id": "comprun_e16515780eb64202a15c0fc3722e2d66",
       "repository": "BoneManTGRM/NICO",
-      "commit_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+      "commit_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
       "stage": "final_comprehensive_report_generation",
       "canonical_progress_percent": 82.61,
-      "revision": 132,
+      "revision": 115,
       "terminal": true,
       "lifecycle_status": "blocked",
       "final_artifact_generation_complete": true,
@@ -55,67 +55,41 @@
       "report_contract_reason": "comprehensive_final_report_semantic_contract_failed",
       "human_review_reached": false,
       "human_review_required": true,
-      "client_delivery_allowed": false,
-      "observation_file": "docs/production-final-report-scanner-truth-failure.json"
+      "client_delivery_allowed": false
     },
-    "separate_new_user_run": {
-      "run_id": "comprun_8438671f276445ed87b81c7d25056652",
-      "stage": "final_comprehensive_report_generation",
-      "displayed_progress_percent": 83,
-      "behavior": "Repeated final-report behavior after the terminal-ordering repair.",
-      "evidence_scope": "User screenshot and observation; exact technical failure is established by the production proof run."
-    },
+    "post_merge_ios_webkit_status": "failed",
+    "post_merge_two_service_status": "pending_or_in_progress_when_continuation_started",
     "first_incomplete_package_remains_blocking": true,
     "later_report_truth_package_closed_without_merge": 977
   },
   "root_causes_and_hypotheses": [
     {
-      "id": "revision_only_stage_continuation_can_run_indefinitely",
-      "evidence_status": "remediated",
-      "repair_merge_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546"
-    },
-    {
-      "id": "conflicting_final_report_coverage_aliases",
-      "evidence_status": "remediated",
-      "repair_merge_sha": "010263d0db823e46ff1c47ee21f89bef84af5f86"
-    },
-    {
-      "id": "false_stuck_run_overlay_on_healthy_assessment",
-      "evidence_status": "remediated",
-      "repair_merge_sha": "671d213ca70d612e1f0386cb05d86b138da0df81"
-    },
-    {
-      "id": "synchronous_long_stage_provider_holds_continue_request",
-      "evidence_status": "remediated",
-      "repair_merge_sha": "62b53749ca1c3e877187de092fbb5cef4245b0b1"
-    },
-    {
-      "id": "background_terminal_result_can_be_overwritten_by_delayed_heartbeat",
-      "evidence_status": "remediated_but_not_complete_root_cause",
-      "repair_merge_sha": "53923aa5db6d96ca5be73f37dee376b49d5fd092",
-      "truth_boundary": "A brand-new post-repair run repeated the final-stage behavior, proving this race was not the complete cause."
-    },
-    {
       "id": "stale_incomplete_scanner_alias_flattened_before_canonical_reconciliation",
+      "evidence_status": "verified"
+    },
+    {
+      "id": "global_report_builder_patch_bypassed_by_production_provider_registry_wrapper",
       "evidence_status": "verified",
-      "effect": "The final artifacts contain an indexed incomplete-analyzer alias even though authoritative exact-run scanner truth classifies the applicable analyzers as complete. The strict semantic gate blocks publication before human review.",
-      "repair": "Canonicalize raw stage scanner aliases before comprehensive_report_package flattens them into Markdown, HTML, and PDF. Preserve genuine incomplete tools and keep final validation strict."
+      "effect": "PR #988 patched the native report builder, but exact production runs continued to emit the identical semantic failure. The authoritative production final-report wrapper copies prior_stage_results, synchronizes only scores, and invokes the registry provider directly.",
+      "repair": "Canonicalize scanner truth inside comprehensive_final_report_execution_v1._canonical_final_report_context before score synchronization and before the provider invocation."
     }
   ],
   "active_continuation": {
-    "pre_render_authoritative_scanner_truth": true,
+    "authoritative_production_final_report_boundary": "nico/comprehensive_final_report_execution_v1.py::_canonical_final_report_context",
+    "scanner_truth_canonicalized_before_provider_invocation": true,
+    "sanitized_prior_stage_results_only": true,
     "direct_exact_commit_records_used": true,
     "live_scanner_manifest_used": true,
     "client_readiness_contract_used": true,
     "live_failures_override_stale_completion": true,
     "exact_completion_overrides_stale_incomplete_alias": true,
-    "stale_incomplete_aliases_removed_before_flattening": true,
+    "unknown_evidence_preserved_fail_closed": true,
     "genuine_incomplete_analyzers_preserved": true,
-    "counts_and_coverage_synchronized_before_render": true,
-    "pre_render_manifest_retained": true,
-    "source_stage_evidence_mutated": false,
+    "scanner_truth_manifest_in_provider_context": true,
+    "scanner_truth_manifest_in_result_and_evidence": true,
+    "global_builder_patch_retained_as_defense_in_depth": true,
     "final_semantic_validator_remains_strict": true,
-    "prior_completed_stage_evidence_preserved": true,
+    "source_stage_evidence_mutated": false,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
     "existing_section_order_preserved": true,

@@ -6,7 +6,7 @@ The machine-readable source of truth for the active package is:
 
 `docs/client-ready-report-accuracy-observation.json`
 
-The current exact production failure evidence is:
+The exact production failure evidence remains:
 
 `docs/production-final-report-scanner-truth-failure.json`
 
@@ -27,15 +27,19 @@ Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and 
 
 Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete dependency-ordered package.
 
-Current production main: `c00a715627ff59bc0a35f6e1a3134b854a69b80e`
+Current production main: `a8e42b4874a31a6defc43f05f6d22c5623f379c7`
 
-Current continuation: PR #988, branch `codex/pre-render-authoritative-scanner-truth`.
+Current continuation: PR #991, branch `codex/production-final-context-scanner-truth`.
 
 No later work package may begin before this package is post-merge verified.
 
-## Exact retained production failure
+## Exact post-merge failure after PR #988
 
-The post-merge Mobile Restart proof created exact run `comprun_94b29a7df4514b6aa45bf92d061f4d5e` against deployed main `c00a715627ff59bc0a35f6e1a3134b854a69b80e`.
+PR #988 passed every exact-head CI, security, WebKit, Mobile Restart, Postgres, resilience, report, and production-acceptance check and merged as `a8e42b4874a31a6defc43f05f6d22c5623f379c7`.
+
+The exact merge was deployed to Vercel and Railway. Mandatory post-merge Mobile Restart and iOS WebKit proofs then failed.
+
+Mobile Restart created exact run `comprun_e16515780eb64202a15c0fc3722e2d66` against deployed merge `a8e42b4874a31a6defc43f05f6d22c5623f379c7`.
 
 The run reached `final_comprehensive_report_generation` at 82.61 percent. The final artifacts existed and were retained:
 
@@ -46,46 +50,46 @@ The run reached `final_comprehensive_report_generation` at 82.61 percent. The fi
 - client delivery still blocked;
 - human review not reached.
 
-The semantic publication gate stopped the run with:
+The semantic publication gate stopped the run with the same exact reason:
 
 `v2_production_publication_failed:ValueError:client report listed completed analyzers as incomplete`
 
-A separately started user run, `comprun_8438671f276445ed87b81c7d25056652`, repeated the 83 percent final-report behavior after the earlier heartbeat-ordering repair.
+## Verified production bypass
 
-## Verified root cause
+The scanner-truth sequencing defect remains verified, but PR #988 bound the repair at a layer production did not reliably use.
 
-The prior heartbeat race was real and was remediated, but it was not the complete cause of the 83 percent behavior.
+The authoritative production path is `nico/comprehensive_final_report_execution_v1.py`:
 
-The exact report failure is caused by ordering inside the report pipeline:
+1. the production application registers and wraps the exact `final_report_generation` provider;
+2. `_canonical_final_report_context` copies `prior_stage_results`;
+3. it synchronizes score aliases;
+4. it invokes the provider directly;
+5. the production path can therefore bypass process-global report-builder patches.
 
-1. Raw stage evidence can retain recursively copied fields such as `incomplete_analyzers`.
-2. `comprehensive_report_package` flattens that stage evidence into client-visible strings before the final canonical scanner reconciliation pass.
-3. Later reconciliation corrects canonical JSON but cannot correct strings already rendered into Markdown, HTML, and PDF.
-4. The final validator sees an indexed `incomplete_analyzers[n]` path while authoritative exact-run truth says the applicable scanners completed and the incomplete count is zero.
-5. The validator correctly blocks publication rather than delivering a contradictory report.
-
-This is a report-truth sequencing defect, not a reason to weaken the semantic gate.
+This explains why PR #988 passed standalone and integration tests while the exact deployed final-report provider continued to produce the same stale incomplete-analyzer contradiction.
 
 ## Active continuation
 
-PR #988:
+PR #991 moves the repair into the authoritative production boundary:
 
-- derives one pre-render scanner population from direct exact-commit records, the live scanner manifest, and the authoritative client-readiness contract;
-- gives current explicit failures precedence over completion;
-- gives current exact completion precedence over stale copied incomplete aliases;
-- removes only false incomplete-analyzer and incomplete-scanner aliases before stage evidence is flattened;
-- preserves genuine failed, unavailable, timed-out, missing, and review-required scanner states;
-- synchronizes analyzer counts and coverage before Markdown, HTML, JSON, and PDF are built;
-- retains an auditable `pre_render_scanner_truth` manifest, including the exact requested, completed, incomplete, and removed-path populations;
-- leaves the final semantic validator strict;
-- changes no scanner result, score, finding, report layout, renderer, section order, or PDF composition;
-- keeps human review mandatory and client delivery blocked.
+- `_canonical_final_report_context` derives exact-run scanner truth before score synchronization;
+- only sanitized `prior_stage_results` are passed to the final-report provider;
+- direct exact-commit scanner records, the live scanner manifest, and the client-readiness contract are reconciled before the provider can render any format;
+- current explicit failures override completion;
+- current exact completion overrides stale copied incomplete aliases;
+- unidentified evidence remains visible and fail-closed;
+- genuine failed, unavailable, timed-out, and missing analyzers remain incomplete;
+- the pre-render scanner-truth manifest is retained in the provider context, final result, and evidence envelope;
+- the PR #988 report-builder patch remains as defense in depth but is no longer relied on for production correctness;
+- the strict final semantic validator remains unchanged;
+- no score, scanner result, report design, renderer, section order, or PDF composition changes;
+- human review remains mandatory and client delivery remains blocked.
 
 ## Completion gate
 
 This package cannot be marked complete until:
 
-- every PR #988 exact-head check passes;
+- every PR #991 exact-head check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass post-merge;
