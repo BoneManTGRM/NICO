@@ -1,0 +1,68 @@
+name: Capture final report terminal diagnostic
+
+on:
+  push:
+    branches:
+      - codex/final-report-terminal-diagnostic
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Fetch exact production run record
+        env:
+          RUN_ID: comprun_b60488fd729b41bea5263aa1e18ce881
+          ORIGIN: https://app.nicoaudit.com
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results
+          python - <<'PY'
+          import json, os, time, urllib.request
+          run_id = os.environ['RUN_ID']
+          origin = os.environ['ORIGIN'].rstrip('/')
+          urls = {
+              'status': f'{origin}/api/nico/assessment/comprehensive-run/{run_id}',
+              'runtime': f'{origin}/api/nico/diagnostics/comprehensive-runtime',
+          }
+          combined = {
+              'artifact_schema': 'nico.final_report_terminal_diagnostic.v1',
+              'run_id': run_id,
+              'captured_at_epoch': time.time(),
+              'sources': {},
+          }
+          for name, url in urls.items():
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'Accept': 'application/json',
+                      'Cache-Control': 'no-store',
+                      'User-Agent': 'nico-final-report-terminal-diagnostic',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      raw = response.read().decode('utf-8')
+                      combined['sources'][name] = {
+                          'http_status': response.status,
+                          'url': url,
+                          'payload': json.loads(raw),
+                      }
+              except Exception as exc:
+                  combined['sources'][name] = {
+                      'url': url,
+                      'error': f'{type(exc).__name__}: {exc}',
+                  }
+          with open('audit-results/final-report-terminal-diagnostic.json', 'w', encoding='utf-8') as handle:
+              json.dump(combined, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          print(json.dumps(combined, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: final-report-terminal-diagnostic
+          path: audit-results/final-report-terminal-diagnostic.json
+          retention-days: 30
