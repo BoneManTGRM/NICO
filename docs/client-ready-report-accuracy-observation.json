@@ -8,7 +8,7 @@
   "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
   "current_main_sha": "116a896f031f258426b7f93759323667867c34ee",
   "continuation_branch": "codex/exact-head-client-report-accuracy-continuation",
-  "continuation_pr": null,
+  "continuation_pr": 978,
   "state": "post_merge_verification_failed_continuation_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
@@ -81,6 +81,7 @@
     "single_explicit_stalled_stage_retry": true,
     "duplicate_unbounded_retries_prohibited": true,
     "webkit_request_body_dispatched_once": true,
+    "failed_proof_backend_diagnostic_retained": true,
     "prior_completed_stage_evidence_preserved": true,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
