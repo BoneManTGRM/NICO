@@ -14,9 +14,10 @@
   "background_stage_execution_merge_sha": "62b53749ca1c3e877187de092fbb5cef4245b0b1",
   "background_terminal_ordering_merge_sha": "53923aa5db6d96ca5be73f37dee376b49d5fd092",
   "active_run_escape_hatch_merge_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
-  "current_main_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+  "pre_render_scanner_truth_merge_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
+  "current_main_sha": "a8e42b4874a31a6defc43f05f6d22c5623f379c7",
   "continuation_branch": "codex/atomic-final-report-publication",
-  "continuation_pr": null,
+  "continuation_pr": 989,
   "state": "fresh_production_final_report_stall_atomic_publication_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
@@ -31,6 +32,7 @@
     "pull_request_984_exact_head_checks": "passed",
     "pull_request_985_exact_head_checks": "passed",
     "pull_request_986_exact_head_checks": "passed",
+    "pull_request_988_exact_head_checks": "passed",
     "pull_request_985_unresolved_review_threads": 0,
     "pull_request_986_unresolved_review_threads": 0,
     "fresh_production_run": {
