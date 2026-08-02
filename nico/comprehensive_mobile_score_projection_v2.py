@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v59-client-readiness"
+RUNTIME_REVISION = "v60-client-ready-render"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -40,6 +40,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_client_readiness_v59 import (
         install_comprehensive_client_readiness_v59,
+    )
+    from nico.comprehensive_client_report_render_v60 import (
+        install_comprehensive_client_report_render_v60,
     )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
@@ -82,6 +85,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     final_publication_truth = install_comprehensive_final_publication_truth_v58()
     client_readiness = install_comprehensive_client_readiness_v59()
+    client_report_render = install_comprehensive_client_report_render_v60()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
     report_truth = install_comprehensive_report_truth_v53()
@@ -95,6 +99,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "source_anchor_location": source_anchor_location,
         "final_publication_truth": final_publication_truth,
         "client_readiness": client_readiness,
+        "client_report_render": client_report_render,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
@@ -138,6 +143,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "pre_render_truth_reconciliation": True,
         "final_register_count_synchronized_before_render": True,
         "legacy_score_contract_reconciled_before_render": True,
+        "premium_core_rebuilt_after_reconciliation": True,
+        "production_pdf_is_acceptance_artifact": True,
+        "single_detailed_register_enforced": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,
