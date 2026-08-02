@@ -30,3 +30,5 @@ jobs:
           git add -A
           git commit -m "Remove generated package metadata from PR 991"
           git push origin HEAD:codex/production-final-context-scanner-truth
+
+# This no-op edit triggers the cleanup after the workflow exists on the branch.
