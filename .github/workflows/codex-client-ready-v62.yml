@@ -1,0 +1,296 @@
+name: Codex Client Ready v62
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/codex-client-ready-v62.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply bounded source repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          scanner = Path('nico/scanner_evidence_pipeline_v1.py')
+          text = scanner.read_text(encoding='utf-8')
+          start = text.index('def _run_bandit(')
+          end = text.index('\n\ndef _semgrep_config', start)
+          replacement = '''def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
+              """Run Bandit with a complete JSON artifact instead of fragile CSV parsing."""
+
+              binary = shutil.which("bandit")
+              if binary is None:
+                  return _unavailable(
+                      spec,
+                      "bandit is not installed in the worker image.",
+                      source="canonical_bandit_json_v62",
+                  )
+              raw = workspace.root / "scanner-raw" / "bandit.json"
+              raw.parent.mkdir(parents=True, exist_ok=True)
+              log = workspace.root / "scanner-output" / "bandit.log"
+              excludes = (
+                  ".git", ".next", ".venv", "__pycache__", "audit-results",
+                  "build", "coverage", "coverage_html", "dist", "example",
+                  "examples", "fixture", "fixtures", "generated", "node_modules",
+                  "sample", "samples", "test", "tests", "vendor", "vendors", "venv",
+              )
+              command = (
+                  binary, "-r", ".", "-f", "json", "-o", str(raw),
+                  "-x", ",".join(excludes),
+              )
+              result = _run(
+                  runner,
+                  command,
+                  cwd=workspace.repo_dir,
+                  limits=WorkerLimits(
+                      max(spec.timeout_seconds, 360),
+                      max(spec.max_output_chars, 4_000_000),
+                  ),
+                  stdout_path=log,
+              )
+              payload, reason = _read_json(raw)
+              findings: list[Any] = []
+              capture_complete = False
+              if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+                  findings = [dict(item) for item in payload["results"] if isinstance(item, dict)]
+                  capture_complete = len(findings) == len(payload["results"])
+                  if not capture_complete:
+                      reason = "Bandit JSON results contained a non-object finding."
+              elif not reason:
+                  reason = "Bandit JSON output did not retain a results list."
+              blob = _raw_blob(spec.name, raw if raw.exists() else log, "json")
+              return _tool_payload(
+                  spec,
+                  result,
+                  findings=findings,
+                  capture_complete=capture_complete,
+                  reason=reason,
+                  raw_blob=blob,
+                  execution_source="canonical_bandit_json_v62",
+                  workspace=workspace,
+                  valid_returncodes={0, 1},
+                  extra={
+                      "bandit_json_contract": True,
+                      "bandit_csv_parser_used": False,
+                      "explicit_exclusion_count": len(excludes),
+                      "production_source_scope": True,
+                      "compact_complete_result": True,
+                  },
+              )
+          '''
+          # The triple-quoted block is indented for YAML readability. Remove its
+          # common 10-space indentation before writing Python source.
+          replacement = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in replacement.splitlines()
+          )
+          scanner.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+
+          renderer = Path('nico/v2_premium_report_renderer.py')
+          text = renderer.read_text(encoding='utf-8')
+          old = '''    canonical = deepcopy(dict(result.get("json") or {})) if isinstance(result.get("json"), Mapping) else {}
+              identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+          '''
+          old = '\n'.join(
+              line[6:] if line.startswith('      ') else line
+              for line in old.splitlines()
+          )
+          new = '''    canonical = deepcopy(dict(result.get("json") or {})) if isinstance(result.get("json"), Mapping) else {}
+              # Reconcile scanner, coverage, maturity, identifier, and stage truth at
+              # the established premium renderer boundary. This changes report data,
+              # not the approved report design or layout.
+              from nico.comprehensive_client_readiness_v59 import reconcile_client_readiness
+              from nico.comprehensive_client_report_render_v60 import _extract_internal_diagnostics
+
+              canonical = reconcile_client_readiness(canonical)
+              canonical, internal_diagnostics = _extract_internal_diagnostics(canonical)
+              if internal_diagnostics:
+                  result["pre_finalization_audit"] = {
+                      "version": "nico.existing_renderer_truth.v62",
+                      "entries": internal_diagnostics,
+                      "retained_outside_client_facing_canonical_truth": True,
+                  }
+              identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+          '''
+          new = '\n'.join(
+              line[6:] if line.startswith('      ') else line
+              for line in new.splitlines()
+          )
+          if old not in text:
+              raise SystemExit('premium renderer canonical boundary marker not found')
+          renderer.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          phase4 = Path('tests/test_phase4_bandit_evidence.py')
+          phase4.write_text('''from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from nico.scanner_evidence_pipeline_v1 import _run_bandit
+from nico.scanner_tool_runners import TOOL_SPECS
+from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
+
+
+def _bandit_spec():
+    return next(spec for spec in TOOL_SPECS if spec.name == "bandit")
+
+
+def _runner(findings):
+    def run(command, **kwargs):
+        command = tuple(str(part) for part in command)
+        report = Path(command[command.index("-o") + 1])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps({"errors": [], "metrics": {}, "results": findings}), encoding="utf-8")
+        stdout_path = kwargs.get("stdout_path")
+        if stdout_path:
+            Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(stdout_path).write_text("Bandit completed\\n", encoding="utf-8")
+        return WorkerCommandResult(
+            args=command,
+            returncode=1 if findings else 0,
+            stdout="Bandit completed",
+            stderr="",
+            stdout_path=str(stdout_path) if stdout_path else None,
+            stdout_bytes=17,
+            stderr_bytes=0,
+        )
+    return run
+
+
+def test_bandit_retains_complete_json(monkeypatch, tmp_path: Path) -> None:
+    workspace = WorkerWorkspace(tmp_path)
+    workspace.repo_dir.mkdir(parents=True)
+    monkeypatch.setattr("nico.scanner_evidence_pipeline_v1.shutil.which", lambda name: "/usr/bin/bandit")
+    finding = {
+        "filename": "nico/example.py",
+        "test_name": "request_without_timeout",
+        "test_id": "B113",
+        "issue_severity": "MEDIUM",
+        "issue_confidence": "LOW",
+        "issue_text": "Requests call without timeout",
+        "line_number": 14,
+    }
+    payload = _run_bandit(_bandit_spec(), workspace, _runner([finding]))
+    assert payload["status"] == "completed"
+    assert payload["output_capture_complete"] is True
+    assert payload["raw_artifact_capture_complete"] is True
+    assert payload["raw_artifact_format"] == "json"
+    assert payload["findings_count"] == 1
+    assert payload["execution_source"] == "canonical_bandit_json_v62"
+    assert payload["bandit_csv_parser_used"] is False
+
+
+def test_bandit_zero_findings_is_complete(monkeypatch, tmp_path: Path) -> None:
+    workspace = WorkerWorkspace(tmp_path)
+    workspace.repo_dir.mkdir(parents=True)
+    monkeypatch.setattr("nico.scanner_evidence_pipeline_v1.shutil.which", lambda name: "/usr/bin/bandit")
+    payload = _run_bandit(_bandit_spec(), workspace, _runner([]))
+    assert payload["status"] == "completed"
+    assert payload["findings"] == []
+    assert payload["findings_count"] == 0
+    assert payload["raw_artifact_format"] == "json"
+          ''', encoding='utf-8')
+
+          pipeline_test = Path('tests/test_scanner_evidence_pipeline_v1.py')
+          text = pipeline_test.read_text(encoding='utf-8')
+          test_start = text.index('def test_bandit_complete_file_capture_survives_truncated_preview')
+          test_end = text.index('\n\ndef test_osv_uses_v2_source_scan_before_legacy_fallback', test_start)
+          test_replacement = '''def test_bandit_complete_file_capture_survives_truncated_preview(monkeypatch, tmp_path: Path) -> None:
+              workspace = _workspace(tmp_path)
+              monkeypatch.setattr("nico.scanner_evidence_pipeline_v1.shutil.which", lambda name: f"/tools/{name}")
+
+              def runner(args, *, cwd, limits, stdout_path, extra_env):
+                  del cwd, limits, extra_env
+                  Path(args[args.index("-o") + 1]).write_text(
+                      json.dumps({"errors": [], "metrics": {}, "results": [{
+                          "filename": "nico/example.py",
+                          "test_name": "assert_used",
+                          "test_id": "B101",
+                          "issue_severity": "LOW",
+                          "issue_confidence": "HIGH",
+                          "issue_text": "Use of assert detected",
+                          "line_number": 9,
+                      }]}),
+                      encoding="utf-8",
+                  )
+                  stdout_path.write_text("Bandit preview only", encoding="utf-8")
+                  return WorkerCommandResult(
+                      args=tuple(args), returncode=1, stdout="Bandit preview only", stderr="",
+                      output_truncated=True, stdout_path=str(stdout_path), stdout_bytes=32 * 1024 * 1024,
+                  )
+
+              result = _run_bandit(
+                  ScannerToolSpec("bandit", ("bandit",), "static", timeout_seconds=30, max_output_chars=100),
+                  workspace,
+                  runner,
+              )
+              assert result["status"] == "completed"
+              assert result["output_truncated"] is True
+              assert result["output_capture_complete"] is True
+              assert result["raw_artifact_capture_complete"] is True
+              assert result["raw_artifact_format"] == "json"
+              assert result["findings_count"] == 1
+              assert result["execution_source"] == "canonical_bandit_json_v62"
+              assert result["bandit_csv_parser_used"] is False
+          '''
+          test_replacement = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in test_replacement.splitlines()
+          )
+          pipeline_test.write_text(text[:test_start] + test_replacement + text[test_end:], encoding='utf-8')
+
+          renderer_test = Path('tests/test_existing_renderer_truth_v62.py')
+          renderer_test.write_text('''from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_existing_premium_renderer_reconciles_truth_without_redesign() -> None:
+    source = Path("nico/v2_premium_report_renderer.py").read_text(encoding="utf-8")
+    assert "canonical = reconcile_client_readiness(canonical)" in source
+    assert "_extract_internal_diagnostics(canonical)" in source
+    assert "premium_multi_chapter_layout" in source
+    assert "existing_renderer" not in source or "rebuild_premium_client_artifacts" in source
+
+
+def test_bandit_csv_execution_is_removed_from_authoritative_pipeline() -> None:
+    source = Path("nico/scanner_evidence_pipeline_v1.py").read_text(encoding="utf-8")
+    block = source[source.index("def _run_bandit("):source.index("def _semgrep_config")]
+    assert '"-f", "json"' in block
+    assert 'raw = workspace.root / "scanner-raw" / "bandit.json"' in block
+    assert "csv.DictReader" not in block
+    assert 'execution_source="canonical_bandit_json_v62"' in block
+          ''', encoding='utf-8')
+          PY
+
+      - name: Commit repair to pull-request branch
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add nico/scanner_evidence_pipeline_v1.py nico/v2_premium_report_renderer.py tests/
+          if git diff --cached --quiet; then
+            echo "Repair already applied."
+            exit 0
+          fi
+          git commit -m "Make scanner and renderer truth authoritative"
+          git push origin "HEAD:${HEAD_REF}"
