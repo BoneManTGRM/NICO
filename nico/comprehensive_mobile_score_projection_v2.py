@@ -63,6 +63,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_final_publication_truth_v58 import (
         install_comprehensive_final_publication_truth_v58,
     )
+    from nico.comprehensive_final_register_scanner_truth_v62 import (
+        install_comprehensive_final_register_scanner_truth_v62,
+    )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
@@ -87,6 +90,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     final_publication_truth = install_comprehensive_final_publication_truth_v58()
     client_readiness = install_comprehensive_client_readiness_v59()
+    final_register_scanner_truth = (
+        install_comprehensive_final_register_scanner_truth_v62()
+    )
     client_report_render = install_comprehensive_client_report_render_v60()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
@@ -102,6 +108,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "source_anchor_location": source_anchor_location,
         "final_publication_truth": final_publication_truth,
         "client_readiness": client_readiness,
+        "final_register_scanner_truth": final_register_scanner_truth,
         "client_report_render": client_report_render,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
@@ -145,6 +152,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "explicit_assurance_factors_retained": True,
         "pre_render_truth_reconciliation": True,
         "final_register_count_synchronized_before_render": True,
+        "final_register_scanner_truth_reconciled": True,
         "legacy_score_contract_reconciled_before_render": True,
         "existing_report_renderer_preserved": True,
         "existing_visual_design_preserved": True,
