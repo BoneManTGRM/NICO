@@ -1,0 +1,53 @@
+{
+  "artifact_schema": "nico.production.final_report_background_timeout.v1",
+  "observation_scope": "exact_post_merge_mobile_restart_production_proof",
+  "observed_at": "2026-08-02T19:07:53Z",
+  "repository": "BoneManTGRM/NICO",
+  "production_release_sha": "f457ed47fc374358fe47e23128066c771db4f261",
+  "deployment_identity": {
+    "vercel": "verified",
+    "railway": "verified",
+    "environment": "production"
+  },
+  "workflow": {
+    "name": "Mobile Restart Production Proof",
+    "run_id": 30761914027,
+    "artifact_id": 8837943823,
+    "artifact_digest": "sha256:1b0ed5ced2d2620097bfc5485acc0456384bda501c911b9fb0becb58df7871fc"
+  },
+  "assessment": {
+    "run_id": "comprun_33925b5a68994333ab148ec925d5bd2f",
+    "repository": "BoneManTGRM/NICO",
+    "commit_sha": "f457ed47fc374358fe47e23128066c771db4f261",
+    "current_stage": "final_comprehensive_report_generation",
+    "canonical_progress_percent": 82.61,
+    "terminal": true,
+    "status": "blocked",
+    "error_code": "background_stage_execution_timeout",
+    "reason": "stage_progress_stalled",
+    "error_message": "Stage final_comprehensive_report_generation exceeded the 900-second background execution boundary.",
+    "technical_reason": "background_stage_execution_timeout:stage=final_comprehensive_report_generation:task_id=comprehensive_stage_83fcc878a480cb96e397165c6ada:elapsed_seconds=908.093",
+    "task_id": "comprehensive_stage_83fcc878a480cb96e397165c6ada",
+    "elapsed_seconds": 908.093,
+    "configured_background_boundary_seconds": 900,
+    "artifacts_available": false,
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "interpretation": {
+    "browser_only_failure": false,
+    "scanner_truth_failure": false,
+    "final_report_generic_background_execution_verified": true,
+    "indefinite_83_percent_behavior_replaced_by_explicit_terminal_timeout": true,
+    "production_completion_gate_passed": false,
+    "required_repair": "Execute final report generation outside the generic detached background branch, validate all report artifacts and exact identity, and commit the result through the canonical Comprehensive run transaction."
+  },
+  "preserved_boundaries": {
+    "report_design_preserved": true,
+    "score_truth_preserved": true,
+    "scanner_truth_preserved": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
