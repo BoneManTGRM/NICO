@@ -132,6 +132,7 @@ def install_comprehensive_source_anchor_location_v57() -> dict[str, Any]:
         "v5_parser_bound": v5_bound,
         "ranged_source_anchor_path_canonicalized": True,
         "source_range_retained_as_metadata": True,
+        "temporary_observation_workflow_retained": False,
         "scores_changed_to_satisfy_gate": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
