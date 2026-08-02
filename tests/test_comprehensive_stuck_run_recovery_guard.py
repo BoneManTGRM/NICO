@@ -42,3 +42,11 @@ def test_guard_is_mounted_before_assessment_transport_bridges() -> None:
     assert 'import ComprehensiveStuckRunRecovery from "./ComprehensiveStuckRunRecovery"' in source
     assert "<ComprehensiveStuckRunRecovery />" in source
     assert source.index("<ComprehensiveStuckRunRecovery />") < source.index("<AssessmentApiTransportBridge />")
+
+
+def test_request_input_is_dispatched_once_for_webkit_body_safety() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "const boundedRequest = new Request(input, boundedInit)" in source
+    assert "requestPromise = originalFetch(boundedRequest)" in source
+    assert "originalFetch(boundedRequest, boundedInit)" not in source
+    assert "Passing the same" in source and "WebKit" in source

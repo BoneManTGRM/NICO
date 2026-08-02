@@ -206,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
             "expected_sha": args.expected_sha,
             "browser_engine": "webkit",
             "error": f"{type(exc).__name__}: {recovery._bounded(exc, 2_000)}",
+            "diagnostic": getattr(exc, "nico_diagnostic", {}),
             "finished_at_epoch": time.time(),
         }
         recovery._write(args.output, failure)

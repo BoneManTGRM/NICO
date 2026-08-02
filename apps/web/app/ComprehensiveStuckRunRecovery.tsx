@@ -53,8 +53,19 @@ function combinedRequest(
   }, requestTimeout(path, method));
 
   const boundedInit: RequestInit = {...init, signal: controller.signal, cache: "no-store"};
-  const request = input instanceof Request ? new Request(input, boundedInit) : input;
-  return originalFetch(request, boundedInit).finally(() => {
+  let requestPromise: Promise<Response>;
+  if (input instanceof Request) {
+    // The proxy bridge already constructed the exact request body. Passing the same
+    // init object to fetch a second time is tolerated by Chromium but can consume or
+    // reject the body in WebKit before the intake response is returned. Construct one
+    // bounded Request and dispatch it without a second init/body application.
+    const boundedRequest = new Request(input, boundedInit);
+    requestPromise = originalFetch(boundedRequest);
+  } else {
+    requestPromise = originalFetch(input, boundedInit);
+  }
+
+  return requestPromise.finally(() => {
     window.clearTimeout(timeout);
     if (callerSignal) callerSignal.removeEventListener("abort", abortFromCaller);
     activeControllers.delete(controller);

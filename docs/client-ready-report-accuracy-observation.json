@@ -5,8 +5,11 @@
   "work_package": "exact_head_client_report_accuracy",
   "dependency_state": "first_incomplete",
   "release_base_sha": "78c8a62393446a9a70a675d905c7a9201a8d21b5",
-  "continuation_pr": 974,
-  "state": "implementation_complete_awaiting_exact_head_checks",
+  "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
+  "current_main_sha": "116a896f031f258426b7f93759323667867c34ee",
+  "continuation_branch": "codex/exact-head-client-report-accuracy-continuation",
+  "continuation_pr": 978,
+  "state": "post_merge_verification_failed_continuation_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -14,52 +17,80 @@
     "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
   },
   "observed": {
-    "main_deployed_to_vercel": true,
-    "main_deployed_to_railway": true,
-    "pull_request_972_exact_head_checks": "passed",
-    "pull_request_972_unresolved_review_threads": 0,
-    "post_merge_two_service_production_acceptance": "failed",
-    "post_merge_mobile_restart_production_proof": "failed",
-    "post_merge_ios_webkit_paint_proof": "failed",
-    "live_run_ids": [
-      "comprun_fb0c5fad584644a2be3a29d4530939ec",
-      "comprun_b29d68d81b6341a99eedc48b08fa1ec4"
-    ],
-    "terminal_stage": "final_comprehensive_report_generation",
-    "terminal_reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [78, 100]",
-    "exact_run_tools_requested": 9,
-    "exact_run_tools_completed": 8,
-    "exact_run_failed_tools": [
-      "bandit"
-    ],
-    "stage_analyzer_execution_coverage": 89,
-    "failed_bandit_execution_source": "canonical_bandit_csv_v2",
-    "failed_bandit_reason": "Bandit CSV output could not be parsed: Error",
-    "stale_report_coverage_values": [
-      78,
-      100
-    ],
-    "root_causes": [
-      "bandit_json_was_not_bound_at_the_authoritative_problem_tool_dispatch_imported_by_the_snapshot_scanner_runtime",
-      "final_report_projection_recomputed_coverage_from_stale_or_filtered_scanner_surfaces_instead_of_the_exact_run_manifest_and_direct_scanner_records"
-    ]
+    "pull_request_974_exact_head_checks": "passed",
+    "pull_request_974_unresolved_review_threads": 0,
+    "current_main_exact_deployment_identity": {
+      "vercel": "verified",
+      "railway": "verified",
+      "release_sha": "116a896f031f258426b7f93759323667867c34ee",
+      "deployment_environment": "production",
+      "ui_contract": "expert-engagement-v2"
+    },
+    "post_merge_mobile_restart_production_proof": {
+      "status": "failed",
+      "run_id": "comprun_0b77c5b34d984eb0bcdbb44328e80c19",
+      "terminal_stage": "final_comprehensive_report_generation",
+      "client_status": "Blocked during final report generation",
+      "human_review_reached": false,
+      "client_delivery_allowed": false
+    },
+    "post_merge_ios_webkit_paint_proof": {
+      "status": "failed",
+      "run_id": null,
+      "failure": "browser_never_persisted_exact_run_identity",
+      "single_click_intake_completed": false
+    },
+    "implementation_merge_two_service_production_acceptance": {
+      "status": "failed",
+      "run_id": "comprun_b6a647acac04427c8c8ab4324fec05a0",
+      "stage": "dependency_security_static_analysis",
+      "canonical_progress_percent": 13.04,
+      "active_stage_progress_percent": 74.0,
+      "continuation_request_count": 362,
+      "last_revision": 362,
+      "failure": "no_observable_backend_progress_for_15_minutes",
+      "revision_only_mutation_observed": true
+    },
+    "current_main_two_service_production_acceptance": "pending_or_not_yet_accepted",
+    "first_incomplete_package_remains_blocking": true,
+    "later_report_truth_package_closed_without_merge": 977
   },
-  "implementation": {
-    "bandit_json_bound_at_named_delegate": true,
-    "bandit_json_bound_at_authoritative_problem_dispatch": true,
-    "legacy_csv_delegate_bypassed_even_if_restored": true,
-    "exact_run_tools_requested_manifest_authoritative": true,
-    "failed_missing_or_timed_out_requested_tools_retained": true,
-    "recursive_stale_projection_counts_ignored": true,
-    "truth_reconciled_before_existing_renderer": true,
-    "truth_reconciled_after_authoritative_projection": true,
+  "root_causes_and_hypotheses": [
+    {
+      "id": "revision_only_stage_continuation_can_run_indefinitely",
+      "evidence_status": "verified",
+      "effect": "dependency_security_static_analysis remained active through 362 continuation writes without meaningful stage advancement"
+    },
+    {
+      "id": "webkit_request_body_double_init_in_recovery_transport",
+      "evidence_status": "working_hypothesis",
+      "effect": "WebKit intake completed no persisted run identity while Chromium reached an exact run",
+      "repair": "dispatch one bounded Request without reapplying the same RequestInit/body to fetch"
+    },
+    {
+      "id": "final_report_generation_failure_diagnostic_not_retained_in_browser_proof",
+      "evidence_status": "verified",
+      "effect": "live proof retained the client-safe block but not the bounded technical reason required to isolate the remaining publication defect"
+    }
+  ],
+  "active_continuation": {
+    "bounded_stage_progress_watchdog": true,
+    "revision_only_changes_count_as_progress": false,
+    "stalled_stage_becomes_terminal_with_reason": true,
+    "stalled_scanner_evidence_preserved": true,
+    "single_explicit_stalled_stage_retry": true,
+    "duplicate_unbounded_retries_prohibited": true,
+    "webkit_request_body_dispatched_once": true,
+    "failed_proof_backend_diagnostic_retained": true,
+    "prior_completed_stage_evidence_preserved": true,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
     "existing_section_order_preserved": true,
     "existing_pdf_composition_preserved": true,
     "report_redesign_performed": false,
     "scores_changed_to_satisfy_gate": false,
-    "temporary_production_diagnostic_removed": true
+    "human_review_required": true,
+    "client_delivery_allowed": false
   },
   "gates": {
     "preserve_report_design": true,
@@ -71,8 +102,11 @@
     "merge_requires_all_pr_checks": true,
     "merge_requires_no_unresolved_review_threads": true,
     "post_merge_exact_deployment_identity_required": true,
-    "post_merge_live_production_proofs_required": true,
+    "post_merge_mobile_restart_required": true,
+    "post_merge_ios_webkit_required": true,
+    "post_merge_two_service_acceptance_required": true,
     "two_distinct_live_comprehensive_runs_required": true,
+    "two_distinct_live_comprehensive_runs_must_reach_expert_review": true,
     "new_live_pdf_must_preserve_approved_design": true,
     "new_live_pdf_must_have_one_canonical_coverage_value": true,
     "new_live_pdf_must_not_list_completed_scanners_as_incomplete": true
