@@ -11,14 +11,28 @@ from nico.comprehensive_client_readiness_v59 import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _scanner(name: str, status: str, findings: int = 0) -> dict[str, object]:
-    return {
+def _scanner(
+    name: str,
+    status: str,
+    findings: int = 0,
+    *,
+    completed: bool | None = None,
+    verified: bool | None = None,
+    reason: str = "",
+) -> dict[str, object]:
+    result: dict[str, object] = {
         "scanner_name": name,
         "status": status,
         "exact_commit_match": True,
         "artifact_retained": True,
         "finding_count": findings,
+        "failure_reason": reason,
     }
+    if completed is not None:
+        result["completed"] = completed
+    if verified is not None:
+        result["verified"] = verified
+    return result
 
 
 def test_client_readiness_reconciles_scanner_state_coverage_and_maturity() -> None:
@@ -41,12 +55,21 @@ def test_client_readiness_reconciles_scanner_state_coverage_and_maturity() -> No
             "maturity_level": "Senior",
             "incomplete_analyzers": ["bandit", "gitleaks"],
             "analyzer_execution_coverage": 78,
+            "sections": [
+                {
+                    "label": "Static Analysis",
+                    "summary": (
+                        "Analyzer execution coverage is 88%; remaining failed or "
+                        "partial tools are shown separately."
+                    ),
+                }
+            ],
         },
         "scorecard": {
             "maturity": "Exceptional",
             "analyzer_execution_coverage": 88,
         },
-        "scanner_records": scanners,
+        "scanner_execution_records": scanners,
         "provenance": {
             "completed_applicable_analyzers": 9,
             "incomplete_applicable_analyzers": 0,
@@ -62,19 +85,64 @@ def test_client_readiness_reconciles_scanner_state_coverage_and_maturity() -> No
     assert result["assessment"]["analyzer_execution_coverage"] == 100
     assert result["scorecard"]["analyzer_execution_coverage"] == 100
     assert result["provenance"]["analyzer_execution_coverage"] == 100
+    assert "coverage is 100%" in result["assessment"]["sections"][0]["summary"]
     assert result["assessment"]["maturity_level"] == "Exceptional"
     assert result["scorecard"]["maturity"] == "Exceptional"
     assert result["client_readiness_contract"]["scanner_execution_completion"] == 100
     assert len(result["client_readiness_contract"]["completed_exact_commit_scanners"]) == 9
+    assert result["client_readiness_contract"]["incomplete_analyzers"] == []
     assert result["client_readiness_contract"]["human_review_required"] is True
     assert result["client_readiness_contract"]["client_delivery_allowed"] is False
+
+
+def test_client_readiness_does_not_promote_failed_bandit_from_stale_nested_text() -> None:
+    scanners = [
+        _scanner("bandit", "failed", completed=False, verified=False, reason="parse failed"),
+        *[
+            _scanner(name, "completed", completed=True, verified=True)
+            for name in (
+                "eslint",
+                "gitleaks",
+                "npm-audit",
+                "osv-scanner",
+                "pip-audit",
+                "semgrep",
+                "trufflehog",
+                "typescript",
+            )
+        ],
+    ]
+    canonical = {
+        "requested_analyzers": 9,
+        "applicable_analyzers": 9,
+        "assessment": {
+            "technical_score": 92,
+            "incomplete_analyzers": ["bandit", "gitleaks"],
+            "analyzer_execution_coverage": 78,
+            "stale_projection": {
+                "scanner_name": "bandit",
+                "status": "completed",
+                "exact_commit_match": True,
+            },
+        },
+        "scanner_execution_records": scanners,
+    }
+
+    result = reconcile_client_readiness(canonical)
+
+    assert result["analyzer_execution_coverage"] == 89
+    assert result["assessment"]["incomplete_analyzers"] == ["bandit"]
+    assert result["client_readiness_contract"]["incomplete_analyzers"] == ["bandit"]
+    assert result["client_readiness_contract"]["coverage_numerator"] == 8
+    assert result["client_readiness_contract"]["coverage_denominator"] == 9
+    assert result["client_readiness_contract"]["scanner_states"]["bandit"]["completed"] is False
 
 
 def test_client_readiness_repairs_whitespace_corrupted_identifiers() -> None:
     canonical = {
         "requested_analyzers": 1,
         "assessment": {"technical_score": 92},
-        "scanner_records": [_scanner("bandit", "completed")],
+        "scanner_execution_records": [_scanner("bandit", "completed")],
         "canonical_findings": [
             {
                 "symbol": "apply_scanner_artifact_scoring",
@@ -106,7 +174,7 @@ def test_execution_complete_is_separate_from_limited_human_evidence() -> None:
     canonical = {
         "requested_analyzers": 1,
         "assessment": {"technical_score": 92},
-        "scanner_records": [_scanner("bandit", "completed")],
+        "scanner_execution_records": [_scanner("bandit", "completed")],
         "functional_qa": {
             "status": "COMPLETE",
             "human_evidence_status": "not_assessed",
@@ -126,10 +194,13 @@ def test_runtime_installs_client_readiness_before_scoring_and_rendering() -> Non
         ROOT / "nico" / "comprehensive_mobile_score_projection_v2.py"
     ).read_text(encoding="utf-8")
 
+    bandit = source.index("install_bandit_json_execution_v61()")
     client_readiness = source.index("install_comprehensive_client_readiness_v59()")
     scoring = source.index("install_comprehensive_scoring_manifest_v54()")
 
-    assert client_readiness < scoring
+    assert bandit < client_readiness < scoring
+    assert '"bandit_json_artifact_required": True' in source
+    assert '"authoritative_scanner_records_only": True' in source
     assert '"analyzer_coverage_canonicalized": True' in source
     assert '"maturity_terminology_unified": True' in source
     assert '"identifier_integrity_repaired_before_render": True' in source
