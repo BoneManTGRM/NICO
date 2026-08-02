@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import io
 from copy import deepcopy
 from typing import Any, Mapping
 
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
 from nico import client_report_completion_v1 as legacy
 from nico.client_assessment_truth_v3 import normalize_client_assessment_truth
@@ -16,13 +18,26 @@ from nico.client_finding_remediation_register_v5 import (
     render_finding_register_pdf,
     synchronize_canonical_finding_surfaces,
 )
+from nico.client_report_truth_contract_v63 import (
+    apply_client_report_truth_contract,
+    report_truth_markdown,
+)
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 from nico.v2_authoritative_premium_report import _html_from_markdown
 
-VERSION = "nico.client-report-completion.v6"
+VERSION = "nico.client-report-completion.v7"
+_STATUS_REPLACEMENTS = {
+    "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED": "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
+    "FINAL REPORT - PENDING HUMAN APPROVAL - CLIENT DELIVERY BLOCKED": "AUTOMATED DRAFT - PENDING HUMAN APPROVAL - CLIENT DELIVERY BLOCKED",
+    "FINAL REPORT": "AUTOMATED DRAFT",
+    "Final Report": "Automated Draft",
+    "final automated assessment pending human approval": "automated draft pending human approval",
+    "final automated assessment": "automated draft",
+    "Client-ready after internal approval": "Client delivery requires human approval",
+}
 
 
 def _text(value: Any, limit: int = 12000) -> str:
@@ -46,6 +61,9 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
             "stable_finding_alias_projection_idempotent": True,
             "all_mirrored_finding_surfaces_synchronized": True,
             "exact_run_scanner_truth_reconciled_in_core_finalizer": True,
+            "canonical_report_truth_shared_across_formats": True,
+            "automated_output_is_draft_until_human_approval": True,
+            "finding_evidence_status_and_confidence_required": True,
         }
     )
     canonical["v2_pipeline_contract"] = contract
@@ -58,6 +76,13 @@ def _install_register(canonical: dict[str, Any]) -> dict[str, Any]:
     return _install_contract(synchronized)
 
 
+def _canonicalize(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    output = _install_register(normalize_client_assessment_truth(canonical))
+    output = reconcile_authoritative_scanner_truth(output)
+    output = apply_client_report_truth_contract(output)
+    return output
+
+
 def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     """Prepare one canonical report model before the premium renderer runs."""
 
@@ -67,26 +92,36 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     )
     result["json"] = canonical
 
-    # Recompute applicability after configuration-error classification so the
-    # requested, applicable, completed, incomplete, and not-applicable populations
-    # remain internally consistent.
     result = normalize_scanner_applicability_package(result)
-    canonical = normalize_client_assessment_truth(
+    canonical = _canonicalize(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
-    canonical = _install_register(canonical)
-    # This call is intentionally part of the core finalizer rather than relying
-    # only on installer rebinding. Every production and fixture path therefore
-    # reaches the existing renderer with one exact-run scanner population and one
-    # explicit coverage denominator.
-    canonical = reconcile_authoritative_scanner_truth(canonical)
 
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
         canonical["client_finding_remediation_register"]
     )
     result["finding_population"] = deepcopy(canonical["finding_population"])
+    result["canonical_report_truth"] = deepcopy(canonical["canonical_report_truth"])
     return result
+
+
+def _replace_status_text(value: str) -> str:
+    output = value
+    for old, new in _STATUS_REPLACEMENTS.items():
+        output = output.replace(old, new)
+    return output
+
+
+def _insert_truth_boundary(markdown: str, canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    heading = "## Estado del informe y límite de revisión" if spanish else "## Report Status and Review Boundary"
+    if heading in markdown:
+        return markdown
+    block = report_truth_markdown(canonical, spanish=spanish).strip()
+    first_break = markdown.find("\n\n")
+    if first_break < 0:
+        return block + "\n\n" + markdown.lstrip()
+    return markdown[:first_break].rstrip() + "\n\n" + block + "\n\n" + markdown[first_break:].lstrip()
 
 
 def _final_markdown(
@@ -96,7 +131,9 @@ def _final_markdown(
     *,
     spanish: bool,
 ) -> str:
-    markdown = legacy._remove_old_register(existing)
+    markdown = _replace_status_text(existing)
+    markdown = _insert_truth_boundary(markdown, canonical, spanish=spanish)
+    markdown = legacy._remove_old_register(markdown)
     markdown = legacy._remove_legacy_scanner_provenance(markdown)
     markdown = markdown.replace(
         legacy._STALE_EMPTY_FINDING_TEXT,
@@ -114,6 +151,127 @@ def _final_markdown(
         + legacy.scanner_provenance_markdown(canonical, spanish=spanish).strip()
         + "\n"
     )
+
+
+def _replace_pdf_operand(value: Any) -> tuple[Any, bool]:
+    if isinstance(value, TextStringObject):
+        original = str(value)
+        replaced = _replace_status_text(original)
+        return TextStringObject(replaced), replaced != original
+    if isinstance(value, ByteStringObject):
+        original = bytes(value)
+        replaced = original
+        for old, new in _STATUS_REPLACEMENTS.items():
+            replaced = replaced.replace(old.encode("latin-1", errors="ignore"), new.encode("latin-1", errors="ignore"))
+        return ByteStringObject(replaced), replaced != original
+    return value, False
+
+
+def _replace_pdf_status_terms(pdf: bytes) -> bytes:
+    if not pdf.startswith(b"%PDF"):
+        raise ValueError("client report status normalization requires a valid PDF")
+    reader = PdfReader(io.BytesIO(pdf))
+    writer = PdfWriter()
+    for source_page in reader.pages:
+        writer.add_page(source_page)
+        page = writer.pages[-1]
+        contents = page.get_contents()
+        if contents is None:
+            continue
+        stream = ContentStream(contents, writer)
+        changed = False
+        for operands, operator in stream.operations:
+            if operator == b"Tj" and operands:
+                operands[0], operand_changed = _replace_pdf_operand(operands[0])
+                changed = changed or operand_changed
+            elif operator == b"TJ" and operands:
+                for index, value in enumerate(operands[0]):
+                    operands[0][index], operand_changed = _replace_pdf_operand(value)
+                    changed = changed or operand_changed
+            elif operator in {b"'", b'"'} and operands:
+                operands[-1], operand_changed = _replace_pdf_operand(operands[-1])
+                changed = changed or operand_changed
+        if changed:
+            page.replace_contents(stream)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _truth_boundary_pdf(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    markdown = report_truth_markdown(canonical, spanish=spanish)
+    buffer = io.BytesIO()
+    styles = getSampleStyleSheet()
+    heading = ParagraphStyle(
+        "ReportTruthHeading",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#075985"),
+        spaceAfter=12,
+    )
+    subheading = ParagraphStyle(
+        "ReportTruthSubheading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#075985"),
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+    body = ParagraphStyle(
+        "ReportTruthBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#334155"),
+        spaceAfter=5,
+    )
+    story: list[Any] = [Spacer(1, .2 * inch)]
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("## "):
+            story.append(Paragraph(html.escape(line[3:]), heading))
+        elif line.startswith("### "):
+            story.append(Paragraph(html.escape(line[4:]), subheading))
+        elif line.startswith("- "):
+            story.append(Paragraph("- " + html.escape(line[2:]), body))
+        else:
+            story.append(Paragraph(html.escape(line), body))
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=.65 * inch,
+        rightMargin=.65 * inch,
+        topMargin=.65 * inch,
+        bottomMargin=.65 * inch,
+        invariant=1,
+        title="NICO Report Status and Review Boundary",
+        author="NICO",
+    )
+    document.build(story)
+    return buffer.getvalue()
+
+
+def _join_pdfs(*documents: bytes) -> bytes:
+    writer = PdfWriter()
+    for document in documents:
+        for page in PdfReader(io.BytesIO(document)).pages:
+            writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def _validate_final_surfaces(
@@ -134,6 +292,12 @@ def _validate_final_surfaces(
         raise ValueError("unverified TLS pattern candidates were promoted to P1")
     if summary.get("stable_alias_projection_idempotent") is not True:
         raise ValueError("canonical finding alias projection is not idempotent")
+
+    truth = canonical.get("canonical_report_truth") if isinstance(canonical.get("canonical_report_truth"), Mapping) else {}
+    if truth.get("automated_status") not in {"automated_draft", "human_approved_final"}:
+        raise ValueError("canonical report truth did not retain a valid automated status")
+    if truth.get("client_delivery_status") == "authorized" and truth.get("human_review_status") != "approved":
+        raise ValueError("client delivery was authorized without human approval")
 
     code = [item for item in register.get("code_findings") or [] if isinstance(item, Mapping)]
     canonical_findings = [
@@ -156,6 +320,14 @@ def _validate_final_surfaces(
         raise ValueError("client report retained unknown analyzer and rule identity")
     if "No structured item was retained." in combined:
         raise ValueError("client report retained obsolete empty finding copy")
+    if truth.get("automated_status") == "automated_draft":
+        normalized = " ".join(combined.split()).casefold()
+        if "automated draft" not in normalized:
+            raise ValueError("automated report formats did not disclose Automated Draft status")
+        if "client delivery blocked" not in normalized:
+            raise ValueError("automated report formats did not disclose blocked client delivery")
+        if "final report" in normalized:
+            raise ValueError("automated report retained misleading Final Report language")
 
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
@@ -176,6 +348,8 @@ def _validate_final_surfaces(
         "stable_finding_alias_projection_idempotent": True,
         "unverified_tls_candidates_not_promoted": True,
         "exact_run_scanner_truth_reconciled": True,
+        "canonical_report_truth_in_all_formats": True,
+        "automated_draft_language_enforced": truth.get("automated_status") == "automated_draft",
     }
 
 
@@ -183,17 +357,10 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     """Finalize one cross-format package from the repaired canonical model."""
 
     prepared = prepare_client_report_package(package)
-    # Preserve the existing premium report, scorecard, evidence appendix, and
-    # delivery gate, then replace only the finding/provenance projections from the
-    # final authoritative canonical state.
     result = legacy.finalize_client_report_package(prepared)
-    canonical = normalize_client_assessment_truth(
+    canonical = _canonicalize(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
-    canonical = _install_register(canonical)
-    # Legacy completion can add or restore nested report surfaces. Reconcile again
-    # at the last canonical boundary before Markdown, HTML, and PDF are composed.
-    canonical = reconcile_authoritative_scanner_truth(canonical)
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 
@@ -207,14 +374,16 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     title = (
         "Evaluación Técnica Integral NICO"
         if spanish
-        else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
+        else f"NICO Comprehensive Technical Assessment - {_text(identity.get('repository'))}"
     )
     rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
 
-    base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    base_pdf = _replace_pdf_status_terms(base64.b64decode(str(result.get("pdf_base64") or "")))
+    truth_pdf = _truth_boundary_pdf(canonical, spanish=spanish)
     register_pdf = render_finding_register_pdf(register, spanish=spanish)
+    truth_and_register_pdf = _join_pdfs(truth_pdf, register_pdf)
     provenance_pdf = legacy._provenance_pdf(canonical, spanish=spanish)
-    pdf = legacy._compose_pdf(base_pdf, register_pdf, provenance_pdf)
+    pdf = legacy._compose_pdf(base_pdf, truth_and_register_pdf, provenance_pdf)
     validation = _validate_final_surfaces(
         canonical,
         register,
@@ -224,6 +393,9 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     )
 
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+    truth = deepcopy(dict(canonical.get("canonical_report_truth") or {}))
+    approval = deepcopy(dict(canonical.get("human_approval_metadata") or {}))
+    approved = truth.get("automated_status") == "human_approved_final"
     completion = deepcopy(dict(result.get("client_report_completion") or {}))
     completion.update(
         {
@@ -239,8 +411,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
                 "Evidence Appendix" in markdown or "Apéndice de evidencia" in markdown
             ),
             "premium_cover_preserved": True,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
+            "human_review_required": not approved,
+            "client_delivery_allowed": approved,
             "page_count": page_count,
         }
     )
@@ -252,6 +424,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     result.update(
         {
             "json": canonical,
+            "canonical_report_truth": truth,
+            "human_approval_metadata": approval,
             "client_finding_remediation_register": deepcopy(register),
             "finding_population": deepcopy(register.get("summary") or {}),
             "markdown": markdown,
@@ -263,14 +437,20 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             "pdf_page_count": page_count,
             "core_report_page_count": page_count,
             "final_package_page_count": page_count,
-            "status": "review_required",
-            "assessment_state": "review_required",
-            "report_finality": "final",
-            "approval_status": "pending_human_approval",
-            "delivery_status": "blocked_pending_human_approval",
-            "human_review_required": True,
-            "human_review_completed": False,
-            "client_delivery_allowed": False,
+            "status": "approved" if approved else "review_required",
+            "assessment_state": "approved_final" if approved else "pending_human_review",
+            "report_finality": "approved_final" if approved else "automated_draft",
+            "automated_status": truth.get("automated_status"),
+            "evidence_status": truth.get("evidence_status"),
+            "human_review_status": truth.get("human_review_status"),
+            "client_delivery_status": truth.get("client_delivery_status"),
+            "score_status": truth.get("score_status"),
+            "limitations": deepcopy(truth.get("limitations") or []),
+            "approval_status": "approved" if approved else "pending_human_approval",
+            "delivery_status": "authorized" if approved else "blocked_pending_human_approval",
+            "human_review_required": not approved,
+            "human_review_completed": approved,
+            "client_delivery_allowed": approved,
             "phase17_artifact_rebuild": phase17,
             "premium_report_renderer": premium,
             "client_report_completion": completion,
@@ -281,6 +461,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
 
 __all__ = [
     "VERSION",
+    "_replace_pdf_status_terms",
     "finalize_client_report_package",
     "prepare_client_report_package",
 ]
