@@ -138,12 +138,68 @@ def _authoritative_truth(
                 }
             )
 
-    # Commercial Comprehensive reports use the fixed nine-tool contract. Do not
-    # invent that denominator for partial fixtures, but do preserve it when the live
-    # run explicitly requested the standard population.
     if set(requested) == set(_REQUIRED_TOOLS):
         requested = list(_REQUIRED_TOOLS)
     return truth, requested
+
+
+def _canonical_records(
+    output: Mapping[str, Any],
+    truth: Mapping[str, Mapping[str, Any]],
+    requested_tools: list[str],
+) -> list[dict[str, Any]]:
+    existing = v59._direct_scanner_records(output)
+    records: dict[str, dict[str, Any]] = {}
+    for raw in existing:
+        name = v59._tool(raw)
+        if not name:
+            continue
+        item = deepcopy(raw)
+        state = truth.get(name)
+        if state is not None:
+            item.update(
+                {
+                    "scanner_name": name,
+                    "status": state.get("status"),
+                    "state": state.get("status"),
+                    "completed": state.get("completed") is True,
+                    "verified": state.get("verified") is True,
+                    "verified_complete": state.get("verified") is True,
+                    "exact_commit_match": state.get("exact_commit_match") is True,
+                    "finding_count": state.get("finding_count", 0),
+                    "failure_reason": state.get("failure_reason", ""),
+                    "failure_or_unavailable_reason": state.get("failure_reason", ""),
+                }
+            )
+        records[name] = item
+
+    for name in requested_tools:
+        if name in records:
+            continue
+        state = truth[name]
+        records[name] = {
+            "scanner_name": name,
+            "tool": name,
+            "status": state.get("status"),
+            "state": state.get("status"),
+            "completed": False,
+            "verified": False,
+            "verified_complete": False,
+            "verified_for_this_report": False,
+            "exact_commit_match": state.get("exact_commit_match") is True,
+            "artifact_retained": False,
+            "finding_count": 0,
+            "findings": [],
+            "failure_reason": state.get("failure_reason", ""),
+            "failure_or_unavailable_reason": state.get("failure_reason", ""),
+            "execution_source": "live_scanner_manifest_synthetic_record_v62",
+            "current_run": True,
+            "required": True,
+        }
+    order = requested_tools or sorted(records)
+    return [records[name] for name in order if name in records] + [
+        records[name] for name in sorted(records) if name not in set(order)
+    ]
 
 
 def reconcile_authoritative_scanner_truth(
@@ -154,14 +210,13 @@ def reconcile_authoritative_scanner_truth(
     output = deepcopy(dict(canonical))
     truth, requested_tools = _authoritative_truth(output)
     requested = len(requested_tools) or len(truth)
+    requested_set = set(requested_tools or truth)
     completed = {
         name
         for name, state in truth.items()
-        if state.get("completed") is True and name in set(requested_tools or truth)
+        if state.get("completed") is True and name in requested_set
     }
-    incomplete = set(requested_tools) - completed if requested_tools else {
-        name for name, state in truth.items() if state.get("completed") is not True
-    }
+    incomplete = requested_set - completed
 
     assessment = _mapping(output.get("assessment"))
     technical = assessment.get("technical_score") or output.get("technical_score")
@@ -179,6 +234,12 @@ def reconcile_authoritative_scanner_truth(
         symbols=v59._symbols(output),
         technical_score=technical_score,
     )
+    records = _canonical_records(output, truth, requested_tools)
+    output["scanner_execution_records"] = records
+    assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
+    assessment_output["scanner_execution_records"] = deepcopy(records)
+    output["assessment"] = assessment_output
+
     coverage = round(100 * len(completed) / requested) if requested else 0
     output["analyzer_execution_coverage"] = coverage
     output["scanner_execution_coverage"] = coverage
@@ -196,8 +257,9 @@ def reconcile_authoritative_scanner_truth(
             "requested_exact_run_scanners": list(requested_tools),
             "completed_exact_commit_scanners": sorted(completed),
             "incomplete_analyzers": sorted(incomplete),
-            "authoritative_scanner_record_count": len(truth),
+            "authoritative_scanner_record_count": len(records),
             "authoritative_source": "direct_exact_run_records_plus_live_scanner_manifest",
+            "missing_requested_scanners_retained_as_incomplete_records": True,
             "recursive_stale_projection_counts_ignored": True,
             "maturity_label": v59._maturity_label(technical_score),
             "technical_maturity_is_not_operational_readiness": True,
