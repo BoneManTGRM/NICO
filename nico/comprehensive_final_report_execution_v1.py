@@ -10,8 +10,8 @@ from fastapi import FastAPI
 
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 
-VERSION = "nico.comprehensive_final_report_execution.v5"
-_MARKER = "__nico_comprehensive_final_report_execution_v5__"
+VERSION = "nico.comprehensive_final_report_execution.v4"
+_MARKER = "__nico_comprehensive_final_report_execution_v4__"
 
 
 def _text(value: Any, limit: int = 1600) -> str:
@@ -121,7 +121,7 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
             "scanner_truth_synchronized_before_render": False,
         }
 
-    stages, scanner_truth = canonicalize_stage_results_before_render(source_stages)
+    stages, scanner_truth = canonicalize_stage_results_before_render(deepcopy(source_stages))
     output["prior_stage_results"] = stages
     output["pre_render_scanner_truth"] = deepcopy(scanner_truth)
 
