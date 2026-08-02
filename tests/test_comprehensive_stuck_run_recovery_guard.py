@@ -37,6 +37,26 @@ def test_guard_exposes_mobile_safe_recovery_controls() -> None:
     assert "env(safe-area-inset-bottom)" in source
 
 
+def test_guard_does_not_treat_every_active_run_as_stuck() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "RECOVERY_CONTROL_DELAY_MS" not in source
+    assert "RUNNING_COPY" not in source
+    assert "document.body?.innerText" not in source
+    assert "const stale = Boolean(" in source
+    assert "const timedOut = Boolean(" in source
+    assert "if (dismissed || (!stale && !timedOut))" in source
+    assert "timedOutRunId.current = currentRunId()" in source
+
+
+def test_keep_waiting_dismisses_the_current_run_until_identity_changes() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert 'const dismissedRunId = useRef("")' in source
+    assert "dismissedRunId.current = runId" in source
+    assert 'timedOutRunId.current = ""' in source
+    assert "onClick={keepWaiting}" in source
+    assert "dismissedRunId.current !== runId" in source
+
+
 def test_guard_is_mounted_before_assessment_transport_bridges() -> None:
     source = LAYOUT.read_text(encoding="utf-8")
     assert 'import ComprehensiveStuckRunRecovery from "./ComprehensiveStuckRunRecovery"' in source

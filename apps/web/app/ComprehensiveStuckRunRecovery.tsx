@@ -5,11 +5,10 @@ import {useEffect, useMemo, useRef, useState} from "react";
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
 const ACTIVE_RUN_MAX_AGE_MS = 2 * 60 * 60_000;
-const RECOVERY_CONTROL_DELAY_MS = 15_000;
+const STALE_CHECK_INTERVAL_MS = 30_000;
 const SHORT_REQUEST_TIMEOUT_MS = 45_000;
 const LONG_REQUEST_TIMEOUT_MS = 300_000;
 const LIFECYCLE_PATH = /^\/api\/nico\/(?:diagnostics\/comprehensive-runtime|assessment\/comprehensive-(?:intake|run\/[^/?#]+(?:\/continue)?))(?:[?#]|$)/;
-const RUNNING_COPY = /checking readiness|verifying assessment service readiness|awaiting scanner completion|persistence verification pending|preparing report|running scanner/i;
 
 const activeControllers = new Set<AbortController>();
 
@@ -86,6 +85,12 @@ function readStoredRun(): {runId: string; startedAt: number} | null {
   }
 }
 
+function currentRunId(): string {
+  return readStoredRun()?.runId
+    || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+    || "";
+}
+
 function clearRunIdentity(): void {
   activeControllers.forEach((controller) => controller.abort(new DOMException("Assessment recovery canceled.", "AbortError")));
   activeControllers.clear();
@@ -105,10 +110,10 @@ function clearRunIdentity(): void {
 export default function ComprehensiveStuckRunRecovery() {
   const [visible, setVisible] = useState(false);
   const [reason, setReason] = useState("");
-  const mountedAt = useRef(0);
+  const timedOutRunId = useRef("");
+  const dismissedRunId = useRef("");
 
   useEffect(() => {
-    mountedAt.current = Date.now();
     const originalFetch = window.fetch.bind(window);
     const boundedFetch: typeof window.fetch = (input, init) => combinedRequest(originalFetch, input, init);
     window.fetch = boundedFetch;
@@ -118,34 +123,48 @@ export default function ComprehensiveStuckRunRecovery() {
         setVisible(false);
         return;
       }
+
       const stored = readStoredRun();
-      const urlRunId = new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
-      if (stored && Date.now() - stored.startedAt > ACTIVE_RUN_MAX_AGE_MS) {
+      const runId = stored?.runId
+        || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+        || "";
+      if (dismissedRunId.current && dismissedRunId.current !== runId) {
+        dismissedRunId.current = "";
+      }
+      if (timedOutRunId.current && timedOutRunId.current !== runId) {
+        timedOutRunId.current = "";
+      }
+
+      const stale = Boolean(stored && Date.now() - stored.startedAt > ACTIVE_RUN_MAX_AGE_MS);
+      const timedOut = Boolean(timedOutRunId.current && timedOutRunId.current === runId);
+      const dismissed = Boolean(runId && dismissedRunId.current === runId);
+
+      if (dismissed || (!stale && !timedOut)) {
+        setVisible(false);
+        return;
+      }
+      if (stale) {
         setReason("The saved assessment is older than the recovery limit.");
         setVisible(true);
         return;
       }
-      const text = document.body?.innerText || "";
-      const runningCopy = RUNNING_COPY.test(text);
-      const delayed = Date.now() - mountedAt.current >= RECOVERY_CONTROL_DELAY_MS;
-      setVisible(Boolean((stored || urlRunId) && runningCopy && delayed));
-      if ((stored || urlRunId) && runningCopy && delayed) {
-        setReason("This assessment is still waiting. You can retry it or clear the saved browser state and start a new assessment.");
+      if (timedOut) {
+        setReason("The assessment service did not respond before the bounded request timeout.");
+        setVisible(true);
       }
     };
 
     const timeoutListener = () => {
+      timedOutRunId.current = currentRunId();
+      dismissedRunId.current = "";
       setReason("The assessment service did not respond before the bounded request timeout.");
       setVisible(true);
     };
-    const observer = new MutationObserver(inspect);
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true});
-    const interval = window.setInterval(inspect, 1_000);
+    const interval = window.setInterval(inspect, STALE_CHECK_INTERVAL_MS);
     window.addEventListener("nico:comprehensive-request-timeout", timeoutListener);
     inspect();
 
     return () => {
-      observer.disconnect();
       window.clearInterval(interval);
       window.removeEventListener("nico:comprehensive-request-timeout", timeoutListener);
       if (window.fetch === boundedFetch) window.fetch = originalFetch;
@@ -156,10 +175,16 @@ export default function ComprehensiveStuckRunRecovery() {
 
   const runId = useMemo(() => {
     if (typeof window === "undefined") return "";
-    return readStoredRun()?.runId || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY) || "";
+    return currentRunId();
   }, [visible]);
 
   if (!visible) return null;
+
+  const keepWaiting = () => {
+    dismissedRunId.current = runId;
+    timedOutRunId.current = "";
+    setVisible(false);
+  };
 
   return <aside
     role="alert"
@@ -187,7 +212,7 @@ export default function ComprehensiveStuckRunRecovery() {
     <div style={{display: "flex", gap: 10, flexWrap: "wrap"}}>
       <button type="button" onClick={() => window.location.reload()}>Retry saved run</button>
       <button type="button" onClick={clearRunIdentity} data-clear-stuck-comprehensive-run="true">Clear stuck run and start new</button>
-      <button type="button" onClick={() => setVisible(false)}>Keep waiting</button>
+      <button type="button" onClick={keepWaiting}>Keep waiting</button>
     </div>
   </aside>;
 }
