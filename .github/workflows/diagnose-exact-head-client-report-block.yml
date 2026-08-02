@@ -1,0 +1,119 @@
+name: Diagnose exact-head client report block
+
+on:
+  push:
+    branches:
+      - codex/client-report-accuracy-continuation
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@v4
+
+      - name: Capture bounded production run diagnostics
+        shell: bash
+        env:
+          FRONTEND_ORIGIN: https://app.nicoaudit.com
+          RUN_IDS: comprun_83c69d4afdd9451b987dfb99196f3d28 comprun_0b77c5b34d984eb0bcdbb44328e80c19
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results/exact-head-report-block
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import pathlib
+          import urllib.error
+          import urllib.request
+
+          origin = os.environ["FRONTEND_ORIGIN"].rstrip("/")
+          output = pathlib.Path("audit-results/exact-head-report-block")
+          output.mkdir(parents=True, exist_ok=True)
+
+          def fetch(path: str, accept: str = "application/json") -> tuple[int, bytes, dict[str, str]]:
+              request = urllib.request.Request(
+                  origin + path,
+                  headers={
+                      "Accept": accept,
+                      "Cache-Control": "no-store",
+                      "User-Agent": "nico-exact-head-report-diagnostic",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=90) as response:
+                      return response.status, response.read(), dict(response.headers.items())
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), dict(exc.headers.items())
+
+          def bounded(value, depth=0):
+              if value is None or isinstance(value, (bool, int, float)):
+                  return value
+              if isinstance(value, str):
+                  return value[:4000]
+              if depth >= 5:
+                  if isinstance(value, (dict, list)):
+                      return {"bounded": True, "item_count": len(value)}
+                  return str(type(value).__name__)
+              if isinstance(value, list):
+                  return [bounded(item, depth + 1) for item in value[:100]]
+              if isinstance(value, dict):
+                  return {str(key): bounded(item, depth + 1) for key, item in list(value.items())[:120]}
+              return str(value)[:4000]
+
+          summaries = []
+          for run_id in os.environ["RUN_IDS"].split():
+              status, raw, headers = fetch(f"/api/nico/assessment/comprehensive-run/{run_id}")
+              record_path = output / f"{run_id}-status.json"
+              record_path.write_bytes(raw)
+              try:
+                  payload = json.loads(raw.decode("utf-8"))
+              except Exception:
+                  payload = {"unparsed": raw.decode("utf-8", errors="replace")[:8000]}
+
+              record = payload.get("record") if isinstance(payload, dict) and isinstance(payload.get("record"), dict) else {}
+              stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+              stage_id = str(payload.get("current_stage") or record.get("current_stage") or "") if isinstance(payload, dict) else ""
+              stage = stage_results.get(stage_id) if isinstance(stage_results.get(stage_id), dict) else {}
+              summary = {
+                  "run_id": run_id,
+                  "http_status": status,
+                  "response_headers": {key: value for key, value in headers.items() if key.lower() in {"content-type", "x-request-id", "x-nico-proxy-attempts"}},
+                  "status": payload.get("status") if isinstance(payload, dict) else None,
+                  "current_stage": stage_id,
+                  "reason": payload.get("reason") if isinstance(payload, dict) else None,
+                  "record_status": record.get("status"),
+                  "record_terminal": record.get("terminal"),
+                  "blockers": bounded(record.get("blockers")),
+                  "current_stage_result": bounded(stage),
+                  "top_level_keys": sorted(payload) if isinstance(payload, dict) else [],
+              }
+
+              for format_name, accept in (("markdown", "text/markdown"), ("pdf", "application/pdf")):
+                  report_status, report_raw, report_headers = fetch(
+                      f"/api/nico/assessment/comprehensive-run/{run_id}/report/{format_name}",
+                      accept,
+                  )
+                  suffix = "md" if format_name == "markdown" else "pdf"
+                  (output / f"{run_id}-report.{suffix}").write_bytes(report_raw)
+                  summary[f"{format_name}_http_status"] = report_status
+                  summary[f"{format_name}_content_type"] = report_headers.get("Content-Type", "")
+                  summary[f"{format_name}_size"] = len(report_raw)
+
+              summaries.append(summary)
+              print(json.dumps(summary, indent=2, sort_keys=True))
+
+          (output / "summary.json").write_text(json.dumps({"runs": summaries}, indent=2, sort_keys=True), encoding="utf-8")
+          PY
+
+      - name: Upload immutable diagnostic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-head-client-report-block-${{ github.sha }}
+          path: audit-results/exact-head-report-block/
+          retention-days: 30
