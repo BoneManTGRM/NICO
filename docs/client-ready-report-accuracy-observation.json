@@ -6,10 +6,10 @@
   "dependency_state": "first_incomplete",
   "release_base_sha": "78c8a62393446a9a70a675d905c7a9201a8d21b5",
   "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
-  "current_main_sha": "116a896f031f258426b7f93759323667867c34ee",
-  "continuation_branch": "codex/exact-head-client-report-accuracy-continuation",
-  "continuation_pr": 978,
-  "state": "post_merge_verification_failed_continuation_in_progress",
+  "current_main_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
+  "continuation_branch": "codex/exact-head-client-report-coverage-v63",
+  "continuation_pr": 980,
+  "state": "post_merge_verification_running_targeted_report_projection_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -17,72 +17,74 @@
     "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
   },
   "observed": {
-    "pull_request_974_exact_head_checks": "passed",
-    "pull_request_974_unresolved_review_threads": 0,
+    "pull_request_978_merged": true,
+    "pull_request_978_unresolved_review_threads": 0,
     "current_main_exact_deployment_identity": {
       "vercel": "verified",
       "railway": "verified",
-      "release_sha": "116a896f031f258426b7f93759323667867c34ee",
+      "release_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
       "deployment_environment": "production",
       "ui_contract": "expert-engagement-v2"
     },
-    "post_merge_mobile_restart_production_proof": {
-      "status": "failed",
+    "current_main_post_merge_proofs": {
+      "mobile_restart": "running",
+      "ios_webkit": "running",
+      "two_service_production_acceptance": "running"
+    },
+    "retained_final_report_failure": {
       "run_id": "comprun_0b77c5b34d984eb0bcdbb44328e80c19",
       "terminal_stage": "final_comprehensive_report_generation",
-      "client_status": "Blocked during final report generation",
+      "technical_score": 93,
+      "evidence_adjusted_score": 90,
+      "final_artifact_generation_complete": true,
       "human_review_reached": false,
-      "client_delivery_allowed": false
+      "client_delivery_allowed": false,
+      "reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]",
+      "markdown_artifact_retained": true,
+      "pdf_artifact_retained": true
     },
-    "post_merge_ios_webkit_paint_proof": {
-      "status": "failed",
-      "run_id": null,
-      "failure": "browser_never_persisted_exact_run_identity",
-      "single_click_intake_completed": false
+    "exact_run_scanner_truth": {
+      "requested_scanners": 9,
+      "completed_verified_exact_commit_scanners": 9,
+      "failed_scanners": [],
+      "unavailable_scanners": [],
+      "timed_out_scanners": [],
+      "authoritative_coverage_percent": 100
     },
-    "implementation_merge_two_service_production_acceptance": {
-      "status": "failed",
-      "run_id": "comprun_b6a647acac04427c8c8ab4324fec05a0",
-      "stage": "dependency_security_static_analysis",
-      "canonical_progress_percent": 13.04,
-      "active_stage_progress_percent": 74.0,
-      "continuation_request_count": 362,
-      "last_revision": 362,
-      "failure": "no_observable_backend_progress_for_15_minutes",
-      "revision_only_mutation_observed": true
+    "stale_structured_projections": {
+      "analyzer_completion_completed": 8,
+      "analyzer_completion_total": 9,
+      "analyzer_completion_percent": 89,
+      "stale_incomplete_scanner": "gitleaks",
+      "stage_summary_entry": "incomplete_analyzers[0]: gitleaks",
+      "conflicting_client_coverage_values": [89, 100]
     },
-    "current_main_two_service_production_acceptance": "pending_or_not_yet_accepted",
     "first_incomplete_package_remains_blocking": true,
-    "later_report_truth_package_closed_without_merge": 977
+    "superseded_continuation_pr_closed_without_merge": 979
   },
   "root_causes_and_hypotheses": [
     {
-      "id": "revision_only_stage_continuation_can_run_indefinitely",
+      "id": "legacy_structured_scanner_projections_restored_after_authoritative_truth_pass",
       "evidence_status": "verified",
-      "effect": "dependency_security_static_analysis remained active through 362 continuation writes without meaningful stage advancement"
+      "effect": "final report package retained 89 and 100 analyzer coverage values for the same exact-run scanner population"
     },
     {
-      "id": "webkit_request_body_double_init_in_recovery_transport",
-      "evidence_status": "working_hypothesis",
-      "effect": "WebKit intake completed no persisted run identity while Chromium reached an exact run",
-      "repair": "dispatch one bounded Request without reapplying the same RequestInit/body to fetch"
-    },
-    {
-      "id": "final_report_generation_failure_diagnostic_not_retained_in_browser_proof",
+      "id": "stale_gitleaks_partial_projection_survived_exact_run_completion",
       "evidence_status": "verified",
-      "effect": "live proof retained the client-safe block but not the bounded technical reason required to isolate the remaining publication defect"
+      "effect": "structured evidence health and stage evidence listed Gitleaks incomplete even though its direct exact-run record was completed and verified"
     }
   ],
   "active_continuation": {
-    "bounded_stage_progress_watchdog": true,
-    "revision_only_changes_count_as_progress": false,
-    "stalled_stage_becomes_terminal_with_reason": true,
-    "stalled_scanner_evidence_preserved": true,
-    "single_explicit_stalled_stage_retry": true,
-    "duplicate_unbounded_retries_prohibited": true,
-    "webkit_request_body_dispatched_once": true,
-    "failed_proof_backend_diagnostic_retained": true,
-    "prior_completed_stage_evidence_preserved": true,
+    "authoritative_base_version": "nico.comprehensive_authoritative_scanner_truth.v62",
+    "structured_projection_repair_version": "nico.comprehensive_authoritative_scanner_truth.v63",
+    "exact_run_records_remain_authoritative": true,
+    "requested_tools_manifest_remains_authoritative": true,
+    "structured_evidence_coverage_synchronized": true,
+    "analyzer_completion_contract_synchronized": true,
+    "evidence_health_summary_synchronized": true,
+    "stage_summary_machine_evidence_synchronized": true,
+    "true_incomplete_scanners_preserved": true,
+    "false_incomplete_scanner_projection_removed": true,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
     "existing_section_order_preserved": true,
