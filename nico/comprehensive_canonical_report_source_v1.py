@@ -32,6 +32,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     rewrite, parse, and hash large artifacts twice. This source reuses the same native
     identity, assessment, stage-summary, and decision-summary functions while omitting
     all pre-v2 artifact rendering.
+
+    A real final-stage invocation always contains retained prior-stage evidence. Empty
+    stage mappings are compatibility or synthetic calls and must fall back to the
+    delegate instead of being mistaken for a complete production assessment.
     """
 
     identity = {
@@ -49,7 +53,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     raw_stages = context.get("prior_stage_results")
-    if not isinstance(raw_stages, Mapping):
+    if not isinstance(raw_stages, Mapping) or not raw_stages:
         return {
             "status": "blocked",
             "reason": "canonical_report_stage_results_unavailable",
