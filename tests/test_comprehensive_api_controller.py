@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def _controller(path: Path) -> ComprehensiveApiController:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            result = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
@@ -28,6 +29,23 @@ def _controller(path: Path) -> ComprehensiveApiController:
                 "commit_sha": context["commit_sha"],
                 "evidence_ledger_id": context["evidence_ledger_id"],
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    "run_id": context["run_id"],
+                    "repository": context["repository"],
+                    "commit_sha": context["commit_sha"],
+                    "evidence_ledger_id": context["evidence_ledger_id"],
+                }
+                result["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": "# NICO Comprehensive Technical Assessment\n\nCLIENT DELIVERY NOT AUTHORIZED\n",
+                    "html": "<html><body>NICO Comprehensive Technical Assessment</body></html>",
+                    "pdf_base64": base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                }
+            return result
 
         executors[capability] = execute
     return ComprehensiveApiController(ComprehensiveRunService(store, executors))
@@ -106,6 +124,9 @@ def test_continue_without_bound_runs_to_human_review(tmp_path: Path) -> None:
     assert response["terminal"] is True
     assert response["human_review_required"] is True
     assert response["client_delivery_allowed"] is False
+    report_stage = response["stage_results"]["final_comprehensive_report_generation"]
+    assert report_stage["stage_execution"]["mode"] == "atomic_final_report_publication"
+    assert report_stage["stage_execution"]["detached_background_execution"] is False
 
 
 def test_request_validation_rejects_missing_identity_and_invalid_bounds(tmp_path: Path) -> None:
