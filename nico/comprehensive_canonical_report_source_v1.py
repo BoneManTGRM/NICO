@@ -6,6 +6,9 @@ from typing import Any, Mapping
 from nico.comprehensive_maturity_label_truth_v1 import (
     synchronize_maturity_label_truth,
 )
+from nico.comprehensive_post_readiness_maturity_truth_v2 import (
+    install_post_readiness_maturity_truth,
+)
 from nico.comprehensive_report_package import (
     VERSION as SOURCE_VERSION,
     _assessment,
@@ -16,7 +19,9 @@ from nico.comprehensive_report_package import (
     _text,
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v2"
+POST_READINESS_MATURITY_TRUTH = install_post_readiness_maturity_truth()
+
+VERSION = "nico.comprehensive_canonical_report_source.v3"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -37,10 +42,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     identity, assessment, stage-summary, and decision-summary functions while omitting
     all pre-v2 artifact rendering.
 
-    Before stage evidence is flattened, one client-readiness maturity taxonomy is also
-    projected into every explicit maturity alias. This prevents older internal labels
-    such as ``maturity_level: Senior`` from contradicting a canonical client label such
-    as ``Exceptional`` in Markdown, HTML, JSON, or PDF.
+    Before stage evidence is flattened, one preliminary maturity taxonomy is projected
+    into explicit aliases. The installed post-readiness reconciler then applies the
+    final client-readiness maturity label after that contract exists and before the
+    authoritative report renderer sees the canonical model.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -108,6 +113,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "source_artifact_schema": SOURCE_VERSION,
         "canonical_only_source": True,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "post_readiness_maturity_truth_installed": (
+            POST_READINESS_MATURITY_TRUTH.get("bound") is True
+        ),
         "legacy_markdown_rendered": False,
         "legacy_html_rendered": False,
         "legacy_pdf_rendered": False,
@@ -126,6 +134,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "assessment": assessment,
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "post_readiness_maturity_truth_installation": deepcopy(
+            POST_READINESS_MATURITY_TRUTH
+        ),
         "canonical_truth_sha256": truth_sha,
         "canonical_only_source": True,
         "single_artifact_render_required": True,
@@ -135,4 +146,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-__all__ = ["VERSION", "build_canonical_report_source"]
+__all__ = [
+    "POST_READINESS_MATURITY_TRUTH",
+    "VERSION",
+    "build_canonical_report_source",
+]
