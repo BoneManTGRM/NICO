@@ -50,8 +50,8 @@ def _configured_capacity(value: int | None) -> int:
 
 
 def _identity(record: Mapping[str, Any]) -> dict[str, str]:
-    value = record.get("identity")
-    identity = value if isinstance(value, Mapping) else {}
+    raw = record.get("identity")
+    identity = raw if isinstance(raw, Mapping) else {}
     output = {
         field: _text(identity.get(field))
         for field in (
@@ -72,13 +72,23 @@ def _identity(record: Mapping[str, Any]) -> dict[str, str]:
 
 def _stage_context(record: Mapping[str, Any]) -> dict[str, Any]:
     identity = _identity(record)
+    raw_stages = record.get("stage_results")
+    stage_results = raw_stages if isinstance(raw_stages, Mapping) else {}
+    # A queued worker can start after the request persisted a final-stage progress
+    # envelope. That envelope is orchestration telemetry, not assessment evidence, and
+    # must never be flattened into the client report.
+    prior_stage_results = {
+        str(stage_id): deepcopy(result)
+        for stage_id, result in stage_results.items()
+        if str(stage_id) != FINAL_REPORT_STAGE_ID
+    }
     return {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "stage_id": FINAL_REPORT_STAGE_ID,
         **identity,
         "human_evidence": deepcopy(record.get("human_evidence") or {}),
-        "prior_stage_results": deepcopy(record.get("stage_results") or {}),
+        "prior_stage_results": prior_stage_results,
         "recovery_history": deepcopy(record.get("recovery_history") or []),
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -91,17 +101,18 @@ def _running_result(
 ) -> dict[str, Any]:
     state = _text(job.get("state")) or "queued"
     capacity_blocked = job.get("capacity_blocked") is True
+    queued = state == "queued" or capacity_blocked
     return {
         "status": "running",
         "reason": (
             "durable_final_report_worker_queued"
-            if state == "queued" or capacity_blocked
+            if queued
             else "durable_final_report_worker_running"
         ),
         "summary": (
             "The final Comprehensive report is queued behind another active render. "
             "Its durable worker will start automatically when capacity is available."
-            if state == "queued" or capacity_blocked
+            if queued
             else (
                 "The final Comprehensive report is rendering in a durable leased worker. "
                 "Status and restart recovery remain available while the exact package is built."
@@ -133,6 +144,7 @@ def _running_result(
             "canonical_run_write_by_worker": True,
             "orphan_timeout_thread_absent": True,
             "automatic_queue_monitor": True,
+            "final_progress_envelope_excluded_from_report": True,
         },
     }
 
@@ -170,11 +182,11 @@ def _failure_result(
 
 
 class DurableFinalReportWorker:
-    """Lease, queue, heartbeat, render, validate, and persist final reports.
+    """Queue, lease, heartbeat, render, validate, and persist final reports.
 
-    One database-wide capacity limit protects API availability across app processes and
+    A database-wide capacity limit protects API availability across app processes and
     concurrent proof runs. A local queue monitor continues trying to acquire capacity,
-    while the durable lease remains reclaimable after process replacement. The canonical
+    while an expired lease remains reclaimable after process replacement. The canonical
     run record remains the only report source of truth.
     """
 
@@ -210,8 +222,6 @@ class DurableFinalReportWorker:
         self._owners: dict[str, str] = {}
 
     def advance(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Start or observe the final worker and return a bounded canonical record."""
-
         identity = _identity(record)
         run_id = identity["run_id"]
         current = self._run_store.load(run_id)
@@ -225,9 +235,9 @@ class DurableFinalReportWorker:
         latest = self._run_store.load(run_id)
         if self._final_stage_is_terminal(latest):
             return latest
-        stage_results = latest.get("stage_results")
-        stage_map = stage_results if isinstance(stage_results, Mapping) else {}
-        existing = stage_map.get(FINAL_REPORT_STAGE_ID)
+        raw_stages = latest.get("stage_results")
+        stages = raw_stages if isinstance(raw_stages, Mapping) else {}
+        existing = stages.get(FINAL_REPORT_STAGE_ID)
         if isinstance(existing, Mapping) and _text(existing.get("status")).lower() in {
             "queued",
             "running",
@@ -237,11 +247,10 @@ class DurableFinalReportWorker:
         }:
             return latest
 
-        running = _running_result(identity, job)
         updated = apply_comprehensive_stage_result(
             latest,
             stage_id=FINAL_REPORT_STAGE_ID,
-            result=running,
+            result=_running_result(identity, job),
         )
         try:
             return self._run_store.save(
@@ -283,24 +292,24 @@ class DurableFinalReportWorker:
         owner = self._new_owner()
         job = self._claim(identity, owner)
         if job.get("claimed") is True:
-            worker = threading.Thread(
+            thread = threading.Thread(
                 target=self._run,
                 args=(run_id, owner, event),
                 name=f"nico-final-report-{run_id[-12:]}",
                 daemon=True,
             )
         else:
-            worker = threading.Thread(
+            thread = threading.Thread(
                 target=self._monitor_queue,
                 args=(run_id, event),
                 name=f"nico-final-queue-{run_id[-12:]}",
                 daemon=True,
             )
         with self._lock:
-            self._threads[run_id] = worker
+            self._threads[run_id] = thread
             if job.get("claimed") is True:
                 self._owners[run_id] = owner
-        worker.start()
+        thread.start()
         return job
 
     def _claim(
@@ -341,7 +350,7 @@ class DurableFinalReportWorker:
                     return
                 event.wait(self._queue_poll_seconds)
         except BaseException:
-            # A later continue request or replacement process can recreate the monitor.
+            # A later continue request or replacement process recreates the monitor.
             return
         finally:
             with self._lock:
@@ -365,10 +374,9 @@ class DurableFinalReportWorker:
         try:
             record = self._run_store.load(run_id)
             identity = _identity(record)
-            context = _stage_context(record)
             result = execute_final_report_provider(
                 self._executor,
-                context,
+                _stage_context(record),
                 execution_mode="durable_final_report_worker",
             )
             self._persist_result(run_id, result)
