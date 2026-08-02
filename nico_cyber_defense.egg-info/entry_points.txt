@@ -1,3 +1,0 @@
-[console_scripts]
-nico = nico.__main__:main
-nico-api = nico.api_runner:main
