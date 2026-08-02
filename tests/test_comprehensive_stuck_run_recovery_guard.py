@@ -15,8 +15,8 @@ def test_guard_bounds_comprehensive_lifecycle_requests() -> None:
     assert "controller.abort" in source
     assert "nico:comprehensive-request-timeout" in source
     assert "/diagnostics/comprehensive-runtime" in source
-    assert "comprehensive-intake" in source
-    assert "comprehensive-run" in source
+    assert "assessment\\/comprehensive-(?:intake|run" in source
+    assert "(?:\\/continue)?" in source
 
 
 def test_guard_expires_stale_browser_run_identity() -> None:
