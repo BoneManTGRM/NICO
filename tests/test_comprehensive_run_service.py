@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def _executors() -> dict[str, object]:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            output = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
@@ -32,6 +33,23 @@ def _executors() -> dict[str, object]:
                 "evidence_ledger_id": context["evidence_ledger_id"],
                 "prior_count": len(context["prior_stage_results"]),
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    "run_id": context["run_id"],
+                    "repository": context["repository"],
+                    "commit_sha": context["commit_sha"],
+                    "evidence_ledger_id": context["evidence_ledger_id"],
+                }
+                output["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": "# NICO Comprehensive Technical Assessment\n\nCLIENT DELIVERY NOT AUTHORIZED\n",
+                    "html": "<html><body>NICO Comprehensive Technical Assessment</body></html>",
+                    "pdf_base64": base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                }
+            return output
 
         result[capability] = execute
     return result
@@ -68,6 +86,10 @@ def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -
     assert final["progress_percent"] == 100.0
     assert final["human_review_required"] is True
     assert final["client_delivery_allowed"] is False
+    report_stage = final["stage_results"]["final_comprehensive_report_generation"]
+    assert report_stage["stage_execution"]["mode"] == "atomic_final_report_publication"
+    assert report_stage["stage_execution"]["detached_background_execution"] is False
+    assert report_stage["evidence"]["exact_run_identity_verified"] is True
 
 
 def test_prior_stage_evidence_is_forwarded_in_order(tmp_path: Path) -> None:
