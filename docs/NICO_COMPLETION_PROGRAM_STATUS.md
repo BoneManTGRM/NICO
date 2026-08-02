@@ -26,22 +26,24 @@ Active continuation branch: `codex/exact-head-client-report-coverage-v63`
 
 Active continuation pull request: `#980`
 
-PR #978 merged with zero unresolved review threads. The exact current main release is deployed successfully to Vercel and Railway. Its required Mobile Restart, iOS WebKit, and Two-Service production proofs are running and remain mandatory. The work package is not complete.
+PR #978 merged with zero unresolved review threads. The exact current main release is deployed successfully to Vercel and Railway. Mobile Restart failed on that exact release. iOS WebKit and Two-Service Production Acceptance remain in progress. The work package is not complete.
 
 ## Retained exact-run publication defect
 
-Bounded production diagnostics retained the exact remaining final-report failure from run `comprun_0b77c5b34d984eb0bcdbb44328e80c19`:
+Current-main Mobile Restart created run `comprun_35af75b0509d4ae8aa52eed3427a99d2` and retained the exact remaining final-report failure:
 
 `v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]`
 
-All nine requested scanner records in that run were completed, verified, artifact-backed, and bound to the immutable commit. Legacy structured report projections still retained:
+The run reached `final_comprehensive_report_generation`; final Markdown and PDF artifacts were generated and retained, technical score remained 93, evidence-adjusted score remained 90, human review was not reached, and client delivery remained blocked.
+
+The earlier exact-run diagnostic and the current-main proof agree. All nine requested scanner records were completed, verified, artifact-backed, and bound to the immutable commit. Legacy structured report projections still retained:
 
 - analyzer completion as `8/9` and `89%`;
 - Gitleaks as partial and a required scanner failure;
 - `incomplete_analyzers[0]: gitleaks` in stage-summary evidence;
 - a separate client-facing analyzer coverage value of `100%`.
 
-The retained final Markdown and PDF artifacts remained downloadable, but the semantic publication gate correctly blocked progression to expert review because the package contained conflicting truth.
+The semantic publication gate correctly blocked progression to expert review because the package contained conflicting truth.
 
 ## Active continuation
 
