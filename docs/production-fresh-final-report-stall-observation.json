@@ -1,0 +1,91 @@
+{
+  "artifact_schema": "nico.production_fresh_final_report_stall_observation.v1",
+  "observed_at": "2026-08-02T17:23:00Z",
+  "production_main_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e",
+  "repository": "BoneManTGRM/NICO",
+  "run_identity": {
+    "run_id": "comprun_8438671f276445ed87b81c7d25056652",
+    "repository": "BoneManTGRM/NICO",
+    "commit_sha": "c00a715627ff59bc0a35f6e1a3134b854a69b80e"
+  },
+  "exact_live_api_observation": {
+    "status": "running",
+    "terminal": false,
+    "current_stage": "final_comprehensive_report_generation",
+    "canonical_progress_percent": 82.61,
+    "completed_stage_count": 19,
+    "revision": 94,
+    "current_stage_status": "running",
+    "current_stage_reason": "background_stage_execution_in_progress",
+    "current_stage_error_code": null,
+    "stage_execution_metadata_present": false,
+    "task_id_present": false,
+    "report_id_present": false,
+    "pdf_available": false,
+    "blockers": [],
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "runtime_diagnostics": {
+    "application_status": "ready",
+    "postgres_storage_ready": true,
+    "durability_verified": true,
+    "shared_across_workers": true,
+    "full_persisted_run_record_present": true,
+    "ui_only_failure": false
+  },
+  "diagnostic_provenance": {
+    "diagnostic_pr": 987,
+    "diagnostic_branch": "diagnostics/live-run-8438671",
+    "workflow_run_id": 30758692152,
+    "workflow_job_id": 91525263941,
+    "artifact_id": 8836770746,
+    "artifact_name": "live-run-8438671-diagnostic",
+    "diagnostic_pr_merged": false,
+    "query_mode": "read_only_public_status_and_runtime_endpoints"
+  },
+  "verified_architecture_findings": [
+    {
+      "id": "final_report_uses_process_local_daemon_thread",
+      "evidence_status": "verified_in_source",
+      "detail": "The final report provider is launched by comprehensive_background_stage_execution_v1 in a daemon thread stored in the process-local _TASKS map."
+    },
+    {
+      "id": "generic_job_row_is_telemetry_not_a_worker_queue",
+      "evidence_status": "verified_in_source",
+      "detail": "client_jobs stores status and result telemetry, but no separate durable worker claims and executes the persisted job."
+    },
+    {
+      "id": "job_storage_failure_is_silently_non_durable",
+      "evidence_status": "verified_in_source",
+      "detail": "_put_job catches storage exceptions and returns the local payload, allowing a provider result to exist only inside one web process."
+    },
+    {
+      "id": "canonical_stage_lost_background_identity",
+      "evidence_status": "verified_in_live_run",
+      "detail": "The persisted final-report stage contains the generic running reason but no stage_execution metadata, task ID, poll iteration, report ID, or PDF."
+    }
+  ],
+  "root_cause_boundary": {
+    "verified": "The final publication stage depends on process-local daemon execution and generic telemetry rather than an atomic canonical-run publication transaction.",
+    "inference": "A web-process lifecycle interruption or failure to durably store the large final report result can leave the generic running stage permanently visible to later workers.",
+    "not_claimed": "The retained public response does not reveal a specific swallowed database exception or process termination event."
+  },
+  "repair_boundary": {
+    "final_report_background_execution_removed": true,
+    "final_report_runs_inside_bounded_canonical_request": true,
+    "complete_artifact_validation_required": true,
+    "canonical_run_store_is_publication_authority": true,
+    "non_returning_report_fails_closed": true,
+    "prior_completed_stage_evidence_preserved": true,
+    "existing_renderer_preserved": true,
+    "existing_visual_design_preserved": true,
+    "existing_section_order_preserved": true,
+    "existing_pdf_composition_preserved": true,
+    "scores_changed": false,
+    "scanner_findings_changed": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
