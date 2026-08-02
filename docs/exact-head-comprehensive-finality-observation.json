@@ -3,19 +3,19 @@
   "workstream": 1,
   "work_package": "exact_head_comprehensive_finality_repair",
   "dependency_state": "first_incomplete",
-  "release_base_sha": "1eba1fbdf5f38d9a8be863548584e7ffbe1d5ce2",
-  "state": "implementation_complete_awaiting_post_merge_proof",
+  "release_base_sha": "8560cf37e34a04463990ef84f0c574a3e74d6c27",
+  "continuation_pr": 967,
+  "state": "implementation_complete_awaiting_exact_head_checks",
   "observed": {
     "main_deployed_to_vercel": true,
     "main_deployed_to_railway": true,
     "two_service_production_acceptance": "failed",
     "mobile_restart_production_proof": "failed",
     "ios_webkit_paint_proof": "failed",
+    "live_run_id": "comprun_d8f9ae4b3400430b8e0299e446063ec2",
     "terminal_stage": "cross_format_truth_verification",
     "terminal_reason": "final_artifact_truth_verification_failed",
     "failed_checks": [
-      "analyzer_coverage_values_consistent",
-      "completed_scanners_not_incomplete",
       "finding_register_has_no_equivalent_duplicates",
       "stated_unique_finding_count_matches_register"
     ],
@@ -23,33 +23,36 @@
     "evidence_adjusted_score": 90,
     "weighted_score_recalculation_matches": true,
     "completed_exact_commit_scanner_count": 9,
-    "stale_analyzer_coverage_values": [
-      88,
-      89,
-      100
-    ],
+    "analyzer_execution_coverage": 100,
     "duplicate_source_conditions": 8,
-    "pre_reconciliation_register_count": 88,
-    "post_reconciliation_register_count": 80
+    "published_register_count": 88,
+    "source_anchor_identity_count": 80,
+    "stale_unique_finding_count": 79,
+    "root_cause": "ranged_source_location_was_retained_inside_repository_path_during_final_remediation_register_rebuild"
   },
   "implementation": {
     "canonical_scanner_population_authoritative": true,
     "nested_scanner_projection_synchronized": true,
     "source_anchor_finding_deduplication": true,
+    "ranged_source_anchor_path_canonicalization": true,
+    "source_range_retained_as_metadata": true,
+    "final_register_rebuild_uses_canonical_repository_path": true,
     "former_finding_ids_retained_as_aliases": true,
     "canonical_register_count_authoritative": true,
-    "genuine_incomplete_scanners_remain_fail_closed": true,
+    "genuine_invariant_failures_remain_fail_closed": true,
     "scores_changed_to_satisfy_gate": false,
     "temporary_production_diagnostic_removed": true
   },
   "gates": {
     "preserve_report_truth": true,
     "preserve_security_boundaries": true,
+    "preserve_commercial_readiness_boundaries": true,
     "human_review_required": true,
     "client_delivery_allowed": false,
     "merge_requires_all_pr_checks": true,
     "merge_requires_no_unresolved_review_threads": true,
     "post_merge_exact_deployment_identity_required": true,
-    "post_merge_live_production_proofs_required": true
+    "post_merge_live_production_proofs_required": true,
+    "two_distinct_live_comprehensive_runs_required": true
   }
 }
