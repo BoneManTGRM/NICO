@@ -126,6 +126,116 @@ def _validate_package(
     }
 
 
+def _finalize_provider_result(
+    value: Any,
+    context: Mapping[str, Any],
+    *,
+    execution: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return _blocked(
+            context,
+            reason="final_report_provider_invalid_result",
+            message="The final report provider did not return a structured result.",
+            execution=execution,
+        )
+
+    output = dict(value)
+    prior_execution = (
+        output.get("stage_execution")
+        if isinstance(output.get("stage_execution"), Mapping)
+        else {}
+    )
+    merged_execution = {
+        **dict(prior_execution),
+        **dict(execution),
+        "completed_within_boundary": True,
+    }
+    status = _text(output.get("status")).casefold()
+    if status != "complete":
+        output.setdefault("run_id", _text(context.get("run_id")))
+        output.setdefault("repository", _text(context.get("repository")))
+        output.setdefault("commit_sha", _text(context.get("commit_sha")))
+        output.setdefault("evidence_ledger_id", _text(context.get("evidence_ledger_id")))
+        output["human_review_required"] = True
+        output["client_delivery_allowed"] = False
+        output["stage_execution"] = merged_execution
+        return output
+    if not _exact_identity_matches(output, context):
+        return _blocked(
+            context,
+            reason="final_report_result_identity_mismatch",
+            message="The final report provider result did not match the exact run identity.",
+            execution=merged_execution,
+        )
+    package = output.get("report_package")
+    if not isinstance(package, Mapping):
+        return _blocked(
+            context,
+            reason="final_report_package_missing",
+            message="The final report provider completed without a retained report package.",
+            execution=merged_execution,
+        )
+    valid, reason, evidence = _validate_package(package, context)
+    if not valid:
+        return _blocked(
+            context,
+            reason=reason,
+            message=f"The final report package failed validation: {reason}.",
+            execution=merged_execution,
+        )
+
+    output["run_id"] = _text(context.get("run_id"))
+    output["repository"] = _text(context.get("repository"))
+    output["commit_sha"] = _text(context.get("commit_sha"))
+    output["evidence_ledger_id"] = _text(context.get("evidence_ledger_id"))
+    output["report_package"] = dict(package)
+    output["artifacts_available"] = True
+    output["human_review_required"] = True
+    output["client_delivery_allowed"] = False
+    output["stage_execution"] = {
+        **merged_execution,
+        "canonical_run_write_required": True,
+        "artifact_validation_complete": True,
+        "exact_identity_verified": True,
+    }
+    retained = output.get("evidence") if isinstance(output.get("evidence"), Mapping) else {}
+    output["evidence"] = {**dict(retained), **evidence}
+    return output
+
+
+def execute_final_report_provider(
+    executor,
+    context: Mapping[str, Any],
+    *,
+    execution_mode: str = "durable_final_report_worker",
+) -> dict[str, Any]:
+    """Run and validate the provider without creating an unkillable timeout thread.
+
+    Request-bound callers should not use this directly. The durable worker owns its
+    lease and heartbeat while this function runs, then writes the result to the canonical
+    Comprehensive record. The provider is allowed to finish rather than being orphaned
+    after an HTTP timeout.
+    """
+
+    started = time.perf_counter()
+    value = executor(dict(context))
+    elapsed = round(time.perf_counter() - started, 3)
+    return _finalize_provider_result(
+        value,
+        context,
+        execution={
+            "artifact_schema": VERSION,
+            "mode": execution_mode,
+            "elapsed_seconds": elapsed,
+            "detached_background_execution": False,
+            "durable_worker_execution": True,
+            "request_lifetime_independent": True,
+            "full_context_deepcopy_skipped": True,
+        },
+    )
+
+
 def _execute_bounded(
     executor,
     context: Mapping[str, Any],
@@ -136,9 +246,6 @@ def _execute_bounded(
 
     def invoke() -> None:
         try:
-            # The run service already created an isolated context. The report
-            # canonicalizer is copy-on-write, so another full evidence-tree deepcopy
-            # would multiply large-payload latency without adding isolation.
             results.put_nowait(("result", executor(dict(context))))
         except BaseException as exc:
             try:
@@ -166,7 +273,12 @@ def execute_final_report_stage(
     *,
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
-    """Generate, validate, and return one exact final package for atomic run storage."""
+    """Legacy bounded helper retained for focused compatibility tests.
+
+    Production run orchestration must use ``execute_final_report_provider`` through the
+    durable leased worker. This helper still proves fail-closed validation but must not be
+    used on the public request path because Python cannot terminate its timed-out thread.
+    """
 
     limit = _timeout_seconds(timeout_seconds)
     kind, value, elapsed = _execute_bounded(executor, context, limit)
@@ -190,82 +302,13 @@ def execute_final_report_stage(
         )
     if kind == "error":
         raise value
-    if not isinstance(value, Mapping):
-        return _blocked(
-            context,
-            reason="final_report_provider_invalid_result",
-            message="The final report provider did not return a structured result.",
-            execution=execution,
-        )
-
-    output = dict(value)
-    prior_execution = (
-        output.get("stage_execution")
-        if isinstance(output.get("stage_execution"), Mapping)
-        else {}
-    )
-    execution = {
-        **dict(prior_execution),
-        **execution,
-        "completed_within_boundary": True,
-    }
-    status = _text(output.get("status")).casefold()
-    if status != "complete":
-        output.setdefault("run_id", _text(context.get("run_id")))
-        output.setdefault("repository", _text(context.get("repository")))
-        output.setdefault("commit_sha", _text(context.get("commit_sha")))
-        output.setdefault("evidence_ledger_id", _text(context.get("evidence_ledger_id")))
-        output["human_review_required"] = True
-        output["client_delivery_allowed"] = False
-        output["stage_execution"] = execution
-        return output
-    if not _exact_identity_matches(output, context):
-        return _blocked(
-            context,
-            reason="final_report_result_identity_mismatch",
-            message="The final report provider result did not match the exact run identity.",
-            execution=execution,
-        )
-    package = output.get("report_package")
-    if not isinstance(package, Mapping):
-        return _blocked(
-            context,
-            reason="final_report_package_missing",
-            message="The final report provider completed without a retained report package.",
-            execution=execution,
-        )
-    valid, reason, evidence = _validate_package(package, context)
-    if not valid:
-        return _blocked(
-            context,
-            reason=reason,
-            message=f"The final report package failed validation: {reason}.",
-            execution=execution,
-        )
-
-    output["run_id"] = _text(context.get("run_id"))
-    output["repository"] = _text(context.get("repository"))
-    output["commit_sha"] = _text(context.get("commit_sha"))
-    output["evidence_ledger_id"] = _text(context.get("evidence_ledger_id"))
-    output["report_package"] = dict(package)
-    output["artifacts_available"] = True
-    output["human_review_required"] = True
-    output["client_delivery_allowed"] = False
-    output["stage_execution"] = {
-        **execution,
-        "canonical_run_write_required": True,
-        "canonical_run_written_only_by_request_thread": True,
-        "artifact_validation_complete": True,
-        "exact_identity_verified": True,
-    }
-    retained = output.get("evidence") if isinstance(output.get("evidence"), Mapping) else {}
-    output["evidence"] = {**dict(retained), **evidence}
-    return output
+    return _finalize_provider_result(value, context, execution=execution)
 
 
 __all__ = [
     "DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS",
     "FINAL_REPORT_STAGE_ID",
     "VERSION",
+    "execute_final_report_provider",
     "execute_final_report_stage",
 ]
