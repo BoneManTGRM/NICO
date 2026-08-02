@@ -12,8 +12,11 @@ from pypdf import PdfReader
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
 )
+from nico.comprehensive_report_coverage_synchronization_v63 import (
+    synchronize_final_report_coverage,
+)
 
-VERSION = "nico.comprehensive_client_report_render.v62"
+VERSION = "nico.comprehensive_client_report_render.v63"
 _PREPARE_MARKER = "_nico_comprehensive_client_report_prepare_v60"
 _FINALIZE_MARKER = "_nico_comprehensive_client_report_finalize_v60"
 _PROJECT_MARKER = "_nico_comprehensive_client_report_project_v62"
@@ -263,6 +266,14 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
                 + ", ".join(missing_design)
             )
 
+    coverage_sync = (
+        package.get("coverage_synchronization")
+        if isinstance(package.get("coverage_synchronization"), Mapping)
+        else {}
+    )
+    if scanner_backed_report and int(coverage_sync.get("canonical_coverage_value", -1)) != coverage:
+        raise ValueError("final report coverage synchronization did not bind canonical truth")
+
     return {
         "version": VERSION,
         "existing_renderer_preserved": True,
@@ -273,6 +284,7 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         "coverage_denominator": denominator,
         "scanner_backed_report": scanner_backed_report,
         "conflicting_coverage_absent": True,
+        "coverage_synchronization_verified": bool(coverage_sync),
         "false_incomplete_analyzers_absent": True,
         "superseded_diagnostics_absent": True,
         "malformed_identifiers_absent": True,
@@ -328,6 +340,7 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
             "prepare_bound": True,
             "finalize_bound": True,
             "single_pass_projection_bound": projection_bound,
+            "final_coverage_synchronization_bound": True,
             "existing_renderer_preserved": True,
         }
 
@@ -340,6 +353,11 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
     def finalize(package: Mapping[str, Any]) -> dict[str, Any]:
         result = current_finalize(package)
         result = reconcile_before_existing_report_renderer(result)
+        coverage, _incomplete, _maturity, _denominator = _expected_truth(result)
+        result = synchronize_final_report_coverage(
+            result,
+            expected_coverage=coverage,
+        )
         validation = validate_existing_report_accuracy(result)
         completion_state = deepcopy(dict(result.get("client_report_completion") or {}))
         completion_state.update(validation)
@@ -376,10 +394,12 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
         "phase17_prepare_alias_bound": phase17.prepare_client_report_package is prepare,
         "phase17_finalize_alias_bound": phase17.finalize_client_report_package is finalize,
         "single_pass_projection_bound": projection_bound,
+        "final_coverage_synchronization_bound": True,
         "existing_renderer_preserved": True,
         "existing_visual_design_preserved": True,
         "canonical_truth_reconciled_before_existing_renderer": True,
         "canonical_truth_reconciled_after_authoritative_projection": True,
+        "canonical_coverage_synchronized_after_existing_renderer": True,
         "production_pdf_is_accuracy_acceptance_artifact": True,
         "redesign_performed": False,
         "human_review_required": True,
