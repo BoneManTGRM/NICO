@@ -10,6 +10,7 @@ import "../styles/workflow-simplification.css";
 import "../styles/assessment-terminal-mobile.css";
 import "../styles/assessment-mobile-stability.css";
 import "../styles/assessment-failure-terminal.css";
+import AssessmentActiveRunReset from "./AssessmentActiveRunReset";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
 import AssessmentExactCommitTransport from "./AssessmentExactCommitTransport";
 import AssessmentExpressRecoveryActions from "./AssessmentExpressRecoveryActions";
@@ -76,6 +77,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="nico-app">
         <MidWorkspaceProvider>
+          <AssessmentActiveRunReset />
           <ComprehensiveStuckRunRecovery />
           <AssessmentRunStateGuard />
           <AssessmentStatusResilience />
