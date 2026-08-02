@@ -53,6 +53,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_final_artifact_truth_v54_compat import (
         install_comprehensive_final_artifact_truth_v54_compat,
     )
+    from nico.comprehensive_final_publication_truth_v58 import (
+        install_comprehensive_final_publication_truth_v58,
+    )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
     )
@@ -74,6 +77,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     )
 
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
+    final_publication_truth = install_comprehensive_final_publication_truth_v58()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
     report_truth = install_comprehensive_report_truth_v53()
@@ -85,6 +89,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     return {
         "runtime_revision": RUNTIME_REVISION,
         "source_anchor_location": source_anchor_location,
+        "final_publication_truth": final_publication_truth,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
@@ -129,6 +134,8 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "all_canonical_rows_and_scores_required": True,
         "explicit_assurance_factors_retained": True,
         "pre_render_truth_reconciliation": True,
+        "final_register_count_synchronized_before_render": True,
+        "legacy_score_contract_reconciled_before_render": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,
