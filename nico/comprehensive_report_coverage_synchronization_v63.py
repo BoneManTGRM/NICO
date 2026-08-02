@@ -154,6 +154,8 @@ def synchronize_pdf_coverage(pdf: bytes, expected: int) -> tuple[bytes, int]:
         if page_changed:
             page.replace_contents(stream)
 
+    if changes == 0:
+        return pdf, 0
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue(), changes
