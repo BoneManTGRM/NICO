@@ -16,7 +16,7 @@ from nico.client_finding_remediation_register_v5 import (
     render_finding_register_pdf,
     synchronize_canonical_finding_surfaces,
 )
-from nico.comprehensive_authoritative_scanner_truth_v62 import (
+from nico.comprehensive_authoritative_scanner_truth_v63 import (
     reconcile_authoritative_scanner_truth,
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
