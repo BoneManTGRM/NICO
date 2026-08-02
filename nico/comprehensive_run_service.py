@@ -15,6 +15,10 @@ from nico.comprehensive_background_terminal_order_v2 import (
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
+from nico.comprehensive_final_report_execution_boundary_v3 import (
+    FINAL_REPORT_STAGE_ID,
+    execute_final_report_stage,
+)
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pre_render_scanner_truth_v64 import (
     install_pre_render_authoritative_scanner_truth,
@@ -36,7 +40,7 @@ from nico.comprehensive_stage_watchdog_v1 import (
 install_background_terminal_ordering()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v10"
+VERSION = "nico.comprehensive_run_service.v11"
 
 
 class ComprehensiveRunService:
@@ -47,17 +51,13 @@ class ComprehensiveRunService:
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
 
-    Long scanner, triage, executive-briefing, and final-report providers execute behind
-    a durable background polling boundary. Their HTTP continuation requests return
-    promptly while exact-run work continues. Short stages keep the direct bounded
-    execution path. Neither path can claim completion without a returned provider result,
-    and both retain the existing one-retry, evidence-preserving stall contract.
-
-    Background task persistence is monotonic: once a provider records a terminal task
-    result, a delayed heartbeat cannot revert the durable task to ``running``. Before
-    report rendering, exact-run scanner completion also replaces stale recursive
-    incomplete-analyzer aliases so generated Markdown, HTML, JSON, and PDF cannot list a
-    completed tool as incomplete.
+    Scanner, triage, and executive-analysis providers may execute behind the durable
+    polling boundary. The final report is different: its PDF, HTML, Markdown, and JSON
+    payload are publication-critical and can be too large for generic background-job
+    telemetry. Final report generation therefore executes inside the bounded canonical
+    request path and is written atomically to the Comprehensive run only after artifact,
+    scanner-truth, and exact-identity validation. It can complete or fail closed, but
+    cannot remain an indefinitely detached 83-percent background task.
     """
 
     def __init__(
@@ -198,7 +198,9 @@ class ComprehensiveRunService:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
-            if stage_id in BACKGROUND_STAGE_IDS:
+            if stage_id == FINAL_REPORT_STAGE_ID:
+                result = execute_final_report_stage(executor, context)
+            elif stage_id in BACKGROUND_STAGE_IDS:
                 raw = execute_background_stage(
                     executor,
                     context,
