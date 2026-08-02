@@ -17,6 +17,19 @@ _REQUIRED_TOOLS = (
     "gitleaks",
     "trufflehog",
 )
+_COVERAGE_ALIAS_KEYS = {
+    "analyzer_execution_coverage",
+    "scanner_execution_coverage",
+    "scanner_execution_completion",
+}
+_COMPLETED_COUNT_ALIAS_KEYS = {
+    "completed_applicable_analyzers",
+    "completed_applicable_scanners",
+}
+_INCOMPLETE_COUNT_ALIAS_KEYS = {
+    "incomplete_applicable_analyzers",
+    "incomplete_applicable_scanners",
+}
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -202,6 +215,54 @@ def _canonical_records(
     ]
 
 
+def _synchronize_scalar_aliases(
+    value: Any,
+    *,
+    coverage: int,
+    completed_count: int,
+    incomplete_count: int,
+) -> Any:
+    """Force every nested exact-run scalar alias to the same scanner truth.
+
+    Earlier report layers can carry stale compatibility surfaces inside assessment,
+    stage summaries, evidence-health blocks, or appendix metadata. The final truth
+    validator walks every nested alias, so all active client-facing aliases must be
+    synchronized, not only the top-level contract.
+    """
+
+    if isinstance(value, list):
+        return [
+            _synchronize_scalar_aliases(
+                item,
+                coverage=coverage,
+                completed_count=completed_count,
+                incomplete_count=incomplete_count,
+            )
+            for item in value
+        ]
+    if not isinstance(value, Mapping):
+        return value
+
+    output: dict[str, Any] = {}
+    for key, child in value.items():
+        normalized_key = str(key).casefold()
+        repaired = _synchronize_scalar_aliases(
+            child,
+            coverage=coverage,
+            completed_count=completed_count,
+            incomplete_count=incomplete_count,
+        )
+        if normalized_key in _COVERAGE_ALIAS_KEYS:
+            output[str(key)] = coverage
+        elif normalized_key in _COMPLETED_COUNT_ALIAS_KEYS:
+            output[str(key)] = completed_count
+        elif normalized_key in _INCOMPLETE_COUNT_ALIAS_KEYS:
+            output[str(key)] = incomplete_count
+        else:
+            output[str(key)] = repaired
+    return output
+
+
 def reconcile_authoritative_scanner_truth(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -271,6 +332,12 @@ def reconcile_authoritative_scanner_truth(
         }
     )
     output["client_readiness_contract"] = contract
+    output = _synchronize_scalar_aliases(
+        output,
+        coverage=coverage,
+        completed_count=len(completed),
+        incomplete_count=len(incomplete),
+    )
     output["scanner_state_reconciled"] = True
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False
