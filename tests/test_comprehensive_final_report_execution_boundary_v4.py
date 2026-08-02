@@ -39,9 +39,7 @@ def _report(context: dict) -> dict:
             "html": (
                 "<html><body>NICO Comprehensive Technical Assessment</body></html>"
             ),
-            "pdf_base64": base64.b64encode(
-                b"%PDF-1.4\n%%EOF\n"
-            ).decode("ascii"),
+            "pdf_base64": base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii"),
             "pdf_page_count": 1,
             "json": {"identity": identity},
             "canonical_truth_sha256": "b" * 64,
@@ -63,6 +61,7 @@ def test_atomic_final_report_validates_and_retains_exact_artifacts() -> None:
     assert result["stage_execution"]["canonical_run_written_only_by_request_thread"] is True
     assert result["evidence"]["pdf_valid"] is True
     assert result["evidence"]["exact_run_identity_verified"] is True
+    assert result["evidence"]["exact_evidence_ledger_identity_verified"] is True
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
 
@@ -97,9 +96,36 @@ def test_atomic_final_report_rejects_identity_drift() -> None:
     assert result["client_delivery_allowed"] is False
 
 
+def test_atomic_final_report_rejects_missing_identity_and_hash() -> None:
+    def missing_identity(context: dict) -> dict:
+        result = _report(context)
+        result["report_package"]["json"]["identity"].pop("evidence_ledger_id")
+        return result
+
+    identity_result = execute_final_report_stage(
+        missing_identity,
+        _context(),
+        timeout_seconds=5,
+    )
+    assert identity_result["status"] == "blocked"
+    assert identity_result["reason"] == "final_report_identity_mismatch"
+
+    def missing_hash(context: dict) -> dict:
+        result = _report(context)
+        result["report_package"].pop("canonical_truth_sha256")
+        return result
+
+    hash_result = execute_final_report_stage(missing_hash, _context(), timeout_seconds=5)
+    assert hash_result["status"] == "blocked"
+    assert hash_result["reason"] == "final_report_canonical_hash_missing"
+
+
 def test_atomic_final_report_does_not_copy_large_context_again() -> None:
     context = _context()
-    huge = [{"path": f"file_{index}", "values": list(range(20))} for index in range(20_000)]
+    huge = [
+        {"path": f"file_{index}", "values": list(range(20))}
+        for index in range(20_000)
+    ]
     context["prior_stage_results"] = {
         "repository_and_delivery_evidence": {"huge": huge}
     }
@@ -107,7 +133,10 @@ def test_atomic_final_report_does_not_copy_large_context_again() -> None:
 
     def provider(payload: dict) -> dict:
         observed.update(payload)
-        assert payload["prior_stage_results"]["repository_and_delivery_evidence"]["huge"] is huge
+        assert (
+            payload["prior_stage_results"]["repository_and_delivery_evidence"]["huge"]
+            is huge
+        )
         return _report(payload)
 
     result = execute_final_report_stage(provider, context, timeout_seconds=5)
