@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from nico.comprehensive_client_readiness_v59 import reconcile_client_readiness
-from nico.comprehensive_maturity_label_truth_v1 import (
+from nico.comprehensive_post_readiness_maturity_truth_v2 import (
+    install_post_readiness_maturity_truth,
     synchronize_explicit_maturity_text,
 )
+
+INSTALLATION = install_post_readiness_maturity_truth()
+
+from nico.comprehensive_client_readiness_v59 import reconcile_client_readiness
 
 
 def _canonical() -> dict:
@@ -41,6 +45,12 @@ def _canonical() -> dict:
     }
 
 
+def test_post_readiness_installer_is_bound() -> None:
+    assert INSTALLATION["bound"] is True
+    assert INSTALLATION["post_readiness_boundary"] is True
+    assert INSTALLATION["strict_semantic_validation_preserved"] is True
+
+
 def test_explicit_maturity_text_uses_post_readiness_label() -> None:
     output = reconcile_client_readiness(_canonical())
 
@@ -53,6 +63,7 @@ def test_explicit_maturity_text_uses_post_readiness_label() -> None:
     assert evidence[1] == "maturity label = Exceptional"
     assert evidence[2] == "Senior engineering reviewer required"
     assert "maturity_level: Senior" not in repr(output)
+    assert output["post_readiness_maturity_truth"]["canonical_label"] == "Exceptional"
     assert output["human_review_required"] is True
     assert output["client_delivery_allowed"] is False
 
@@ -80,3 +91,4 @@ def test_unscored_readiness_does_not_invent_a_maturity_label() -> None:
     evidence = output["stage_summaries"][0]["evidence"]
     assert evidence[0] == "assessment.maturity_level: Senior"
     assert evidence[1] == "maturity label = Senior"
+    assert output["post_readiness_maturity_truth"]["status"] == "not_applied"
