@@ -78,17 +78,24 @@ def install_scanner_stage_retention(app: FastAPI) -> dict[str, Any]:
             "status": "blocked",
             "version": VERSION,
             "bound": False,
+            "applicable": True,
             "reason": "comprehensive_provider_registry_unavailable",
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
     current = raw.get("scanner_suite")
     if not callable(current):
+        # Unit-test and compatibility apps may intentionally install only a final-report
+        # provider. Production missing-capability checks remain independently fail-closed.
         return {
-            "status": "blocked",
+            "status": "not_applicable",
             "version": VERSION,
-            "bound": False,
-            "reason": "scanner_suite_provider_unavailable",
+            "bound": True,
+            "applicable": False,
+            "reason": "scanner_suite_provider_not_present_in_synthetic_registry",
+            "compact_exact_sha_records_retained": False,
+            "raw_scanner_outputs_excluded_from_run_record": True,
+            "final_report_scanner_store_read_required": False,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -100,6 +107,7 @@ def install_scanner_stage_retention(app: FastAPI) -> dict[str, Any]:
         "status": "installed" if wrapped is not current else "already_installed",
         "version": VERSION,
         "bound": bound,
+        "applicable": True,
         "compact_exact_sha_records_retained": True,
         "raw_scanner_outputs_excluded_from_run_record": True,
         "final_report_scanner_store_read_required": False,
