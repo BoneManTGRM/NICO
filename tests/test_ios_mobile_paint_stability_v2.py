@@ -87,6 +87,8 @@ def test_bounded_terminal_response_recovers_canonical_score_from_report_json() -
     source = SCORE_PROJECTION.read_text(encoding="utf-8")
     package = PACKAGE.read_text(encoding="utf-8")
 
+    # Keep the public compatibility identifier stable. Runtime releases advance
+    # through RUNTIME_REVISION so older mobile proof contracts remain valid.
     assert 'VERSION = "nico.comprehensive_mobile_score_projection.v3"' in source
     assert 'json_value.get("assessment")' in source
     assert "controller_module._report_outputs = _report_outputs" in source
