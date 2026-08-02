@@ -1,0 +1,56 @@
+{
+  "artifact_schema": "nico.production_dependency_stage_timeout_observation.v1",
+  "observed_at": "2026-08-02T09:40:00-06:00",
+  "repository": "BoneManTGRM/NICO",
+  "current_main_at_observation": "62354ea2db1f62f09eeba373e50efedbcb50c598",
+  "run_id": "comprun_99d7f2630eb74db5be7725c2fd9fd93c",
+  "observed_state": {
+    "assessment_status": "assessment_in_progress",
+    "stage_id": "dependency_security_static_analysis",
+    "stage_label": "Dependency, security, and static analysis",
+    "canonical_progress_percent": 16,
+    "elapsed_display": "8:00",
+    "assessment_package": "awaiting_scanner_completion",
+    "human_review_status": "begins_after_report_preparation",
+    "client_ready": false,
+    "client_delivery_allowed": false
+  },
+  "recovery_result": {
+    "overlay_shown": true,
+    "message": "The current assessment stage exceeded the bounded response time. The exact run was retained and can be retried.",
+    "exact_run_id_visible": true,
+    "retry_exact_run_available": true,
+    "clear_run_available": true,
+    "keep_waiting_available": true
+  },
+  "verified_outcome": {
+    "false_positive_overlay": false,
+    "browser_request_was_bounded": true,
+    "exact_run_identity_was_retained": true,
+    "normal_dependency_stage_completed": false,
+    "manual_recovery_was_required": true,
+    "client_delivery_remained_blocked": true
+  },
+  "root_cause_boundary": {
+    "verified": "The dependency/security stage provider did not return inside the browser continuation boundary.",
+    "not_yet_proven": "Which internal scanner, storage operation, or provider call consumed the full response window.",
+    "architectural_gap": "A long stage provider was still executed synchronously inside the continuation request even though its underlying scanner worker is asynchronous."
+  },
+  "active_repair": {
+    "branch": "codex/async-comprehensive-stage-execution",
+    "long_stage_request_returns_promptly": true,
+    "durable_background_task_identity": true,
+    "cross_process_task_observation": true,
+    "background_heartbeat": true,
+    "orphaned_task_recovery": true,
+    "duplicate_execution_prevention": true,
+    "provider_poll_iteration_retained": true,
+    "completed_stage_evidence_preserved": true,
+    "late_result_after_timeout_ignored": true,
+    "scores_changed": false,
+    "scanner_findings_changed": false,
+    "report_design_changed": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}

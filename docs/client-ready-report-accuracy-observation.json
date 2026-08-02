@@ -8,10 +8,13 @@
   "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
   "run_recovery_merge_sha": "116a896f031f258426b7f93759323667867c34ee",
   "stage_watchdog_merge_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
-  "current_main_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
-  "continuation_branch": "codex/final-coverage-synchronization",
-  "continuation_pr": 981,
-  "state": "post_merge_verification_failed_exact_coverage_repair_in_progress",
+  "coverage_synchronization_merge_sha": "010263d0db823e46ff1c47ee21f89bef84af5f86",
+  "false_recovery_popup_merge_sha": "671d213ca70d612e1f0386cb05d86b138da0df81",
+  "bounded_stage_execution_merge_sha": "62354ea2db1f62f09eeba373e50efedbcb50c598",
+  "current_main_sha": "62354ea2db1f62f09eeba373e50efedbcb50c598",
+  "continuation_branch": "codex/async-comprehensive-stage-execution",
+  "continuation_pr": 984,
+  "state": "post_merge_dependency_stage_timeout_async_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -19,73 +22,80 @@
     "authoritative_state_file": "docs/exact-head-comprehensive-finality-observation.json"
   },
   "observed": {
-    "pull_request_974_exact_head_checks": "passed",
-    "pull_request_974_unresolved_review_threads": 0,
-    "pull_request_978_exact_head_checks": "passed",
-    "pull_request_978_unresolved_review_threads": 0,
-    "current_main_exact_deployment_identity": {
-      "vercel": "verified",
-      "railway": "verified",
-      "release_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
-      "deployment_environment": "production",
-      "ui_contract": "expert-engagement-v2"
-    },
-    "post_merge_mobile_restart_production_proof": {
-      "status": "failed",
-      "run_id": "comprun_35af75b0509d4ae8aa52eed3427a99d2",
-      "terminal_stage": "final_comprehensive_report_generation",
-      "canonical_progress_percent": 82.61,
-      "revision": 23,
-      "client_status": "Blocked during final report generation",
-      "technical_reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]",
-      "report_contract_reason": "comprehensive_final_report_semantic_contract_failed",
-      "final_artifact_generation_complete": true,
-      "pdf_page_count": 20,
+    "pull_request_981_exact_head_checks": "passed",
+    "pull_request_982_exact_head_checks": "passed",
+    "pull_request_983_exact_head_checks": "passed",
+    "pull_request_983_unresolved_review_threads": 0,
+    "production_run": {
+      "run_id": "comprun_99d7f2630eb74db5be7725c2fd9fd93c",
+      "status": "bounded_stage_timeout",
+      "stage": "dependency_security_static_analysis",
+      "canonical_progress_percent": 16,
+      "elapsed_display": "8:00",
+      "recovery_message": "The current assessment stage exceeded the bounded response time. The exact run was retained and can be retried.",
+      "exact_run_identity_visible": true,
+      "manual_retry_required": true,
       "human_review_reached": false,
       "human_review_required": true,
-      "client_delivery_allowed": false
+      "client_delivery_allowed": false,
+      "observation_file": "docs/production-dependency-stage-timeout-observation.json"
     },
-    "post_merge_ios_webkit_paint_proof": "pending_at_time_of_coverage_repair_start",
-    "post_merge_two_service_production_acceptance": "pending_at_time_of_coverage_repair_start",
+    "deployment_identity_at_failure": {
+      "frontend_contains_pr_983_recovery_contract": true,
+      "backend_exact_sha_proven_by_screenshot": false,
+      "truth_boundary": "The screenshot proves the retained exact-run timeout contract but does not by itself prove which Railway process handled the timed-out continuation."
+    },
     "first_incomplete_package_remains_blocking": true,
     "later_report_truth_package_closed_without_merge": 977
   },
   "root_causes_and_hypotheses": [
     {
       "id": "revision_only_stage_continuation_can_run_indefinitely",
-      "evidence_status": "remediated_in_ff239f",
-      "effect": "dependency_security_static_analysis previously remained active through 362 continuation writes without meaningful stage advancement"
+      "evidence_status": "remediated",
+      "repair_merge_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546"
     },
     {
-      "id": "webkit_request_body_double_init_in_recovery_transport",
-      "evidence_status": "repair_deployed_in_ff239f_pending_post_merge_result",
-      "effect": "WebKit intake previously completed no persisted run identity while Chromium reached an exact run"
+      "id": "conflicting_final_report_coverage_aliases",
+      "evidence_status": "remediated",
+      "repair_merge_sha": "010263d0db823e46ff1c47ee21f89bef84af5f86"
     },
     {
-      "id": "final_report_contains_pre_finalization_and_final_coverage_aliases",
+      "id": "false_stuck_run_overlay_on_healthy_assessment",
+      "evidence_status": "remediated",
+      "repair_merge_sha": "671d213ca70d612e1f0386cb05d86b138da0df81"
+    },
+    {
+      "id": "synchronous_long_stage_provider_holds_continue_request",
       "evidence_status": "verified",
-      "effect": "the retained final package exposed analyzer coverage values 89 and 100 while exact-run canonical coverage was 100",
-      "repair": "synchronize only recognized analyzer and scanner coverage aliases in Markdown, HTML, and the existing PDF after final rendering and before accuracy validation"
+      "effect": "A normal dependency/security provider invocation consumed the browser response boundary and required manual exact-run recovery.",
+      "repair": "Execute known long provider polls through a durable background task with immediate in-progress responses, heartbeats, orphan recovery, exact identity, and fail-closed late-result handling."
     }
   ],
   "active_continuation": {
-    "canonical_coverage_value": 100,
-    "observed_conflicting_coverage_values": [89, 100],
-    "markdown_coverage_synchronized_after_render": true,
-    "html_coverage_synchronized_after_render": true,
-    "pdf_coverage_synchronized_after_render": true,
-    "split_pdf_label_and_value_operands_supported": true,
-    "unrelated_numeric_evidence_preserved": true,
-    "artifact_hashes_recomputed": true,
-    "synchronization_byte_idempotent": true,
-    "recognized_coverage_aliases_only": true,
-    "scanner_results_changed": false,
-    "scores_changed_to_satisfy_gate": false,
+    "known_long_stages_backgrounded": [
+      "dependency_security_static_analysis",
+      "deep_scanner_triage",
+      "risk_reduction_and_executive_briefing",
+      "final_comprehensive_report_generation"
+    ],
+    "continuation_requests_return_promptly": true,
+    "durable_background_task_state": true,
+    "cross_process_task_observation": true,
+    "task_heartbeat": true,
+    "bounded_orphan_recovery": true,
+    "same_poll_duplicate_execution_prevented": true,
+    "poll_iteration_bound_to_prior_stage_result": true,
+    "recovery_attempt_receives_new_task_identity": true,
+    "canonical_run_written_only_by_request_thread": true,
+    "late_provider_result_after_timeout_ignored": true,
+    "prior_completed_stage_evidence_preserved": true,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
     "existing_section_order_preserved": true,
     "existing_pdf_composition_preserved": true,
     "report_redesign_performed": false,
+    "scores_changed_to_satisfy_gate": false,
+    "scanner_findings_changed": false,
     "human_review_required": true,
     "client_delivery_allowed": false
   },

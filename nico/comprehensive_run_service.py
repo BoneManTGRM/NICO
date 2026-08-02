@@ -4,6 +4,11 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico.comprehensive_approved_delivery_v1 import attach_approved_delivery_package
+from nico.comprehensive_background_stage_execution_v1 import (
+    BACKGROUND_STAGE_IDS,
+    execute_background_stage,
+    is_background_stage_in_progress,
+)
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
@@ -22,7 +27,7 @@ from nico.comprehensive_stage_watchdog_v1 import (
     rewind_stalled_stage_for_retry,
 )
 
-VERSION = "nico.comprehensive_run_service.v7"
+VERSION = "nico.comprehensive_run_service.v8"
 
 
 class ComprehensiveRunService:
@@ -33,12 +38,11 @@ class ComprehensiveRunService:
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
 
-    Every provider execution has a server-side response boundary. Active stages are
-    also guarded by a durable progress watchdog. A provider that does not return cannot
-    hold the API worker indefinitely, and repeated continuation calls that only mutate
-    revision or timestamps cannot remain `running` forever. Both conditions become a
-    truthful, evidence-preserving terminal block that may be explicitly retried once
-    without rerunning any previously completed stage.
+    Long scanner, triage, executive-briefing, and final-report providers execute behind
+    a durable background polling boundary. Their HTTP continuation requests return
+    promptly while exact-run work continues. Short stages keep the direct bounded
+    execution path. Neither path can claim completion without a returned provider result,
+    and both retain the existing one-retry, evidence-preserving stall contract.
     """
 
     def __init__(
@@ -175,19 +179,36 @@ class ComprehensiveRunService:
                 "report_language": identity["report_language"],
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
                 "prior_stage_results": deepcopy(record.get("stage_results") or {}),
+                "recovery_history": deepcopy(record.get("recovery_history") or []),
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
-            raw = execute_stage_with_timeout(
-                executor,
-                context,
-                stage_id=stage_id,
-            )
-            result = apply_stage_watchdog(
-                record,
-                stage_id=stage_id,
-                result=raw,
-            )
+            if stage_id in BACKGROUND_STAGE_IDS:
+                raw = execute_background_stage(
+                    executor,
+                    context,
+                    stage_id=stage_id,
+                )
+                result = (
+                    raw
+                    if is_background_stage_in_progress(raw)
+                    else apply_stage_watchdog(
+                        record,
+                        stage_id=stage_id,
+                        result=raw,
+                    )
+                )
+            else:
+                raw = execute_stage_with_timeout(
+                    executor,
+                    context,
+                    stage_id=stage_id,
+                )
+                result = apply_stage_watchdog(
+                    record,
+                    stage_id=stage_id,
+                    result=raw,
+                )
 
         previous_revision = int(record["revision"])
         updated = apply_comprehensive_stage_result(
