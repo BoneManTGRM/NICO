@@ -5,7 +5,7 @@ from typing import Any, Callable
 import nico.comprehensive_api_controller as controller_module
 
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v61-client-ready-accuracy"
+RUNTIME_REVISION = "v62-client-ready-exact-run-truth"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -153,6 +153,10 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "production_pdf_is_accuracy_acceptance_artifact": True,
         "bandit_csv_parser_dependency_removed": True,
         "bandit_json_artifact_required": True,
+        "bandit_problem_dispatch_bound": True,
+        "live_scanner_manifest_authoritative": True,
+        "missing_requested_scanners_retained_as_incomplete": True,
+        "post_authoritative_projection_truth_reconciled": True,
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "legacy_final_artifact_fixtures_supported": True,
