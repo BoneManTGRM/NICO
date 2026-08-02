@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v5"
+VERSION = "nico.comprehensive_final_report_execution_boundary.v4"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 240
 _IDENTITY_FIELDS = ("run_id", "repository", "commit_sha", "evidence_ledger_id")

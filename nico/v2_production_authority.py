@@ -13,8 +13,8 @@ from nico.comprehensive_canonical_report_source_v1 import (
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v6"
-_MARKER = "__nico_v2_production_authority_v6__"
+VERSION = "nico.v2.production-authority.v5"
+_MARKER = "__nico_v2_production_authority_v5__"
 
 
 def _text(value: Any) -> str:
