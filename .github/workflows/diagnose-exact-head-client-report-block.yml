@@ -46,10 +46,11 @@ jobs:
                       "Accept": accept,
                       "Cache-Control": "no-store",
                       "User-Agent": "nico-exact-head-report-diagnostic",
+                      "X-NICO-Browser-Projection": "terminal-manifest-v1",
                   },
               )
               try:
-                  with urllib.request.urlopen(request, timeout=90) as response:
+                  with urllib.request.urlopen(request, timeout=45) as response:
                       return response.status, response.read(), dict(response.headers.items())
               except urllib.error.HTTPError as exc:
                   return exc.code, exc.read(), dict(exc.headers.items())
