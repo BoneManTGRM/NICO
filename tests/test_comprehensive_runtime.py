@@ -92,19 +92,22 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
 
     completed = client.post("/assessment/comprehensive-run/comprun_runtime_001/continue")
     assert completed.status_code == 200
-    assert completed.json()["status"] == "review_required"
-    assert completed.json()["progress_percent"] == 100.0
-    assert completed.json()["human_review_required"] is True
-    assert completed.json()["client_delivery_allowed"] is False
-    final_report = completed.json()["stage_results"][
+    body = completed.json()
+    assert body["status"] == "review_required"
+    assert body["progress_percent"] == 100.0
+    assert body["human_review_required"] is True
+    assert body["client_delivery_allowed"] is False
+    assert body["reports"]["report_id"] == "report_comprun_runtime_001"
+    assert body["reports"]["markdown"].startswith(
+        "# NICO Comprehensive Technical Assessment"
+    )
+    assert body["reports"]["pdf_base64"].startswith("JVBER")
+    projected_final = body["record"]["stage_results"][
         "final_comprehensive_report_generation"
     ]
-    assert final_report["report_package"]["report_id"] == (
-        "report_comprun_runtime_001"
-    )
-    assert final_report["stage_execution"]["mode"] == (
-        "atomic_final_report_publication"
-    )
+    assert projected_final["status"] == "complete"
+    assert "report_package" in projected_final["omitted_large_fields"]
+    assert body["response_projection"]["terminal_report_attached"] is True
 
     restarted = FastAPI()
     configure_comprehensive_runtime(
@@ -117,11 +120,13 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
         "/assessment/comprehensive-run/comprun_runtime_001"
     )
     assert restored.status_code == 200
-    assert restored.json()["integrity_sha256"] == completed.json()["integrity_sha256"]
-    assert restored.json()["revision"] == completed.json()["revision"]
-    assert restored.json()["stage_results"][
-        "final_comprehensive_report_generation"
-    ]["report_package"]["report_id"] == "report_comprun_runtime_001"
+    restored_body = restored.json()
+    assert restored_body["integrity_sha256"] == body["integrity_sha256"]
+    assert restored_body["revision"] == body["revision"]
+    assert restored_body["reports"]["report_id"] == "report_comprun_runtime_001"
+    assert restored_body["reports"]["canonical_truth_sha256"] == "a" * 64
+    assert restored_body["human_review_required"] is True
+    assert restored_body["client_delivery_allowed"] is False
 
 
 def test_runtime_rejects_missing_capabilities(tmp_path: Path) -> None:
