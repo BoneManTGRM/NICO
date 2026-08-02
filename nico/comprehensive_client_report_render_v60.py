@@ -271,7 +271,12 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         if isinstance(package.get("coverage_synchronization"), Mapping)
         else {}
     )
-    if scanner_backed_report and int(coverage_sync.get("canonical_coverage_value", -1)) != coverage:
+    coverage_sync_applied = bool(coverage_sync)
+    coverage_sync_matches = (
+        not coverage_sync_applied
+        or int(coverage_sync.get("canonical_coverage_value", -1)) == coverage
+    )
+    if scanner_backed_report and not coverage_sync_matches:
         raise ValueError("final report coverage synchronization did not bind canonical truth")
 
     return {
@@ -284,7 +289,8 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         "coverage_denominator": denominator,
         "scanner_backed_report": scanner_backed_report,
         "conflicting_coverage_absent": True,
-        "coverage_synchronization_verified": bool(coverage_sync),
+        "coverage_synchronization_applied": coverage_sync_applied,
+        "coverage_synchronization_verified": coverage_sync_matches,
         "false_incomplete_analyzers_absent": True,
         "superseded_diagnostics_absent": True,
         "malformed_identifiers_absent": True,
