@@ -1,0 +1,62 @@
+{
+  "artifact_schema": "nico.production_final_report_timeout_observation.v1",
+  "observed_at": "2026-08-02T19:07:52Z",
+  "repository": "BoneManTGRM/NICO",
+  "deployed_release_sha": "f457ed47fc374358fe47e23128066c771db4f261",
+  "deployment_identity": {
+    "frontend": "verified_exact_production_release",
+    "backend": "verified_exact_production_release",
+    "environment": "production",
+    "ui_contract": "expert-engagement-v2"
+  },
+  "workflow": {
+    "name": "Mobile Restart Production Proof",
+    "run_id": 30761914027,
+    "job_id": 91533887144,
+    "artifact_id": 8837943823,
+    "conclusion": "failure"
+  },
+  "assessment": {
+    "run_id": "comprun_33925b5a68994333ab148ec925d5bd2f",
+    "commit_sha": "f457ed47fc374358fe47e23128066c771db4f261",
+    "evidence_ledger_id": "ledger_comprehensive_ac8c14824951469a8d6148ef54fa3d71",
+    "assessment_depth": "strategic",
+    "report_language": "en",
+    "current_stage": "final_comprehensive_report_generation",
+    "canonical_progress_percent": 82.61,
+    "revision": 114,
+    "terminal": true,
+    "lifecycle_status": "blocked",
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "failure": {
+    "reason": "stage_progress_stalled",
+    "error_code": "background_stage_execution_timeout",
+    "error_message": "Stage final_comprehensive_report_generation exceeded the 900-second background execution boundary.",
+    "technical_reason": "background_stage_execution_timeout:stage=final_comprehensive_report_generation:task_id=comprehensive_stage_83fcc878a480cb96e397165c6ada:elapsed_seconds=908.093",
+    "artifacts_available": false,
+    "response_bounded": true,
+    "retryable": true,
+    "cancelable": true
+  },
+  "truth_boundary": {
+    "scanner_truth_failure_recurred": false,
+    "semantic_completed_analyzer_contradiction_observed": false,
+    "final_provider_completed_with_artifacts": false,
+    "generic_background_final_publication_failed": true,
+    "chat_or_screenshot_inference_used": false
+  },
+  "required_repair": {
+    "remove_final_report_from_generic_background_stage_path": true,
+    "validate_pdf_html_markdown_json_together": true,
+    "write_complete_package_through_canonical_run_store": true,
+    "bound_recursive_evidence_processing": true,
+    "prevent_duplicate_scanner_truth_canonicalization": true,
+    "preserve_existing_report_design": true,
+    "preserve_scores_and_scanner_findings": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}

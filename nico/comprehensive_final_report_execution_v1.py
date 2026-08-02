@@ -92,22 +92,21 @@ def _apply_local_finality(result: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
-def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _canonical_final_report_context(
+    context: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Bind scanner and score truth at the authoritative production provider boundary.
 
-    The production registry wraps the final-report provider directly. It can therefore
-    bypass process-global report-builder patches. Canonicalize exact-run scanner aliases
-    in ``prior_stage_results`` here, before the provider can flatten them into Markdown,
-    HTML, JSON, or PDF. Then synchronize the technical and evidence-adjusted score pair.
-
-    The source context is never mutated. Unknown scanner evidence remains fail-closed;
-    only aliases tied to a known completed exact-run analyzer are removed.
+    Scanner aliases are canonicalized through the bounded copy-on-write v65 path. The
+    resulting manifest is embedded into the retained scoring evidence, allowing the
+    patched report builder to recognize that the exact stage population has already
+    been processed and skip a second full evidence-tree traversal.
     """
 
     from nico.comprehensive_cross_format_finality_v49 import (
         synchronize_comprehensive_score_truth,
     )
-    from nico.comprehensive_pre_render_scanner_truth_v64 import (
+    from nico.comprehensive_pre_render_scanner_truth_v65 import (
         canonicalize_stage_results_before_render,
     )
 
@@ -121,7 +120,7 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
             "scanner_truth_synchronized_before_render": False,
         }
 
-    stages, scanner_truth = canonicalize_stage_results_before_render(deepcopy(source_stages))
+    stages, scanner_truth = canonicalize_stage_results_before_render(source_stages)
     output["prior_stage_results"] = stages
     output["pre_render_scanner_truth"] = deepcopy(scanner_truth)
 
@@ -133,7 +132,7 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
             "version": VERSION,
             "pre_render_scanner_truth": deepcopy(scanner_truth),
             "scanner_truth_synchronized_before_render": (
-                scanner_truth.get("status") == "applied"
+                scanner_truth.get("status") in {"applied", "already_applied"}
             ),
             "global_report_builder_mutated": False,
         }
@@ -148,7 +147,7 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
             "version": VERSION,
             "pre_render_scanner_truth": deepcopy(scanner_truth),
             "scanner_truth_synchronized_before_render": (
-                scanner_truth.get("status") == "applied"
+                scanner_truth.get("status") in {"applied", "already_applied"}
             ),
             "global_report_builder_mutated": False,
         }
@@ -156,7 +155,8 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
         return output, truth
 
     synchronized = synchronize_comprehensive_score_truth(assessment)
-    scoring["assessment"] = synchronized
+    scoring_copy = dict(scoring)
+    scoring_copy["assessment"] = synchronized
     maturity = (
         synchronized.get("maturity_signal")
         if isinstance(synchronized.get("maturity_signal"), dict)
@@ -167,7 +167,11 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
         "canonical_evidence_adjusted_score",
         maturity.get("canonical_evidence_adjusted_score"),
     )
-    evidence = scoring.get("evidence") if isinstance(scoring.get("evidence"), dict) else {}
+    evidence = (
+        dict(scoring.get("evidence"))
+        if isinstance(scoring.get("evidence"), dict)
+        else {}
+    )
     evidence.update(
         {
             "technical_score": technical,
@@ -177,10 +181,11 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
             "pre_render_scanner_truth": deepcopy(scanner_truth),
         }
     )
-    scoring["evidence"] = evidence
-    scoring["canonical_evidence_adjusted_score"] = adjusted
-    stages["evidence_reconciliation_and_scoring"] = scoring
-    output["prior_stage_results"] = stages
+    scoring_copy["evidence"] = evidence
+    scoring_copy["canonical_evidence_adjusted_score"] = adjusted
+    stages_copy = dict(stages)
+    stages_copy["evidence_reconciliation_and_scoring"] = scoring_copy
+    output["prior_stage_results"] = stages_copy
     truth = {
         "status": "complete" if technical is not None and adjusted is not None else "incomplete",
         "version": VERSION,
@@ -190,8 +195,9 @@ def _canonical_final_report_context(context: dict[str, Any]) -> tuple[dict[str, 
         "input_assessment_synchronized": True,
         "pre_render_scanner_truth": deepcopy(scanner_truth),
         "scanner_truth_synchronized_before_render": (
-            scanner_truth.get("status") == "applied"
+            scanner_truth.get("status") in {"applied", "already_applied"}
         ),
+        "duplicate_scanner_truth_pass_prevented": True,
         "global_report_builder_mutated": False,
     }
     output["final_report_input_score_truth"] = truth
@@ -268,7 +274,11 @@ def wrap_final_report_provider(
             return result
 
         original_status = source_status or readiness["original_status"]
-        original_reason = source_reason or readiness["original_reason"] or "final_report_requires_human_review"
+        original_reason = (
+            source_reason
+            or readiness["original_reason"]
+            or "final_report_requires_human_review"
+        )
         output = dict(result)
         output.update(
             {
@@ -359,7 +369,10 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
         raw.get("cross_format_verification")
         is finality_aware_cross_format_verification_provider
     )
-    changed = wrapped is not provider or previous_verifier is not finality_aware_cross_format_verification_provider
+    changed = (
+        wrapped is not provider
+        or previous_verifier is not finality_aware_cross_format_verification_provider
+    )
     bound = final_bound and verifier_bound
     return {
         "status": "installed" if changed else "already_installed",
@@ -369,6 +382,7 @@ def install_comprehensive_final_report_execution(target: FastAPI) -> dict[str, A
         "cross_format_provider_bound": verifier_bound,
         "cross_format_contract_schema": CROSS_FORMAT_VERSION,
         "authoritative_scanner_truth_synchronized_before_render": True,
+        "duplicate_scanner_truth_pass_prevented": True,
         "canonical_score_parity_required": True,
         "canonical_score_synchronized_before_render": True,
         "local_finality_applied_after_render": True,

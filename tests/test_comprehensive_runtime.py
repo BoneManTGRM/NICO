@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -17,14 +18,45 @@ def _executors() -> dict:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            result = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
                 "repository": context["repository"],
                 "commit_sha": context["commit_sha"],
                 "evidence_ledger_id": context["evidence_ledger_id"],
+                "human_review_required": True,
+                "client_delivery_allowed": False,
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    key: context[key]
+                    for key in (
+                        "run_id",
+                        "repository",
+                        "commit_sha",
+                        "evidence_ledger_id",
+                    )
+                }
+                result["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": (
+                        "# NICO Comprehensive Technical Assessment\n"
+                        "CLIENT DELIVERY NOT AUTHORIZED"
+                    ),
+                    "html": (
+                        "<html><body>NICO Comprehensive Technical Assessment</body></html>"
+                    ),
+                    "pdf_base64": base64.b64encode(
+                        b"%PDF-1.4\n%%EOF\n"
+                    ).decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                }
+            return result
 
         executors[capability] = execute
     return executors
@@ -60,10 +92,22 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
 
     completed = client.post("/assessment/comprehensive-run/comprun_runtime_001/continue")
     assert completed.status_code == 200
-    assert completed.json()["status"] == "review_required"
-    assert completed.json()["progress_percent"] == 100.0
-    assert completed.json()["human_review_required"] is True
-    assert completed.json()["client_delivery_allowed"] is False
+    body = completed.json()
+    assert body["status"] == "review_required"
+    assert body["progress_percent"] == 100.0
+    assert body["human_review_required"] is True
+    assert body["client_delivery_allowed"] is False
+    assert body["reports"]["report_id"] == "report_comprun_runtime_001"
+    assert body["reports"]["markdown"].startswith(
+        "# NICO Comprehensive Technical Assessment"
+    )
+    assert body["reports"]["pdf_base64"].startswith("JVBER")
+    projected_final = body["record"]["stage_results"][
+        "final_comprehensive_report_generation"
+    ]
+    assert projected_final["status"] == "complete"
+    assert "report_package" in projected_final["omitted_large_fields"]
+    assert body["response_projection"]["terminal_report_attached"] is True
 
     restarted = FastAPI()
     configure_comprehensive_runtime(
@@ -72,10 +116,17 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
         connection_factory=lambda: sqlite3.connect(path),
         dialect="sqlite",
     )
-    restored = TestClient(restarted).get("/assessment/comprehensive-run/comprun_runtime_001")
+    restored = TestClient(restarted).get(
+        "/assessment/comprehensive-run/comprun_runtime_001"
+    )
     assert restored.status_code == 200
-    assert restored.json()["integrity_sha256"] == completed.json()["integrity_sha256"]
-    assert restored.json()["revision"] == completed.json()["revision"]
+    restored_body = restored.json()
+    assert restored_body["integrity_sha256"] == body["integrity_sha256"]
+    assert restored_body["revision"] == body["revision"]
+    assert restored_body["reports"]["report_id"] == "report_comprun_runtime_001"
+    assert restored_body["reports"]["canonical_truth_sha256"] == "a" * 64
+    assert restored_body["human_review_required"] is True
+    assert restored_body["client_delivery_allowed"] is False
 
 
 def test_runtime_rejects_missing_capabilities(tmp_path: Path) -> None:
@@ -91,7 +142,12 @@ def test_runtime_rejects_missing_capabilities(tmp_path: Path) -> None:
             dialect="sqlite",
         )
 
-    assert not any(str(getattr(route, "path", "")).startswith("/assessment/comprehensive-run") for route in app.routes)
+    assert not any(
+        str(getattr(route, "path", "")).startswith(
+            "/assessment/comprehensive-run"
+        )
+        for route in app.routes
+    )
 
 
 def test_runtime_requires_postgres_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,7 +163,9 @@ def test_runtime_requires_postgres_by_default(monkeypatch: pytest.MonkeyPatch) -
         )
 
 
-def test_runtime_metadata_discloses_durable_boundary_without_secrets(tmp_path: Path) -> None:
+def test_runtime_metadata_discloses_durable_boundary_without_secrets(
+    tmp_path: Path,
+) -> None:
     app = FastAPI()
     configure_comprehensive_runtime(
         app,
