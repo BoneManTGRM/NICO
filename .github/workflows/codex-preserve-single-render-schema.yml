@@ -1,0 +1,59 @@
+name: Preserve single-render schema identifiers
+
+on:
+  push:
+    branches:
+      - codex/single-render-final-report-v1
+
+permissions:
+  contents: write
+
+jobs:
+  preserve:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/single-render-final-report-v1
+          fetch-depth: 0
+
+      - name: Preserve public schema contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('nico/v2_production_authority.py'): {
+                  'VERSION = "nico.v2.production-authority.v6"':
+                      'VERSION = "nico.v2.production-authority.v5"',
+                  '_MARKER = "__nico_v2_production_authority_v6__"':
+                      '_MARKER = "__nico_v2_production_authority_v5__"',
+              },
+              Path('nico/comprehensive_final_report_execution_boundary_v4.py'): {
+                  'VERSION = "nico.comprehensive_final_report_execution_boundary.v5"':
+                      'VERSION = "nico.comprehensive_final_report_execution_boundary.v4"',
+              },
+          }
+          for path, mapping in replacements.items():
+              source = path.read_text(encoding='utf-8')
+              for old, new in mapping.items():
+                  count = source.count(old)
+                  if count != 1:
+                      raise SystemExit(f'{path}: expected one {old!r}, found {count}')
+                  source = source.replace(old, new, 1)
+              path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Commit schema-compatible implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/codex-preserve-single-render-schema.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve established final-report schema identifiers"
+          git push origin HEAD:codex/single-render-final-report-v1
