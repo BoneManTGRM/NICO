@@ -5,8 +5,8 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive_post_readiness_maturity_truth.v2"
-_MARKER = "__nico_post_readiness_maturity_truth_v2__"
+VERSION = "nico.comprehensive_post_readiness_maturity_truth.v3"
+_MARKER = "__nico_post_readiness_maturity_truth_v3__"
 _LABEL_FIELDS = frozenset(
     {
         "maturity",
@@ -97,12 +97,14 @@ def _synchronize(
     if isinstance(node, str):
         updated = synchronize_explicit_maturity_text(node, canonical_label)
         if updated != node:
+            # Never retain the stale client-visible sentence in the canonical manifest.
+            # The path, replacement type, and canonical label are sufficient audit data.
             replacements.append(
                 {
                     "path": path,
-                    "observed": _text(node, 300),
                     "canonical": canonical_label,
                     "kind": "explicit_text_alias",
+                    "original_text_retained": "false",
                 }
             )
         return updated
@@ -146,7 +148,7 @@ def _synchronize(
                 replacements.append(
                     {
                         "path": current_path,
-                        "observed": observed,
+                        "observed_label": observed,
                         "canonical": canonical_label,
                         "kind": "structured_alias",
                     }
@@ -197,6 +199,7 @@ def synchronize_post_readiness_maturity_truth(
         "replacements": replacements[:100],
         "post_readiness_boundary": True,
         "explicit_maturity_aliases_only": True,
+        "stale_client_text_retained_in_manifest": False,
         "unrelated_seniority_preserved": True,
         "scores_changed": False,
         "scanner_results_changed": False,
@@ -243,6 +246,7 @@ def install_post_readiness_maturity_truth() -> dict[str, Any]:
         "bound": readiness.reconcile_client_readiness is reconcile,
         "post_readiness_boundary": True,
         "explicit_maturity_aliases_only": True,
+        "stale_client_text_retained_in_manifest": False,
         "strict_semantic_validation_preserved": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
