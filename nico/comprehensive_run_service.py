@@ -15,9 +15,11 @@ from nico.comprehensive_background_terminal_order_v2 import (
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
+from nico.comprehensive_final_report_durable_worker_v1 import (
+    DurableFinalReportWorker,
+)
 from nico.comprehensive_final_report_execution_boundary_v4 import (
     FINAL_REPORT_STAGE_ID,
-    execute_final_report_stage,
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
@@ -42,29 +44,23 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v11"
+VERSION = "nico.comprehensive_run_service.v12"
 
 
 class ComprehensiveRunService:
     """Restart-safe orchestration over the canonical Comprehensive run record.
 
-    Each completed stage and each explicit human review decision is persisted through
-    the same optimistic-concurrency store. Approval binds the exact existing artifacts;
-    it never reruns report generation or changes the assessed commit. An approved
-    delivery archive is generated only after the accepted-edition manifest validates.
+    Scanner, triage, and executive-analysis providers retain the existing background
+    polling boundary. Final report generation uses a separate durable leased worker:
 
-    Scanner, triage, and executive-analysis providers can execute behind the durable
-    polling boundary. Final report publication is different: the PDF, HTML, Markdown,
-    and JSON must be validated together and committed through the canonical run-store
-    transaction. It therefore uses a bounded atomic publication path rather than the
-    process-local background task/result surface that produced terminal 83-percent
-    timeouts for complete or nearly complete report work.
+    - the HTTP request returns after a short grace interval;
+    - a Postgres/SQLite lease and heartbeat survive process replacement;
+    - a stale lease can be reclaimed by the next continue request;
+    - the provider is allowed to finish instead of becoming an orphan after timeout;
+    - the exact validated Markdown, HTML, JSON, and PDF package is written directly to
+      the canonical run record through its optimistic revision boundary.
 
-    Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    Evidence flattening also carries one bounded visit budget across recursion, and the
-    report builder recognizes the retained manifest to skip duplicate full-tree work.
-    Scores, scanner findings, report design, human review, and blocked client delivery
-    remain unchanged.
+    Human review remains mandatory and client delivery remains blocked until approval.
     """
 
     def __init__(
@@ -74,6 +70,12 @@ class ComprehensiveRunService:
     ) -> None:
         self._store = store
         self._stage_executors = bind_capability_executors(capability_executors)
+        final_executor = self._stage_executors.get(FINAL_REPORT_STAGE_ID)
+        self._final_report_worker = (
+            DurableFinalReportWorker(store, final_executor)
+            if callable(final_executor)
+            else None
+        )
 
     def start(
         self,
@@ -186,6 +188,18 @@ class ComprehensiveRunService:
                 "retryable": False,
                 "cancelable": True,
             }
+        elif stage_id == FINAL_REPORT_STAGE_ID:
+            if self._final_report_worker is None:
+                result = {
+                    "status": "blocked",
+                    "reason": "durable_final_report_worker_unavailable",
+                    "error_code": "durable_final_report_worker_unavailable",
+                    "error_message": "The durable final report worker is not configured.",
+                    "retryable": False,
+                    "cancelable": True,
+                }
+            else:
+                return self._final_report_worker.advance(record)
         else:
             context = {
                 "artifact_schema": VERSION,
@@ -205,9 +219,7 @@ class ComprehensiveRunService:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
-            if stage_id == FINAL_REPORT_STAGE_ID:
-                result = execute_final_report_stage(executor, context)
-            elif stage_id in BACKGROUND_STAGE_IDS:
+            if stage_id in BACKGROUND_STAGE_IDS:
                 raw = execute_background_stage(
                     executor,
                     context,
