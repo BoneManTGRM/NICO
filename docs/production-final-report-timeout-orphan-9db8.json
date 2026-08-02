@@ -1,0 +1,62 @@
+{
+  "artifact_schema": "nico.production_final_report_timeout_orphan_observation.v1",
+  "repository": "BoneManTGRM/NICO",
+  "deployed_release_sha": "9db8f1e7dad4324e86240ff2104a953a559d1a6f",
+  "deployment_identity": {
+    "vercel": "verified_success",
+    "railway": "verified_success",
+    "environment": "production",
+    "ui_contract": "expert-engagement-v2"
+  },
+  "mobile_proof": {
+    "workflow_run_id": 30764378256,
+    "workflow_job_id": 91540624517,
+    "workflow_artifact_id": 8838622607,
+    "conclusion": "failure"
+  },
+  "assessment": {
+    "run_id": "comprun_7474de8e01814ed592659eee68b6a715",
+    "commit_sha": "9db8f1e7dad4324e86240ff2104a953a559d1a6f",
+    "evidence_ledger_id": "ledger_comprehensive_08e9e232d02d47478e54f31e8deb4c6c",
+    "stage": "final_comprehensive_report_generation",
+    "canonical_progress_percent": 82.61,
+    "revision": 27,
+    "terminal": true,
+    "lifecycle_status": "blocked",
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "exact_failure": {
+    "reason": "final_report_execution_timeout",
+    "error_code": "final_report_execution_timeout",
+    "error_message": "Final report generation exceeded the 240-second bounded publication window.",
+    "technical_reason": "final_report_execution_timeout:stage=final_comprehensive_report_generation",
+    "artifacts_available": false,
+    "retryable": true,
+    "cancelable": true
+  },
+  "availability_observation": {
+    "diagnostic_workflow_run_id": 30765016007,
+    "diagnostic_artifact_id": 8838669620,
+    "status_endpoint_result": "HTTP 502 Bad Gateway",
+    "runtime_endpoint_result": "HTTP 502 Bad Gateway",
+    "observation_scope": "Captured while concurrent timed-out final-report render threads remained active."
+  },
+  "verified_code_boundary": {
+    "timeout_thread_is_daemon": true,
+    "python_thread_termination_supported": false,
+    "timeout_returns_blocked_while_provider_thread_can_continue": true,
+    "orphan_render_can_outlive_request_and_run_state": true
+  },
+  "required_repair": {
+    "request_path_must_not_wait_for_final_render": true,
+    "provider_must_not_be_orphaned_after_timeout": true,
+    "worker_lease_must_be_persisted": true,
+    "worker_heartbeat_must_be_persisted": true,
+    "stale_lease_must_be_reclaimable": true,
+    "validated_package_must_write_to_canonical_run_record": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
