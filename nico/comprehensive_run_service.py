@@ -15,8 +15,12 @@ from nico.comprehensive_background_terminal_order_v2 import (
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
+from nico.comprehensive_final_report_execution_boundary_v4 import (
+    FINAL_REPORT_STAGE_ID,
+    execute_final_report_stage,
+)
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
-from nico.comprehensive_pre_render_scanner_truth_v64 import (
+from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
 )
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
@@ -36,7 +40,7 @@ from nico.comprehensive_stage_watchdog_v1 import (
 install_background_terminal_ordering()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v10"
+VERSION = "nico.comprehensive_run_service.v11"
 
 
 class ComprehensiveRunService:
@@ -47,17 +51,17 @@ class ComprehensiveRunService:
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
 
-    Long scanner, triage, executive-briefing, and final-report providers execute behind
-    a durable background polling boundary. Their HTTP continuation requests return
-    promptly while exact-run work continues. Short stages keep the direct bounded
-    execution path. Neither path can claim completion without a returned provider result,
-    and both retain the existing one-retry, evidence-preserving stall contract.
+    Scanner, triage, and executive-analysis providers can execute behind the durable
+    polling boundary. Final report publication is different: the PDF, HTML, Markdown,
+    and JSON must be validated together and committed through the canonical run-store
+    transaction. It therefore uses a bounded atomic publication path rather than the
+    process-local background task/result surface that produced terminal 83-percent
+    timeouts for complete or nearly complete report work.
 
-    Background task persistence is monotonic: once a provider records a terminal task
-    result, a delayed heartbeat cannot revert the durable task to ``running``. Before
-    report rendering, exact-run scanner completion also replaces stale recursive
-    incomplete-analyzer aliases so generated Markdown, HTML, JSON, and PDF cannot list a
-    completed tool as incomplete.
+    Scanner truth is canonicalized once with copy-on-write traversal before rendering.
+    The report builder recognizes the retained manifest and skips duplicate full-tree
+    work. Scores, scanner findings, report design, human review, and blocked client
+    delivery remain unchanged.
     """
 
     def __init__(
@@ -198,7 +202,9 @@ class ComprehensiveRunService:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
-            if stage_id in BACKGROUND_STAGE_IDS:
+            if stage_id == FINAL_REPORT_STAGE_ID:
+                result = execute_final_report_stage(executor, context)
+            elif stage_id in BACKGROUND_STAGE_IDS:
                 raw = execute_background_stage(
                     executor,
                     context,
