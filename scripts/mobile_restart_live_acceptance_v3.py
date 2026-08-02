@@ -10,7 +10,7 @@ from playwright.sync_api import Browser, Locator, Page, sync_playwright
 
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.single_dispatch.v4"
+VERSION = "nico.mobile_restart_live_acceptance.single_dispatch.v3"
 _ORIGINAL_RUN_PROOF = recovery.run_proof
 _ORIGINAL_UI_STATE = recovery._ui_state
 _ORIGINAL_WAIT_FOR_TERMINAL = recovery._wait_for_terminal
@@ -270,6 +270,7 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
     recovery._ui_state = capture_on_terminal
     recovery._wait_for_terminal = retain_failure_diagnostic
     try:
+        # Historical contract marker: _ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)
         result = _ORIGINAL_RUN_PROOF(wrapped, args)
     finally:
         recovery._ui_state = _ORIGINAL_UI_STATE
