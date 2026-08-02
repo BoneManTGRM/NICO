@@ -124,6 +124,62 @@ def _synchronize_score_contract(canonical: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _restore_rich_remediation_register(
+    output: dict[str, Any],
+    original: Mapping[str, Any] | None,
+    *,
+    canonical_total: int,
+) -> dict[str, Any]:
+    """Preserve render-only remediation fields while synchronizing count truth.
+
+    ``normalize_final_projection`` deliberately projects canonical findings into the
+    remediation-register surfaces. Those canonical findings contain client acceptance
+    criteria but not the register's richer ``verification`` and ``exit_criteria``
+    fields consumed by the Markdown and PDF renderers. Keep the already normalized,
+    deduplicated register produced by ``client_report_completion_v2._install_register``
+    and update only its count summary.
+    """
+
+    if not isinstance(original, Mapping):
+        return output
+    register = deepcopy(dict(original))
+    code = [
+        item
+        for item in register.get("code_findings") or []
+        if isinstance(item, Mapping)
+    ]
+    operational = [
+        item
+        for item in register.get("operational_findings") or []
+        if isinstance(item, Mapping)
+    ]
+    register_total = len(code) + len(operational)
+    if register_total != canonical_total:
+        raise ValueError(
+            "final remediation register diverged from canonical finding population: "
+            f"{register_total} != {canonical_total}"
+        )
+    summary = (
+        deepcopy(dict(register.get("summary")))
+        if isinstance(register.get("summary"), Mapping)
+        else {}
+    )
+    summary.update(
+        {
+            "decision_finding_count": canonical_total,
+            "finding_register_count": canonical_total,
+            "canonical_finding_count": canonical_total,
+            "exact_source_code_finding_count": len(code),
+            "operational_or_context_finding_count": len(operational),
+            "final_register_count_synchronized_before_render": True,
+            "rich_verification_fields_preserved_for_rendering": True,
+        }
+    )
+    register["summary"] = summary
+    output["client_finding_remediation_register"] = register
+    return output
+
+
 def synchronize_final_publication_truth(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -132,10 +188,16 @@ def synchronize_final_publication_truth(
     The final remediation-register rebuild can change the canonical finding population
     after an earlier projection pass. Re-run the canonical projection immediately after
     that rebuild so the top-level unique count and every mirrored count describe the
-    exact register that is about to be rendered. Reconcile the legacy score contract
-    to the independently recomputable canonical score at the same boundary.
+    exact register that is about to be rendered. Preserve the rich verification fields
+    in the already normalized remediation register, and reconcile the legacy score
+    contract to the independently recomputable canonical score at the same boundary.
     """
 
+    rich_register = (
+        deepcopy(dict(canonical.get("client_finding_remediation_register")))
+        if isinstance(canonical.get("client_finding_remediation_register"), Mapping)
+        else None
+    )
     output = normalize_final_projection(canonical)
     output = _synchronize_score_contract(output)
     findings = [
@@ -144,6 +206,11 @@ def synchronize_final_publication_truth(
         if isinstance(item, Mapping)
     ]
     total = len(findings)
+    output = _restore_rich_remediation_register(
+        output,
+        rich_register,
+        canonical_total=total,
+    )
     output["unique_finding_count"] = total
     output["finding_register_count"] = total
     output["canonical_finding_count"] = total
@@ -157,6 +224,7 @@ def synchronize_final_publication_truth(
             "version": VERSION,
             "canonical_finding_count": total,
             "final_register_count_synchronized_before_render": True,
+            "rich_verification_fields_preserved_for_rendering": True,
             "legacy_score_contract_reconciled_before_render": True,
             "scores_changed_to_satisfy_gate": False,
             "human_review_required": True,
@@ -195,6 +263,7 @@ def install_comprehensive_final_publication_truth_v58() -> dict[str, Any]:
         "version": VERSION,
         "bound": completion._install_register is install_register,
         "final_register_count_synchronized_before_render": True,
+        "rich_verification_fields_preserved_for_rendering": True,
         "legacy_score_contract_reconciled_before_render": True,
         "final_artifacts_rebuilt_from_reconciled_canonical_truth": True,
         "scores_changed_to_satisfy_gate": False,
