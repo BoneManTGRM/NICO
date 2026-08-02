@@ -62,6 +62,18 @@ def test_canonical_source_contains_truth_without_legacy_artifacts() -> None:
     assert source["client_delivery_allowed"] is False
 
 
+def test_empty_stage_context_is_not_treated_as_production_canonical_source() -> None:
+    context = _context()
+    context["prior_stage_results"] = {}
+
+    source = build_canonical_report_source(context)
+
+    assert source["status"] == "blocked"
+    assert source["reason"] == "canonical_report_stage_results_unavailable"
+    assert source["human_review_required"] is True
+    assert source["client_delivery_allowed"] is False
+
+
 def test_v2_authority_skips_legacy_delegate_and_renders_once(monkeypatch) -> None:
     delegate_calls = 0
     observed_source: dict[str, Any] = {}
@@ -123,3 +135,27 @@ def test_delegate_fallback_remains_for_noncanonical_synthetic_callers(monkeypatc
     assert calls == 1
     assert result["status"] == "blocked"
     assert result["reason"] == "synthetic_fallback"
+
+
+def test_delegate_fallback_remains_for_identity_complete_empty_stage_context(monkeypatch) -> None:
+    calls = 0
+
+    def delegate(context: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "complete",
+            "report_package": {
+                "json": {"identity": {"run_id": context["run_id"]}},
+                "report_id": "synthetic-report",
+            },
+        }
+
+    context = _context()
+    context["prior_stage_results"] = {}
+    wrapped = authority.wrap_final_report_publication(delegate)
+    result = wrapped(context)
+
+    assert calls == 1
+    assert result["v2_production_authority"]["canonical_only_source_used"] is False
+    assert result["v2_production_authority"]["legacy_delegate_render_skipped"] is False
