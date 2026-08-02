@@ -9,6 +9,9 @@ from nico.comprehensive_background_stage_execution_v1 import (
     execute_background_stage,
     is_background_stage_in_progress,
 )
+from nico.comprehensive_background_terminal_order_v2 import (
+    install_background_terminal_ordering,
+)
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
@@ -27,7 +30,9 @@ from nico.comprehensive_stage_watchdog_v1 import (
     rewind_stalled_stage_for_retry,
 )
 
-VERSION = "nico.comprehensive_run_service.v8"
+install_background_terminal_ordering()
+
+VERSION = "nico.comprehensive_run_service.v9"
 
 
 class ComprehensiveRunService:
@@ -43,6 +48,11 @@ class ComprehensiveRunService:
     promptly while exact-run work continues. Short stages keep the direct bounded
     execution path. Neither path can claim completion without a returned provider result,
     and both retain the existing one-retry, evidence-preserving stall contract.
+
+    Background task persistence is monotonic: once a provider records a terminal task
+    result, a delayed heartbeat cannot revert the durable task to ``running``. This lets
+    another request process consume the exact completed final report instead of leaving
+    the engagement indefinitely at the final-report stage.
     """
 
     def __init__(
