@@ -1,0 +1,165 @@
+name: Diagnose Client Ready Live v62
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/diagnose-client-ready-live-v62.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      ORIGIN: https://app.nicoaudit.com
+      RELEASE_SHA: 78c8a62393446a9a70a675d905c7a9201a8d21b5
+      RUN_IDS: >-
+        comprun_fb0c5fad584644a2be3a29d4530939ec
+        comprun_b29d68d81b6341a99eedc48b08fa1ec4
+    steps:
+      - name: Check out diagnostic revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Fetch exact persisted run and report surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 2 --retry-all-errors --max-time 90 \
+            -H 'Accept: application/json' -H 'Cache-Control: no-cache' \
+            "${ORIGIN}/api/nico/diagnostics/comprehensive-runtime" \
+            -o diagnostic/runtime-diagnostic.json || true
+          for run_id in ${RUN_IDS}; do
+            run_dir="diagnostic/${run_id}"
+            mkdir -p "${run_dir}"
+            base="${ORIGIN}/api/nico/assessment/comprehensive-run/${run_id}"
+            curl --fail-with-body --silent --show-error \
+              --retry 3 --retry-delay 2 --retry-all-errors --max-time 120 \
+              -H 'Accept: application/json' -H 'Cache-Control: no-cache' \
+              "${base}" -o "${run_dir}/status.json"
+            for suffix in report/json report/markdown report/html report/pdf; do
+              safe_name="$(printf '%s' "${suffix}" | tr '/' '-')"
+              if ! curl --fail-with-body --silent --show-error \
+                --retry 1 --retry-delay 2 --retry-all-errors --max-time 120 \
+                -H 'Accept: application/json,text/plain,text/html,application/pdf' \
+                -H 'Cache-Control: no-cache' \
+                "${base}/${suffix}" -o "${run_dir}/${safe_name}"; then
+                rm -f "${run_dir}/${safe_name}"
+                printf '%s\n' unavailable > "${run_dir}/${safe_name}.status"
+              fi
+            done
+          done
+
+      - name: Extract final-stage and report-validation truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+          from typing import Any
+
+          ROOT = Path("diagnostic")
+          SIGNAL_KEYS = (
+              "error",
+              "reason",
+              "failed",
+              "failure",
+              "check",
+              "contract",
+              "coverage",
+              "incomplete",
+              "maturity",
+              "scanner",
+              "bandit",
+              "render",
+              "final",
+          )
+
+          def load_json(path: Path) -> Any:
+              try:
+                  return json.loads(path.read_text(encoding="utf-8"))
+              except Exception:
+                  return None
+
+          def record_signals(value: Any, path: str = "") -> list[dict[str, Any]]:
+              output: list[dict[str, Any]] = []
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      child_path = f"{path}.{key}" if path else str(key)
+                      lowered = str(key).casefold()
+                      if any(token in lowered for token in SIGNAL_KEYS):
+                          if isinstance(child, (str, int, float, bool)) or child is None:
+                              output.append({"path": child_path, "value": child})
+                          elif isinstance(child, list) and len(child) <= 40:
+                              output.append({"path": child_path, "value": child})
+                          elif isinstance(child, dict) and len(child) <= 30:
+                              output.append({"path": child_path, "value": child})
+                      output.extend(record_signals(child, child_path))
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      output.extend(record_signals(child, f"{path}[{index}]"))
+              return output
+
+          aggregate: dict[str, Any] = {
+              "artifact_schema": "nico.client_ready_live_diagnostic.v62",
+              "release_sha": "78c8a62393446a9a70a675d905c7a9201a8d21b5",
+              "read_only": True,
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+              "runs": [],
+          }
+
+          for run_dir in sorted(p for p in ROOT.iterdir() if p.is_dir()):
+              status = load_json(run_dir / "status.json") or {}
+              record = status.get("record") if isinstance(status.get("record"), dict) else status
+              stages = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+              final_stage = stages.get("final_comprehensive_report_generation")
+              cross_stage = stages.get("cross_format_truth_verification")
+              report = load_json(run_dir / "report-json") or {}
+              canonical = report.get("json") if isinstance(report.get("json"), dict) else report
+              assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
+              summary = {
+                  "run_id": status.get("run_id") or record.get("identity", {}).get("run_id") or run_dir.name,
+                  "status": status.get("status") or record.get("status"),
+                  "terminal": status.get("terminal", record.get("terminal")),
+                  "current_stage": status.get("current_stage") or record.get("current_stage"),
+                  "revision": status.get("revision") or record.get("revision"),
+                  "final_stage": final_stage,
+                  "cross_format_stage": cross_stage,
+                  "report_json_available": bool(report),
+                  "technical_score": assessment.get("technical_score"),
+                  "evidence_adjusted_score": assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score")),
+                  "client_accuracy_validation": report.get("client_accuracy_validation") or canonical.get("client_accuracy_validation"),
+                  "client_report_completion": report.get("client_report_completion"),
+                  "signals": record_signals(status)[:500],
+                  "report_signals": record_signals(report)[:500],
+              }
+              (run_dir / "summary.json").write_text(
+                  json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
+                  encoding="utf-8",
+              )
+              aggregate["runs"].append(summary)
+
+          runtime = load_json(ROOT / "runtime-diagnostic.json")
+          if runtime is not None:
+              aggregate["runtime_diagnostic"] = runtime
+          (ROOT / "summary.json").write_text(
+              json.dumps(aggregate, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(aggregate, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Upload immutable diagnostic evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: client-ready-live-v62-${{ github.sha }}
+          path: diagnostic/
+          if-no-files-found: error
+          retention-days: 30
