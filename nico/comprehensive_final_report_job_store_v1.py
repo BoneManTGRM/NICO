@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Callable, Iterator, Protocol
 
 VERSION = "nico.comprehensive_final_report_job_store.v1"
+DEFAULT_MAX_ACTIVE_WORKERS = 1
+_POSTGRES_CLAIM_LOCK_ID = 9952026
 
 
 class ConnectionLike(Protocol):
@@ -30,11 +32,14 @@ def _text(value: Any) -> str:
 
 
 class ComprehensiveFinalReportJobStore:
-    """Small durable lease table for long final-report rendering.
+    """Durable lease and capacity table for long final-report rendering.
 
     The canonical Comprehensive record remains the only source of report truth. This
-    table stores only ownership, heartbeat, retry, and terminal worker metadata so a
-    process restart can safely resume rendering without holding an HTTP request open.
+    table stores ownership, heartbeat, retry, queue, and terminal worker metadata.
+
+    Claims are serialized through a Postgres advisory transaction lock or SQLite
+    ``BEGIN IMMEDIATE``. This enforces a database-wide active-render limit across app
+    processes so simultaneous proof runs cannot saturate the production API.
     """
 
     def __init__(
@@ -115,6 +120,7 @@ class ComprehensiveFinalReportJobStore:
         evidence_ledger_id: str,
         lease_owner: str,
         lease_seconds: int = 90,
+        max_active_workers: int = DEFAULT_MAX_ACTIVE_WORKERS,
     ) -> dict[str, Any]:
         identity = {
             "run_id": _text(run_id),
@@ -127,6 +133,7 @@ class ComprehensiveFinalReportJobStore:
         owner = _text(lease_owner)
         if not owner:
             raise ValueError("lease_owner_required")
+        capacity = max(1, int(max_active_workers))
         now = _now()
         now_text = _iso(now)
         expires_text = _iso(now + timedelta(seconds=max(30, int(lease_seconds))))
@@ -159,6 +166,21 @@ class ComprehensiveFinalReportJobStore:
             None,
             now_text,
         )
+        select_current = f"""
+        SELECT run_id, repository, commit_sha, evidence_ledger_id, state, attempt,
+               lease_owner, lease_expires_at, heartbeat_at, started_at, finished_at,
+               error_code, error_message, updated_at
+        FROM nico_comprehensive_final_report_jobs
+        WHERE run_id = {p}
+        """
+        active_count = f"""
+        SELECT COUNT(*)
+        FROM nico_comprehensive_final_report_jobs
+        WHERE state = 'running'
+          AND lease_expires_at IS NOT NULL
+          AND lease_expires_at >= {p}
+          AND run_id <> {p}
+        """
         update = f"""
         UPDATE nico_comprehensive_final_report_jobs
         SET state = {p},
@@ -198,22 +220,61 @@ class ComprehensiveFinalReportJobStore:
             now_text,
             owner,
         )
+
+        claimed = False
+        capacity_blocked = False
         with self._connection() as connection:
             cursor = connection.cursor()
+            if self._dialect == "postgres":
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(%s)",
+                    (_POSTGRES_CLAIM_LOCK_ID,),
+                )
+            else:
+                cursor.execute("BEGIN IMMEDIATE")
             cursor.execute(insert, insert_values)
-            cursor.execute(update, update_values)
-            claimed = int(cursor.rowcount or 0) == 1
+            cursor.execute(select_current, (identity["run_id"],))
+            current_row = cursor.fetchone()
+            if current_row is None:
+                raise RuntimeError("final_report_job_missing_after_insert")
+            current = self._row(current_row)
+            if (
+                current["repository"] != identity["repository"]
+                or current["commit_sha"] != identity["commit_sha"]
+                or current["evidence_ledger_id"] != identity["evidence_ledger_id"]
+            ):
+                raise ValueError("final_report_job_identity_mismatch")
+
+            lease_active = (
+                current["state"] == "running"
+                and bool(current.get("lease_owner"))
+                and bool(current.get("lease_expires_at"))
+                and str(current["lease_expires_at"]) >= now_text
+                and current.get("lease_owner") != owner
+            )
+            if current["state"] != "complete" and not lease_active:
+                cursor.execute(
+                    active_count,
+                    (now_text, identity["run_id"]),
+                )
+                row = cursor.fetchone()
+                active = int(row[0] if row else 0)
+                if active < capacity:
+                    cursor.execute(update, update_values)
+                    claimed = int(cursor.rowcount or 0) == 1
+                else:
+                    capacity_blocked = True
             connection.commit()
+
         job = self.load(identity["run_id"])
         if job is None:
             raise RuntimeError("final_report_job_missing_after_claim")
-        if (
-            job["repository"] != identity["repository"]
-            or job["commit_sha"] != identity["commit_sha"]
-            or job["evidence_ledger_id"] != identity["evidence_ledger_id"]
-        ):
-            raise ValueError("final_report_job_identity_mismatch")
-        return {**job, "claimed": claimed}
+        return {
+            **job,
+            "claimed": claimed,
+            "capacity_blocked": capacity_blocked,
+            "max_active_workers": capacity,
+        }
 
     def heartbeat(
         self,
@@ -309,5 +370,6 @@ class ComprehensiveFinalReportJobStore:
 __all__ = [
     "ComprehensiveFinalReportJobStore",
     "ConnectionFactory",
+    "DEFAULT_MAX_ACTIVE_WORKERS",
     "VERSION",
 ]
