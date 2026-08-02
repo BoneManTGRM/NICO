@@ -6,10 +6,12 @@
   "dependency_state": "first_incomplete",
   "release_base_sha": "78c8a62393446a9a70a675d905c7a9201a8d21b5",
   "implementation_merge_sha": "ccc399f4766d455a78adf690a1f7f43c1e7c6e3d",
-  "current_main_sha": "116a896f031f258426b7f93759323667867c34ee",
-  "continuation_branch": "codex/exact-head-client-report-accuracy-continuation",
-  "continuation_pr": 978,
-  "state": "post_merge_verification_failed_continuation_in_progress",
+  "run_recovery_merge_sha": "116a896f031f258426b7f93759323667867c34ee",
+  "stage_watchdog_merge_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
+  "current_main_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
+  "continuation_branch": "codex/final-coverage-synchronization",
+  "continuation_pr": 981,
+  "state": "post_merge_verification_failed_exact_coverage_repair_in_progress",
   "prior_completed_dependency": {
     "workstream": 1,
     "work_package": "exact_head_comprehensive_finality_repair",
@@ -19,76 +21,71 @@
   "observed": {
     "pull_request_974_exact_head_checks": "passed",
     "pull_request_974_unresolved_review_threads": 0,
+    "pull_request_978_exact_head_checks": "passed",
+    "pull_request_978_unresolved_review_threads": 0,
     "current_main_exact_deployment_identity": {
       "vercel": "verified",
       "railway": "verified",
-      "release_sha": "116a896f031f258426b7f93759323667867c34ee",
+      "release_sha": "ff239fbba71a917ef164848bbe6b1a86d760d546",
       "deployment_environment": "production",
       "ui_contract": "expert-engagement-v2"
     },
     "post_merge_mobile_restart_production_proof": {
       "status": "failed",
-      "run_id": "comprun_0b77c5b34d984eb0bcdbb44328e80c19",
+      "run_id": "comprun_35af75b0509d4ae8aa52eed3427a99d2",
       "terminal_stage": "final_comprehensive_report_generation",
+      "canonical_progress_percent": 82.61,
+      "revision": 23,
       "client_status": "Blocked during final report generation",
+      "technical_reason": "v2_production_publication_failed:ValueError:client report retained conflicting analyzer coverage values: expected 100, observed [89, 100]",
+      "report_contract_reason": "comprehensive_final_report_semantic_contract_failed",
+      "final_artifact_generation_complete": true,
+      "pdf_page_count": 20,
       "human_review_reached": false,
+      "human_review_required": true,
       "client_delivery_allowed": false
     },
-    "post_merge_ios_webkit_paint_proof": {
-      "status": "failed",
-      "run_id": null,
-      "failure": "browser_never_persisted_exact_run_identity",
-      "single_click_intake_completed": false
-    },
-    "implementation_merge_two_service_production_acceptance": {
-      "status": "failed",
-      "run_id": "comprun_b6a647acac04427c8c8ab4324fec05a0",
-      "stage": "dependency_security_static_analysis",
-      "canonical_progress_percent": 13.04,
-      "active_stage_progress_percent": 74.0,
-      "continuation_request_count": 362,
-      "last_revision": 362,
-      "failure": "no_observable_backend_progress_for_15_minutes",
-      "revision_only_mutation_observed": true
-    },
-    "current_main_two_service_production_acceptance": "pending_or_not_yet_accepted",
+    "post_merge_ios_webkit_paint_proof": "pending_at_time_of_coverage_repair_start",
+    "post_merge_two_service_production_acceptance": "pending_at_time_of_coverage_repair_start",
     "first_incomplete_package_remains_blocking": true,
     "later_report_truth_package_closed_without_merge": 977
   },
   "root_causes_and_hypotheses": [
     {
       "id": "revision_only_stage_continuation_can_run_indefinitely",
-      "evidence_status": "verified",
-      "effect": "dependency_security_static_analysis remained active through 362 continuation writes without meaningful stage advancement"
+      "evidence_status": "remediated_in_ff239f",
+      "effect": "dependency_security_static_analysis previously remained active through 362 continuation writes without meaningful stage advancement"
     },
     {
       "id": "webkit_request_body_double_init_in_recovery_transport",
-      "evidence_status": "working_hypothesis",
-      "effect": "WebKit intake completed no persisted run identity while Chromium reached an exact run",
-      "repair": "dispatch one bounded Request without reapplying the same RequestInit/body to fetch"
+      "evidence_status": "repair_deployed_in_ff239f_pending_post_merge_result",
+      "effect": "WebKit intake previously completed no persisted run identity while Chromium reached an exact run"
     },
     {
-      "id": "final_report_generation_failure_diagnostic_not_retained_in_browser_proof",
+      "id": "final_report_contains_pre_finalization_and_final_coverage_aliases",
       "evidence_status": "verified",
-      "effect": "live proof retained the client-safe block but not the bounded technical reason required to isolate the remaining publication defect"
+      "effect": "the retained final package exposed analyzer coverage values 89 and 100 while exact-run canonical coverage was 100",
+      "repair": "synchronize only recognized analyzer and scanner coverage aliases in Markdown, HTML, and the existing PDF after final rendering and before accuracy validation"
     }
   ],
   "active_continuation": {
-    "bounded_stage_progress_watchdog": true,
-    "revision_only_changes_count_as_progress": false,
-    "stalled_stage_becomes_terminal_with_reason": true,
-    "stalled_scanner_evidence_preserved": true,
-    "single_explicit_stalled_stage_retry": true,
-    "duplicate_unbounded_retries_prohibited": true,
-    "webkit_request_body_dispatched_once": true,
-    "failed_proof_backend_diagnostic_retained": true,
-    "prior_completed_stage_evidence_preserved": true,
+    "canonical_coverage_value": 100,
+    "observed_conflicting_coverage_values": [89, 100],
+    "markdown_coverage_synchronized_after_render": true,
+    "html_coverage_synchronized_after_render": true,
+    "pdf_coverage_synchronized_after_render": true,
+    "split_pdf_label_and_value_operands_supported": true,
+    "unrelated_numeric_evidence_preserved": true,
+    "artifact_hashes_recomputed": true,
+    "synchronization_byte_idempotent": true,
+    "recognized_coverage_aliases_only": true,
+    "scanner_results_changed": false,
+    "scores_changed_to_satisfy_gate": false,
     "existing_renderer_preserved": true,
     "existing_visual_design_preserved": true,
     "existing_section_order_preserved": true,
     "existing_pdf_composition_preserved": true,
     "report_redesign_performed": false,
-    "scores_changed_to_satisfy_gate": false,
     "human_review_required": true,
     "client_delivery_allowed": false
   },
