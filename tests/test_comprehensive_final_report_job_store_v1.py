@@ -18,16 +18,16 @@ def _store(path: Path) -> ComprehensiveFinalReportJobStore:
     return store
 
 
-def _identity() -> dict[str, str]:
+def _identity(index: int = 1) -> dict[str, str]:
     return {
-        "run_id": "comprun_job_001",
+        "run_id": f"comprun_job_{index:03d}",
         "repository": "BoneManTGRM/NICO",
-        "commit_sha": "a" * 40,
-        "evidence_ledger_id": "ledger_job_001",
+        "commit_sha": f"{index:x}" * 40,
+        "evidence_ledger_id": f"ledger_job_{index:03d}",
     }
 
 
-def test_only_one_unexpired_owner_can_claim(tmp_path: Path) -> None:
+def test_only_one_unexpired_owner_can_claim_same_run(tmp_path: Path) -> None:
     store = _store(tmp_path / "jobs.db")
 
     first = store.claim(**_identity(), lease_owner="worker-one", lease_seconds=90)
@@ -39,6 +39,46 @@ def test_only_one_unexpired_owner_can_claim(tmp_path: Path) -> None:
     assert second["claimed"] is False
     assert second["lease_owner"] == "worker-one"
     assert second["attempt"] == 1
+
+
+def test_global_capacity_queues_distinct_run_until_active_job_finishes(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "jobs.db")
+    first = store.claim(
+        **_identity(1),
+        lease_owner="worker-one",
+        lease_seconds=90,
+        max_active_workers=1,
+    )
+
+    queued = store.claim(
+        **_identity(2),
+        lease_owner="worker-two",
+        lease_seconds=90,
+        max_active_workers=1,
+    )
+
+    assert first["claimed"] is True
+    assert queued["claimed"] is False
+    assert queued["state"] == "queued"
+    assert queued["capacity_blocked"] is True
+    assert queued["attempt"] == 0
+
+    assert store.finish(
+        _identity(1)["run_id"],
+        lease_owner="worker-one",
+        state="complete",
+    ) is True
+    claimed = store.claim(
+        **_identity(2),
+        lease_owner="worker-two",
+        lease_seconds=90,
+        max_active_workers=1,
+    )
+    assert claimed["claimed"] is True
+    assert claimed["state"] == "running"
+    assert claimed["attempt"] == 1
 
 
 def test_heartbeat_extends_matching_lease_only(tmp_path: Path) -> None:
