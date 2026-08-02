@@ -5,15 +5,12 @@ import io
 from pathlib import Path
 
 import pytest
-from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_client_report_render_v60 import (
-    _assert_client_ready_surfaces,
-    _client_projection,
-    _strip_redundant_pdf_pages,
-    install_comprehensive_client_report_render_v60,
+    reconcile_before_existing_report_renderer,
+    validate_existing_report_accuracy,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,95 +26,165 @@ def _pdf(*pages: str) -> bytes:
     return stream.getvalue()
 
 
-def test_client_projection_moves_superseded_contract_diagnostics_out_of_stage_truth() -> None:
-    canonical = {
-        "human_review_required": True,
-        "client_delivery_allowed": False,
+def _scanner(name: str, status: str, findings: int = 0) -> dict[str, object]:
+    return {
+        "scanner_name": name,
+        "status": status,
+        "exact_commit_match": True,
+        "artifact_retained": True,
+        "finding_count": findings,
+    }
+
+
+def _canonical() -> dict[str, object]:
+    scanners = [
+        _scanner("bandit", "completed"),
+        _scanner("eslint", "completed"),
+        _scanner("gitleaks", "completed_with_findings", 6),
+        _scanner("npm-audit", "completed"),
+        _scanner("osv-scanner", "completed_with_findings", 59),
+        _scanner("pip-audit", "completed"),
+        _scanner("semgrep", "completed"),
+        _scanner("trufflehog", "completed_with_findings", 11),
+        _scanner("typescript", "completed"),
+    ]
+    return {
+        "requested_analyzers": 9,
+        "applicable_analyzers": 9,
+        "assessment": {
+            "technical_score": 92,
+            "maturity_level": "Senior",
+            "incomplete_analyzers": ["bandit", "gitleaks"],
+            "analyzer_execution_coverage": 78,
+        },
+        "scorecard": {
+            "maturity": "Exceptional",
+            "analyzer_execution_coverage": 88,
+        },
+        "scanner_records": scanners,
         "stage_summaries": [
             {
                 "stage_id": "decision_report_generation",
                 "status": "complete",
                 "report_contract_status": "blocked",
                 "report_contract_reason": "executive_decision_brief_page_gate_failed",
-                "core_artifact_generation_complete": True,
             }
         ],
+        "canonical_findings": [
+            {
+                "symbol": "apply_scanner_artifact_scoring",
+                "recommendation": "Split `appy_ l scanner_artifact_scoring` safely.",
+            }
+        ],
+        "human_review_required": True,
+        "client_delivery_allowed": False,
     }
 
-    projected = _client_projection(canonical)
-    stage = projected["stage_summaries"][0]
 
+def test_pre_render_reconciliation_preserves_existing_rendered_surfaces() -> None:
+    original_pdf = base64.b64encode(_pdf("Existing approved NICO report")).decode("ascii")
+    package = {
+        "json": _canonical(),
+        "markdown": "existing markdown",
+        "html": "<p>existing html</p>",
+        "pdf_base64": original_pdf,
+    }
+
+    result = reconcile_before_existing_report_renderer(package)
+
+    assert result["markdown"] == package["markdown"]
+    assert result["html"] == package["html"]
+    assert result["pdf_base64"] == original_pdf
+    assert result["report_design_contract"]["existing_renderer_preserved"] is True
+    assert result["report_design_contract"]["redesign_performed"] is False
+
+
+def test_pre_render_reconciliation_corrects_truth_and_retains_diagnostics_outside_json() -> None:
+    result = reconcile_before_existing_report_renderer({"json": _canonical()})
+    canonical = result["json"]
+
+    assert canonical["assessment"]["incomplete_analyzers"] == []
+    assert canonical["assessment"]["analyzer_execution_coverage"] == 100
+    assert canonical["scorecard"]["analyzer_execution_coverage"] == 100
+    assert canonical["assessment"]["maturity_level"] == "Exceptional"
+    stage = canonical["stage_summaries"][0]
     assert "report_contract_status" not in stage
     assert "report_contract_reason" not in stage
-    assert stage["pre_finalization_diagnostics"] == {
-        "report_contract_status": "blocked",
-        "report_contract_reason": "executive_decision_brief_page_gate_failed",
-    }
-    assert stage["final_publication_contract_status"] == "reconciled_and_revalidated"
-    assert projected["client_readiness_contract"][
-        "rendered_from_final_reconciled_canonical_truth"
-    ] is True
-    assert projected["human_review_required"] is True
-    assert projected["client_delivery_allowed"] is False
+    audit = result["pre_finalization_audit"]
+    assert len(audit["entries"]) == 2
+    assert audit["retained_outside_client_facing_canonical_truth"] is True
+    assert "appy_ l scanner_artifact_scoring" not in str(canonical)
+    assert "apply_scanner_artifact_scoring" in str(canonical)
 
 
-def test_redundant_nico_code_summary_pages_are_removed_before_final_register() -> None:
-    original = _pdf(
-        "Executive Decision Brief",
-        "NICO-CODE-A33EF80F5728 legacy duplicate summary",
-        "Evidence Appendix",
+def test_final_accuracy_validation_accepts_existing_design_with_canonical_truth() -> None:
+    canonical_package = reconcile_before_existing_report_renderer({"json": _canonical()})
+    markdown = "\n".join(
+        (
+            "NICO COMPREHENSIVE",
+            "Canonical Technical Scorecard",
+            "Analyzer execution coverage is 100%",
+            "Incomplete applicable analyzers: 0",
+            "Maturity Exceptional",
+            "Evidence Appendix",
+            "Human Review and Acceptance Gate",
+        )
     )
-    stripped = _strip_redundant_pdf_pages(original)
-    texts = [page.extract_text() or "" for page in PdfReader(io.BytesIO(stripped)).pages]
+    canonical_package.update(
+        {
+            "markdown": markdown,
+            "html": f"<main>{markdown}</main>",
+            "pdf_base64": base64.b64encode(_pdf(markdown)).decode("ascii"),
+        }
+    )
 
-    assert len(texts) == 2
-    assert all("NICO-CODE-" not in text for text in texts)
-    assert "Executive Decision Brief" in texts[0]
-    assert "Evidence Appendix" in texts[1]
+    result = validate_existing_report_accuracy(canonical_package)
 
-
-def test_client_ready_surface_validation_rejects_production_report_regressions() -> None:
-    package = {
-        "markdown": (
-            "## Finding and Remediation Register\n"
-            "- Completed applicable analyzers: 9\n"
-            "- Incomplete applicable analyzers: 0\n"
-            "- Analyzer execution coverage is 88%\n"
-        ),
-        "html": "<h2>Finding and Remediation Register</h2>",
-        "pdf_base64": base64.b64encode(
-            _pdf("Finding and Remediation Register")
-        ).decode("ascii"),
-    }
-
-    with pytest.raises(ValueError, match="superseded truth"):
-        _assert_client_ready_surfaces(package)
+    assert result["existing_visual_design_preserved"] is True
+    assert result["canonical_coverage_value"] == 100
+    assert result["canonical_incomplete_analyzer_count"] == 0
+    assert result["canonical_maturity_label"] == "Exceptional"
+    assert result["production_pdf_validated"] is True
 
 
-def test_final_runtime_binds_v60_after_v59_and_before_scoring() -> None:
+def test_final_accuracy_validation_rejects_stale_report_truth() -> None:
+    package = reconcile_before_existing_report_renderer({"json": _canonical()})
+    markdown = "\n".join(
+        (
+            "NICO COMPREHENSIVE",
+            "Canonical Technical Scorecard",
+            "Analyzer execution coverage is 88%",
+            "Incomplete applicable analyzers: 0",
+            "Maturity Exceptional",
+            "Evidence Appendix",
+            "Human Review and Acceptance Gate",
+        )
+    )
+    package.update(
+        {
+            "markdown": markdown,
+            "html": f"<main>{markdown}</main>",
+            "pdf_base64": base64.b64encode(_pdf(markdown)).decode("ascii"),
+        }
+    )
+
+    with pytest.raises(ValueError, match="conflicting analyzer coverage"):
+        validate_existing_report_accuracy(package)
+
+
+def test_final_runtime_preserves_renderer_and_binds_phase17_static_aliases() -> None:
     source = (
+        ROOT / "nico" / "comprehensive_client_report_render_v60.py"
+    ).read_text(encoding="utf-8")
+    mobile = (
         ROOT / "nico" / "comprehensive_mobile_score_projection_v2.py"
     ).read_text(encoding="utf-8")
 
-    readiness = source.index("install_comprehensive_client_readiness_v59()")
-    render = source.index("install_comprehensive_client_report_render_v60()")
-    scoring = source.index("install_comprehensive_scoring_manifest_v54()")
-
-    assert readiness < render < scoring
-    assert '"premium_core_rebuilt_after_reconciliation": True' in source
-    assert '"production_pdf_is_acceptance_artifact": True' in source
-    assert '"single_detailed_register_enforced": True' in source
-
-
-def test_v60_installer_binds_real_finalizer() -> None:
-    from nico import client_report_completion_v2 as completion
-
-    result = install_comprehensive_client_report_render_v60()
-
-    assert result["status"] in {"installed", "already_installed"}
-    assert result["bound"] is True
-    assert getattr(
-        completion.finalize_client_report_package,
-        "_nico_comprehensive_client_report_render_v60",
-        False,
-    ) is True
+    assert "rebuild_premium_client_artifacts_with_appendix" not in source
+    assert "rebuild_single_pass_premium_artifacts" not in source
+    assert "phase17.prepare_client_report_package = prepare" in source
+    assert "phase17.finalize_client_report_package = finalize" in source
+    assert '"existing_renderer_preserved": True' in source
+    assert '"redesign_performed": False' in source
+    assert '"existing_report_renderer_preserved": True' in mobile
+    assert '"report_redesign_performed": False' in mobile
