@@ -1,0 +1,89 @@
+name: Diagnose Client Ready Live v61
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/diagnose-client-ready-live-v61.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ORIGIN: https://app.nicoaudit.com
+      RUN_ID: comprun_f65df0e04b884a4cbc56942bce403727
+    steps:
+      - name: Fetch persisted run and report endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic
+          base="${ORIGIN}/api/nico/assessment/comprehensive-run/${RUN_ID}"
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 2 --retry-all-errors --max-time 120 \
+            -H 'Accept: application/json' -H 'Cache-Control: no-cache' \
+            "${base}" -o diagnostic/run-status.json
+          for suffix in report/json report/markdown; do
+            name="$(printf '%s' "${suffix}" | tr '/' '-')"
+            if ! curl --fail-with-body --silent --show-error \
+              --retry 1 --retry-delay 2 --retry-all-errors --max-time 60 \
+              -H 'Accept: application/json, text/plain' -H 'Cache-Control: no-cache' \
+              "${base}/${suffix}" -o "diagnostic/${name}"; then
+              rm -f "diagnostic/${name}"
+              printf '%s\n' unavailable > "diagnostic/${name}.status"
+            fi
+          done
+
+      - name: Extract bounded failure evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          status = json.loads(Path('diagnostic/run-status.json').read_text(encoding='utf-8'))
+          record = status.get('record') if isinstance(status.get('record'), dict) else status
+          stages = record.get('stage_results') if isinstance(record.get('stage_results'), dict) else status.get('stage_results')
+          stages = stages if isinstance(stages, dict) else {}
+          final = stages.get('final_comprehensive_report_generation')
+          cross = stages.get('cross_format_truth_verification')
+          report = {}
+          report_path = Path('diagnostic/report-json')
+          if report_path.exists():
+              try:
+                  report = json.loads(report_path.read_text(encoding='utf-8'))
+              except Exception:
+                  report = {'parse_error': True}
+          summary = {
+              'artifact_schema': 'nico.client_ready_live_failure.v61',
+              'run_id': status.get('run_id') or record.get('identity', {}).get('run_id'),
+              'status': status.get('status') or record.get('status'),
+              'current_stage': status.get('current_stage') or record.get('current_stage'),
+              'terminal': status.get('terminal', record.get('terminal')),
+              'revision': status.get('revision') or record.get('revision'),
+              'failure': status.get('failure') or record.get('failure'),
+              'error': status.get('error') or record.get('error'),
+              'message': status.get('message') or record.get('message'),
+              'final_comprehensive_report_generation': final,
+              'cross_format_truth_verification': cross,
+              'report_available': bool(report),
+              'report_top_level_keys': sorted(report) if isinstance(report, dict) else [],
+          }
+          Path('diagnostic/diagnostic-summary.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Upload immutable diagnostic evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: client-ready-live-v61-${{ github.sha }}
+          path: diagnostic/
+          if-no-files-found: error
+          retention-days: 30
