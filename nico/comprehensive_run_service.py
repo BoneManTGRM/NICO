@@ -16,6 +16,9 @@ from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_pre_render_scanner_truth_v64 import (
+    install_pre_render_authoritative_scanner_truth,
+)
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
     apply_comprehensive_review_decision,
@@ -31,8 +34,9 @@ from nico.comprehensive_stage_watchdog_v1 import (
 )
 
 install_background_terminal_ordering()
+install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v9"
+VERSION = "nico.comprehensive_run_service.v10"
 
 
 class ComprehensiveRunService:
@@ -50,9 +54,10 @@ class ComprehensiveRunService:
     and both retain the existing one-retry, evidence-preserving stall contract.
 
     Background task persistence is monotonic: once a provider records a terminal task
-    result, a delayed heartbeat cannot revert the durable task to ``running``. This lets
-    another request process consume the exact completed final report instead of leaving
-    the engagement indefinitely at the final-report stage.
+    result, a delayed heartbeat cannot revert the durable task to ``running``. Before
+    report rendering, exact-run scanner completion also replaces stale recursive
+    incomplete-analyzer aliases so generated Markdown, HTML, JSON, and PDF cannot list a
+    completed tool as incomplete.
     """
 
     def __init__(
