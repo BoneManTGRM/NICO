@@ -10,7 +10,7 @@ from playwright.sync_api import Browser, Page, sync_playwright
 import mobile_failure_layout_probe as failure_layout
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"
+VERSION = "nico.mobile_restart_live_acceptance.webkit.v5"
 OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
@@ -206,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
             "expected_sha": args.expected_sha,
             "browser_engine": "webkit",
             "error": f"{type(exc).__name__}: {recovery._bounded(exc, 2_000)}",
+            "diagnostic": getattr(exc, "nico_diagnostic", {}),
             "finished_at_epoch": time.time(),
         }
         recovery._write(args.output, failure)
