@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def _executors() -> dict:
         capability = item["capability"]
 
         def execute(context, *, _capability=capability):
-            return {
+            result = {
                 "status": "complete",
                 "capability": _capability,
                 "run_id": context["run_id"],
@@ -24,6 +25,23 @@ def _executors() -> dict:
                 "commit_sha": context["commit_sha"],
                 "evidence_ledger_id": context["evidence_ledger_id"],
             }
+            if _capability == "final_report_generation":
+                identity = {
+                    "run_id": context["run_id"],
+                    "repository": context["repository"],
+                    "commit_sha": context["commit_sha"],
+                    "evidence_ledger_id": context["evidence_ledger_id"],
+                }
+                result["report_package"] = {
+                    "report_id": f"report_{context['run_id']}",
+                    "markdown": "# NICO Comprehensive Technical Assessment\n\nCLIENT DELIVERY NOT AUTHORIZED\n",
+                    "html": "<html><body>NICO Comprehensive Technical Assessment</body></html>",
+                    "pdf_base64": base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii"),
+                    "pdf_page_count": 1,
+                    "json": {"identity": identity},
+                    "canonical_truth_sha256": "a" * 64,
+                }
+            return result
 
         executors[capability] = execute
     return executors
@@ -108,6 +126,7 @@ def test_explicit_sqlite_durable_fallback_activates_without_database_url(
     assert completed.status_code == 200
     assert completed.json()["status"] == "review_required"
     assert completed.json()["progress_percent"] == 100.0
+    assert completed.json()["stage_results"]["final_comprehensive_report_generation"]["stage_execution"]["mode"] == "atomic_final_report_publication"
 
 
 def test_later_installation_upgrades_existing_routes_to_durable_controller(tmp_path: Path) -> None:
@@ -160,6 +179,7 @@ def test_restart_reuses_exact_persisted_record(tmp_path: Path) -> None:
     assert restored.status_code == 200
     assert restored.json()["revision"] == terminal["revision"]
     assert restored.json()["integrity_sha256"] == terminal["integrity_sha256"]
+    assert restored.json()["stage_results"]["final_comprehensive_report_generation"]["report_package"]["report_id"] == "report_comprun_bootstrap_001"
 
 
 def test_environment_sqlite_fallback_survives_process_restart(
