@@ -98,3 +98,5 @@ jobs:
           git add -A
           git commit -m "Reconcile maturity text after client readiness scoring"
           git push origin HEAD:codex/post-readiness-maturity-text-truth
+
+# Trigger after workflow registration.
