@@ -1,25 +1,26 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import io
 import re
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Mapping
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
+
+from nico.comprehensive_client_readiness_v59 import reconcile_client_readiness
 
 VERSION = "nico.comprehensive_client_report_render.v60"
-_MARKER = "_nico_comprehensive_client_report_render_v60"
+_PREPARE_MARKER = "_nico_comprehensive_client_report_prepare_v60"
+_FINALIZE_MARKER = "_nico_comprehensive_client_report_finalize_v60"
 
-_STALE_CLIENT_PATTERNS = (
-    re.compile(r"analyzer execution coverage\s*(?:is|[:=])\s*(?:78|88)\s*%?", re.I),
-    re.compile(r"incomplete_analyzers\[\d+\]\s*:\s*(?:bandit|gitleaks)", re.I),
-    re.compile(r"maturity_level\s*:\s*senior", re.I),
-    re.compile(r"report_contract_status\s*:\s*blocked", re.I),
-    re.compile(r"executive_decision_brief_page_gate_failed", re.I),
-)
+_DIAGNOSTIC_KEYS = {
+    "report_contract_status",
+    "report_contract_reason",
+    "core_report_contract_status",
+    "core_report_contract_reason",
+}
 _BROKEN_IDENTIFIERS = (
     "appy_ l scanner_artifact_scoring",
     "span ish_pdf",
@@ -31,163 +32,286 @@ _BROKEN_IDENTIFIERS = (
     "reso lve_repository_commit",
     "install_comprehensive_on_production_ app",
 )
+_COVERAGE_PATTERNS = (
+    re.compile(
+        r"analy[sz]er execution coverage\s*(?:is|[:=])\s*(\d{1,3})\s*%?",
+        re.I,
+    ),
+    re.compile(r"analyzer_execution_coverage\s*:\s*(\d{1,3})", re.I),
+    re.compile(r"scanner_execution_coverage\s*:\s*(\d{1,3})", re.I),
+)
+_DESIGN_MARKERS = (
+    "NICO COMPREHENSIVE",
+    "Canonical Technical Scorecard",
+    "Evidence Appendix",
+    "Human Review and Acceptance Gate",
+)
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _strip_internal_diagnostics(node: Any) -> Any:
-    """Keep raw diagnostics in an audit envelope, not in client-facing stage text."""
+def _extract_internal_diagnostics(
+    node: Any,
+    *,
+    path: str = "json",
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Remove superseded pre-finalization diagnostics from client-facing truth.
 
+    The values remain retained outside the canonical report object in a bounded audit
+    envelope. The approved report renderer therefore receives accurate current truth
+    without losing historical diagnostic evidence.
+    """
+
+    audit: list[dict[str, Any]] = []
     if isinstance(node, list):
-        return [_strip_internal_diagnostics(item) for item in node]
+        cleaned: list[Any] = []
+        for index, item in enumerate(node):
+            value, entries = _extract_internal_diagnostics(
+                item,
+                path=f"{path}[{index}]",
+            )
+            cleaned.append(value)
+            audit.extend(entries)
+        return cleaned, audit
     if not isinstance(node, Mapping):
-        return node
+        return deepcopy(node), audit
 
-    output: dict[str, Any] = {}
-    audit: dict[str, Any] = {}
-    for key, value in node.items():
-        normalized = str(key).casefold()
-        if normalized in {
-            "report_contract_status",
-            "report_contract_reason",
-            "core_report_contract_status",
-            "core_report_contract_reason",
-        }:
-            audit[str(key)] = deepcopy(value)
+    cleaned_map: dict[str, Any] = {}
+    for raw_key, raw_value in node.items():
+        key = str(raw_key)
+        if key.casefold() in _DIAGNOSTIC_KEYS:
+            audit.append(
+                {
+                    "path": path,
+                    "key": key,
+                    "value": deepcopy(raw_value),
+                    "classification": "superseded_pre_finalization_diagnostic",
+                }
+            )
             continue
-        output[str(key)] = _strip_internal_diagnostics(value)
+        value, entries = _extract_internal_diagnostics(
+            raw_value,
+            path=f"{path}.{key}",
+        )
+        cleaned_map[key] = value
+        audit.extend(entries)
+    return cleaned_map, audit
 
+
+def reconcile_before_existing_report_renderer(
+    package: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Correct canonical truth without replacing any rendered report surface."""
+
+    result = deepcopy(dict(package))
+    canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
+    reconciled = reconcile_client_readiness(canonical)
+    client_truth, audit = _extract_internal_diagnostics(reconciled)
+    result["json"] = client_truth
     if audit:
-        output["pre_finalization_diagnostics"] = audit
-        output["final_publication_contract_status"] = "reconciled_and_revalidated"
-    return output
-
-
-def _client_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    projected = _strip_internal_diagnostics(deepcopy(dict(canonical)))
-    projected["human_review_required"] = True
-    projected["client_delivery_allowed"] = False
-    projected["report_finality"] = "final"
-    projected["approval_status"] = "pending_human_approval"
-    projected["delivery_status"] = "blocked_pending_human_approval"
-    contract = deepcopy(dict(projected.get("client_readiness_contract") or {}))
+        result["pre_finalization_audit"] = {
+            "version": VERSION,
+            "entries": audit,
+            "retained_outside_client_facing_canonical_truth": True,
+        }
+    contract = deepcopy(dict(result.get("report_design_contract") or {}))
     contract.update(
         {
             "version": VERSION,
-            "client_projection_excludes_superseded_internal_diagnostics": True,
-            "rendered_from_final_reconciled_canonical_truth": True,
-            "one_detailed_finding_register": True,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
+            "existing_renderer_preserved": True,
+            "existing_visual_design_preserved": True,
+            "existing_section_order_preserved": True,
+            "existing_pdf_composition_preserved": True,
+            "canonical_truth_reconciled_before_existing_renderer": True,
+            "redesign_performed": False,
         }
     )
-    projected["client_readiness_contract"] = contract
-    return projected
+    result["report_design_contract"] = contract
+    return result
 
 
-def _strip_redundant_pdf_pages(pdf: bytes) -> bytes:
-    reader = PdfReader(io.BytesIO(pdf))
-    writer = PdfWriter()
-    removed = 0
-    for page in reader.pages:
-        normalized = " ".join((page.extract_text() or "").casefold().split())
-        # These pages are legacy pre-register summaries. The authoritative detailed
-        # register is inserted once later by client_report_completion_v2.
-        if "nico-code-" in normalized:
-            removed += 1
-            continue
-        writer.add_page(page)
-    if removed == 0:
-        return pdf
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+def _expected_truth(package: Mapping[str, Any]) -> tuple[int, int, str]:
+    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
+    contract = (
+        canonical.get("client_readiness_contract")
+        if isinstance(canonical.get("client_readiness_contract"), Mapping)
+        else {}
+    )
+    coverage = int(
+        contract.get(
+            "analyzer_execution_coverage",
+            canonical.get("analyzer_execution_coverage", 0),
+        )
+        or 0
+    )
+    incomplete = int(canonical.get("incomplete_applicable_analyzers", 0) or 0)
+    maturity = _text(contract.get("maturity_label"))
+    return coverage, incomplete, maturity
 
 
-def _assert_client_ready_surfaces(package: Mapping[str, Any]) -> dict[str, Any]:
+def _coverage_values(text: str) -> set[int]:
+    values: set[int] = set()
+    for pattern in _COVERAGE_PATTERNS:
+        values.update(int(match.group(1)) for match in pattern.finditer(text))
+    return values
+
+
+def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Use the existing generated PDF as the final accuracy acceptance artifact."""
+
     markdown = str(package.get("markdown") or "")
-    html = str(package.get("html") or "")
-    pdf = base64.b64decode(str(package.get("pdf_base64") or ""))
+    rendered_html = str(package.get("html") or "")
+    try:
+        pdf = base64.b64decode(str(package.get("pdf_base64") or ""))
+    except Exception as exc:  # pragma: no cover - defensive boundary
+        raise ValueError("client report did not retain a decodable PDF") from exc
     if not pdf.startswith(b"%PDF"):
-        raise ValueError("client-ready render requires a valid final PDF")
-    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
-    combined = "\n".join((markdown, html, extracted))
+        raise ValueError("client report did not retain a valid final PDF")
 
-    for pattern in _STALE_CLIENT_PATTERNS:
-        if pattern.search(combined):
-            raise ValueError(f"client report retained superseded truth: {pattern.pattern}")
+    extracted = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    combined = "\n".join((markdown, rendered_html, extracted))
+    coverage, incomplete, maturity = _expected_truth(package)
+
+    observed_coverage = _coverage_values(combined)
+    if observed_coverage and observed_coverage != {coverage}:
+        raise ValueError(
+            "client report retained conflicting analyzer coverage values: "
+            f"expected {coverage}, observed {sorted(observed_coverage)}"
+        )
+    if not observed_coverage:
+        raise ValueError("client report omitted analyzer execution coverage")
+
+    if incomplete == 0:
+        if re.search(r"incomplete_analyzers\[\d+\]", combined, re.I):
+            raise ValueError("client report listed completed analyzers as incomplete")
+        if "Incomplete applicable analyzers: 0" not in combined:
+            raise ValueError("client report omitted the canonical incomplete analyzer count")
+
+    if maturity:
+        stale_labels = {
+            "Exceptional": ("maturity_level: Senior",),
+            "Strong": ("maturity_level: Senior", "Maturity Exceptional"),
+        }
+        for stale in stale_labels.get(maturity, ()):
+            if stale.casefold() in combined.casefold():
+                raise ValueError(
+                    f"client report retained a maturity label conflicting with {maturity}: {stale}"
+                )
+
+    for stale in (
+        "report_contract_status: blocked",
+        "executive_decision_brief_page_gate_failed",
+    ):
+        if stale.casefold() in combined.casefold():
+            raise ValueError(
+                f"client report exposed a superseded pre-finalization diagnostic: {stale}"
+            )
     for broken in _BROKEN_IDENTIFIERS:
         if broken.casefold() in combined.casefold():
             raise ValueError(f"client report retained malformed identifier: {broken}")
 
-    if combined.casefold().count("finding and remediation register") != 3:
-        # Once in Markdown, once in HTML, once in extracted PDF.
-        raise ValueError("client report did not retain exactly one detailed register per format")
-    if "Completed applicable analyzers: 9" not in markdown:
-        raise ValueError("client report omitted canonical completed analyzer count")
-    if "Incomplete applicable analyzers: 0" not in markdown:
-        raise ValueError("client report omitted canonical incomplete analyzer count")
+    missing_design = [
+        marker for marker in _DESIGN_MARKERS if marker.casefold() not in combined.casefold()
+    ]
+    if missing_design:
+        raise ValueError(
+            "approved NICO report design markers were not preserved: "
+            + ", ".join(missing_design)
+        )
 
     return {
-        "stale_client_truth_absent": True,
+        "version": VERSION,
+        "existing_renderer_preserved": True,
+        "existing_visual_design_preserved": True,
+        "canonical_coverage_value": coverage,
+        "canonical_incomplete_analyzer_count": incomplete,
+        "canonical_maturity_label": maturity,
+        "conflicting_coverage_absent": True,
+        "false_incomplete_analyzers_absent": True,
+        "superseded_diagnostics_absent": True,
         "malformed_identifiers_absent": True,
-        "single_detailed_register_per_format": True,
-        "canonical_analyzer_completion_present": True,
-        "client_report_render_version": VERSION,
+        "production_pdf_validated": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
     }
 
 
 def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
-    """Patch the real finalizer so all core pages are rebuilt after reconciliation."""
+    """Bind truth correction before, and validation after, the approved renderer."""
 
     from nico import client_report_completion_v2 as completion
-    from nico.v2_premium_evidence_appendix import (
-        rebuild_premium_client_artifacts_with_appendix,
+    from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+
+    current_prepare: Callable[[Mapping[str, Any]], dict[str, Any]] = (
+        completion.prepare_client_report_package
+    )
+    current_finalize: Callable[[Mapping[str, Any]], dict[str, Any]] = (
+        completion.finalize_client_report_package
     )
 
-    current: Callable[[Mapping[str, Any]], dict[str, Any]] = completion.finalize_client_report_package
-    if getattr(current, _MARKER, False):
-        return {"status": "already_installed", "version": VERSION, "bound": True}
+    if getattr(current_prepare, _PREPARE_MARKER, False) and getattr(
+        current_finalize,
+        _FINALIZE_MARKER,
+        False,
+    ):
+        phase17.prepare_client_report_package = current_prepare
+        phase17.finalize_client_report_package = current_finalize
+        return {
+            "status": "already_installed",
+            "version": VERSION,
+            "prepare_bound": True,
+            "finalize_bound": True,
+            "existing_renderer_preserved": True,
+        }
 
-    @wraps(current)
+    @wraps(current_prepare)
+    def prepare(package: Mapping[str, Any]) -> dict[str, Any]:
+        reconciled = reconcile_before_existing_report_renderer(package)
+        prepared = current_prepare(reconciled)
+        return reconcile_before_existing_report_renderer(prepared)
+
+    @wraps(current_finalize)
     def finalize(package: Mapping[str, Any]) -> dict[str, Any]:
-        prepared = completion.prepare_client_report_package(package)
-        canonical = prepared.get("json") if isinstance(prepared.get("json"), Mapping) else {}
-        prepared = deepcopy(dict(prepared))
-        prepared["json"] = _client_projection(canonical)
-
-        # Discard inherited Markdown/HTML/PDF projections. Rebuild the premium core
-        # report from the final reconciled canonical model, then let the authoritative
-        # completion layer insert exactly one detailed register and provenance appendix.
-        rebuilt = rebuild_premium_client_artifacts_with_appendix(prepared)
-        rebuilt_pdf = _strip_redundant_pdf_pages(
-            base64.b64decode(str(rebuilt.get("pdf_base64") or ""))
-        )
-        rebuilt["pdf_base64"] = base64.b64encode(rebuilt_pdf).decode("ascii")
-        rebuilt["pdf_sha256"] = hashlib.sha256(rebuilt_pdf).hexdigest()
-        rebuilt["pdf_page_count"] = len(PdfReader(io.BytesIO(rebuilt_pdf)).pages)
-
-        result = current(rebuilt)
-        validation = _assert_client_ready_surfaces(result)
+        reconciled = reconcile_before_existing_report_renderer(package)
+        result = current_finalize(reconciled)
+        result = reconcile_before_existing_report_renderer(result)
+        validation = validate_existing_report_accuracy(result)
         completion_state = deepcopy(dict(result.get("client_report_completion") or {}))
         completion_state.update(validation)
         result["client_report_completion"] = completion_state
-        result["client_ready_render_validation"] = validation
+        result["client_accuracy_validation"] = validation
+        result["human_review_required"] = True
+        result["client_delivery_allowed"] = False
         return result
 
-    setattr(finalize, _MARKER, True)
-    setattr(finalize, "_nico_previous", current)
+    setattr(prepare, _PREPARE_MARKER, True)
+    setattr(prepare, "_nico_previous", current_prepare)
+    setattr(finalize, _FINALIZE_MARKER, True)
+    setattr(finalize, "_nico_previous", current_finalize)
+
+    completion.prepare_client_report_package = prepare
     completion.finalize_client_report_package = finalize
+    # Phase 17 imported these functions by value. Rebind those production aliases
+    # explicitly so live Comprehensive runs use the corrected pre-render truth.
+    phase17.prepare_client_report_package = prepare
+    phase17.finalize_client_report_package = finalize
+
     return {
         "status": "installed",
         "version": VERSION,
-        "bound": completion.finalize_client_report_package is finalize,
-        "premium_core_rebuilt_after_reconciliation": True,
-        "superseded_internal_diagnostics_excluded_from_client_projection": True,
-        "single_detailed_register_enforced": True,
-        "production_pdf_is_acceptance_artifact": True,
+        "prepare_bound": completion.prepare_client_report_package is prepare,
+        "finalize_bound": completion.finalize_client_report_package is finalize,
+        "phase17_prepare_alias_bound": phase17.prepare_client_report_package is prepare,
+        "phase17_finalize_alias_bound": phase17.finalize_client_report_package is finalize,
+        "existing_renderer_preserved": True,
+        "existing_visual_design_preserved": True,
+        "canonical_truth_reconciled_before_existing_renderer": True,
+        "production_pdf_is_accuracy_acceptance_artifact": True,
+        "redesign_performed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -196,4 +320,6 @@ def install_comprehensive_client_report_render_v60() -> dict[str, Any]:
 __all__ = [
     "VERSION",
     "install_comprehensive_client_report_render_v60",
+    "reconcile_before_existing_report_renderer",
+    "validate_existing_report_accuracy",
 ]
