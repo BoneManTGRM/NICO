@@ -1,0 +1,46 @@
+{
+  "artifact_schema": "nico.production_final_report_stage_stall_observation.v1",
+  "observed_at": "2026-08-02T10:13:00-06:00",
+  "production_main_sha": "62b53749ca1c3e877187de092fbb5cef4245b0b1",
+  "repository": "BoneManTGRM/NICO",
+  "run_identity": {
+    "run_id": "comprun_99d7f2630eb74db5be7725c2fd9fd93c",
+    "identity_source": "retained exact-run retry context from the immediately preceding production failure",
+    "run_id_visible_in_current_screenshot": false
+  },
+  "observed_ui": {
+    "engagement_status": "Comprehensive Run",
+    "status_badge": "Assessment in progress",
+    "current_stage": "Final assessment report",
+    "canonical_progress_percent": 83,
+    "elapsed_display": "13:30",
+    "assessment_package": "Awaiting scanner completion",
+    "internal_review": "Begins after report preparation"
+  },
+  "verified_progress": {
+    "dependency_security_stage_advanced_after_pr_984": true,
+    "final_report_stage_reached": true,
+    "final_report_stage_not_consumed_by_observation_time": true,
+    "human_review_reached": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  },
+  "code_path_finding": {
+    "id": "background_terminal_result_can_be_overwritten_by_delayed_heartbeat",
+    "evidence_status": "verified_in_source_and_regression_tested",
+    "production_causality_status": "strong_match_not_directly_proven_from_screenshot_alone",
+    "mechanism": "The provider and heartbeat threads wrote the same durable client_jobs record without per-task ordering. A heartbeat completing after the provider terminal write could restore status=running, leaving another request process unable to consume the completed report.",
+    "repair": "Serialize durable writes per exact task and prohibit every terminal-to-running transition."
+  },
+  "repair_pr": 985,
+  "safety_boundaries": {
+    "scores_changed": false,
+    "scanner_findings_changed": false,
+    "report_design_changed": false,
+    "renderer_changed": false,
+    "section_order_changed": false,
+    "pdf_composition_changed": false,
+    "human_review_required": true,
+    "client_delivery_allowed": false
+  }
+}
