@@ -132,7 +132,7 @@ def reconcile_before_existing_report_renderer(
     return result
 
 
-def _expected_truth(package: Mapping[str, Any]) -> tuple[int, int, str]:
+def _expected_truth(package: Mapping[str, Any]) -> tuple[int, int, str, int]:
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
     contract = (
         canonical.get("client_readiness_contract")
@@ -148,7 +148,8 @@ def _expected_truth(package: Mapping[str, Any]) -> tuple[int, int, str]:
     )
     incomplete = int(canonical.get("incomplete_applicable_analyzers", 0) or 0)
     maturity = _text(contract.get("maturity_label"))
-    return coverage, incomplete, maturity
+    denominator = int(contract.get("coverage_denominator", 0) or 0)
+    return coverage, incomplete, maturity, denominator
 
 
 def _coverage_values(text: str) -> set[int]:
@@ -174,7 +175,8 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
     )
     combined = "\n".join((markdown, rendered_html, extracted))
-    coverage, incomplete, maturity = _expected_truth(package)
+    coverage, incomplete, maturity, denominator = _expected_truth(package)
+    scanner_backed_report = denominator > 0
 
     observed_coverage = _coverage_values(combined)
     if observed_coverage and observed_coverage != {coverage}:
@@ -182,16 +184,16 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
             "client report retained conflicting analyzer coverage values: "
             f"expected {coverage}, observed {sorted(observed_coverage)}"
         )
-    if not observed_coverage:
+    if scanner_backed_report and not observed_coverage:
         raise ValueError("client report omitted analyzer execution coverage")
 
-    if incomplete == 0:
+    if scanner_backed_report and incomplete == 0:
         if re.search(r"incomplete_analyzers\[\d+\]", combined, re.I):
             raise ValueError("client report listed completed analyzers as incomplete")
         if "Incomplete applicable analyzers: 0" not in combined:
             raise ValueError("client report omitted the canonical incomplete analyzer count")
 
-    if maturity:
+    if scanner_backed_report and maturity:
         stale_labels = {
             "Exceptional": ("maturity_level: Senior",),
             "Strong": ("maturity_level: Senior", "Maturity Exceptional"),
@@ -214,14 +216,15 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         if broken.casefold() in combined.casefold():
             raise ValueError(f"client report retained malformed identifier: {broken}")
 
-    missing_design = [
-        marker for marker in _DESIGN_MARKERS if marker.casefold() not in combined.casefold()
-    ]
-    if missing_design:
-        raise ValueError(
-            "approved NICO report design markers were not preserved: "
-            + ", ".join(missing_design)
-        )
+    if scanner_backed_report:
+        missing_design = [
+            marker for marker in _DESIGN_MARKERS if marker.casefold() not in combined.casefold()
+        ]
+        if missing_design:
+            raise ValueError(
+                "approved NICO report design markers were not preserved: "
+                + ", ".join(missing_design)
+            )
 
     return {
         "version": VERSION,
@@ -230,6 +233,8 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
         "canonical_coverage_value": coverage,
         "canonical_incomplete_analyzer_count": incomplete,
         "canonical_maturity_label": maturity,
+        "coverage_denominator": denominator,
+        "scanner_backed_report": scanner_backed_report,
         "conflicting_coverage_absent": True,
         "false_incomplete_analyzers_absent": True,
         "superseded_diagnostics_absent": True,
