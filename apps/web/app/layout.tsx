@@ -26,6 +26,7 @@ import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
 import AssessmentScoreAssuranceGuard from "./AssessmentScoreAssuranceGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
 import AssessmentStatusResilience from "./AssessmentStatusResilience";
+import ComprehensiveStuckRunRecovery from "./ComprehensiveStuckRunRecovery";
 import GenericRepositoryExample from "./GenericRepositoryExample";
 import LegacyFullRunRedirect from "./LegacyFullRunRedirect";
 import {MidWorkspaceProvider} from "./MidWorkspaceContext";
@@ -75,6 +76,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="nico-app">
         <MidWorkspaceProvider>
+          <ComprehensiveStuckRunRecovery />
           <AssessmentRunStateGuard />
           <AssessmentStatusResilience />
           <AssessmentStatusOutcomeGuard />
