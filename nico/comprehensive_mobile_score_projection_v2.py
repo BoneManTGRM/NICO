@@ -62,6 +62,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_scoring_manifest_v54 import (
         install_comprehensive_scoring_manifest_v54,
     )
+    from nico.comprehensive_source_anchor_location_v57 import (
+        install_comprehensive_source_anchor_location_v57,
+    )
     from nico.evidence_ledger_typescript_truth_v1 import (
         install_evidence_ledger_typescript_truth_v1,
     )
@@ -70,6 +73,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    source_anchor_location = install_comprehensive_source_anchor_location_v57()
     scoring_manifest = install_comprehensive_scoring_manifest_v54()
     compatibility_truth = install_comprehensive_report_truth_stabilization_v52()
     report_truth = install_comprehensive_report_truth_v53()
@@ -80,6 +84,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
     return {
         "runtime_revision": RUNTIME_REVISION,
+        "source_anchor_location": source_anchor_location,
         "scoring_manifest": scoring_manifest,
         "report_truth_compatibility": compatibility_truth,
         "report_truth_stabilization": report_truth,
@@ -130,6 +135,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "blocked_run_recovery_supported": True,
         "failure_checks_visible_to_ui": True,
         "finding_register_deduplicated": True,
+        "ranged_source_anchor_paths_canonicalized": True,
         "scanner_state_reconciled": True,
         "canonical_score_contract_reconciled": True,
         "human_review_required": True,
