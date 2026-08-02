@@ -20,44 +20,44 @@ Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and 
 
 Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete dependency-ordered package.
 
-Current production main: `9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130`
+Current production main: `d19df900b178593669cd971575975898a29f3ec1`
 
-Current continuation: PR #998, branch `codex/canonical-maturity-label-truth`.
+Current continuation: PR #999, branch `codex/post-readiness-maturity-text-truth`.
 
 No later work package may begin before this package is post-merge verified.
 
 ## Exact post-merge production failure
 
-PR #997 retained compact exact-SHA scanner evidence during the scanner stage and removed final-stage scanner-store reads, repository cloning, scanner execution, raw findings, and output previews. It passed every exact-head check and merged as `9d26a71f8ac70bf0d0fb8129e8d7ac5654b14130`. Vercel and Railway exact production identity were verified.
+PR #998 synchronized explicit maturity aliases before canonical stage-summary flattening. It passed every exact-head check and merged as `d19df900b178593669cd971575975898a29f3ec1`. Vercel and Railway exact production identity were verified.
 
-The mandatory Mobile Restart proof created exact run `comprun_07f23ee3e93341e9b2508b5881f4e0cd`. The final stage now returned a bounded retained diagnostic instead of timing out. Canonical source preparation took 0.004 seconds.
+Mobile Restart workflow `30769480932` created exact run `comprun_294f80dd7b5746b9858a702788da521c`. The final stage returned a bounded retained diagnostic and canonical source preparation completed in 0.015 seconds.
 
-The strict semantic publisher stopped the report with:
+The strict semantic publisher still stopped the report with:
 
 `v2_production_publication_failed:ValueError:client report retained a maturity label conflicting with Exceptional: maturity_level: Senior`
 
-The former final-stage scanner-store timeout is no longer the active root cause. The run is blocked because the report contains contradictory maturity taxonomies.
+This proves the pre-flatten repair runs before the final client-readiness label exists and therefore cannot be the authoritative last maturity boundary.
 
-## Verified maturity-truth defect
+## Verified post-readiness defect
 
-The final client-readiness contract classifies maturity as `Exceptional`. Older internal stage evidence still contains the explicit alias `maturity_level: Senior`.
+`comprehensive_client_readiness_v59.reconcile_client_readiness` derives `Exceptional` from the final technical score and creates `client_readiness_contract.maturity_label` after preliminary stage evidence has already been flattened.
 
-Stage evidence is flattened into report surfaces before final semantic validation. The validator correctly rejects the resulting Markdown, HTML, JSON, and PDF package rather than delivering a report that simultaneously says `Exceptional` and `Senior`.
+That reconciler updates structured maturity fields but did not update flattened explicit strings such as `maturity_level: Senior`. The validator correctly rejects the resulting contradiction.
 
-This is a maturity-label sequencing defect. It is not a reason to weaken or bypass the semantic gate.
+The correct boundary is after client readiness scoring and before the authoritative report renderer—not a weaker validator and not a general text replacement.
 
 ## Active continuation
 
-PR #998:
+PR #999:
 
-- derives one authoritative maturity label from `client_readiness_contract.maturity_label` before report stage evidence is flattened;
-- synchronizes explicit structured aliases including `maturity_label`, `maturity_level`, `maturity_rating`, `maturity_tier`, and maturity-signal `level` and `label`;
-- synchronizes only explicit text aliases such as `maturity_level: Senior` and `maturity label = Senior`;
-- does not perform a general replacement of the word `Senior`;
-- preserves unrelated reviewer seniority, role descriptions, and ordinary prose;
-- leaves source stage evidence unmodified;
-- does not traverse already-rendered report artifacts;
-- retains a machine-readable maturity-label truth manifest in the assessment, canonical JSON, report package, and source envelope;
+- installs a narrow wrapper around the existing readiness reconciler;
+- runs only after `client_readiness_contract.maturity_label` exists;
+- synchronizes explicit structured maturity aliases and explicit text forms such as `maturity_level: Senior` and `maturity label = Senior`;
+- performs no general replacement of the word `Senior`;
+- preserves reviewer seniority, role descriptions, and ordinary prose;
+- leaves the established readiness scoring logic and contract unchanged;
+- leaves unscored or unavailable maturity truth unchanged and fail-closed;
+- retains a machine-readable `post_readiness_maturity_truth` manifest;
 - preserves the strict semantic validator, single authoritative v2 renderer, atomic publication boundary, and retained scanner evidence path;
 - changes no score, scanner result, finding, report design, renderer, section order, or PDF composition;
 - keeps human review mandatory and client delivery blocked.
@@ -66,7 +66,7 @@ PR #998:
 
 This package cannot be marked complete until:
 
-- every PR #998 exact-head CI, CodeQL, security, frontend, Postgres, resilience, report, Mobile Restart, iOS WebKit, and production-acceptance check passes;
+- every PR #999 exact-head CI, CodeQL, security, frontend, Postgres, resilience, report, Mobile Restart, iOS WebKit, and production-acceptance check passes;
 - zero unresolved review threads remain;
 - the exact merge commit is deployed to Vercel and Railway;
 - post-merge Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass;
@@ -74,7 +74,7 @@ This package cannot be marked complete until:
 - status endpoints remain responsive during final report publication;
 - canonical and rendered maturity labels agree in Markdown, HTML, JSON, and PDF;
 - final report generation completes inside the atomic boundary with one authoritative render and no final-stage scanner-store read;
-- their existing-design PDFs contain one canonical analyzer-coverage value;
+- existing-design PDFs retain one canonical analyzer-coverage value;
 - no completed analyzer is listed as incomplete;
 - no stale blocked or running contract is presented as current truth;
 - all approval and client-delivery boundaries remain visible.
