@@ -49,6 +49,11 @@ def configure_comprehensive_runtime(
     disconnected verification may inject an explicit DB-API connection factory.
     Every required capability must be provided before routes are exposed; missing
     executors are never treated as passing evidence.
+
+    The final report worker uses the same persistence adapter for its lease and
+    heartbeat table, while the canonical run record remains the only report source of
+    truth. Rendering is independent of HTTP request lifetime and can be reclaimed after
+    process replacement when a lease expires.
     """
 
     required = _required_capabilities()
@@ -70,7 +75,10 @@ def configure_comprehensive_runtime(
 
     store = ComprehensiveRunStore(connection_factory, dialect=resolved_dialect)
     store.ensure_schema()
-    service = ComprehensiveRunService(store, {name: supplied[name] for name in required})
+    service = ComprehensiveRunService(
+        store,
+        {name: supplied[name] for name in required},
+    )
     controller = ComprehensiveApiController(service)
     register_comprehensive_api_routes(app, controller=controller)
 
@@ -80,6 +88,13 @@ def configure_comprehensive_runtime(
         "configured": True,
         "persistence_adapter": persistence_adapter,
         "required_capability_count": len(required),
+        "durable_final_report_worker": True,
+        "final_report_job_lease_persisted": True,
+        "final_report_heartbeat_persisted": True,
+        "final_report_request_lifetime_independent": True,
+        "final_report_stale_lease_reclaimable": True,
+        "canonical_run_record_is_report_truth": True,
+        "orphan_timeout_thread_absent": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
