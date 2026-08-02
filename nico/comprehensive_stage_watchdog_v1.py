@@ -83,7 +83,7 @@ def _max_no_progress_attempts() -> int:
     return _bounded_int(
         "NICO_COMPREHENSIVE_STAGE_MAX_NO_PROGRESS_ATTEMPTS",
         DEFAULT_MAX_NO_PROGRESS_ATTEMPTS,
-        5,
+        1,
         2_000,
     )
 
