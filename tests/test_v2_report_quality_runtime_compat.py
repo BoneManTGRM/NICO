@@ -7,7 +7,8 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from nico.v2_report_quality_runtime_compat import repair_rendered_report
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
+from nico.v2_automated_draft_quality_compat_v2 import repair_rendered_report
 
 
 def _package(title: str) -> dict:
@@ -50,7 +51,13 @@ def test_repairs_restored_premium_scorecard_title() -> None:
     assert "Canonical Technical Scorecard" in text
     assert "Code Audit" in text
     assert "78/100" in text
+    assert EN_BOUNDARY in text
+    assert "FINAL REPORT" not in text.upper()
+    assert repaired["report_finality"] == "automated_draft"
+    assert repaired["approval_status"] == "pending_human_approval"
+    assert repaired["client_delivery_allowed"] is False
     assert repaired["premium_report_renderer"]["scorecard_rows_verified"] is True
+    assert repaired["premium_report_renderer"]["automated_draft_is_valid_unapproved_state"] is True
 
 
 def test_repairs_canonical_scorecard_title() -> None:
@@ -59,3 +66,7 @@ def test_repairs_canonical_scorecard_title() -> None:
     text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(output)).pages)
     assert text.count("Canonical Technical Scorecard") == 1
     assert "Code Audit" in text
+    assert EN_BOUNDARY in text
+    assert "FINAL REPORT" not in text.upper()
+    assert repaired["report_finality"] == "automated_draft"
+    assert repaired["client_delivery_allowed"] is False
