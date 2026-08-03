@@ -60,4 +60,4 @@ def test_normalized_marker_matching_remains_fail_closed_when_identity_is_missing
 def test_contract_version_records_normalized_marker_boundary() -> None:
     contract = _module()
 
-    assert contract.VERSION == "nico.comprehensive-live-report-contract.v3"
+    assert contract.VERSION == "nico.comprehensive-live-report-contract.v4"
