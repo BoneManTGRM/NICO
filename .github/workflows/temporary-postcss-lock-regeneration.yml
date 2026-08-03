@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   regenerate-lockfile:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out exact branch
         uses: actions/checkout@v4
