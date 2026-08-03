@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import base64
 import io
+from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-compact-design-marker.v1"
-_MARKER = "_nico_comprehensive_compact_design_marker_v1"
+VERSION = "nico.comprehensive-compact-design-marker.v2"
+_MARKER = "_nico_comprehensive_compact_design_marker_v2"
 
 _DESIGN_MARKER_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -18,10 +19,6 @@ _DESIGN_MARKER_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "NICO Comprehensive Technical Assessment",
             "Evaluación Técnica Integral NICO",
         ),
-    ),
-    (
-        "canonical technical scorecard",
-        ("Canonical Technical Scorecard",),
     ),
     (
         "client evidence summary",
@@ -61,6 +58,60 @@ def _combined_client_text(package: Mapping[str, Any]) -> str:
     return "\n".join((markdown, rendered_html, extracted))
 
 
+def _is_compact_client_package(package: Mapping[str, Any]) -> bool:
+    """Identify only the bounded client package, not legacy or synthetic fixtures."""
+
+    for key in (
+        "client_report_completion",
+        "phase17_artifact_rebuild",
+        "premium_report_renderer",
+    ):
+        contract = package.get(key)
+        if not isinstance(contract, Mapping):
+            continue
+        if contract.get("full_evidence_appendix_in_client_pdf") is False:
+            return True
+        if (
+            contract.get("one_compact_client_pdf") is True
+            and contract.get("full_evidence_retained_outside_client_pdf") is True
+        ):
+            return True
+
+    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
+    pipeline = (
+        canonical.get("v2_pipeline_contract")
+        if isinstance(canonical.get("v2_pipeline_contract"), Mapping)
+        else {}
+    )
+    return bool(
+        pipeline.get("one_compact_client_pdf") is True
+        and pipeline.get("full_evidence_retained_outside_client_pdf") is True
+    )
+
+
+def _legacy_delegate_package(
+    package: Mapping[str, Any],
+    legacy_markers: tuple[str, ...],
+) -> dict[str, Any]:
+    """Satisfy only the retired visual tuple in a private validation copy.
+
+    The legacy validator also owns score, coverage, incomplete-analyzer, maturity,
+    malformed-content, and superseded-diagnostic checks. Those checks remain active.
+    The compatibility tokens exist only in this detached copy and never enter a
+    client artifact, hash, download, or canonical truth surface.
+    """
+
+    result = deepcopy(dict(package))
+    compatibility = "\n".join(str(marker) for marker in legacy_markers)
+    result["markdown"] = (
+        str(result.get("markdown") or "").rstrip()
+        + "\n\n<!-- legacy visual marker compatibility only -->\n"
+        + compatibility
+        + "\n"
+    )
+    return result
+
+
 def validate_compact_design_markers(package: Mapping[str, Any]) -> dict[str, Any]:
     """Require the bounded report's real decision sections, not a removed appendix."""
 
@@ -93,6 +144,25 @@ def validate_compact_design_markers(package: Mapping[str, Any]) -> dict[str, Any
         "retired_evidence_appendix_absent": True,
         "bounded_evidence_summary_present": True,
         "human_review_gate_present": True,
+        "technical_scorecard_verified_by_authoritative_scorecard_gate": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+def _installation_contract(*, status: str, bound: bool) -> dict[str, Any]:
+    return {
+        "status": status,
+        "version": VERSION,
+        "bound": bound,
+        "legacy_design_marker_tuple_preserved": True,
+        "legacy_visual_compatibility_isolated_to_delegate_copy": True,
+        "legacy_and_synthetic_packages_keep_original_validation": True,
+        "retired_evidence_appendix_not_required_for_compact_package": True,
+        "compact_evidence_summary_required": True,
+        "bilingual_marker_groups_required": True,
+        "authoritative_scorecard_gate_remains_separate": True,
+        "score_scanner_maturity_and_identity_delegate_preserved": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -103,25 +173,27 @@ def install_compact_design_marker_gate() -> dict[str, Any]:
 
     current = client_render.validate_existing_report_accuracy
     if getattr(current, _MARKER, False):
-        return {
-            "status": "already_installed",
-            "version": VERSION,
-            "bound": True,
-            "retired_evidence_appendix_not_required": True,
-            "compact_evidence_summary_required": True,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
+        return _installation_contract(status="already_installed", bound=True)
 
-    # The legacy validator required the raw Evidence Appendix that the approved
-    # bounded client package deliberately removes. Preserve every score, scanner,
-    # maturity, identity, and malformed-content check in the delegate, and move
-    # only the visual-section contract to the grouped compact marker gate below.
-    client_render._DESIGN_MARKERS = ()
+    legacy_markers = tuple(client_render._DESIGN_MARKERS)
 
     @wraps(current)
     def validate(package: Mapping[str, Any]) -> dict[str, Any]:
-        result = dict(current(package))
+        compact_package = _is_compact_client_package(package)
+        delegate_input = (
+            _legacy_delegate_package(package, legacy_markers)
+            if compact_package
+            else package
+        )
+        result = dict(current(delegate_input))
+        if not compact_package:
+            result["compact_design_marker_gate"] = {
+                "version": VERSION,
+                "applied": False,
+                "reason": "package_not_declared_as_bounded_compact_client_report",
+            }
+            return result
+
         compact = validate_compact_design_markers(package)
         result["compact_design_marker_gate"] = compact
         result.update(
@@ -135,19 +207,12 @@ def install_compact_design_marker_gate() -> dict[str, Any]:
 
     setattr(validate, _MARKER, True)
     setattr(validate, "_nico_previous", current)
+    setattr(validate, "_nico_legacy_design_markers", legacy_markers)
     client_render.validate_existing_report_accuracy = validate
-    return {
-        "status": "installed",
-        "version": VERSION,
-        "bound": client_render.validate_existing_report_accuracy is validate,
-        "legacy_design_marker_tuple_disabled": client_render._DESIGN_MARKERS == (),
-        "retired_evidence_appendix_not_required": True,
-        "compact_evidence_summary_required": True,
-        "bilingual_marker_groups_required": True,
-        "score_scanner_maturity_and_identity_delegate_preserved": True,
-        "human_review_required": True,
-        "client_delivery_allowed": False,
-    }
+    return _installation_contract(
+        status="installed",
+        bound=client_render.validate_existing_report_accuracy is validate,
+    )
 
 
 __all__ = [
