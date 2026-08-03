@@ -2,79 +2,71 @@
 
 ## Authoritative state
 
-The machine-readable source of truth for the active package is:
+The machine-readable source of truth is:
 
 `docs/client-ready-report-accuracy-observation.json`
 
 Earlier exact production observations remain available in the `docs/production-*observation.json` files and immutable workflow artifacts.
 
-The previously completed dependency remains recorded in:
+## Completed dependencies
 
-`docs/exact-head-comprehensive-finality-observation.json`
+Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and post-merge verified. Its exact-commit, evidence-retention, report-preservation, security, mandatory human-review, and blocked-delivery boundaries remain mandatory.
 
-## Completed dependency
+Workstream 2, `exact_head_client_report_accuracy`, is now completed and post-merge verified on production release:
 
-Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and post-merge verified. Its exact-commit, evidence-retention, human-review, report-preservation, security, and blocked-delivery boundaries remain mandatory.
+`153d0f958e6a0072cfb2bd2130387d3fad468ab7`
 
-## First incomplete package
+The implementation completed through PR #1002, `Bind service identity to canonical Comprehensive packages`.
 
-Workstream 2, `exact_head_client_report_accuracy`, remains the first incomplete dependency-ordered package.
+## Exact-head verification
 
-Current production main: `d19df900b178593669cd971575975898a29f3ec1`
+PR #1002 exact head `c4bd4c74dcab27603db1b3ec6831b89808dd71c7` passed all 17 required workflows, including NICO CI, CodeQL, security evidence, remediation evidence, frontend production proof, Postgres restart, resilience, Mobile Restart, iOS WebKit, Comprehensive report proof, and unified production acceptance.
 
-Current continuation: PR #999, branch `codex/post-readiness-maturity-text-truth`.
+No unresolved review threads remained before merge.
 
-No later work package may begin before this package is post-merge verified.
+## Exact production verification
 
-## Exact post-merge production failure
+Vercel and Railway both identify exact release `153d0f958e6a0072cfb2bd2130387d3fad468ab7` as successfully deployed.
 
-PR #998 synchronized explicit maturity aliases before canonical stage-summary flattening. It passed every exact-head check and merged as `d19df900b178593669cd971575975898a29f3ec1`. Vercel and Railway exact production identity were verified.
+Post-merge production proofs passed:
 
-Mobile Restart workflow `30769480932` created exact run `comprun_294f80dd7b5746b9858a702788da521c`. The final stage returned a bounded retained diagnostic and canonical source preparation completed in 0.015 seconds.
+- Mobile Restart workflow `30774647412`, artifact `8841665571`, run `comprun_bf61bc3490994bf8960b3ccf06709cac`.
+- iOS WebKit workflow `30774647367`, artifact `8841678860`, run `comprun_2b7b38bae3e74cf5a13f8ab1246844fe`.
+- Two-Service Production Acceptance workflow `30774647385`, artifact `8841713944`.
 
-The strict semantic publisher still stopped the report with:
+Two-Service acceptance completed two distinct live Comprehensive runs:
 
-`v2_production_publication_failed:ValueError:client report retained a maturity label conflicting with Exceptional: maturity_level: Senior`
+- `comprun_6c88d8d1b9b847659c5fe9d214c9b972`
+- `comprun_e835a3cda6ad4909ae62ff38bb95c516`
 
-This proves the pre-flatten repair runs before the final client-readiness label exists and therefore cannot be the authoritative last maturity boundary.
+Both reached `client_acceptance_pending` at 100% progress with `review_required` status. Both produced retained Markdown, HTML, JSON, and 54-page PDF artifacts at technical score 93/100, evidence-adjusted score 90/100, and maturity `Exceptional`.
 
-## Verified post-readiness defect
+## Verified report boundaries
 
-`comprehensive_client_readiness_v59.reconcile_client_readiness` derives `Exceptional` from the final technical score and creates `client_readiness_contract.maturity_label` after preliminary stage evidence has already been flattened.
+The final production package now has one matching `service_id=comprehensive` identity across the top-level result, report package, and canonical JSON.
 
-That reconciler updates structured maturity fields but did not update flattened explicit strings such as `maturity_level: Senior`. The validator correctly rejects the resulting contradiction.
+The verified package also preserves:
 
-The correct boundary is after client readiness scoring and before the authoritative report renderer—not a weaker validator and not a general text replacement.
+- one authoritative artifact render;
+- retained exact-run scanner evidence without final-stage scanner-store reads;
+- one canonical analyzer-coverage value;
+- completed analyzers excluded from incomplete lists;
+- consistent maturity labels across Markdown, HTML, JSON, and PDF;
+- explicit zero-finding truth only when every canonical finding surface and count alias is present and synchronized;
+- the existing report design, section order, detailed content, and PDF composition;
+- strict cross-format semantic validation.
 
-## Active continuation
+## Commercial and approval state
 
-PR #999:
+Automated reports remain human-review packages, not automatically approved final reports.
 
-- installs a narrow wrapper around the existing readiness reconciler;
-- runs only after `client_readiness_contract.maturity_label` exists;
-- synchronizes explicit structured maturity aliases and explicit text forms such as `maturity_level: Senior` and `maturity label = Senior`;
-- performs no general replacement of the word `Senior`;
-- preserves reviewer seniority, role descriptions, and ordinary prose;
-- leaves the established readiness scoring logic and contract unchanged;
-- leaves unscored or unavailable maturity truth unchanged and fail-closed;
-- retains a machine-readable `post_readiness_maturity_truth` manifest;
-- preserves the strict semantic validator, single authoritative v2 renderer, atomic publication boundary, and retained scanner evidence path;
-- changes no score, scanner result, finding, report design, renderer, section order, or PDF composition;
-- keeps human review mandatory and client delivery blocked.
+- Human review reached: yes.
+- Human review required: yes.
+- Client delivery authorized: no.
+- Client delivery remains blocked until explicit human approval.
 
-## Completion gate
+## Next dependency-ordered package
 
-This package cannot be marked complete until:
+No later work package is declared in the authoritative completion state.
 
-- every PR #999 exact-head CI, CodeQL, security, frontend, Postgres, resilience, report, Mobile Restart, iOS WebKit, and production-acceptance check passes;
-- zero unresolved review threads remain;
-- the exact merge commit is deployed to Vercel and Railway;
-- post-merge Mobile Restart, iOS WebKit, and Two-Service Production Acceptance pass;
-- two distinct fresh Comprehensive runs reach expert review without manual stage recovery;
-- status endpoints remain responsive during final report publication;
-- canonical and rendered maturity labels agree in Markdown, HTML, JSON, and PDF;
-- final report generation completes inside the atomic boundary with one authoritative render and no final-stage scanner-store read;
-- existing-design PDFs retain one canonical analyzer-coverage value;
-- no completed analyzer is listed as incomplete;
-- no stale blocked or running contract is presented as current truth;
-- all approval and client-delivery boundaries remain visible.
+The completion program therefore pauses at this verified boundary rather than inventing, re-planning, or beginning an undeclared package. A later package may begin only after it is added to the authoritative machine-readable program state under the same merge, report-preservation, security, and commercial-readiness gates.
