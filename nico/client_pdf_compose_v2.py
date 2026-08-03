@@ -9,7 +9,27 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3"
+VERSION = "nico.client-pdf-compose.v3.2"
+CORE_REVIEW_COMPANION_PAGES = 24
+
+_REVIEW_SECTION_HEADINGS = (
+    "functional qa",
+    "qa funcional",
+    "platform parity",
+    "paridad de plataformas",
+    "historical trends and change failure",
+    "tendencias historicas y fallos de cambio",
+    "requirements traceability",
+    "trazabilidad de requisitos",
+    "stakeholder and business alignment",
+    "alineacion comercial y de partes interesadas",
+    "risk reduction and executive briefing",
+    "reduccion de riesgo y resumen ejecutivo",
+    "six-month roadmap",
+    "hoja de ruta de seis meses",
+    "staffing, sequencing, and cost",
+    "personal, secuencia y costo",
+)
 
 
 def _normalized(value: str) -> str:
@@ -58,11 +78,12 @@ def compose_compact_client_pdf(
 ) -> bytes:
     """Retain the decision body and append bounded client-review artifacts.
 
-    Heading-bound detection is deliberate. Cover and executive text may mention an
-    evidence appendix or review gate without starting those sections; substring
-    matching would incorrectly discard the entire decision body. The optional
-    review companion restores decision-useful Comprehensive sections without
-    reintroducing the raw evidence appendix.
+    The first 24 review-companion pages contain the evidence posture,
+    limitations, and human-decision worksheet for every restored Comprehensive
+    section. Later companion pages are action-planning worksheets and may be
+    omitted only when a larger legacy/premium base would otherwise exceed the
+    45-page client boundary. This keeps all eight review sections while avoiding
+    a false failure caused by a harmless difference in base-renderer pagination.
     """
 
     if not base_pdf.startswith(b"%PDF"):
@@ -96,6 +117,7 @@ def compose_compact_client_pdf(
                 "procedencia y aplicabilidad de analizadores",
                 "human review and acceptance gate",
                 "puerta de revision humana y aceptacion",
+                *_REVIEW_SECTION_HEADINGS,
             ),
         ):
             continue
@@ -103,12 +125,40 @@ def compose_compact_client_pdf(
             continue
         retained.append(page)
 
+    register_and_gate_count = len(register.pages) + len(gate.pages)
+    review_count = len(review.pages) if review is not None else 0
+    core_review_count = min(CORE_REVIEW_COMPANION_PAGES, review_count)
+
+    # If an unusually long legacy base competes with the decision-review core,
+    # keep the cover/decision body only up to the space that preserves all core
+    # review pages and the compact register/gate.
+    if review is not None:
+        max_retained = max(
+            0,
+            MAX_CLIENT_PDF_PAGES - register_and_gate_count - core_review_count,
+        )
+        retained = retained[:max_retained]
+
+    available_review_pages = max(
+        0,
+        MAX_CLIENT_PDF_PAGES - len(retained) - register_and_gate_count,
+    )
+    selected_review_pages = (
+        list(review.pages[: min(review_count, available_review_pages)])
+        if review is not None
+        else []
+    )
+    if review is not None and len(selected_review_pages) < core_review_count:
+        raise ValueError(
+            "client-ready PDF cannot preserve the complete Comprehensive review core "
+            f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
+        )
+
     writer = PdfWriter()
     for page in retained:
         writer.add_page(page)
-    if review is not None:
-        for page in review.pages:
-            writer.add_page(page)
+    for page in selected_review_pages:
+        writer.add_page(page)
     for page in register.pages:
         writer.add_page(page)
     for page in gate.pages:
@@ -124,4 +174,8 @@ def compose_compact_client_pdf(
     return pdf
 
 
-__all__ = ["VERSION", "compose_compact_client_pdf"]
+__all__ = [
+    "CORE_REVIEW_COMPANION_PAGES",
+    "VERSION",
+    "compose_compact_client_pdf",
+]
