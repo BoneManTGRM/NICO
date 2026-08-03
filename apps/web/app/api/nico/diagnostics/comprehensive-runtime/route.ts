@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 45;
 
-const HEALTH_WARMUP_TIMEOUT_MS = 28_000;
+const HEALTH_WARMUP_BUDGET_MS = 28_000;
+const HEALTH_REQUEST_TIMEOUT_MS = 8_000;
+const HEALTH_RETRY_DELAY_MS = 2_000;
 const DIAGNOSTIC_TIMEOUT_MS = 14_000;
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
@@ -20,6 +22,12 @@ type UpstreamObservation = {
   httpStatus: number | null;
   payload: JsonRecord;
   failureClass: string;
+};
+
+type WarmupResult = UpstreamObservation & {
+  attempts: number;
+  elapsedMs: number;
+  healthy: boolean;
 };
 
 function record(value: unknown): JsonRecord {
@@ -56,6 +64,10 @@ function configuredBackend(): BackendResolution {
     configuredCount: values.length,
     conflict: values.length > 1,
   };
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function boundedHeaders(requestId: string, upstreamRequests: number): HeadersInit {
@@ -98,7 +110,9 @@ function blockedReadiness(
       preflight_proxy: {
         status: retryable ? "transient_failure" : "bounded_failure",
         upstream_requests: upstreamRequests,
-        health_warmup_timeout_ms: HEALTH_WARMUP_TIMEOUT_MS,
+        health_warmup_budget_ms: HEALTH_WARMUP_BUDGET_MS,
+        health_request_timeout_ms: HEALTH_REQUEST_TIMEOUT_MS,
+        health_retry_delay_ms: HEALTH_RETRY_DELAY_MS,
         diagnostic_timeout_ms: DIAGNOSTIC_TIMEOUT_MS,
         browser_retry_authoritative: retryable,
         ...extra,
@@ -160,6 +174,50 @@ async function observeUpstream(
   }
 }
 
+async function warmBackend(backend: URL, requestId: string): Promise<WarmupResult> {
+  const startedAt = Date.now();
+  const deadline = startedAt + HEALTH_WARMUP_BUDGET_MS;
+  let attempts = 0;
+  let latest: UpstreamObservation = {
+    httpStatus: null,
+    payload: {},
+    failureClass: "not_attempted",
+  };
+
+  while (Date.now() < deadline) {
+    attempts += 1;
+    const remaining = Math.max(1, deadline - Date.now());
+    latest = await observeUpstream(
+      new URL("/health", backend),
+      requestId,
+      Math.min(HEALTH_REQUEST_TIMEOUT_MS, remaining),
+    );
+    const healthy = (
+      latest.httpStatus != null
+      && latest.httpStatus >= 200
+      && latest.httpStatus < 300
+      && String(latest.payload.status || "").toLowerCase() === "ok"
+    );
+    if (healthy) {
+      return {
+        ...latest,
+        attempts,
+        elapsedMs: Date.now() - startedAt,
+        healthy: true,
+      };
+    }
+    const delay = Math.min(HEALTH_RETRY_DELAY_MS, Math.max(0, deadline - Date.now()));
+    if (delay > 0) await wait(delay);
+  }
+
+  return {
+    ...latest,
+    attempts,
+    elapsedMs: Date.now() - startedAt,
+    healthy: false,
+  };
+}
+
 export async function GET(request: NextRequest): Promise<Response> {
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   const resolution = configuredBackend();
@@ -183,20 +241,17 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
   }
 
-  // Railway may report a successful deployment before a sleeping container has
-  // imported the full Comprehensive production bootstrap. Wake the exact backend
-  // with its lightweight health route, then ask the authoritative readiness route.
-  // The health result is never used as readiness evidence.
-  const warmup = await observeUpstream(
-    new URL("/health", resolution.backend),
-    requestId,
-    HEALTH_WARMUP_TIMEOUT_MS,
-  );
+  // Railway can return a temporary edge error while a sleeping container imports
+  // the production application. Poll only the lightweight health endpoint inside
+  // one bounded warm-up budget, then ask the authoritative Comprehensive route.
+  // Health can wake the process but can never authorize an assessment.
+  const warmup = await warmBackend(resolution.backend, requestId);
   const diagnostic = await observeUpstream(
     new URL("/diagnostics/comprehensive-runtime", resolution.backend),
     requestId,
     DIAGNOSTIC_TIMEOUT_MS,
   );
+  const upstreamRequests = warmup.attempts + 1;
 
   if (
     diagnostic.httpStatus != null
@@ -206,7 +261,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   ) {
     return Response.json(diagnostic.payload, {
       status: 200,
-      headers: boundedHeaders(requestId, 2),
+      headers: boundedHeaders(requestId, upstreamRequests),
     });
   }
 
@@ -222,9 +277,12 @@ export async function GET(request: NextRequest): Promise<Response> {
     transient
       ? "The Comprehensive assessment service did not become ready within the bounded warm-up window."
       : "The Comprehensive assessment service is not ready yet.",
-    2,
+    upstreamRequests,
     {
       backend_candidate_count: 1,
+      warmup_healthy: warmup.healthy,
+      warmup_attempts: warmup.attempts,
+      warmup_elapsed_ms: warmup.elapsedMs,
       warmup_http_status: warmup.httpStatus,
       warmup_failure_class: warmup.failureClass,
       diagnostic_http_status: diagnostic.httpStatus,
