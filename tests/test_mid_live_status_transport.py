@@ -67,8 +67,13 @@ def test_same_origin_proxy_allows_native_comprehensive_lifecycle_and_short_read_
     assert "comprehensive-runtime" in source
     assert "mid-runtime" not in source
     assert "/live-status" not in source
-    assert "AbortSignal.timeout(shortRead ? 20_000 : 240_000)" in source
+    assert "const SHORT_READ_TIMEOUT_MS = 20_000" in source
+    assert "const ARTIFACT_READ_TIMEOUT_MS = 240_000" in source
+    assert 'readClass: "exact-run-artifact"' in source
+    assert 'readClass: shortRead ? "short-status" : "bounded-write"' in source
+    assert "signal: AbortSignal.timeout(policy.timeoutMs)" in source
     assert "RETRY_DELAYS_MS = [0, 1_500, 4_000]" in source
+    assert "ARTIFACT_RETRY_DELAYS_MS = [0]" in source
     assert "export const GET = proxyNico" in source
     assert "export const POST = proxyNico" in source
 

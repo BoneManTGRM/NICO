@@ -12,9 +12,15 @@ def test_proxy_retries_transient_backend_failures_and_cold_starts() -> None:
 
     assert "const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])" in source
     assert "const RETRY_DELAYS_MS = [0, 1_500, 4_000]" in source
-    assert "for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1)" in source
-    assert "AbortSignal.timeout(shortRead ? 20_000 : 240_000)" in source
+    assert "const ARTIFACT_RETRY_DELAYS_MS = [0]" in source
+    assert "const SHORT_READ_TIMEOUT_MS = 20_000" in source
+    assert "const ARTIFACT_READ_TIMEOUT_MS = 240_000" in source
+    assert "for (let attempt = 0; attempt < policy.retryDelaysMs.length; attempt += 1)" in source
+    assert "signal: AbortSignal.timeout(policy.timeoutMs)" in source
+    assert 'readClass: "exact-run-artifact"' in source
+    assert 'readClass: shortRead ? "short-status" : "bounded-write"' in source
     assert '"X-NICO-Proxy-Attempts"' in source
+    assert '"X-NICO-Proxy-Read-Class": policy.readClass' in source
     assert '"Retry-After": "5"' in source
 
 

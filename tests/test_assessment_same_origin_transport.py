@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / "apps" / "web" / "app" / "AssessmentApiTransportBridge.tsx"
 FAILURE_BRIDGE = ROOT / "apps" / "web" / "app" / "AssessmentFailureResponseBridge.tsx"
 FAILURE_PANEL = ROOT / "apps" / "web" / "app" / "AssessmentFailureEvidencePanel.tsx"
+PDF_DOWNLOAD = ROOT / "apps" / "web" / "app" / "AssessmentReviewPdfDownload.tsx"
 ROUTE = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts"
 LAYOUT = ROOT / "apps" / "web" / "app" / "layout.tsx"
 
@@ -130,11 +131,34 @@ def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnos
     assert 'request.headers.get("authorization")' not in source
     assert 'request.headers.get("cookie")' not in source
     assert 'Cache-Control": "no-store"' in source
-    assert 'AbortSignal.timeout(shortRead ? 20_000 : 240_000)' in source
+    assert 'const ARTIFACT_RETRY_DELAYS_MS = [0]' in source
+    assert 'const ARTIFACT_READ_TIMEOUT_MS = 240_000' in source
+    assert 'readClass: "exact-run-artifact"' in source
+    assert 'signal: AbortSignal.timeout(policy.timeoutMs)' in source
+    assert 'attempt < policy.retryDelaysMs.length' in source
+    assert '"content-length"' in source
+    assert '"X-NICO-Proxy-Read-Class": policy.readClass' in source
     assert 'RETRY_DELAYS_MS = [0, 1_500, 4_000]' in source
     assert 'TRANSIENT_STATUS.has(response.status)' in source
     assert '"/assessment/mid-run"' not in source
     assert '"/assessment/full-run"' not in source
+
+
+def test_review_pdf_download_preserves_the_original_mobile_user_gesture() -> None:
+    source = PDF_DOWNLOAD.read_text(encoding="utf-8")
+    layout = LAYOUT.read_text(encoding="utf-8")
+
+    assert 'document.addEventListener("click", handleReviewPdfClick, true)' in source
+    assert 'event.stopImmediatePropagation()' in source
+    assert 'runId.startsWith("comprun_")' in source
+    assert '/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf' in source
+    assert 'link.download = `nico-comprehensive-${runId}-FINAL-PENDING-APPROVAL.pdf`' in source
+    assert 'link.click();' in source
+    assert 'fetch(' not in source
+    assert 'arrayBuffer' not in source
+    assert 'Preparing file' not in source
+    assert 'import AssessmentReviewPdfDownload from "./AssessmentReviewPdfDownload"' in layout
+    assert layout.index('<AssessmentReviewPdfDownload />') < layout.index('<AssessmentHomeRedirect />')
 
 
 def test_failure_panel_displays_only_current_page_failure_without_hydration() -> None:

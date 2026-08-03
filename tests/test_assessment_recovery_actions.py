@@ -77,6 +77,8 @@ def test_same_origin_proxy_allows_only_native_runtime_diagnostics() -> None:
     assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/(?:express-runtime|comprehensive-runtime)$/' in source
     assert "diagnosticAllowed" in source
     assert 'request.method === "GET"' in source
-    assert "shortRead" in source
-    assert "AbortSignal.timeout(shortRead ? 20_000 : 240_000)" in source
+    assert "const SHORT_READ_TIMEOUT_MS = 20_000" in source
+    assert "const ARTIFACT_READ_TIMEOUT_MS = 240_000" in source
+    assert 'readClass: shortRead ? "short-status" : "bounded-write"' in source
+    assert 'signal: AbortSignal.timeout(policy.timeoutMs)' in source
     assert "mid-runtime" not in source
