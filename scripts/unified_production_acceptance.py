@@ -9,7 +9,7 @@ from typing import Any
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
 
-VERSION = "nico.unified_production_acceptance.canonical_terminal_rendering.v6"
+VERSION = "nico.unified_production_acceptance.canonical_terminal_rendering.v7"
 ASSESSMENT_WORKSPACE_SELECTOR = (
     'main[data-workspace="assessment"]'
     '[data-engagement-type="comprehensive"]'
@@ -36,11 +36,75 @@ LEGACY_DRAFT_PHRASES = (
     "DRAFT · HUMAN REVIEW REQUIRED",
     "COMPLETE ONLY AS A DRAFT",
 )
+REQUIRED_COMPACT_SECTION_GROUPS = (
+    ("Functional QA", ("Functional QA", "QA funcional")),
+    ("Platform Parity", ("Platform Parity", "Paridad de plataforma")),
+    ("Six-Month Roadmap", ("Six-Month Roadmap", "Hoja de ruta de seis meses")),
+    (
+        "Staffing, Sequencing, and Cost",
+        (
+            "Staffing, Sequencing, and Cost",
+            "Personal, secuenciación y costo",
+            "Personal, secuenciacion y costo",
+        ),
+    ),
+)
+COMPACT_EVIDENCE_SUMMARY_MARKERS = (
+    "Evidence Package Summary",
+    "Client Evidence Summary",
+    "Resumen del paquete de evidencia",
+    "Resumen de evidencia para revisión",
+    "Resumen de evidencia para revision",
+)
+HUMAN_REVIEW_GATE_MARKERS = (
+    "Human Review and Acceptance Gate",
+    "Puerta de revisión humana y aceptación",
+    "Puerta de revision humana y aceptacion",
+    "Puerta de revisión y entrega",
+    "Puerta de revision y entrega",
+)
+RETIRED_EVIDENCE_APPENDIX_HEADINGS = (
+    "Evidence Appendix",
+    "Apéndice de evidencia",
+    "Apendice de evidencia",
+)
+AUTOMATED_DRAFT_MARKERS = ("AUTOMATED DRAFT", "BORRADOR AUTOMATIZADO")
+PENDING_APPROVAL_MARKERS = (
+    "PENDING HUMAN APPROVAL",
+    "APROBACIÓN HUMANA PENDIENTE",
+    "APROBACION HUMANA PENDIENTE",
+)
+BLOCKED_DELIVERY_MARKERS = (
+    "CLIENT DELIVERY BLOCKED",
+    "ENTREGA AL CLIENTE BLOQUEADA",
+)
+FORBIDDEN_UNAPPROVED_FINALITY = (
+    "FINAL REPORT",
+    "INFORME FINAL",
+    "APPROVED FINAL",
+    "FINAL APROBADO",
+    "CLIENT DELIVERY AUTHORIZED",
+    "ENTREGA AL CLIENTE AUTORIZADA",
+)
 RETIRED_TIER_SELECTOR = '[aria-label="Assessment type"]'
 
 
 def _normalized(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
+
+
+def _contains_any(value: Any, markers: tuple[str, ...]) -> bool:
+    normalized = _normalized(value)
+    return any(_normalized(marker) in normalized for marker in markers)
+
+
+def _retired_heading_present(value: Any) -> bool:
+    retired = {_normalized(marker) for marker in RETIRED_EVIDENCE_APPENDIX_HEADINGS}
+    for raw in str(value or "").splitlines():
+        line = _normalized(raw.lstrip("# ").strip())
+        if line in retired:
+            return True
+    return False
 
 
 def has_comprehensive_report_identity(value: Any) -> bool:
@@ -125,24 +189,45 @@ def validate_preapproval_delivery_posture(
     pdf_text: str,
     payload: dict[str, Any],
     assessment: dict[str, Any],
+    *,
+    rendered_html: str = "",
 ) -> dict[str, bool]:
-    upper_markdown = markdown.upper()
-    upper_pdf = pdf_text.upper()
-    for stale in LEGACY_DRAFT_PHRASES:
-        assert stale not in upper_markdown, f"Comprehensive Markdown retained stale status: {stale}"
-        assert stale not in upper_pdf, f"Comprehensive PDF retained stale status: {stale}"
+    surfaces = {
+        "Markdown": markdown,
+        "PDF": pdf_text,
+    }
+    if rendered_html:
+        surfaces["HTML"] = rendered_html
 
-    draft_only_label_present = "DRAFT ONLY" in upper_markdown or "DRAFT ONLY" in upper_pdf
-    if draft_only_label_present:
-        assert "PENDING HUMAN APPROVAL" in upper_markdown
-        assert "PENDING HUMAN APPROVAL" in upper_pdf
-        assert payload.get("client_delivery_allowed") is not True
-        assert assessment.get("client_delivery_allowed") is not True
+    for surface_name, value in surfaces.items():
+        upper = value.upper()
+        for stale in LEGACY_DRAFT_PHRASES:
+            assert stale not in upper, f"Comprehensive {surface_name} retained stale status: {stale}"
+        for forbidden in FORBIDDEN_UNAPPROVED_FINALITY:
+            assert forbidden not in upper, (
+                f"Comprehensive {surface_name} retained unapproved finality: {forbidden}"
+            )
+        assert _contains_any(value, AUTOMATED_DRAFT_MARKERS), (
+            f"Comprehensive {surface_name} omitted Automated Draft lifecycle truth"
+        )
+        assert _contains_any(value, PENDING_APPROVAL_MARKERS), (
+            f"Comprehensive {surface_name} omitted pending-human-approval truth"
+        )
+        assert _contains_any(value, BLOCKED_DELIVERY_MARKERS), (
+            f"Comprehensive {surface_name} omitted blocked-delivery truth"
+        )
 
+    assert acceptance.first_bool(payload, "human_review_required") is True
+    assert acceptance.first_bool(payload, "client_delivery_allowed") is not True
+    assert assessment.get("client_delivery_allowed") is not True
     return {
         "stale_draft_language_absent": True,
         "preapproval_delivery_posture_verified": True,
-        "draft_only_delivery_label_present": draft_only_label_present,
+        "draft_only_delivery_label_present": False,
+        "automated_draft_language_verified": True,
+        "pending_human_approval_verified": True,
+        "client_delivery_blocked_verified": True,
+        "unapproved_finality_absent": True,
     }
 
 
@@ -319,6 +404,11 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
         "preapproval_delivery_posture_verified": True,
         "draft_only_delivery_label_present": False,
     }
+    compact_contract = {
+        "compact_evidence_summary_verified": False,
+        "retired_evidence_appendix_absent": True,
+        "canonical_incomplete_analyzer_count_verified": False,
+    }
     if service == "comprehensive":
         assert package.get("service_id") == "comprehensive"
         for format_name, content in (
@@ -332,30 +422,45 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
 
         assert "NICO MID TECHNICAL" not in markdown.upper()
         assert "NICO MID TECHNICAL" not in pdf["text"].upper()
-        semantic_markers = (
-            "Functional QA",
-            "Platform Parity",
-            "Six-Month Roadmap",
-            "Staffing, Sequencing, and Cost",
-            "Evidence Appendix",
-            "Human Review and Acceptance Gate",
-        )
-        for marker in semantic_markers:
-            assert marker in markdown, f"Comprehensive Markdown omitted {marker}"
-            assert marker in pdf["text"], f"Comprehensive PDF omitted {marker}"
+        for label, alternatives in REQUIRED_COMPACT_SECTION_GROUPS:
+            for format_name, content in (
+                ("Markdown", markdown),
+                ("HTML", rendered_html),
+                ("PDF", pdf["text"]),
+            ):
+                assert _contains_any(content, alternatives), (
+                    f"Comprehensive {format_name} omitted {label}"
+                )
+        for format_name, content in (
+            ("Markdown", markdown),
+            ("HTML", rendered_html),
+            ("PDF", pdf["text"]),
+        ):
+            assert _contains_any(content, COMPACT_EVIDENCE_SUMMARY_MARKERS), (
+                f"Comprehensive {format_name} omitted the compact evidence summary"
+            )
+            assert _contains_any(content, HUMAN_REVIEW_GATE_MARKERS), (
+                f"Comprehensive {format_name} omitted the human review gate"
+            )
+            assert "Incomplete applicable analyzers:" in content, (
+                f"Comprehensive {format_name} omitted the canonical incomplete analyzer count"
+            )
+            assert not _retired_heading_present(content), (
+                f"Comprehensive {format_name} restored the retired raw evidence appendix"
+            )
 
-        upper_markdown = markdown.upper()
-        upper_pdf = pdf["text"].upper()
-        assert "FINAL REPORT" in upper_markdown
-        assert "FINAL REPORT" in upper_pdf
-        assert "PENDING HUMAN APPROVAL" in upper_markdown
-        assert "PENDING HUMAN APPROVAL" in upper_pdf
         delivery_posture = validate_preapproval_delivery_posture(
             markdown,
             pdf["text"],
             payload,
             assessment,
+            rendered_html=rendered_html,
         )
+        compact_contract = {
+            "compact_evidence_summary_verified": True,
+            "retired_evidence_appendix_absent": True,
+            "canonical_incomplete_analyzer_count_verified": True,
+        }
         assert "\x7f" not in pdf["text"], "Comprehensive PDF contains a control-character glyph"
 
     maturity = acceptance.dict_value(assessment.get("maturity_signal"))
@@ -394,6 +499,7 @@ def validate_report(service: str, payload: dict[str, Any], destination: Path) ->
             "required_sections_verified": True,
             "final_report_language_verified": True,
             **delivery_posture,
+            **compact_contract,
             "control_characters_absent": True,
             "canonical_report_identity_verified": True,
             "canonical_score_verified": True,
