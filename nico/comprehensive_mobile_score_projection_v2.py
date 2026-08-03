@@ -4,8 +4,8 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v62-client-ready-exact-run-truth"
+VERSION = "nico.comprehensive_mobile_score_projection.v4"
+RUNTIME_REVISION = "v64-client-ready-assurance-review-package"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -39,6 +39,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.bandit_json_execution_v61 import install_bandit_json_execution_v61
+    from nico.comprehensive_candidate_volume_assurance_v2 import (
+        install_candidate_volume_assurance_v2,
+    )
     from nico.comprehensive_client_readiness_v59 import (
         install_comprehensive_client_readiness_v59,
     )
@@ -89,6 +92,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    candidate_volume_assurance = install_candidate_volume_assurance_v2()
     bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     requested_scanner_projection = (
@@ -110,6 +114,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
     return {
         "runtime_revision": RUNTIME_REVISION,
+        "candidate_volume_assurance": candidate_volume_assurance,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -188,6 +193,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "identifier_integrity_repaired_before_render": True,
         "limited_evidence_status_separated_from_execution_status": True,
         "canonical_score_contract_reconciled": True,
+        "candidate_volume_is_triage_workload_not_defect_severity": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
