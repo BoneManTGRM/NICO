@@ -7,7 +7,7 @@ from typing import Any
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.client-pdf-status-sanitizer.v4"
+VERSION = "nico.client-pdf-status-sanitizer.v5"
 
 _EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 _ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
@@ -71,7 +71,7 @@ def _drop_internal_page(text: str) -> bool:
         return True
     if "report_contract_reason" in normalized or "comprehensive_final_report_semantic_contract_failed" in normalized:
         return True
-    marker_count = sum(marker in normalized for marker in _RAW_INTERNAL_MARKERS)
+    marker_count = sum(normalized.count(marker) for marker in _RAW_INTERNAL_MARKERS)
     return marker_count >= 2
 
 
