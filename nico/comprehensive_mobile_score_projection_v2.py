@@ -4,8 +4,10 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
+# Public compatibility identifier. Runtime behavior advances through
+# RUNTIME_REVISION so existing mobile proof contracts remain valid.
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v62-client-ready-exact-run-truth"
+RUNTIME_REVISION = "v66-client-ready-assurance-review-package"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -39,11 +41,17 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.bandit_json_execution_v61 import install_bandit_json_execution_v61
+    from nico.comprehensive_candidate_volume_assurance_v2 import (
+        install_candidate_volume_assurance_v2,
+    )
     from nico.comprehensive_client_readiness_v59 import (
         install_comprehensive_client_readiness_v59,
     )
     from nico.comprehensive_client_report_render_v60 import (
         install_comprehensive_client_report_render_v60,
+    )
+    from nico.comprehensive_client_review_companion_v4 import (
+        install_comprehensive_review_companion_v4,
     )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
@@ -89,6 +97,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    candidate_volume_assurance = install_candidate_volume_assurance_v2()
     bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
     requested_scanner_projection = (
@@ -108,8 +117,11 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_truth = install_comprehensive_final_artifact_truth_v54()
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
+    client_review_companion = install_comprehensive_review_companion_v4()
     return {
         "runtime_revision": RUNTIME_REVISION,
+        "candidate_volume_assurance": candidate_volume_assurance,
+        "client_review_companion": client_review_companion,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -188,6 +200,8 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "identifier_integrity_repaired_before_render": True,
         "limited_evidence_status_separated_from_execution_status": True,
         "canonical_score_contract_reconciled": True,
+        "candidate_volume_is_triage_workload_not_defect_severity": True,
+        "decision_useful_review_companion_pages": 32,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }

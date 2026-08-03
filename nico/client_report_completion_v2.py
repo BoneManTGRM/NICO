@@ -31,9 +31,37 @@ from nico.comprehensive_client_ready_projection_v1 import (
     render_compact_finding_register_pdf,
     render_evidence_review_gate_pdf,
 )
+from nico.comprehensive_client_review_companion_v2 import (
+    MAX_CLIENT_REVIEW_PAGES,
+    MIN_CLIENT_REVIEW_PAGES,
+    VERSION as REVIEW_COMPANION_VERSION,
+    merge_review_companion_markdown,
+    render_comprehensive_review_companion_pdf,
+)
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 
-VERSION = "nico.client-report-completion.v9"
+VERSION = "nico.client-report-completion.v10"
+
+_REVIEW_SECTION_TITLES = (
+    "Functional QA",
+    "Platform Parity",
+    "Historical Trends and Change Failure",
+    "Requirements Traceability",
+    "Stakeholder and Business Alignment",
+    "Risk Reduction and Executive Briefing",
+    "Six-Month Roadmap",
+    "Staffing, Sequencing, and Cost",
+)
+_REVIEW_SECTION_TITLES_ES = (
+    "QA funcional",
+    "Paridad de plataformas",
+    "Tendencias históricas y fallos de cambio",
+    "Trazabilidad de requisitos",
+    "Alineación comercial y de partes interesadas",
+    "Reducción de riesgo y resumen ejecutivo",
+    "Hoja de ruta de seis meses",
+    "Personal, secuencia y costo",
+)
 
 
 def _text(value: Any, limit: int = 12000) -> str:
@@ -65,6 +93,7 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
         {
             "client_report_completion_version": VERSION,
             "client_ready_projection_version": CLIENT_READY_VERSION,
+            "client_review_companion_version": REVIEW_COMPANION_VERSION,
             "canonical_finding_identity_uses_source_anchor_and_family": True,
             "scanner_configuration_errors_are_not_code_findings": True,
             "repository_relative_paths_only": True,
@@ -78,6 +107,8 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
             "exact_run_scanner_truth_reconciled_in_core_finalizer": True,
             "one_compact_client_pdf": True,
             "full_evidence_retained_outside_client_pdf": True,
+            "decision_useful_comprehensive_sections_restored": True,
+            "raw_stage_dump_excluded_from_client_pdf": True,
             "automated_draft_until_human_approval": True,
         }
     )
@@ -181,12 +212,22 @@ def _validate_final_surfaces(
             f"client report exceeds the {MAX_CLIENT_PDF_PAGES}-page client boundary"
         )
 
+    spanish = any(title in combined for title in _REVIEW_SECTION_TITLES_ES)
+    required_titles = _REVIEW_SECTION_TITLES_ES if spanish else _REVIEW_SECTION_TITLES
+    missing_review_sections = [title for title in required_titles if title not in combined]
+    if missing_review_sections:
+        raise ValueError(
+            "client report omitted decision-useful Comprehensive sections: "
+            + ", ".join(missing_review_sections)
+        )
+
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
         location = _text(item.get("location"))
         if location and legacy._compact(location) not in compact_pdf:
             raise ValueError(f"final client PDF omitted exact source location: {location}")
 
+    page_count = len(reader.pages)
     return {
         "finding_population_reconciled": True,
         "canonical_decision_finding_count": decision_count,
@@ -202,9 +243,17 @@ def _validate_final_surfaces(
         "exact_run_scanner_truth_reconciled": True,
         "duplicate_full_page_finding_cards_absent": True,
         "raw_stage_dump_excluded_from_client_pdf": True,
+        "decision_useful_comprehensive_sections_restored": True,
         "automated_draft_language_verified": True,
         "client_pdf_page_boundary": MAX_CLIENT_PDF_PAGES,
-        "client_pdf_page_count": len(reader.pages),
+        "client_pdf_page_count": page_count,
+        "requested_client_review_page_range": [
+            MIN_CLIENT_REVIEW_PAGES,
+            MAX_CLIENT_REVIEW_PAGES,
+        ],
+        "client_review_page_range_met": (
+            MIN_CLIENT_REVIEW_PAGES <= page_count <= MAX_CLIENT_REVIEW_PAGES
+        ),
     }
 
 
@@ -214,7 +263,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     prepared = prepare_client_report_package(package)
     # The legacy pass retains compatibility and the accepted premium cover. The
     # authoritative pass below removes duplicate finding cards and raw evidence
-    # dumps before composing one compact register and one human-review gate.
+    # dumps before composing one review companion, one compact register, and one
+    # human-review gate.
     result = legacy.finalize_client_report_package(prepared)
     canonical = normalize_client_assessment_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
@@ -225,11 +275,16 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 
+    markdown = compact_client_markdown(
+        str(result.get("markdown") or ""),
+        canonical,
+        register,
+        spanish=spanish,
+    )
     markdown = _normalize_unapproved_language(
-        compact_client_markdown(
-            str(result.get("markdown") or ""),
+        merge_review_companion_markdown(
+            markdown,
             canonical,
-            register,
             spanish=spanish,
         )
     )
@@ -242,10 +297,19 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     rendered_html = render_client_html(markdown, title, spanish=spanish)
 
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    review_pdf = render_comprehensive_review_companion_pdf(
+        canonical,
+        spanish=spanish,
+    )
     register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
     gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
     pdf = sanitize_client_pdf_status(
-        compose_compact_client_pdf(base_pdf, register_pdf, gate_pdf)
+        compose_compact_client_pdf(
+            base_pdf,
+            register_pdf,
+            gate_pdf,
+            review_pdf=review_pdf,
+        )
     )
     validation = _validate_final_surfaces(
         canonical,
@@ -256,6 +320,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     )
 
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+    review_page_count = len(PdfReader(io.BytesIO(review_pdf)).pages)
     completion = deepcopy(dict(result.get("client_report_completion") or {}))
     completion.update(
         {
@@ -269,6 +334,10 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             "scanner_applicability_in_all_formats": True,
             "full_evidence_retained_in_structured_exports": True,
             "full_evidence_appendix_in_client_pdf": False,
+            "comprehensive_review_companion_in_markdown": True,
+            "comprehensive_review_companion_in_html": True,
+            "comprehensive_review_companion_in_pdf": True,
+            "comprehensive_review_companion_page_count": review_page_count,
             "premium_cover_preserved": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
