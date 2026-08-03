@@ -2,10 +2,10 @@ import type {NextRequest} from "next/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
-const UPSTREAM_TIMEOUT_MS = 12_000;
-const RETRY_DELAYS_MS = [0];
+const HEALTH_WARMUP_TIMEOUT_MS = 28_000;
+const DIAGNOSTIC_TIMEOUT_MS = 14_000;
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 type JsonRecord = Record<string, unknown>;
@@ -14,6 +14,12 @@ type BackendResolution = {
   backend: URL | null;
   configuredCount: number;
   conflict: boolean;
+};
+
+type UpstreamObservation = {
+  httpStatus: number | null;
+  payload: JsonRecord;
+  failureClass: string;
 };
 
 function record(value: unknown): JsonRecord {
@@ -52,17 +58,13 @@ function configuredBackend(): BackendResolution {
   };
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function boundedHeaders(requestId: string, attempts: number): HeadersInit {
+function boundedHeaders(requestId: string, upstreamRequests: number): HeadersInit {
   return {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "CDN-Cache-Control": "no-store",
     "Vercel-CDN-Cache-Control": "no-store",
     "X-Request-ID": requestId,
-    "X-NICO-Readiness-Proxy-Attempts": String(attempts),
+    "X-NICO-Readiness-Upstream-Requests": String(upstreamRequests),
   };
 }
 
@@ -70,7 +72,7 @@ function blockedReadiness(
   requestId: string,
   reason: string,
   message: string,
-  attempts: number,
+  upstreamRequests: number,
   extra: JsonRecord = {},
   transportStatus = 200,
 ): Response {
@@ -95,8 +97,9 @@ function blockedReadiness(
       },
       preflight_proxy: {
         status: retryable ? "transient_failure" : "bounded_failure",
-        attempts,
-        timeout_ms: UPSTREAM_TIMEOUT_MS,
+        upstream_requests: upstreamRequests,
+        health_warmup_timeout_ms: HEALTH_WARMUP_TIMEOUT_MS,
+        diagnostic_timeout_ms: DIAGNOSTIC_TIMEOUT_MS,
         browser_retry_authoritative: retryable,
         ...extra,
       },
@@ -106,21 +109,55 @@ function blockedReadiness(
     {
       status: transportStatus,
       headers: {
-        ...boundedHeaders(requestId, attempts),
+        ...boundedHeaders(requestId, upstreamRequests),
         ...(retryable ? {"Retry-After": "2"} : {}),
       },
     },
   );
 }
 
-function upstreamReason(payload: JsonRecord, status: number): string {
+function upstreamReason(payload: JsonRecord, status: number | null, fallback: string): string {
   const detail = record(payload.detail);
   return String(
     detail.code
       || payload.reason
       || payload.code
-      || `comprehensive_runtime_upstream_${status}`,
+      || (status ? `comprehensive_runtime_upstream_${status}` : fallback),
   ).trim();
+}
+
+async function observeUpstream(
+  url: URL,
+  requestId: string,
+  timeoutMs: number,
+): Promise<UpstreamObservation> {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache",
+        "X-Request-ID": requestId,
+      },
+      cache: "no-store",
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const payload = record(await response.json().catch(() => null));
+    return {
+      httpStatus: response.status,
+      payload,
+      failureClass: Object.keys(payload).length ? "" : `upstream_${response.status}_invalid_json`,
+    };
+  } catch (error) {
+    return {
+      httpStatus: null,
+      payload: {},
+      failureClass: error instanceof DOMException && error.name === "TimeoutError"
+        ? "timeout"
+        : "network_error",
+    };
+  }
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
@@ -146,73 +183,54 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
   }
 
-  const upstream = new URL("/diagnostics/comprehensive-runtime", resolution.backend);
-  let lastStatus: number | null = null;
-  let lastFailure = "network_error";
+  // Railway may report a successful deployment before a sleeping container has
+  // imported the full Comprehensive production bootstrap. Wake the exact backend
+  // with its lightweight health route, then ask the authoritative readiness route.
+  // The health result is never used as readiness evidence.
+  const warmup = await observeUpstream(
+    new URL("/health", resolution.backend),
+    requestId,
+    HEALTH_WARMUP_TIMEOUT_MS,
+  );
+  const diagnostic = await observeUpstream(
+    new URL("/diagnostics/comprehensive-runtime", resolution.backend),
+    requestId,
+    DIAGNOSTIC_TIMEOUT_MS,
+  );
 
-  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
-    const delay = RETRY_DELAYS_MS[attempt];
-    if (delay) await wait(delay);
-    try {
-      const response = await fetch(upstream, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-          "X-Request-ID": requestId,
-        },
-        cache: "no-store",
-        redirect: "manual",
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      });
-      lastStatus = response.status;
-      const payload = record(await response.json().catch(() => null));
-
-      if (response.ok && Object.keys(payload).length) {
-        return Response.json(payload, {
-          status: 200,
-          headers: boundedHeaders(requestId, attempt + 1),
-        });
-      }
-
-      lastFailure = Object.keys(payload).length
-        ? upstreamReason(payload, response.status)
-        : `upstream_${response.status}_invalid_json`;
-      if (TRANSIENT_STATUS.has(response.status)) {
-        return blockedReadiness(
-          requestId,
-          lastFailure,
-          "The Comprehensive assessment service is temporarily busy and will be checked again.",
-          attempt + 1,
-          {last_upstream_status: response.status},
-          503,
-        );
-      }
-      return blockedReadiness(
-        requestId,
-        lastFailure,
-        "The Comprehensive assessment service is not ready yet.",
-        attempt + 1,
-        {last_upstream_status: response.status},
-      );
-    } catch (error) {
-      lastFailure = error instanceof DOMException && error.name === "TimeoutError"
-        ? "timeout"
-        : "network_error";
-      if (attempt < RETRY_DELAYS_MS.length - 1) continue;
-    }
+  if (
+    diagnostic.httpStatus != null
+    && diagnostic.httpStatus >= 200
+    && diagnostic.httpStatus < 300
+    && Object.keys(diagnostic.payload).length
+  ) {
+    return Response.json(diagnostic.payload, {
+      status: 200,
+      headers: boundedHeaders(requestId, 2),
+    });
   }
 
+  const reason = upstreamReason(
+    diagnostic.payload,
+    diagnostic.httpStatus,
+    "assessment_backend_unreachable",
+  );
+  const transient = diagnostic.httpStatus == null || TRANSIENT_STATUS.has(diagnostic.httpStatus);
   return blockedReadiness(
     requestId,
-    "assessment_backend_unreachable",
-    "The Comprehensive assessment backend did not answer within the bounded readiness window.",
-    RETRY_DELAYS_MS.length,
+    reason,
+    transient
+      ? "The Comprehensive assessment service did not become ready within the bounded warm-up window."
+      : "The Comprehensive assessment service is not ready yet.",
+    2,
     {
-      last_upstream_status: lastStatus,
-      failure_class: lastFailure,
       backend_candidate_count: 1,
+      warmup_http_status: warmup.httpStatus,
+      warmup_failure_class: warmup.failureClass,
+      diagnostic_http_status: diagnostic.httpStatus,
+      diagnostic_failure_class: diagnostic.failureClass,
+      health_used_as_readiness_evidence: false,
     },
-    503,
+    transient ? 503 : 200,
   );
 }
