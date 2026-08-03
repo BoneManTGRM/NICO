@@ -23,7 +23,7 @@ from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
 from nico.v2_authoritative_premium_report import VERSION, install_pipeline_projection
 from nico.v2_authoritative_review_gate import install_authoritative_review_gate
-from nico.v2_automated_draft_quality_compat_v2 import (
+from nico.v2_automated_draft_quality_compat_v3 import (
     install_automated_draft_quality_compat,
     repair_localized_rendered_report,
     repair_rendered_report,
