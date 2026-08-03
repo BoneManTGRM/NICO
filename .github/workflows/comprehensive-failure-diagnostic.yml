@@ -1,0 +1,56 @@
+name: Comprehensive Failure Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/comprehensive-failure-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-run:
+    name: Read preserved exact-run failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch bounded production run record
+        env:
+          RUN_ID: comprun_a6bc8574078c4cf09f9a162b5715c423
+        run: |
+          set -euo pipefail
+          url="https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/${RUN_ID}"
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            -H "Accept: application/json" \
+            -H "Cache-Control: no-cache" \
+            "${url}?_nico_failure_diagnostic=${GITHUB_RUN_ID}" \
+            -o run-status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("run-status.json").read_text(encoding="utf-8"))
+          record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+          stages = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+          final = stages.get("final_comprehensive_report_generation") if isinstance(stages.get("final_comprehensive_report_generation"), dict) else {}
+          bounded = {
+              "top_status": payload.get("status"),
+              "top_reason": payload.get("reason"),
+              "top_error": payload.get("error"),
+              "top_failure_reason": payload.get("failure_reason"),
+              "top_blockers": payload.get("blockers"),
+              "record_status": record.get("status"),
+              "record_blockers": record.get("blockers"),
+              "current_stage": record.get("current_stage"),
+              "final_stage": final,
+          }
+          print(json.dumps(bounded, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload exact bounded response
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: comprehensive-failure-diagnostic-${{ github.run_id }}
+          path: run-status.json
+          if-no-files-found: error
+          retention-days: 7
