@@ -205,6 +205,38 @@ def _normalized_artifact_filename(value: Any, *, default_name: str, extension: s
     return f"{stem}-{_APPROVAL_SUFFIX}{extension}"
 
 
+def _normalize_artifact_filenames(package: dict[str, Any]) -> None:
+    package.update(
+        {
+            "pdf_filename": _normalized_artifact_filename(
+                package.get("pdf_filename"),
+                default_name="nico-comprehensive-assessment.pdf",
+                extension=".pdf",
+            ),
+            "spanish_pdf_filename": _normalized_artifact_filename(
+                package.get("spanish_pdf_filename"),
+                default_name="nico-comprehensive-assessment-es.pdf",
+                extension=".pdf",
+            ),
+            "json_filename": _normalized_artifact_filename(
+                package.get("json_filename"),
+                default_name="nico-comprehensive-assessment.json",
+                extension=".json",
+            ),
+            "markdown_filename": _normalized_artifact_filename(
+                package.get("markdown_filename"),
+                default_name="nico-comprehensive-assessment.md",
+                extension=".md",
+            ),
+            "csv_filename": _normalized_artifact_filename(
+                package.get("csv_filename"),
+                default_name="nico-comprehensive-assessment.csv",
+                extension=".csv",
+            ),
+        }
+    )
+
+
 def _findings_csv(findings: list[Mapping[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     fields = [
@@ -271,25 +303,27 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
 
-    package.update({
-        "json": canonical,
-        "canonical_findings": deepcopy(findings),
-        "findings_register": deepcopy(findings),
-        "pdf_filename": _normalized_artifact_filename(package.get("pdf_filename"), default_name="nico-comprehensive-assessment.pdf", extension=".pdf"),
-        "spanish_pdf_filename": _normalized_artifact_filename(package.get("spanish_pdf_filename"), default_name="nico-comprehensive-assessment-es.pdf", extension=".pdf"),
-        "json_filename": _normalized_artifact_filename(package.get("json_filename"), default_name="nico-comprehensive-assessment.json", extension=".json"),
-        "markdown_filename": _normalized_artifact_filename(package.get("markdown_filename"), default_name="nico-comprehensive-assessment.md", extension=".md"),
-        "csv_filename": _normalized_artifact_filename(package.get("csv_filename"), default_name="nico-comprehensive-assessment.csv", extension=".csv"),
-        "report_finality": REPORT_FINALITY,
-        "approval_status": APPROVAL_STATUS,
-        "delivery_status": DELIVERY_STATUS,
-        "human_review_required": True,
-        "client_delivery_allowed": False,
-        "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
-        "report_language": language,
-        "locale": language,
-    })
+    package.update(
+        {
+            "json": canonical,
+            "canonical_findings": deepcopy(findings),
+            "findings_register": deepcopy(findings),
+            "report_finality": REPORT_FINALITY,
+            "approval_status": APPROVAL_STATUS,
+            "delivery_status": DELIVERY_STATUS,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+            "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
+            "report_language": language,
+            "locale": language,
+        }
+    )
+    _normalize_artifact_filenames(package)
     package = rebuild_client_artifacts(package)
+    # Downstream renderers may retain legacy file names for compatibility. The
+    # publication boundary owns the final artifact identity and normalizes it
+    # after all rendering passes so the suffix is present exactly once.
+    _normalize_artifact_filenames(package)
     rebuilt_canonical = package.get("json")
     if not isinstance(rebuilt_canonical, Mapping):
         raise ValueError("v2 artifact rebuild did not preserve canonical JSON")
@@ -297,14 +331,16 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
     digest = canonical_truth_sha256(canonical)
-    package.update({
-        "json": canonical,
-        "canonical_findings": deepcopy(findings),
-        "findings_register": deepcopy(findings),
-        "report_finality": REPORT_FINALITY,
-        "approval_status": APPROVAL_STATUS,
-        "delivery_status": DELIVERY_STATUS,
-    })
+    package.update(
+        {
+            "json": canonical,
+            "canonical_findings": deepcopy(findings),
+            "findings_register": deepcopy(findings),
+            "report_finality": REPORT_FINALITY,
+            "approval_status": APPROVAL_STATUS,
+            "delivery_status": DELIVERY_STATUS,
+        }
+    )
 
     csv_bytes = _findings_csv(findings)
     package.update({
