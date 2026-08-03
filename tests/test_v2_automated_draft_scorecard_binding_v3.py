@@ -7,13 +7,14 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from nico import scorecard_extraction_validation_v1 as scorecard_validation
+from nico import v2_localized_report_quality_repairs as localized
 from nico import v2_report_quality_repairs as quality
 from nico import v2_report_quality_runtime_compat as runtime_compat
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
 from nico.v2_automated_draft_quality_compat_v3 import (
     install_automated_draft_quality_compat,
     repair_rendered_report,
+    validate_final_pdf,
 )
 
 RUN_ID = "comprun_multipage_scorecard"
@@ -89,15 +90,19 @@ def _package() -> dict:
     }
 
 
-def test_compatibility_reasserts_extraction_safe_validator_last() -> None:
+def test_compatibility_binds_combined_validator_last() -> None:
     installation = install_automated_draft_quality_compat()
 
-    assert quality._validate_final_pdf is scorecard_validation.validate_final_pdf
-    assert runtime_compat._validate_final_pdf is scorecard_validation.validate_final_pdf
+    assert quality._validate_final_pdf is validate_final_pdf
+    assert runtime_compat._validate_final_pdf is validate_final_pdf
+    assert localized._validate_final_pdf is validate_final_pdf
+    assert installation["combined_lifecycle_and_scorecard_validator_bound"] is True
     assert installation["scorecard_extraction_validation_reasserted_last"] is True
     assert installation["wrapped_label_normalization_enabled"] is True
     assert installation["multi_page_scorecard_supported"] is True
     assert installation["all_canonical_rows_and_scores_required"] is True
+    assert installation["legacy_raw_substring_scorecard_validator_bypassed"] is True
+    assert installation["automated_draft_lifecycle_validator_preserved"] is True
 
 
 def test_multipage_scorecard_retains_wrapped_dependency_row() -> None:
@@ -123,6 +128,9 @@ def test_multipage_scorecard_retains_wrapped_dependency_row() -> None:
     assert repaired["approval_status"] == "pending_human_approval"
     assert repaired["client_delivery_allowed"] is False
     contract = repaired["premium_report_renderer"]
+    assert contract["combined_lifecycle_and_scorecard_validator_bound"] is True
     assert contract["scorecard_extraction_validation_reasserted_last"] is True
     assert contract["multi_page_scorecard_supported"] is True
     assert contract["all_canonical_rows_and_scores_required"] is True
+    assert contract["legacy_raw_substring_scorecard_validator_bypassed"] is True
+    assert contract["automated_draft_lifecycle_validator_preserved"] is True
