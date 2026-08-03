@@ -33,7 +33,7 @@ ZERO_FINDING_FINALITY_TRUTH = (
     install_comprehensive_zero_finding_finality_truth_v1()
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v5"
+VERSION = "nico.comprehensive_canonical_report_source.v6"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -43,6 +43,7 @@ _REQUIRED_IDENTITY_FIELDS = (
     "project_id",
 )
 _FINAL_STAGE_ID = "final_comprehensive_report_generation"
+_SERVICE_ID = "comprehensive"
 
 
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
@@ -58,7 +59,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     into explicit aliases. Installed post-readiness boundaries then apply the final
     client-readiness maturity label, remove only superseded internal report-contract
     diagnostics, and allow a fully explicit zero-finding canonical register only when
-    every mirrored finding-count alias is present and synchronized to zero.
+    every mirrored finding-count alias is present and synchronized to zero. The report
+    package and its canonical JSON carry the same explicit Comprehensive service identity
+    so every renderer and release verifier reads one unambiguous artifact contract.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -104,7 +107,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     assessment["maturity_label_truth"] = deepcopy(maturity_truth)
 
     canonical = {
-        "service_id": "comprehensive",
+        "service_id": _SERVICE_ID,
         "identity": identity,
         "assessment": assessment,
         "stage_summaries": ordered,
@@ -119,6 +122,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     )
     generated_at = _now()
     package = {
+        "service_id": _SERVICE_ID,
         "report_id": report_id,
         "generated_at": generated_at,
         "json": canonical,
@@ -145,7 +149,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "status": "complete",
         "reason": "",
         "artifact_schema": VERSION,
-        "service_id": "comprehensive",
+        "service_id": _SERVICE_ID,
         "report_id": report_id,
         "generated_at": generated_at,
         "report_package": package,
