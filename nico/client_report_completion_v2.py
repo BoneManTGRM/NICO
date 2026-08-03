@@ -14,6 +14,7 @@ from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
 )
+from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
 from nico.client_ready_html_v1 import render_client_html
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
@@ -32,12 +33,30 @@ from nico.comprehensive_client_ready_projection_v1 import (
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 
-VERSION = "nico.client-report-completion.v7"
+VERSION = "nico.client-report-completion.v8"
 
 
 def _text(value: Any, limit: int = 12000) -> str:
     normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+
+
+def _normalize_unapproved_language(value: str) -> str:
+    output = str(value or "")
+    replacements = (
+        ("AUTOMATED FINAL · PENDING HUMAN APPROVAL", "AUTOMATED DRAFT · PENDING HUMAN APPROVAL"),
+        ("AUTOMATED FINAL — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
+        ("AUTOMATED FINAL", "AUTOMATED DRAFT"),
+        ("FINAL REPORT · PENDING HUMAN APPROVAL", "AUTOMATED DRAFT · PENDING HUMAN APPROVAL"),
+        ("FINAL REPORT — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
+        ("INFORME FINAL PENDIENTE DE APROBACIÓN", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN"),
+        ("INFORME FINAL · APROBACIÓN HUMANA PENDIENTE", "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE"),
+        ("The final automated report package", "The automated draft package"),
+        ("El informe automatizado final", "El borrador automatizado"),
+    )
+    for old, new in replacements:
+        output = output.replace(old, new)
+    return output
 
 
 def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
@@ -134,7 +153,7 @@ def _validate_final_surfaces(
         raise ValueError("client report retained unknown analyzer and rule identity")
     if "No structured item was retained." in combined:
         raise ValueError("client report retained obsolete empty finding copy")
-    if "FINAL REPORT" in combined or "INFORME FINAL" in combined:
+    if any(marker in combined for marker in ("FINAL REPORT", "INFORME FINAL", "AUTOMATED FINAL")):
         raise ValueError("unapproved client report used finality language")
     if "AUTOMATED DRAFT" not in combined and "BORRADOR AUTOMATIZADO" not in combined:
         raise ValueError("client report omitted automated-draft status")
@@ -187,11 +206,13 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 
-    markdown = compact_client_markdown(
-        str(result.get("markdown") or ""),
-        canonical,
-        register,
-        spanish=spanish,
+    markdown = _normalize_unapproved_language(
+        compact_client_markdown(
+            str(result.get("markdown") or ""),
+            canonical,
+            register,
+            spanish=spanish,
+        )
     )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     title = (
@@ -204,7 +225,9 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
     register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
     gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
-    pdf = compose_compact_client_pdf(base_pdf, register_pdf, gate_pdf)
+    pdf = sanitize_client_pdf_status(
+        compose_compact_client_pdf(base_pdf, register_pdf, gate_pdf)
+    )
     validation = _validate_final_surfaces(
         canonical,
         register,
