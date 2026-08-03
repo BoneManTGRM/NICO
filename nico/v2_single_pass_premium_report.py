@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-import re
 import unicodedata
 from copy import deepcopy
 from typing import Any, Mapping
@@ -11,20 +10,30 @@ from typing import Any, Mapping
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
+from nico.comprehensive_client_ready_projection_v1 import (
+    APPROVAL_STATUS,
+    DELIVERY_STATUS,
+    REPORT_FINALITY,
+)
 from nico.v2_authoritative_premium_report import (
     _html_from_markdown,
     project_authoritative_canonical,
 )
 from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
+from nico.v2_client_ready_truth_projection_v1 import project_client_ready_truth
 from nico.v2_dark_branded_cover import apply_dark_branded_cover
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v1"
+VERSION = "nico.v2.single-pass-premium-report.v2"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _project(value: Mapping[str, Any]) -> dict[str, Any]:
+    return project_client_ready_truth(project_authoritative_canonical(value))
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
@@ -114,7 +123,7 @@ def _has_human_review_gate(extracted: str) -> bool:
     return review and acceptance and boundary
 
 
-def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
+def _validate_review_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("single-pass premium renderer did not produce a valid PDF")
     _assert_no_control_glyphs(pdf)
@@ -126,29 +135,23 @@ def _validate_final_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
         _text(identity.get("commit_sha")),
     ):
         if required and required not in extracted:
-            raise ValueError(f"final premium PDF omitted required identity text: {required}")
+            raise ValueError(f"review PDF omitted required identity text: {required}")
 
     if not _has_human_review_gate(extracted):
-        raise ValueError("final premium PDF omitted the human review and acceptance gate")
+        raise ValueError("review PDF omitted the human review and acceptance gate")
     return len(reader.pages)
 
 
 def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Render the mature premium report once from authoritative canonical truth.
-
-    The established premium renderer remains the presentation compiler and the
-    projected canonical assessment remains its only data source. The approved
-    English dark cover is assembled inside this compiler before final validation,
-    so phase 17 still has one authoritative report-build entry point.
-    """
+    """Render the premium review package once from authoritative canonical truth."""
     prepared = deepcopy(dict(package))
-    canonical = project_authoritative_canonical(
+    canonical = _project(
         prepared.get("json") if isinstance(prepared.get("json"), Mapping) else {}
     )
     prepared["json"] = canonical
 
     result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
-    canonical = project_authoritative_canonical(
+    canonical = _project(
         result.get("json") if isinstance(result.get("json"), Mapping) else canonical
     )
     result["json"] = canonical
@@ -156,7 +159,7 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     spanish = _is_spanish(canonical)
     if not spanish:
         result = deepcopy(apply_dark_branded_cover(result))
-        canonical = project_authoritative_canonical(
+        canonical = _project(
             result.get("json") if isinstance(result.get("json"), Mapping) else canonical
         )
         result["json"] = canonical
@@ -174,24 +177,25 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
 
     pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
     pdf = _sanitize_pdf_control_glyphs(pdf)
-    page_count = _validate_final_pdf(pdf, canonical)
+    page_count = _validate_review_pdf(pdf, canonical)
 
     contract = deepcopy(dict(result.get("premium_report_renderer") or {}))
     contract.update(
         {
             "version": VERSION,
             "single_pass_renderer": True,
-            "old_premium_layout_is_client_pdf": True,
+            "premium_layout_is_intermediate_review_pdf": True,
             "canonical_system_is_sole_truth": True,
             "approved_cover_assembled_inside_compiler": not spanish,
             "spanish_cover_preserved": spanish,
             "post_render_pdf_replacement_disabled": True,
-            "final_pdf_control_glyph_validation": True,
-            "final_pdf_identity_validation": True,
+            "review_pdf_control_glyph_validation": True,
+            "review_pdf_identity_validation": True,
             "markdown_html_review_gate_preserved": True,
             "pdf_review_gate_verified_bilingually": True,
             "legacy_spanish_review_gate_heading_accepted": True,
             "semantic_review_gate_validation": True,
+            "automated_draft_until_human_approval": True,
             "page_count": page_count,
         }
     )
@@ -200,12 +204,13 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
         {
             "version": VERSION,
             "authoritative_truth_projected_before_render": True,
-            "single_final_pdf_generation": True,
+            "single_review_pdf_generation": True,
             "page_count": page_count,
         }
     )
     result.update(
         {
+            "json": canonical,
             "markdown": markdown,
             "html": rendered_html,
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
@@ -217,9 +222,9 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "final_package_page_count": page_count,
             "status": "review_required",
             "assessment_state": "review_required",
-            "report_finality": "final",
-            "approval_status": "pending_human_approval",
-            "delivery_status": "blocked_pending_human_approval",
+            "report_finality": REPORT_FINALITY,
+            "approval_status": APPROVAL_STATUS,
+            "delivery_status": DELIVERY_STATUS,
             "human_review_required": True,
             "human_review_completed": False,
             "client_delivery_allowed": False,
