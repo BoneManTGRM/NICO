@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import base64
 import io
+import re
+import unicodedata
 from copy import deepcopy
 from functools import wraps
+from html import unescape
 from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-compact-design-marker.v2"
-_MARKER = "_nico_comprehensive_compact_design_marker_v2"
+VERSION = "nico.comprehensive-compact-design-marker.v3"
+_MARKER = "_nico_comprehensive_compact_design_marker_v3"
 
 _DESIGN_MARKER_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -41,6 +44,72 @@ _DESIGN_MARKER_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
 )
+_RETIRED_APPENDIX_HEADINGS = {
+    "evidence appendix",
+    "apendice de evidencia",
+}
+
+
+def _normalized(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    without_marks = "".join(
+        char for char in decomposed if not unicodedata.combining(char)
+    )
+    return " ".join(without_marks.casefold().split())
+
+
+def _meaningful_lines(value: str) -> list[str]:
+    output: list[str] = []
+    for raw in str(value or "").splitlines():
+        line = _normalized(raw.lstrip("# ").strip())
+        if not line:
+            continue
+        if line.startswith("nico comprehensive ·"):
+            continue
+        if re.fullmatch(r"(?:page|pagina) \d+", line):
+            continue
+        output.append(line)
+    return output
+
+
+def _html_lines(value: str) -> list[str]:
+    source = unescape(str(value or ""))
+    source = re.sub(
+        r"(?i)</(?:h[1-6]|p|div|section|article|li|tr|table|main)\s*>",
+        "\n",
+        source,
+    )
+    source = re.sub(r"(?i)<br\s*/?>", "\n", source)
+    source = re.sub(r"<[^>]+>", " ", source)
+    return _meaningful_lines(source)
+
+
+def _page_starts_retired_appendix(value: str) -> bool:
+    lines = _meaningful_lines(value)
+    return bool(lines and lines[0] in _RETIRED_APPENDIX_HEADINGS)
+
+
+def _retired_appendix_section_present(package: Mapping[str, Any]) -> bool:
+    """Reject an actual raw appendix section, not a bounded explanatory mention."""
+
+    markdown_lines = _meaningful_lines(str(package.get("markdown") or ""))
+    if any(line in _RETIRED_APPENDIX_HEADINGS for line in markdown_lines):
+        return True
+
+    html_lines = _html_lines(str(package.get("html") or ""))
+    if any(line in _RETIRED_APPENDIX_HEADINGS for line in html_lines):
+        return True
+
+    try:
+        pdf = base64.b64decode(str(package.get("pdf_base64") or ""))
+    except Exception as exc:
+        raise ValueError("client report did not retain a decodable PDF") from exc
+    if not pdf.startswith(b"%PDF"):
+        raise ValueError("client report did not retain a valid final PDF")
+    for page in PdfReader(io.BytesIO(pdf)).pages:
+        if _page_starts_retired_appendix(page.extract_text() or ""):
+            return True
+    return False
 
 
 def _combined_client_text(package: Mapping[str, Any]) -> str:
@@ -133,7 +202,7 @@ def validate_compact_design_markers(package: Mapping[str, Any]) -> dict[str, Any
             "approved compact NICO report design sections were not preserved: "
             + ", ".join(missing)
         )
-    if "Evidence Appendix" in combined or "Apéndice de evidencia" in combined:
+    if _retired_appendix_section_present(package):
         raise ValueError(
             "compact client report restored the retired raw evidence appendix"
         )
