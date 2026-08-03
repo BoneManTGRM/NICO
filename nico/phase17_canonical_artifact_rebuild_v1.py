@@ -18,6 +18,9 @@ from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.comprehensive_automated_draft_cross_format_v1 import (
     install_automated_draft_cross_format_contract,
 )
+from nico.comprehensive_incomplete_analyzer_summary_v1 import (
+    install_comprehensive_incomplete_analyzer_summary,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -39,6 +42,7 @@ _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
+_INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 install_pipeline_projection()
 install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
@@ -81,6 +85,7 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         {
             "unapproved_finality_removed_from_pdf_headers": True,
             "automated_draft_grammar_normalized": True,
+            "canonical_incomplete_analyzer_summary_retained": True,
             "page_count": page_count,
         }
     )
@@ -122,6 +127,7 @@ __all__ = [
     "_SCANNER_EVIDENCE_CONTRACT",
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
+    "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "rebuild_client_artifacts",
 ]
