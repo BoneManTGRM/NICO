@@ -200,8 +200,18 @@ def _normalized_artifact_filename(value: Any, *, default_name: str, extension: s
     if not filename.casefold().endswith(extension.casefold()):
         filename += extension
     stem = filename[: -len(extension)]
-    stem = re.sub(r"(?:-(?:FINAL-PENDING-APPROVAL|AUTOMATED-DRAFT-PENDING-APPROVAL))+$", "", stem, flags=re.I)
-    stem = re.sub(r"(?:-DRAFT|-FINAL)+$", "", stem, flags=re.I)
+    # Historical layers have emitted FINAL, DRAFT, AUTOMATED-FINAL, and even
+    # repeated AUTOMATED prefixes. Strip every terminal state token before
+    # applying the one authoritative automated-draft suffix.
+    terminal = re.compile(
+        r"-(?:AUTOMATED-)*(?:FINAL|DRAFT)(?:-PENDING-APPROVAL)?$",
+        flags=re.IGNORECASE,
+    )
+    while True:
+        normalized = terminal.sub("", stem)
+        if normalized == stem:
+            break
+        stem = normalized
     return f"{stem}-{_APPROVAL_SUFFIX}{extension}"
 
 
