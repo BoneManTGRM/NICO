@@ -42,7 +42,13 @@ def _canonical() -> dict:
     }
 
 
-def _package(*, spanish: bool = False, evidence: bool = True, appendix: bool = False) -> dict:
+def _package(
+    *,
+    spanish: bool = False,
+    evidence: bool = True,
+    appendix: bool = False,
+    compact: bool = True,
+) -> dict:
     if spanish:
         cover = "Evaluación Técnica Integral NICO"
         evidence_marker = "Resumen del paquete de evidencia"
@@ -64,23 +70,34 @@ def _package(*, spanish: bool = False, evidence: bool = True, appendix: bool = F
     if appendix:
         lines.append("Evidence Appendix")
     text = "\n".join(lines)
-    return {
+    package = {
         "json": _canonical(),
         "markdown": text,
         "html": f"<main>{text}</main>",
         "pdf_base64": base64.b64encode(_pdf(*lines)).decode("ascii"),
     }
+    if compact:
+        package["client_report_completion"] = {
+            "one_compact_client_pdf": True,
+            "full_evidence_retained_outside_client_pdf": True,
+            "full_evidence_appendix_in_client_pdf": False,
+        }
+    return package
 
 
-def test_installer_replaces_only_legacy_visual_marker_check() -> None:
+def test_installer_isolates_legacy_visual_compatibility() -> None:
+    original_markers = tuple(client_render._DESIGN_MARKERS)
     state = install_compact_design_marker_gate()
 
     assert state["bound"] is True
-    assert state["legacy_design_marker_tuple_disabled"] is True
-    assert state["retired_evidence_appendix_not_required"] is True
+    assert state["legacy_design_marker_tuple_preserved"] is True
+    assert state["legacy_visual_compatibility_isolated_to_delegate_copy"] is True
+    assert state["legacy_and_synthetic_packages_keep_original_validation"] is True
+    assert state["retired_evidence_appendix_not_required_for_compact_package"] is True
     assert state["compact_evidence_summary_required"] is True
+    assert state["authoritative_scorecard_gate_remains_separate"] is True
     assert state["score_scanner_maturity_and_identity_delegate_preserved"] is True
-    assert client_render._DESIGN_MARKERS == ()
+    assert tuple(client_render._DESIGN_MARKERS) == original_markers
 
 
 def test_compact_report_passes_without_retired_evidence_appendix() -> None:
@@ -92,6 +109,7 @@ def test_compact_report_passes_without_retired_evidence_appendix() -> None:
 
     assert compact["compact_design_sections_verified"] is True
     assert compact["retired_evidence_appendix_absent"] is True
+    assert compact["technical_scorecard_verified_by_authoritative_scorecard_gate"] is True
     assert result["production_pdf_validated"] is True
     assert result["compact_evidence_summary_verified"] is True
     assert result["retired_evidence_appendix_absent"] is True
@@ -132,6 +150,16 @@ def test_delegate_still_blocks_scanner_truth_conflicts() -> None:
 
     with pytest.raises(ValueError, match="conflicting analyzer coverage"):
         client_render.validate_existing_report_accuracy(package)
+
+
+def test_noncompact_package_keeps_legacy_visual_validation() -> None:
+    install_compact_design_marker_gate()
+    legacy = _package(evidence=False, appendix=True, compact=False)
+
+    result = client_render.validate_existing_report_accuracy(legacy)
+
+    assert result["compact_design_marker_gate"]["applied"] is False
+    assert result["existing_visual_design_preserved"] is True
 
 
 def test_phase17_installs_compact_design_marker_gate() -> None:
