@@ -15,6 +15,9 @@ from nico.comprehensive_post_readiness_maturity_truth_v2 import (
 from nico.comprehensive_post_readiness_report_contract_truth_v1 import (
     install_post_readiness_report_contract_truth,
 )
+from nico.comprehensive_report_content_render_v66 import (
+    install_comprehensive_report_content_render_v66,
+)
 from nico.comprehensive_report_package import (
     VERSION as SOURCE_VERSION,
     _assessment,
@@ -68,6 +71,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     are restored into canonical truth before hashing. A zero-finding final register is
     therefore valid only when the retained source package contains neither structured
     decision findings nor actionable exact-SHA production complexity evidence.
+
+    The compact premium renderer is extended with truthful scanner counts, rich finding
+    cards, and separately labeled CI operational health. Duplicate full-page finding
+    copies remain removed.
 
     The report package and its canonical JSON carry the same explicit Comprehensive
     service identity so every renderer and release verifier reads one unambiguous
@@ -132,6 +139,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         commit_sha=identity["commit_sha"],
     )
     canonical["assessment"] = assessment
+    report_content_render = install_comprehensive_report_content_render_v66()
 
     truth_sha = _canonical_hash(canonical)
     report_id = (
@@ -149,6 +157,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_only_source": True,
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
+        "report_content_render": deepcopy(report_content_render),
         "post_readiness_maturity_truth_installed": (
             POST_READINESS_MATURITY_TRUTH.get("bound") is True
         ),
@@ -177,6 +186,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
+        "report_content_render": deepcopy(report_content_render),
         "post_readiness_maturity_truth_installation": deepcopy(
             POST_READINESS_MATURITY_TRUTH
         ),
