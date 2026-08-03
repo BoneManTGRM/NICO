@@ -224,7 +224,7 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     assert "not evidence that the repository materially worsened" in assessment["executive_summary"]
 
 
-def test_review_companion_restores_all_decision_sections_in_16_pages() -> None:
+def test_review_companion_restores_all_decision_sections_in_24_pages() -> None:
     canonical = _canonical()
     sections = review_sections(canonical, spanish=False)
     pdf = render_comprehensive_review_companion_pdf(canonical, spanish=False)
@@ -232,12 +232,13 @@ def test_review_companion_restores_all_decision_sections_in_16_pages() -> None:
     extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert len(sections) == 8
-    assert len(reader.pages) == 16
+    assert len(reader.pages) == 24
     for section in sections:
         assert section["title"] in extracted
-    assert extracted.count("review worksheet") == 8
-    assert "AUTOMATED DRAFT · HUMAN REVIEW REQUIRED" in extracted
-    assert "PENDING HUMAN DECISION · DELIVERY BLOCKED" in extracted
+    assert extracted.casefold().count("review worksheet") == 8
+    assert "AUTOMATED DRAFT | HUMAN REVIEW REQUIRED" in extracted
+    assert "HUMAN DECISION PENDING | DELIVERY BLOCKED" in extracted
+    assert "\x7f" not in extracted
 
 
 def test_review_companion_markdown_preserves_automated_draft_boundary() -> None:
@@ -268,6 +269,8 @@ def test_runtime_and_completion_bind_new_contracts() -> None:
     completion = COMPLETION.read_text(encoding="utf-8")
 
     assert "install_candidate_volume_assurance_v2" in mobile
+    assert "install_comprehensive_review_companion_v3" in mobile
+    assert '"decision_useful_review_companion_pages": 24' in mobile
     assert '"candidate_volume_is_triage_workload_not_defect_severity": True' in mobile
     assert "render_comprehensive_review_companion_pdf" in completion
     assert "merge_review_companion_markdown" in completion
