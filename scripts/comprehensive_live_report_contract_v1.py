@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import html as html_lib
+import re
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-live-report-contract.v2"
+VERSION = "nico.comprehensive-live-report-contract.v3"
 
 _EN_EVIDENCE_SUMMARIES = (
     "Evidence Package Summary",
@@ -51,9 +52,20 @@ def _contains_any(value: str, markers: tuple[str, ...]) -> bool:
     return any(marker.casefold() in normalized for marker in markers)
 
 
+def _normalized_surface_text(value: str) -> str:
+    """Normalize renderer and PDF-extraction boundaries without changing meaning."""
+
+    unescaped = html_lib.unescape(str(value or ""))
+    without_markup = re.sub(r"<[^>]+>", " ", unescaped)
+    return " ".join(without_markup.split()).casefold()
+
+
 def _assert_marker(value: str, marker: str, *, surface: str) -> None:
-    escaped = html_lib.escape(marker)
-    assert marker in value or escaped in value, f"Comprehensive {surface} omitted {marker}"
+    normalized_value = _normalized_surface_text(value)
+    normalized_marker = _normalized_surface_text(marker)
+    assert normalized_marker in normalized_value, (
+        f"Comprehensive {surface} omitted {marker}"
+    )
 
 
 def _retired_heading_present(value: str) -> bool:
