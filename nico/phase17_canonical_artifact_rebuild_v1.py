@@ -12,6 +12,7 @@ from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
 from nico.v2_authoritative_premium_report import VERSION, install_pipeline_projection
 from nico.v2_authoritative_review_gate import install_authoritative_review_gate
+from nico.v2_client_ready_truth_projection_v1 import install_client_ready_truth_projection
 from nico.v2_localized_report_quality_repairs import repair_localized_rendered_report
 from nico.v2_pdf_control_character_guard import install_pdf_control_character_guard
 from nico.v2_report_quality_repairs import _is_spanish, repair_canonical_truth
@@ -23,6 +24,7 @@ from nico.v2_single_pass_premium_report import rebuild_single_pass_premium_artif
 _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 install_pipeline_projection()
+install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
 
@@ -34,7 +36,7 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one client report from canonical finding and scanner truth."""
+    """Build one bounded client package from canonical finding and scanner truth."""
 
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
@@ -50,8 +52,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    # Reconcile once more after report-quality repair, then compile final
-    # cross-format artifacts from the exact authoritative canonical state.
+    # Reconcile once more after report-quality repair, then compile the bounded
+    # cross-format client artifacts from the exact authoritative canonical state.
     repaired = _reconcile(repaired)
     return finalize_client_report_package(repaired)
 
