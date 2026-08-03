@@ -44,9 +44,18 @@ def _payload(
     finality: str = "AUTOMATED DRAFT",
     incomplete_count: int = 7,
     retired_appendix: bool = False,
+    identity: str = "legacy",
 ) -> dict:
-    common = (
-        "NICO Comprehensive Technical Assessment",
+    identities = {
+        "legacy": ("NICO Comprehensive Technical Assessment",),
+        "decision_grade": (
+            "NICO COMPREHENSIVE",
+            "Decision-Grade Technical Assessment",
+        ),
+        "missing": ("Unrelated Technical Report",),
+    }
+    identity_lines = identities[identity]
+    sections = (
         "Functional QA",
         "Platform Parity",
         "Six-Month Roadmap",
@@ -61,8 +70,8 @@ def _payload(
     markdown = "\n\n".join(
         value
         for value in (
-            "# NICO Comprehensive Technical Assessment",
-            *common[1:],
+            "\n".join(f"# {line}" for line in identity_lines),
+            *sections,
             "## Evidence Package Summary",
             incomplete,
             appendix,
@@ -76,7 +85,8 @@ def _payload(
         + " ".join(
             value
             for value in (
-                *common,
+                *identity_lines,
+                *sections,
                 "Evidence Package Summary",
                 incomplete,
                 "Evidence Appendix" if retired_appendix else "",
@@ -88,7 +98,8 @@ def _payload(
         + "</body></html>"
     )
     pdf = _pdf(
-        *common,
+        *identity_lines,
+        *sections,
         "Client Evidence Summary",
         incomplete,
         *("Evidence Appendix",) if retired_appendix else (),
@@ -143,23 +154,27 @@ def _payload(
     }
 
 
-def test_live_contract_accepts_compact_evidence_summary_without_retired_appendix(
-    tmp_path: Path,
-) -> None:
-    acceptance = _load(ACCEPTANCE, "compact_contract_acceptance")
-    contract = _load(CONTRACT, "compact_live_contract")
-    payload = _payload(incomplete_count=7)
-
-    result = contract.validate_report(
+def _validate(payload: dict, tmp_path: Path, name: str) -> dict:
+    acceptance = _load(ACCEPTANCE, f"{name}_acceptance")
+    contract = _load(CONTRACT, f"{name}_contract")
+    return contract.validate_report(
         acceptance,
         "comprehensive",
         payload,
-        tmp_path / "report.pdf",
+        tmp_path / f"{name}.pdf",
         fallback=lambda *_args: pytest.fail("comprehensive must not use legacy fallback"),
     )
 
+
+def test_live_contract_accepts_compact_evidence_summary_without_retired_appendix(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(incomplete_count=7)
+    result = _validate(payload, tmp_path, "compact_live")
+
     semantic = result["semantic_contract"]
     assert semantic["status"] == "passed"
+    assert semantic["canonical_report_identity_verified"] is True
     assert semantic["compact_evidence_summary_verified"] is True
     assert semantic["canonical_incomplete_analyzer_count_verified"] is True
     assert semantic["retired_evidence_appendix_absent"] is True
@@ -172,32 +187,31 @@ def test_live_contract_accepts_compact_evidence_summary_without_retired_appendix
     assert "Evidence Appendix" not in markdown
 
 
-def test_live_contract_rejects_unapproved_final_report_language(tmp_path: Path) -> None:
-    acceptance = _load(ACCEPTANCE, "false_finality_acceptance")
-    contract = _load(CONTRACT, "false_finality_contract")
+def test_live_contract_accepts_approved_decision_grade_cover_identity(
+    tmp_path: Path,
+) -> None:
+    result = _validate(
+        _payload(identity="decision_grade"),
+        tmp_path,
+        "decision_grade_identity",
+    )
 
+    assert result["semantic_contract"]["canonical_report_identity_verified"] is True
+
+
+def test_live_contract_rejects_missing_comprehensive_identity(tmp_path: Path) -> None:
+    with pytest.raises(AssertionError, match="canonical report identity"):
+        _validate(_payload(identity="missing"), tmp_path, "missing_identity")
+
+
+def test_live_contract_rejects_unapproved_final_report_language(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="unapproved finality"):
-        contract.validate_report(
-            acceptance,
-            "comprehensive",
-            _payload(finality="FINAL REPORT"),
-            tmp_path / "report.pdf",
-            fallback=lambda *_args: {},
-        )
+        _validate(_payload(finality="FINAL REPORT"), tmp_path, "false_finality")
 
 
 def test_live_contract_rejects_restored_raw_evidence_appendix(tmp_path: Path) -> None:
-    acceptance = _load(ACCEPTANCE, "retired_appendix_acceptance")
-    contract = _load(CONTRACT, "retired_appendix_contract")
-
     with pytest.raises(AssertionError, match="retired raw Evidence Appendix"):
-        contract.validate_report(
-            acceptance,
-            "comprehensive",
-            _payload(retired_appendix=True),
-            tmp_path / "report.pdf",
-            fallback=lambda *_args: {},
-        )
+        _validate(_payload(retired_appendix=True), tmp_path, "retired_appendix")
 
 
 def test_non_comprehensive_service_preserves_existing_validator(tmp_path: Path) -> None:
