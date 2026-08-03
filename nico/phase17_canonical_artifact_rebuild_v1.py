@@ -106,7 +106,9 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "parser_placeholders_absent": True,
             "candidate_section_summaries_deduplicated": True,
             "review_candidate_status_requires_human_review": True,
-            "exact_source_complexity_truth_reconciled": True,
+            "exact_source_complexity_truth_reconciled": bool(
+                completion.get("exact_source_complexity_truth_reconciled")
+            ),
             "compact_evidence_summary_design_marker_retained": True,
             "retired_raw_evidence_appendix_absent": True,
             "page_count": page_count,
