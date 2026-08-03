@@ -7,7 +7,7 @@ from nico.comprehensive_report_semantic_content_gate_v66 import (
 )
 
 
-def test_semantic_gate_accepts_restored_findings_candidates_and_ci_context() -> None:
+def test_semantic_gate_accepts_authoritative_register_candidates_and_ci_context() -> None:
     package = {
         "json": {
             "canonical_findings": [
@@ -24,7 +24,7 @@ def test_semantic_gate_accepts_restored_findings_candidates_and_ci_context() -> 
             "ci_operational_context": {"successful_runs": 83},
         },
         "markdown": """
-## Detailed Canonical Findings
+## Finding and Remediation Register
 NICO-FINDING-ABC
 ## Review-Required Candidate Register
 - Confirmed material findings: 0.
@@ -40,6 +40,45 @@ NICO-FINDING-ABC
     assert result["canonical_finding_count_rendered"] == 1
     assert result["review_required_candidate_count_rendered"] == 59
     assert result["ci_operational_context_rendered"] is True
+    assert result["authoritative_finding_register_present"] is True
+    assert result["finding_register_marker"] == "finding and remediation register"
+
+
+def test_semantic_gate_accepts_spanish_authoritative_register_heading() -> None:
+    package = {
+        "json": {
+            "canonical_findings": [{"finding_id": "NICO-FINDING-ABC"}],
+            "architecture_hotspots": [{"path": "nico/report.py"}],
+        },
+        "markdown": """
+## Registro de hallazgos y remediación
+NICO-FINDING-ABC
+""",
+        "html": "",
+    }
+
+    result = validate_retained_decision_content(package)
+
+    assert result["authoritative_finding_register_present"] is True
+    assert result["finding_register_marker"] == "registro de hallazgos y remediación"
+
+
+def test_semantic_gate_keeps_legacy_detailed_heading_compatible() -> None:
+    package = {
+        "json": {
+            "canonical_findings": [{"finding_id": "NICO-FINDING-ABC"}],
+            "architecture_hotspots": [{"path": "nico/report.py"}],
+        },
+        "markdown": """
+## Detailed Canonical Findings
+NICO-FINDING-ABC
+""",
+        "html": "",
+    }
+
+    result = validate_retained_decision_content(package)
+
+    assert result["authoritative_finding_register_present"] is True
 
 
 def test_semantic_gate_rejects_false_zero_finding_claim() -> None:
@@ -53,6 +92,20 @@ def test_semantic_gate_rejects_false_zero_finding_claim() -> None:
     }
 
     with pytest.raises(ValueError, match="suppressed retained canonical findings"):
+        validate_retained_decision_content(package)
+
+
+def test_semantic_gate_rejects_missing_authoritative_register() -> None:
+    package = {
+        "json": {
+            "canonical_findings": [{"finding_id": "NICO-FINDING-ABC"}],
+            "architecture_hotspots": [{"path": "nico/report.py"}],
+        },
+        "markdown": "NICO-FINDING-ABC",
+        "html": "",
+    }
+
+    with pytest.raises(ValueError, match="authoritative finding and remediation register"):
         validate_retained_decision_content(package)
 
 
