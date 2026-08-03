@@ -30,6 +30,9 @@ from nico.comprehensive_placeholder_sanitization_v1 import (
 from nico.comprehensive_platform_parity_summary_v1 import (
     install_comprehensive_platform_parity_summary,
 )
+from nico.comprehensive_report_clarity_v1 import (
+    install_comprehensive_report_clarity,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -54,6 +57,7 @@ _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
 _PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
+_REPORT_CLARITY = install_comprehensive_report_clarity()
 _COMPACT_DESIGN_MARKER_GATE = install_compact_design_marker_gate()
 install_pipeline_projection()
 install_client_ready_truth_projection()
@@ -100,6 +104,11 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "canonical_incomplete_analyzer_summary_retained": True,
             "canonical_platform_parity_summary_retained": True,
             "parser_placeholders_absent": True,
+            "candidate_section_summaries_deduplicated": True,
+            "review_candidate_status_requires_human_review": True,
+            "exact_source_complexity_truth_reconciled": bool(
+                completion.get("exact_source_complexity_truth_reconciled")
+            ),
             "compact_evidence_summary_design_marker_retained": True,
             "retired_raw_evidence_appendix_absent": True,
             "page_count": page_count,
@@ -146,6 +155,7 @@ __all__ = [
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
     "_PLACEHOLDER_SANITIZATION",
+    "_REPORT_CLARITY",
     "_COMPACT_DESIGN_MARKER_GATE",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "rebuild_client_artifacts",

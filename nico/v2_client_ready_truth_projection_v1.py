@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from typing import Any, Mapping
 
@@ -11,8 +12,15 @@ from nico.comprehensive_client_ready_projection_v1 import (
 )
 from nico.v2_authoritative_premium_report import _ORIGINAL_HASH
 
-VERSION = "nico.v2.client-ready-truth-projection.v1"
+VERSION = "nico.v2.client-ready-truth-projection.v2"
 _PATCHED = False
+
+_ASSURANCE_DISCLOSURE_RE = re.compile(
+    r"(?:\s*Confirmed material findings:\s*\d+\.\s*"
+    r"Review-required candidates:\s*\d+\.\s*"
+    r"Score effect:\s*assurance-only until triaged\.)+",
+    re.IGNORECASE,
+)
 
 
 def _text(value: Any) -> str:
@@ -28,6 +36,41 @@ def _integer(value: Any) -> int:
         return max(0, int(str(value or "0").strip()))
     except (TypeError, ValueError):
         return 0
+
+
+def _is_spanish(canonical: Mapping[str, Any]) -> bool:
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    ).casefold()
+    return language.startswith("es")
+
+
+def _provisional_label(*, spanish: bool) -> str:
+    return (
+        "Fuerte provisional — Revisión humana requerida"
+        if spanish
+        else "Provisional Strong — Human Review Required"
+    )
+
+
+def _strip_assurance_disclosure(value: Any) -> str:
+    cleaned = _ASSURANCE_DISCLOSURE_RE.sub(" ", _text(value))
+    return " ".join(cleaned.split()).strip()
 
 
 def _candidate_summary(canonical: Mapping[str, Any]) -> dict[str, Any]:
@@ -124,6 +167,7 @@ def _provisional_sections(canonical: dict[str, Any], summary: Mapping[str, Any])
         "secret": ("secret",),
         "static": ("static",),
     }
+    spanish = _is_spanish(canonical)
     output: list[Any] = []
     for raw in sections:
         if not isinstance(raw, Mapping):
@@ -140,10 +184,12 @@ def _provisional_sections(canonical: dict[str, Any], summary: Mapping[str, Any])
         review_required = _integer(counts.get("review_required"))
         if review_required:
             material = _integer(counts.get("material") or counts.get("confirmed_material"))
+            label = _provisional_label(spanish=spanish)
             item.update(
                 {
                     "status": "Provisional Strong",
-                    "status_label": "Provisional Strong",
+                    "status_label": label,
+                    "presented_status": label,
                     "assurance_status": "human_review_required",
                     "human_review_required": True,
                     "confirmed_material_findings": material,
@@ -151,12 +197,7 @@ def _provisional_sections(canonical: dict[str, Any], summary: Mapping[str, Any])
                     "score_effect": "assurance-only until triaged",
                 }
             )
-            summary_text = _text(item.get("summary"))
-            disclosure = (
-                f"Confirmed material findings: {material}. Review-required candidates: {review_required}. "
-                "Score effect: assurance-only until triaged."
-            )
-            item["summary"] = f"{summary_text} {disclosure}".strip()
+            item["summary"] = _strip_assurance_disclosure(item.get("summary"))
         output.append(item)
     assessment["sections"] = output
     assessment["review_candidate_summary"] = deepcopy(dict(summary))
@@ -176,6 +217,8 @@ def project_client_ready_truth(value: Mapping[str, Any]) -> dict[str, Any]:
             "client_ready_truth_projection_version": VERSION,
             "automated_draft_until_human_approval": True,
             "review_candidate_scores_presented_as_provisional": True,
+            "review_candidate_status_requires_human_review_label": True,
+            "review_candidate_summary_projection_idempotent": True,
             "scanner_execution_separated_from_candidate_disposition": True,
             "client_finding_identifiers_sanitized": True,
         }
