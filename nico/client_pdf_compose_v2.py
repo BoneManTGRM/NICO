@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v2"
+VERSION = "nico.client-pdf-compose.v3"
 
 
 def _normalized(value: str) -> str:
@@ -49,17 +49,30 @@ def _finding_detail(value: str) -> bool:
     return "nico-code-" in text and "action:" in text and "cyclomatic_complexity" in text
 
 
-def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes) -> bytes:
-    """Retain the decision body, then append one compact register and review gate.
+def compose_compact_client_pdf(
+    base_pdf: bytes,
+    register_pdf: bytes,
+    gate_pdf: bytes,
+    *,
+    review_pdf: bytes | None = None,
+) -> bytes:
+    """Retain the decision body and append bounded client-review artifacts.
 
     Heading-bound detection is deliberate. Cover and executive text may mention an
     evidence appendix or review gate without starting those sections; substring
-    matching would incorrectly discard the entire decision body.
+    matching would incorrectly discard the entire decision body. The optional
+    review companion restores decision-useful Comprehensive sections without
+    reintroducing the raw evidence appendix.
     """
 
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("compact client composition requires a valid base PDF")
     base = PdfReader(io.BytesIO(base_pdf))
+    review = (
+        PdfReader(io.BytesIO(review_pdf))
+        if review_pdf is not None and review_pdf.startswith(b"%PDF")
+        else None
+    )
     register = PdfReader(io.BytesIO(register_pdf))
     gate = PdfReader(io.BytesIO(gate_pdf))
 
@@ -93,6 +106,9 @@ def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: b
     writer = PdfWriter()
     for page in retained:
         writer.add_page(page)
+    if review is not None:
+        for page in review.pages:
+            writer.add_page(page)
     for page in register.pages:
         writer.add_page(page)
     for page in gate.pages:
