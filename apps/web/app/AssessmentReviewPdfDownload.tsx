@@ -28,7 +28,7 @@ function startExactRunDownload(runId: string): void {
  *
  * The assessment result intentionally carries only a bounded terminal manifest.
  * Waiting for fetch -> arrayBuffer -> Blob before clicking a synthetic link loses
- * Safari's download gesture and can leave the React action in "Preparing file…"
+ * Safari's download gesture and can leave the React action waiting indefinitely
  * while a streamed proxy response stalls. The backend artifact route already
  * validates exact run identity, strict base64, the PDF signature, and SHA-256.
  * This bridge therefore hands the same-origin download directly to the browser.
