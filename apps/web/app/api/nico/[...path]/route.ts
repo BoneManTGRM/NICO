@@ -17,6 +17,10 @@ const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";
 const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [0, 1_500, 4_000];
+const ARTIFACT_RETRY_DELAYS_MS = [0];
+const SHORT_READ_TIMEOUT_MS = 20_000;
+const ARTIFACT_READ_TIMEOUT_MS = 240_000;
+const WRITE_TIMEOUT_MS = 240_000;
 
 type BackendResolution = {
   backend: URL | null;
@@ -87,6 +91,23 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function upstreamReadPolicy(method: string, path: string): {timeoutMs: number; retryDelaysMs: number[]; readClass: string} {
+  const artifactRead = method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path);
+  if (artifactRead) {
+    return {
+      timeoutMs: ARTIFACT_READ_TIMEOUT_MS,
+      retryDelaysMs: ARTIFACT_RETRY_DELAYS_MS,
+      readClass: "exact-run-artifact",
+    };
+  }
+  const shortRead = method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(path);
+  return {
+    timeoutMs: shortRead ? SHORT_READ_TIMEOUT_MS : WRITE_TIMEOUT_MS,
+    retryDelaysMs: RETRY_DELAYS_MS,
+    readClass: shortRead ? "short-status" : "bounded-write",
+  };
+}
+
 async function proxyNico(
   request: NextRequest,
   context: {params: Promise<{path: string[]}>},
@@ -131,13 +152,13 @@ async function proxyNico(
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   headers.set("X-Request-ID", requestId);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-  const shortRead = request.method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
+  const policy = upstreamReadPolicy(request.method, apiPath);
   const upstream = new URL(`${apiPath}${request.nextUrl.search}`, backend);
   let lastStatus: number | null = null;
   let lastFailure = "network_error";
 
-  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
-    const delay = RETRY_DELAYS_MS[attempt];
+  for (let attempt = 0; attempt < policy.retryDelaysMs.length; attempt += 1) {
+    const delay = policy.retryDelaysMs[attempt];
     if (delay) await wait(delay);
     try {
       const response = await fetch(upstream, {
@@ -146,10 +167,10 @@ async function proxyNico(
         body,
         cache: "no-store",
         redirect: "manual",
-        signal: AbortSignal.timeout(shortRead ? 20_000 : 240_000),
+        signal: AbortSignal.timeout(policy.timeoutMs),
       });
       lastStatus = response.status;
-      if (TRANSIENT_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length - 1) {
+      if (TRANSIENT_STATUS.has(response.status) && attempt < policy.retryDelaysMs.length - 1) {
         await response.arrayBuffer();
         lastFailure = `upstream_${response.status}`;
         continue;
@@ -158,11 +179,13 @@ async function proxyNico(
       const responseHeaders = new Headers({
         "Cache-Control": "no-store",
         "X-NICO-Proxy-Attempts": String(attempt + 1),
+        "X-NICO-Proxy-Read-Class": policy.readClass,
         "X-NICO-Backend-Candidate-Count": "1",
         "X-Request-ID": requestId,
       });
       for (const name of [
         "content-type",
+        "content-length",
         "content-disposition",
         "retry-after",
         "x-nico-run-id",
@@ -186,7 +209,7 @@ async function proxyNico(
       });
     } catch (error) {
       lastFailure = error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "network_error";
-      if (attempt >= RETRY_DELAYS_MS.length - 1) break;
+      if (attempt >= policy.retryDelaysMs.length - 1) break;
     }
   }
 
@@ -196,7 +219,9 @@ async function proxyNico(
     "The canonical assessment backend could not be reached after bounded cold-start retries.",
     {
       request_id: requestId,
-      attempts: RETRY_DELAYS_MS.length,
+      attempts: policy.retryDelaysMs.length,
+      request_class: policy.readClass,
+      timeout_ms: policy.timeoutMs,
       backend_candidate_count: 1,
       last_upstream_status: lastStatus,
       failure_class: lastFailure,
