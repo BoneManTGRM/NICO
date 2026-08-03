@@ -72,8 +72,9 @@ def test_english_review_gate_renders_in_markdown_html_and_pdf():
     assert result["markdown"].count("## Human Review and Acceptance Gate") == 1
     assert "Human Review and Acceptance Gate" in result["html"]
     assert "Human Review and Acceptance Gate" in _pdf_text(result["pdf_base64"])
-    assert "Human review: Required before any client delivery." in result["markdown"]
-    assert "Client delivery: Blocked until explicit approval." in result["markdown"]
+    assert "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED" in result["markdown"]
+    assert "Approve or reject this immutable automated draft before delivery." in result["markdown"]
+    assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
     assert result["client_delivery_allowed"] is False
     assert result["human_review_required"] is True
 
