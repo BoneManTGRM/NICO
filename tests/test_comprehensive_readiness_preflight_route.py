@@ -10,10 +10,12 @@ def test_comprehensive_readiness_preflight_is_bounded_and_fail_closed() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'export const maxDuration = 45' in source
-    assert 'const HEALTH_WARMUP_TIMEOUT_MS = 28_000' in source
+    assert 'const HEALTH_WARMUP_BUDGET_MS = 28_000' in source
+    assert 'const HEALTH_REQUEST_TIMEOUT_MS = 8_000' in source
+    assert 'const HEALTH_RETRY_DELAY_MS = 2_000' in source
     assert 'const DIAGNOSTIC_TIMEOUT_MS = 14_000' in source
     assert 'signal: AbortSignal.timeout(timeoutMs)' in source
-    assert 'new URL("/health", resolution.backend)' in source
+    assert 'new URL("/health", backend)' in source
     assert 'new URL("/diagnostics/comprehensive-runtime", resolution.backend)' in source
     assert '"assessment_backend_unreachable"' in source
     assert 'survives_container_replacement_verified: false' in source
@@ -24,7 +26,7 @@ def test_comprehensive_readiness_preflight_is_bounded_and_fail_closed() -> None:
 def test_permanent_configuration_blocks_use_successful_transport() -> None:
     source = ROUTE.read_text(encoding="utf-8")
     conflict = source[source.index("if (resolution.conflict)"):source.index("if (!resolution.backend)")]
-    missing = source[source.index("if (!resolution.backend)"):source.index("// Railway may report")]
+    missing = source[source.index("if (!resolution.backend)"):source.index("// Railway can return")]
 
     assert '"assessment_backend_configuration_conflict"' in conflict
     assert '"assessment_backend_not_configured"' in missing
@@ -32,9 +34,22 @@ def test_permanent_configuration_blocks_use_successful_transport() -> None:
     assert ",\n    );" in missing
 
 
+def test_health_warmup_retries_immediate_edge_failures_inside_one_budget() -> None:
+    source = ROUTE.read_text(encoding="utf-8")
+    warm = source[source.index("async function warmBackend"):source.index("export async function GET")]
+
+    assert "const deadline = startedAt + HEALTH_WARMUP_BUDGET_MS" in warm
+    assert "while (Date.now() < deadline)" in warm
+    assert "attempts += 1" in warm
+    assert "Math.min(HEALTH_REQUEST_TIMEOUT_MS, remaining)" in warm
+    assert "await wait(delay)" in warm
+    assert "healthy: true" in warm
+    assert "healthy: false" in warm
+
+
 def test_health_warmup_never_substitutes_for_authoritative_readiness() -> None:
     source = ROUTE.read_text(encoding="utf-8")
-    warmup_start = source.index("const warmup = await observeUpstream")
+    warmup_start = source.index("const warmup = await warmBackend")
     diagnostic_start = source.index("const diagnostic = await observeUpstream")
     success_start = source.index("if (\n    diagnostic.httpStatus")
     success_end = source.index("const reason = upstreamReason")
@@ -67,7 +82,7 @@ def test_successful_upstream_readiness_is_forwarded_without_reinterpretation() -
 
     assert "Response.json(diagnostic.payload" in success
     assert "status: 200" in success
-    assert "boundedHeaders(requestId, 2)" in success
+    assert "boundedHeaders(requestId, upstreamRequests)" in success
 
 
 def test_total_upstream_budget_fits_external_production_probe() -> None:
