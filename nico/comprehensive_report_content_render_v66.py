@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-content-render.v66"
+VERSION = "nico.comprehensive-report-content-render.v67"
 _SCANNER_MARKER = "_nico_comprehensive_scanner_content_v66"
 _FINDING_MARKER = "_nico_comprehensive_finding_content_v66"
 _STAGE_MARKER = "_nico_comprehensive_stage_content_v66"
@@ -287,7 +287,13 @@ def install_comprehensive_report_content_render_v66() -> dict[str, Any]:
     from nico import v2_premium_report_renderer as renderer
 
     current_scanner = renderer._scanner_stages
-    current_detailed = renderer._detailed_findings_markdown
+    current_detailed = getattr(
+        renderer,
+        "_detailed_findings_markdown",
+        lambda findings, *, spanish: "",
+    )
+    if not hasattr(renderer, "_detailed_findings_markdown"):
+        renderer._detailed_findings_markdown = current_detailed
     current_stages = renderer._canonical_stages
 
     if not getattr(current_scanner, _SCANNER_MARKER, False):

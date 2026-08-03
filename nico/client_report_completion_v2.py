@@ -12,17 +12,28 @@ from nico import client_report_completion_v1 as legacy
 from nico.client_assessment_truth_v3 import normalize_client_assessment_truth
 from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
-    finding_register_markdown,
-    render_finding_register_pdf,
     synchronize_canonical_finding_surfaces,
 )
+from nico.client_pdf_compose_v2 import compose_compact_client_pdf
+from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
+from nico.client_ready_html_v1 import render_client_html
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
 )
+from nico.comprehensive_client_ready_projection_v1 import (
+    APPROVAL_STATUS,
+    DELIVERY_STATUS,
+    MAX_CLIENT_PDF_PAGES,
+    REPORT_FINALITY,
+    VERSION as CLIENT_READY_VERSION,
+    apply_automated_draft_truth,
+    compact_client_markdown,
+    render_compact_finding_register_pdf,
+    render_evidence_review_gate_pdf,
+)
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
-from nico.v2_authoritative_premium_report import _html_from_markdown
 
-VERSION = "nico.client-report-completion.v6"
+VERSION = "nico.client-report-completion.v9"
 
 
 def _text(value: Any, limit: int = 12000) -> str:
@@ -30,11 +41,30 @@ def _text(value: Any, limit: int = 12000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _normalize_unapproved_language(value: str) -> str:
+    output = str(value or "")
+    replacements = (
+        ("AUTOMATED FINAL · PENDING HUMAN APPROVAL", "AUTOMATED DRAFT · PENDING HUMAN APPROVAL"),
+        ("AUTOMATED FINAL — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
+        ("AUTOMATED FINAL", "AUTOMATED DRAFT"),
+        ("FINAL REPORT · PENDING HUMAN APPROVAL", "AUTOMATED DRAFT · PENDING HUMAN APPROVAL"),
+        ("FINAL REPORT — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
+        ("INFORME FINAL PENDIENTE DE APROBACIÓN", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN"),
+        ("INFORME FINAL · APROBACIÓN HUMANA PENDIENTE", "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE"),
+        ("The final automated report package", "The automated draft package"),
+        ("El informe automatizado final", "El borrador automatizado"),
+    )
+    for old, new in replacements:
+        output = output.replace(old, new)
+    return output
+
+
 def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
     contract = deepcopy(dict(canonical.get("v2_pipeline_contract") or {}))
     contract.update(
         {
             "client_report_completion_version": VERSION,
+            "client_ready_projection_version": CLIENT_READY_VERSION,
             "canonical_finding_identity_uses_source_anchor_and_family": True,
             "scanner_configuration_errors_are_not_code_findings": True,
             "repository_relative_paths_only": True,
@@ -46,6 +76,9 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
             "stable_finding_alias_projection_idempotent": True,
             "all_mirrored_finding_surfaces_synchronized": True,
             "exact_run_scanner_truth_reconciled_in_core_finalizer": True,
+            "one_compact_client_pdf": True,
+            "full_evidence_retained_outside_client_pdf": True,
+            "automated_draft_until_human_approval": True,
         }
     )
     canonical["v2_pipeline_contract"] = contract
@@ -59,61 +92,26 @@ def _install_register(canonical: dict[str, Any]) -> dict[str, Any]:
 
 
 def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Prepare one canonical report model before the premium renderer runs."""
+    """Prepare canonical truth before the premium renderer runs."""
 
     result = normalize_scanner_applicability_package(package)
     canonical = normalize_client_assessment_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
     result["json"] = canonical
-
-    # Recompute applicability after configuration-error classification so the
-    # requested, applicable, completed, incomplete, and not-applicable populations
-    # remain internally consistent.
     result = normalize_scanner_applicability_package(result)
     canonical = normalize_client_assessment_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
     canonical = _install_register(canonical)
-    # This call is intentionally part of the core finalizer rather than relying
-    # only on installer rebinding. Every production and fixture path therefore
-    # reaches the existing renderer with one exact-run scanner population and one
-    # explicit coverage denominator.
     canonical = reconcile_authoritative_scanner_truth(canonical)
-
+    canonical = apply_automated_draft_truth(canonical)
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
         canonical["client_finding_remediation_register"]
     )
     result["finding_population"] = deepcopy(canonical["finding_population"])
     return result
-
-
-def _final_markdown(
-    existing: str,
-    canonical: Mapping[str, Any],
-    register: Mapping[str, Any],
-    *,
-    spanish: bool,
-) -> str:
-    markdown = legacy._remove_old_register(existing)
-    markdown = legacy._remove_legacy_scanner_provenance(markdown)
-    markdown = markdown.replace(
-        legacy._STALE_EMPTY_FINDING_TEXT,
-        legacy._STALE_EMPTY_FINDING_REPLACEMENT,
-    )
-    markdown = legacy._insert_register(
-        markdown,
-        finding_register_markdown(register, spanish=spanish),
-    )
-    if legacy._CLIENT_DELIVERY_MARKER not in markdown:
-        markdown = markdown.rstrip() + f"\n\n<!-- {legacy._CLIENT_DELIVERY_MARKER} -->\n"
-    return (
-        markdown.rstrip()
-        + "\n\n"
-        + legacy.scanner_provenance_markdown(canonical, spanish=spanish).strip()
-        + "\n"
-    )
 
 
 def _validate_final_surfaces(
@@ -146,9 +144,8 @@ def _validate_final_surfaces(
             f"{len(canonical_findings)} != {decision_count}"
         )
 
-    extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
+    reader = PdfReader(io.BytesIO(pdf))
+    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
     combined = "\n".join((markdown, rendered_html, extracted))
     if "/tmp/nico-snapshot-scan-" in combined or "/home/runner/work/" in combined:
         raise ValueError("client report exposed a temporary worker path")
@@ -156,6 +153,33 @@ def _validate_final_surfaces(
         raise ValueError("client report retained unknown analyzer and rule identity")
     if "No structured item was retained." in combined:
         raise ValueError("client report retained obsolete empty finding copy")
+    if any(
+        marker in combined
+        for marker in (
+            "FINAL REPORT",
+            "INFORME FINAL",
+            "AUTOMATED FINAL",
+            " · FINAL Page",
+            " · FINAL Página",
+        )
+    ):
+        raise ValueError("unapproved client report used finality language")
+    if "AUTOMATED DRAFT" not in combined and "BORRADOR AUTOMATIZADO" not in combined:
+        raise ValueError("client report omitted automated-draft status")
+    for internal_marker in (
+        "report_contract_reason",
+        "comprehensive_final_report_semantic_contract_failed",
+        "stage_execution.artifact_schema",
+        "human_evidence_summary.",
+    ):
+        if internal_marker in extracted:
+            raise ValueError(
+                f"client PDF exposed raw internal evidence field: {internal_marker}"
+            )
+    if len(reader.pages) > MAX_CLIENT_PDF_PAGES:
+        raise ValueError(
+            f"client report exceeds the {MAX_CLIENT_PDF_PAGES}-page client boundary"
+        )
 
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
@@ -176,32 +200,38 @@ def _validate_final_surfaces(
         "stable_finding_alias_projection_idempotent": True,
         "unverified_tls_candidates_not_promoted": True,
         "exact_run_scanner_truth_reconciled": True,
+        "duplicate_full_page_finding_cards_absent": True,
+        "raw_stage_dump_excluded_from_client_pdf": True,
+        "automated_draft_language_verified": True,
+        "client_pdf_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "client_pdf_page_count": len(reader.pages),
     }
 
 
 def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Finalize one cross-format package from the repaired canonical model."""
+    """Finalize a bounded client PDF while retaining full JSON/CSV evidence."""
 
     prepared = prepare_client_report_package(package)
-    # Preserve the existing premium report, scorecard, evidence appendix, and
-    # delivery gate, then replace only the finding/provenance projections from the
-    # final authoritative canonical state.
+    # The legacy pass retains compatibility and the accepted premium cover. The
+    # authoritative pass below removes duplicate finding cards and raw evidence
+    # dumps before composing one compact register and one human-review gate.
     result = legacy.finalize_client_report_package(prepared)
     canonical = normalize_client_assessment_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
     canonical = _install_register(canonical)
-    # Legacy completion can add or restore nested report surfaces. Reconcile again
-    # at the last canonical boundary before Markdown, HTML, and PDF are composed.
     canonical = reconcile_authoritative_scanner_truth(canonical)
+    canonical = apply_automated_draft_truth(canonical)
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 
-    markdown = _final_markdown(
-        str(result.get("markdown") or ""),
-        canonical,
-        register,
-        spanish=spanish,
+    markdown = _normalize_unapproved_language(
+        compact_client_markdown(
+            str(result.get("markdown") or ""),
+            canonical,
+            register,
+            spanish=spanish,
+        )
     )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     title = (
@@ -209,12 +239,14 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         if spanish
         else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
     )
-    rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
+    rendered_html = render_client_html(markdown, title, spanish=spanish)
 
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
-    register_pdf = render_finding_register_pdf(register, spanish=spanish)
-    provenance_pdf = legacy._provenance_pdf(canonical, spanish=spanish)
-    pdf = legacy._compose_pdf(base_pdf, register_pdf, provenance_pdf)
+    register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
+    gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
+    pdf = sanitize_client_pdf_status(
+        compose_compact_client_pdf(base_pdf, register_pdf, gate_pdf)
+    )
     validation = _validate_final_surfaces(
         canonical,
         register,
@@ -235,9 +267,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             "finding_register_in_pdf": True,
             "exact_source_locations_verified_in_pdf": True,
             "scanner_applicability_in_all_formats": True,
-            "full_evidence_appendix_preserved": (
-                "Evidence Appendix" in markdown or "Apéndice de evidencia" in markdown
-            ),
+            "full_evidence_retained_in_structured_exports": True,
+            "full_evidence_appendix_in_client_pdf": False,
             "premium_cover_preserved": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -265,9 +296,9 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             "final_package_page_count": page_count,
             "status": "review_required",
             "assessment_state": "review_required",
-            "report_finality": "final",
-            "approval_status": "pending_human_approval",
-            "delivery_status": "blocked_pending_human_approval",
+            "report_finality": REPORT_FINALITY,
+            "approval_status": APPROVAL_STATUS,
+            "delivery_status": DELIVERY_STATUS,
             "human_review_required": True,
             "human_review_completed": False,
             "client_delivery_allowed": False,

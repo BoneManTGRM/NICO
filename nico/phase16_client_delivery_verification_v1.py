@@ -7,8 +7,15 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.phase16.client-delivery-verification.v3"
-_APPROVAL = "FINAL-PENDING-APPROVAL"
+from nico.comprehensive_client_ready_projection_v1 import (
+    APPROVAL_SUFFIX,
+    APPROVAL_STATUS,
+    DELIVERY_STATUS,
+    REPORT_FINALITY,
+)
+
+VERSION = "nico.phase16.client-delivery-verification.v5"
+_APPROVAL = APPROVAL_SUFFIX
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -177,10 +184,23 @@ def _replace_nested_findings(value: Any, canonical_by_id: Mapping[str, Mapping[s
 
 def _normalized_filename(value: Any) -> str:
     filename = _text(value) or "nico-comprehensive-assessment.pdf"
-    suffix = ".pdf" if filename.lower().endswith(".pdf") else ""
-    stem = filename[:-4] if suffix else filename
-    stem = re.sub(rf"(?:-{re.escape(_APPROVAL)})+\s*$", "", stem, flags=re.IGNORECASE)
-    return f"{stem}-{_APPROVAL}.pdf"
+    if not filename.casefold().endswith(".pdf"):
+        filename += ".pdf"
+    stem = filename[:-4]
+    # Historical compatibility layers emitted mixed and repeated forms such as
+    # AUTOMATED-AUTOMATED-DRAFT-PENDING-APPROVAL. Consume the complete terminal
+    # state, including every repeated AUTOMATED prefix, before adding one
+    # authoritative automated-draft suffix.
+    terminal = re.compile(
+        r"-(?:AUTOMATED-)*(?:FINAL|DRAFT)(?:-PENDING-APPROVAL)?$",
+        flags=re.IGNORECASE,
+    )
+    while True:
+        normalized = terminal.sub("", stem)
+        if normalized == stem:
+            break
+        stem = normalized
+    return f"{stem.rstrip('- ')}-{_APPROVAL}.pdf"
 
 
 def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -207,6 +227,11 @@ def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     for surface in _CLIENT_SURFACES:
         if surface in report:
             report[surface] = _replace_nested_findings(report[surface], canonical_by_id)
+    report["report_finality"] = REPORT_FINALITY
+    report["approval_status"] = APPROVAL_STATUS
+    report["delivery_status"] = DELIVERY_STATUS
+    report["human_review_required"] = True
+    report["client_delivery_allowed"] = False
 
     payload["json"] = report
     payload["canonical_findings"] = deepcopy(canonical)
@@ -214,6 +239,11 @@ def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
     payload["pdf_filename"] = _normalized_filename(payload.get("pdf_filename"))
     if payload.get("spanish_pdf_filename"):
         payload["spanish_pdf_filename"] = _normalized_filename(payload.get("spanish_pdf_filename"))
+    payload["report_finality"] = REPORT_FINALITY
+    payload["approval_status"] = APPROVAL_STATUS
+    payload["delivery_status"] = DELIVERY_STATUS
+    payload["human_review_required"] = True
+    payload["client_delivery_allowed"] = False
     payload["canonical_truth_sha256"] = hashlib.sha256(
         json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
     ).hexdigest()
@@ -222,6 +252,8 @@ def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
         "semantic_duplicates_removed": True,
         "acceptance_criteria_deduplicated": True,
         "terminal_filename_normalized": True,
+        "repeated_automated_prefixes_removed": True,
+        "automated_draft_until_human_approval": True,
         "canonical_finding_count": len(canonical),
     }
     return payload
@@ -289,10 +321,17 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
             errors.append(f"finding {finding_id} is not title-consistent across client surfaces")
 
     filename = _text(payload.get("pdf_filename"))
-    if not filename.lower().endswith(".pdf"):
+    if not filename.casefold().endswith(".pdf"):
         errors.append("client PDF filename is missing or invalid")
     if filename.upper().count(_APPROVAL) != 1:
-        errors.append("client PDF filename must contain exactly one approval state")
+        errors.append("client PDF filename must contain exactly one automated-draft approval state")
+
+    if _text(payload.get("report_finality")).casefold() != REPORT_FINALITY:
+        errors.append("unapproved client package must be identified as an automated draft")
+    if _text(payload.get("approval_status")).casefold() != APPROVAL_STATUS:
+        errors.append("unapproved client package must remain pending human approval")
+    if payload.get("client_delivery_allowed") is not False:
+        errors.append("unapproved client package must keep client delivery blocked")
 
     pdf_base64 = payload.get("pdf_base64")
     if pdf_base64:
@@ -345,6 +384,7 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
         "surface_reference_count": sum(len(values) for values in observed.values()),
         "pdf_signature_checked": bool(pdf_base64),
         "release_gate_verified": isinstance(release_gate, Mapping) and release_gate.get("valid") is True,
+        "automated_draft_verified": not errors,
         "verification_fingerprint_sha256": fingerprint,
     }
 

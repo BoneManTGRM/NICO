@@ -6,7 +6,13 @@ import io
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.v2.dark-branded-cover.v2"
+from nico.comprehensive_client_ready_projection_v1 import (
+    EN_BOUNDARY,
+    ES_BOUNDARY,
+    clean_finding_title,
+)
+
+VERSION = "nico.v2.dark-branded-cover.v3"
 
 
 def _text(value: Any) -> str:
@@ -26,7 +32,7 @@ def _priority_titles(canonical: Mapping[str, Any]) -> list[str]:
     findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
     titles: list[str] = []
     for item in findings:
-        title = _text(item.get("decision_title") or item.get("title"))
+        title = clean_finding_title(item.get("decision_title") or item.get("title"))
         if title and title.casefold() not in {value.casefold() for value in titles}:
             titles.append(title)
         if len(titles) == 3:
@@ -41,14 +47,14 @@ def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: s
         return (
             f"NICO completó una evaluación técnica integral autorizada para {repository}. "
             f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
-            "La evaluación combina salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
-            "una hoja de ruta de seis meses, secuencia de personal y un apéndice completo de evidencia."
+            "El paquete combina salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
+            "una hoja de ruta de seis meses y exportaciones estructuradas para revisión humana."
         )
     return (
         f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
         f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
-        "The assessment combines repository health, exact-location findings, deeper architecture evidence, "
-        "a six-month execution roadmap, staffing sequence, and a full evidence appendix."
+        "The package combines repository health, exact-location findings, architecture evidence, "
+        "a six-month roadmap, and structured exports for human review."
     )
 
 
@@ -172,6 +178,10 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
         pdf.setFont("Helvetica", 8)
         pdf.drawString(left + 34, cy, title[:88])
 
+    boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
+    pdf.setFillColor(colors.HexColor("#f0a23a"))
+    pdf.setFont("Helvetica-Bold", 6.4)
+    pdf.drawString(left, 75, boundary[:115])
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 6.2)
     pdf.drawString(left, 60, "READ-ONLY · IMMUTABLE SNAPSHOT · INTERNAL REVIEW REQUIRED")
@@ -180,7 +190,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.drawRightString(width - left, 60, "POWERED BY REPARODYNAMICS")
     pdf.setFillColor(colors.HexColor("#f0a23a"))
     pdf.setFont("Helvetica", 6.2)
-    pdf.drawString(left, 45, "Client-ready after internal approval")
+    pdf.drawString(left, 45, "Client delivery remains blocked until explicit approval")
     pdf.setFillColor(muted)
     pdf.drawRightString(width - left, 45, "Page 1")
 
@@ -213,6 +223,7 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
         "dark_cover_version": VERSION,
         "golden_cover_layout_restored": True,
         "canonical_score_sheet_removed": True,
+        "automated_draft_boundary_visible": True,
     })
     page_count = len(writer.pages)
     result.update({

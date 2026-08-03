@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 
+from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
 
@@ -86,7 +87,7 @@ def test_phase17_renders_repaired_canonical_truth_not_stale_artifacts() -> None:
 
     assert len(canonical["canonical_findings"]) == 1
     assert len(canonical["canonical_findings"][0]["acceptance_criteria"]) == 1
-    assert package["markdown"].count("## Finding and Remediation Register") == 1
+    assert package["markdown"].count("## Compact Finding and Remediation Register") == 1
     assert package["markdown"].count("apps/web/app/operations/page.tsx:177") >= 1
     assert package["markdown"].count("Target complexity is at most 30") == 1
     register = canonical["client_finding_remediation_register"]
@@ -96,7 +97,10 @@ def test_phase17_renders_repaired_canonical_truth_not_stale_artifacts() -> None:
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     assert package["phase17_artifact_rebuild"]["rebuilt_from_repaired_canonical_truth"] is True
     assert package["phase9_release_gate"]["artifacts_rebuilt_after_canonical_repair"] is True
-    assert package["pdf_filename"] == "nico-report-FINAL-PENDING-APPROVAL.pdf"
+    assert package["pdf_filename"] == f"nico-report-{APPROVAL_SUFFIX}.pdf"
+    assert package["report_finality"] == "automated_draft"
+    assert package["approval_status"] == "pending_human_approval"
+    assert package["client_delivery_allowed"] is False
 
     section = canonical["assessment"]["sections"][0]
     assert section["presented_score"] == 83

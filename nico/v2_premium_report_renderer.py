@@ -7,11 +7,18 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from nico.comprehensive_client_ready_projection_v1 import (
+    APPROVAL_STATUS,
+    DELIVERY_STATUS,
+    EN_BOUNDARY,
+    ES_BOUNDARY,
+    REPORT_FINALITY,
+)
 from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
 from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
 from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
-VERSION = "nico.v2.premium-report-renderer.v5"
+VERSION = "nico.v2.premium-report-renderer.v6"
 
 
 def _text(value: Any) -> str:
@@ -124,11 +131,7 @@ def _prepend_score_summary_pdf(
         spaceAfter=16,
     )
     heading = "Resumen canónico de puntuación" if spanish else "Canonical Score Summary"
-    boundary = (
-        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
-        if spanish
-        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED · CLIENT DELIVERY NOT AUTHORIZED"
-    )
+    boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
     rows = [
         ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
         ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
@@ -212,45 +215,6 @@ def _finding_lines(findings: list[Mapping[str, Any]]) -> list[str]:
     return output
 
 
-def _detailed_findings_markdown(findings: list[Mapping[str, Any]], *, spanish: bool) -> str:
-    heading = "## Hallazgos canónicos detallados" if spanish else "## Detailed Canonical Findings"
-    lines = [heading, ""]
-    if not findings:
-        lines.append("No se conservó ningún hallazgo canónico accionable." if spanish else "No canonical actionable finding was retained.")
-        return "\n".join(lines)
-    for item in findings:
-        identifier = _text(item.get("finding_id") or item.get("id"))
-        title = _text(item.get("title") or item.get("decision_title"))
-        priority = _text(item.get("priority") or item.get("severity") or "P2")
-        lines += [
-            f"### {priority} - {title}",
-            "",
-            f"- Finding ID: {identifier}",
-            f"- Category / status: {_text(item.get('category'))} · {_text(item.get('status'))}",
-            f"- Location: {_text(item.get('location')) or 'Location not retained'}",
-            f"- Evidence: {_text(item.get('fact') or item.get('evidence')) or 'Evidence requires review'}",
-            f"- Interpretation: {_text(item.get('interpretation') or title)}",
-            f"- Business impact: {_text(item.get('business_impact') or item.get('impact')) or 'Requires review'}",
-            f"- Recommendation: {_text(item.get('recommendation')) or 'Requires review'}",
-            f"- Owner / effort: {_text(item.get('owner_role')) or 'Unassigned'} · {_text(item.get('effort')) or 'Unestimated'}",
-            f"- Cost of inaction: {_text(item.get('cost_of_inaction')) or 'Not quantified'}",
-            f"- Residual risk: {_text(item.get('residual_risk')) or 'Requires review'}",
-        ]
-        criteria: list[str] = []
-        seen: set[str] = set()
-        for raw in item.get("acceptance_criteria") or []:
-            value = _text(raw)
-            key = value.casefold()
-            if value and key not in seen:
-                seen.add(key)
-                criteria.append(value)
-        if criteria:
-            lines.append("- Acceptance criteria:")
-            lines.extend(f"  - {value}" for value in criteria)
-        lines.append("")
-    return "\n".join(lines).strip()
-
-
 def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
     records = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
     completed = [item for item in records if item.get("completed") is True]
@@ -260,19 +224,22 @@ def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         f"{_text(item.get('state') or item.get('status'))}; "
         f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
         f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
-        f"findings={len(item.get('findings') or [])}"
+        f"retained finding count={len(item.get('findings') or [])}"
         for item in records
     ]
     limitations = [
         f"{_text(item.get('scanner_name') or item.get('tool'))}: "
-        f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner evidence incomplete')}"
+        f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner execution evidence incomplete')}"
         for item in incomplete
     ]
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    candidate = assessment.get("review_candidate_summary") if isinstance(assessment.get("review_candidate_summary"), Mapping) else {}
+    review_required = int(candidate.get("review_required_total") or 0)
     return [
         _stage(
             "dependency_security_static_analysis",
             "Dependency, Security, and Static Analysis",
-            f"{len(completed)} scanner records completed and {len(incomplete)} remain incomplete or review-limited.",
+            f"{len(completed)} scanner execution record(s) completed; {review_required} candidate(s) remain pending human triage. Execution completion does not equal candidate disposition.",
             evidence=evidence,
             unavailable=limitations,
             status="complete" if not incomplete else "review_required",
@@ -287,11 +254,12 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         by_id[item["stage_id"]] = item
 
     findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
+    executive = findings[:7]
     by_id["risk_reduction_and_executive_briefing"] = _stage(
         "risk_reduction_and_executive_briefing",
         "Executive Risk Register and Decision Briefing",
-        f"The canonical register contains {len(findings)} unique decision-grade findings.",
-        findings=_finding_lines(findings),
+        f"The canonical register contains {len(findings)} unique decision findings. The client body presents the top {len(executive)}; the complete exact-source index remains in the compact register and structured exports.",
+        findings=_finding_lines(executive),
         status="complete",
     )
 
@@ -325,7 +293,6 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     canonical = deepcopy(dict(result.get("json") or {})) if isinstance(result.get("json"), Mapping) else {}
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
-    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
     stages = _canonical_stages(canonical)
     canonical["stage_summaries"] = deepcopy(stages)
     generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -335,13 +302,10 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     if spanish:
         markdown = _spanish_markdown(canonical).replace(
             "La evaluación automatizada terminó como borrador.",
-            "La evaluación automatizada terminó como informe final pendiente de aprobación humana.",
-        ).replace("BORRADOR", "INFORME FINAL PENDIENTE DE APROBACIÓN")
+            "La evaluación automatizada terminó como borrador automatizado pendiente de aprobación humana.",
+        ).replace("BORRADOR", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN")
         marker = "## Resumen ejecutivo"
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
-        detailed = _detailed_findings_markdown(findings, spanish=True)
-        marker = "## Puerta de revisión y entrega"
-        markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
         if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
             markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
         rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
@@ -353,13 +317,10 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     else:
         markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
-            "FINAL REPORT — PENDING HUMAN APPROVAL — CLIENT DELIVERY BLOCKED — CLIENT DELIVERY NOT AUTHORIZED",
+            f"{EN_BOUNDARY} — CLIENT DELIVERY NOT AUTHORIZED",
         )
         marker = "## Executive Decision Brief"
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
-        detailed = _detailed_findings_markdown(findings, spanish=False)
-        marker = "## Delivery Status"
-        markdown = markdown.replace(marker, f"{detailed}\n\n{marker}", 1) if marker in markdown else f"{markdown.rstrip()}\n\n{detailed}\n"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
         pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
@@ -380,11 +341,11 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "rebuilt_from_repaired_canonical_truth": True,
         "markdown_html_pdf_share_one_canonical_population": True,
         "premium_renderer_restored_after_canonical_repair": True,
-        "detailed_canonical_findings_rendered": True,
+        "duplicate_full_finding_cards_not_rendered": True,
         "canonical_score_pair_explicit_in_all_formats": True,
         "legacy_aliases_hidden_from_client_artifacts": True,
         "bilingual_renderer_selected_from_canonical_language": True,
-        "finality_semantics_embedded": True,
+        "automated_draft_semantics_embedded": True,
         "page_count": page_count,
     })
 
@@ -403,9 +364,9 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
         "status": "review_required",
         "assessment_state": "review_required",
-        "report_finality": "final",
-        "approval_status": "pending_human_approval",
-        "delivery_status": "blocked_pending_human_approval",
+        "report_finality": REPORT_FINALITY,
+        "approval_status": APPROVAL_STATUS,
+        "delivery_status": DELIVERY_STATUS,
         "human_review_required": True,
         "human_review_completed": False,
         "client_delivery_allowed": False,
@@ -418,10 +379,11 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "canonical_score_summary": True,
             "evidence_health_summary": True,
             "executive_risk_register": True,
-            "detailed_canonical_finding_cards": True,
+            "bounded_executive_finding_detail": True,
+            "duplicate_full_finding_cards": False,
             "architecture_and_delivery_chapters": True,
             "roadmap_and_resourcing_chapters": True,
-            "full_evidence_appendix": True,
+            "full_evidence_retained_in_structured_exports": True,
             "canonical_findings_only": True,
             "canonical_scanner_truth_only": True,
             "bilingual_premium_output": True,

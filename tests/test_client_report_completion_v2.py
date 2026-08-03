@@ -184,14 +184,14 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     markdown = result["markdown"]
     html = result["html"]
     pdf = base64.b64decode(result["pdf_base64"])
-    extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
+    reader = PdfReader(io.BytesIO(pdf))
+    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
     combined = "\n".join((markdown, html, extracted))
 
     assert pdf.startswith(b"%PDF")
-    assert markdown.count("## Finding and Remediation Register") == 1
-    assert "Finding population: raw observations=" in markdown
+    assert markdown.count("## Compact Finding and Remediation Register") == 1
+    assert "Decision findings: 1" in markdown
+    assert "Complete exact-source index" in markdown
     assert "apps/web/app/operations/page.tsx:177" in combined
     assert "OperationsPage" in combined
     assert "typed hooks or services" in combined
@@ -204,5 +204,9 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert summary["finding_population_reconciled"] is True
     assert result["client_report_completion"]["temporary_worker_paths_absent"] is True
     assert result["client_report_completion"]["unverified_tls_candidates_not_promoted"] is True
+    assert result["client_report_completion"]["duplicate_full_page_finding_cards_absent"] is True
+    assert result["client_report_completion"]["raw_stage_dump_excluded_from_client_pdf"] is True
+    assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["report_finality"] == "automated_draft"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False

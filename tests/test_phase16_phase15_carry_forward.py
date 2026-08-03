@@ -43,8 +43,14 @@ def test_phase15_quality_fields_and_strict_p1_survive_phase16() -> None:
     assert release_blocker["ranking_reason"].startswith("P1 because")
     assert release_blocker["quality_complete"] is True
     for field in (
-        "fact", "interpretation", "inference", "recommendation",
-        "owner_role", "effort", "residual_risk", "acceptance_criteria",
+        "fact",
+        "interpretation",
+        "inference",
+        "recommendation",
+        "owner_role",
+        "effort",
+        "residual_risk",
+        "acceptance_criteria",
     ):
         assert release_blocker[field]
 
@@ -123,7 +129,11 @@ def test_phase16_repairs_phase15_visible_report_failures_and_reverifies() -> Non
     assert len(findings) == 1
     assert {"RISK-1", "RISK-P1-1"}.issubset(set(findings[0]["finding_aliases"]))
     assert len(findings[0]["acceptance_criteria"]) == 1
-    assert repaired["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
+    assert repaired["pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1
+    assert "FINAL-PENDING-APPROVAL" not in repaired["pdf_filename"]
+    assert repaired["report_finality"] == "automated_draft"
+    assert repaired["approval_status"] == "pending_human_approval"
+    assert repaired["client_delivery_allowed"] is False
     assert repaired["canonical_truth_sha256"] != "0" * 64
 
     verification = verify_client_delivery_package(repaired)

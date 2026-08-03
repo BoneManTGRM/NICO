@@ -36,7 +36,7 @@ def _result():
     }
 
 
-def test_finalizer_canonicalizes_every_surface_and_filename():
+def test_finalizer_canonicalizes_every_surface_filename_and_review_truth():
     output = finalize_report_package(_result())
     package = output["report_package"]
     canonical = package["json"]
@@ -47,8 +47,12 @@ def test_finalizer_canonicalizes_every_surface_and_filename():
     assert canonical["executive_findings"][0]["title"] == finding["title"]
     assert canonical["roadmap"][0]["work_packages"][0]["title"] == finding["title"]
     assert canonical["backlog"][0]["title"] == finding["title"]
-    assert package["pdf_filename"] == "nico-report-FINAL-PENDING-APPROVAL.pdf"
-    assert package["spanish_pdf_filename"] == "nico-report-es-FINAL-PENDING-APPROVAL.pdf"
+    assert package["pdf_filename"] == "nico-report-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    assert package["spanish_pdf_filename"] == "nico-report-es-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    assert package["report_finality"] == "automated_draft"
+    assert package["approval_status"] == "pending_human_approval"
+    assert package["delivery_status"] == "blocked_pending_human_approval"
+    assert package["client_delivery_allowed"] is False
     assert package["phase9_release_gate"]["valid"] is True
     assert package["phase9_release_gate"]["production_path_integrated"] is True
     assert package["canonical_truth_sha256"]
@@ -61,3 +65,4 @@ def test_finalizer_is_idempotent():
     assert first["report_package"]["json"] == second["report_package"]["json"]
     assert first["report_package"]["pdf_filename"] == second["report_package"]["pdf_filename"]
     assert first["report_package"]["canonical_truth_sha256"] == second["report_package"]["canonical_truth_sha256"]
+    assert second["report_package"]["pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1

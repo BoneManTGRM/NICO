@@ -145,8 +145,11 @@ def _assert_shared_truth(output: dict) -> None:
     assert scanners["eslint"]["state"] == "completed_with_findings"
     assert scanners["eslint"]["verified"] is True
 
-    assert package["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
-    assert package["spanish_pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
+    assert package["pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1
+    assert package["spanish_pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1
+    assert package["report_finality"] == "automated_draft"
+    assert package["approval_status"] == "pending_human_approval"
+    assert package["client_delivery_allowed"] is False
     assert "CLIENT DELIVERY NOT AUTHORIZED" in package["markdown"]
     assert "RISK-LEGACY-123" not in package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
@@ -171,6 +174,18 @@ def _forbid_final_stage_scan(monkeypatch) -> None:
     monkeypatch.setattr(providers, "_scan", forbidden)
 
 
+def _assert_review_gated_verification(verification: dict) -> None:
+    assert verification["status"] == "complete", verification
+    assert verification["required_finality"] == "automated_draft"
+    assert verification["required_approval_status"] == "pending_human_approval"
+    assert verification["required_delivery_status"] == "blocked_pending_human_approval"
+    assert verification["checks"]["report_finality_is_automated_draft"] is True
+    assert "report_finality_is_final" not in verification["checks"]
+    assert verification["evidence"]["automated_draft_package_verified"] is True
+    assert verification["evidence"]["human_review_required"] is True
+    assert verification["evidence"]["client_delivery_allowed"] is False
+
+
 def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     _forbid_final_stage_scan(monkeypatch)
     provider = wrap_final_report_publication(lambda context: _source())
@@ -189,7 +204,7 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete", verification
+    _assert_review_gated_verification(verification)
 
 
 def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(monkeypatch):
@@ -208,7 +223,6 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     assert "Evaluación Técnica Integral NICO" in package["markdown"]
     assert "APROBACIÓN HUMANA PENDIENTE" in package["markdown"]
     assert "ENTREGA AL CLIENTE BLOQUEADA" in package["markdown"]
-    assert "como borrador" not in package["markdown"].casefold()
     assert "DESCONOCIDO" not in package["markdown"]
     assert "bandit" in package["markdown"]
     assert "eslint" in package["markdown"]
@@ -218,7 +232,7 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete", verification
+    _assert_review_gated_verification(verification)
 
 
 def test_production_bootstraps_bind_real_report_and_scanner_authorities():

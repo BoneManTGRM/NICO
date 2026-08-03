@@ -50,7 +50,7 @@ def test_phase16_blocks_semantic_duplicates_repeated_criteria_and_filename_state
 
     assert "canonical findings contain semantic duplicates" in verifier
     assert "contains repeated acceptance criteria" in verifier
-    assert "must contain exactly one approval state" in verifier
+    assert "must contain exactly one automated-draft approval state" in verifier
     assert "repair_client_delivery_package" in integration
     assert 'package["canonical_truth_sha256"]' in integration
     assert 'package["findings_csv_base64"]' in integration

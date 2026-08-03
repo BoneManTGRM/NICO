@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 
 import nico.phase17_canonical_artifact_rebuild_v1 as phase17
-from nico.v2_single_pass_premium_report import VERSION, _validate_final_pdf
+from nico.v2_single_pass_premium_report import VERSION, _validate_review_pdf
 
 
 def test_phase17_uses_only_single_pass_premium_compiler() -> None:
@@ -15,13 +15,13 @@ def test_phase17_uses_only_single_pass_premium_compiler() -> None:
 
 
 def test_single_pass_contract_version_is_explicit() -> None:
-    assert VERSION == "nico.v2.single-pass-premium-report.v1"
+    assert VERSION == "nico.v2.single-pass-premium-report.v2"
 
 
-def test_final_pdf_validation_rejects_non_pdf_bytes() -> None:
+def test_review_pdf_validation_rejects_non_pdf_bytes() -> None:
     try:
-        _validate_final_pdf(b"not-a-pdf", {})
+        _validate_review_pdf(b"not-a-pdf", {})
     except ValueError as exc:
         assert "valid PDF" in str(exc)
     else:
-        raise AssertionError("invalid final report bytes must fail closed")
+        raise AssertionError("invalid review-package bytes must fail closed")

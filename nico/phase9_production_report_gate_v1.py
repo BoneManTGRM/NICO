@@ -3,10 +3,18 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
-VERSION = "nico.phase9_production_report_gate.v1"
-_TERMINAL = ("DRAFT", "FINAL", "FINAL-PENDING-APPROVAL", "APPROVED")
+from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
+
+VERSION = "nico.phase9_production_report_gate.v2"
+_TERMINAL = (
+    "AUTOMATED-DRAFT-PENDING-APPROVAL",
+    "FINAL-PENDING-APPROVAL",
+    "DRAFT",
+    "FINAL",
+    "APPROVED",
+)
 _PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME|PLACEHOLDER|LOREM IPSUM)\b", re.IGNORECASE)
 _GENERIC_TITLES = {"high-complexity code hotspot", "technical risk", "security issue", "dependency issue"}
 
@@ -51,7 +59,7 @@ def normalized_filename(filename: str, approval_state: str) -> str:
     stem = path.stem
     for token in sorted(_TERMINAL, key=len, reverse=True):
         stem = re.sub(rf"(?:-{re.escape(token)})+$", "", stem, flags=re.IGNORECASE)
-    state = _text(approval_state).upper() or "FINAL-PENDING-APPROVAL"
+    state = _text(approval_state).upper() or APPROVAL_SUFFIX
     return f"{stem}-{state}{path.suffix}"
 
 
@@ -104,14 +112,17 @@ def validate_production_report(report: Mapping[str, Any], *, filename: str | Non
     if _PLACEHOLDER.search(_text(surfaces)):
         placeholders.append("report-surface")
 
-    approval_state = _text(report.get("approval_state") or "FINAL-PENDING-APPROVAL")
+    approval_state = _text(report.get("approval_state") or APPROVAL_SUFFIX)
     filename_valid = True
     expected_filename = None
     if filename:
         expected_filename = normalized_filename(filename, approval_state)
         filename_valid = filename == expected_filename
 
-    valid = not any((duplicate_findings, duplicate_acceptance, generic_titles, placeholders)) and filename_valid
+    finality = _text(report.get("report_finality")).casefold()
+    approval_status = _text(report.get("approval_status")).casefold()
+    misleading_finality = approval_status == "pending_human_approval" and finality in {"final", "approved_final"}
+    valid = not any((duplicate_findings, duplicate_acceptance, generic_titles, placeholders, misleading_finality)) and filename_valid
     return {
         "version": VERSION,
         "valid": valid,
@@ -120,6 +131,7 @@ def validate_production_report(report: Mapping[str, Any], *, filename: str | Non
         "duplicate_acceptance": duplicate_acceptance,
         "generic_title_findings": generic_titles,
         "placeholder_findings": sorted(set(placeholders)),
+        "misleading_unapproved_finality": misleading_finality,
         "filename_valid": filename_valid,
         "expected_filename": expected_filename,
     }
