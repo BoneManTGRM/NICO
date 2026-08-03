@@ -197,7 +197,7 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     assert "Canonical Score Summary" not in result["markdown"]
     assert "PENDING HUMAN APPROVAL" in result["markdown"].upper()
-    assert "APPROVED FINAL" not in result["markdown"].upper()
+    assert "IT IS NOT AN APPROVED FINAL REPORT" in result["markdown"].upper()
     assert result["approval_status"] == "pending_human_approval"
     assert result["delivery_status"] == "blocked_pending_human_approval"
     assert result["client_delivery_allowed"] is False
@@ -213,7 +213,7 @@ def test_spanish_authoritative_renderer_preserves_pending_approval_boundary():
     result = rebuild_authoritative_premium_artifacts({"json": _canonical("es-MX")})
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     assert "APROBACIÓN" in result["markdown"].upper()
-    assert "FINAL APROBADO" not in result["markdown"].upper()
+    assert "NO ES UN INFORME FINAL APROBADO" in result["markdown"].upper()
     assert result["approval_status"] == "pending_human_approval"
     assert result["delivery_status"] == "blocked_pending_human_approval"
     assert result["client_delivery_allowed"] is False
