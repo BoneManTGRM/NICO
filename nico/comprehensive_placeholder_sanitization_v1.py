@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import io
-import json
 import re
 from copy import deepcopy
 from functools import wraps
@@ -77,7 +76,7 @@ def _sanitize_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_sanitize_value(item) for item in value]
     if isinstance(value, tuple):
-        return [_sanitize_value(item) for item in value]
+        return tuple(_sanitize_value(item) for item in value)
     if isinstance(value, str):
         return _PLACEHOLDER_RE.sub("anonymous callback", value)
     return deepcopy(value)
