@@ -91,9 +91,11 @@ def _canonical(status: str = "MODERATE") -> dict:
 def _package(status: str = "MODERATE") -> dict:
     return {
         "json": _canonical(status),
-        "markdown": "# FINAL REPORT\n79/100\n78/100\n",
+        "markdown": "# AUTOMATED DRAFT\n79/100\n78/100\n",
         "html": "<!doctype html><html><body>79/100 78/100</body></html>",
-        "pdf_filename": "nico-comprehensive-FINAL-PENDING-APPROVAL.pdf",
+        "pdf_filename": (
+            "nico-comprehensive-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+        ),
     }
 
 
@@ -213,6 +215,9 @@ def test_repeat_run_output_requires_identical_scores_sections_scanners_and_seman
             "section_status_score_parity_verified": True,
             "single_scanner_status_per_tool_verified": True,
             "score_clamping_forbidden": True,
+            "compact_evidence_summary_verified": True,
+            "automated_draft_language_verified": True,
+            "unapproved_finality_absent": True,
         },
     }
     runs = []
