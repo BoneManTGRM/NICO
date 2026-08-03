@@ -5,26 +5,34 @@ on:
     branches: [main]
     paths:
       - "nico/comprehensive_native_providers_v4.py"
+      - "nico/comprehensive_native_providers_v5.py"
       - "nico/comprehensive_score_truth_scope_v4.py"
       - "nico/v2_snapshot_scanner_authority.py"
       - "nico/api/comprehensive_production_bootstrap.py"
       - "tests/test_comprehensive_native_providers_v4.py"
+      - "tests/test_comprehensive_native_providers_v5.py"
       - "tests/test_comprehensive_score_truth_scope_v4.py"
       - "tests/test_real_90_publication_gate_v4.py"
       - "tests/test_secret_history_scan.py"
+      - "tests/test_comprehensive_native_production_binding.py"
+      - "tests/test_production_bootstrap_v4_binding.py"
       - "docs/real-90-scoring-contract-v4.md"
       - ".github/workflows/real-90-score-truth-v4.yml"
   push:
     branches: [main]
     paths:
       - "nico/comprehensive_native_providers_v4.py"
+      - "nico/comprehensive_native_providers_v5.py"
       - "nico/comprehensive_score_truth_scope_v4.py"
       - "nico/v2_snapshot_scanner_authority.py"
       - "nico/api/comprehensive_production_bootstrap.py"
       - "tests/test_comprehensive_native_providers_v4.py"
+      - "tests/test_comprehensive_native_providers_v5.py"
       - "tests/test_comprehensive_score_truth_scope_v4.py"
       - "tests/test_real_90_publication_gate_v4.py"
       - "tests/test_secret_history_scan.py"
+      - "tests/test_comprehensive_native_production_binding.py"
+      - "tests/test_production_bootstrap_v4_binding.py"
       - "docs/real-90-scoring-contract-v4.md"
       - ".github/workflows/real-90-score-truth-v4.yml"
   workflow_dispatch:
@@ -60,21 +68,27 @@ jobs:
         run: |
           python -m py_compile \
             nico/comprehensive_native_providers_v4.py \
+            nico/comprehensive_native_providers_v5.py \
             nico/comprehensive_score_truth_scope_v4.py \
             nico/v2_snapshot_scanner_authority.py \
             nico/api/comprehensive_production_bootstrap.py \
             tests/test_comprehensive_native_providers_v4.py \
+            tests/test_comprehensive_native_providers_v5.py \
             tests/test_comprehensive_score_truth_scope_v4.py \
             tests/test_real_90_publication_gate_v4.py \
-            tests/test_secret_history_scan.py
+            tests/test_secret_history_scan.py \
+            tests/test_comprehensive_native_production_binding.py \
+            tests/test_production_bootstrap_v4_binding.py
 
       - name: Run focused score and report truth regressions
         run: |
           python -m pytest -q \
             tests/test_comprehensive_native_providers_v4.py \
+            tests/test_comprehensive_native_providers_v5.py \
             tests/test_comprehensive_score_truth_scope_v4.py \
             tests/test_real_90_publication_gate_v4.py \
             tests/test_secret_history_scan.py \
             tests/test_comprehensive_native_providers_v2.py \
             tests/test_comprehensive_assessment_hardening_v1.py \
-            tests/test_comprehensive_native_production_binding.py
+            tests/test_comprehensive_native_production_binding.py \
+            tests/test_production_bootstrap_v4_binding.py

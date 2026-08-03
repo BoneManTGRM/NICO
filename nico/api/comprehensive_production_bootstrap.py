@@ -13,7 +13,7 @@ from nico.comprehensive_final_artifact_truth_v53 import (
     install_comprehensive_final_artifact_truth_v53,
 )
 from nico.comprehensive_final_report_execution_v1 import install_comprehensive_final_report_execution
-from nico.comprehensive_native_providers_v4 import install_native_comprehensive_providers
+from nico.comprehensive_native_providers_v5 import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import (
     PROVIDER_STATE_KEY,
@@ -26,7 +26,7 @@ from nico.decision_grade_scanner_executions_v1 import install_structured_scanner
 from nico.strategic_human_evidence_binding_v1 import install_strategic_human_evidence_binding
 from nico.v2_production_authority import install_v2_production_authority
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v17"
+VERSION = "nico.api.comprehensive_production_bootstrap.v18"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
