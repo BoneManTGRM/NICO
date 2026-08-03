@@ -39,7 +39,12 @@ def _pdf(*lines: str) -> bytes:
     return output.getvalue()
 
 
-def _payload(*, finality: str = "AUTOMATED DRAFT") -> dict:
+def _payload(
+    *,
+    finality: str = "AUTOMATED DRAFT",
+    incomplete_count: int = 7,
+    retired_appendix: bool = False,
+) -> dict:
     common = (
         "NICO Comprehensive Technical Assessment",
         "Functional QA",
@@ -51,29 +56,49 @@ def _payload(*, finality: str = "AUTOMATED DRAFT") -> dict:
     lifecycle = (
         f"{finality} · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
     )
+    incomplete = f"Incomplete applicable analyzers: {incomplete_count}"
+    appendix = "## Evidence Appendix" if retired_appendix else ""
     markdown = "\n\n".join(
-        (
+        value
+        for value in (
             "# NICO Comprehensive Technical Assessment",
             *common[1:],
             "## Evidence Package Summary",
+            incomplete,
+            appendix,
             lifecycle,
             "93/100",
         )
+        if value
     )
     rendered_html = (
         "<!doctype html><html><body>"
-        + " ".join((*common, "Evidence Package Summary", lifecycle, "93/100"))
+        + " ".join(
+            value
+            for value in (
+                *common,
+                "Evidence Package Summary",
+                incomplete,
+                "Evidence Appendix" if retired_appendix else "",
+                lifecycle,
+                "93/100",
+            )
+            if value
+        )
         + "</body></html>"
     )
     pdf = _pdf(
         *common,
         "Client Evidence Summary",
+        incomplete,
+        *("Evidence Appendix",) if retired_appendix else (),
         lifecycle,
         "93/100",
     )
     canonical = {
         "canonical_truth_sha256": "a" * 64,
         "assessment": {
+            "client_delivery_allowed": False,
             "maturity_signal": {
                 "level": "Exceptional",
                 "score": 93,
@@ -103,13 +128,17 @@ def _payload(*, finality: str = "AUTOMATED DRAFT") -> dict:
     }
     return {
         "canonical_truth_sha256": "a" * 64,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
         "record": {
+            "human_review_required": True,
+            "client_delivery_allowed": False,
             "stage_results": {
                 "final_comprehensive_report_generation": {
                     "assessment": canonical["assessment"],
                     "report_package": package,
                 }
-            }
+            },
         },
     }
 
@@ -119,7 +148,7 @@ def test_live_contract_accepts_compact_evidence_summary_without_retired_appendix
 ) -> None:
     acceptance = _load(ACCEPTANCE, "compact_contract_acceptance")
     contract = _load(CONTRACT, "compact_live_contract")
-    payload = _payload()
+    payload = _payload(incomplete_count=7)
 
     result = contract.validate_report(
         acceptance,
@@ -129,13 +158,18 @@ def test_live_contract_accepts_compact_evidence_summary_without_retired_appendix
         fallback=lambda *_args: pytest.fail("comprehensive must not use legacy fallback"),
     )
 
-    assert result["semantic_contract"]["status"] == "passed"
-    assert result["semantic_contract"]["compact_evidence_summary_verified"] is True
-    assert result["semantic_contract"]["automated_draft_language_verified"] is True
-    assert result["semantic_contract"]["unapproved_finality_absent"] is True
-    assert "Evidence Appendix" not in payload["record"]["stage_results"][
+    semantic = result["semantic_contract"]
+    assert semantic["status"] == "passed"
+    assert semantic["compact_evidence_summary_verified"] is True
+    assert semantic["canonical_incomplete_analyzer_count_verified"] is True
+    assert semantic["retired_evidence_appendix_absent"] is True
+    assert semantic["automated_draft_language_verified"] is True
+    assert semantic["unapproved_finality_absent"] is True
+    markdown = payload["record"]["stage_results"][
         "final_comprehensive_report_generation"
     ]["report_package"]["markdown"]
+    assert "Incomplete applicable analyzers: 7" in markdown
+    assert "Evidence Appendix" not in markdown
 
 
 def test_live_contract_rejects_unapproved_final_report_language(tmp_path: Path) -> None:
@@ -152,6 +186,20 @@ def test_live_contract_rejects_unapproved_final_report_language(tmp_path: Path) 
         )
 
 
+def test_live_contract_rejects_restored_raw_evidence_appendix(tmp_path: Path) -> None:
+    acceptance = _load(ACCEPTANCE, "retired_appendix_acceptance")
+    contract = _load(CONTRACT, "retired_appendix_contract")
+
+    with pytest.raises(AssertionError, match="retired raw Evidence Appendix"):
+        contract.validate_report(
+            acceptance,
+            "comprehensive",
+            _payload(retired_appendix=True),
+            tmp_path / "report.pdf",
+            fallback=lambda *_args: {},
+        )
+
+
 def test_non_comprehensive_service_preserves_existing_validator(tmp_path: Path) -> None:
     contract = _load(CONTRACT, "fallback_contract")
     sentinel = {"status": "legacy-express-validated"}
@@ -161,6 +209,29 @@ def test_non_comprehensive_service_preserves_existing_validator(tmp_path: Path) 
         "express",
         {},
         tmp_path / "express.pdf",
+        fallback=lambda *_args: sentinel,
+    )
+
+    assert result == sentinel
+
+
+def test_synthetic_comprehensive_fixture_preserves_existing_validator(tmp_path: Path) -> None:
+    contract = _load(CONTRACT, "synthetic_fallback_contract")
+    acceptance = type(
+        "Acceptance",
+        (),
+        {
+            "report_package": staticmethod(lambda *_args: {"json": {}}),
+            "assessment_payload": staticmethod(lambda *_args: {}),
+        },
+    )()
+    sentinel = {"status": "synthetic-semantic-fixture"}
+
+    result = contract.validate_report(
+        acceptance,
+        "comprehensive",
+        {},
+        tmp_path / "synthetic.pdf",
         fallback=lambda *_args: sentinel,
     )
 
