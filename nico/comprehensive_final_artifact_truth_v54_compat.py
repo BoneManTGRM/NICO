@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_final_artifact_truth_v54_compat.v5"
+VERSION = "nico.comprehensive_final_artifact_truth_v54_compat.v6"
 _MARKER = "_nico_comprehensive_final_artifact_truth_v54_compat_v1"
 _PROJECTION_MARKER = "_nico_comprehensive_projection_fixture_compat_v1"
 _VALIDATION_MARKER = "_nico_comprehensive_legacy_projection_validation_v1"
@@ -168,14 +168,21 @@ def _install_projection_truth() -> dict[str, Any]:
     from nico.comprehensive_scanner_completion_projection_v56 import (
         install_comprehensive_scanner_completion_projection_v56,
     )
+    from nico.comprehensive_scanner_register_projection_truth_v57 import (
+        install_comprehensive_scanner_register_projection_truth_v57,
+    )
 
     canonical_projection = install_comprehensive_canonical_projection_truth_v55()
     scanner_completion = install_comprehensive_scanner_completion_projection_v56()
+    scanner_register_projection = (
+        install_comprehensive_scanner_register_projection_truth_v57()
+    )
     fixture_compatibility = _install_projection_fixture_compat()
     validation_compatibility = _install_legacy_validation_compat()
     return {
         "canonical_projection": canonical_projection,
         "scanner_completion_projection": scanner_completion,
+        "scanner_register_projection_truth": scanner_register_projection,
         "projection_fixture_compatibility": fixture_compatibility,
         "legacy_validation_compatibility": validation_compatibility,
     }
