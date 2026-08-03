@@ -47,16 +47,25 @@ def _package(
     spanish: bool = False,
     evidence: bool = True,
     appendix: bool = False,
+    appendix_reference: bool = False,
     compact: bool = True,
 ) -> dict:
     if spanish:
         cover = "Evaluación Técnica Integral NICO"
         evidence_marker = "Resumen del paquete de evidencia"
         review = "Puerta de revisión humana y aceptación"
+        appendix_heading = "Apéndice de evidencia"
+        appendix_note = (
+            "El Apéndice de evidencia completo permanece fuera del PDF del cliente."
+        )
     else:
         cover = "NICO COMPREHENSIVE"
         evidence_marker = "Evidence Package Summary"
         review = "Human Review and Acceptance Gate"
+        appendix_heading = "Evidence Appendix"
+        appendix_note = (
+            "The full Evidence Appendix remains outside the client PDF."
+        )
     lines = [
         cover,
         "Canonical Technical Scorecard",
@@ -67,8 +76,10 @@ def _package(
     ]
     if evidence:
         lines.insert(2, evidence_marker)
+    if appendix_reference:
+        lines.insert(-1, appendix_note)
     if appendix:
-        lines.append("Evidence Appendix")
+        lines.append(appendix_heading)
     text = "\n".join(lines)
     package = {
         "json": _canonical(),
@@ -129,6 +140,20 @@ def test_spanish_compact_report_uses_localized_marker_groups() -> None:
     )
 
 
+def test_bounded_appendix_reference_is_not_misclassified_as_raw_section() -> None:
+    install_compact_design_marker_gate()
+
+    english = client_render.validate_existing_report_accuracy(
+        _package(appendix_reference=True)
+    )
+    spanish = client_render.validate_existing_report_accuracy(
+        _package(spanish=True, appendix_reference=True)
+    )
+
+    assert english["retired_evidence_appendix_absent"] is True
+    assert spanish["retired_evidence_appendix_absent"] is True
+
+
 def test_missing_compact_evidence_summary_remains_fail_closed() -> None:
     install_compact_design_marker_gate()
 
@@ -141,6 +166,15 @@ def test_retired_raw_evidence_appendix_remains_blocked() -> None:
 
     with pytest.raises(ValueError, match="retired raw evidence appendix"):
         client_render.validate_existing_report_accuracy(_package(appendix=True))
+
+
+def test_spanish_retired_raw_evidence_appendix_remains_blocked() -> None:
+    install_compact_design_marker_gate()
+
+    with pytest.raises(ValueError, match="retired raw evidence appendix"):
+        client_render.validate_existing_report_accuracy(
+            _package(spanish=True, appendix=True)
+        )
 
 
 def test_delegate_still_blocks_scanner_truth_conflicts() -> None:
