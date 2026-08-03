@@ -27,22 +27,31 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
-      - name: Compile and verify single-dispatch recovery proof
+      - name: Compile and verify single-dispatch recovery and PDF proof
         run: |
           set -euo pipefail
-          python -m py_compile scripts/mobile_restart_live_acceptance_v1.py scripts/mobile_restart_live_acceptance_v3.py
+          python -m py_compile \
+            scripts/mobile_pdf_download_action_proof_v1.py \
+            scripts/mobile_restart_live_acceptance_v1.py \
+            scripts/mobile_restart_live_acceptance_v3.py \
+            scripts/mobile_restart_live_acceptance_v5.py
           python - <<'PY'
           from pathlib import Path
           proof = Path("scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
+          download = Path("scripts/mobile_pdf_download_action_proof_v1.py").read_text(encoding="utf-8")
+          wrapper = Path("scripts/mobile_restart_live_acceptance_v5.py").read_text(encoding="utf-8")
           assert 'nico.mobile_restart_live_acceptance.single_dispatch.v3' in proof
           assert 'class _SingleDispatchLocator' in proof
           assert 'button.click();' in proof
           assert 'start_dispatch_retry_absent' in proof
           assert '_ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)' in proof
+          assert 'page.expect_download(timeout=240_000)' in download
+          assert 'ui_review_pdf_download_verified' in download
+          assert 'install_ui_pdf_download_proof(recovery)' in wrapper
           PY
 
   live-production:
-    name: Reload active and terminal mobile assessment
+    name: Reload mobile assessment and download the exact review PDF
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: contract
     runs-on: ubuntu-latest
@@ -70,7 +79,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for exact-SHA single-dispatch mobile recovery proof",
+              "description": "Waiting for exact-SHA mobile recovery and review PDF download proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -99,7 +108,7 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-mobile-single-dispatch-proof",
+                      "User-Agent": "nico-mobile-single-dispatch-pdf-proof",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -140,12 +149,12 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
           python -m playwright install --with-deps chromium
 
-      - name: Prove one-click recovery across running and terminal restarts
+      - name: Prove recovery and exact-run review PDF download
         id: restart_proof
         continue-on-error: true
         run: |
           set -euo pipefail
-          python scripts/mobile_restart_live_acceptance_v3.py \
+          python scripts/mobile_restart_live_acceptance_v5.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -184,6 +193,12 @@ jobs:
           assert payload["terminal_restart_recovery_verified"] is True
           assert payload["terminal_manifest_bounded"] is True
           assert payload["pdf_signature_verified"] is True
+          assert payload["ui_review_pdf_download_verified"] is True
+          assert payload["ui_review_pdf_signature_verified"] is True
+          assert payload["ui_review_pdf_exact_run_filename_verified"] is True
+          assert payload["ui_review_pdf_artifact_status_cleared"] is True
+          assert payload["ui_review_pdf_original_user_gesture_preserved"] is True
+          assert payload["ui_review_pdf_proof_version"] == "nico.mobile-pdf-download-action-proof.v1"
           assert payload["terminal_before_reload"]["commit_sha"] == payload["expected_sha"]
           assert "Awaiting" not in payload["terminal_before_reload"]["score"]
           assert payload["terminal_after_reload"]["pdf_enabled"] == "true"
@@ -198,7 +213,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "One mobile click created and recovered one exact scored run",
+              "description": "Mobile recovered one exact run and downloaded its review PDF",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -218,7 +233,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Single-dispatch mobile recovery proof failed",
+              "description": "Mobile recovery or review PDF download proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
