@@ -31,7 +31,7 @@ jobs:
         run: |
           pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
           pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
-          pytest -q tests/test_comprehensive_client_ready_projection_v1.py tests/test_client_pdf_status_sanitizer_v1.py tests/test_client_pdf_compose_v2.py
+          pytest -q tests/test_comprehensive_client_ready_projection_v1.py tests/test_client_pdf_status_sanitizer_v1.py tests/test_client_pdf_compose_v2.py tests/test_client_text_status_sanitizer_v1.py
       - name: Generate retained real-package contract proof
         run: |
           mkdir -p phase9-comprehensive-proof
@@ -78,6 +78,7 @@ jobs:
           page_count = len(reader.pages)
           pdf_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
           markdown = package['markdown']
+          html = package['html']
           assert len(canonical['canonical_findings']) == 1
           assert package['phase9_release_gate']['valid'] is True
           assert package['pdf_filename'].count('AUTOMATED-DRAFT-PENDING-APPROVAL') == 1
@@ -89,9 +90,14 @@ jobs:
           assert page_count <= 45
           assert 'AUTOMATED DRAFT' in markdown
           assert 'FINAL REPORT' not in markdown
+          assert 'a automated' not in markdown
+          assert 'AUTOMATED DRAFT' in html
+          assert 'FINAL REPORT' not in html
+          assert 'a automated' not in html
           assert 'AUTOMATED DRAFT' in pdf_text
           assert 'FINAL REPORT' not in pdf_text
           assert ' · FINAL' not in pdf_text
+          assert 'a automated' not in pdf_text
           assert 'report_contract_reason' not in pdf_text
           assert 'comprehensive_final_report_semantic_contract_failed' not in pdf_text
           assert 'stage_execution.artifact_schema' not in pdf_text
@@ -101,6 +107,8 @@ jobs:
           (root / 'findings.csv').write_bytes(base64.b64decode(package['findings_csv_base64']))
           (root / 'report-en.pdf').write_bytes(pdf)
           (root / 'report-en.txt').write_text(pdf_text, encoding='utf-8')
+          (root / 'report-en.md').write_text(markdown, encoding='utf-8')
+          (root / 'report-en.html').write_text(html, encoding='utf-8')
           manifest = {
               'immutable_revision': revision,
               'repository': os.environ.get('GITHUB_REPOSITORY'),
@@ -120,6 +128,7 @@ jobs:
                   'unapproved_finality_language': True,
                   'legacy_final_pdf_headers': True,
                   'raw_internal_pdf_fields': True,
+                  'bad_automated_draft_grammar': True,
                   'oversized_client_pdf': True,
               },
           }
@@ -136,6 +145,8 @@ jobs:
           root = Path('phase9-comprehensive-proof')
           manifest = json.loads((root / 'manifest.json').read_text())
           text = (root / 'report-en.txt').read_text(encoding='utf-8')
+          markdown = (root / 'report-en.md').read_text(encoding='utf-8')
+          html = (root / 'report-en.html').read_text(encoding='utf-8')
           assert manifest['immutable_revision'] == os.environ['PHASE9_REVISION']
           assert all(manifest['defects_absent'].values())
           assert manifest['finding_count'] == 1
@@ -143,7 +154,9 @@ jobs:
           assert manifest['report_finality'] == 'automated_draft'
           assert manifest['approval_status'] == 'pending_human_approval'
           assert manifest['delivery_status'] == 'blocked_pending_human_approval'
-          assert 'FINAL REPORT' not in text
+          for value in (text, markdown, html):
+              assert 'FINAL REPORT' not in value
+              assert 'a automated' not in value
           assert ' · FINAL' not in text
           assert 'report_contract_reason' not in text
           assert (root / 'report-en.pdf').read_bytes().startswith(b'%PDF')
