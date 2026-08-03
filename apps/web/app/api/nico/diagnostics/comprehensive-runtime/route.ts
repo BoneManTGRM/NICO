@@ -2,10 +2,10 @@ import type {NextRequest} from "next/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 20;
 
-const UPSTREAM_TIMEOUT_MS = 15_000;
-const RETRY_DELAYS_MS = [0, 1_500];
+const UPSTREAM_TIMEOUT_MS = 12_000;
+const RETRY_DELAYS_MS = [0];
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 type JsonRecord = Record<string, unknown>;
@@ -72,34 +72,43 @@ function blockedReadiness(
   message: string,
   attempts: number,
   extra: JsonRecord = {},
+  transportStatus = 200,
 ): Response {
-  // Return a successful transport response with a blocked readiness payload. The
-  // browser validates status and persistence itself, so this avoids multiplying
-  // the proxy's bounded retries with another full client retry cycle.
+  const retryable = TRANSIENT_STATUS.has(transportStatus);
   return Response.json(
     {
       status: "blocked",
       configured: false,
       reason,
       message,
-      retryable: true,
+      retryable,
+      detail: {
+        code: reason,
+        message,
+        retryable,
+        request_id: requestId,
+      },
       survives_container_replacement_verified: false,
       persistence: {
         survives_container_replacement_verified: false,
         durability_verified: false,
       },
       preflight_proxy: {
-        status: "bounded_failure",
+        status: retryable ? "transient_failure" : "bounded_failure",
         attempts,
         timeout_ms: UPSTREAM_TIMEOUT_MS,
+        browser_retry_authoritative: retryable,
         ...extra,
       },
       human_review_required: true,
       client_delivery_allowed: false,
     },
     {
-      status: 200,
-      headers: boundedHeaders(requestId, attempts),
+      status: transportStatus,
+      headers: {
+        ...boundedHeaders(requestId, attempts),
+        ...(retryable ? {"Retry-After": "2"} : {}),
+      },
     },
   );
 }
@@ -169,8 +178,15 @@ export async function GET(request: NextRequest): Promise<Response> {
       lastFailure = Object.keys(payload).length
         ? upstreamReason(payload, response.status)
         : `upstream_${response.status}_invalid_json`;
-      if (TRANSIENT_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length - 1) {
-        continue;
+      if (TRANSIENT_STATUS.has(response.status)) {
+        return blockedReadiness(
+          requestId,
+          lastFailure,
+          "The Comprehensive assessment service is temporarily busy and will be checked again.",
+          attempt + 1,
+          {last_upstream_status: response.status},
+          503,
+        );
       }
       return blockedReadiness(
         requestId,
@@ -197,5 +213,6 @@ export async function GET(request: NextRequest): Promise<Response> {
       failure_class: lastFailure,
       backend_candidate_count: 1,
     },
+    503,
   );
 }
