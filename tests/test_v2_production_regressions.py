@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
+from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 from nico.v2_scanner_reconciliation import normalize_record
 
@@ -111,7 +112,11 @@ def test_finalizer_eliminates_production_contradictions_and_duplicates():
     assert len(canonical["canonical_findings"]) == 1
     assert len(canonical["canonical_findings"][0]["acceptance_criteria"]) == 1
     for key in ("pdf_filename", "spanish_pdf_filename", "json_filename", "markdown_filename", "csv_filename"):
-        assert package[key].count("FINAL-PENDING-APPROVAL") == 1
+        assert package[key].count(APPROVAL_SUFFIX) == 1
+        assert "FINAL-PENDING-APPROVAL" not in package[key]
+    assert package["report_finality"] == "automated_draft"
+    assert package["approval_status"] == "pending_human_approval"
+    assert package["delivery_status"] == "blocked_pending_human_approval"
     assert package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     hashes = {
