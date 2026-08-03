@@ -27,6 +27,9 @@ from nico.comprehensive_report_package import (
     _stage_summary,
     _text,
 )
+from nico.comprehensive_report_semantic_content_gate_v66 import (
+    install_comprehensive_report_semantic_content_gate_v66,
+)
 from nico.comprehensive_zero_finding_finality_truth_v1 import (
     install_comprehensive_zero_finding_finality_truth_v1,
 )
@@ -74,7 +77,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     The compact premium renderer is extended with truthful scanner counts, rich finding
     cards, and separately labeled CI operational health. Duplicate full-page finding
-    copies remain removed.
+    copies remain removed. A semantic gate blocks publication if any restored finding,
+    review-candidate count, or CI operational boundary disappears from client formats.
 
     The report package and its canonical JSON carry the same explicit Comprehensive
     service identity so every renderer and release verifier reads one unambiguous
@@ -140,6 +144,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     )
     canonical["assessment"] = assessment
     report_content_render = install_comprehensive_report_content_render_v66()
+    semantic_content_gate = install_comprehensive_report_semantic_content_gate_v66()
 
     truth_sha = _canonical_hash(canonical)
     report_id = (
@@ -158,6 +163,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
         "report_content_render": deepcopy(report_content_render),
+        "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installed": (
             POST_READINESS_MATURITY_TRUTH.get("bound") is True
         ),
@@ -187,6 +193,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
         "report_content_render": deepcopy(report_content_render),
+        "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installation": deepcopy(
             POST_READINESS_MATURITY_TRUTH
         ),
