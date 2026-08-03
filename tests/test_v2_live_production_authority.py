@@ -175,10 +175,15 @@ def _forbid_final_stage_scan(monkeypatch) -> None:
 
 
 def _assert_review_gated_verification(verification: dict) -> None:
-    assert verification["status"] == "blocked", verification
-    assert verification["reason"] == "cross_format_final_report_verification_failed"
-    assert verification["failed_checks"] == ["report_finality_is_final"]
-    assert verification["checks"]["report_finality_is_final"] is False
+    assert verification["status"] == "complete", verification
+    assert verification["required_finality"] == "automated_draft"
+    assert verification["required_approval_status"] == "pending_human_approval"
+    assert verification["required_delivery_status"] == "blocked_pending_human_approval"
+    assert verification["checks"]["report_finality_is_automated_draft"] is True
+    assert "report_finality_is_final" not in verification["checks"]
+    assert verification["evidence"]["automated_draft_package_verified"] is True
+    assert verification["evidence"]["human_review_required"] is True
+    assert verification["evidence"]["client_delivery_allowed"] is False
 
 
 def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
