@@ -14,6 +14,7 @@ from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
 )
+from nico.client_pdf_compose_v2 import compose_compact_client_pdf
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
 from nico.client_ready_html_v1 import render_client_html
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
@@ -27,13 +28,12 @@ from nico.comprehensive_client_ready_projection_v1 import (
     VERSION as CLIENT_READY_VERSION,
     apply_automated_draft_truth,
     compact_client_markdown,
-    compose_compact_client_pdf,
     render_compact_finding_register_pdf,
     render_evidence_review_gate_pdf,
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 
-VERSION = "nico.client-report-completion.v8"
+VERSION = "nico.client-report-completion.v9"
 
 
 def _text(value: Any, limit: int = 12000) -> str:
@@ -153,10 +153,29 @@ def _validate_final_surfaces(
         raise ValueError("client report retained unknown analyzer and rule identity")
     if "No structured item was retained." in combined:
         raise ValueError("client report retained obsolete empty finding copy")
-    if any(marker in combined for marker in ("FINAL REPORT", "INFORME FINAL", "AUTOMATED FINAL")):
+    if any(
+        marker in combined
+        for marker in (
+            "FINAL REPORT",
+            "INFORME FINAL",
+            "AUTOMATED FINAL",
+            " · FINAL Page",
+            " · FINAL Página",
+        )
+    ):
         raise ValueError("unapproved client report used finality language")
     if "AUTOMATED DRAFT" not in combined and "BORRADOR AUTOMATIZADO" not in combined:
         raise ValueError("client report omitted automated-draft status")
+    for internal_marker in (
+        "report_contract_reason",
+        "comprehensive_final_report_semantic_contract_failed",
+        "stage_execution.artifact_schema",
+        "human_evidence_summary.",
+    ):
+        if internal_marker in extracted:
+            raise ValueError(
+                f"client PDF exposed raw internal evidence field: {internal_marker}"
+            )
     if len(reader.pages) > MAX_CLIENT_PDF_PAGES:
         raise ValueError(
             f"client report exceeds the {MAX_CLIENT_PDF_PAGES}-page client boundary"
