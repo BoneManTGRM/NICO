@@ -21,13 +21,19 @@ from nico.comprehensive_report_package import (
     _stage_summary,
     _text,
 )
+from nico.comprehensive_zero_finding_finality_truth_v1 import (
+    install_comprehensive_zero_finding_finality_truth_v1,
+)
 
 POST_READINESS_MATURITY_TRUTH = install_post_readiness_maturity_truth()
 POST_READINESS_REPORT_CONTRACT_TRUTH = (
     install_post_readiness_report_contract_truth()
 )
+ZERO_FINDING_FINALITY_TRUTH = (
+    install_comprehensive_zero_finding_finality_truth_v1()
+)
 
-VERSION = "nico.comprehensive_canonical_report_source.v4"
+VERSION = "nico.comprehensive_canonical_report_source.v5"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -50,9 +56,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     Before stage evidence is flattened, one preliminary maturity taxonomy is projected
     into explicit aliases. Installed post-readiness boundaries then apply the final
-    client-readiness maturity label and remove only superseded internal report-contract
-    diagnostics after that contract exists and before the authoritative renderer sees
-    the canonical model.
+    client-readiness maturity label, remove only superseded internal report-contract
+    diagnostics, and allow a fully explicit zero-finding canonical register only when
+    every mirrored finding-count alias is present and synchronized to zero.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -126,6 +132,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "post_readiness_report_contract_truth_installed": (
             POST_READINESS_REPORT_CONTRACT_TRUTH.get("bound") is True
         ),
+        "zero_finding_finality_truth_installed": (
+            ZERO_FINDING_FINALITY_TRUTH.get("bound") is True
+        ),
         "legacy_markdown_rendered": False,
         "legacy_html_rendered": False,
         "legacy_pdf_rendered": False,
@@ -150,6 +159,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "post_readiness_report_contract_truth_installation": deepcopy(
             POST_READINESS_REPORT_CONTRACT_TRUTH
         ),
+        "zero_finding_finality_truth_installation": deepcopy(
+            ZERO_FINDING_FINALITY_TRUTH
+        ),
         "canonical_truth_sha256": truth_sha,
         "canonical_only_source": True,
         "single_artifact_render_required": True,
@@ -162,6 +174,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "POST_READINESS_MATURITY_TRUTH",
     "POST_READINESS_REPORT_CONTRACT_TRUTH",
+    "ZERO_FINDING_FINALITY_TRUTH",
     "VERSION",
     "build_canonical_report_source",
 ]
