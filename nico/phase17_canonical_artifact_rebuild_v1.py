@@ -15,6 +15,9 @@ from nico.client_report_completion_v2 import (
     prepare_client_report_package,
 )
 from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
+from nico.comprehensive_automated_draft_cross_format_v1 import (
+    install_automated_draft_cross_format_contract,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -31,6 +34,7 @@ from nico.v2_single_pass_premium_report import rebuild_single_pass_premium_artif
 # Bandit configuration deterministic and preserves one fail-closed scanner chain.
 _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
+_AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 install_pipeline_projection()
 install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
@@ -45,7 +49,9 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
 
 def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(package))
-    pdf = sanitize_client_pdf_status(base64.b64decode(str(result.get("pdf_base64") or "")))
+    pdf = sanitize_client_pdf_status(
+        base64.b64decode(str(result.get("pdf_base64") or ""))
+    )
     markdown = sanitize_client_text_status(str(result.get("markdown") or ""))
     rendered_html = sanitize_client_text_status(str(result.get("html") or ""))
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
@@ -54,9 +60,13 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
             "markdown": markdown,
-            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            "markdown_sha256": hashlib.sha256(
+                markdown.encode("utf-8")
+            ).hexdigest(),
             "html": rendered_html,
-            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
+            "html_sha256": hashlib.sha256(
+                rendered_html.encode("utf-8")
+            ).hexdigest(),
             "pdf_page_count": page_count,
             "core_report_page_count": page_count,
             "final_package_page_count": page_count,
@@ -85,7 +95,11 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # compiler derives stages, scores, executive findings, and artifact content.
     prepared = prepare_client_report_package(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
-    canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
+    canonical = (
+        rendered.get("json")
+        if isinstance(rendered.get("json"), Mapping)
+        else {}
+    )
     repaired = (
         repair_localized_rendered_report(rendered)
         if _is_spanish(canonical)
@@ -102,6 +116,7 @@ __all__ = [
     "VERSION",
     "_SCANNER_COMMAND_REPAIR",
     "_SCANNER_EVIDENCE_CONTRACT",
+    "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "rebuild_client_artifacts",
 ]
