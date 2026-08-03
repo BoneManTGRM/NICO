@@ -6,6 +6,9 @@ from typing import Any, Mapping
 from nico.comprehensive_decision_content_restoration_v66 import (
     restore_decision_content,
 )
+from nico.comprehensive_finding_count_truth_v66 import (
+    reconcile_finding_count_truth,
+)
 from nico.comprehensive_maturity_label_truth_v1 import (
     synchronize_maturity_label_truth,
 )
@@ -73,7 +76,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     review-required candidate counts, and separately unscored CI operational context
     are restored into canonical truth before hashing. A zero-finding final register is
     therefore valid only when the retained source package contains neither structured
-    decision findings nor actionable exact-SHA production complexity evidence.
+    decision findings nor actionable exact-SHA production complexity evidence. Any stale
+    zero-count aliases in retained stage summaries are synchronized to the restored
+    canonical population without modifying scanner or review-candidate counts.
 
     The compact premium renderer is extended with truthful scanner counts, rich finding
     cards, and separately labeled CI operational health. Duplicate full-page finding
@@ -143,6 +148,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         commit_sha=identity["commit_sha"],
     )
     canonical["assessment"] = assessment
+    canonical, finding_count_truth = reconcile_finding_count_truth(canonical)
+    assessment = dict(canonical.get("assessment") or {})
+    ordered = list(canonical.get("stage_summaries") or [])
     report_content_render = install_comprehensive_report_content_render_v66()
     semantic_content_gate = install_comprehensive_report_semantic_content_gate_v66()
 
@@ -162,6 +170,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_only_source": True,
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
+        "finding_count_truth": deepcopy(finding_count_truth),
         "report_content_render": deepcopy(report_content_render),
         "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installed": (
@@ -192,6 +201,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
+        "finding_count_truth": deepcopy(finding_count_truth),
         "report_content_render": deepcopy(report_content_render),
         "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installation": deepcopy(
