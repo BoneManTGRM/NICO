@@ -673,7 +673,15 @@ def scanner_triage_provider(context: dict[str, Any]) -> dict[str, Any]:
         ),
         scanner_triage={
             "finding_summary": scan.get("finding_summary") or {},
-            "canonical_scanner_finding_register": register,
+            "canonical_scanner_finding_register_reference": {
+                "artifact_schema": register["artifact_schema"],
+                "status": register["status"],
+                "exact_commit_sha": register["exact_commit_sha"],
+                "canonical_digest_sha256": register["canonical_digest_sha256"],
+                "canonical_finding_count": register["totals"]["raw"],
+                "count_parity_verified": register["count_parity_verified"],
+                "raw_payload_retention_complete": register["raw_payload_retention_complete"],
+            },
             "tools_run": scan.get("tools_run") or [],
             "failed_tools": scan.get("failed_tools") or [],
             "timed_out_tools": scan.get("timed_out_tools") or [],
