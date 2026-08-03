@@ -17,6 +17,18 @@ def _digest(findings: list[dict]) -> str:
     ).hexdigest()
 
 
+def _canonical_digest(canonical: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _record(*, evidence: str, fingerprint: str, count: int = 1) -> dict:
     return {
         "finding_id": f"NICO-SCAN-{fingerprint[:16].upper()}",
@@ -116,11 +128,11 @@ def test_projection_checks_verify_both_source_and_rendered_truth() -> None:
     }
 
 
-def test_rendered_evidence_tamper_fails_rendered_digest() -> None:
+def test_rendered_evidence_tamper_fails_rendered_digest_before_final_binding() -> None:
     normalized = projection.normalize_scanner_register_projection(_canonical())
     normalized["assessment"]["canonical_scanner_finding_register"]["findings"][0][
         "evidence"
-    ] = "Tampered after final projection"
+    ] = "Changed by a later client-safe redaction layer"
 
     checks = projection.scanner_register_projection_checks(normalized)
 
@@ -136,6 +148,81 @@ def test_scanner_count_reference_tamper_fails_coverage_truth() -> None:
 
     assert checks["canonical_scanner_digest_recomputes"] is True
     assert checks["canonical_scanner_coverage_reference_matches"] is False
+
+
+def test_final_binding_uses_exact_post_redaction_projection_and_refreshes_hash() -> None:
+    normalized = projection.normalize_scanner_register_projection(_canonical())
+    source_register = normalized["assessment"]["canonical_scanner_finding_register"]
+    source_digest = source_register["source_canonical_digest_sha256"]
+    source_fingerprint = source_register["findings"][0]["raw_fingerprint"]
+    normalized["assessment"]["canonical_scanner_finding_register"]["findings"][0][
+        "evidence"
+    ] = "Final client-safe redacted evidence"
+    package = {"json": normalized, "canonical_truth_sha256": "stale"}
+
+    bound = projection.bind_final_scanner_register_projection(package)
+    register = bound["json"]["assessment"]["canonical_scanner_finding_register"]
+    coverage = bound["json"]["assessment"]["evidence_coverage"]
+
+    assert register["source_canonical_digest_sha256"] == source_digest
+    assert register["canonical_digest_sha256"] == source_digest
+    assert register["findings"][0]["raw_fingerprint"] == source_fingerprint
+    assert register["rendered_projection_digest_sha256"] == _digest(register["findings"])
+    assert coverage["canonical_scanner_rendered_digest_sha256"] == register[
+        "rendered_projection_digest_sha256"
+    ]
+    assert bound["canonical_truth_sha256"] == _canonical_digest(bound["json"])
+    assert package["json"] == bound["json"]
+    assert package["canonical_truth_sha256"] == bound["canonical_truth_sha256"]
+    assert projection.scanner_register_projection_checks(bound["json"]) == {
+        "canonical_scanner_digest_recomputes": True,
+        "canonical_scanner_coverage_reference_matches": True,
+    }
+
+
+def test_validator_binds_after_late_redaction_before_delegating() -> None:
+    normalized = projection.normalize_scanner_register_projection(_canonical())
+    normalized["assessment"]["canonical_scanner_finding_register"]["findings"][0][
+        "evidence"
+    ] = "Late final-report redaction"
+    package = {"json": normalized, "canonical_truth_sha256": "stale"}
+    delegated: dict = {}
+
+    def delegate(final_package: dict) -> dict:
+        delegated.update(final_package)
+        assert projection.scanner_register_projection_checks(final_package["json"]) == {
+            "canonical_scanner_digest_recomputes": True,
+            "canonical_scanner_coverage_reference_matches": True,
+        }
+        assert final_package["canonical_truth_sha256"] == _canonical_digest(
+            final_package["json"]
+        )
+        return {
+            "status": "blocked",
+            "checks": {
+                "canonical_scanner_digest_recomputes": False,
+                "canonical_scanner_coverage_reference_matches": False,
+                "canonical_scanner_totals_recompute": True,
+                "canonical_scanner_count_parity_verified": True,
+                "automated_package_remains_human_review_gated": True,
+            },
+            "failed_checks": [
+                "canonical_scanner_digest_recomputes",
+                "canonical_scanner_coverage_reference_matches",
+            ],
+        }
+
+    result = projection.validate_scanner_register_projection(package, delegate)
+
+    assert delegated
+    assert result["status"] == "verified"
+    assert result["failed_checks"] == []
+    assert result["rendered_scanner_digest_bound_at_final_validation"] is True
+    assert result["canonical_truth_sha256"] == package["canonical_truth_sha256"]
+    assert result["checks"]["canonical_scanner_totals_recompute"] is True
+    assert result["checks"]["canonical_scanner_count_parity_verified"] is True
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
 
 
 def test_validator_replaces_only_obsolete_ambiguous_checks() -> None:
