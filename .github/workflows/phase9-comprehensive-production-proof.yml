@@ -35,8 +35,9 @@ jobs:
         run: |
           mkdir -p phase9-comprehensive-proof
           python - <<'PY'
-          import base64, hashlib, json, os
+          import base64, hashlib, io, json, os
           from pathlib import Path
+          from pypdf import PdfReader
           from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
           revision = os.environ['PHASE9_REVISION']
@@ -71,15 +72,25 @@ jobs:
           output = finalize_report_package(result)
           package = output['report_package']
           canonical = package['json']
+          pdf = base64.b64decode(package['pdf_base64'])
+          page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+          markdown = package['markdown']
           assert len(canonical['canonical_findings']) == 1
           assert package['phase9_release_gate']['valid'] is True
-          assert package['pdf_filename'].count('FINAL-PENDING-APPROVAL') == 1
-          assert package['spanish_pdf_filename'].count('FINAL-PENDING-APPROVAL') == 1
+          assert package['pdf_filename'].count('AUTOMATED-DRAFT-PENDING-APPROVAL') == 1
+          assert package['spanish_pdf_filename'].count('AUTOMATED-DRAFT-PENDING-APPROVAL') == 1
+          assert package['report_finality'] == 'automated_draft'
+          assert package['approval_status'] == 'pending_human_approval'
+          assert package['delivery_status'] == 'blocked_pending_human_approval'
+          assert package['client_delivery_allowed'] is False
+          assert page_count <= 45
+          assert 'AUTOMATED DRAFT' in markdown
+          assert 'FINAL REPORT' not in markdown
           root = Path('phase9-comprehensive-proof')
           (root / 'canonical.json').write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding='utf-8')
           (root / 'release-gate.json').write_text(json.dumps(package['phase9_release_gate'], indent=2), encoding='utf-8')
           (root / 'findings.csv').write_bytes(base64.b64decode(package['findings_csv_base64']))
-          (root / 'report-en.pdf').write_bytes(base64.b64decode(package['pdf_base64']))
+          (root / 'report-en.pdf').write_bytes(pdf)
           manifest = {
               'immutable_revision': revision,
               'repository': os.environ.get('GITHUB_REPOSITORY'),
@@ -87,11 +98,17 @@ jobs:
               'canonical_truth_sha256': package['canonical_truth_sha256'],
               'artifact_sha256': {},
               'finding_count': len(canonical['canonical_findings']),
+              'pdf_page_count': page_count,
+              'report_finality': package['report_finality'],
+              'approval_status': package['approval_status'],
+              'delivery_status': package['delivery_status'],
               'defects_absent': {
                   'duplicate_findings': True,
                   'duplicate_acceptance_criteria': True,
                   'generic_priority_titles': True,
                   'repeated_terminal_filename': True,
+                  'unapproved_finality_language': True,
+                  'oversized_client_pdf': True,
               },
           }
           for path in sorted(root.iterdir()):
@@ -109,6 +126,10 @@ jobs:
           assert manifest['immutable_revision'] == os.environ['PHASE9_REVISION']
           assert all(manifest['defects_absent'].values())
           assert manifest['finding_count'] == 1
+          assert manifest['pdf_page_count'] <= 45
+          assert manifest['report_finality'] == 'automated_draft'
+          assert manifest['approval_status'] == 'pending_human_approval'
+          assert manifest['delivery_status'] == 'blocked_pending_human_approval'
           assert (root / 'report-en.pdf').read_bytes().startswith(b'%PDF')
           assert (root / 'canonical.json').is_file()
           assert (root / 'findings.csv').is_file()
