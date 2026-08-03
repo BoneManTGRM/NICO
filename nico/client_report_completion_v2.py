@@ -14,6 +14,7 @@ from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
 )
+from nico.client_ready_html_v1 import render_client_html
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
 )
@@ -30,7 +31,6 @@ from nico.comprehensive_client_ready_projection_v1 import (
     render_evidence_review_gate_pdf,
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
-from nico.v2_authoritative_premium_report import _html_from_markdown
 
 VERSION = "nico.client-report-completion.v7"
 
@@ -199,7 +199,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         if spanish
         else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
     )
-    rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
+    rendered_html = render_client_html(markdown, title, spanish=spanish)
 
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
     register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
