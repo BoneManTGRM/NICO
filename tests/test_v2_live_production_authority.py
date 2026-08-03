@@ -145,8 +145,11 @@ def _assert_shared_truth(output: dict) -> None:
     assert scanners["eslint"]["state"] == "completed_with_findings"
     assert scanners["eslint"]["verified"] is True
 
-    assert package["pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
-    assert package["spanish_pdf_filename"].count("FINAL-PENDING-APPROVAL") == 1
+    assert package["pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1
+    assert package["spanish_pdf_filename"].count("AUTOMATED-DRAFT-PENDING-APPROVAL") == 1
+    assert package["report_finality"] == "automated_draft"
+    assert package["approval_status"] == "pending_human_approval"
+    assert package["client_delivery_allowed"] is False
     assert "CLIENT DELIVERY NOT AUTHORIZED" in package["markdown"]
     assert "RISK-LEGACY-123" not in package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
@@ -208,7 +211,6 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     assert "Evaluación Técnica Integral NICO" in package["markdown"]
     assert "APROBACIÓN HUMANA PENDIENTE" in package["markdown"]
     assert "ENTREGA AL CLIENTE BLOQUEADA" in package["markdown"]
-    assert "como borrador" not in package["markdown"].casefold()
     assert "DESCONOCIDO" not in package["markdown"]
     assert "bandit" in package["markdown"]
     assert "eslint" in package["markdown"]
