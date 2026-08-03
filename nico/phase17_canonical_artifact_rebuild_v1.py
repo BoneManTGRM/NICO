@@ -24,6 +24,9 @@ from nico.comprehensive_compact_design_marker_v1 import (
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
+from nico.comprehensive_placeholder_sanitization_v1 import (
+    install_comprehensive_placeholder_sanitization,
+)
 from nico.comprehensive_platform_parity_summary_v1 import (
     install_comprehensive_platform_parity_summary,
 )
@@ -50,6 +53,7 @@ _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
+_PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
 _COMPACT_DESIGN_MARKER_GATE = install_compact_design_marker_gate()
 install_pipeline_projection()
 install_client_ready_truth_projection()
@@ -95,6 +99,7 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "automated_draft_grammar_normalized": True,
             "canonical_incomplete_analyzer_summary_retained": True,
             "canonical_platform_parity_summary_retained": True,
+            "parser_placeholders_absent": True,
             "compact_evidence_summary_design_marker_retained": True,
             "retired_raw_evidence_appendix_absent": True,
             "page_count": page_count,
@@ -140,6 +145,7 @@ __all__ = [
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
+    "_PLACEHOLDER_SANITIZATION",
     "_COMPACT_DESIGN_MARKER_GATE",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "rebuild_client_artifacts",
