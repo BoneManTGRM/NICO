@@ -196,9 +196,11 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
     assert result["pdf_page_count"] >= 5
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     assert "Canonical Score Summary" not in result["markdown"]
-    assert "DRAFT" not in result["markdown"].upper()
-    assert "FINAL REPORT" in result["markdown"].upper()
     assert "PENDING HUMAN APPROVAL" in result["markdown"].upper()
+    assert "APPROVED FINAL" not in result["markdown"].upper()
+    assert result["approval_status"] == "pending_human_approval"
+    assert result["delivery_status"] == "blocked_pending_human_approval"
+    assert result["client_delivery_allowed"] is False
     assert "Bandit failed" not in result["markdown"]
     assert "Gitleaks missing" not in result["markdown"]
     assert "ESLint missing" not in result["markdown"]
@@ -207,10 +209,12 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
 
 
-def test_spanish_authoritative_renderer_has_no_legacy_draft_language():
+def test_spanish_authoritative_renderer_preserves_pending_approval_boundary():
     result = rebuild_authoritative_premium_artifacts({"json": _canonical("es-MX")})
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
-    assert "BORRADOR" not in result["markdown"].upper()
-    assert "INFORME FINAL" in result["markdown"].upper()
     assert "APROBACIÓN" in result["markdown"].upper()
+    assert "FINAL APROBADO" not in result["markdown"].upper()
+    assert result["approval_status"] == "pending_human_approval"
+    assert result["delivery_status"] == "blocked_pending_human_approval"
+    assert result["client_delivery_allowed"] is False
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
