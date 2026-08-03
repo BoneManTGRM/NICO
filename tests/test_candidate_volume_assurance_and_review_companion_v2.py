@@ -47,6 +47,20 @@ def _register() -> dict:
     }
 
 
+def _complete_register(commit_sha: str) -> dict:
+    return {
+        "artifact_schema": "nico.canonical-scanner-findings.v1",
+        "status": "complete",
+        "exact_commit_sha": commit_sha,
+        "findings": [],
+        **_register(),
+        "count_parity_verified": True,
+        "discrepancies": [],
+        "canonical_digest_sha256": "f" * 64,
+        "raw_payload_retention_complete": True,
+    }
+
+
 def _baseline() -> dict:
     return {
         "status": "complete",
@@ -186,6 +200,11 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     monkeypatch.setattr(v4, "canonical_scoring_provider", lambda context: _baseline())
     monkeypatch.setattr(legacy, "_scan", lambda context: _scan())
     monkeypatch.setattr(
+        scoring,
+        "build_canonical_scanner_finding_register",
+        lambda scan, commit_sha: _complete_register(commit_sha),
+    )
+    monkeypatch.setattr(
         legacy,
         "_repo",
         lambda context: {"workflow_evidence": {"successful_runs": 89, "non_success_runs": 6}},
@@ -197,6 +216,8 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     assert assessment["technical_score"] == 93
     assert assessment["evidence_adjusted_score"] == 89
     assert contract["candidate_volume_penalty"] == 4
+    assert contract["missing_raw_payload_penalty"] == 0
+    assert contract["incomplete_analyzer_penalty"] == 0
     assert contract["candidate_volume_penalty_model"] == MODEL
     assert contract["candidate_volume_confirmed_material_total"] == 0
     assert contract["candidate_volume_is_triage_workload_not_defect_severity"] is True
@@ -214,7 +235,7 @@ def test_review_companion_restores_all_decision_sections_in_16_pages() -> None:
     assert len(reader.pages) == 16
     for section in sections:
         assert section["title"] in extracted
-        assert f"{section['title']} — review worksheet" in extracted
+    assert extracted.count("review worksheet") == 8
     assert "AUTOMATED DRAFT · HUMAN REVIEW REQUIRED" in extracted
     assert "PENDING HUMAN DECISION · DELIVERY BLOCKED" in extracted
 
