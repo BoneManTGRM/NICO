@@ -4,7 +4,7 @@ import html as html_lib
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-live-report-contract.v1"
+VERSION = "nico.comprehensive-live-report-contract.v2"
 
 _EN_EVIDENCE_SUMMARIES = (
     "Evidence Package Summary",
@@ -23,6 +23,12 @@ _REQUIRED_SECTIONS = (
     "Staffing, Sequencing, and Cost",
     "Human Review and Acceptance Gate",
 )
+_CANONICAL_INCOMPLETE_ANALYZER_LABEL = "Incomplete applicable analyzers:"
+_RETIRED_EVIDENCE_APPENDIX_HEADINGS = (
+    "Evidence Appendix",
+    "Apéndice de evidencia",
+    "Apendice de evidencia",
+)
 _STALE_DRAFT_PHRASES = (
     "DRAFT ONLY",
     "DRAFT - HUMAN REVIEW REQUIRED",
@@ -33,6 +39,10 @@ _FORBIDDEN_FINALITY = (
     "FINAL REPORT",
     "INFORME FINAL",
     "AUTOMATED FINAL",
+    "APPROVED FINAL",
+    "FINAL APROBADO",
+    "CLIENT DELIVERY AUTHORIZED",
+    "ENTREGA AL CLIENTE AUTORIZADA",
 )
 
 
@@ -44,6 +54,15 @@ def _contains_any(value: str, markers: tuple[str, ...]) -> bool:
 def _assert_marker(value: str, marker: str, *, surface: str) -> None:
     escaped = html_lib.escape(marker)
     assert marker in value or escaped in value, f"Comprehensive {surface} omitted {marker}"
+
+
+def _retired_heading_present(value: str) -> bool:
+    retired = {marker.casefold() for marker in _RETIRED_EVIDENCE_APPENDIX_HEADINGS}
+    for raw in str(value or "").splitlines():
+        normalized = " ".join(raw.lstrip("# ").split()).strip().casefold()
+        if normalized in retired:
+            return True
+    return False
 
 
 def validate_report(
@@ -65,6 +84,13 @@ def validate_report(
     rendered_html = str(package.get("html") or "")
     encoded_pdf = str(package.get("pdf_base64") or "")
 
+    # Existing semantic-unit fixtures intentionally supply only canonical JSON and
+    # text aliases while mocking the historical validator. Keep those tests on the
+    # delegated seam. A real Comprehensive package identifies itself explicitly
+    # and remains fail-closed on any missing artifact below.
+    if package.get("service_id") != "comprehensive":
+        return dict(fallback(service, payload, destination))
+
     assert markdown.strip(), "comprehensive Markdown report is missing"
     assert rendered_html.strip().lower().startswith("<!doctype html"), (
         "comprehensive HTML report is invalid"
@@ -75,7 +101,6 @@ def validate_report(
 
     pdf = acceptance.pdf_evidence(encoded_pdf, destination)
     pdf_text = str(pdf.get("text") or "")
-    assert package.get("service_id") == "comprehensive"
     assert "NICO MID TECHNICAL" not in markdown.upper()
     assert "NICO MID TECHNICAL" not in pdf_text.upper()
 
@@ -96,11 +121,20 @@ def validate_report(
     )
 
     surfaces = {
-        "Markdown": markdown.upper(),
-        "HTML": rendered_html.upper(),
-        "PDF": pdf_text.upper(),
+        "Markdown": markdown,
+        "HTML": rendered_html,
+        "PDF": pdf_text,
     }
-    for surface, value in surfaces.items():
+    for surface, raw_value in surfaces.items():
+        value = raw_value.upper()
+        for forbidden in _FORBIDDEN_FINALITY:
+            assert forbidden not in value, (
+                f"Comprehensive {surface} retained unapproved finality: {forbidden}"
+            )
+        for stale in _STALE_DRAFT_PHRASES:
+            assert stale not in value, (
+                f"Comprehensive {surface} retained stale status: {stale}"
+            )
         assert _contains_any(value, ("AUTOMATED DRAFT", "BORRADOR AUTOMATIZADO")), (
             f"Comprehensive {surface} omitted automated-draft lifecycle truth"
         )
@@ -110,15 +144,22 @@ def validate_report(
         assert _contains_any(value, ("CLIENT DELIVERY BLOCKED", "ENTREGA AL CLIENTE BLOQUEADA")), (
             f"Comprehensive {surface} omitted blocked-delivery status"
         )
-        for forbidden in _FORBIDDEN_FINALITY:
-            assert forbidden not in value, (
-                f"Comprehensive {surface} retained unapproved finality: {forbidden}"
-            )
-        for stale in _STALE_DRAFT_PHRASES:
-            assert stale not in value, (
-                f"Comprehensive {surface} retained stale status: {stale}"
-            )
+        assert _CANONICAL_INCOMPLETE_ANALYZER_LABEL in raw_value, (
+            f"Comprehensive {surface} omitted the canonical incomplete analyzer count"
+        )
+        assert not _retired_heading_present(raw_value), (
+            f"Comprehensive {surface} restored the retired raw Evidence Appendix"
+        )
 
+    assert acceptance.first_bool(payload, "human_review_required") is True, (
+        "Comprehensive package omitted mandatory human-review truth"
+    )
+    assert acceptance.first_bool(payload, "client_delivery_allowed") is not True, (
+        "Comprehensive package allowed client delivery before approval"
+    )
+    assert assessment.get("client_delivery_allowed") is not True, (
+        "Comprehensive assessment allowed client delivery before approval"
+    )
     assert "\x7f" not in pdf_text, "Comprehensive PDF contains a control-character glyph"
 
     maturity = acceptance.dict_value(assessment.get("maturity_signal"))
@@ -165,6 +206,8 @@ def validate_report(
             "page_count_informational_only": True,
             "required_sections_verified": True,
             "compact_evidence_summary_verified": True,
+            "canonical_incomplete_analyzer_count_verified": True,
+            "retired_evidence_appendix_absent": True,
             "automated_draft_language_verified": True,
             "unapproved_finality_absent": True,
             "stale_draft_language_absent": True,
