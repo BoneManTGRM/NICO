@@ -9,7 +9,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_final_artifact_truth.v53.1"
+VERSION = "nico.comprehensive_final_artifact_truth.v53.2"
 _MARKER = "_nico_comprehensive_final_artifact_truth_v53"
 
 
@@ -28,6 +28,18 @@ def _nonnegative_int(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _strict_truth_package(canonical: dict[str, Any]) -> bool:
+    assessment = _dict(canonical.get("assessment"))
+    contract = _dict(assessment.get("score_contract"))
+    return bool(
+        canonical.get("pre_render_truth_reconciliation") is True
+        or assessment.get("pre_render_truth_reconciliation") is True
+        or isinstance(assessment.get("score_reconciliation"), dict)
+        or contract.get("canonical_finding_register_required") is True
+        or isinstance(assessment.get("canonical_scanner_finding_register"), dict)
+    )
 
 
 def _pdf_text(pdf: bytes) -> str:
@@ -175,7 +187,7 @@ def _weighted_scores_recompute(canonical: dict[str, Any]) -> bool:
         if row.get("included") is True and _score(row.get("technical_score")) is not None
     ]
     if not included:
-        return False
+        return not _strict_truth_package(canonical)
     denominator = sum(float(row.get("weight") or 0.0) for row in included)
     if denominator <= 0:
         return False
@@ -236,7 +248,8 @@ def _finding_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, int]:
     register = register if isinstance(register, list) else []
     identities = [identity for item in register if (identity := _finding_identity(item))]
     no_duplicates = len(identities) == len(set(identities))
-    _, _, calculated = _finding_metrics(canonical)
+    metrics_source = {"findings_register": register} if register else canonical
+    _, _, calculated = _finding_metrics(metrics_source)
     stated_values = {
         int(value)
         for value in _walk_key_values(canonical, "unique_finding_count")
@@ -399,20 +412,25 @@ def _canonical_scanner_register_truth(canonical: dict[str, Any]) -> dict[str, bo
 
 
 def _automated_delivery_boundary(package: dict[str, Any], canonical: dict[str, Any]) -> bool:
-    explicit = any(
-        key in package or key in canonical
-        for key in ("human_review_required", "client_delivery_allowed")
-    )
-    if not explicit:
-        return True
     assessment = _dict(canonical.get("assessment"))
+    containers = (package, canonical, assessment)
+    review_values = [
+        container.get("human_review_required")
+        for container in containers
+        if "human_review_required" in container
+    ]
+    delivery_values = [
+        container.get("client_delivery_allowed")
+        for container in containers
+        if "client_delivery_allowed" in container
+    ]
+    if not review_values and not delivery_values:
+        return True
     return (
-        package.get("human_review_required") is True
-        and package.get("client_delivery_allowed") is False
-        and canonical.get("human_review_required") is True
-        and canonical.get("client_delivery_allowed") is False
-        and assessment.get("human_review_required") is True
-        and assessment.get("client_delivery_allowed") is False
+        bool(review_values)
+        and bool(delivery_values)
+        and all(value is True for value in review_values)
+        and all(value is False for value in delivery_values)
     )
 
 
@@ -533,6 +551,7 @@ def install_comprehensive_final_artifact_truth_v53() -> dict[str, Any]:
         "automated_delivery_boundary_required": True,
         "finding_deduplication_required": True,
         "identifier_integrity_required": True,
+        "legacy_packages_without_modern_truth_contract_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
