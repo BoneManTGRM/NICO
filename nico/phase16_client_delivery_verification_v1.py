@@ -14,7 +14,7 @@ from nico.comprehensive_client_ready_projection_v1 import (
     REPORT_FINALITY,
 )
 
-VERSION = "nico.phase16.client-delivery-verification.v4"
+VERSION = "nico.phase16.client-delivery-verification.v5"
 _APPROVAL = APPROVAL_SUFFIX
 _FINDING_SURFACES = (
     "canonical_findings",
@@ -184,16 +184,23 @@ def _replace_nested_findings(value: Any, canonical_by_id: Mapping[str, Mapping[s
 
 def _normalized_filename(value: Any) -> str:
     filename = _text(value) or "nico-comprehensive-assessment.pdf"
-    if not filename.lower().endswith(".pdf"):
+    if not filename.casefold().endswith(".pdf"):
         filename += ".pdf"
     stem = filename[:-4]
-    stem = re.sub(
-        r"(?:-(?:FINAL-PENDING-APPROVAL|AUTOMATED-DRAFT-PENDING-APPROVAL|DRAFT|FINAL))+$",
-        "",
-        stem,
+    # Historical compatibility layers emitted mixed and repeated forms such as
+    # AUTOMATED-AUTOMATED-DRAFT-PENDING-APPROVAL. Consume the complete terminal
+    # state, including every repeated AUTOMATED prefix, before adding one
+    # authoritative automated-draft suffix.
+    terminal = re.compile(
+        r"-(?:AUTOMATED-)*(?:FINAL|DRAFT)(?:-PENDING-APPROVAL)?$",
         flags=re.IGNORECASE,
     )
-    return f"{stem}-{_APPROVAL}.pdf"
+    while True:
+        normalized = terminal.sub("", stem)
+        if normalized == stem:
+            break
+        stem = normalized
+    return f"{stem.rstrip('- ')}-{_APPROVAL}.pdf"
 
 
 def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -245,6 +252,7 @@ def repair_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
         "semantic_duplicates_removed": True,
         "acceptance_criteria_deduplicated": True,
         "terminal_filename_normalized": True,
+        "repeated_automated_prefixes_removed": True,
         "automated_draft_until_human_approval": True,
         "canonical_finding_count": len(canonical),
     }
@@ -313,7 +321,7 @@ def verify_client_delivery_package(package: Mapping[str, Any]) -> dict[str, Any]
             errors.append(f"finding {finding_id} is not title-consistent across client surfaces")
 
     filename = _text(payload.get("pdf_filename"))
-    if not filename.lower().endswith(".pdf"):
+    if not filename.casefold().endswith(".pdf"):
         errors.append("client PDF filename is missing or invalid")
     if filename.upper().count(_APPROVAL) != 1:
         errors.append("client PDF filename must contain exactly one automated-draft approval state")
