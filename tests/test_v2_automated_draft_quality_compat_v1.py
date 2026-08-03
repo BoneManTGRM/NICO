@@ -80,6 +80,7 @@ def test_quality_gate_accepts_required_automated_draft_boundary() -> None:
     assert installation["legacy_bare_draft_remains_blocked"] is True
     assert installation["unapproved_finality_remains_blocked"] is True
     assert installation["legacy_status_draft_detection_narrowed"] is True
+    assert installation["extended_legacy_status_phrases_normalized"] is True
 
 
 def test_quality_gate_allows_explanatory_draft_prose_with_authoritative_boundary() -> None:
@@ -150,7 +151,13 @@ def test_runtime_repair_preserves_scorecard_identity_and_draft_posture() -> None
         "pdf_base64": base64.b64encode(
             _pdf(
                 ["Canonical Technical Scorecard", "Code Quality", "88/100"],
-                [RUN_ID, COMMIT, EN_BOUNDARY],
+                [
+                    RUN_ID,
+                    COMMIT,
+                    EN_BOUNDARY,
+                    "The automated assessment is complete only as a draft until readiness conditions are satisfied.",
+                    "NICO Comprehensive · run · DRAFT",
+                ],
             )
         ).decode("ascii"),
     }
@@ -169,6 +176,8 @@ def test_runtime_repair_preserves_scorecard_identity_and_draft_posture() -> None
     assert result["json"]["report_finality"] == "automated_draft"
     assert "AUTOMATED DRAFT" in extracted
     assert "FINAL REPORT" not in extracted
+    assert "complete only as a draft" not in extracted.casefold()
+    assert " · DRAFT" not in extracted
     assert "Canonical Technical Scorecard" in extracted
     assert "Code Quality" in extracted
     assert "88/100" in extracted
@@ -179,3 +188,4 @@ def test_runtime_repair_preserves_scorecard_identity_and_draft_posture() -> None
     assert contract["legacy_bare_draft_language_absent"] is True
     assert contract["unapproved_finality_language_absent"] is True
     assert contract["legacy_status_draft_detection_narrowed"] is True
+    assert contract["extended_legacy_status_phrases_normalized"] is True
