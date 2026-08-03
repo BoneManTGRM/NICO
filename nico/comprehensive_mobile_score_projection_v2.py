@@ -4,7 +4,9 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v6"
+# Public compatibility identifier. Runtime behavior advances through
+# RUNTIME_REVISION so existing mobile proof contracts remain valid.
+VERSION = "nico.comprehensive_mobile_score_projection.v3"
 RUNTIME_REVISION = "v66-client-ready-assurance-review-package"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
