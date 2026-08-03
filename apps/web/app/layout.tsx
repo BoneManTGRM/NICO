@@ -23,6 +23,7 @@ import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
+import AssessmentReviewPdfDownload from "./AssessmentReviewPdfDownload";
 import AssessmentRunStateGuard from "./AssessmentRunStateGuard";
 import AssessmentScoreAssuranceGuard from "./AssessmentScoreAssuranceGuard";
 import AssessmentStatusOutcomeGuard from "./AssessmentStatusOutcomeGuard";
@@ -88,6 +89,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentApiTransportBridge />
           <AssessmentExactCommitTransport />
           <AssessmentFailureResponseBridge />
+          <AssessmentReviewPdfDownload />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />
