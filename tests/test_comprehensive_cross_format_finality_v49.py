@@ -7,6 +7,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico import comprehensive_native_providers as providers
+from nico.comprehensive_automated_draft_cross_format_v1 import (
+    install_automated_draft_cross_format_contract,
+)
 from nico.comprehensive_cross_format_finality_v49 import (
     VERSION,
     install_comprehensive_cross_format_finality_v49,
@@ -21,6 +24,12 @@ TECHNICAL_SCORE = 85
 EVIDENCE_ADJUSTED_SCORE = 74
 
 
+def _install() -> tuple[dict, dict]:
+    legacy = install_comprehensive_cross_format_finality_v49()
+    automated_draft = install_automated_draft_cross_format_contract()
+    return legacy, automated_draft
+
+
 def _pdf(
     *,
     technical_score: int = TECHNICAL_SCORE,
@@ -29,7 +38,11 @@ def _pdf(
     buffer = io.BytesIO()
     page = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     page.drawString(42, 720, "NICO Comprehensive Technical Assessment")
-    page.drawString(42, 700, "FINAL REPORT - PENDING HUMAN APPROVAL - CLIENT DELIVERY BLOCKED")
+    page.drawString(
+        42,
+        700,
+        "AUTOMATED DRAFT - PENDING HUMAN APPROVAL - CLIENT DELIVERY BLOCKED",
+    )
     page.drawString(42, 680, f"Technical maturity {technical_score}/100")
     page.drawString(42, 660, f"Evidence-Adjusted {adjusted_score}/100")
     page.drawString(42, 640, f"Run ID: {RUN_ID}")
@@ -70,7 +83,7 @@ def _package(
 ) -> dict:
     markdown = (
         "# NICO Comprehensive Technical Assessment\n\n"
-        "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED\n\n"
+        "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED\n\n"
         f"Technical maturity is Strong ({TECHNICAL_SCORE}/100).\n"
         f"Evidence-Adjusted readiness is {markdown_adjusted}/100.\n"
         f"Run ID: {RUN_ID}\n"
@@ -87,7 +100,7 @@ def _package(
     )
     canonical = {
         "service_id": "comprehensive",
-        "report_finality": "final",
+        "report_finality": "automated_draft",
         "approval_status": "pending_human_approval",
         "delivery_status": delivery_status,
         "human_review_required": True,
@@ -99,7 +112,7 @@ def _package(
     }
     return {
         "service_id": "comprehensive",
-        "report_finality": "final",
+        "report_finality": "automated_draft",
         "approval_status": "pending_human_approval",
         "delivery_status": delivery_status,
         "human_review_required": True,
@@ -107,7 +120,9 @@ def _package(
         "markdown": markdown,
         "html": html,
         "json": canonical,
-        "pdf_base64": base64.b64encode(_pdf(adjusted_score=pdf_adjusted)).decode("ascii"),
+        "pdf_base64": base64.b64encode(
+            _pdf(adjusted_score=pdf_adjusted)
+        ).decode("ascii"),
         "canonical_truth_sha256": "b" * 64,
     }
 
@@ -132,22 +147,28 @@ def _context(*, package: dict | None = None, nested: bool = False) -> dict:
     }
 
 
-def test_current_final_report_boundary_and_score_truth_pass() -> None:
-    install = install_comprehensive_cross_format_finality_v49()
+def test_current_automated_draft_boundary_and_score_truth_pass() -> None:
+    install, automated = _install()
     result = providers.cross_format_verification_provider(_context())
 
     assert install["bound"] is True
     assert install["canonical_score_parity_required"] is True
+    assert automated["provider_bound"] is True
+    assert automated["required_finality"] == "automated_draft"
     assert result["status"] == "complete"
     assert result["cross_format_contract_schema"] == VERSION
     assert result["failed_checks"] == []
+    assert result["checks"]["report_finality_is_automated_draft"] is True
     assert result["checks"]["final_delivery_boundary_present_in_markdown"] is True
     assert result["checks"]["evidence_adjusted_aliases_consistent"] is True
     assert result["checks"]["markdown_evidence_adjusted_matches_canonical"] is True
     assert result["checks"]["html_evidence_adjusted_matches_canonical"] is True
     assert result["checks"]["pdf_evidence_adjusted_matches_canonical"] is True
     assert result["score_truth"]["technical_score"] == TECHNICAL_SCORE
-    assert result["score_truth"]["evidence_adjusted_score"] == EVIDENCE_ADJUSTED_SCORE
+    assert (
+        result["score_truth"]["evidence_adjusted_score"]
+        == EVIDENCE_ADJUSTED_SCORE
+    )
     assert result["report_package_source"] == "stage.report_package"
     assert "CLIENT DELIVERY NOT AUTHORIZED" not in _package()["markdown"]
     assert result["human_review_required"] is True
@@ -155,7 +176,7 @@ def test_current_final_report_boundary_and_score_truth_pass() -> None:
 
 
 def test_execution_wrapper_envelope_does_not_hide_the_generated_report_package() -> None:
-    install_comprehensive_cross_format_finality_v49()
+    _install()
     result = providers.cross_format_verification_provider(_context(nested=True))
 
     assert result["status"] == "complete"
@@ -176,18 +197,20 @@ def test_finality_metadata_can_be_read_from_canonical_truth() -> None:
         "client_delivery_allowed",
     ):
         package.pop(key)
-    install_comprehensive_cross_format_finality_v49()
-    result = providers.cross_format_verification_provider(_context(package=package, nested=True))
+    _install()
+    result = providers.cross_format_verification_provider(
+        _context(package=package, nested=True)
+    )
 
     assert canonical["delivery_status"] == "blocked_pending_human_approval"
     assert result["status"] == "complete"
     assert result["failed_checks"] == []
-    assert result["checks"]["report_finality_is_final"] is True
+    assert result["checks"]["report_finality_is_automated_draft"] is True
     assert result["checks"]["delivery_status_is_blocked"] is True
 
 
 def test_structured_delivery_drift_fails_closed_and_exposes_exact_check() -> None:
-    install_comprehensive_cross_format_finality_v49()
+    _install()
     result = providers.cross_format_verification_provider(
         _context(package=_package(delivery_status="delivery_allowed"))
     )
@@ -203,7 +226,8 @@ def test_structured_delivery_drift_fails_closed_and_exposes_exact_check() -> Non
 def test_canonical_score_synchronizer_replaces_legacy_adjusted_score() -> None:
     assessment = _assessment(canonical_adjusted=74, legacy_adjusted=72)
     assessment["executive_summary"] = (
-        "Weighted technical maturity is 85/100; independently evidence-adjusted readiness is 72/100."
+        "Weighted technical maturity is 85/100; independently evidence-adjusted "
+        "readiness is 72/100."
     )
 
     synchronized = synchronize_comprehensive_score_truth(assessment)
@@ -216,12 +240,15 @@ def test_canonical_score_synchronizer_replaces_legacy_adjusted_score() -> None:
     assert maturity["presented_score"] == 85
     assert maturity["canonical_evidence_adjusted_score"] == 74
     assert maturity["evidence_adjusted_score"] == 74
-    assert "evidence-adjusted readiness is 74/100" in synchronized["executive_summary"]
+    assert (
+        "evidence-adjusted readiness is 74/100"
+        in synchronized["executive_summary"]
+    )
     assert "72/100" not in synchronized["executive_summary"]
 
 
 def test_canonical_json_alias_mismatch_fails_closed() -> None:
-    install_comprehensive_cross_format_finality_v49()
+    _install()
     result = providers.cross_format_verification_provider(
         _context(package=_package(canonical_adjusted=74, legacy_adjusted=72))
     )
@@ -229,11 +256,16 @@ def test_canonical_json_alias_mismatch_fails_closed() -> None:
     assert result["status"] == "blocked"
     assert "evidence_adjusted_aliases_consistent" in result["failed_checks"]
     assert result["score_truth"]["adjusted_aliases_consistent"] is False
-    assert result["score_truth"]["adjusted_aliases"]["assessment.evidence_adjusted_score"] == 72
+    assert (
+        result["score_truth"]["adjusted_aliases"][
+            "assessment.evidence_adjusted_score"
+        ]
+        == 72
+    )
 
 
 def test_pdf_score_drift_fails_closed_with_exact_diagnostic() -> None:
-    install_comprehensive_cross_format_finality_v49()
+    _install()
     result = providers.cross_format_verification_provider(
         _context(package=_package(pdf_adjusted=72))
     )
@@ -245,7 +277,7 @@ def test_pdf_score_drift_fails_closed_with_exact_diagnostic() -> None:
 
 
 def test_markdown_and_html_score_drift_fail_closed() -> None:
-    install_comprehensive_cross_format_finality_v49()
+    _install()
     result = providers.cross_format_verification_provider(
         _context(package=_package(markdown_adjusted=72, html_adjusted=72))
     )
@@ -256,11 +288,14 @@ def test_markdown_and_html_score_drift_fail_closed() -> None:
 
 
 def test_installation_is_idempotent_and_replaces_obsolete_verifier() -> None:
-    first = install_comprehensive_cross_format_finality_v49()
-    second = install_comprehensive_cross_format_finality_v49()
+    first, automated_first = _install()
+    second, automated_second = _install()
 
     assert first["bound"] is True
     assert second["bound"] is True
     assert second["status"] == "already_installed"
     assert second["legacy_draft_phrase_required"] is False
     assert second["canonical_score_parity_required"] is True
+    assert automated_first["provider_bound"] is True
+    assert automated_second["provider_bound"] is True
+    assert automated_second["required_finality"] == "automated_draft"
