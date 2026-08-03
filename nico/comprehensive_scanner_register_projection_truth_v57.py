@@ -6,7 +6,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Mapping
 
-VERSION = "nico.comprehensive_scanner_register_projection_truth.v57"
+VERSION = "nico.comprehensive_scanner_register_projection_truth.v57.1"
 _NORMALIZER_MARKER = "_nico_scanner_register_projection_truth_v57"
 _VALIDATOR_MARKER = "_nico_scanner_register_projection_validation_v57"
 
@@ -36,6 +36,18 @@ def _digest(findings: list[dict[str, Any]]) -> str:
             separators=(",", ":"),
             default=str,
         ).encode()
+    ).hexdigest()
+
+
+def _canonical_digest(canonical: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
     ).hexdigest()
 
 
@@ -108,9 +120,40 @@ def normalize_scanner_register_projection(
             "scanner_register_projection_truth_version": VERSION,
             "scanner_source_and_rendered_digests_separated": True,
             "scanner_candidate_count_separate_from_decision_finding_count": True,
+            "rendered_scanner_digest_bound_at_final_validation": True,
         }
     )
     output["v2_prepublication_contract"] = contract
+    return output
+
+
+def bind_final_scanner_register_projection(
+    package: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind integrity metadata after every client-safe transformation has run.
+
+    The report builder and later redaction layers may legitimately change the
+    rendered evidence text after the early canonical normalizer. Final validation
+    is the last publication boundary, so it must calculate the rendered digest
+    from the exact JSON that will be retained and then refresh its canonical hash.
+    The immutable source digest and source fingerprints are preserved unchanged.
+    """
+
+    output = deepcopy(package)
+    canonical = output.get("json")
+    if not isinstance(canonical, Mapping):
+        return output
+
+    normalized = normalize_scanner_register_projection(canonical)
+    output["json"] = normalized
+    canonical_sha = _canonical_digest(normalized)
+    output["canonical_truth_sha256"] = canonical_sha
+
+    # `_report_package` returns the underlying final-stage package. Updating the
+    # caller object ensures the validated machine-readable artifact, not only the
+    # validation result, retains the final rendered digest and refreshed hash.
+    package["json"] = deepcopy(normalized)
+    package["canonical_truth_sha256"] = canonical_sha
     return output
 
 
@@ -172,8 +215,9 @@ def validate_scanner_register_projection(
     package: dict[str, Any],
     delegate: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
-    result = deepcopy(delegate(package))
-    canonical = package.get("json")
+    final_package = bind_final_scanner_register_projection(package)
+    result = deepcopy(delegate(final_package))
+    canonical = final_package.get("json")
     canonical = canonical if isinstance(canonical, Mapping) else {}
     projection_checks = scanner_register_projection_checks(canonical)
     checks = _dict(result.get("checks"))
@@ -186,6 +230,8 @@ def validate_scanner_register_projection(
             "checks": checks,
             "failed_checks": failed,
             "scanner_register_projection_truth": projection_checks,
+            "rendered_scanner_digest_bound_at_final_validation": True,
+            "canonical_truth_sha256": final_package.get("canonical_truth_sha256"),
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -238,6 +284,8 @@ def install_comprehensive_scanner_register_projection_truth_v57() -> dict[str, A
         ),
         "source_digest_preserved": True,
         "rendered_projection_digest_required": True,
+        "rendered_projection_digest_bound_at_final_validation": True,
+        "canonical_truth_hash_refreshed_at_final_validation": True,
         "scanner_candidate_count_separate_from_decision_findings": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -246,6 +294,7 @@ def install_comprehensive_scanner_register_projection_truth_v57() -> dict[str, A
 
 __all__ = [
     "VERSION",
+    "bind_final_scanner_register_projection",
     "install_comprehensive_scanner_register_projection_truth_v57",
     "normalize_scanner_register_projection",
     "scanner_register_projection_checks",
