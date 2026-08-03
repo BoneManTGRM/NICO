@@ -209,10 +209,12 @@ Blocked.
     assert EN_BOUNDARY in rendered
 
 
-def test_pdf_status_sanitizer_removes_legacy_final_headers() -> None:
+def test_pdf_status_sanitizer_removes_legacy_final_headers_and_duplicate_banners() -> None:
     original = _pdf_pages(
         [
-            "NICO Comprehensive · comprun_test · FINAL Page 1",
+            "NICO Comprehensive · comprun_test · FINAL",
+            "Page 1",
+            "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
             "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
         ]
     )
@@ -220,7 +222,8 @@ def test_pdf_status_sanitizer_removes_legacy_final_headers() -> None:
     extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(sanitized)).pages)
 
     assert "FINAL REPORT" not in extracted
-    assert "· FINAL Page" not in extracted
+    assert " · FINAL" not in extracted
+    assert extracted.count(EN_BOUNDARY) == 1
     assert "AUTOMATED DRAFT" in extracted
 
 
