@@ -246,9 +246,11 @@ def test_scanner_triage_exposes_count_reconciled_register(monkeypatch) -> None:
     monkeypatch.setattr(legacy, "_scan", lambda context: _scan(static_review=3, include_payload=True))
 
     result = scoring.scanner_triage_provider(_context())
-    register = result["scanner_triage"]["canonical_scanner_finding_register"]
+    reference = result["scanner_triage"]["canonical_scanner_finding_register_reference"]
 
     assert result["status"] == "complete"
     assert result["evidence"]["count_parity_verified"] is True
     assert result["evidence"]["canonical_finding_count"] == 79
-    assert register["totals"]["review_required"] == 79
+    assert result["evidence"]["review"] == 79
+    assert reference["canonical_finding_count"] == 79
+    assert reference["count_parity_verified"] is True
