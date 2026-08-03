@@ -4,7 +4,7 @@ import html as html_lib
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-live-report-contract.v2"
+VERSION = "nico.comprehensive-live-report-contract.v3"
 
 _EN_EVIDENCE_SUMMARIES = (
     "Evidence Package Summary",
@@ -15,8 +15,11 @@ _ES_EVIDENCE_SUMMARIES = (
     "Resumen de evidencia para revisión",
     "Resumen de evidencia para revision",
 )
+_COMPREHENSIVE_REPORT_IDENTITIES = (
+    ("NICO Comprehensive Technical Assessment",),
+    ("NICO Comprehensive", "Decision-Grade Technical Assessment"),
+)
 _REQUIRED_SECTIONS = (
-    "NICO Comprehensive Technical Assessment",
     "Functional QA",
     "Platform Parity",
     "Six-Month Roadmap",
@@ -49,6 +52,14 @@ _FORBIDDEN_FINALITY = (
 def _contains_any(value: str, markers: tuple[str, ...]) -> bool:
     normalized = str(value or "").casefold()
     return any(marker.casefold() in normalized for marker in markers)
+
+
+def _has_comprehensive_report_identity(value: str) -> bool:
+    normalized = " ".join(str(value or "").split()).casefold()
+    return any(
+        all(" ".join(marker.split()).casefold() in normalized for marker in identity)
+        for identity in _COMPREHENSIVE_REPORT_IDENTITIES
+    )
 
 
 def _assert_marker(value: str, marker: str, *, surface: str) -> None:
@@ -104,6 +115,16 @@ def validate_report(
     assert "NICO MID TECHNICAL" not in markdown.upper()
     assert "NICO MID TECHNICAL" not in pdf_text.upper()
 
+    surfaces = {
+        "Markdown": markdown,
+        "HTML": rendered_html,
+        "PDF": pdf_text,
+    }
+    for surface, raw_value in surfaces.items():
+        assert _has_comprehensive_report_identity(raw_value), (
+            f"Comprehensive {surface} omitted the canonical report identity"
+        )
+
     for marker in _REQUIRED_SECTIONS:
         _assert_marker(markdown, marker, surface="Markdown")
         _assert_marker(rendered_html, marker, surface="HTML")
@@ -120,11 +141,6 @@ def validate_report(
         "Comprehensive PDF omitted the compact evidence summary"
     )
 
-    surfaces = {
-        "Markdown": markdown,
-        "HTML": rendered_html,
-        "PDF": pdf_text,
-    }
     for surface, raw_value in surfaces.items():
         value = raw_value.upper()
         for forbidden in _FORBIDDEN_FINALITY:
@@ -205,6 +221,7 @@ def validate_report(
             "status": "passed",
             "page_count_informational_only": True,
             "required_sections_verified": True,
+            "canonical_report_identity_verified": True,
             "compact_evidence_summary_verified": True,
             "canonical_incomplete_analyzer_count_verified": True,
             "retired_evidence_appendix_absent": True,
