@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-from nico.comprehensive_decision_content_restoration_v66 import (
+from nico.comprehensive_decision_content_restoration_v67 import (
     restore_decision_content,
 )
 from nico.comprehensive_finding_count_truth_v66 import (
@@ -78,7 +78,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     therefore valid only when the retained source package contains neither structured
     decision findings nor actionable exact-SHA production complexity evidence. Any stale
     zero-count aliases in retained stage summaries are synchronized to the restored
-    canonical population without modifying scanner or review-candidate counts.
+    canonical population without modifying scanner or review-candidate counts. The
+    restoration reads only the authoritative finding, complexity, scanner-triage, and CI
+    stages rather than traversing unrelated retained evidence payloads.
 
     The compact premium renderer is extended with truthful scanner counts, rich finding
     cards, and separately labeled CI operational health. Duplicate full-page finding
