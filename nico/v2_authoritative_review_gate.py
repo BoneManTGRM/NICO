@@ -3,8 +3,10 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable, Mapping
 
-VERSION = "nico.v2.authoritative-review-gate.v1"
-_MARKER = "__nico_authoritative_review_gate_v1__"
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
+
+VERSION = "nico.v2.authoritative-review-gate.v2"
+_MARKER = "__nico_authoritative_review_gate_v2__"
 
 
 def _text(value: Any) -> str:
@@ -29,21 +31,25 @@ def authoritative_review_gate_markdown(*, spanish: bool) -> str:
     if spanish:
         return "\n".join([
             "## Puerta de revisión humana y aceptación", "",
-            "El informe automatizado final está completo y pendiente de aprobación humana.", "",
-            "- Estado del paquete: Completo.",
+            ES_BOUNDARY, "",
+            "El borrador automatizado está completo como paquete de revisión, pero no es un informe final aprobado.", "",
+            "- Estado automatizado: Completo.",
             "- Revisión humana: Obligatoria antes de cualquier entrega al cliente.",
             "- Aceptación: Pendiente para el paquete inmutable exacto.",
             "- Entrega al cliente: Bloqueada hasta la aprobación explícita.",
             "- Responsabilidad del revisor: Confirmar identidad, puntuación, evidencia, limitaciones, hallazgos y plan de remediación.",
+            "- Cambio de estado permitido: Solo un revisor autorizado puede declarar FINAL APROBADO y ENTREGA AL CLIENTE AUTORIZADA.",
         ])
     return "\n".join([
         "## Human Review and Acceptance Gate", "",
-        "The final automated report package is complete and pending human approval.", "",
-        "- Package status: Complete.",
+        EN_BOUNDARY, "",
+        "The automated draft is complete as a review package, but it is not an approved final report.", "",
+        "- Automated status: Complete.",
         "- Human review: Required before any client delivery.",
         "- Acceptance: Pending for the exact immutable package.",
         "- Client delivery: Blocked until explicit approval.",
         "- Reviewer responsibility: Confirm identity, scores, evidence, limitations, findings, and remediation plan.",
+        "- Permitted state change: Only an authorized reviewer may declare APPROVED FINAL and CLIENT DELIVERY AUTHORIZED.",
     ])
 
 
@@ -78,6 +84,7 @@ def install_authoritative_review_gate() -> dict[str, Any]:
         "bound": report._clean_markdown is wrapped,
         "markdown_html_pdf_share_gate": True,
         "client_delivery_remains_blocked": True,
+        "automated_draft_language_required": True,
     }
 
 
