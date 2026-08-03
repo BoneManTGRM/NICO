@@ -12,99 +12,105 @@ Earlier exact production observations remain available in the `docs/production-*
 
 Workstream 1, `exact_head_comprehensive_finality_repair`, remains completed and post-merge verified. Its exact-commit, evidence-retention, report-preservation, security, mandatory human-review, and blocked-delivery boundaries remain mandatory.
 
-Workstream 2, `exact_head_client_report_accuracy`, remains completed and post-merge verified. Its current verified production release is:
+Workstream 2, `exact_head_client_report_accuracy`, remains completed and post-merge verified. The current verified production code release is:
 
-`9946f0f9d5f3f752ada263fe7179a16731d6b307`
+`caf099499841e6b5ac6ef4c92a211e2c8fa3f9de`
 
-The original completion chain reached production through PR #1002 and was recorded by PR #1004. Two later corrective-maintenance packages restored useful report content and repaired its final publication gate without declaring a new workstream:
-
-- PR #1005, `Restore useful Comprehensive findings and remediation content`, merged as `d9fae9c860767ba3e051e87c11481715c9a94562`.
-- PR #1006, `Accept the authoritative final finding register`, merged as `9946f0f9d5f3f752ada263fe7179a16731d6b307`.
+The original workstream completion through PR #1006 remains valid. Subsequent corrective maintenance compacted the client review package, restored required truth markers, repaired exact-live validation, and removed a parser-only placeholder without changing scores, scanner dispositions, approval posture, or client-delivery authorization.
 
 ## Repository inspection at continuation
 
-Before synchronizing this status:
+Before acting:
 
-- current production code release was `9946f0f9d5f3f752ada263fe7179a16731d6b307`;
-- no pull requests were open;
-- no unresolved review threads remained on the latest corrective PR;
-- all 17 exact-head workflows passed on PR #1006 head `2005cbf9eeb50859d4ae44372ffd44ecc51758b0`;
-- Vercel and Railway both served the exact merged release;
-- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all passed on the exact merged release.
+- `main` was exact release `1167acf9e32785542065bc2f88f50eedf85a761f`;
+- PR #1020 was the only open pull request and was the first incomplete dependency-ordered corrective package;
+- its exact head was `1defcc491d25c5b9aa0685f2e4f02c9abb0667de`;
+- all 17 required exact-head workflows passed;
+- unresolved review threads were zero;
+- its three-file diff was limited to canonical placeholder sanitation, Phase 17 installation, and regression coverage.
 
-The prior status documents still named `153d0f958e6a0072cfb2bd2130387d3fad468ab7` as current production. This synchronization corrects that stale repository-authority record. It does not begin a later package.
+PR #1020 was merged by squash as `caf099499841e6b5ac6ef4c92a211e2c8fa3f9de`.
 
-## Corrective-maintenance result
+After merge:
 
-The compact single-render report pipeline is preserved, but useful decision content that disappeared from the earlier 91-page report is again present when supported by retained evidence.
+- `main` is exactly `caf099499841e6b5ac6ef4c92a211e2c8fa3f9de`;
+- no pull requests are open;
+- Vercel and Railway both serve the exact merge SHA;
+- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all pass on the exact merge SHA.
 
-Restored content includes:
+## Corrective-maintenance chain
 
-- canonical decision-grade findings;
-- exact-source production complexity hotspots;
-- technical and business consequences;
-- specific remediation instructions;
-- verification requirements;
-- rollback, acceptance, and exit criteria;
-- owner and effort estimates;
-- review-required dependency, secret, and static-analysis counts;
-- sanitized candidate metadata when safely available;
-- CI/CD operational readiness and historical health as a separate, unscored boundary.
+The merged compact-report and live-proof chain is:
 
-The following were intentionally not restored:
+- PR #1009, bounded client review package and authoritative pre-approval lifecycle.
+- PR #1010, Automated Draft compatibility in premium report validation.
+- PR #1011, wrapped multi-page technical scorecard preservation.
+- PR #1012, canonical incomplete-applicable-analyzer metric restoration.
+- PR #1013, compact evidence-summary design contract.
+- PR #1014, Platform Parity and exact-run browser PDF proof repair.
+- PR #1015, compact evidence summary in live production acceptance.
+- PR #1018, wrapped PDF section-identity normalization.
+- PR #1019, authorized future-state guidance distinguished from current package finality.
+- PR #1020, parser placeholder sanitation across canonical and rendered report surfaces.
 
-- duplicate full-page copies of the same finding;
-- raw secret values;
-- unverified scanner candidates presented as confirmed defects;
-- score changes made only to satisfy a gate.
-
-The semantic publication gate now accepts the final authoritative headings:
-
-- `Finding and Remediation Register`
-- `Registro de hallazgos y remediación`
-
-It still requires retained canonical finding identifiers and still blocks false zero-finding reports, missing review-candidate truth, and missing CI/CD operational boundaries.
+PRs #1016 and #1017 were closed without merge and are not part of the authoritative release chain.
 
 ## Exact-head verification
 
-PR #1006 exact head `2005cbf9eeb50859d4ae44372ffd44ecc51758b0` passed all 17 required workflows, including NICO CI, CodeQL, security evidence, remediation evidence, frontend production proof, Postgres restart, resilience, Mobile Restart, iOS WebKit, Comprehensive report proof, client-delivery proof, and unified production acceptance.
+PR #1020 exact head `1defcc491d25c5b9aa0685f2e4f02c9abb0667de` passed all 17 required workflows, including NICO CI, CodeQL, security evidence, remediation evidence, frontend production proof, Postgres restart, resilience, Mobile Restart, iOS WebKit, Comprehensive report proof, client-delivery proof, and unified production acceptance.
 
-No unresolved review threads remained before merge.
+No unresolved review threads remained before merge. The report-preservation, security, and commercial-readiness gates remained satisfied.
 
 ## Exact production verification
 
-Vercel and Railway both identify exact release `9946f0f9d5f3f752ada263fe7179a16731d6b307` as successfully deployed.
+Vercel and Railway both identify exact release `caf099499841e6b5ac6ef4c92a211e2c8fa3f9de` as successfully deployed.
 
-Post-merge production proofs passed:
+Post-merge proofs:
 
-- Mobile Restart workflow `30781560728`, artifact `8843909023`, run `comprun_c19e1bbbc9294634b9fdf3dd02033586`.
-- iOS WebKit workflow `30781560714`, artifact `8843946923`, run `comprun_8085772bd54743438cb3b8d4b4dc1276`.
-- Two-Service Production Acceptance workflow `30781560746`, artifact `8843997324`.
+- Mobile Restart workflow `30835028595`, artifact `8864675853`, artifact digest `sha256:1acf0318b590887eed0fc3c0982b3c5000d9ddccf8ce4d07b3a54e1c91b61bc6`, run `comprun_040b35eea61b446f98c1f87d908d2421`.
+- iOS WebKit workflow `30835029616`, artifact `8864730879`, artifact digest `sha256:eb9b70b45a9675975d0d924858438425cc45e1b6983f5dafe754b7d9a1f6934c`, run `comprun_e9bc1ad0656f4884950b8aee0e5b96e9`.
+- Two-Service Production Acceptance workflow `30835029607`, successful retry artifact `8865005566`, artifact digest `sha256:72bb2f195218e4139e12102011a05b86b80c7e998d422669c678b4e99d9abaad`.
 
-Two-Service acceptance completed two distinct live Comprehensive runs:
+The first Two-Service attempt stopped before starting an assessment when the runtime-readiness endpoint briefly returned HTTP 502 immediately after deployment. Mobile and iOS then passed on the unchanged exact release, and the proportional failed-job retry passed readiness and the complete two-run contract. No code change or gate relaxation was used.
 
-- `comprun_b37d05fbf9a84102b58b8f60319e926c`
-- `comprun_5b0e685f79f24c4985026afbb4aea001`
+The successful Two-Service proof completed two distinct live Comprehensive runs:
 
-Both reached `client_acceptance_pending` at 100% progress with `review_required` status. Both retained Markdown, HTML, canonical JSON, and 161-page PDF artifacts at technical score 93/100, evidence-adjusted score 90/100, and maturity `Exceptional`.
+- `comprun_081d9566e6f14f69ba53f06a45931ba4`
+- `comprun_4a062b8bebb7463c9cedcbbe0e51c3c9`
 
-The final PDFs contain the authoritative Finding and Remediation Register and retained canonical finding identifiers. The semantic contract passed across canonical identity, score truth, required sections, cross-format artifacts, lifecycle state, and pre-approval delivery posture.
+Both reached `review_required`, displayed `Internal review required`, retained Markdown, HTML, canonical JSON, and 21-page PDF artifacts, and reported technical score 93/100, evidence-adjusted score 90/100, and maturity `Exceptional`.
+
+## Direct retained-artifact verification
+
+The successful immutable Two-Service artifact was inspected independently of the workflow summary.
+
+Across both live report packages:
+
+- literal `<arrow>` is absent from Markdown, HTML, canonical JSON, and extracted PDF text;
+- HTML-escaped `&lt;arrow&gt;` is absent;
+- the client-readable `anonymous callback` label is present;
+- exact source anchors remain retained, including `apps/web/app/AssessmentMidLiveStatusTransport.tsx:294` and `apps/web/app/AssessmentStatusResilience.tsx:286`;
+- all reported Markdown, HTML, JSON, and PDF SHA-256 values match the retained files;
+- `AUTOMATED DRAFT`, `PENDING HUMAN APPROVAL`, and `CLIENT DELIVERY BLOCKED` are present;
+- `Incomplete applicable analyzers: 0`, Platform Parity, the compact Evidence Package Summary, and the Human Review and Acceptance Gate are present;
+- the retired raw Evidence Appendix is absent;
+- unapproved current finality is absent;
+- scores remain 93/100 technical and 90/100 evidence-adjusted.
 
 ## Verified report boundaries
 
 The current production package preserves:
 
 - one authoritative artifact-rendering path;
-- retained exact-run scanner evidence without final-stage scanner-store reads;
-- one canonical analyzer-coverage value;
-- completed analyzers excluded from incomplete lists;
-- consistent maturity labels across Markdown, HTML, JSON, and PDF;
-- explicit zero-finding truth only when every canonical finding surface and count alias is present and synchronized;
-- useful exact-source finding and remediation content without duplicate full-page copies;
+- exact-run and exact-commit identity;
+- all four client report artifacts;
+- canonical scanner and score truth;
+- useful exact-source finding and remediation content;
 - review-required candidates separated from confirmed defects;
 - CI/CD operational health separated from configuration maturity and technical scoring;
-- the existing visual design and section order;
-- strict cross-format semantic validation.
+- the approved compact visual design and section order;
+- strict cross-format semantic validation;
+- fail-closed parser-placeholder validation before publication.
 
 ## Commercial and approval state
 
@@ -113,10 +119,10 @@ Automated reports remain human-review packages, not automatically approved clien
 - Human review reached: yes.
 - Human review required: yes.
 - Client delivery authorized: no.
-- Client delivery remains blocked until explicit human approval.
+- Client delivery remains blocked until explicit authorized approval of the exact immutable package digest.
 
 ## Next dependency-ordered package
 
 No later work package is declared in the authoritative completion state.
 
-The completion program therefore pauses at this verified boundary rather than inventing, re-planning, or beginning an undeclared package. A later package may begin only after it is added to the authoritative machine-readable program state under the same merge, report-preservation, security, and commercial-readiness gates.
+The completion program pauses at this verified boundary rather than inventing, re-planning, or beginning an undeclared package. A later package may begin only after it is added to the authoritative machine-readable program state under the same merge, report-preservation, security, and commercial-readiness gates.
