@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
+import comprehensive_live_report_contract_v1 as compact_contract
 import unified_production_acceptance as production
 
-VERSION = "nico.unified_production_acceptance.authoritative_identity.v5"
+VERSION = "nico.unified_production_acceptance.authoritative_identity.v6"
 _ORIGINAL_RUN_SERVICE = production.unified._current_run_service
 _ORIGINAL_VALIDATE_REPORT = production.validate_report
 _SCORE_BANDS = {"STRONG", "MODERATE", "WEAK", "CRITICAL"}
@@ -130,7 +131,15 @@ def authoritative_validate_report(
 ) -> dict[str, Any]:
     """Retain all four client artifacts and prove score/status/scanner parity."""
 
-    evidence = dict(_ORIGINAL_VALIDATE_REPORT(service, payload, destination))
+    evidence = dict(
+        compact_contract.validate_report(
+            production.acceptance,
+            service,
+            payload,
+            destination,
+            fallback=_ORIGINAL_VALIDATE_REPORT,
+        )
+    )
     package = production.acceptance.report_package(service, payload)
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
     assert canonical, f"{service} canonical JSON report artifact is missing"
@@ -195,14 +204,19 @@ def authoritative_validate_report(
 
     filename = _text(package.get("pdf_filename"))
     if filename:
-        assert filename.upper().count("FINAL-PENDING-APPROVAL") <= 1, (
-            f"report filename repeated final lifecycle suffix: {filename}"
+        upper_filename = filename.upper()
+        assert "FINAL-PENDING-APPROVAL" not in upper_filename, (
+            f"report filename retained false final lifecycle language: {filename}"
+        )
+        assert upper_filename.count("AUTOMATED-DRAFT-PENDING-APPROVAL") <= 1, (
+            f"report filename repeated automated-draft lifecycle suffix: {filename}"
         )
 
     semantic_contract = dict(evidence.get("semantic_contract") or {})
     semantic_contract.update(
         {
             "canonical_json_artifact_verified": True,
+            "canonical_report_identity_verified": True,
             "section_status_score_parity_verified": True,
             "single_scanner_status_per_tool_verified": True,
             "markdown_html_pdf_json_artifacts_retained": True,
@@ -415,6 +429,9 @@ def verify_authoritative_output(path: Path) -> None:
         assert report["semantic_contract"]["section_status_score_parity_verified"] is True
         assert report["semantic_contract"]["single_scanner_status_per_tool_verified"] is True
         assert report["semantic_contract"]["score_clamping_forbidden"] is True
+        assert report["semantic_contract"]["automated_draft_language_verified"] is True
+        assert report["semantic_contract"]["unapproved_finality_absent"] is True
+        assert report["semantic_contract"]["compact_evidence_summary_verified"] is True
 
     proof = dict(payload.get("proof") or {})
     proof.update(
@@ -427,6 +444,9 @@ def verify_authoritative_output(path: Path) -> None:
             "all_four_report_artifacts_retained": True,
             "numeric_section_status_parity": True,
             "score_clamping_forbidden": True,
+            "compact_evidence_summary_verified": True,
+            "automated_draft_language_verified": True,
+            "unapproved_finality_absent": True,
         }
     )
     payload["proof"] = proof
