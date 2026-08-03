@@ -3,8 +3,16 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-semantic-content-gate.v66"
-_MARKER = "_nico_comprehensive_semantic_content_gate_v66"
+VERSION = "nico.comprehensive-report-semantic-content-gate.v67"
+_MARKER = "_nico_comprehensive_semantic_content_gate_v67"
+_FINDING_REGISTER_MARKERS = (
+    "finding and remediation register",
+    "registro de hallazgos y remediación",
+    "registro de hallazgos y remediacion",
+    "detailed canonical findings",
+    "hallazgos canónicos detallados",
+    "hallazgos canonicos detallados",
+)
 
 
 def _text(value: Any) -> str:
@@ -64,6 +72,7 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
     lowered = combined.casefold()
 
     finding_count = len(findings)
+    finding_register_marker = ""
     if finding_count:
         false_zero_markers = (
             "no unresolved priority finding retained",
@@ -89,8 +98,14 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
                 "client report omitted retained canonical finding identifiers: "
                 + ", ".join(missing_ids[:10])
             )
-        if "detailed canonical findings" not in lowered and "hallazgos canónicos detallados" not in lowered:
-            raise ValueError("client report omitted the detailed canonical finding register")
+        finding_register_marker = next(
+            (marker for marker in _FINDING_REGISTER_MARKERS if marker in lowered),
+            "",
+        )
+        if not finding_register_marker:
+            raise ValueError(
+                "client report omitted the authoritative finding and remediation register"
+            )
 
     if hotspots and not findings:
         raise ValueError(
@@ -124,6 +139,8 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
         "review_required_candidate_count_rendered": review_total,
         "confirmed_material_candidate_count_rendered": material_total,
         "ci_operational_context_rendered": bool(ci_context),
+        "finding_register_marker": finding_register_marker,
+        "authoritative_finding_register_present": not finding_count or bool(finding_register_marker),
         "false_zero_finding_claim_absent": True,
         "retained_finding_identifiers_present": True,
         "review_candidate_truth_present": True,
@@ -153,6 +170,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         result.update(
             {
                 "canonical_decision_content_verified": True,
+                "authoritative_finding_register_verified": True,
                 "review_candidate_truth_verified": True,
                 "ci_operational_context_verified": True,
             }
@@ -167,6 +185,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "version": VERSION,
         "bound": client_render.validate_existing_report_accuracy is validate,
         "false_zero_finding_publication_blocked": True,
+        "authoritative_finding_register_omission_blocked": True,
         "review_candidate_omission_blocked": True,
         "ci_operational_context_omission_blocked": True,
         "human_review_required": True,
