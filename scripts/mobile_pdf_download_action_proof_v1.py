@@ -8,7 +8,6 @@ from typing import Any
 
 VERSION = "nico.mobile-pdf-download-action-proof.v1"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
-_PREPARING_LABELS = ("preparing file", "preparando el archivo")
 
 
 def _artifact_status_cleared(page: Any) -> bool:
@@ -35,22 +34,44 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         assert pdf_button.is_visible(), "Review PDF action was not visible"
         assert pdf_button.is_enabled(), "Review PDF action was not enabled"
 
-        with page.expect_download(timeout=240_000) as download_info:
-            pdf_button.click()
-        download = download_info.value
-        failure = download.failure()
-        assert not failure, f"Browser-managed review PDF download failed: {failure}"
+        artifact_url_suffix = f"/api/nico/assessment/comprehensive-run/{run_id}/report/pdf"
+        responses: list[dict[str, Any]] = []
 
-        with tempfile.TemporaryDirectory(prefix="nico-review-pdf-") as directory:
-            target = Path(directory) / (download.suggested_filename or f"nico-{run_id}.pdf")
-            download.save_as(target)
-            pdf_bytes = target.read_bytes()
+        def capture_response(response: Any) -> None:
+            if str(response.url).split("?", 1)[0].endswith(artifact_url_suffix):
+                responses.append(
+                    {
+                        "status": int(response.status),
+                        "run_id": str(response.headers.get("x-nico-run-id") or ""),
+                        "sha256": str(response.headers.get("x-nico-artifact-sha256") or "").lower(),
+                        "read_class": str(response.headers.get("x-nico-proxy-read-class") or ""),
+                    }
+                )
+
+        page.on("response", capture_response)
+        try:
+            with page.expect_download(timeout=240_000) as download_info:
+                pdf_button.click()
+            download = download_info.value
+            failure = download.failure()
+            assert not failure, f"Browser-managed review PDF download failed: {failure}"
+
+            with tempfile.TemporaryDirectory(prefix="nico-review-pdf-") as directory:
+                target = Path(directory) / (download.suggested_filename or f"nico-{run_id}.pdf")
+                download.save_as(target)
+                pdf_bytes = target.read_bytes()
+        finally:
+            page.remove_listener("response", capture_response)
 
         assert pdf_bytes.startswith(b"%PDF"), "UI review PDF did not have a PDF signature"
         assert len(pdf_bytes) > 1_000, "UI review PDF was unexpectedly small"
-        assert run_id in (download.suggested_filename or ""), (
-            f"UI review PDF filename did not retain exact run identity: {download.suggested_filename}"
-        )
+        observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
+        assert responses, "UI review PDF response was not observed"
+        response = responses[-1]
+        assert response["status"] == 200, response
+        assert response["run_id"] == run_id, response
+        assert not response["sha256"] or response["sha256"] == observed_sha, response
+        assert response["read_class"] == "exact-run-artifact", response
         page.wait_for_timeout(250)
         assert _artifact_status_cleared(page), "Review PDF action remained stuck on Preparing file"
 
@@ -58,9 +79,11 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             **direct,
             "ui_review_pdf_download_verified": True,
             "ui_review_pdf_download_size_bytes": len(pdf_bytes),
-            "ui_review_pdf_download_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+            "ui_review_pdf_download_sha256": observed_sha,
             "ui_review_pdf_suggested_filename": download.suggested_filename,
-            "ui_review_pdf_exact_run_filename_verified": True,
+            "ui_review_pdf_exact_run_response_verified": True,
+            "ui_review_pdf_response_sha256_verified": True,
+            "ui_review_pdf_proxy_read_class": response["read_class"],
             "ui_review_pdf_signature_verified": True,
             "ui_review_pdf_artifact_status_cleared": True,
             "ui_review_pdf_original_user_gesture_preserved": True,
