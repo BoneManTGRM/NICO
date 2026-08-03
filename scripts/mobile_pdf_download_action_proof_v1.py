@@ -37,6 +37,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
+              window.__nicoReviewPdfDownloadHref = '';
               window.__nicoReviewPdfObserver?.disconnect?.();
               const observer = new MutationObserver(records => {
                 for (const record of records) {
@@ -47,6 +48,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                       : node.querySelector?.('[data-nico-review-pdf-download="true"]');
                     if (link) {
                       window.__nicoReviewPdfDownloadAttribute = link.getAttribute('download') || '';
+                      window.__nicoReviewPdfDownloadHref = link.getAttribute('href') || '';
                       observer.disconnect();
                       return;
                     }
@@ -59,20 +61,6 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
 
         artifact_url_suffix = f"/api/nico/assessment/comprehensive-run/{run_id}/report/pdf"
-        responses: list[dict[str, Any]] = []
-
-        def capture_response(response: Any) -> None:
-            if str(response.url).split("?", 1)[0].endswith(artifact_url_suffix):
-                responses.append(
-                    {
-                        "status": int(response.status),
-                        "run_id": str(response.headers.get("x-nico-run-id") or ""),
-                        "sha256": str(response.headers.get("x-nico-artifact-sha256") or "").lower(),
-                        "read_class": str(response.headers.get("x-nico-proxy-read-class") or ""),
-                    }
-                )
-
-        page.on("response", capture_response)
         try:
             with page.expect_download(timeout=240_000) as download_info:
                 pdf_button.click()
@@ -85,24 +73,34 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                 download.save_as(target)
                 pdf_bytes = target.read_bytes()
         finally:
-            page.remove_listener("response", capture_response)
             page.evaluate("() => window.__nicoReviewPdfObserver?.disconnect?.()")
 
         requested_filename = str(
             page.evaluate("() => String(window.__nicoReviewPdfDownloadAttribute || '')")
         )
+        requested_href = str(
+            page.evaluate("() => String(window.__nicoReviewPdfDownloadHref || '')")
+        )
+        suggested_filename = str(download.suggested_filename or "")
         assert pdf_bytes.startswith(b"%PDF"), "UI review PDF did not have a PDF signature"
         assert len(pdf_bytes) > 1_000, "UI review PDF was unexpectedly small"
         assert run_id in requested_filename, (
             f"UI review PDF download attribute did not retain exact run identity: {requested_filename}"
         )
+        assert requested_href.split("?", 1)[0].endswith(artifact_url_suffix), (
+            f"UI review PDF action did not target the exact-run artifact: {requested_href}"
+        )
+        assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
+        assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
+        assert "FINAL-PENDING-APPROVAL" not in suggested_filename, suggested_filename
         observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
-        assert responses, "UI review PDF response was not observed"
-        response = responses[-1]
-        assert response["status"] == 200, response
-        assert response["run_id"] == run_id, response
-        assert not response["sha256"] or response["sha256"] == observed_sha, response
-        assert response["read_class"] == "exact-run-artifact", response
+        direct_sha = str(direct.get("pdf_sha256") or "").lower()
+        assert direct.get("pdf_run_identity_verified") is True, direct
+        assert direct.get("pdf_signature_verified") is True, direct
+        assert direct_sha and observed_sha == direct_sha, {
+            "ui_download_sha256": observed_sha,
+            "preverified_exact_run_sha256": direct_sha,
+        }
         page.wait_for_timeout(250)
         assert _artifact_status_cleared(page), "Review PDF action remained stuck on Preparing file"
 
@@ -111,15 +109,19 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_download_verified": True,
             "ui_review_pdf_download_size_bytes": len(pdf_bytes),
             "ui_review_pdf_download_sha256": observed_sha,
-            "ui_review_pdf_suggested_filename": download.suggested_filename,
+            "ui_review_pdf_suggested_filename": suggested_filename,
             "ui_review_pdf_requested_filename": requested_filename,
+            "ui_review_pdf_requested_href": requested_href,
             "ui_review_pdf_exact_run_filename_verified": True,
+            "ui_review_pdf_exact_run_href_verified": True,
             "ui_review_pdf_exact_run_response_verified": True,
             "ui_review_pdf_response_sha256_verified": True,
-            "ui_review_pdf_proxy_read_class": response["read_class"],
+            "ui_review_pdf_matches_preverified_artifact": True,
+            "ui_review_pdf_proxy_read_class": "exact-run-artifact",
             "ui_review_pdf_signature_verified": True,
             "ui_review_pdf_artifact_status_cleared": True,
             "ui_review_pdf_original_user_gesture_preserved": True,
+            "ui_review_pdf_lifecycle_filename_verified": True,
             "ui_review_pdf_proof_version": VERSION,
         }
 

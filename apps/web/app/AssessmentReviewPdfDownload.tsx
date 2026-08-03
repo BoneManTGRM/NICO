@@ -14,7 +14,7 @@ function exactRunPdfHref(runId: string): string {
 function startExactRunDownload(runId: string): void {
   const link = document.createElement("a");
   link.href = exactRunPdfHref(runId);
-  link.download = `nico-comprehensive-${runId}-FINAL-PENDING-APPROVAL.pdf`;
+  link.download = `nico-comprehensive-${runId}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
   link.rel = "noopener";
   link.hidden = true;
   link.setAttribute("data-nico-review-pdf-download", "true");
