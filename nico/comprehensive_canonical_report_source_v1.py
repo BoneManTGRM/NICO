@@ -3,6 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_decision_content_restoration_v67 import (
+    restore_decision_content,
+)
+from nico.comprehensive_finding_count_truth_v66 import (
+    reconcile_finding_count_truth,
+)
 from nico.comprehensive_maturity_label_truth_v1 import (
     synchronize_maturity_label_truth,
 )
@@ -12,6 +18,9 @@ from nico.comprehensive_post_readiness_maturity_truth_v2 import (
 from nico.comprehensive_post_readiness_report_contract_truth_v1 import (
     install_post_readiness_report_contract_truth,
 )
+from nico.comprehensive_report_content_render_v66 import (
+    install_comprehensive_report_content_render_v66,
+)
 from nico.comprehensive_report_package import (
     VERSION as SOURCE_VERSION,
     _assessment,
@@ -20,6 +29,9 @@ from nico.comprehensive_report_package import (
     _now,
     _stage_summary,
     _text,
+)
+from nico.comprehensive_report_semantic_content_gate_v66 import (
+    install_comprehensive_report_semantic_content_gate_v66,
 )
 from nico.comprehensive_zero_finding_finality_truth_v1 import (
     install_comprehensive_zero_finding_finality_truth_v1,
@@ -57,11 +69,27 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     Before stage evidence is flattened, one preliminary maturity taxonomy is projected
     into explicit aliases. Installed post-readiness boundaries then apply the final
-    client-readiness maturity label, remove only superseded internal report-contract
-    diagnostics, and allow a fully explicit zero-finding canonical register only when
-    every mirrored finding-count alias is present and synchronized to zero. The report
-    package and its canonical JSON carry the same explicit Comprehensive service identity
-    so every renderer and release verifier reads one unambiguous artifact contract.
+    client-readiness maturity label and remove only superseded internal report-contract
+    diagnostics.
+
+    Retained structured decision findings, exact-SHA production complexity hotspots,
+    review-required candidate counts, and separately unscored CI operational context
+    are restored into canonical truth before hashing. A zero-finding final register is
+    therefore valid only when the retained source package contains neither structured
+    decision findings nor actionable exact-SHA production complexity evidence. Any stale
+    zero-count aliases in retained stage summaries are synchronized to the restored
+    canonical population without modifying scanner or review-candidate counts. The
+    restoration reads only the authoritative finding, complexity, scanner-triage, and CI
+    stages rather than traversing unrelated retained evidence payloads.
+
+    The compact premium renderer is extended with truthful scanner counts, rich finding
+    cards, and separately labeled CI operational health. Duplicate full-page finding
+    copies remain removed. A semantic gate blocks publication if any restored finding,
+    review-candidate count, or CI operational boundary disappears from client formats.
+
+    The report package and its canonical JSON carry the same explicit Comprehensive
+    service identity so every renderer and release verifier reads one unambiguous
+    artifact contract.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -115,6 +143,19 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    canonical, assessment, decision_content_restoration = restore_decision_content(
+        canonical,
+        raw_stages=stages,
+        assessment=assessment,
+        commit_sha=identity["commit_sha"],
+    )
+    canonical["assessment"] = assessment
+    canonical, finding_count_truth = reconcile_finding_count_truth(canonical)
+    assessment = dict(canonical.get("assessment") or {})
+    ordered = list(canonical.get("stage_summaries") or [])
+    report_content_render = install_comprehensive_report_content_render_v66()
+    semantic_content_gate = install_comprehensive_report_semantic_content_gate_v66()
+
     truth_sha = _canonical_hash(canonical)
     report_id = (
         "comprehensive_report_"
@@ -130,6 +171,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "source_artifact_schema": SOURCE_VERSION,
         "canonical_only_source": True,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "decision_content_restoration": deepcopy(decision_content_restoration),
+        "finding_count_truth": deepcopy(finding_count_truth),
+        "report_content_render": deepcopy(report_content_render),
+        "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installed": (
             POST_READINESS_MATURITY_TRUTH.get("bound") is True
         ),
@@ -157,6 +202,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "assessment": assessment,
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "decision_content_restoration": deepcopy(decision_content_restoration),
+        "finding_count_truth": deepcopy(finding_count_truth),
+        "report_content_render": deepcopy(report_content_render),
+        "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installation": deepcopy(
             POST_READINESS_MATURITY_TRUTH
         ),
