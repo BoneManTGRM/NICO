@@ -8,6 +8,13 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_client_ready_projection_v1 import (
+    APPROVAL_STATUS,
+    APPROVAL_SUFFIX,
+    DELIVERY_STATUS,
+    REPORT_FINALITY,
+    apply_automated_draft_truth,
+)
 from nico.phase16_client_delivery_verification_v1 import assert_client_delivery_package
 from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 from nico.phase9_production_report_gate_v1 import assert_production_report
@@ -20,7 +27,7 @@ from nico.v2_assessment_pipeline import (
     semantic_finding_key,
 )
 
-_APPROVAL_SUFFIX = "FINAL-PENDING-APPROVAL"
+_APPROVAL_SUFFIX = APPROVAL_SUFFIX
 
 
 def _text(value: Any) -> str:
@@ -193,7 +200,7 @@ def _normalized_artifact_filename(value: Any, *, default_name: str, extension: s
     if not filename.casefold().endswith(extension.casefold()):
         filename += extension
     stem = filename[: -len(extension)]
-    stem = re.sub(r"(?:-FINAL-PENDING-APPROVAL)+$", "", stem, flags=re.I)
+    stem = re.sub(r"(?:-(?:FINAL-PENDING-APPROVAL|AUTOMATED-DRAFT-PENDING-APPROVAL))+$", "", stem, flags=re.I)
     stem = re.sub(r"(?:-DRAFT|-FINAL)+$", "", stem, flags=re.I)
     return f"{stem}-{_APPROVAL_SUFFIX}{extension}"
 
@@ -260,15 +267,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     assessment["report_language"] = language
     assessment["locale"] = language
     canonical["assessment"] = assessment
-    canonical.update({
-        "approval_state": _APPROVAL_SUFFIX,
-        "report_finality": "final",
-        "approval_status": "pending_human_approval",
-        "delivery_status": "blocked_pending_human_approval",
-        "human_review_required": True,
-        "client_delivery_allowed": False,
-        "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
-    })
+    canonical = apply_automated_draft_truth(canonical)
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
 
@@ -281,9 +280,9 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "json_filename": _normalized_artifact_filename(package.get("json_filename"), default_name="nico-comprehensive-assessment.json", extension=".json"),
         "markdown_filename": _normalized_artifact_filename(package.get("markdown_filename"), default_name="nico-comprehensive-assessment.md", extension=".md"),
         "csv_filename": _normalized_artifact_filename(package.get("csv_filename"), default_name="nico-comprehensive-assessment.csv", extension=".csv"),
-        "report_finality": "final",
-        "approval_status": "pending_human_approval",
-        "delivery_status": "blocked_pending_human_approval",
+        "report_finality": REPORT_FINALITY,
+        "approval_status": APPROVAL_STATUS,
+        "delivery_status": DELIVERY_STATUS,
         "human_review_required": True,
         "client_delivery_allowed": False,
         "assessment_state": AssessmentState.REVIEW_REQUIRED.value,
@@ -294,7 +293,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     rebuilt_canonical = package.get("json")
     if not isinstance(rebuilt_canonical, Mapping):
         raise ValueError("v2 artifact rebuild did not preserve canonical JSON")
-    canonical = deepcopy(dict(rebuilt_canonical))
+    canonical = apply_automated_draft_truth(deepcopy(dict(rebuilt_canonical)))
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
     digest = canonical_truth_sha256(canonical)
@@ -302,6 +301,9 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "json": canonical,
         "canonical_findings": deepcopy(findings),
         "findings_register": deepcopy(findings),
+        "report_finality": REPORT_FINALITY,
+        "approval_status": APPROVAL_STATUS,
+        "delivery_status": DELIVERY_STATUS,
     })
 
     csv_bytes = _findings_csv(findings)
@@ -327,6 +329,8 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("v2 pipeline did not generate complete Markdown and HTML artifacts")
     if "CLIENT DELIVERY NOT AUTHORIZED" not in _text(package.get("markdown")):
         raise ValueError("v2 Markdown does not preserve the production delivery boundary")
+    if "AUTOMATED DRAFT" not in _text(package.get("markdown")) and "BORRADOR AUTOMATIZADO" not in _text(package.get("markdown")):
+        raise ValueError("v2 Markdown omitted automated-draft truth")
     for key in ("pdf_filename", "spanish_pdf_filename", "json_filename", "markdown_filename", "csv_filename"):
         value = _text(package.get(key))
         if value.count(_APPROVAL_SUFFIX) != 1:
@@ -352,6 +356,7 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "approval_suffix_exactly_once": True,
         "localized_artifacts_share_canonical_truth": True,
         "legacy_acceptance_metadata_removed": True,
+        "automated_draft_until_human_approval": True,
     })
     package["phase16_delivery_verification"] = assert_client_delivery_package(package)
 
@@ -370,15 +375,16 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "assessment_state": state.value,
         "status": state.value,
         "approval_state": _APPROVAL_SUFFIX,
-        "report_finality": "final",
-        "approval_status": "pending_human_approval",
-        "delivery_status": "blocked_pending_human_approval",
+        "report_finality": REPORT_FINALITY,
+        "approval_status": APPROVAL_STATUS,
+        "delivery_status": DELIVERY_STATUS,
         "human_review_required": True,
         "human_review_completed": False,
         "client_delivery_allowed": False,
         "canonical_truth_sha256": digest,
         "final_artifact_generation_complete": True,
         "final_package": True,
+        "automated_draft_package_complete": True,
         "report_language": language,
         "locale": language,
     })
@@ -387,6 +393,9 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "assessment_state": state.value,
         "status": state.value,
         "assessment_package_complete": True,
+        "report_finality": REPORT_FINALITY,
+        "approval_status": APPROVAL_STATUS,
+        "delivery_status": DELIVERY_STATUS,
         "human_review_required": True,
         "human_review_completed": False,
         "client_delivery_allowed": False,
