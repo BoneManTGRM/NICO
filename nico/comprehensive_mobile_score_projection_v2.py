@@ -4,8 +4,8 @@ from typing import Any, Callable
 
 import nico.comprehensive_api_controller as controller_module
 
-VERSION = "nico.comprehensive_mobile_score_projection.v4"
-RUNTIME_REVISION = "v64-client-ready-assurance-review-package"
+VERSION = "nico.comprehensive_mobile_score_projection.v5"
+RUNTIME_REVISION = "v65-client-ready-assurance-review-package"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -47,6 +47,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     )
     from nico.comprehensive_client_report_render_v60 import (
         install_comprehensive_client_report_render_v60,
+    )
+    from nico.comprehensive_client_review_companion_v3 import (
+        install_comprehensive_review_companion_v3,
     )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
@@ -112,9 +115,11 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_truth = install_comprehensive_final_artifact_truth_v54()
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
+    client_review_companion = install_comprehensive_review_companion_v3()
     return {
         "runtime_revision": RUNTIME_REVISION,
         "candidate_volume_assurance": candidate_volume_assurance,
+        "client_review_companion": client_review_companion,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -194,6 +199,7 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "limited_evidence_status_separated_from_execution_status": True,
         "canonical_score_contract_reconciled": True,
         "candidate_volume_is_triage_workload_not_defect_severity": True,
+        "decision_useful_review_companion_pages": 24,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
