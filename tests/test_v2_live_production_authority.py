@@ -174,6 +174,13 @@ def _forbid_final_stage_scan(monkeypatch) -> None:
     monkeypatch.setattr(providers, "_scan", forbidden)
 
 
+def _assert_review_gated_verification(verification: dict) -> None:
+    assert verification["status"] == "blocked", verification
+    assert verification["reason"] == "cross_format_final_report_verification_failed"
+    assert verification["failed_checks"] == ["report_finality_is_final"]
+    assert verification["checks"]["report_finality_is_final"] is False
+
+
 def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     _forbid_final_stage_scan(monkeypatch)
     provider = wrap_final_report_publication(lambda context: _source())
@@ -192,7 +199,7 @@ def test_real_final_provider_is_republished_through_one_v2_truth(monkeypatch):
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete", verification
+    _assert_review_gated_verification(verification)
 
 
 def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(monkeypatch):
@@ -220,7 +227,7 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     verification = providers.cross_format_verification_provider(
         {**context, "prior_stage_results": {"final_comprehensive_report_generation": output}}
     )
-    assert verification["status"] == "complete", verification
+    _assert_review_gated_verification(verification)
 
 
 def test_production_bootstraps_bind_real_report_and_scanner_authorities():
