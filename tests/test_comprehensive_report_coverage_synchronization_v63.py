@@ -61,6 +61,11 @@ def _package() -> dict:
         ),
         "html": "<html><body><p>Analyzer execution coverage is 89%</p></body></html>",
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+        "client_report_completion": {
+            "one_compact_client_pdf": True,
+            "full_evidence_retained_outside_client_pdf": True,
+            "full_evidence_appendix_in_client_pdf": False,
+        },
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
