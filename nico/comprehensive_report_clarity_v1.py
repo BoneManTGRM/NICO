@@ -250,6 +250,23 @@ def _hotspot_count(canonical: Mapping[str, Any]) -> int:
     return len(identities) if identities else len(candidates)
 
 
+def _architecture_section_present(canonical: Mapping[str, Any]) -> bool:
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    sections = (
+        assessment.get("sections")
+        if isinstance(assessment.get("sections"), list)
+        else []
+    )
+    return any(
+        isinstance(item, Mapping) and "architect" in _section_identity(item)
+        for item in sections
+    )
+
+
 def _normalize_architecture_section(
     section: Mapping[str, Any],
     *,
@@ -325,7 +342,9 @@ def normalize_comprehensive_report_clarity(
             "comprehensive_report_clarity_version": VERSION,
             "candidate_section_summaries_deduplicated": True,
             "review_candidate_presented_status_requires_human_review": True,
-            "exact_source_complexity_truth_reconciled": bool(hotspot_count),
+            "exact_source_complexity_truth_reconciled": bool(
+                hotspot_count and _architecture_section_present(result)
+            ),
             "numeric_scores_unchanged_by_report_clarity": True,
             "scanner_dispositions_unchanged_by_report_clarity": True,
         }
@@ -442,7 +461,7 @@ def assert_comprehensive_report_clarity(
         rendered_html,
         pdf,
     ).split())
-    if hotspot_count:
+    if hotspot_count and _architecture_section_present(canonical):
         if _COMPLEXITY_UNKNOWN_RE.search(combined):
             raise ValueError(
                 "architecture section reported unknown complexity despite retained hotspots"
@@ -531,6 +550,7 @@ def install_comprehensive_report_clarity() -> dict[str, Any]:
                     "review_candidate_status_requires_human_review": True,
                     "exact_source_complexity_truth_reconciled": bool(
                         _hotspot_count(canonical)
+                        and _architecture_section_present(canonical)
                     ),
                     "numeric_scores_unchanged_by_report_clarity": True,
                 }
