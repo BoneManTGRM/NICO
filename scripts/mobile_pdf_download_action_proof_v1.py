@@ -34,6 +34,30 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         assert pdf_button.is_visible(), "Review PDF action was not visible"
         assert pdf_button.is_enabled(), "Review PDF action was not enabled"
 
+        page.evaluate(
+            """() => {
+              window.__nicoReviewPdfDownloadAttribute = '';
+              window.__nicoReviewPdfObserver?.disconnect?.();
+              const observer = new MutationObserver(records => {
+                for (const record of records) {
+                  for (const node of record.addedNodes) {
+                    if (!(node instanceof Element)) continue;
+                    const link = node.matches('[data-nico-review-pdf-download="true"]')
+                      ? node
+                      : node.querySelector?.('[data-nico-review-pdf-download="true"]');
+                    if (link) {
+                      window.__nicoReviewPdfDownloadAttribute = link.getAttribute('download') || '';
+                      observer.disconnect();
+                      return;
+                    }
+                  }
+                }
+              });
+              observer.observe(document.body, {childList: true, subtree: true});
+              window.__nicoReviewPdfObserver = observer;
+            }"""
+        )
+
         artifact_url_suffix = f"/api/nico/assessment/comprehensive-run/{run_id}/report/pdf"
         responses: list[dict[str, Any]] = []
 
@@ -62,9 +86,16 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                 pdf_bytes = target.read_bytes()
         finally:
             page.remove_listener("response", capture_response)
+            page.evaluate("() => window.__nicoReviewPdfObserver?.disconnect?.()")
 
+        requested_filename = str(
+            page.evaluate("() => String(window.__nicoReviewPdfDownloadAttribute || '')")
+        )
         assert pdf_bytes.startswith(b"%PDF"), "UI review PDF did not have a PDF signature"
         assert len(pdf_bytes) > 1_000, "UI review PDF was unexpectedly small"
+        assert run_id in requested_filename, (
+            f"UI review PDF download attribute did not retain exact run identity: {requested_filename}"
+        )
         observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
         assert responses, "UI review PDF response was not observed"
         response = responses[-1]
@@ -81,6 +112,8 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_download_size_bytes": len(pdf_bytes),
             "ui_review_pdf_download_sha256": observed_sha,
             "ui_review_pdf_suggested_filename": download.suggested_filename,
+            "ui_review_pdf_requested_filename": requested_filename,
+            "ui_review_pdf_exact_run_filename_verified": True,
             "ui_review_pdf_exact_run_response_verified": True,
             "ui_review_pdf_response_sha256_verified": True,
             "ui_review_pdf_proxy_read_class": response["read_class"],
