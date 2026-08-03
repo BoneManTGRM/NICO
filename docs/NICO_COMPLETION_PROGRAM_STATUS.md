@@ -16,13 +16,14 @@ The current verified production code release is:
 
 Repository state at synchronization:
 
-- `main` equals the verified release exactly;
-- no pull requests are open;
+- before this documentation-only synchronization, `main` equaled the verified production code release exactly;
+- PR #1025 is the sole open pull request and changes only the two authority files;
+- merging this authority update does not change the deployed production code identity;
 - stale authority PR #1021 was closed unmerged as superseded;
 - PR #1023 and PR #1024 each passed all 17 exact-head workflows;
 - both PRs had zero unresolved review threads before merge;
-- Vercel and Railway serve the exact final release;
-- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all pass on the exact final release.
+- Vercel and Railway serve the exact final production code release;
+- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all pass on the exact final production code release.
 
 ## Completed corrective chain
 
