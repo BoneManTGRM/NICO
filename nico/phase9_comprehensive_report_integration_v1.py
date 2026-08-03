@@ -7,13 +7,14 @@ from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
 )
+from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase15_production_integration_v1 import integrate_production_truth
 from nico.phase16_client_delivery_verification_v1 import repair_client_delivery_package
 from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize_findings
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v6"
+VERSION = "nico.v2.comprehensive.finalizer.v7"
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -52,10 +53,28 @@ def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) 
     if finding_id and finding_id in canonical_by_id:
         canonical = canonical_by_id[finding_id]
         for field in (
-            "finding_id", "id", "title", "decision_title", "category", "priority", "severity", "status",
-            "location", "fact", "evidence", "interpretation", "business_impact", "impact", "recommendation",
-            "owner_role", "effort", "cost_of_inaction", "residual_risk", "acceptance_criteria",
-            "finding_aliases", "supporting_evidence",
+            "finding_id",
+            "id",
+            "title",
+            "decision_title",
+            "category",
+            "priority",
+            "severity",
+            "status",
+            "location",
+            "fact",
+            "evidence",
+            "interpretation",
+            "business_impact",
+            "impact",
+            "recommendation",
+            "owner_role",
+            "effort",
+            "cost_of_inaction",
+            "residual_risk",
+            "acceptance_criteria",
+            "finding_aliases",
+            "supporting_evidence",
         ):
             if field in canonical:
                 item[field] = deepcopy(canonical[field])
@@ -72,18 +91,34 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
 
     by_id: dict[str, Mapping[str, Any]] = {}
     for item in findings:
-        for value in [item.get("finding_id"), item.get("id"), *(item.get("finding_aliases") or [])]:
+        for value in [
+            item.get("finding_id"),
+            item.get("id"),
+            *(item.get("finding_aliases") or []),
+        ]:
             key = _text(value)
             if key:
                 by_id[key] = item
 
-    for surface in ("canonical_findings", "findings_register", "findings", "decision_grade_findings_register"):
+    for surface in (
+        "canonical_findings",
+        "findings_register",
+        "findings",
+        "decision_grade_findings_register",
+    ):
         normalized[surface] = deepcopy(findings)
     normalized["executive_risk_register"] = deepcopy(findings[:7])
     normalized["priority_findings"] = deepcopy(findings[:5])
     for surface in (
-        "executive_findings", "finding_cards", "roadmap", "backlog", "work_packages",
-        "remediation_plan", "recommendations", "assessment", "stage_summaries",
+        "executive_findings",
+        "finding_cards",
+        "roadmap",
+        "backlog",
+        "work_packages",
+        "remediation_plan",
+        "recommendations",
+        "assessment",
+        "stage_summaries",
     ):
         if surface in normalized:
             normalized[surface] = _sync_surface(normalized[surface], by_id)
@@ -96,7 +131,8 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
     register = build_finding_remediation_register(normalized)
     normalized = synchronize_canonical_finding_surfaces(normalized, register)
     stable_findings = [
-        item for item in normalized.get("canonical_findings") or []
+        item
+        for item in normalized.get("canonical_findings") or []
         if isinstance(item, Mapping)
     ]
 
@@ -111,28 +147,47 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "pre_integration_finding_aliases_preserved": True,
         "stable_finding_identity_before_rendering": True,
         "all_mirrored_finding_surfaces_synchronized": True,
+        "automated_draft_is_default_unapproved_state": True,
     }
     return normalized
 
 
-def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = "FINAL-PENDING-APPROVAL") -> dict[str, Any]:
+def finalize_report_package(
+    result: Mapping[str, Any],
+    *,
+    approval_state: str = APPROVAL_SUFFIX,
+) -> dict[str, Any]:
     """The only Comprehensive publication boundary.
 
     Compatibility repair is allowed only before v2 rendering. Every final artifact
     is rebuilt afterward from the repaired canonical JSON and no later layer may
-    mutate the client-facing population.
+    mutate the client-facing population. Unapproved automation always enters this
+    boundary as an automated draft; approved-final identity requires a separate,
+    authorized review transition.
     """
 
     finalized = deepcopy(dict(result))
-    package = deepcopy(finalized.get("report_package") if isinstance(finalized.get("report_package"), Mapping) else {})
-    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else finalized.get("canonical_report")
+    package = deepcopy(
+        finalized.get("report_package")
+        if isinstance(finalized.get("report_package"), Mapping)
+        else {}
+    )
+    canonical = (
+        package.get("json")
+        if isinstance(package.get("json"), Mapping)
+        else finalized.get("canonical_report")
+    )
     if not isinstance(canonical, Mapping):
         raise ValueError("report package is missing canonical JSON")
     canonical = normalize_canonical_report(canonical)
     canonical["approval_state"] = approval_state
     package["json"] = canonical
     package = repair_client_delivery_package(package)
-    repaired = package.get("json") if isinstance(package.get("json"), Mapping) else canonical
+    repaired = (
+        package.get("json")
+        if isinstance(package.get("json"), Mapping)
+        else canonical
+    )
     repaired = normalize_canonical_report(repaired)
     repaired["approval_state"] = approval_state
     package["json"] = repaired
@@ -149,4 +204,9 @@ def finalize_report_package(result: Mapping[str, Any], *, approval_state: str = 
     return published
 
 
-__all__ = ["VERSION", "canonicalize_findings", "normalize_canonical_report", "finalize_report_package"]
+__all__ = [
+    "VERSION",
+    "canonicalize_findings",
+    "normalize_canonical_report",
+    "finalize_report_package",
+]
