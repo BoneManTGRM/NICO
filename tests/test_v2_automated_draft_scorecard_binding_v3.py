@@ -41,6 +41,10 @@ def _sections() -> list[dict]:
         "Risk Reduction",
         "Operational Readiness",
         "Evidence Reconciliation",
+        *[
+            f"Supplemental Verified Control {index:02d}"
+            for index in range(1, 41)
+        ],
     ]
     return [
         {
@@ -122,6 +126,7 @@ def test_multipage_scorecard_retains_wrapped_dependency_row() -> None:
     assert scorecard_index + expected_scorecard_pages <= len(reader.pages)
     normalized = " ".join(extracted.split())
     assert "Dependency / Library Ecosystem" in normalized
+    assert "Supplemental Verified Control 40" in normalized
     assert EN_BOUNDARY in extracted
     assert "FINAL REPORT" not in extracted.upper()
     assert repaired["report_finality"] == "automated_draft"
