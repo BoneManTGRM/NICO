@@ -174,6 +174,7 @@ def test_authoritative_report_retains_json_markdown_html_and_score_status_parity
     assert result["score"] == "79/100"
     assert result["evidence_adjusted_score"] == "78/100"
     assert result["semantic_contract"]["section_status_score_parity_verified"] is True
+    assert result["semantic_contract"]["provisional_review_status_contract_verified"] is True
     assert result["semantic_contract"]["single_scanner_status_per_tool_verified"] is True
     assert result["semantic_contract"]["score_clamping_forbidden"] is True
     assert result["section_parity"][1]["status"] == "MODERATE"
@@ -213,6 +214,7 @@ def test_repeat_run_output_requires_identical_scores_sections_scanners_and_seman
         "canonical_truth_sha256": "c" * 64,
         "semantic_contract": {
             "section_status_score_parity_verified": True,
+            "provisional_review_status_contract_verified": True,
             "single_scanner_status_per_tool_verified": True,
             "score_clamping_forbidden": True,
             "compact_evidence_summary_verified": True,
@@ -243,6 +245,7 @@ def test_repeat_run_output_requires_identical_scores_sections_scanners_and_seman
     assert payload["proof"]["deterministic_score_pair"] is True
     assert payload["proof"]["deterministic_semantic_assessment_hash"] is True
     assert payload["proof"]["identity_bound_canonical_truth_hashes_retained"] is True
+    assert payload["proof"]["provisional_review_status_contract_verified"] is True
     assert payload["proof"]["score_clamping_forbidden"] is True
     assert len(payload["repeat_run_evidence"]["identity_bound_canonical_truth_sha256"]) == 2
 
