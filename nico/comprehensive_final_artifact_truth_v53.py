@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import re
@@ -8,7 +9,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_final_artifact_truth.v53"
+VERSION = "nico.comprehensive_final_artifact_truth.v53.1"
 _MARKER = "_nico_comprehensive_final_artifact_truth_v53"
 
 
@@ -18,6 +19,15 @@ def _dict(value: Any) -> dict[str, Any]:
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _pdf_text(pdf: bytes) -> str:
@@ -236,6 +246,176 @@ def _finding_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, int]:
     return no_duplicates, stated_matches, calculated
 
 
+def _canonical_scanner_register_truth(canonical: dict[str, Any]) -> dict[str, bool]:
+    assessment = _dict(canonical.get("assessment"))
+    contract = _dict(assessment.get("score_contract"))
+    register = _dict(assessment.get("canonical_scanner_finding_register"))
+    required = contract.get("canonical_finding_register_required") is True or bool(register)
+    check_names = (
+        "canonical_scanner_register_present",
+        "canonical_scanner_register_complete",
+        "canonical_scanner_count_parity_verified",
+        "canonical_scanner_totals_recompute",
+        "canonical_scanner_digest_recomputes",
+        "canonical_scanner_commit_matches_report",
+        "canonical_scanner_ids_are_unique",
+        "canonical_scanner_payload_retention_truthful",
+        "canonical_scanner_summary_matches_assessment",
+        "canonical_scanner_coverage_reference_matches",
+        "evidence_adjusted_penalty_recomputes",
+        "candidate_volume_does_not_change_technical_score",
+        "ci_configuration_and_operational_health_separated",
+    )
+    if not required:
+        return {name: True for name in check_names}
+
+    findings = [item for item in _list(register.get("findings")) if isinstance(item, dict)]
+    totals = _dict(register.get("totals"))
+    calculated = {
+        "raw": 0,
+        "material": 0,
+        "review_required": 0,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": 0,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
+    disposition_keys = {
+        "verified_material": "material",
+        "review_required": "review_required",
+        "approved_or_nonblocking": "approved_or_nonblocking",
+        "excluded_test_only": "excluded_test_only",
+    }
+    records_valid = True
+    for finding in findings:
+        count = _nonnegative_int(finding.get("occurrence_count"))
+        disposition = str(finding.get("disposition") or "")
+        quality = str(finding.get("evidence_quality") or "")
+        if count <= 0 or disposition not in disposition_keys or quality not in calculated:
+            records_valid = False
+            continue
+        calculated["raw"] += count
+        calculated[disposition_keys[disposition]] += count
+        calculated[quality] += count
+
+    totals_match = records_valid and all(
+        _nonnegative_int(totals.get(key)) == value
+        for key, value in calculated.items()
+    )
+    digest = hashlib.sha256(
+        json.dumps(findings, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+    identity = _dict(canonical.get("identity"))
+    report_commit = str(
+        identity.get("commit_sha")
+        or assessment.get("commit_sha")
+        or ""
+    ).strip().casefold()
+    register_commit = str(register.get("exact_commit_sha") or "").strip().casefold()
+    record_commits = {
+        str(item.get("exact_commit_sha") or "").strip().casefold()
+        for item in findings
+    }
+    commit_matches = bool(report_commit and register_commit == report_commit) and (
+        not record_commits or record_commits == {report_commit}
+    )
+    finding_ids = [str(item.get("finding_id") or "") for item in findings]
+    fingerprints = [str(item.get("raw_fingerprint") or "") for item in findings]
+    ids_unique = (
+        all(finding_ids)
+        and len(finding_ids) == len(set(finding_ids))
+        and all(fingerprints)
+        and len(fingerprints) == len(set(fingerprints))
+    ) if findings else calculated["raw"] == 0
+    retention_truth = (
+        register.get("raw_payload_retention_complete") is (calculated["count_only"] == 0)
+    )
+    summary_matches = assessment.get("scanner_finding_summary") == register.get("summary_by_category")
+    coverage = _dict(assessment.get("evidence_coverage"))
+    coverage_matches = (
+        _nonnegative_int(coverage.get("canonical_finding_count")) == calculated["raw"]
+        and str(coverage.get("canonical_finding_digest_sha256") or "") == digest
+        and coverage.get("canonical_finding_register_status") == register.get("status")
+    )
+
+    technical, adjusted = _score_truth(canonical)
+    volume_penalty = _nonnegative_int(contract.get("candidate_volume_penalty"))
+    payload_penalty = _nonnegative_int(contract.get("missing_raw_payload_penalty"))
+    execution_penalty = _nonnegative_int(contract.get("incomplete_analyzer_penalty"))
+    assurance_penalty = min(30, volume_penalty + payload_penalty + execution_penalty)
+    expected_adjusted = None if technical is None else max(0, technical - assurance_penalty)
+    penalty_recomputes = (
+        technical is not None
+        and adjusted == expected_adjusted
+        and _score(contract.get("technical_score")) == technical
+        and _score(contract.get("evidence_adjusted_score")) == adjusted
+        and _nonnegative_int(contract.get("assurance_penalty")) == assurance_penalty
+    )
+    candidate_flags = (
+        contract.get("candidate_volume_affects_technical_score") is False
+        and contract.get("candidate_volume_affects_evidence_adjusted_score") is True
+        and coverage.get("candidate_volume_affects_technical_score") is False
+        and coverage.get("candidate_volume_affects_evidence_adjusted_score") is True
+    )
+
+    operational = _dict(assessment.get("ci_cd_operational_health"))
+    ci_section = next(
+        (
+            item
+            for item in _list(assessment.get("sections"))
+            if isinstance(item, dict) and item.get("id") == "ci_cd"
+        ),
+        {},
+    )
+    section_operational = _dict(ci_section.get("operational_health"))
+    ci_separated = bool(ci_section and operational) and (
+        ci_section.get("configuration_maturity_score") == ci_section.get("presented_score")
+        and section_operational == operational
+        and operational.get("score_effect") == "operational_context_only"
+        and operational.get("technical_configuration_score_affected") is False
+    )
+
+    return {
+        "canonical_scanner_register_present": bool(register),
+        "canonical_scanner_register_complete": register.get("status") == "complete",
+        "canonical_scanner_count_parity_verified": (
+            register.get("count_parity_verified") is True
+            and not _list(register.get("discrepancies"))
+            and contract.get("canonical_finding_count_parity_verified") is True
+        ),
+        "canonical_scanner_totals_recompute": totals_match,
+        "canonical_scanner_digest_recomputes": str(register.get("canonical_digest_sha256") or "") == digest,
+        "canonical_scanner_commit_matches_report": commit_matches,
+        "canonical_scanner_ids_are_unique": ids_unique,
+        "canonical_scanner_payload_retention_truthful": retention_truth,
+        "canonical_scanner_summary_matches_assessment": summary_matches,
+        "canonical_scanner_coverage_reference_matches": coverage_matches,
+        "evidence_adjusted_penalty_recomputes": penalty_recomputes,
+        "candidate_volume_does_not_change_technical_score": candidate_flags,
+        "ci_configuration_and_operational_health_separated": ci_separated,
+    }
+
+
+def _automated_delivery_boundary(package: dict[str, Any], canonical: dict[str, Any]) -> bool:
+    explicit = any(
+        key in package or key in canonical
+        for key in ("human_review_required", "client_delivery_allowed")
+    )
+    if not explicit:
+        return True
+    assessment = _dict(canonical.get("assessment"))
+    return (
+        package.get("human_review_required") is True
+        and package.get("client_delivery_allowed") is False
+        and canonical.get("human_review_required") is True
+        and canonical.get("client_delivery_allowed") is False
+        and assessment.get("human_review_required") is True
+        and assessment.get("client_delivery_allowed") is False
+    )
+
+
 def _identifier_integrity(*texts: str) -> bool:
     from nico.comprehensive_report_truth_stabilization_v52 import _repair_text
 
@@ -251,6 +431,7 @@ def validate_final_report_package(package: dict[str, Any]) -> dict[str, Any]:
     html_text = _html_text(rendered_html)
     scanner_state, coverage_consistent, coverage_complete = _scanner_consistency(canonical)
     no_duplicates, finding_count_matches, finding_count = _finding_consistency(canonical)
+    scanner_register_checks = _canonical_scanner_register_truth(canonical)
 
     checks = {
         "canonical_json_present": bool(canonical),
@@ -263,9 +444,11 @@ def validate_final_report_package(package: dict[str, Any]) -> dict[str, Any]:
         "all_completed_analyzers_report_full_coverage": coverage_complete,
         "finding_register_has_no_equivalent_duplicates": no_duplicates,
         "stated_unique_finding_count_matches_register": finding_count_matches,
+        "automated_package_remains_human_review_gated": _automated_delivery_boundary(package, canonical),
         "markdown_identifier_integrity": _identifier_integrity(markdown),
         "html_identifier_integrity": _identifier_integrity(html_text),
         "pdf_identifier_integrity": _identifier_integrity(pdf_text),
+        **scanner_register_checks,
     }
     failed = sorted(key for key, value in checks.items() if value is not True)
     return {
@@ -342,6 +525,12 @@ def install_comprehensive_final_artifact_truth_v53() -> dict[str, Any]:
         "full_pdf_text_validated": True,
         "weighted_score_recalculation_required": True,
         "scanner_state_consistency_required": True,
+        "canonical_scanner_register_required_when_scoring_requires_it": True,
+        "canonical_scanner_count_parity_required": True,
+        "canonical_scanner_digest_required": True,
+        "evidence_adjusted_penalty_recalculation_required": True,
+        "ci_configuration_operational_separation_required": True,
+        "automated_delivery_boundary_required": True,
         "finding_deduplication_required": True,
         "identifier_integrity_required": True,
         "human_review_required": True,
