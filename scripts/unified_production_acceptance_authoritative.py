@@ -9,8 +9,9 @@ from urllib.parse import parse_qs, urlparse
 
 import comprehensive_live_report_contract_v1 as compact_contract
 import unified_production_acceptance as production
+from comprehensive_review_status_contract_v1 import assert_section_status_contract
 
-VERSION = "nico.unified_production_acceptance.authoritative_identity.v6"
+VERSION = "nico.unified_production_acceptance.authoritative_identity.v7"
 _ORIGINAL_RUN_SERVICE = production.unified._current_run_service
 _ORIGINAL_VALIDATE_REPORT = production.validate_report
 _SCORE_BANDS = {"STRONG", "MODERATE", "WEAK", "CRITICAL"}
@@ -165,9 +166,12 @@ def authoritative_validate_report(
         status = _text(raw.get("presented_status") or raw.get("status")).upper()
         if score is not None:
             expected = _score_band(score)
-            assert status == expected, (
-                f"canonical JSON section {label} presents {score}/100 with status {status or 'missing'}, "
-                f"expected {expected}"
+            status = assert_section_status_contract(
+                raw,
+                label=label,
+                score=score,
+                status=status,
+                numeric_status=expected,
             )
             assert "NOT_SCORED" not in status and "REVIEW_LIMITED" not in status
         section_vector.append(
@@ -218,6 +222,7 @@ def authoritative_validate_report(
             "canonical_json_artifact_verified": True,
             "canonical_report_identity_verified": True,
             "section_status_score_parity_verified": True,
+            "provisional_review_status_contract_verified": True,
             "single_scanner_status_per_tool_verified": True,
             "markdown_html_pdf_json_artifacts_retained": True,
             "report_filename_lifecycle_idempotent": True,
@@ -427,6 +432,7 @@ def verify_authoritative_output(path: Path) -> None:
             assert artifact_path.is_file(), f"retained {key} artifact is missing: {artifact_path}"
             assert artifact_path.stat().st_size > 0
         assert report["semantic_contract"]["section_status_score_parity_verified"] is True
+        assert report["semantic_contract"]["provisional_review_status_contract_verified"] is True
         assert report["semantic_contract"]["single_scanner_status_per_tool_verified"] is True
         assert report["semantic_contract"]["score_clamping_forbidden"] is True
         assert report["semantic_contract"]["automated_draft_language_verified"] is True
@@ -443,6 +449,7 @@ def verify_authoritative_output(path: Path) -> None:
             "identity_bound_canonical_truth_hashes_retained": True,
             "all_four_report_artifacts_retained": True,
             "numeric_section_status_parity": True,
+            "provisional_review_status_contract_verified": True,
             "score_clamping_forbidden": True,
             "compact_evidence_summary_verified": True,
             "automated_draft_language_verified": True,
