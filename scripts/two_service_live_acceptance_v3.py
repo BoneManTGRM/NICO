@@ -20,7 +20,7 @@ import two_service_live_acceptance_v3_impl as _impl
 # Preserve the historical module surface used by tests and production wrappers.
 runtime = _impl.runtime
 
-VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v12"
+VERSION = "nico.two_service_live_acceptance_terminal_reconciliation.v13"
 CURRENT_REVIEW_TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -84,6 +84,17 @@ def __getattr__(name: str) -> Any:
 def install_current_review_terminal_phases() -> set[str]:
     acceptance.TERMINAL_PHASES.update(CURRENT_REVIEW_TERMINAL_PHASES)
     return set(acceptance.TERMINAL_PHASES)
+
+
+def _terminal_ui_observed(observed: bool, state: dict[str, str]) -> bool:
+    """Reconcile the polling result with the authoritative final UI read.
+
+    The backend can become terminal immediately before React paints the review state.
+    The final UI read remains mandatory and must itself match a supported terminal phase;
+    this helper only prevents the earlier polling snapshot from becoming stale truth.
+    """
+
+    return bool(observed or runtime._phase_is_terminal(state))
 
 
 def _current_ui_state(page: Any) -> dict[str, str]:
@@ -277,6 +288,7 @@ def _current_run_service(browser: Any, config: Any, pass_number: int, service: s
         )
         page.wait_for_timeout(1000)
         state = acceptance.ui_state(page)
+        ui_terminal_observed = _terminal_ui_observed(ui_terminal_observed, state)
         rid = state["run_id"] or acceptance.run_id(identity_payload)
         assert rid, f"{service} UI did not expose a run ID"
 
@@ -318,7 +330,9 @@ def _current_run_service(browser: Any, config: Any, pass_number: int, service: s
             f"{service} terminated with {final_status or 'unknown'} at "
             f"{acceptance.first_text(final.get('current_stage'), acceptance.record(final).get('current_stage')) or 'unknown stage'}"
         )
-        assert ui_terminal_observed is True
+        assert ui_terminal_observed is True, (
+            f"{service} backend completed but terminal UI state was not observed"
+        )
         assert state["phase_label"] in acceptance.TERMINAL_PHASES, (
             f"{service} rendered unsupported terminal phase {state['phase_label']!r}"
         )
