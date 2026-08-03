@@ -20,7 +20,7 @@ def _pdf() -> bytes:
     document = canvas.Canvas(buffer)
     document.drawString(72, 740, "NICO COMPREHENSIVE")
     document.drawString(72, 720, "Canonical Technical Scorecard")
-    document.drawString(72, 700, "Evidence Appendix")
+    document.drawString(72, 700, "Evidence Package Summary")
     document.drawString(72, 680, "Human Review and Acceptance Gate")
     document.drawString(72, 640, "Analyzer execution coverage: 89%")
     document.drawString(72, 620, "Analyzer execution coverage:")
@@ -51,7 +51,7 @@ def _package() -> dict:
             (
                 "NICO COMPREHENSIVE",
                 "Canonical Technical Scorecard",
-                "Evidence Appendix",
+                "Evidence Package Summary",
                 "Human Review and Acceptance Gate",
                 "Analyzer execution coverage: 89%",
                 "analyzer_execution_coverage: 100",
@@ -61,6 +61,11 @@ def _package() -> dict:
         ),
         "html": "<html><body><p>Analyzer execution coverage is 89%</p></body></html>",
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+        "client_report_completion": {
+            "one_compact_client_pdf": True,
+            "full_evidence_retained_outside_client_pdf": True,
+            "full_evidence_appendix_in_client_pdf": False,
+        },
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -93,6 +98,8 @@ def test_final_package_binds_one_canonical_value_in_markdown_html_and_pdf() -> N
     assert "Analyzer execution coverage: 100%" in combined
     assert "Analyzer execution coverage is 100%" in combined
     assert "Unrelated observed value: 89" in combined
+    assert "Evidence Package Summary" in combined
+    assert "Evidence Appendix" not in combined
     assert repaired["coverage_synchronization"]["canonical_coverage_value"] == 100
     assert repaired["coverage_synchronization"]["scores_changed"] is False
     assert repaired["coverage_synchronization"]["scanner_results_changed"] is False
@@ -104,6 +111,8 @@ def test_final_package_binds_one_canonical_value_in_markdown_html_and_pdf() -> N
     validation = validate_existing_report_accuracy(repaired)
     assert validation["conflicting_coverage_absent"] is True
     assert validation["coverage_synchronization_verified"] is True
+    assert validation["compact_evidence_summary_verified"] is True
+    assert validation["retired_evidence_appendix_absent"] is True
     assert validation["production_pdf_validated"] is True
 
 
