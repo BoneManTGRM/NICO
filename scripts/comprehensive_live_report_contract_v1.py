@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-live-report-contract.v3"
+VERSION = "nico.comprehensive-live-report-contract.v4"
 
 _EN_EVIDENCE_SUMMARIES = (
     "Evidence Package Summary",
@@ -45,6 +45,16 @@ _FORBIDDEN_FINALITY = (
     "CLIENT DELIVERY AUTHORIZED",
     "ENTREGA AL CLIENTE AUTORIZADA",
 )
+_AUTHORIZED_FUTURE_STATE_GUIDANCE = (
+    (
+        "Only an authorized reviewer may change the status to APPROVED FINAL "
+        "and CLIENT DELIVERY AUTHORIZED."
+    ),
+    (
+        "Solo un revisor autorizado puede cambiar el estado a FINAL APROBADO "
+        "y ENTREGA AL CLIENTE AUTORIZADA."
+    ),
+)
 
 
 def _contains_any(value: str, markers: tuple[str, ...]) -> bool:
@@ -66,6 +76,24 @@ def _assert_marker(value: str, marker: str, *, surface: str) -> None:
     assert normalized_marker in normalized_value, (
         f"Comprehensive {surface} omitted {marker}"
     )
+
+
+def _current_state_finality_scope(value: str) -> str:
+    """Remove only the approved explanatory sentence about a possible future state."""
+
+    current = _normalized_surface_text(value)
+    for guidance in _AUTHORIZED_FUTURE_STATE_GUIDANCE:
+        current = current.replace(_normalized_surface_text(guidance), " ")
+    return " ".join(current.split())
+
+
+def _assert_no_unapproved_finality(value: str, *, surface: str) -> None:
+    current_state = _current_state_finality_scope(value)
+    for forbidden in _FORBIDDEN_FINALITY:
+        normalized_forbidden = _normalized_surface_text(forbidden)
+        assert normalized_forbidden not in current_state, (
+            f"Comprehensive {surface} retained unapproved finality: {forbidden}"
+        )
 
 
 def _retired_heading_present(value: str) -> bool:
@@ -139,10 +167,7 @@ def validate_report(
     }
     for surface, raw_value in surfaces.items():
         value = raw_value.upper()
-        for forbidden in _FORBIDDEN_FINALITY:
-            assert forbidden not in value, (
-                f"Comprehensive {surface} retained unapproved finality: {forbidden}"
-            )
+        _assert_no_unapproved_finality(raw_value, surface=surface)
         for stale in _STALE_DRAFT_PHRASES:
             assert stale not in value, (
                 f"Comprehensive {surface} retained stale status: {stale}"
