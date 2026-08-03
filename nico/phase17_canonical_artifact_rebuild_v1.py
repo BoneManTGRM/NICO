@@ -14,6 +14,7 @@ from nico.client_report_completion_v2 import (
     finalize_client_report_package,
     prepare_client_report_package,
 )
+from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -42,14 +43,20 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
     return normalize_report_package(reconcile_production_report_truth(package))
 
 
-def _sanitize_published_pdf(package: Mapping[str, Any]) -> dict[str, Any]:
+def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(package))
     pdf = sanitize_client_pdf_status(base64.b64decode(str(result.get("pdf_base64") or "")))
+    markdown = sanitize_client_text_status(str(result.get("markdown") or ""))
+    rendered_html = sanitize_client_text_status(str(result.get("html") or ""))
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
     result.update(
         {
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+            "markdown": markdown,
+            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            "html": rendered_html,
+            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
             "pdf_page_count": page_count,
             "core_report_page_count": page_count,
             "final_package_page_count": page_count,
@@ -59,6 +66,7 @@ def _sanitize_published_pdf(package: Mapping[str, Any]) -> dict[str, Any]:
     completion.update(
         {
             "unapproved_finality_removed_from_pdf_headers": True,
+            "automated_draft_grammar_normalized": True,
             "page_count": page_count,
         }
     )
@@ -87,7 +95,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # cross-format client artifacts from the exact authoritative canonical state.
     repaired = _reconcile(repaired)
     finalized = finalize_client_report_package(repaired)
-    return _sanitize_published_pdf(finalized)
+    return _sanitize_published_artifacts(finalized)
 
 
 __all__ = [
