@@ -239,7 +239,7 @@ def test_phase17_installs_and_enforces_the_client_ready_projection() -> None:
     assert "MAX_CLIENT_PDF_PAGES" in completion
     assert '"full_evidence_appendix_in_client_pdf": False' in completion
     assert '"report_finality": REPORT_FINALITY' in completion
-    assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in pipeline
+    assert "_APPROVAL_SUFFIX = APPROVAL_SUFFIX" in pipeline
     assert '"report_finality": REPORT_FINALITY' in pipeline
 
 
