@@ -107,6 +107,17 @@ def test_phase16_rejects_legacy_final_pending_approval_identity():
     assert any("automated draft" in error for error in result["errors"])
 
 
+def test_phase16_repairs_repeated_automated_prefixes():
+    package = _package()
+    package["pdf_filename"] = (
+        "nico-report-AUTOMATED-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    repaired = repair_client_delivery_package(package)
+    assert repaired["pdf_filename"] == f"nico-report-{APPROVAL_SUFFIX}.pdf"
+    assert repaired["pdf_filename"].count(APPROVAL_SUFFIX) == 1
+    assert assert_client_delivery_package(repaired)["valid"] is True
+
+
 def test_phase16_repairs_paired_legacy_and_p1_findings_and_repeated_criteria():
     package = _package()
     legacy = _finding("RISK-54DC2C8248A9")
