@@ -3,6 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_decision_content_restoration_v66 import (
+    restore_decision_content,
+)
 from nico.comprehensive_maturity_label_truth_v1 import (
     synchronize_maturity_label_truth,
 )
@@ -33,7 +36,7 @@ ZERO_FINDING_FINALITY_TRUTH = (
     install_comprehensive_zero_finding_finality_truth_v1()
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v6"
+VERSION = "nico.comprehensive_canonical_report_source.v7"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -57,11 +60,18 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     Before stage evidence is flattened, one preliminary maturity taxonomy is projected
     into explicit aliases. Installed post-readiness boundaries then apply the final
-    client-readiness maturity label, remove only superseded internal report-contract
-    diagnostics, and allow a fully explicit zero-finding canonical register only when
-    every mirrored finding-count alias is present and synchronized to zero. The report
-    package and its canonical JSON carry the same explicit Comprehensive service identity
-    so every renderer and release verifier reads one unambiguous artifact contract.
+    client-readiness maturity label and remove only superseded internal report-contract
+    diagnostics.
+
+    Retained structured decision findings, exact-SHA production complexity hotspots,
+    review-required candidate counts, and separately unscored CI operational context
+    are restored into canonical truth before hashing. A zero-finding final register is
+    therefore valid only when the retained source package contains neither structured
+    decision findings nor actionable exact-SHA production complexity evidence.
+
+    The report package and its canonical JSON carry the same explicit Comprehensive
+    service identity so every renderer and release verifier reads one unambiguous
+    artifact contract.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -115,6 +125,14 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    canonical, assessment, decision_content_restoration = restore_decision_content(
+        canonical,
+        raw_stages=stages,
+        assessment=assessment,
+        commit_sha=identity["commit_sha"],
+    )
+    canonical["assessment"] = assessment
+
     truth_sha = _canonical_hash(canonical)
     report_id = (
         "comprehensive_report_"
@@ -130,6 +148,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "source_artifact_schema": SOURCE_VERSION,
         "canonical_only_source": True,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "decision_content_restoration": deepcopy(decision_content_restoration),
         "post_readiness_maturity_truth_installed": (
             POST_READINESS_MATURITY_TRUTH.get("bound") is True
         ),
@@ -157,6 +176,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "assessment": assessment,
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
+        "decision_content_restoration": deepcopy(decision_content_restoration),
         "post_readiness_maturity_truth_installation": deepcopy(
             POST_READINESS_MATURITY_TRUTH
         ),
