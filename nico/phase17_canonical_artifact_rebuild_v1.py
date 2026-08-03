@@ -23,11 +23,14 @@ from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
 from nico.v2_authoritative_premium_report import VERSION, install_pipeline_projection
 from nico.v2_authoritative_review_gate import install_authoritative_review_gate
+from nico.v2_automated_draft_quality_compat_v2 import (
+    install_automated_draft_quality_compat,
+    repair_localized_rendered_report,
+    repair_rendered_report,
+)
 from nico.v2_client_ready_truth_projection_v1 import install_client_ready_truth_projection
-from nico.v2_localized_report_quality_repairs import repair_localized_rendered_report
 from nico.v2_pdf_control_character_guard import install_pdf_control_character_guard
 from nico.v2_report_quality_repairs import _is_spanish, repair_canonical_truth
-from nico.v2_report_quality_runtime_compat import repair_rendered_report
 from nico.v2_single_pass_premium_report import rebuild_single_pass_premium_artifacts
 
 # Repair concrete scanner commands before wrapping execution evidence. This keeps
@@ -35,6 +38,7 @@ from nico.v2_single_pass_premium_report import rebuild_single_pass_premium_artif
 _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
+_AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 install_pipeline_projection()
 install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
@@ -117,6 +121,7 @@ __all__ = [
     "_SCANNER_COMMAND_REPAIR",
     "_SCANNER_EVIDENCE_CONTRACT",
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
+    "_AUTOMATED_DRAFT_QUALITY_COMPAT",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "rebuild_client_artifacts",
 ]

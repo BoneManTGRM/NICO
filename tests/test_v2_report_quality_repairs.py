@@ -5,7 +5,9 @@ import io
 
 from pypdf import PdfReader
 
-from nico.v2_report_quality_repairs import repair_canonical_truth, repair_rendered_report
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
+from nico.v2_automated_draft_quality_compat_v2 import repair_rendered_report
+from nico.v2_report_quality_repairs import repair_canonical_truth
 
 
 SHA = "a" * 40
@@ -146,7 +148,7 @@ def test_repair_removes_truth_contradictions_without_inventing_scores() -> None:
     assert [item["finding_id"] for item in canonical["non_production_observations"]] == ["TEST-ONLY"]
 
 
-def test_rendered_scorecard_wraps_rows_and_finalizes_report_semantics() -> None:
+def test_rendered_scorecard_wraps_rows_and_preserves_automated_draft_semantics() -> None:
     package = repair_canonical_truth(_package())
     package["pdf_base64"] = base64.b64encode(
         _synthetic_pdf(scorecard_text="REVIEW_LIMITED_NOT_SCOREDStatic Analysis")
@@ -161,16 +163,16 @@ def test_rendered_scorecard_wraps_rows_and_finalizes_report_semantics() -> None:
     assert "Static Analysis" in text
     assert "Moderate" in text
     assert "83/100" in text
-    assert "DRAFT" not in text.upper()
-    assert "FINAL REPORT" in text.upper()
-    assert "PENDING HUMAN APPROVAL" in text.upper()
-    assert "FINAL REPORT" in repaired["markdown"].upper()
+    assert EN_BOUNDARY in text
+    assert "FINAL REPORT" not in text.upper()
+    assert "AUTOMATED DRAFT" in repaired["markdown"].upper()
     assert "PENDING HUMAN APPROVAL" in repaired["html"].upper()
-    assert repaired["report_finality"] == "final"
+    assert repaired["report_finality"] == "automated_draft"
     assert repaired["approval_status"] == "pending_human_approval"
     assert repaired["client_delivery_allowed"] is False
     assert repaired["premium_report_renderer"]["scorecard_word_jumble_removed"] is True
     assert repaired["premium_report_renderer"]["scorecard_rows_verified"] is True
+    assert repaired["premium_report_renderer"]["automated_draft_is_valid_unapproved_state"] is True
 
 
 def test_report_with_no_canonical_sections_preserves_original_page() -> None:
@@ -187,5 +189,7 @@ def test_report_with_no_canonical_sections_preserves_original_page() -> None:
     assert repaired["premium_report_renderer"]["scorecard_word_jumble_removed"] is False
     assert repaired["premium_report_renderer"]["scorecard_replacement_skipped_no_sections"] is True
     assert repaired["premium_report_renderer"]["scorecard_rows_verified"] is False
-    assert "DRAFT" not in text.upper()
-    assert "FINAL REPORT" in text.upper()
+    assert EN_BOUNDARY in text
+    assert "FINAL REPORT" not in text.upper()
+    assert repaired["report_finality"] == "automated_draft"
+    assert repaired["client_delivery_allowed"] is False
