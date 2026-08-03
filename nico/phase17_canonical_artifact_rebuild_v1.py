@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import io
+from copy import deepcopy
 from typing import Any, Mapping
 
+from pypdf import PdfReader
+
 from nico.canonical_section_status_v1 import normalize_report_package
+from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
 from nico.client_report_completion_v2 import (
     finalize_client_report_package,
     prepare_client_report_package,
@@ -35,6 +42,30 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
     return normalize_report_package(reconcile_production_report_truth(package))
 
 
+def _sanitize_published_pdf(package: Mapping[str, Any]) -> dict[str, Any]:
+    result = deepcopy(dict(package))
+    pdf = sanitize_client_pdf_status(base64.b64decode(str(result.get("pdf_base64") or "")))
+    page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+    result.update(
+        {
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+            "pdf_page_count": page_count,
+            "core_report_page_count": page_count,
+            "final_package_page_count": page_count,
+        }
+    )
+    completion = deepcopy(dict(result.get("client_report_completion") or {}))
+    completion.update(
+        {
+            "unapproved_finality_removed_from_pdf_headers": True,
+            "page_count": page_count,
+        }
+    )
+    result["client_report_completion"] = completion
+    return result
+
+
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one bounded client package from canonical finding and scanner truth."""
 
@@ -55,7 +86,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # Reconcile once more after report-quality repair, then compile the bounded
     # cross-format client artifacts from the exact authoritative canonical state.
     repaired = _reconcile(repaired)
-    return finalize_client_report_package(repaired)
+    finalized = finalize_client_report_package(repaired)
+    return _sanitize_published_pdf(finalized)
 
 
 __all__ = [
