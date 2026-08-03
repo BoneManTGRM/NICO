@@ -9,7 +9,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
-from nico.v2_automated_draft_quality_compat_v1 import (
+from nico.v2_automated_draft_quality_compat_v2 import (
     install_automated_draft_quality_compat,
     repair_rendered_report,
 )
@@ -79,9 +79,31 @@ def test_quality_gate_accepts_required_automated_draft_boundary() -> None:
     assert installation["automated_draft_is_valid_unapproved_state"] is True
     assert installation["legacy_bare_draft_remains_blocked"] is True
     assert installation["unapproved_finality_remains_blocked"] is True
+    assert installation["legacy_status_draft_detection_narrowed"] is True
 
 
-def test_quality_gate_blocks_legacy_bare_draft_and_unapproved_finality() -> None:
+def test_quality_gate_allows_explanatory_draft_prose_with_authoritative_boundary() -> None:
+    from nico import v2_report_quality_repairs as quality
+
+    install_automated_draft_quality_compat()
+    pdf = _pdf(
+        [
+            RUN_ID,
+            COMMIT,
+            EN_BOUNDARY,
+            "This evidence-bound draft remains subject to authorized human review.",
+        ]
+    )
+
+    quality._validate_final_pdf(
+        pdf,
+        _canonical(),
+        expected_sections=[],
+        spanish=False,
+    )
+
+
+def test_quality_gate_blocks_legacy_status_draft_and_unapproved_finality() -> None:
     from nico import v2_report_quality_repairs as quality
 
     install_automated_draft_quality_compat()
@@ -156,3 +178,4 @@ def test_runtime_repair_preserves_scorecard_identity_and_draft_posture() -> None
     assert contract["automated_draft_is_valid_unapproved_state"] is True
     assert contract["legacy_bare_draft_language_absent"] is True
     assert contract["unapproved_finality_language_absent"] is True
+    assert contract["legacy_status_draft_detection_narrowed"] is True
