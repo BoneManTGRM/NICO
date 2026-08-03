@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import io
+import unicodedata
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.client-pdf-status-sanitizer.v3"
+VERSION = "nico.client-pdf-status-sanitizer.v4"
 
 _EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 _ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
@@ -26,6 +27,52 @@ _REPLACEMENTS = (
     ("final automated report", "automated draft report"),
     ("a final automated assessment", "an automated draft assessment"),
 )
+_PRESERVED_CLIENT_MARKERS = (
+    "compact finding and remediation register",
+    "complete exact-source index",
+    "client evidence summary",
+    "human review and acceptance gate",
+    "registro compacto de hallazgos y remediacion",
+    "indice completo de ubicaciones",
+    "resumen de evidencia para revision",
+    "puerta de revision humana y aceptacion",
+)
+_RAW_INTERNAL_MARKERS = (
+    "retained evidence",
+    "stage_execution.",
+    "artifact_schema",
+    "human_evidence_",
+    "human_evidence_summary.",
+    "report_contract_reason",
+    "comprehensive_final_report_semantic_contract_failed",
+    "scanner_triage.",
+    "technical_analysis.",
+    "complexity_evidence.",
+    "pre_render_scanner_truth.",
+    "configuration_controls.",
+    "snapshot.",
+    "roadmap[",
+    "staffing_plan[",
+    "scanner_execution_records[",
+)
+
+
+def _normalized(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.casefold().split())
+
+
+def _drop_internal_page(text: str) -> bool:
+    normalized = _normalized(text)
+    if any(marker in normalized for marker in _PRESERVED_CLIENT_MARKERS):
+        return False
+    if "evidence appendix" in normalized or "apendice de evidencia" in normalized:
+        return True
+    if "report_contract_reason" in normalized or "comprehensive_final_report_semantic_contract_failed" in normalized:
+        return True
+    marker_count = sum(marker in normalized for marker in _RAW_INTERNAL_MARKERS)
+    return marker_count >= 2
 
 
 def _replace_text(value: str) -> str:
@@ -74,6 +121,8 @@ def sanitize_client_pdf_status(pdf: bytes) -> bytes:
     reader = PdfReader(io.BytesIO(pdf))
     writer = PdfWriter()
     for source_page in reader.pages:
+        if _drop_internal_page(source_page.extract_text() or ""):
+            continue
         writer.add_page(source_page)
         page = writer.pages[-1]
         contents = page.get_contents()
@@ -95,6 +144,8 @@ def sanitize_client_pdf_status(pdf: bytes) -> bytes:
                 changed = changed or operand_changed
         if changed:
             page.replace_contents(stream)
+    if not writer.pages:
+        raise ValueError("client PDF sanitization removed every page")
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
