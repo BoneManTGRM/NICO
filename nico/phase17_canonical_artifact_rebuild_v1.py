@@ -26,6 +26,9 @@ from nico.comprehensive_decision_summary_truth_v1 import (
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
+from nico.comprehensive_markdown_identity_v1 import (
+    install_comprehensive_markdown_identity_v1,
+)
 from nico.comprehensive_pdf_navigation_titles_v1 import (
     install_comprehensive_pdf_navigation_titles_v1,
 )
@@ -80,6 +83,7 @@ _SCORE_PRESENCE_TRUTH = install_comprehensive_score_presence_truth_v1()
 _TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
 _ZERO_INCOMPLETE_VALIDATION = install_comprehensive_zero_incomplete_validation_v1()
 _DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
+_MARKDOWN_IDENTITY = install_comprehensive_markdown_identity_v1()
 _PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
 _RENDERED_PACKAGE_REUSE = install_comprehensive_rendered_package_reuse_v1()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
@@ -189,6 +193,7 @@ __all__ = [
     "_TRUTH_DIAGNOSTICS",
     "_ZERO_INCOMPLETE_VALIDATION",
     "_DECISION_SUMMARY_TRUTH",
+    "_MARKDOWN_IDENTITY",
     "_PDF_NAVIGATION_TITLES",
     "_RENDERED_PACKAGE_REUSE",
     "_INCOMPLETE_ANALYZER_SUMMARY",
