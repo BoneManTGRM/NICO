@@ -6,8 +6,8 @@ import re
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
-VERSION = "nico.comprehensive-client-review-companion.v2"
-MIN_CLIENT_REVIEW_PAGES = 35
+VERSION = "nico.comprehensive-client-review-companion.v2.1"
+MIN_CLIENT_REVIEW_PAGES = 8
 MAX_CLIENT_REVIEW_PAGES = 45
 
 _SECTION_SPECS = (
@@ -113,12 +113,12 @@ _SECTION_SPECS = (
         "title": "Six-Month Roadmap",
         "title_es": "Hoja de ruta de seis meses",
         "questions": (
-            "Are the 0–30, 31–90, and 91–180 day objectives correctly sequenced?",
+            "Are the 0-30, 31-90, and 91-180 day objectives correctly sequenced?",
             "Which dependencies, owners, acceptance criteria, and expected impacts are approved?",
             "Which calendar dates remain illustrative until stakeholder confirmation?",
         ),
         "questions_es": (
-            "¿Están correctamente secuenciados los objetivos de 0–30, 31–90 y 91–180 días?",
+            "¿Están correctamente secuenciados los objetivos de 0-30, 31-90 y 91-180 días?",
             "¿Qué dependencias, responsables, criterios e impactos están aprobados?",
             "¿Qué fechas siguen siendo ilustrativas hasta su confirmación?",
         ),
@@ -195,9 +195,7 @@ def _stage_map(canonical: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
                 continue
             item = deepcopy(dict(raw))
             stage_id = _text(
-                item.get("stage_id")
-                or item.get("id")
-                or item.get("capability"),
+                item.get("stage_id") or item.get("id") or item.get("capability"),
                 160,
             ).casefold().replace("-", "_").replace(" ", "_")
             if stage_id:
@@ -261,9 +259,9 @@ def review_sections(canonical: Mapping[str, Any], *, spanish: bool) -> list[dict
             "limited",
         }:
             limitations = [
-                "Human review or additional evidence is required before acceptance."
-                if not spanish
-                else "Se requiere revisión humana o evidencia adicional antes de la aceptación."
+                "Se requiere revisión humana o evidencia adicional antes de la aceptación."
+                if spanish
+                else "Human review or additional evidence is required before acceptance."
             ]
         output.append(
             {
@@ -310,9 +308,9 @@ def merge_review_companion_markdown(
         "## Paquete de revisión integral" if spanish else "## Comprehensive Client Review",
         "",
         (
-            "Estas secciones restauran la evidencia útil para decisiones sin reintroducir el volcado interno completo. Los datos faltantes permanecen identificados como no disponibles y todas las conclusiones siguen pendientes de revisión humana."
+            "Estas secciones conservan evidencia útil para decisiones sin reintroducir el volcado interno completo. Los datos faltantes permanecen identificados y toda conclusión sigue pendiente de revisión humana."
             if spanish
-            else "These sections restore decision-useful evidence without reintroducing the full internal stage dump. Missing data remains marked unavailable and every conclusion remains pending human review."
+            else "These sections retain decision-useful evidence without reintroducing the full internal stage dump. Missing data remains identified and every conclusion remains pending human review."
         ),
         "",
     ]
@@ -328,32 +326,41 @@ def merge_review_companion_markdown(
                 "",
             ]
         )
-        if section["evidence"]:
-            lines.extend(f"- {item}" for item in section["evidence"])
-        else:
-            lines.append("- No se conservó evidencia estructurada adicional." if spanish else "- No additional structured evidence was retained.")
+        lines.extend(
+            f"- {item}" for item in (
+                section["evidence"]
+                or (["No se conservó evidencia estructurada adicional."] if spanish else ["No additional structured evidence was retained."])
+            )
+        )
         if section["findings"]:
             lines.extend(["", f"### {('Observaciones' if spanish else 'Observations')}", ""])
             lines.extend(f"- {item}" for item in section["findings"])
         lines.extend(["", f"### {('Limitaciones y decisiones del revisor' if spanish else 'Limitations and reviewer decisions')}", ""])
-        if section["limitations"]:
-            lines.extend(f"- {item}" for item in section["limitations"])
-        else:
-            lines.append("- No se conservó una limitación adicional." if spanish else "- No additional limitation was retained.")
+        lines.extend(
+            f"- {item}" for item in (
+                section["limitations"]
+                or (["No se conservó una limitación adicional."] if spanish else ["No additional limitation was retained."])
+            )
+        )
         lines.extend(f"- [ ] {item}" for item in section["questions"])
         lines.append("")
 
     companion = "\n".join(lines).strip() + "\n"
-    marker_candidates = (
+    markers = (
         "## Compact Finding and Remediation Register",
         "## Registro compacto de hallazgos y remediación",
         "## Evidence Package Summary",
         "## Resumen del paquete de evidencia",
     )
-    for marker in marker_candidates:
+    for marker in markers:
         if marker in output:
-            return output.replace(marker, companion + "\n" + marker, 1)
-    return output.rstrip() + "\n\n" + companion
+            output = output.replace(marker, companion + "\n" + marker, 1)
+            break
+    else:
+        output = output.rstrip() + "\n\n" + companion
+    # Remove orphan Markdown heading tokens left by legacy section extraction.
+    output = re.sub(r"(?m)^#{1,6}\s*$\n?", "", output)
+    return output.strip() + "\n"
 
 
 def render_comprehensive_review_companion_pdf(
@@ -374,48 +381,50 @@ def render_comprehensive_review_companion_pdf(
         "NICOReviewTitle",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
+        fontSize=15.5,
+        leading=18.5,
         textColor=colors.HexColor("#0f172a"),
-        spaceAfter=9,
+        spaceAfter=5,
     )
     heading = ParagraphStyle(
         "NICOReviewHeading",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=12.5,
-        leading=16,
+        fontSize=9.4,
+        leading=11.4,
         textColor=colors.HexColor("#075985"),
-        spaceBefore=7,
-        spaceAfter=5,
+        spaceBefore=3,
+        spaceAfter=2,
     )
     body = ParagraphStyle(
         "NICOReviewBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=8.5,
-        leading=11.2,
+        fontSize=6.9,
+        leading=8.4,
         textColor=colors.HexColor("#334155"),
-        spaceAfter=5,
+        spaceAfter=2,
     )
     small = ParagraphStyle(
         "NICOReviewSmall",
         parent=body,
-        fontSize=7.4,
-        leading=9.6,
+        fontSize=6.2,
+        leading=7.5,
         textColor=colors.HexColor("#475569"),
-        spaceAfter=3,
+        spaceAfter=1.5,
     )
     warning = ParagraphStyle(
         "NICOReviewWarning",
         parent=body,
         fontName="Helvetica-Bold",
+        fontSize=6.7,
+        leading=8.1,
         textColor=colors.HexColor("#92400e"),
         backColor=colors.HexColor("#fef3c7"),
         borderColor=colors.HexColor("#f59e0b"),
-        borderWidth=.7,
-        borderPadding=7,
-        spaceAfter=8,
+        borderWidth=.6,
+        borderPadding=4,
+        spaceAfter=4,
     )
 
     def p(value: Any, style: ParagraphStyle = body, limit: int = 1200) -> Paragraph:
@@ -423,24 +432,21 @@ def render_comprehensive_review_companion_pdf(
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setFont("Helvetica", 7)
+        canvas.setFont("Helvetica", 6.5)
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawString(.55 * inch, .35 * inch, "NICO · Comprehensive client review · automated draft")
-        canvas.drawRightString(7.95 * inch, .35 * inch, f"Review {doc.page}")
+        canvas.drawString(.55 * inch, .35 * inch, "NICO | Comprehensive client review | automated draft")
+        canvas.drawRightString(7.95 * inch, .35 * inch, f"Review sheet {doc.page}")
         canvas.restoreState()
 
     story: list[Any] = []
-    total_pages = len(sections) * 2
-    page_number = 0
-    for section in sections:
-        page_number += 1
+    for section_index, section in enumerate(sections):
         story.extend(
             [
                 p(section["title"], title),
                 p(
-                    "BORRADOR AUTOMATIZADO · REVISIÓN HUMANA REQUERIDA"
+                    "BORRADOR AUTOMATIZADO | DECISIÓN HUMANA PENDIENTE | ENTREGA BLOQUEADA"
                     if spanish
-                    else "AUTOMATED DRAFT · HUMAN REVIEW REQUIRED",
+                    else "AUTOMATED DRAFT | HUMAN DECISION PENDING | CLIENT DELIVERY BLOCKED",
                     warning,
                 ),
             ]
@@ -448,9 +454,9 @@ def render_comprehensive_review_companion_pdf(
         status_table = Table(
             [
                 [p("Estado" if spanish else "Status", small), p(section["status"], small)],
-                [p("Resumen" if spanish else "Summary", small), p(section["summary"] or ("No disponible" if spanish else "Unavailable"), small)],
+                [p("Resumen" if spanish else "Summary", small), p(section["summary"] or ("No disponible" if spanish else "Unavailable"), small, 900)],
             ],
-            colWidths=[1.25 * inch, 6.15 * inch],
+            colWidths=[1.05 * inch, 6.35 * inch],
         )
         status_table.setStyle(
             TableStyle(
@@ -459,10 +465,10 @@ def render_comprehensive_review_companion_pdf(
                     ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
                     ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#cbd5e1")),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                 ]
             )
         )
@@ -473,65 +479,49 @@ def render_comprehensive_review_companion_pdf(
             else "No additional structured evidence was retained."
         ]
         for item in evidence[:8]:
-            story.append(p(f"• {item}", body, 700))
+            story.append(p(f"- {item}", small, 420))
         if section["findings"]:
             story.append(p("Observaciones" if spanish else "Observations", heading))
             for item in section["findings"][:3]:
-                story.append(p(f"• {item}", small, 650))
-        story.append(Spacer(1, .08 * inch))
-        story.append(p(
-            "La evidencia de esta página describe el estado automatizado; no representa aceptación del cliente."
-            if spanish
-            else "Evidence on this page describes the automated state; it does not represent client acceptance.",
-            small,
-        ))
-        if page_number < total_pages:
-            story.append(PageBreak())
+                story.append(p(f"- {item}", small, 420))
 
-        page_number += 1
-        story.extend(
-            [
-                p(
-                    f"{section['title']} — " + ("hoja de revisión" if spanish else "review worksheet"),
-                    title,
-                ),
-                p(
-                    "PENDIENTE DE DECISIÓN HUMANA · ENTREGA BLOQUEADA"
-                    if spanish
-                    else "PENDING HUMAN DECISION · DELIVERY BLOCKED",
-                    warning,
-                ),
-                p("Limitaciones conservadas" if spanish else "Retained limitations", heading),
-            ]
-        )
+        story.append(p("Limitaciones conservadas" if spanish else "Retained limitations", heading))
         limitations = section["limitations"] or [
             "No se conservó una limitación adicional."
             if spanish
             else "No additional limitation was retained."
         ]
         for item in limitations[:6]:
-            story.append(p(f"• {item}", body, 700))
+            story.append(p(f"- {item}", small, 420))
+
         story.append(p("Decisiones del revisor" if spanish else "Reviewer decisions", heading))
         for item in section["questions"]:
-            story.append(p(f"☐ {item}", body, 700))
+            story.append(p(f"[ ] {item}", small, 420))
         story.extend(
             [
                 p("Registro de decisión" if spanish else "Decision record", heading),
                 p(
-                    "Resultado: ☐ aceptar evidencia  ☐ solicitar más evidencia  ☐ rechazar conclusión  ☐ diferir decisión"
+                    "Resultado: [ ] aceptar  [ ] solicitar evidencia  [ ] rechazar  [ ] diferir"
                     if spanish
-                    else "Outcome: ☐ accept evidence  ☐ request more evidence  ☐ reject conclusion  ☐ defer decision",
-                    body,
+                    else "Outcome: [ ] accept  [ ] request evidence  [ ] reject  [ ] defer",
+                    small,
                 ),
                 p(
-                    "Responsable / fecha / evidencia de aceptación: ______________________________________________"
+                    "Revisor / fecha / evidencia: _________________________________________________"
                     if spanish
-                    else "Reviewer / date / acceptance evidence: _________________________________________________",
-                    body,
+                    else "Reviewer / date / acceptance evidence: __________________________________________",
+                    small,
+                ),
+                Spacer(1, .03 * inch),
+                p(
+                    "La evidencia completa permanece en los artefactos estructurados; esta hoja no constituye aceptación del cliente."
+                    if spanish
+                    else "Full retained evidence remains in the structured artifacts; this worksheet is not client acceptance.",
+                    small,
                 ),
             ]
         )
-        if page_number < total_pages:
+        if section_index < len(sections) - 1:
             story.append(PageBreak())
 
     document = SimpleDocTemplate(
@@ -539,8 +529,8 @@ def render_comprehensive_review_companion_pdf(
         pagesize=letter,
         leftMargin=.55 * inch,
         rightMargin=.55 * inch,
-        topMargin=.55 * inch,
-        bottomMargin=.62 * inch,
+        topMargin=.48 * inch,
+        bottomMargin=.58 * inch,
         invariant=1,
         title="NICO Comprehensive Client Review Companion",
         author="NICO",

@@ -18,8 +18,10 @@ def _package() -> dict:
                 "evidence_ledger_id": "ledger-golden",
                 "customer_id": "customer-golden",
                 "project_id": "project-golden",
+                "generated_at": "2026-08-04T16:15:00Z",
                 "report_language": "en",
             },
+            "generated_at": "2026-08-04T16:15:00Z",
             "report_language": "en",
             "assessment": {
                 "technical_score": 81,
@@ -52,22 +54,25 @@ def test_golden_dark_cover_replaces_plain_canonical_score_sheet() -> None:
     pdf = base64.b64decode(result["pdf_base64"])
     reader = PdfReader(io.BytesIO(pdf))
     first_page = reader.pages[0].extract_text() or ""
+    normalized = " ".join(first_page.split())
 
     assert "NICO / EVIDENCE-BOUND ENGINEERING INTELLIGENCE" in first_page
     assert "NICO COMPREHENSIVE" in first_page
-    assert "Decision-Grade Technical Assessment" in first_page
+    assert "Evidence-Bound Technical Review Package" in first_page
+    assert "Decision-Grade Technical Assessment" not in first_page
     assert "TECHNICAL MATURITY" in first_page
     assert "EVIDENCE-ADJUSTED" in first_page
-    assert "HUMAN APPROVAL" in first_page
+    assert "HUMAN REVIEW" in first_page
     assert "Pending" in first_page
-    assert "REVIEW PACKAGE" in first_page
-    assert "Ready" in first_page
+    assert "CLIENT DELIVERY" in first_page
+    assert "Blocked" in first_page
     assert "CLIENT-READY" not in first_page
     assert "ASSESSED REPOSITORY" in first_page
     assert "Executive posture" in first_page
-    assert "PRIORITY DECISIONS" in first_page
+    assert "PRIORITY REVIEW ITEMS" in first_page
     assert "POWERED BY REPARODYNAMICS" in first_page
-    assert "Client delivery remains blocked until explicit approval" in first_page
+    assert "Client delivery remains blocked until explicit authorized human approval" in normalized
+    assert "completed an authorized" not in normalized.casefold()
     assert "Canonical Score Summary" not in first_page
     assert result["premium_report_renderer"]["golden_cover_layout_restored"] is True
     assert result["premium_report_renderer"]["canonical_score_sheet_removed"] is True

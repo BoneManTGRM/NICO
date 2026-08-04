@@ -5,6 +5,9 @@ import base64
 from nico.v2_production_authority import wrap_final_report_publication
 
 
+GENERATED_AT = "2026-08-04T16:15:00Z"
+
+
 def _context() -> dict:
     return {
         "run_id": "comprun_real_single_render",
@@ -13,6 +16,7 @@ def _context() -> dict:
         "evidence_ledger_id": "ledger_real_single_render",
         "customer_id": "customer",
         "project_id": "project",
+        "generated_at": GENERATED_AT,
         "report_language": "en",
         "prior_stage_results": {
             "authorization_and_scope": {
@@ -79,11 +83,12 @@ def test_real_v2_finalizer_renders_once_from_canonical_source() -> None:
     result = wrap_final_report_publication(legacy_delegate)(_context())
 
     assert delegate_calls == 0
-    assert result["status"] == "complete"
+    assert result["status"] == "complete", result
     package = result["report_package"]
     assert package["markdown"]
     assert package["html"]
     assert package["json"]["identity"]["run_id"] == "comprun_real_single_render"
+    assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     assert package["canonical_truth_sha256"]
     contract = result["v2_production_authority"]

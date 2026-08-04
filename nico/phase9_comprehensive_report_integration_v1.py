@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
+)
+from nico.comprehensive_artifact_filename_truth_v1 import (
+    install_comprehensive_artifact_filename_truth_v1,
 )
 from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase15_production_integration_v1 import integrate_production_truth
@@ -16,7 +20,8 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v7.1"
+VERSION = "nico.v2.comprehensive.finalizer.v7.3"
+_ARTIFACT_FILENAME_TRUTH = install_comprehensive_artifact_filename_truth_v1()
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -28,9 +33,14 @@ _FINDING_SURFACES = (
 _EXACT_MANIFEST_SCHEMA = "nico.comprehensive-artifact-manifest.v1"
 _EXACT_IDENTITY_SCHEMA = "nico.comprehensive-draft-artifact-identity.v1"
 _REQUIRED_ARTIFACT_TYPES = {
+    "findings_csv",
+    "evidence_csv",
+    "candidate_register_json",
+    "remediation_backlog_json",
+    "markdown_report",
+    "html_report",
     "comprehensive_pdf",
     "canonical_json",
-    "evidence_manifest_json",
 }
 
 
@@ -52,43 +62,37 @@ def _digest(value: Any) -> str:
 def _already_finalized_exact_artifact_result(result: Mapping[str, Any]) -> bool:
     """Recognize only a complete, internally consistent unapproved artifact package.
 
-    Re-running publication over an already finalized package appends the manifest
-    pages again and necessarily changes the PDF and manifest digests. Preserve the
-    exact immutable bytes only after verifying all three detached digest bindings
-    and the fail-closed Automated Draft lifecycle.
+    Re-running publication over an already finalized package appends manifest pages,
+    changes rendered HTML, and necessarily changes the PDF and detached digests.
+    Preserve exact bytes only after independently recomputing all three retained
+    digests, verifying the complete artifact inventory, and confirming the
+    fail-closed Automated Draft lifecycle. The canonical JSON's embedded manifest
+    is informative and self-referential; the detached manifest is authoritative.
     """
 
     package = result.get("report_package")
     if not isinstance(package, Mapping):
         return False
     canonical = package.get("json")
-    if not isinstance(canonical, Mapping):
-        return False
-    canonical_manifest = canonical.get("artifact_manifest")
     detached_manifest = package.get("artifact_manifest")
     identity = package.get("draft_artifact_identity")
     completion = package.get("client_report_completion")
     if not all(
         isinstance(value, Mapping)
-        for value in (canonical_manifest, detached_manifest, identity, completion)
+        for value in (canonical, detached_manifest, identity, completion)
     ):
-        return False
-    if canonical_manifest.get("artifact_schema") != _EXACT_MANIFEST_SCHEMA:
         return False
     if detached_manifest.get("artifact_schema") != _EXACT_MANIFEST_SCHEMA:
         return False
     if identity.get("artifact_schema") != _EXACT_IDENTITY_SCHEMA:
         return False
 
-    manifest_id = _text(canonical_manifest.get("manifest_id"))
-    if not manifest_id or manifest_id != _text(detached_manifest.get("manifest_id")):
+    manifest_id = _text(detached_manifest.get("manifest_id"))
+    if not manifest_id or manifest_id != _text(identity.get("manifest_id")):
         return False
-    if manifest_id != _text(identity.get("manifest_id")):
-        return False
-
     artifact_types = {
         _text(item.get("artifact_type"))
-        for item in canonical_manifest.get("artifacts") or []
+        for item in detached_manifest.get("artifacts") or []
         if isinstance(item, Mapping)
     }
     if not _REQUIRED_ARTIFACT_TYPES.issubset(artifact_types):
@@ -123,16 +127,30 @@ def _already_finalized_exact_artifact_result(result: Mapping[str, Any]) -> bool:
 
     try:
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
+        canonical_json = str(package.get("canonical_json") or "").encode("utf-8")
+        manifest_json = str(package.get("evidence_manifest_json") or "").encode("utf-8")
+        canonical_payload = json.loads(canonical_json.decode("utf-8"))
+        manifest_payload = json.loads(manifest_json.decode("utf-8"))
     except Exception:
         return False
     if not pdf.startswith(b"%PDF") or _sha256(pdf) != expected_pdf:
         return False
-
-    canonical_json = str(package.get("canonical_json") or "").encode("utf-8")
-    manifest_json = str(package.get("evidence_manifest_json") or "").encode("utf-8")
     if not canonical_json or _sha256(canonical_json) != expected_json:
         return False
     if not manifest_json or _sha256(manifest_json) != expected_manifest:
+        return False
+    if not isinstance(canonical_payload, Mapping):
+        return False
+    if not isinstance(manifest_payload, Mapping):
+        return False
+    if _text(manifest_payload.get("manifest_id")) != manifest_id:
+        return False
+    manifest_payload_types = {
+        _text(item.get("artifact_type"))
+        for item in manifest_payload.get("artifacts") or []
+        if isinstance(item, Mapping)
+    }
+    if not _REQUIRED_ARTIFACT_TYPES.issubset(manifest_payload_types):
         return False
     return True
 
@@ -231,11 +249,6 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         if surface in normalized:
             normalized[surface] = _sync_surface(normalized[surface], by_id)
 
-    # The legacy canonicalizer intentionally preserves pre-existing IDs. Convert
-    # those aliases into the final source-anchor/finding-family identity before
-    # any report, roadmap, backlog, or stage projection is generated. This makes
-    # first and repeated publication passes byte-stable at the canonical JSON
-    # boundary instead of relying on a later rendering repair.
     register = build_finding_remediation_register(normalized)
     normalized = synchronize_canonical_finding_surfaces(normalized, register)
     stable_findings = [
@@ -256,6 +269,8 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "stable_finding_identity_before_rendering": True,
         "all_mirrored_finding_surfaces_synchronized": True,
         "automated_draft_is_default_unapproved_state": True,
+        "complete_exact_artifact_idempotence": True,
+        "artifact_filename_truth_version": _ARTIFACT_FILENAME_TRUTH.get("version"),
     }
     return normalized
 
@@ -265,14 +280,7 @@ def finalize_report_package(
     *,
     approval_state: str = APPROVAL_SUFFIX,
 ) -> dict[str, Any]:
-    """The only Comprehensive publication boundary.
-
-    Compatibility repair is allowed only before v2 rendering. Every final artifact
-    is rebuilt afterward from the repaired canonical JSON and no later layer may
-    mutate the client-facing population. Unapproved automation always enters this
-    boundary as an automated draft; approved-final identity requires a separate,
-    authorized review transition.
-    """
+    """The only Comprehensive publication boundary."""
 
     if _already_finalized_exact_artifact_result(result):
         return deepcopy(dict(result))

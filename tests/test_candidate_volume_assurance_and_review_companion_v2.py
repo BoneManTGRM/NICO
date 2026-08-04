@@ -224,7 +224,7 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     assert "not evidence that the repository materially worsened" in assessment["executive_summary"]
 
 
-def test_review_companion_restores_all_decision_sections_in_16_substantive_pages() -> None:
+def test_review_companion_restores_all_decision_sections_in_eight_substantive_pages() -> None:
     canonical = _canonical()
     sections = review_sections(canonical, spanish=False)
     pdf = render_comprehensive_review_companion_pdf(canonical, spanish=False)
@@ -233,18 +233,16 @@ def test_review_companion_restores_all_decision_sections_in_16_substantive_pages
     normalized = " ".join(extracted.casefold().split())
 
     assert len(sections) == 8
-    assert len(reader.pages) == 16
+    assert len(reader.pages) == 8
     for section in sections:
         assert section["title"].casefold() in normalized
     for section_number in range(1, 9):
-        assert f"section {section_number} of 8 | page 1 of 2" in normalized
-        assert f"section {section_number} of 8 | page 2 of 2" in normalized
+        assert f"section {section_number} of 8 | page 1 of 1" in normalized
     assert "what can be concluded" in normalized
     assert "what cannot be concluded" in normalized
     assert "required client input" in normalized
     assert "recommended decision" in normalized
-    assert "automated draft | human review required" in normalized
-    assert "human decision pending | delivery blocked" in normalized
+    assert "automated draft | human decision pending | client delivery blocked" in normalized
     assert "action and acceptance plan" not in normalized
     assert "no additional structured observation was retained" not in normalized
     assert "\x7f" not in extracted
@@ -283,8 +281,10 @@ def test_runtime_and_completion_bind_current_review_contracts() -> None:
     assert "install_candidate_volume_assurance_v2" in mobile
     assert "install_comprehensive_review_companion_v4" in mobile
     assert "install_comprehensive_review_companion_v5" in mobile
-    assert '"decision_useful_review_companion_pages": 16' in mobile
+    assert "install_comprehensive_review_companion_v6" in mobile
+    assert '"decision_useful_review_companion_pages": 8' in mobile
     assert '"continuous_review_section_numbering": True' in mobile
+    assert '"continuous_physical_page_labels": True' in mobile
     assert '"filler_only_review_pages_allowed": False' in mobile
     assert '"candidate_volume_is_triage_workload_not_defect_severity": True' in mobile
     assert "render_comprehensive_review_companion_pdf" in completion

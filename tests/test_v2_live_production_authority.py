@@ -7,6 +7,7 @@ from nico.v2_production_authority import wrap_final_report_publication
 
 
 SHA = "8" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -92,7 +93,9 @@ def _source() -> dict:
                     "evidence_ledger_id": "ledger-v2",
                     "customer_id": "customer-v2",
                     "project_id": "project-v2",
+                    "generated_at": GENERATED_AT,
                 },
+                "generated_at": GENERATED_AT,
                 "assessment": {
                     "technical_score": 81,
                     "canonical_evidence_adjusted_score": 80,
@@ -103,6 +106,7 @@ def _source() -> dict:
                 "canonical_findings": [legacy, prioritized],
                 "findings_register": [legacy, prioritized],
             },
+            "generated_at": GENERATED_AT,
             "pdf_filename": f"nico-live-{duplicated}.pdf",
             "spanish_pdf_filename": f"nico-live-es-{duplicated}.pdf",
             "pdf_base64": base64.b64encode(b"%PDF stale legacy artifact").decode("ascii"),
@@ -118,6 +122,7 @@ def _context(language: str = "en") -> dict:
         "evidence_ledger_id": "ledger-v2",
         "customer_id": "customer-v2",
         "project_id": "project-v2",
+        "generated_at": GENERATED_AT,
         "report_language": language,
         "prior_stage_results": {},
     }
@@ -126,7 +131,7 @@ def _context(language: str = "en") -> dict:
 def _assert_shared_truth(output: dict) -> None:
     package = output["report_package"]
     canonical = package["json"]
-    assert output["status"] == "complete"
+    assert output["status"] == "complete", output
     assert output["assessment_state"] == "review_required"
     assert output["v2_production_authority"]["single_final_publication_boundary"] is True
     assert output["v2_production_authority"]["final_stage_scanner_store_read"] is False
@@ -150,6 +155,7 @@ def _assert_shared_truth(output: dict) -> None:
     assert package["report_finality"] == "automated_draft"
     assert package["approval_status"] == "pending_human_approval"
     assert package["client_delivery_allowed"] is False
+    assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert "CLIENT DELIVERY NOT AUTHORIZED" in package["markdown"]
     assert "RISK-LEGACY-123" not in package["markdown"]
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
@@ -221,6 +227,7 @@ def test_spanish_production_report_is_rendered_from_the_same_canonical_truth(mon
     assert canonical["report_language"] == "es-MX"
     assert package["pdf_filename"].startswith("nico-evaluacion-tecnica-integral-")
     assert "Evaluación Técnica Integral NICO" in package["markdown"]
+    assert "Hoja de ruta de seis meses" in package["markdown"]
     assert "APROBACIÓN HUMANA PENDIENTE" in package["markdown"]
     assert "ENTREGA AL CLIENTE BLOQUEADA" in package["markdown"]
     assert "DESCONOCIDO" not in package["markdown"]

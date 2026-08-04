@@ -9,8 +9,8 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.2"
-CORE_REVIEW_COMPANION_PAGES = 24
+VERSION = "nico.client-pdf-compose.v3.4"
+CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
     "functional qa",
@@ -76,14 +76,12 @@ def compose_compact_client_pdf(
     *,
     review_pdf: bytes | None = None,
 ) -> bytes:
-    """Retain the decision body and append bounded client-review artifacts.
+    """Retain one cover, the decision body, and every client-review page.
 
-    The first 24 review-companion pages contain the evidence posture,
-    limitations, and human-decision worksheet for every restored Comprehensive
-    section. Later companion pages are action-planning worksheets and may be
-    omitted only when a larger legacy/premium base would otherwise exceed the
-    45-page client boundary. This keeps all eight review sections while avoiding
-    a false failure caused by a harmless difference in base-renderer pagination.
+    The legacy premium body can contain its own title page after the branded cover
+    is applied. That second cover is not evidence and can introduce a second
+    generated timestamp, so it is removed here. Review pages are compacted at the
+    authoritative renderer and are never silently truncated.
     """
 
     if not base_pdf.startswith(b"%PDF"):
@@ -98,7 +96,7 @@ def compose_compact_client_pdf(
     gate = PdfReader(io.BytesIO(gate_pdf))
 
     retained: list[Any] = []
-    for page in base.pages:
+    for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
         if _page_heading(
             extracted,
@@ -121,21 +119,32 @@ def compose_compact_client_pdf(
             ),
         ):
             continue
+        if page_index > 0 and _page_heading(
+            extracted,
+            (
+                "comprehensive technical assessment",
+                "evaluacion tecnica integral",
+            ),
+        ):
+            # The branded cover is retained as page zero. A second legacy title
+            # page has no independent evidence and would create duplicate title,
+            # pagination, and generated-at facts.
+            continue
         if _finding_detail(extracted):
             continue
         retained.append(page)
 
+    if not retained:
+        raise ValueError("client-ready PDF composition removed every primary report page")
+
     register_and_gate_count = len(register.pages) + len(gate.pages)
     review_count = len(review.pages) if review is not None else 0
-    core_review_count = min(CORE_REVIEW_COMPANION_PAGES, review_count)
+    required_review_count = review_count
 
-    # If an unusually long legacy base competes with the decision-review core,
-    # keep the cover/decision body only up to the space that preserves all core
-    # review pages and the compact register/gate.
     if review is not None:
         max_retained = max(
             0,
-            MAX_CLIENT_PDF_PAGES - register_and_gate_count - core_review_count,
+            MAX_CLIENT_PDF_PAGES - register_and_gate_count - required_review_count,
         )
         retained = retained[:max_retained]
 
@@ -148,9 +157,9 @@ def compose_compact_client_pdf(
         if review is not None
         else []
     )
-    if review is not None and len(selected_review_pages) < core_review_count:
+    if review is not None and len(selected_review_pages) != required_review_count:
         raise ValueError(
-            "client-ready PDF cannot preserve the complete Comprehensive review core "
+            "client-ready PDF cannot preserve the complete Comprehensive review companion "
             f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
         )
 

@@ -10,19 +10,27 @@ from pypdf import PdfReader
 
 from nico.canonical_section_status_v1 import normalize_report_package
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
-from nico.client_report_completion_v2 import (
-    finalize_client_report_package,
-    prepare_client_report_package,
-)
 from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.comprehensive_automated_draft_cross_format_v1 import (
     install_automated_draft_cross_format_contract,
 )
+from nico.comprehensive_client_truth_canonical_v2 import (
+    install_comprehensive_client_truth_canonical_v2,
+)
 from nico.comprehensive_compact_design_marker_v1 import (
     install_compact_design_marker_gate,
 )
+from nico.comprehensive_decision_summary_truth_v1 import (
+    install_comprehensive_decision_summary_truth_v1,
+)
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
+)
+from nico.comprehensive_markdown_identity_v1 import (
+    install_comprehensive_markdown_identity_v1,
+)
+from nico.comprehensive_pdf_navigation_titles_v1 import (
+    install_comprehensive_pdf_navigation_titles_v1,
 )
 from nico.comprehensive_placeholder_sanitization_v1 import (
     install_comprehensive_placeholder_sanitization,
@@ -30,8 +38,23 @@ from nico.comprehensive_placeholder_sanitization_v1 import (
 from nico.comprehensive_platform_parity_summary_v1 import (
     install_comprehensive_platform_parity_summary,
 )
+from nico.comprehensive_rendered_package_reuse_v1 import (
+    install_comprehensive_rendered_package_reuse_v1,
+)
 from nico.comprehensive_report_clarity_v1 import (
     install_comprehensive_report_clarity,
+)
+from nico.comprehensive_score_presence_truth_v1 import (
+    install_comprehensive_score_presence_truth_v1,
+)
+from nico.comprehensive_spanish_generated_at_v1 import (
+    install_comprehensive_spanish_generated_at_v1,
+)
+from nico.comprehensive_truth_diagnostics_v1 import (
+    install_comprehensive_truth_diagnostics_v1,
+)
+from nico.comprehensive_zero_incomplete_validation_v1 import (
+    install_comprehensive_zero_incomplete_validation_v1,
 )
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
@@ -54,6 +77,15 @@ _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
+_CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
+_SPANISH_GENERATED_AT = install_comprehensive_spanish_generated_at_v1()
+_SCORE_PRESENCE_TRUTH = install_comprehensive_score_presence_truth_v1()
+_TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
+_ZERO_INCOMPLETE_VALIDATION = install_comprehensive_zero_incomplete_validation_v1()
+_DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
+_MARKDOWN_IDENTITY = install_comprehensive_markdown_identity_v1()
+_PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
+_RENDERED_PACKAGE_REUSE = install_comprehensive_rendered_package_reuse_v1()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
 _PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
@@ -84,13 +116,9 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
             "markdown": markdown,
-            "markdown_sha256": hashlib.sha256(
-                markdown.encode("utf-8")
-            ).hexdigest(),
+            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
             "html": rendered_html,
-            "html_sha256": hashlib.sha256(
-                rendered_html.encode("utf-8")
-            ).hexdigest(),
+            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
             "pdf_page_count": page_count,
             "core_report_page_count": page_count,
             "final_package_page_count": page_count,
@@ -119,7 +147,16 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one bounded client package from canonical finding and scanner truth."""
+    """Build one bounded client package from canonical finding and scanner truth.
+
+    Publication extensions patch ``client_report_completion_v2`` at runtime. Use
+    the module attributes at execution time rather than stale function references
+    captured when this module was imported. This guarantees that the final
+    canonical truth pass occurs before rendering and that the final cross-format
+    validator and exact-artifact manifest gate execute after sanitization.
+    """
+
+    from nico import client_report_completion_v2 as completion
 
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
@@ -127,23 +164,21 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # Scanner applicability, scanner-outcome truth, canonical finding identity,
     # and the structured remediation register must exist before the premium
     # compiler derives stages, scores, executive findings, and artifact content.
-    prepared = prepare_client_report_package(prepared)
+    prepared = completion.prepare_client_report_package(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
-    canonical = (
-        rendered.get("json")
-        if isinstance(rendered.get("json"), Mapping)
-        else {}
-    )
+    canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
         repair_localized_rendered_report(rendered)
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    # Reconcile once more after report-quality repair, then compile the bounded
-    # cross-format client artifacts from the exact authoritative canonical state.
+    # Reconcile once more after report-quality repair, then sanitize every
+    # mutable rendered surface before the exact-artifact finalizer computes the
+    # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
+    # renderer or sanitizer may change retained bytes after that binding point.
     repaired = _reconcile(repaired)
-    finalized = finalize_client_report_package(repaired)
-    return _sanitize_published_artifacts(finalized)
+    sanitized = _sanitize_published_artifacts(repaired)
+    return completion.finalize_client_report_package(sanitized)
 
 
 __all__ = [
@@ -152,6 +187,15 @@ __all__ = [
     "_SCANNER_EVIDENCE_CONTRACT",
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
+    "_CANONICAL_CLIENT_TRUTH",
+    "_SPANISH_GENERATED_AT",
+    "_SCORE_PRESENCE_TRUTH",
+    "_TRUTH_DIAGNOSTICS",
+    "_ZERO_INCOMPLETE_VALIDATION",
+    "_DECISION_SUMMARY_TRUTH",
+    "_MARKDOWN_IDENTITY",
+    "_PDF_NAVIGATION_TITLES",
+    "_RENDERED_PACKAGE_REUSE",
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
     "_PLACEHOLDER_SANITIZATION",

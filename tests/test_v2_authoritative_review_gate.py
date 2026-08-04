@@ -9,6 +9,7 @@ from nico.phase17_canonical_artifact_rebuild_v1 import _AUTHORITATIVE_REVIEW_GAT
 from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
 
 SHA = "8" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def _canonical(language: str = "en") -> dict:
@@ -21,7 +22,9 @@ def _canonical(language: str = "en") -> dict:
             "customer_id": "customer-review-gate",
             "project_id": "project-review-gate",
             "report_language": language,
+            "generated_at": GENERATED_AT,
         },
+        "generated_at": GENERATED_AT,
         "report_language": language,
         "assessment": {
             "report_language": language,
@@ -71,7 +74,10 @@ def test_english_review_gate_renders_in_markdown_html_and_pdf():
     result = rebuild_client_artifacts({"json": _canonical()})
     assert result["markdown"].count("## Human Review and Acceptance Gate") == 1
     assert "Human Review and Acceptance Gate" in result["html"]
-    assert "Human Review and Acceptance Gate" in _pdf_text(result["pdf_base64"])
+    pdf_text = _pdf_text(result["pdf_base64"])
+    assert "Human Review and Acceptance Gate" in pdf_text
+    assert GENERATED_AT in result["markdown"]
+    assert GENERATED_AT in pdf_text
     assert "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED" in result["markdown"]
     assert "Approve or reject this immutable automated draft before delivery." in result["markdown"]
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]

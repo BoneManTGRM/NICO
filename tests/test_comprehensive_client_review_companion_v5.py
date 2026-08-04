@@ -9,11 +9,13 @@ from reportlab.pdfgen import canvas
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
 from nico.client_pdf_status_sanitizer_v7 import install_client_pdf_status_sanitizer_v7
 from nico.comprehensive_client_review_companion_v5 import (
-    COMPANION_PAGE_COUNT,
     SECTION_COUNT,
     merge_substantive_review_markdown,
-    render_substantive_review_pdf,
     substantive_review_sections,
+)
+from nico.comprehensive_client_review_companion_v6 import (
+    COMPANION_PAGE_COUNT,
+    render_compact_substantive_review_pdf,
 )
 
 
@@ -144,7 +146,7 @@ def test_all_eight_sections_are_substantive_and_truthful() -> None:
 
     by_id = {section["id"]: section for section in sections}
     assert by_id["platform_parity"]["status"] == (
-        "Repository indicators assessed — runtime parity not assessed"
+        "Repository indicator review complete; runtime platform parity not assessed"
     )
     assert "Device and human-context evidence" not in combined or "device" in combined.casefold()
     assert by_id["six_month_roadmap"]["status"] == (
@@ -153,24 +155,21 @@ def test_all_eight_sections_are_substantive_and_truthful() -> None:
     assert "framework" in by_id["six_month_roadmap"]["recommended_decision"].casefold()
 
 
-def test_companion_pdf_has_continuous_section_numbering_without_skipped_review_labels() -> None:
-    pdf = render_substantive_review_pdf(_canonical(), spanish=False)
+def test_companion_pdf_has_one_continuous_page_per_review_section() -> None:
+    pdf = render_compact_substantive_review_pdf(_canonical(), spanish=False)
     reader = PdfReader(io.BytesIO(pdf))
     extracted_pages = [page.extract_text() or "" for page in reader.pages]
     extracted = "\n".join(extracted_pages)
 
-    assert len(reader.pages) == COMPANION_PAGE_COUNT == 16
+    assert len(reader.pages) == COMPANION_PAGE_COUNT == SECTION_COUNT == 8
     for section_number in range(1, 9):
-        first = f"Section {section_number} of 8 | Page 1 of 2"
-        second = f"Section {section_number} of 8 | Page 2 of 2"
-        assert first in extracted
-        assert second in extracted
+        marker = f"Section {section_number} of 8 | Page 1 of 1"
+        assert marker in extracted
     assert "Review 2" not in extracted
     assert "Review 5" not in extracted
     assert "Review 8" not in extracted
     assert "No additional structured observation was retained" not in extracted
-    assert "AUTOMATED DRAFT | HUMAN REVIEW REQUIRED" in extracted
-    assert "HUMAN DECISION PENDING | DELIVERY BLOCKED" in extracted
+    assert "AUTOMATED DRAFT | HUMAN DECISION PENDING | CLIENT DELIVERY BLOCKED" in extracted
     assert all(page.strip() for page in extracted_pages)
 
 
@@ -184,7 +183,7 @@ def test_markdown_uses_specific_limitations_and_not_filler() -> None:
     assert "## Functional QA" in markdown
     assert "## Platform Parity" in markdown
     assert "## Six-Month Roadmap" in markdown
-    assert "Repository indicators assessed — runtime parity not assessed" in markdown
+    assert "Repository indicator review complete; runtime platform parity not assessed" in markdown
     assert "Framework only — pending stakeholder validation" in markdown
     assert "What can be concluded" in markdown
     assert "What cannot be concluded" in markdown
@@ -201,7 +200,7 @@ def test_status_sanitizer_preserves_client_review_pages_but_drops_raw_internal_p
         [
             [
                 "NICO | Comprehensive client review | automated draft",
-                "Section 1 of 8 | Page 1 of 2",
+                "Section 1 of 8 | Page 1 of 1",
                 "Retained evidence",
                 "artifact_schema",
                 "stage_execution.internal",
@@ -221,21 +220,23 @@ def test_status_sanitizer_preserves_client_review_pages_but_drops_raw_internal_p
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert len(reader.pages) == 2
-    assert "Section 1 of 8 | Page 1 of 2" in text
+    assert "Section 1 of 8 | Page 1 of 1" in text
     assert "Raw evidence appendix" not in text
     assert "Safe client page" in text
 
 
-def test_runtime_binds_v5_after_legacy_v4_and_preserves_sanitized_pages() -> None:
+def test_runtime_binds_v6_after_legacy_v5_and_preserves_sanitized_pages() -> None:
     source = RUNTIME_BINDING.read_text(encoding="utf-8")
 
     legacy = source.index("install_comprehensive_review_companion_v4()")
     substantive = source.index("install_comprehensive_review_companion_v5()")
+    compact = source.index("install_comprehensive_review_companion_v6()")
     sanitizer = source.index("install_client_pdf_status_sanitizer_v7()")
-    assert legacy < substantive < sanitizer
+    assert legacy < substantive < compact < sanitizer
     assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
-    assert '"decision_useful_review_companion_pages": 16' in source
+    assert '"decision_useful_review_companion_pages": 8' in source
     assert '"continuous_review_section_numbering": True' in source
+    assert '"continuous_physical_page_labels": True' in source
     assert '"filler_only_review_pages_allowed": False' in source
     assert '"roadmap_claim_is_framework_only": True' in source
     assert '"runtime_platform_parity_not_assessed_without_device_evidence": True' in source

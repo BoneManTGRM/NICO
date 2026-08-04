@@ -15,6 +15,7 @@ from nico.client_report_completion_v2 import (
 
 
 SHA = "e" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def _base_pdf() -> bytes:
@@ -23,6 +24,12 @@ def _base_pdf() -> bytes:
     SimpleDocTemplate(buffer, pagesize=letter, invariant=1).build(
         [
             Paragraph("NICO Comprehensive", styles["Title"]),
+            Paragraph("Repository: example/product", styles["BodyText"]),
+            Paragraph(f"Exact commit: {SHA}", styles["BodyText"]),
+            Paragraph(f"Generated: {GENERATED_AT}", styles["BodyText"]),
+            Paragraph("Technical maturity: 78/100", styles["BodyText"]),
+            Paragraph("Evidence-adjusted readiness: 78/100", styles["BodyText"]),
+            Paragraph("7 client-review section(s) remain limited", styles["BodyText"]),
             Paragraph("Executive decision report", styles["BodyText"]),
             PageBreak(),
             Paragraph("Executive Risk Register and Decision Briefing", styles["Heading1"]),
@@ -38,6 +45,34 @@ def _base_pdf() -> bytes:
     return buffer.getvalue()
 
 
+def _empty_scanner_register() -> dict:
+    zero = {
+        "raw": 0,
+        "material": 0,
+        "review_required": 0,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": 0,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
+    return {
+        "artifact_schema": "nico.canonical-scanner-findings.v1",
+        "findings": [],
+        "totals": dict(zero),
+        "summary_by_category": {
+            "dependency": dict(zero),
+            "secret": dict(zero),
+            "static": dict(zero),
+        },
+        "candidate_record_count": 0,
+        "candidate_record_count_matches_raw": True,
+        "count_parity_verified": True,
+        "candidate_evidence_quality_totals_match_source": True,
+    }
+
+
 def _package() -> dict:
     canonical = {
         "identity": {
@@ -45,7 +80,9 @@ def _package() -> dict:
             "commit_sha": SHA,
             "run_id": "comprun_completion_v2",
             "evidence_ledger_id": "ledger_completion_v2",
+            "generated_at": GENERATED_AT,
         },
+        "generated_at": GENERATED_AT,
         "repository_evidence": {
             "file_evidence": {
                 "sampled_paths": [
@@ -131,12 +168,20 @@ def _package() -> dict:
             ],
             "technical_score": 78,
             "canonical_evidence_adjusted_score": 78,
+            "canonical_scanner_finding_register": _empty_scanner_register(),
             "final_report_input_scores_synchronized": True,
             "report_contract_status": "blocked",
             "report_contract_reason": "canonical_score_truth_mismatch",
         },
     }
-    markdown = """# NICO Comprehensive Technical Assessment
+    markdown = f"""# NICO Comprehensive Technical Assessment
+
+Repository: example/product
+Exact commit: {SHA}
+Generated: {GENERATED_AT}
+Technical maturity: 78/100
+Evidence-adjusted readiness: 78/100
+7 client-review section(s) remain limited
 
 ## Detailed Canonical Findings
 
@@ -152,8 +197,18 @@ Client delivery remains blocked.
 """
     return {
         "json": canonical,
+        "generated_at": GENERATED_AT,
         "markdown": markdown,
-        "html": "<html><body>legacy</body></html>",
+        "html": (
+            "<html><body>"
+            "<p>Repository: example/product</p>"
+            f"<p>Exact commit: {SHA}</p>"
+            f"<p>Generated: {GENERATED_AT}</p>"
+            "<p>Technical maturity: 78/100</p>"
+            "<p>Evidence-adjusted readiness: 78/100</p>"
+            "<p>7 client-review section(s) remain limited</p>legacy"
+            "</body></html>"
+        ),
         "pdf_base64": base64.b64encode(_base_pdf()).decode("ascii"),
         "premium_report_renderer": {},
         "phase17_artifact_rebuild": {},
@@ -189,6 +244,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     combined = "\n".join((markdown, html, extracted))
 
     assert pdf.startswith(b"%PDF")
+    assert GENERATED_AT in extracted
     assert markdown.count("## Compact Finding and Remediation Register") == 1
     assert "Decision findings: 1" in markdown
     assert "Complete exact-source index" in markdown
@@ -207,6 +263,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert result["client_report_completion"]["duplicate_full_page_finding_cards_absent"] is True
     assert result["client_report_completion"]["raw_stage_dump_excluded_from_client_pdf"] is True
     assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["json"]["identity"]["generated_at"] == GENERATED_AT
     assert result["report_finality"] == "automated_draft"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False

@@ -61,3 +61,24 @@ def test_status_sanitizer_removes_internal_dump_pages_and_retains_client_pages()
     assert extracted.count("AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED") == 2
     assert "Complete Exact-Source Index" in extracted
     assert "Human Review and Acceptance Gate" in extracted
+
+
+def test_status_sanitizer_rewrites_stale_authorized_cover_and_empty_copy() -> None:
+    source = _pdf(
+        [
+            "NICO completed an authorized Comprehensive Technical Assessment for BoneManTGRM/NICO.",
+            "The package combines repository health, exact-location findings, architecture evidence, a six-month roadmap, and actionable remediation guidance for engineering and executive review.",
+            "No structured item was retained.",
+        ]
+    )
+
+    sanitized = sanitize_client_pdf_status(source)
+    extracted = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(sanitized)).pages
+    )
+
+    assert "completed an authorized" not in extracted
+    assert "generated an automated Comprehensive Technical Assessment draft" in extracted
+    assert "a roadmap framework" in extracted
+    assert "No structured item was retained." not in extracted
+    assert "No additional structured finding detail was retained" in extracted

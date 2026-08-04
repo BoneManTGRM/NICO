@@ -68,6 +68,18 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_client_review_companion_v5 import (
         install_comprehensive_review_companion_v5,
     )
+    from nico.comprehensive_client_review_companion_v6 import (
+        install_comprehensive_review_companion_v6,
+    )
+    from nico.comprehensive_client_truth_final_v1 import (
+        install_comprehensive_client_truth_final_v1,
+    )
+    from nico.comprehensive_client_truth_validation_compat_v1 import (
+        install_comprehensive_client_truth_validation_compat_v1,
+    )
+    from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+        install_comprehensive_exact_artifact_hash_binding_v1,
+    )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
     )
@@ -88,6 +100,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     )
     from nico.comprehensive_final_register_scanner_truth_v62 import (
         install_comprehensive_final_register_scanner_truth_v62,
+    )
+    from nico.comprehensive_manifest_navigation_v1 import (
+        install_comprehensive_manifest_navigation_v1,
     )
     from nico.comprehensive_report_truth_stabilization_v52 import (
         install_comprehensive_report_truth_stabilization_v52,
@@ -142,11 +157,19 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
 
     # Preserve legacy compatibility first, then bind the substantive review,
-    # evidence-based finding priority, detached manifest, and exact delivery receipt.
+    # compact decision worksheets, evidence-based priority, final truth, complete
+    # manifest, and exact receipt.
     install_comprehensive_review_companion_v4()
     client_review_companion = install_comprehensive_review_companion_v5()
+    compact_review_companion = install_comprehensive_review_companion_v6()
     client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
     finding_priority_calibration = install_client_finding_priority_calibration_v1()
+    client_truth_final = install_comprehensive_client_truth_final_v1()
+    client_truth_validation_compat = (
+        install_comprehensive_client_truth_validation_compat_v1()
+    )
+    manifest_navigation = install_comprehensive_manifest_navigation_v1()
+    exact_artifact_hash_binding = install_comprehensive_exact_artifact_hash_binding_v1()
     artifact_manifest_approval = install_comprehensive_artifact_manifest_approval_v1()
     approved_delivery_digest_binding = (
         install_full_assessment_delivery_digest_binding_v1()
@@ -158,8 +181,13 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "candidate_identity": candidate_identity,
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
+        "compact_review_companion": compact_review_companion,
         "client_pdf_sanitizer": client_pdf_sanitizer,
         "finding_priority_calibration": finding_priority_calibration,
+        "client_truth_final": client_truth_final,
+        "client_truth_validation_compat": client_truth_validation_compat,
+        "manifest_navigation": manifest_navigation,
+        "exact_artifact_hash_binding": exact_artifact_hash_binding,
         "artifact_manifest_approval": artifact_manifest_approval,
         "approved_delivery_digest_binding": approved_delivery_digest_binding,
         "bandit_json_execution": bandit_json_execution,
@@ -246,8 +274,11 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "count_only_candidates_are_individually_auditable": True,
         "workflow_outcome_taxonomy_complete": True,
         "blank_numeric_score_inputs_allowed": False,
-        "decision_useful_review_companion_pages": 16,
+        "decision_useful_review_companion_pages": 8,
         "continuous_review_section_numbering": True,
+        "continuous_physical_page_labels": True,
+        "table_of_contents_present": True,
+        "pdf_bookmarks_present": True,
         "filler_only_review_pages_allowed": False,
         "roadmap_claim_is_framework_only": True,
         "runtime_platform_parity_not_assessed_without_device_evidence": True,
@@ -255,6 +286,12 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "p1_elevation_rationale_required": True,
         "priority_order_deterministic": True,
         "artifact_manifest_present": True,
+        "markdown_and_html_in_manifest": True,
+        "all_manifest_hashes_recomputed_from_final_bytes": True,
+        "all_manifest_byte_sizes_recomputed_from_final_bytes": True,
+        "markdown_manifest_hash_matches_final_bytes": True,
+        "html_manifest_hash_matches_final_bytes": True,
+        "detached_manifest_hash_matches_final_bytes": True,
         "detached_manifest_binds_final_pdf": True,
         "detached_manifest_binds_canonical_json": True,
         "approved_delivery_bound_to_three_digests": True,

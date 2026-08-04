@@ -110,6 +110,12 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
             "client_delivery_allowed": False,
         }
 
+    # The final stage must preserve the timestamp established by the run. Only
+    # compatibility calls that do not supply one may create a new timestamp.
+    generated_at = _text(context.get("generated_at"), 80) or _now()
+    identity["generated_at"] = generated_at
+    identity["generation_timestamp"] = generated_at
+
     raw_stages = context.get("prior_stage_results")
     if not isinstance(raw_stages, Mapping) or not raw_stages:
         return {
@@ -137,6 +143,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     canonical = {
         "service_id": _SERVICE_ID,
         "identity": identity,
+        "generated_at": generated_at,
+        "generation_timestamp": generated_at,
         "assessment": assessment,
         "stage_summaries": ordered,
         "maturity_label_truth": deepcopy(maturity_truth),
@@ -161,11 +169,11 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "comprehensive_report_"
         + _canonical_hash({"identity": identity, "stages": ordered})[:20]
     )
-    generated_at = _now()
     package = {
         "service_id": _SERVICE_ID,
         "report_id": report_id,
         "generated_at": generated_at,
+        "generation_timestamp": generated_at,
         "json": canonical,
         "canonical_truth_sha256": truth_sha,
         "source_artifact_schema": SOURCE_VERSION,
@@ -197,6 +205,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "service_id": _SERVICE_ID,
         "report_id": report_id,
         "generated_at": generated_at,
+        "generation_timestamp": generated_at,
         "report_package": package,
         "canonical_report": canonical,
         "assessment": assessment,
