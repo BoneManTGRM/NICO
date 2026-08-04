@@ -147,6 +147,8 @@ def test_manifest_binds_all_required_structured_artifacts() -> None:
         "evidence_csv",
         "candidate_register_json",
         "remediation_backlog_json",
+        "markdown_report",
+        "html_report",
         "comprehensive_pdf",
         "canonical_json",
     }
@@ -257,10 +259,16 @@ def test_runtime_binds_manifest_after_priority_and_review_layers() -> None:
 
     companion = source.index("install_comprehensive_review_companion_v5()")
     priority = source.index("install_client_finding_priority_calibration_v1()")
+    truth = source.index("install_comprehensive_client_truth_final_v1()")
+    compatibility = source.index("install_comprehensive_client_truth_validation_compat_v1()")
+    navigation = source.index("install_comprehensive_manifest_navigation_v1()")
     manifest = source.index("install_comprehensive_artifact_manifest_approval_v1()")
-    assert companion < priority < manifest
+    assert companion < priority < truth < compatibility < navigation < manifest
     assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
     assert '"artifact_manifest_present": True' in source
+    assert '"markdown_and_html_in_manifest": True' in source
+    assert '"continuous_physical_page_labels": True' in source
+    assert '"pdf_bookmarks_present": True' in source
     assert '"detached_manifest_binds_final_pdf": True' in source
     assert '"reviewer_role_required": True' in source
     assert '"reviewer_authorization_required": True' in source
