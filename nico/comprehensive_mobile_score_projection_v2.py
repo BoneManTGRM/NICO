@@ -74,6 +74,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_client_truth_validation_compat_v1 import (
         install_comprehensive_client_truth_validation_compat_v1,
     )
+    from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+        install_comprehensive_exact_artifact_hash_binding_v1,
+    )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
     )
@@ -161,6 +164,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_comprehensive_client_truth_validation_compat_v1()
     )
     manifest_navigation = install_comprehensive_manifest_navigation_v1()
+    exact_artifact_hash_binding = install_comprehensive_exact_artifact_hash_binding_v1()
     artifact_manifest_approval = install_comprehensive_artifact_manifest_approval_v1()
     approved_delivery_digest_binding = (
         install_full_assessment_delivery_digest_binding_v1()
@@ -177,6 +181,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "client_truth_final": client_truth_final,
         "client_truth_validation_compat": client_truth_validation_compat,
         "manifest_navigation": manifest_navigation,
+        "exact_artifact_hash_binding": exact_artifact_hash_binding,
         "artifact_manifest_approval": artifact_manifest_approval,
         "approved_delivery_digest_binding": approved_delivery_digest_binding,
         "bandit_json_execution": bandit_json_execution,
@@ -263,9 +268,10 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "count_only_candidates_are_individually_auditable": True,
         "workflow_outcome_taxonomy_complete": True,
         "blank_numeric_score_inputs_allowed": False,
-        "decision_useful_review_companion_pages": 16,
+        "decision_useful_review_companion_pages": 8,
         "continuous_review_section_numbering": True,
         "continuous_physical_page_labels": True,
+        "table_of_contents_present": True,
         "pdf_bookmarks_present": True,
         "filler_only_review_pages_allowed": False,
         "roadmap_claim_is_framework_only": True,
@@ -275,6 +281,11 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "priority_order_deterministic": True,
         "artifact_manifest_present": True,
         "markdown_and_html_in_manifest": True,
+        "all_manifest_hashes_recomputed_from_final_bytes": True,
+        "all_manifest_byte_sizes_recomputed_from_final_bytes": True,
+        "markdown_manifest_hash_matches_final_bytes": True,
+        "html_manifest_hash_matches_final_bytes": True,
+        "detached_manifest_hash_matches_final_bytes": True,
         "detached_manifest_binds_final_pdf": True,
         "detached_manifest_binds_canonical_json": True,
         "approved_delivery_bound_to_three_digests": True,
