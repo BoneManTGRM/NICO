@@ -7,7 +7,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-client-truth-validation-compat.v1.2"
+VERSION = "nico.comprehensive-client-truth-validation-compat.v1.3"
 _TRUTH_MARKER = "__nico_comprehensive_client_truth_validation_compat_v1__"
 _MANIFEST_MARKER = "__nico_comprehensive_manifest_validation_compat_v1__"
 _PLATFORM_MARKER = "__nico_comprehensive_platform_parity_compat_v1__"
@@ -118,9 +118,9 @@ def _install_platform_parity_compat() -> bool:
             if _text(section.get("id")) != "platform_parity":
                 continue
             section["status"] = (
-                "Indicadores del repositorio evaluados — paridad de ejecución no evaluada"
+                "Revisión de indicadores del repositorio completa; paridad de ejecución no evaluada"
                 if spanish
-                else "Repository indicators assessed — runtime parity not assessed"
+                else "Repository indicator review complete; runtime platform parity not assessed"
             )
         return sections
 
@@ -133,6 +133,14 @@ def _install_platform_parity_compat() -> bool:
 
 
 def _is_exact_immutable_package(result: Mapping[str, Any]) -> bool:
+    """Recognize a complete immutable package from detached retained bytes.
+
+    The serialized canonical JSON may intentionally differ from the in-memory
+    canonical mapping because the latter can contain informative self-referential
+    manifest metadata. Exact byte digests and the detached manifest are the
+    authoritative republication boundary.
+    """
+
     package = result.get("report_package")
     if not isinstance(package, Mapping):
         return False
@@ -144,6 +152,10 @@ def _is_exact_immutable_package(result: Mapping[str, Any]) -> bool:
         isinstance(value, Mapping)
         for value in (canonical, identity, manifest, completion)
     ):
+        return False
+    if identity.get("artifact_schema") != "nico.comprehensive-draft-artifact-identity.v1":
+        return False
+    if manifest.get("artifact_schema") != "nico.comprehensive-artifact-manifest.v1":
         return False
     if package.get("review_package_ready") is not True:
         return False
@@ -176,6 +188,13 @@ def _is_exact_immutable_package(result: Mapping[str, Any]) -> bool:
     expected_manifest = _digest(identity.get("evidence_manifest_sha256"))
     if not all((expected_pdf, expected_json, expected_manifest)):
         return False
+    if _digest(package.get("pdf_sha256")) != expected_pdf:
+        return False
+    if _digest(package.get("canonical_json_sha256")) != expected_json:
+        return False
+    if _digest(package.get("evidence_manifest_sha256")) != expected_manifest:
+        return False
+
     try:
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
         canonical_bytes = str(package.get("canonical_json") or "").encode("utf-8")
@@ -190,9 +209,18 @@ def _is_exact_immutable_package(result: Mapping[str, Any]) -> bool:
         return False
     if not manifest_bytes or _sha256(manifest_bytes) != expected_manifest:
         return False
-    if canonical_payload != canonical:
+    if not isinstance(canonical_payload, Mapping):
         return False
-    if manifest_payload != manifest:
+    if not isinstance(manifest_payload, Mapping):
+        return False
+    if _text(manifest_payload.get("manifest_id")) != manifest_id:
+        return False
+    payload_types = {
+        _text(item.get("artifact_type"))
+        for item in manifest_payload.get("artifacts") or []
+        if isinstance(item, Mapping)
+    }
+    if not _REQUIRED_ARTIFACT_TYPES.issubset(payload_types):
         return False
     return True
 
@@ -240,6 +268,7 @@ def install_comprehensive_client_truth_validation_compat_v1() -> dict[str, Any]:
         "production_manifest_validation_unchanged": True,
         "platform_parity_language_bounded": True,
         "exact_artifact_republication_blocked": True,
+        "self_referential_canonical_manifest_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
