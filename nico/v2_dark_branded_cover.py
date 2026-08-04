@@ -12,7 +12,7 @@ from nico.comprehensive_client_ready_projection_v1 import (
     clean_finding_title,
 )
 
-VERSION = "nico.v2.dark-branded-cover.v3.1"
+VERSION = "nico.v2.dark-branded-cover.v3.2"
 
 
 def _text(value: Any) -> str:
@@ -205,6 +205,27 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     return buffer.getvalue()
 
 
+def _existing_cover_page(text: str) -> bool:
+    normalized = _text(text).casefold()
+    if not normalized:
+        return False
+    explicit = (
+        "decision-grade technical assessment",
+        "evidence-bound technical review package",
+        "canonical score summary",
+        "resumen canónico de puntuación",
+        "completed an authorized comprehensive technical assessment",
+        "completó una evaluación técnica integral autorizada",
+    )
+    if any(marker in normalized for marker in explicit):
+        return True
+    return (
+        "nico comprehensive" in normalized
+        and "executive posture" in normalized
+        and "client delivery" in normalized
+    )
+
+
 def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
     from pypdf import PdfReader, PdfWriter
 
@@ -218,8 +239,14 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
     cover_reader = PdfReader(io.BytesIO(_cover(canonical, spanish=language.startswith("es"))))
     writer = PdfWriter()
     writer.add_page(cover_reader.pages[0])
-    for page in list(old_reader.pages)[1:]:
+    removed_cover_pages = 0
+    for page in old_reader.pages:
+        if _existing_cover_page(page.extract_text() or ""):
+            removed_cover_pages += 1
+            continue
         writer.add_page(page)
+    if len(writer.pages) < 2:
+        raise ValueError("dark branded cover replacement removed the complete report body")
     output = io.BytesIO()
     writer.write(output)
     pdf = output.getvalue()
@@ -229,6 +256,8 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
         "dark_cover_version": VERSION,
         "golden_cover_layout_restored": True,
         "canonical_score_sheet_removed": True,
+        "duplicate_cover_pages_removed": removed_cover_pages,
+        "single_cover_enforced": True,
         "automated_draft_boundary_visible": True,
         "authorized_automation_claims_absent": True,
         "decision_grade_claim_absent": True,
