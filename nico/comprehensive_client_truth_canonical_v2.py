@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-client-truth-canonical.v2"
+VERSION = "nico.comprehensive-client-truth-canonical.v2.1"
 _NORMALIZE_MARKER = "__nico_comprehensive_client_truth_canonical_v2__"
 _VALIDATE_MARKER = "__nico_comprehensive_client_truth_validation_v2__"
 _POSTURE_MARKER = "__nico_comprehensive_cover_posture_v2__"
@@ -107,15 +107,23 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
     return output
 
 
-def _validate_generated_labels(surface_name: str, surface: str, generated_at: str) -> None:
+def _validate_generated_labels(
+    surface_name: str,
+    surface: str,
+    generated_at: str,
+    *,
+    label_required: bool,
+) -> None:
     values = [match.group(1) for match in _GENERATED_LABEL.finditer(surface)]
-    if not values:
+    if label_required and not values:
         raise ValueError(f"{surface_name} omitted the canonical generated_at label")
     stale = sorted({value for value in values if value != generated_at})
     if stale:
         raise ValueError(
             f"{surface_name} rendered a non-canonical generated_at value: {', '.join(stale)}"
         )
+    if generated_at not in surface:
+        raise ValueError(f"{surface_name} omitted the canonical generated_at value")
 
 
 def _validate_final_cross_format_truth(package: Mapping[str, Any]) -> None:
@@ -133,8 +141,17 @@ def _validate_final_cross_format_truth(package: Mapping[str, Any]) -> None:
         "HTML": _visible_html(rendered_html),
         "PDF": _text(pdf_text, 200000),
     }
-    for name, value in surfaces.items():
-        _validate_generated_labels(name, value, generated_at)
+    _validate_generated_labels(
+        "Markdown", surfaces["Markdown"], generated_at, label_required=True
+    )
+    _validate_generated_labels(
+        "HTML", surfaces["HTML"], generated_at, label_required=True
+    )
+    # The branded cover displays the immutable value in the repository identity
+    # card; the detached-manifest supplement later adds an explicit Generated row.
+    _validate_generated_labels(
+        "PDF", surfaces["PDF"], generated_at, label_required=False
+    )
 
     summary = _text(assessment.get("executive_summary"), 12000)
     if not summary:
