@@ -162,7 +162,7 @@ def test_manifest_binds_all_required_structured_artifacts() -> None:
     assert manifest["approval"]["client_delivery_allowed"] is False
 
 
-def test_final_pdf_json_and_manifest_digests_recompute_exactly() -> None:
+def test_final_pdf_json_manifest_and_all_artifact_digests_recompute_exactly() -> None:
     result = attach_artifact_manifest(_package())
     pdf = base64.b64decode(result["pdf_base64"])
     canonical_json = result["canonical_json"].encode("utf-8")
@@ -187,15 +187,37 @@ def test_final_pdf_json_and_manifest_digests_recompute_exactly() -> None:
         "client_delivery_status": "blocked",
     }
 
+    artifact_bytes = {
+        "findings_csv": result["findings_csv"].encode("utf-8"),
+        "evidence_csv": result["evidence_csv"].encode("utf-8"),
+        "candidate_register_json": result["candidate_register_json"].encode("utf-8"),
+        "remediation_backlog_json": result["remediation_backlog_json"].encode("utf-8"),
+        "markdown_report": result["markdown"].encode("utf-8"),
+        "html_report": result["html"].encode("utf-8"),
+        "comprehensive_pdf": pdf,
+        "canonical_json": canonical_json,
+    }
+    for item in result["artifact_manifest"]["artifacts"]:
+        content = artifact_bytes[item["artifact_type"]]
+        assert hashlib.sha256(content).hexdigest() == item["sha256"]
+        assert len(content) == item["size_bytes"]
 
-def test_pdf_contains_client_manifest_and_pending_approval_record() -> None:
+    completion = result["client_report_completion"]
+    assert completion["all_manifest_hashes_recomputed_from_final_bytes"] is True
+    assert completion["all_manifest_byte_sizes_recomputed_from_final_bytes"] is True
+    assert completion["markdown_manifest_hash_matches_final_bytes"] is True
+    assert completion["html_manifest_hash_matches_final_bytes"] is True
+
+
+def test_pdf_contains_toc_client_manifest_and_pending_approval_record() -> None:
     result = attach_artifact_manifest(_package())
     pdf = base64.b64decode(result["pdf_base64"])
     reader = PdfReader(io.BytesIO(pdf))
     extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    assert len(reader.pages) == 3
+    assert len(reader.pages) == 4
     assert len(reader.pages) <= MAX_CLIENT_PDF_PAGES
+    assert "Table of Contents" in extracted
     assert "Client Artifact Manifest" in extracted
     assert "Human Review and Exact-Artifact Approval Record" in extracted
     assert "REVIEW PACKAGE READY · HUMAN APPROVAL PENDING · CLIENT DELIVERY BLOCKED" in extracted
@@ -262,13 +284,17 @@ def test_runtime_binds_manifest_after_priority_and_review_layers() -> None:
     truth = source.index("install_comprehensive_client_truth_final_v1()")
     compatibility = source.index("install_comprehensive_client_truth_validation_compat_v1()")
     navigation = source.index("install_comprehensive_manifest_navigation_v1()")
+    hash_binding = source.index("install_comprehensive_exact_artifact_hash_binding_v1()")
     manifest = source.index("install_comprehensive_artifact_manifest_approval_v1()")
-    assert companion < priority < truth < compatibility < navigation < manifest
+    assert companion < priority < truth < compatibility < navigation < hash_binding < manifest
     assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
     assert '"artifact_manifest_present": True' in source
     assert '"markdown_and_html_in_manifest": True' in source
+    assert '"all_manifest_hashes_recomputed_from_final_bytes": True' in source
     assert '"continuous_physical_page_labels": True' in source
+    assert '"table_of_contents_present": True' in source
     assert '"pdf_bookmarks_present": True' in source
+    assert '"decision_useful_review_companion_pages": 8' in source
     assert '"detached_manifest_binds_final_pdf": True' in source
     assert '"reviewer_role_required": True' in source
     assert '"reviewer_authorization_required": True' in source
