@@ -58,12 +58,16 @@ def test_golden_dark_cover_replaces_plain_canonical_score_sheet() -> None:
     assert "Decision-Grade Technical Assessment" in first_page
     assert "TECHNICAL MATURITY" in first_page
     assert "EVIDENCE-ADJUSTED" in first_page
-    assert "INTERNAL REVIEW" in first_page
-    assert "CLIENT-READY" in first_page
+    assert "HUMAN APPROVAL" in first_page
+    assert "Pending" in first_page
+    assert "REVIEW PACKAGE" in first_page
+    assert "Ready" in first_page
+    assert "CLIENT-READY" not in first_page
     assert "ASSESSED REPOSITORY" in first_page
     assert "Executive posture" in first_page
     assert "PRIORITY DECISIONS" in first_page
     assert "POWERED BY REPARODYNAMICS" in first_page
+    assert "Client delivery remains blocked until explicit approval" in first_page
     assert "Canonical Score Summary" not in first_page
     assert result["premium_report_renderer"]["golden_cover_layout_restored"] is True
     assert result["premium_report_renderer"]["canonical_score_sheet_removed"] is True
