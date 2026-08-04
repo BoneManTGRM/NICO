@@ -42,6 +42,7 @@ jobs:
           from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
           revision = os.environ['PHASE9_REVISION']
+          generated_at = '2026-08-04T16:15:00Z'
           finding = {
               'finding_id': 'ARCH-OPS-1',
               'category': 'architecture',
@@ -58,13 +59,23 @@ jobs:
           result = {
               'report_package': {
                   'json': {
-                      'identity': {'repository': os.environ.get('GITHUB_REPOSITORY'), 'commit_sha': revision, 'run_id': os.environ.get('GITHUB_RUN_ID')},
+                      'identity': {
+                          'repository': os.environ.get('GITHUB_REPOSITORY'),
+                          'commit_sha': revision,
+                          'run_id': os.environ.get('GITHUB_RUN_ID'),
+                          'customer_id': 'phase9-proof-customer',
+                          'project_id': 'phase9-proof-project',
+                          'evidence_ledger_id': 'phase9-proof-' + os.environ.get('GITHUB_RUN_ID', 'run'),
+                          'generated_at': generated_at,
+                      },
+                      'generated_at': generated_at,
                       'findings_register': [finding, dict(finding)],
                       'executive_findings': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}],
                       'roadmap': [{'work_packages': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}]}],
                       'backlog': [{'finding_id': 'ARCH-OPS-1', 'title': finding['title']}],
                       'assessment': {'executive_summary': 'Exact-revision production proof.'},
                   },
+                  'generated_at': generated_at,
                   'pdf_filename': 'nico-comprehensive-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf',
                   'spanish_pdf_filename': 'nico-comprehensive-es-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf',
                   'pdf_base64': base64.b64encode(b'%PDF-1.4\nphase9 production proof\n%%EOF').decode(),
@@ -80,6 +91,7 @@ jobs:
           markdown = package['markdown']
           html = package['html']
           assert len(canonical['canonical_findings']) == 1
+          assert canonical['identity']['generated_at'] == generated_at
           assert package['phase9_release_gate']['valid'] is True
           assert package['pdf_filename'].count('AUTOMATED-DRAFT-PENDING-APPROVAL') == 1
           assert package['spanish_pdf_filename'].count('AUTOMATED-DRAFT-PENDING-APPROVAL') == 1
@@ -117,6 +129,7 @@ jobs:
               'artifact_sha256': {},
               'finding_count': len(canonical['canonical_findings']),
               'pdf_page_count': page_count,
+              'generated_at': canonical['identity']['generated_at'],
               'report_finality': package['report_finality'],
               'approval_status': package['approval_status'],
               'delivery_status': package['delivery_status'],
@@ -151,6 +164,7 @@ jobs:
           assert all(manifest['defects_absent'].values())
           assert manifest['finding_count'] == 1
           assert manifest['pdf_page_count'] <= 45
+          assert manifest['generated_at'] == '2026-08-04T16:15:00Z'
           assert manifest['report_finality'] == 'automated_draft'
           assert manifest['approval_status'] == 'pending_human_approval'
           assert manifest['delivery_status'] == 'blocked_pending_human_approval'
