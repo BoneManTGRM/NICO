@@ -24,6 +24,8 @@ def _base_pdf() -> bytes:
     SimpleDocTemplate(buffer, pagesize=letter, invariant=1).build(
         [
             Paragraph("NICO Comprehensive", styles["Title"]),
+            Paragraph("Repository: example/product", styles["BodyText"]),
+            Paragraph(f"Exact commit: {SHA}", styles["BodyText"]),
             Paragraph(f"Generated: {GENERATED_AT}", styles["BodyText"]),
             Paragraph("Executive decision report", styles["BodyText"]),
             PageBreak(),
@@ -171,6 +173,8 @@ def _package() -> dict:
     }
     markdown = f"""# NICO Comprehensive Technical Assessment
 
+Repository: example/product
+Exact commit: {SHA}
 Generated: {GENERATED_AT}
 
 ## Detailed Canonical Findings
@@ -189,7 +193,13 @@ Client delivery remains blocked.
         "json": canonical,
         "generated_at": GENERATED_AT,
         "markdown": markdown,
-        "html": f"<html><body><p>Generated: {GENERATED_AT}</p>legacy</body></html>",
+        "html": (
+            "<html><body>"
+            "<p>Repository: example/product</p>"
+            f"<p>Exact commit: {SHA}</p>"
+            f"<p>Generated: {GENERATED_AT}</p>legacy"
+            "</body></html>"
+        ),
         "pdf_base64": base64.b64encode(_base_pdf()).decode("ascii"),
         "premium_report_renderer": {},
         "phase17_artifact_rebuild": {},
