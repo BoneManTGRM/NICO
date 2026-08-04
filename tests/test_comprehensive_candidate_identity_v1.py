@@ -121,6 +121,6 @@ def test_runtime_installs_candidate_identity_before_assurance_scoring() -> None:
     identity = source.index("install_comprehensive_candidate_identity_v1()")
     assurance = source.index("install_candidate_volume_assurance_v2()")
     assert identity < assurance
-    assert 'RUNTIME_REVISION = "v71-digest-bound-auditable-candidates"' in source
+    assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
     assert '"every_raw_candidate_has_stable_identity": True' in source
     assert '"count_only_candidates_are_individually_auditable": True' in source
