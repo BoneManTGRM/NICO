@@ -23,6 +23,9 @@ from nico.comprehensive_compact_design_marker_v1 import (
 from nico.comprehensive_decision_summary_truth_v1 import (
     install_comprehensive_decision_summary_truth_v1,
 )
+from nico.comprehensive_executive_summary_semantic_truth_v1 import (
+    install_comprehensive_executive_summary_semantic_truth_v1,
+)
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
@@ -95,6 +98,11 @@ install_pipeline_projection()
 install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
+# Install last so format-specific executive prose is checked through the complete
+# canonical decision-fact validators after every renderer and compatibility layer.
+_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH = (
+    install_comprehensive_executive_summary_semantic_truth_v1()
+)
 
 
 def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -202,5 +210,6 @@ __all__ = [
     "_REPORT_CLARITY",
     "_COMPACT_DESIGN_MARKER_GATE",
     "_PDF_CONTROL_CHARACTER_GUARD",
+    "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "rebuild_client_artifacts",
 ]
