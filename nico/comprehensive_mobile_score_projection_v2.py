@@ -7,7 +7,7 @@ import nico.comprehensive_api_controller as controller_module
 # Public compatibility identifier. Runtime behavior advances through
 # RUNTIME_REVISION so existing mobile proof contracts remain valid.
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v68-substantive-client-review"
+RUNTIME_REVISION = "v69-evidence-based-finding-priority"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -41,6 +41,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.bandit_json_execution_v61 import install_bandit_json_execution_v61
+    from nico.client_finding_priority_calibration_v1 import (
+        install_client_finding_priority_calibration_v1,
+    )
     from nico.client_pdf_status_sanitizer_v7 import (
         install_client_pdf_status_sanitizer_v7,
     )
@@ -128,11 +131,12 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
 
-    # Preserve legacy compatibility first, then replace the 32-page worksheet
-    # bundle with the substantive 16-page client-review contract.
+    # Preserve legacy compatibility first, then replace the worksheet bundle
+    # with the substantive client-review contract and evidence-based priority.
     install_comprehensive_review_companion_v4()
     client_review_companion = install_comprehensive_review_companion_v5()
     client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
+    finding_priority_calibration = install_client_finding_priority_calibration_v1()
 
     return {
         "runtime_revision": RUNTIME_REVISION,
@@ -140,6 +144,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
         "client_pdf_sanitizer": client_pdf_sanitizer,
+        "finding_priority_calibration": finding_priority_calibration,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -227,6 +232,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "filler_only_review_pages_allowed": False,
         "roadmap_claim_is_framework_only": True,
         "runtime_platform_parity_not_assessed_without_device_evidence": True,
+        "complexity_alone_creates_p1": False,
+        "p1_elevation_rationale_required": True,
+        "priority_order_deterministic": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
