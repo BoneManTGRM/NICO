@@ -259,7 +259,7 @@ def test_runtime_binds_manifest_after_priority_and_review_layers() -> None:
     priority = source.index("install_client_finding_priority_calibration_v1()")
     manifest = source.index("install_comprehensive_artifact_manifest_approval_v1()")
     assert companion < priority < manifest
-    assert 'RUNTIME_REVISION = "v70-digest-bound-client-review"' in source
+    assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
     assert '"artifact_manifest_present": True' in source
     assert '"detached_manifest_binds_final_pdf": True' in source
     assert '"reviewer_role_required": True' in source
