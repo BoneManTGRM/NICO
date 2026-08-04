@@ -74,6 +74,7 @@ def test_operator_token_remains_in_component_memory_only() -> None:
 
 def test_operator_page_surfaces_required_status_and_incident_fields() -> None:
     source = _runtime_source()
+    normalized = " ".join(source.split())
 
     required_labels = [
         "Semantic readiness",
@@ -97,7 +98,7 @@ def test_operator_page_surfaces_required_status_and_incident_fields() -> None:
     for severity in ["p0", "p1", "p2", "p3"]:
         assert f'"{severity}"' in source
 
-    assert "Automatic remediation" in source
+    assert "Automatic remediation" in normalized
     assert "not allowed" in source
     assert "Unavailable" in source
 
