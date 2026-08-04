@@ -323,9 +323,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
   function applyIssue(caught: unknown, runCreated: boolean): void {
     const normalized = issueFor(caught, copy, runCreated);
-    setPhase(
-      normalized.kind === "run_failed" ? "failed" : "unavailable",
-    );
+    setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable");
     setStarted(null);
     setIssue(normalized);
     setError("");
