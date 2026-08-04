@@ -7,7 +7,7 @@ import nico.comprehensive_api_controller as controller_module
 # Public compatibility identifier. Runtime behavior advances through
 # RUNTIME_REVISION so existing mobile proof contracts remain valid.
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v69-evidence-based-finding-priority"
+RUNTIME_REVISION = "v72-exact-digest-approved-delivery"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -46,6 +46,12 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     )
     from nico.client_pdf_status_sanitizer_v7 import (
         install_client_pdf_status_sanitizer_v7,
+    )
+    from nico.comprehensive_artifact_manifest_approval_v1 import (
+        install_comprehensive_artifact_manifest_approval_v1,
+    )
+    from nico.comprehensive_candidate_identity_v1 import (
+        install_comprehensive_candidate_identity_v1,
     )
     from nico.comprehensive_candidate_volume_assurance_v2 import (
         install_candidate_volume_assurance_v2,
@@ -104,12 +110,16 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.evidence_ledger_typescript_truth_v1 import (
         install_evidence_ledger_typescript_truth_v1,
     )
+    from nico.full_assessment_delivery_digest_binding_v1 import (
+        install_full_assessment_delivery_digest_binding_v1,
+    )
     from nico.osv_api_fallback_truth_v1 import install_osv_api_fallback_truth_v1
     from nico.scorecard_extraction_validation_v1 import (
         install_scorecard_extraction_validation,
     )
 
     canonical_truth_reconciliation = install_comprehensive_truth_reconciliation_v7()
+    candidate_identity = install_comprehensive_candidate_identity_v1()
     candidate_volume_assurance = install_candidate_volume_assurance_v2()
     bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
@@ -131,20 +141,27 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
 
-    # Preserve legacy compatibility first, then replace the worksheet bundle
-    # with the substantive client-review contract and evidence-based priority.
+    # Preserve legacy compatibility first, then bind the substantive review,
+    # evidence-based finding priority, detached manifest, and exact delivery receipt.
     install_comprehensive_review_companion_v4()
     client_review_companion = install_comprehensive_review_companion_v5()
     client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
     finding_priority_calibration = install_client_finding_priority_calibration_v1()
+    artifact_manifest_approval = install_comprehensive_artifact_manifest_approval_v1()
+    approved_delivery_digest_binding = (
+        install_full_assessment_delivery_digest_binding_v1()
+    )
 
     return {
         "runtime_revision": RUNTIME_REVISION,
         "canonical_truth_reconciliation": canonical_truth_reconciliation,
+        "candidate_identity": candidate_identity,
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
         "client_pdf_sanitizer": client_pdf_sanitizer,
         "finding_priority_calibration": finding_priority_calibration,
+        "artifact_manifest_approval": artifact_manifest_approval,
+        "approved_delivery_digest_binding": approved_delivery_digest_binding,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -225,6 +242,8 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "canonical_score_contract_reconciled": True,
         "candidate_volume_is_triage_workload_not_defect_severity": True,
         "candidate_dispositions_mutually_exclusive": True,
+        "every_raw_candidate_has_stable_identity": True,
+        "count_only_candidates_are_individually_auditable": True,
         "workflow_outcome_taxonomy_complete": True,
         "blank_numeric_score_inputs_allowed": False,
         "decision_useful_review_companion_pages": 16,
@@ -235,6 +254,17 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "complexity_alone_creates_p1": False,
         "p1_elevation_rationale_required": True,
         "priority_order_deterministic": True,
+        "artifact_manifest_present": True,
+        "detached_manifest_binds_final_pdf": True,
+        "detached_manifest_binds_canonical_json": True,
+        "approved_delivery_bound_to_three_digests": True,
+        "digest_mismatch_blocks_delivery": True,
+        "reviewer_role_required": True,
+        "reviewer_authorization_required": True,
+        "regeneration_invalidates_approval": True,
+        "review_package_ready": True,
+        "human_review_status": "pending",
+        "client_delivery_status": "blocked",
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
