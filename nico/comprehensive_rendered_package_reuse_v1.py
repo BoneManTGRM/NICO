@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-rendered-package-reuse.v1"
+VERSION = "nico.comprehensive-rendered-package-reuse.v1.1"
 _MARKER = "__nico_comprehensive_rendered_package_reuse_v1__"
 
 
@@ -23,9 +23,25 @@ def _has_bound_rendered_surfaces(package: Mapping[str, Any]) -> bool:
         return False
     if not pdf.startswith(b"%PDF"):
         return False
-    renderer = package.get("premium_report_renderer")
-    phase17 = package.get("phase17_artifact_rebuild")
-    return isinstance(renderer, Mapping) or isinstance(phase17, Mapping)
+
+    renderer = (
+        package.get("premium_report_renderer")
+        if isinstance(package.get("premium_report_renderer"), Mapping)
+        else {}
+    )
+    phase17 = (
+        package.get("phase17_artifact_rebuild")
+        if isinstance(package.get("phase17_artifact_rebuild"), Mapping)
+        else {}
+    )
+    # Empty compatibility dictionaries are not proof that rendering completed.
+    # Skip the legacy renderer only after the single-pass compiler records an
+    # explicit finished-render marker. Otherwise legacy completion must still
+    # install the canonical register and provenance surfaces.
+    return bool(
+        renderer.get("single_pass_renderer") is True
+        or phase17.get("single_review_pdf_generation") is True
+    )
 
 
 def install_comprehensive_rendered_package_reuse_v1() -> dict[str, Any]:
