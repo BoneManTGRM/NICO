@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.client-finding-priority-calibration.v1.1"
+VERSION = "nico.client-finding-priority-calibration.v1.2"
 MODEL = "evidence-critical-path-priority.v1"
 _MARKER = "__nico_client_finding_priority_calibration_v1__"
 
@@ -42,7 +42,6 @@ _DATA_INTEGRITY_TOKENS = (
     "storage",
     "repository-snapshot",
     "repository_snapshot",
-    "evidence",
     "scoring",
     "score-integrity",
     "score_integrity",
@@ -187,10 +186,6 @@ def _priority_for_complexity(item: Mapping[str, Any]) -> dict[str, Any]:
     critical_path = any(relevance.values())
     complexity_measurement_retained = complexity > 0
 
-    # Complexity alone is a maintainability issue. P1 requires a separately
-    # evidenced critical path and a sufficiently high combined risk score.
-    # Missing numeric complexity evidence remains provisional P2 and may not be
-    # silently downgraded to P3 or promoted to P1.
     if not complexity_measurement_retained:
         priority = "P2"
     elif critical_path and complexity >= 35 and priority_score >= 45:
