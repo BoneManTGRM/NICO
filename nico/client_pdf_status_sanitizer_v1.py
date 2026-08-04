@@ -7,7 +7,7 @@ from typing import Any
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.client-pdf-status-sanitizer.v6"
+VERSION = "nico.client-pdf-status-sanitizer.v6.1"
 
 _EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 _ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
@@ -29,6 +29,10 @@ _REPLACEMENTS = (
     ("final automated report", "automated draft report"),
     ("a automated draft assessment", "an automated draft assessment"),
     ("a automated draft report", "an automated draft report"),
+    (
+        "No structured item was retained.",
+        "No additional structured finding detail was retained for this section.",
+    ),
 )
 _PRESERVED_CLIENT_MARKERS = (
     "compact finding and remediation register",
