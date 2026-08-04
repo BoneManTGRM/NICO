@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-VERSION = "nico.v2.future-approval-guidance-layout.v1.2"
+VERSION = "nico.v2.future-approval-guidance-layout.v1.3"
 _MARKER = "__nico_future_approval_guidance_layout_v1__"
 
 # PDF text extraction can place page headers, footers, and line fragments between
@@ -41,14 +41,60 @@ _GUIDANCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
 )
 
+# These terms are sufficiently specific to be forbidden anywhere after approved
+# future guidance is removed. Generic phrases such as "final report" are not in
+# this tuple because repository evidence can truthfully contain PR titles, source
+# paths, function names, and remediation notes that use those words.
 _FORBIDDEN_CURRENT_STATE_MARKERS = (
-    "final report",
-    "informe final",
     "automated final",
     "final aprobado",
     "approved final",
     "client delivery authorized",
     "entrega al cliente autorizada",
+)
+
+# Generic final-report wording is rejected only when it is actually presented as
+# a lifecycle/status assertion. This preserves the fail-closed boundary while no
+# longer treating source evidence such as "Diagnose final report blocker" as an
+# assertion that the automated draft is final.
+_CURRENT_FINAL_REPORT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\bfinal report\b.{0,220}?\bpending human approval\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\bfinal report\b.{0,220}?\bclient delivery\b"
+        r".{0,120}?\b(?:blocked|not authorized|authorized)\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\binforme final\b.{0,220}?\baprobacion humana pendiente\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\binforme final\b.{0,220}?\bentrega\b"
+        r".{0,120}?\b(?:bloqueada|autorizada)\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\bcurrent(?: report)? (?:status|state|finality)\b"
+        r".{0,120}?\bfinal report\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\b(?:report status|report state|report finality)\b"
+        r".{0,120}?\bfinal\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\b(?:estado|finalidad) del informe\b"
+        r".{0,120}?\binforme final\b",
+        re.DOTALL,
+    ),
+)
+
+_STANDALONE_FINAL_REPORT_LINE = re.compile(
+    r"^(?:final report|informe final)(?:\s*(?:[|:·—-])\s*.*)?$"
 )
 
 
@@ -63,9 +109,23 @@ def _remove_bounded_future_guidance(value: str) -> str:
     return " ".join(current.split())
 
 
+def _contains_standalone_final_report_line(value: str) -> bool:
+    from nico import v2_automated_draft_quality_compat_v1 as target
+
+    for raw_line in str(value or "").splitlines():
+        line = target._semantic(raw_line).strip(" \t•*-—|:")
+        if line and _STANDALONE_FINAL_REPORT_LINE.fullmatch(line):
+            return True
+    return False
+
+
 def _contains_unapproved_finality(value: str) -> bool:
     current_state = _remove_bounded_future_guidance(value)
-    return any(marker in current_state for marker in _FORBIDDEN_CURRENT_STATE_MARKERS)
+    if any(marker in current_state for marker in _FORBIDDEN_CURRENT_STATE_MARKERS):
+        return True
+    if any(pattern.search(current_state) for pattern in _CURRENT_FINAL_REPORT_PATTERNS):
+        return True
+    return _contains_standalone_final_report_line(value)
 
 
 def _contract(*, status: str) -> dict[str, Any]:
@@ -79,8 +139,11 @@ def _contract(*, status: str) -> dict[str, Any]:
         "exact_guidance_support_preserved": True,
         "english_guidance_supported": True,
         "spanish_guidance_supported": True,
+        "source_evidence_final_report_wording_allowed": True,
+        "status_scoped_final_report_detection": True,
         "second_current_state_assertion_remains_blocked": True,
         "standalone_delivery_authorization_remains_blocked": True,
+        "standalone_final_report_status_remains_blocked": True,
         "current_finality_gate_preserved": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -104,6 +167,7 @@ def install_future_approval_guidance_layout_v1() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "_contains_standalone_final_report_line",
     "_contains_unapproved_finality",
     "_remove_bounded_future_guidance",
     "install_future_approval_guidance_layout_v1",
