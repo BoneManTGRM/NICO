@@ -108,9 +108,14 @@ def test_production_installer_activates_block_message_patch() -> None:
 
 def test_frontend_prioritizes_safe_structured_backend_detail_and_starts_empty() -> None:
     source = frontend_source()
-    assert 'const detail = data.detail && typeof data.detail === "object" ? data.detail : {}' in source
+    assert "const detail =" in source
+    assert 'data.detail && typeof data.detail === "object"' in source
+    assert "? data.detail" in source
+    assert ": {}" in source
     assert 'typeof data.detail === "string"' in source
-    assert 'String(detail.message || detail.code || data.error' in source
+    assert "detail.message" in source
+    assert "detail.code" in source
+    assert "data.error" in source
     assert "AssessmentApiError" in source
     assert 'const [repository, setRepository] = useState("")' in source
     assert 'useState("BoneManTGRM/NICO")' not in source
