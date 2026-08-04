@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import re
 from copy import deepcopy
-from datetime import UTC, datetime
 from typing import Any, Mapping
 
 from nico.comprehensive_client_ready_projection_v1 import (
@@ -18,7 +18,8 @@ from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
 from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
 from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
-VERSION = "nico.v2.premium-report-renderer.v6"
+VERSION = "nico.v2.premium-report-renderer.v6.1"
+_TIMESTAMP = re.compile(r"^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 
 
 def _text(value: Any) -> str:
@@ -37,6 +38,34 @@ def _is_spanish(canonical: Mapping[str, Any]) -> bool:
         or "en"
     ).casefold()
     return language.startswith("es")
+
+
+def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    generated_at = _text(
+        identity.get("generated_at")
+        or identity.get("generation_timestamp")
+        or canonical.get("generated_at")
+        or canonical.get("generation_timestamp")
+    )
+    if not _TIMESTAMP.fullmatch(generated_at):
+        raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+    return generated_at
+
+
+def _clean_lines(values: Any) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        item = _text(raw)
+        if not item or not re.search(r"[A-Za-z0-9]", item):
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
 
 
 def _score_pair(assessment: Mapping[str, Any]) -> tuple[int | None, int | None]:
@@ -136,6 +165,7 @@ def _prepend_score_summary_pdf(
         ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
         ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
         ["ID de ejecución" if spanish else "Run ID", _text(identity.get("run_id"))],
+        ["Generado" if spanish else "Generated", _text(identity.get("generated_at"))],
         ["Madurez técnica" if spanish else "Technical maturity", technical_text],
         ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", adjusted_text],
     ]
@@ -193,9 +223,9 @@ def _stage(stage_id: str, title: str, summary: str, *, evidence: list[str] | Non
         "title": title,
         "status": status,
         "summary": summary,
-        "evidence": list(evidence or []),
-        "findings": list(findings or []),
-        "unavailable": list(unavailable or []),
+        "evidence": _clean_lines(evidence),
+        "findings": _clean_lines(findings),
+        "unavailable": _clean_lines(unavailable),
     }
 
 
@@ -248,54 +278,106 @@ def _scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
-    existing = [deepcopy(dict(item)) for item in canonical.get("stage_summaries") or [] if isinstance(item, Mapping)]
+    existing = [
+        deepcopy(dict(item))
+        for item in canonical.get("stage_summaries") or []
+        if isinstance(item, Mapping)
+    ]
     by_id = {_text(item.get("stage_id")): item for item in existing if _text(item.get("stage_id"))}
     for item in _scanner_stages(canonical):
         by_id[item["stage_id"]] = item
 
     findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
     executive = findings[:7]
-    by_id["risk_reduction_and_executive_briefing"] = _stage(
-        "risk_reduction_and_executive_briefing",
-        "Executive Risk Register and Decision Briefing",
-        f"The canonical register contains {len(findings)} unique decision findings. The client body presents the top {len(executive)}; the complete exact-source index remains in the compact register and structured exports.",
-        findings=_finding_lines(executive),
-        status="complete",
+    briefing = deepcopy(dict(by_id.get("risk_reduction_and_executive_briefing") or {}))
+    briefing.update(
+        _stage(
+            "risk_reduction_and_executive_briefing",
+            "Executive Risk Register and Decision Briefing",
+            "The automated executive briefing and bounded priority register are complete for review; finding acceptance, residual-risk ownership, remediation commitment, and delivery authorization remain pending human disposition.",
+            evidence=briefing.get("evidence"),
+            findings=_finding_lines(executive),
+            unavailable=briefing.get("unavailable") or briefing.get("limitations"),
+            status="review_required",
+        )
     )
+    by_id["risk_reduction_and_executive_briefing"] = briefing
 
     roadmap = [item for item in canonical.get("roadmap") or [] if isinstance(item, Mapping)]
     roadmap_evidence: list[str] = []
     for window in roadmap:
         label = _text(window.get("window") or window.get("title"))
         objective = _text(window.get("objective"))
-        roadmap_evidence.append(f"{label}: {objective}")
+        if label and objective:
+            roadmap_evidence.append(f"{label}: {objective}")
+        elif label:
+            roadmap_evidence.append(label)
+        elif objective:
+            roadmap_evidence.append(objective)
         for work in window.get("work_packages") or []:
-            if isinstance(work, Mapping):
-                roadmap_evidence.append(
-                    f"{label} · {_text(work.get('work_package_id') or work.get('id'))}: "
-                    f"{_text(work.get('title') or work.get('objective'))}; "
-                    f"owner={_text(work.get('owner_role') or work.get('owner'))}; "
-                    f"effort={_text(work.get('effort') or work.get('effort_range'))}"
-                )
-    if roadmap_evidence:
-        by_id["six_month_roadmap"] = _stage(
-            "six_month_roadmap",
-            "Six-Month Roadmap",
-            "The roadmap is generated from the canonical findings and retained delivery evidence.",
-            evidence=roadmap_evidence,
-            status="complete",
+            if not isinstance(work, Mapping):
+                continue
+            work_id = _text(work.get("work_package_id") or work.get("id"))
+            title = _text(work.get("title") or work.get("objective"))
+            owner = _text(work.get("owner_role") or work.get("owner"))
+            effort = _text(work.get("effort") or work.get("effort_range"))
+            parts = [part for part in (work_id, title) if part]
+            details = [value for value in (f"owner={owner}" if owner else "", f"effort={effort}" if effort else "") if value]
+            line = " · ".join(parts)
+            if details:
+                line = f"{line}; {'; '.join(details)}" if line else "; ".join(details)
+            if line:
+                roadmap_evidence.append(f"{label} · {line}" if label else line)
+
+    roadmap_stage = deepcopy(dict(by_id.get("six_month_roadmap") or {}))
+    if roadmap_stage or roadmap:
+        roadmap_stage.update(
+            _stage(
+                "six_month_roadmap",
+                "Six-Month Roadmap",
+                "A six-month roadmap framework was derived from canonical technical findings. Dates, owners, sequencing, staffing, cost, business priority, and delivery commitments remain pending authorized stakeholder validation.",
+                evidence=[*(roadmap_stage.get("evidence") or []), *roadmap_evidence],
+                findings=roadmap_stage.get("findings"),
+                unavailable=roadmap_stage.get("unavailable") or roadmap_stage.get("limitations"),
+                status="framework_only",
+            )
         )
+        by_id["six_month_roadmap"] = roadmap_stage
+
+    staffing = deepcopy(dict(by_id.get("staffing_sequencing_and_cost") or {}))
+    if staffing:
+        staffing.update(
+            _stage(
+                "staffing_sequencing_and_cost",
+                _text(staffing.get("title")) or "Staffing, Sequencing, and Cost",
+                "Role sequencing is advisory. Named people, capacity, rates, contract structure, geographic mix, budget, and commercial commitments remain pending authorized stakeholder validation.",
+                evidence=staffing.get("evidence"),
+                findings=staffing.get("findings"),
+                unavailable=staffing.get("unavailable") or staffing.get("limitations"),
+                status="framework_only",
+            )
+        )
+        by_id["staffing_sequencing_and_cost"] = staffing
+
     return list(by_id.values())
 
 
 def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(package))
     canonical = deepcopy(dict(result.get("json") or {})) if isinstance(result.get("json"), Mapping) else {}
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    identity = deepcopy(dict(canonical.get("identity") or {})) if isinstance(canonical.get("identity"), Mapping) else {}
+    generated_at = _canonical_generated_at(canonical)
+    identity["generated_at"] = generated_at
+    identity["generation_timestamp"] = generated_at
+    canonical["identity"] = identity
+    canonical["generated_at"] = generated_at
+    canonical["generation_timestamp"] = generated_at
+
+    assessment = deepcopy(dict(canonical.get("assessment") or {})) if isinstance(canonical.get("assessment"), Mapping) else {}
     stages = _canonical_stages(canonical)
     canonical["stage_summaries"] = deepcopy(stages)
-    generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    assessment["stage_summaries"] = deepcopy(stages)
+    canonical["assessment"] = assessment
     spanish = _is_spanish(canonical)
     score_summary = _score_summary_markdown(assessment, spanish=spanish)
 
@@ -343,6 +425,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         "premium_renderer_restored_after_canonical_repair": True,
         "duplicate_full_finding_cards_not_rendered": True,
         "canonical_score_pair_explicit_in_all_formats": True,
+        "canonical_generated_at_used_by_every_renderer": True,
         "legacy_aliases_hidden_from_client_artifacts": True,
         "bilingual_renderer_selected_from_canonical_language": True,
         "automated_draft_semantics_embedded": True,
@@ -351,6 +434,8 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
 
     result.update({
         "json": canonical,
+        "generated_at": generated_at,
+        "generation_timestamp": generated_at,
         "markdown": markdown,
         "html": rendered_html,
         "pdf_base64": pdf_base64,
@@ -386,6 +471,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "full_evidence_retained_in_structured_exports": True,
             "canonical_findings_only": True,
             "canonical_scanner_truth_only": True,
+            "canonical_generated_at_only": True,
             "bilingual_premium_output": True,
             "page_count": page_count,
         },
