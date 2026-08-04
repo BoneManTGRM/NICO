@@ -1,0 +1,94 @@
+name: Inspect Cross Format Run C5F4C1
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Fetch exact blocked run record
+        env:
+          ORIGIN: https://app.nicoaudit.com
+          RUN_ID: comprun_c5f4c1bd3dae41219129105e4855f129
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from collections.abc import Mapping
+          from pathlib import Path
+
+          origin = os.environ['ORIGIN'].rstrip('/')
+          run_id = os.environ['RUN_ID']
+          status_url = f'{origin}/api/nico/assessment/comprehensive-run/{run_id}'
+          out = Path('evidence')
+
+          def call(url: str):
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'Accept': 'application/json',
+                      'Cache-Control': 'no-store',
+                      'Pragma': 'no-cache',
+                      'User-Agent': 'nico-cross-format-run-inspection',
+                      'X-NICO-Browser-Projection': 'terminal-manifest-v1',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=240) as response:
+                      return response.status, response.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          status, raw = call(status_url + f'?inspect={time.time_ns()}')
+          try:
+              payload = json.loads(raw.decode('utf-8'))
+          except Exception:
+              payload = {'raw_body': raw.decode('utf-8', errors='replace')}
+
+          record = payload.get('record') if isinstance(payload, Mapping) and isinstance(payload.get('record'), Mapping) else payload
+          stages = record.get('stage_results') if isinstance(record, Mapping) and isinstance(record.get('stage_results'), Mapping) else {}
+          cross = stages.get('cross_format_truth_verification') if isinstance(stages, Mapping) else {}
+          final = stages.get('final_comprehensive_report_generation') if isinstance(stages, Mapping) else {}
+          summary = {
+              'run_id': run_id,
+              'http_status': status,
+              'response_status': payload.get('status') if isinstance(payload, Mapping) else None,
+              'terminal': payload.get('terminal') if isinstance(payload, Mapping) else None,
+              'record_status': record.get('status') if isinstance(record, Mapping) else None,
+              'record_terminal': record.get('terminal') if isinstance(record, Mapping) else None,
+              'current_stage': payload.get('current_stage') if isinstance(payload, Mapping) else None,
+              'completed_stages': record.get('completed_stages') if isinstance(record, Mapping) else None,
+              'blockers': record.get('blockers') if isinstance(record, Mapping) else None,
+              'final_stage': final,
+              'cross_format_stage': cross,
+              'reports': payload.get('reports') if isinstance(payload, Mapping) else None,
+              'response_projection': payload.get('response_projection') if isinstance(payload, Mapping) else None,
+          }
+          out.joinpath('full.json').write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          out.joinpath('summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+          if status != 200:
+              raise SystemExit(f'blocked-run inspection failed: HTTP {status}')
+          PY
+
+      - name: Upload exact blocked-run evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cross-format-run-c5f4c1-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
