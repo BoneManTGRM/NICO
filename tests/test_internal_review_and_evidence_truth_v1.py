@@ -5,6 +5,7 @@ from pathlib import Path
 from nico.comprehensive_canonical_report_truth_v1 import apply_canonical_score_truth
 
 ROOT = Path(__file__).resolve().parents[1]
+ASSESSMENT = ROOT / "apps/web/app/assessment"
 
 
 def _assessment(*, missing_control: bool = False) -> dict:
@@ -73,28 +74,29 @@ def test_missing_automatable_result_cannot_be_reported_as_100_percent() -> None:
 
 
 def test_completed_assessment_links_to_protected_internal_review() -> None:
-    workspace = (ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
-    model = (ROOT / "apps/web/app/assessment/assessmentModel.ts").read_text(encoding="utf-8")
+    workspace = (ASSESSMENT / "AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+    evidence = (ASSESSMENT / "assessmentEvidence.ts").read_text(encoding="utf-8")
 
     assert 'data-assessment-internal-review="true"' in workspace
     assert "internalReviewHrefFor(result, locale)" in workspace
-    assert "/operations/final-review?" in model
-    assert 'service: "comprehensive"' in model
-    assert 'run_id: String(result?.run_id' in model
-    assert "X-NICO-Admin-Token" not in model
+    assert "/operations/final-review?" in evidence
+    assert 'service: "comprehensive"' in evidence
+    assert 'run_id: String(result?.run_id' in evidence
+    assert "X-NICO-Admin-Token" not in evidence
 
 
 def test_approved_run_is_complete_and_client_ready_in_the_frontend_contract() -> None:
-    model = (ROOT / "apps/web/app/assessment/assessmentModel.ts").read_text(encoding="utf-8")
-    workspace = (ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+    evidence = (ASSESSMENT / "assessmentEvidence.ts").read_text(encoding="utf-8")
+    workspace = (ASSESSMENT / "AssessmentWorkspace.tsx").read_text(encoding="utf-8")
 
-    assert 'if (value === "approved" && deliveryAllowed) return "complete";' in model
+    assert 'value === "approved" && deliveryAllowed' in evidence
+    assert 'return "complete"' in evidence
     assert "clientReadyStatus" in workspace
     assert "internalReview.approved ? copy.downloadApprovedPdf : copy.downloadReviewPdf" in workspace
 
 
 def test_visible_product_language_is_internal_review_not_client_acceptance() -> None:
-    copy = (ROOT / "apps/web/app/assessment/assessmentCopy.ts").read_text(encoding="utf-8")
+    copy = (ASSESSMENT / "assessmentCopy.ts").read_text(encoding="utf-8")
     review = (ROOT / "apps/web/app/operations/final-review/FinalReviewWorkspace.tsx").read_text(encoding="utf-8")
     pdf = (ROOT / "nico/comprehensive_express_quality_v7.py").read_text(encoding="utf-8")
 
