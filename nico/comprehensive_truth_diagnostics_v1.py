@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-truth-diagnostics.v1"
+VERSION = "nico.comprehensive-truth-diagnostics.v1.1"
 _MARKER = "__nico_comprehensive_truth_diagnostics_v1__"
 _FORBIDDEN = (
     "completed an authorized Comprehensive Technical Assessment",
@@ -19,10 +19,35 @@ _FORBIDDEN = (
     "Platform Parity: Complete",
     "Decision-Grade Technical Assessment",
 )
+_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+_HTML_CODE = re.compile(
+    r"<(?:pre|code)\b[^>]*>.*?</(?:pre|code)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def _markdown_semantic_text(value: str) -> str:
+    """Return prose assertions while excluding quoted literal code evidence.
+
+    Exact commit messages, source excerpts, commands, and other immutable evidence
+    are intentionally rendered in Markdown code spans or fenced blocks. A forbidden
+    phrase inside those literal records is not itself a report assertion. Plain
+    prose remains searchable and therefore still fails closed.
+    """
+
+    source = str(value or "")
+    source = _FENCED_CODE.sub(" ", source)
+    source = _INLINE_CODE.sub(" ", source)
+    return " ".join(source.split())
 
 
 def _visible_html(value: str) -> str:
-    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", str(value or ""))).split())
+    """Return visible prose excluding code/pre literal evidence containers."""
+
+    source = _HTML_CODE.sub(" ", str(value or ""))
+    return " ".join(html.unescape(_HTML_TAG.sub(" ", source)).split())
 
 
 def _pdf_text(package: Mapping[str, Any]) -> str:
@@ -44,6 +69,14 @@ def _excerpt(value: str, marker: str, radius: int = 180) -> str:
     return value[start:end]
 
 
+def _semantic_surfaces(package: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "Markdown": _markdown_semantic_text(str(package.get("markdown") or "")),
+        "HTML": _visible_html(str(package.get("html") or "")),
+        "PDF": _pdf_text(package),
+    }
+
+
 def install_comprehensive_truth_diagnostics_v1() -> dict[str, Any]:
     from nico import comprehensive_client_truth_final_v1 as truth
 
@@ -53,11 +86,7 @@ def install_comprehensive_truth_diagnostics_v1() -> dict[str, Any]:
 
     @wraps(current)
     def _validate_surfaces(package: Mapping[str, Any]) -> None:
-        surfaces = {
-            "Markdown": " ".join(str(package.get("markdown") or "").split()),
-            "HTML": _visible_html(str(package.get("html") or "")),
-            "PDF": _pdf_text(package),
-        }
+        surfaces = _semantic_surfaces(package)
         retained: list[str] = []
         for marker in _FORBIDDEN:
             for surface_name, value in surfaces.items():
@@ -78,10 +107,22 @@ def install_comprehensive_truth_diagnostics_v1() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "surface_specific_truth_diagnostics": True,
+        "literal_code_evidence_excluded_from_semantic_claims": True,
+        "plain_prose_contradictions_fail_closed": True,
+        "pdf_semantic_scan_unchanged": True,
         "fail_closed": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
 
 
-__all__ = ["VERSION", "install_comprehensive_truth_diagnostics_v1"]
+__all__ = [
+    "VERSION",
+    "_FORBIDDEN",
+    "_excerpt",
+    "_markdown_semantic_text",
+    "_pdf_text",
+    "_semantic_surfaces",
+    "_visible_html",
+    "install_comprehensive_truth_diagnostics_v1",
+]
