@@ -1,0 +1,354 @@
+name: Recover Preserved Comprehensive Run
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover-exact-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact deployed repair
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Resume preserved run and verify review boundary
+        env:
+          FRONTEND_ORIGIN: https://app.nicoaudit.com
+          RUN_ID: comprun_891cf108b297485381cc866c30fc5696
+          EXPECTED_DEPLOYED_COMMIT: 96de8556466ccc51e5a7c8a88dc3844d305d9adc
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results/preserved-run-recovery
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import hashlib
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          origin = os.environ["FRONTEND_ORIGIN"].rstrip("/")
+          run_id = os.environ["RUN_ID"]
+          expected_commit = os.environ["EXPECTED_DEPLOYED_COMMIT"]
+          output = Path("audit-results/preserved-run-recovery")
+          status_url = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
+          continue_url = f"{status_url}/continue"
+
+          def bounded(value: Any, depth: int = 0) -> Any:
+              if depth > 7:
+                  return "<depth-bounded>"
+              if value is None or isinstance(value, (bool, int, float)):
+                  return value
+              if isinstance(value, str):
+                  return value if len(value) <= 20000 else value[:20000] + "..."
+              if isinstance(value, list):
+                  return [bounded(item, depth + 1) for item in value[:400]]
+              if isinstance(value, Mapping):
+                  return {
+                      str(key): bounded(item, depth + 1)
+                      for index, (key, item) in enumerate(value.items())
+                      if index < 500
+                  }
+              return str(value)
+
+          def request_json(
+              method: str,
+              url: str,
+              *,
+              payload: Mapping[str, Any] | None = None,
+              timeout: int = 600,
+          ) -> tuple[int, Any, float]:
+              data = None
+              headers = {
+                  "Accept": "application/json",
+                  "Cache-Control": "no-store, no-cache",
+                  "Pragma": "no-cache",
+                  "User-Agent": "nico-preserved-run-recovery-proof",
+                  "X-NICO-Browser-Projection": "terminal-manifest-v1",
+              }
+              if payload is not None:
+                  data = json.dumps(payload).encode("utf-8")
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  headers=headers,
+                  method=method,
+              )
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      status = response.status
+                      raw = response.read()
+              except urllib.error.HTTPError as exc:
+                  status = exc.code
+                  raw = exc.read()
+              elapsed = round(time.monotonic() - started, 3)
+              try:
+                  value = json.loads(raw.decode("utf-8"))
+              except Exception:
+                  value = {"raw_body": raw.decode("utf-8", errors="replace")}
+              return status, value, elapsed
+
+          def record_of(payload: Any) -> Mapping[str, Any]:
+              if not isinstance(payload, Mapping):
+                  return {}
+              record = payload.get("record")
+              return record if isinstance(record, Mapping) else payload
+
+          def final_stage_of(payload: Any) -> Mapping[str, Any]:
+              record = record_of(payload)
+              stages = record.get("stage_results")
+              stages = stages if isinstance(stages, Mapping) else {}
+              stage = stages.get("final_comprehensive_report_generation")
+              return stage if isinstance(stage, Mapping) else {}
+
+          def completed_stages_of(payload: Any) -> list[str]:
+              if isinstance(payload, Mapping) and isinstance(payload.get("completed_stages"), list):
+                  return [str(item) for item in payload.get("completed_stages") or []]
+              record = record_of(payload)
+              return [str(item) for item in record.get("completed_stages") or []]
+
+          def terminal_of(payload: Any) -> bool:
+              if isinstance(payload, Mapping) and isinstance(payload.get("terminal"), bool):
+                  return bool(payload.get("terminal"))
+              return bool(record_of(payload).get("terminal"))
+
+          def package_of(payload: Any) -> Mapping[str, Any]:
+              stage = final_stage_of(payload)
+              package = stage.get("report_package")
+              if isinstance(package, Mapping):
+                  return package
+              if isinstance(payload, Mapping):
+                  reports = payload.get("reports")
+                  if isinstance(reports, Mapping):
+                      for key in (
+                          "final_comprehensive_report_generation",
+                          "final",
+                          "comprehensive",
+                          "report_package",
+                      ):
+                          candidate = reports.get(key)
+                          if isinstance(candidate, Mapping):
+                              nested = candidate.get("report_package")
+                              return nested if isinstance(nested, Mapping) else candidate
+              return {}
+
+          pre_status, pre, pre_elapsed = request_json(
+              "GET",
+              status_url + f"?_nico_recovery_pre={time.time_ns()}",
+              timeout=240,
+          )
+          (output / "pre-recovery-status.json").write_text(
+              json.dumps(bounded(pre), indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          if pre_status != 200:
+              raise SystemExit(f"Pre-recovery status failed: HTTP {pre_status}")
+
+          pre_record = record_of(pre)
+          identity = pre_record.get("identity")
+          identity = identity if isinstance(identity, Mapping) else {}
+          if str(identity.get("run_id") or pre_record.get("run_id") or "") != run_id:
+              raise SystemExit("Pre-recovery response did not match the exact run identity")
+
+          continuation_status, continuation, continuation_elapsed = request_json(
+              "POST",
+              continue_url,
+              payload={
+                  "recovery_reason": "resume preserved final report after deployed timeout repair",
+                  "human_review_required": True,
+                  "client_delivery_allowed": False,
+              },
+              timeout=720,
+          )
+          (output / "continue-response.json").write_text(
+              json.dumps(bounded(continuation), indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          if continuation_status not in {200, 201, 202, 409, 502, 503, 504}:
+              raise SystemExit(
+                  f"Recovery continuation endpoint failed: HTTP {continuation_status}"
+              )
+
+          latest: Any = continuation
+          last_signature = ""
+          stagnant_polls = 0
+          for poll in range(1, 91):
+              status, payload, elapsed = request_json(
+                  "GET",
+                  status_url + f"?_nico_recovery_poll={poll}-{time.time_ns()}",
+                  timeout=240,
+              )
+              if status != 200:
+                  time.sleep(10)
+                  continue
+              latest = payload
+              completed = completed_stages_of(payload)
+              final_stage = final_stage_of(payload)
+              signature = json.dumps(
+                  {
+                      "terminal": terminal_of(payload),
+                      "current_stage": (
+                          payload.get("current_stage")
+                          if isinstance(payload, Mapping)
+                          else None
+                      ),
+                      "completed": completed,
+                      "final_status": final_stage.get("status"),
+                      "final_reason": final_stage.get("reason"),
+                  },
+                  sort_keys=True,
+              )
+              if signature == last_signature:
+                  stagnant_polls += 1
+              else:
+                  stagnant_polls = 0
+                  last_signature = signature
+              (output / f"poll-{poll:03d}.json").write_text(
+                  json.dumps(bounded(payload), indent=2, sort_keys=True, default=str)
+                  + "\n",
+                  encoding="utf-8",
+              )
+
+              final_complete = str(final_stage.get("status") or "").casefold() == "complete"
+              final_completed = "final_comprehensive_report_generation" in completed
+              later_boundary = any(
+                  stage in completed
+                  for stage in (
+                      "cross_format_truth_verification",
+                      "human_review_request",
+                      "client_acceptance_pending",
+                  )
+              )
+              if final_complete and final_completed and (terminal_of(payload) or later_boundary):
+                  break
+
+              # A transient gateway timeout may return while the request thread is
+              # still completing. Reissue continue only after three minutes with no
+              # observed state change, and never more than twice.
+              if stagnant_polls in {18, 36}:
+                  retry_status, retry_payload, retry_elapsed = request_json(
+                      "POST",
+                      continue_url,
+                      payload={
+                          "recovery_reason": "idempotent continuation after stagnant recovery poll",
+                          "human_review_required": True,
+                          "client_delivery_allowed": False,
+                      },
+                      timeout=720,
+                  )
+                  (output / f"continue-retry-{stagnant_polls}.json").write_text(
+                      json.dumps(
+                          {
+                              "http_status": retry_status,
+                              "elapsed_seconds": retry_elapsed,
+                              "payload": bounded(retry_payload),
+                          },
+                          indent=2,
+                          sort_keys=True,
+                          default=str,
+                      )
+                      + "\n",
+                      encoding="utf-8",
+                  )
+              time.sleep(10)
+          else:
+              raise SystemExit("Preserved run did not reach the review boundary in time")
+
+          final_record = record_of(latest)
+          final_stage = final_stage_of(latest)
+          completed = completed_stages_of(latest)
+          stage_execution = final_stage.get("stage_execution")
+          stage_execution = stage_execution if isinstance(stage_execution, Mapping) else {}
+          if str(final_stage.get("status") or "").casefold() != "complete":
+              raise SystemExit(
+                  "Final report stage did not complete: "
+                  + json.dumps(bounded(final_stage), sort_keys=True, default=str)
+              )
+          if final_stage.get("client_delivery_allowed") is True:
+              raise SystemExit("Recovered automated report unexpectedly authorized client delivery")
+          if "final_comprehensive_report_generation" not in completed:
+              raise SystemExit("Final report stage was not retained in completed stages")
+          elapsed = stage_execution.get("elapsed_seconds")
+          if isinstance(elapsed, (int, float)) and elapsed >= 240:
+              raise SystemExit(
+                  f"Recovered final report still exhausted the publication boundary: {elapsed}"
+              )
+
+          package = package_of(latest)
+          pdf_sha256 = ""
+          pdf_size = 0
+          if package:
+              encoded_pdf = str(package.get("pdf_base64") or "")
+              if encoded_pdf:
+                  pdf = base64.b64decode(encoded_pdf, validate=True)
+                  if not pdf.startswith(b"%PDF"):
+                      raise SystemExit("Recovered report package contained an invalid PDF")
+                  pdf_sha256 = hashlib.sha256(pdf).hexdigest()
+                  pdf_size = len(pdf)
+                  (output / "recovered-report.pdf").write_bytes(pdf)
+              finality = str(package.get("report_finality") or "").casefold()
+              approval = str(package.get("approval_status") or "").casefold()
+              delivery = str(package.get("delivery_status") or "").casefold()
+              if finality and finality != "automated_draft":
+                  raise SystemExit(f"Recovered report finality is invalid: {finality}")
+              if approval and "pending" not in approval:
+                  raise SystemExit(f"Recovered report approval status is invalid: {approval}")
+              if delivery and "blocked" not in delivery:
+                  raise SystemExit(f"Recovered report delivery status is invalid: {delivery}")
+
+          summary = {
+              "artifact_schema": "nico.preserved-comprehensive-run-recovery.v1",
+              "run_id": run_id,
+              "deployed_repair_commit": expected_commit,
+              "pre_recovery_http_status": pre_status,
+              "pre_recovery_elapsed_seconds": pre_elapsed,
+              "continuation_http_status": continuation_status,
+              "continuation_elapsed_seconds": continuation_elapsed,
+              "terminal": terminal_of(latest),
+              "current_stage": (
+                  latest.get("current_stage")
+                  if isinstance(latest, Mapping)
+                  else None
+              ),
+              "completed_stage_count": len(completed),
+              "final_stage_status": final_stage.get("status"),
+              "final_stage_elapsed_seconds": stage_execution.get("elapsed_seconds"),
+              "final_stage_execution_mode": stage_execution.get("mode"),
+              "report_package_retained_in_status_projection": bool(package),
+              "pdf_sha256": pdf_sha256 or None,
+              "pdf_size_bytes": pdf_size or None,
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+              "recovery_succeeded": True,
+          }
+          (output / "recovery-summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          (output / "final-status.json").write_text(
+              json.dumps(bounded(latest), indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Upload exact recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: preserved-comprehensive-run-recovery-${{ github.run_id }}
+          path: audit-results/preserved-run-recovery/
+          if-no-files-found: error
+          retention-days: 14
