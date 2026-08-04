@@ -135,6 +135,18 @@ def test_register_distribution_and_top_order_are_deterministic() -> None:
     assert summary["priority_model_version"] == MODEL
 
 
+def test_priority_calibration_preserves_stable_identity_and_exact_source_anchor() -> None:
+    original = _register()["code_findings"][1]
+    calibrated = calibrate_finding(original)
+
+    assert calibrated["finding_id"] == original["finding_id"]
+    assert calibrated["path"] == original["path"]
+    assert calibrated["line"] == original["line"]
+    assert calibrated["location"] == original["location"]
+    assert calibrated["observed_evidence"] == original["observed_evidence"]
+    assert calibrated["business_impact"] == original["business_impact"]
+
+
 def test_non_complexity_p1_also_receives_a_reviewable_rationale() -> None:
     finding = calibrate_finding(
         {
