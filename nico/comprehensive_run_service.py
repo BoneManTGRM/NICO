@@ -42,7 +42,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v11"
+VERSION = "nico.comprehensive_run_service.v12"
 
 
 class ComprehensiveRunService:
@@ -61,10 +61,13 @@ class ComprehensiveRunService:
     timeouts for complete or nearly complete report work.
 
     Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    Evidence flattening also carries one bounded visit budget across recursion, and the
-    report builder recognizes the retained manifest to skip duplicate full-tree work.
-    Scores, scanner findings, report design, human review, and blocked client delivery
-    remain unchanged.
+    The exact final stage receives the already-loaded immutable stage-results snapshot
+    by reference rather than cloning the complete scanner and repository evidence tree.
+    Final-report processing remains copy-on-write, so the persisted run cannot be
+    mutated by the renderer. Evidence flattening carries one bounded visit budget, and
+    the report builder recognizes the retained manifest to skip duplicate full-tree
+    work. Scores, scanner findings, report design, human review, and blocked client
+    delivery remain unchanged.
     """
 
     def __init__(
@@ -187,6 +190,11 @@ class ComprehensiveRunService:
                 "cancelable": True,
             }
         else:
+            retained_stage_results = (
+                record.get("stage_results")
+                if isinstance(record.get("stage_results"), dict)
+                else {}
+            )
             context = {
                 "artifact_schema": VERSION,
                 "service_id": "comprehensive",
@@ -200,7 +208,11 @@ class ComprehensiveRunService:
                 "assessment_depth": identity["assessment_depth"],
                 "report_language": identity["report_language"],
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
-                "prior_stage_results": deepcopy(record.get("stage_results") or {}),
+                "prior_stage_results": (
+                    retained_stage_results
+                    if stage_id == FINAL_REPORT_STAGE_ID
+                    else deepcopy(retained_stage_results)
+                ),
                 "recovery_history": deepcopy(record.get("recovery_history") or []),
                 "human_review_required": True,
                 "client_delivery_allowed": False,
