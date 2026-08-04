@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-VERSION = "nico.v2.future-approval-guidance-layout.v1"
+VERSION = "nico.v2.future-approval-guidance-layout.v1.1"
 _MARKER = "__nico_future_approval_guidance_layout_v1__"
 
 # PDF text extraction can place page headers, footers, and line fragments between
@@ -13,23 +13,30 @@ _MARKER = "__nico_future_approval_guidance_layout_v1__"
 # remove a later, independent current-state assertion.
 _GUIDANCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
-        r"\bonly an authorized reviewer\b.{0,900}?\bchange the status\b"
-        r".{0,900}?\bapproved final\b.{0,900}?\bclient delivery authorized\b",
+        r"\bonly an authorized reviewer\b.{0,900}?\bmay\b.{0,300}?\bchange\b"
+        r".{0,300}?\bstatus\b.{0,900}?\bapproved\b.{0,300}?\bfinal\b"
+        r".{0,900}?\band\b.{0,300}?\bclient\b.{0,300}?\bdelivery\b"
+        r".{0,300}?\bauthorized\b",
         re.DOTALL,
     ),
     re.compile(
-        r"\bautomation cannot\b.{0,900}?\bchange this package\b"
-        r".{0,900}?\bapproved final\b.{0,900}?\bclient delivery authorized\b",
+        r"\bautomation cannot\b.{0,900}?\bchange\b.{0,300}?\bpackage\b"
+        r".{0,900}?\bapproved\b.{0,300}?\bfinal\b.{0,900}?\bor\b"
+        r".{0,300}?\bclient\b.{0,300}?\bdelivery\b.{0,300}?\bauthorized\b",
         re.DOTALL,
     ),
     re.compile(
-        r"\bsolo un revisor autorizado\b.{0,900}?\bcambiar el estado\b"
-        r".{0,900}?\bfinal aprobado\b.{0,900}?\bentrega al cliente autorizada\b",
+        r"\bsolo un revisor autorizado\b.{0,900}?\bpuede\b.{0,300}?\bcambiar\b"
+        r".{0,300}?\bestado\b.{0,900}?\bfinal\b.{0,300}?\baprobado\b"
+        r".{0,900}?\by\b.{0,300}?\bentrega\b.{0,300}?\bal cliente\b"
+        r".{0,300}?\bautorizada\b",
         re.DOTALL,
     ),
     re.compile(
-        r"\bla automatizacion no puede\b.{0,900}?\bcambiar este paquete\b"
-        r".{0,900}?\bfinal aprobado\b.{0,900}?\bentrega al cliente autorizada\b",
+        r"\bla automatizacion no puede\b.{0,900}?\bcambiar\b"
+        r".{0,300}?\beste paquete\b.{0,900}?\bfinal\b.{0,300}?\baprobado\b"
+        r".{0,900}?\bni\b.{0,300}?\bentrega\b.{0,300}?\bal cliente\b"
+        r".{0,300}?\bautorizada\b",
         re.DOTALL,
     ),
 )
@@ -71,6 +78,7 @@ def install_future_approval_guidance_layout_v1() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "bounded_layout_noise_supported": True,
+            "token_level_layout_noise_supported": True,
             "current_finality_gate_preserved": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -84,7 +92,9 @@ def install_future_approval_guidance_layout_v1() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "bounded_layout_noise_supported": True,
-        "maximum_guidance_gap_characters": 2700,
+        "token_level_layout_noise_supported": True,
+        "maximum_clause_gap_characters": 900,
+        "maximum_token_gap_characters": 300,
         "exact_guidance_support_preserved": True,
         "english_guidance_supported": True,
         "spanish_guidance_supported": True,
