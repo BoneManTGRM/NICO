@@ -7,7 +7,7 @@ import nico.comprehensive_api_controller as controller_module
 # Public compatibility identifier. Runtime behavior advances through
 # RUNTIME_REVISION so existing mobile proof contracts remain valid.
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v67-canonical-report-truth"
+RUNTIME_REVISION = "v68-substantive-client-review"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -41,6 +41,9 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.bandit_json_execution_v61 import install_bandit_json_execution_v61
+    from nico.client_pdf_status_sanitizer_v7 import (
+        install_client_pdf_status_sanitizer_v7,
+    )
     from nico.comprehensive_candidate_volume_assurance_v2 import (
         install_candidate_volume_assurance_v2,
     )
@@ -52,6 +55,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     )
     from nico.comprehensive_client_review_companion_v4 import (
         install_comprehensive_review_companion_v4,
+    )
+    from nico.comprehensive_client_review_companion_v5 import (
+        install_comprehensive_review_companion_v5,
     )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
@@ -100,9 +106,6 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
-    # Reconcile source counts and workflow outcomes before assurance scoring wraps
-    # the canonical provider. The score wrapper therefore consumes the corrected
-    # mutually exclusive disposition register instead of repairing display text.
     canonical_truth_reconciliation = install_comprehensive_truth_reconciliation_v7()
     candidate_volume_assurance = install_candidate_volume_assurance_v2()
     bandit_json_execution = install_bandit_json_execution_v61()
@@ -124,12 +127,19 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     final_artifact_truth = install_comprehensive_final_artifact_truth_v54()
     final_artifact_v54_compat = install_comprehensive_final_artifact_truth_v54_compat()
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
-    client_review_companion = install_comprehensive_review_companion_v4()
+
+    # Preserve legacy compatibility first, then replace the 32-page worksheet
+    # bundle with the substantive 16-page client-review contract.
+    install_comprehensive_review_companion_v4()
+    client_review_companion = install_comprehensive_review_companion_v5()
+    client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
+
     return {
         "runtime_revision": RUNTIME_REVISION,
         "canonical_truth_reconciliation": canonical_truth_reconciliation,
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
+        "client_pdf_sanitizer": client_pdf_sanitizer,
         "bandit_json_execution": bandit_json_execution,
         "source_anchor_location": source_anchor_location,
         "requested_scanner_projection": requested_scanner_projection,
@@ -212,7 +222,11 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "candidate_dispositions_mutually_exclusive": True,
         "workflow_outcome_taxonomy_complete": True,
         "blank_numeric_score_inputs_allowed": False,
-        "decision_useful_review_companion_pages": 32,
+        "decision_useful_review_companion_pages": 16,
+        "continuous_review_section_numbering": True,
+        "filler_only_review_pages_allowed": False,
+        "roadmap_claim_is_framework_only": True,
+        "runtime_platform_parity_not_assessed_without_device_evidence": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
