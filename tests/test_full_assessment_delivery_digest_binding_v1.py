@@ -8,6 +8,7 @@ from reportlab.pdfgen import canvas
 
 from nico import full_assessment_delivery
 from nico.full_assessment_delivery_digest_binding_v1 import (
+    _requires_exact_artifact_binding,
     install_full_assessment_delivery_digest_binding_v1,
 )
 
@@ -127,4 +128,42 @@ def test_missing_detached_manifest_identity_blocks_delivery() -> None:
 
     assert result["status"] == "blocked"
     assert result["client_delivery_allowed"] is False
+    assert "evidence_manifest_sha256" in result["error"]
+
+
+def test_legacy_non_manifest_delivery_delegates_to_existing_validator() -> None:
+    install_full_assessment_delivery_digest_binding_v1()
+    report = _report()
+    report.pop("draft_artifact_identity")
+    approval = _approval()
+
+    assert _requires_exact_artifact_binding(report, approval) is False
+    result = full_assessment_delivery.build_approved_delivery_artifact(
+        report,
+        approval,
+        approved_at="2026-08-04T01:00:00Z",
+    )
+
+    assert result["status"] == "complete"
+    assert result["client_delivery_allowed"] is True
+    assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
+
+
+def test_declared_exact_lifecycle_without_identity_fails_closed() -> None:
+    install_full_assessment_delivery_digest_binding_v1()
+    report = _report()
+    report.pop("draft_artifact_identity")
+    report["exact_artifact_approval_required"] = True
+    approval = _approval()
+
+    assert _requires_exact_artifact_binding(report, approval) is True
+    result = full_assessment_delivery.build_approved_delivery_artifact(
+        report,
+        approval,
+        approved_at="2026-08-04T01:00:00Z",
+    )
+
+    assert result["status"] == "blocked"
+    assert result["client_delivery_allowed"] is False
+    assert "pdf_sha256" in result["error"]
     assert "evidence_manifest_sha256" in result["error"]
