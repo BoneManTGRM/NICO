@@ -4,10 +4,12 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.exact-artifact-review-compat.v1.1"
+VERSION = "nico.exact-artifact-review-compat.v1.2"
+_GATE_MARKER = "__nico_exact_artifact_review_gate_compat_v1__"
 _VALIDATION_MARKER = "__nico_exact_artifact_review_validation_compat_v1__"
 _REQUEST_MARKER = "__nico_exact_artifact_review_request_compat_v1__"
 _TRANSITION_MARKER = "__nico_exact_artifact_review_transition_compat_v1__"
+_ARTIFACT_GATE_MARKER = "__nico_artifact_manifest_gate_v1__"
 _ARTIFACT_VALIDATION_MARKER = "__nico_artifact_manifest_validation_v1__"
 _ARTIFACT_REQUEST_MARKER = "__nico_artifact_manifest_request_v1__"
 _ARTIFACT_TRANSITION_MARKER = "__nico_artifact_manifest_transition_v1__"
@@ -20,7 +22,10 @@ def _text(value: Any) -> str:
 def _canonical(report: Mapping[str, Any]) -> Mapping[str, Any]:
     formats = report.get("formats") if isinstance(report.get("formats"), Mapping) else {}
     value = formats.get("json") if isinstance(formats.get("json"), Mapping) else {}
-    return value if isinstance(value, Mapping) else {}
+    if isinstance(value, Mapping):
+        return value
+    direct = report.get("json")
+    return direct if isinstance(direct, Mapping) else {}
 
 
 def _requires_exact_review(
@@ -71,7 +76,24 @@ def _report_for(workflow: Any, approval: Mapping[str, Any]) -> Mapping[str, Any]
 
 
 def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
+    from nico import client_final_review_gate_patch as gate
     from nico import final_review_workflow as workflow
+
+    current_gate = gate.build_client_final_review_gate
+    if not getattr(current_gate, _GATE_MARKER, False):
+        legacy_gate = getattr(current_gate, "_nico_previous", current_gate)
+
+        @wraps(current_gate)
+        def build_client_final_review_gate(result: dict[str, Any]) -> dict[str, Any]:
+            if not _requires_exact_review(result, result):
+                return deepcopy(legacy_gate(result))
+            return deepcopy(current_gate(result))
+
+        setattr(build_client_final_review_gate, _GATE_MARKER, True)
+        setattr(build_client_final_review_gate, _ARTIFACT_GATE_MARKER, True)
+        setattr(build_client_final_review_gate, "_nico_previous", current_gate)
+        setattr(build_client_final_review_gate, "_nico_legacy", legacy_gate)
+        gate.build_client_final_review_gate = build_client_final_review_gate
 
     current_validation = workflow.final_review_validation
     if not getattr(current_validation, _VALIDATION_MARKER, False):
@@ -89,8 +111,6 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
             return deepcopy(current_validation(approval))
 
         setattr(final_review_validation, _VALIDATION_MARKER, True)
-        # Preserve the artifact patch's public marker so repeated runtime installs
-        # do not wrap the compatibility boundary again.
         setattr(final_review_validation, _ARTIFACT_VALIDATION_MARKER, True)
         setattr(final_review_validation, "_nico_previous", current_validation)
         setattr(final_review_validation, "_nico_legacy", legacy_validation)
@@ -158,6 +178,7 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "legacy_non_manifest_gate_preserved": True,
         "legacy_non_manifest_review_flow_preserved": True,
         "manifest_aware_review_requires_exact_identity": True,
         "manifest_aware_missing_identity_fails_closed": True,
