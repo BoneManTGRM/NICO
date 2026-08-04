@@ -6,7 +6,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.v2.dark-branded-cover-readiness.v4"
+VERSION = "nico.v2.dark-branded-cover-readiness.v4.1"
 _MARKER = "__nico_dark_cover_readiness_v4__"
 
 _TEXT_REPLACEMENTS = {
@@ -93,29 +93,9 @@ def _replace_cover_readiness_text(pdf: bytes) -> bytes:
     return output.getvalue()
 
 
-def install_dark_branded_cover_readiness_v4() -> dict[str, Any]:
-    from nico import v2_dark_branded_cover as cover
-
-    current_cover = cover._cover
-    if getattr(current_cover, _MARKER, False):
-        return {
-            "status": "already_installed",
-            "version": VERSION,
-            "review_package_ready": True,
-            "human_review_status": "pending",
-            "client_delivery_status": "blocked",
-        }
-
-    cover._executive_posture = _truthful_executive_posture
-
-    def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
-        return _replace_cover_readiness_text(current_cover(canonical, spanish=spanish))
-
-    setattr(_cover, _MARKER, True)
-    setattr(_cover, "_nico_previous", current_cover)
-    cover._cover = _cover
+def _contract(*, status: str) -> dict[str, Any]:
     return {
-        "status": "installed",
+        "status": status,
         "version": VERSION,
         "premium_design_preserved": True,
         "review_package_ready": True,
@@ -125,6 +105,24 @@ def install_dark_branded_cover_readiness_v4() -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+
+
+def install_dark_branded_cover_readiness_v4() -> dict[str, Any]:
+    from nico import v2_dark_branded_cover as cover
+
+    current_cover = cover._cover
+    if getattr(current_cover, _MARKER, False):
+        return _contract(status="already_installed")
+
+    cover._executive_posture = _truthful_executive_posture
+
+    def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
+        return _replace_cover_readiness_text(current_cover(canonical, spanish=spanish))
+
+    setattr(_cover, _MARKER, True)
+    setattr(_cover, "_nico_previous", current_cover)
+    cover._cover = _cover
+    return _contract(status="installed")
 
 
 __all__ = [
