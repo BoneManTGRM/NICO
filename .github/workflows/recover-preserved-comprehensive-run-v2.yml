@@ -1,0 +1,194 @@
+name: Recover Preserved Comprehensive Run V2
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Resume exact run and verify final review package
+        env:
+          ORIGIN: https://app.nicoaudit.com
+          RUN_ID: comprun_891cf108b297485381cc866c30fc5696
+          DEPLOYED_COMMIT: b9bb935041d59c9a976a4e2c7271c19235e99fcf
+        run: |
+          set -euo pipefail
+          mkdir -p recovery-evidence
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import hashlib
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          origin = os.environ["ORIGIN"].rstrip("/")
+          run_id = os.environ["RUN_ID"]
+          deployed_commit = os.environ["DEPLOYED_COMMIT"]
+          out = Path("recovery-evidence")
+          status_url = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
+          continue_url = f"{status_url}/continue"
+
+          def call(method: str, url: str, payload: Mapping[str, Any] | None = None, timeout: int = 720):
+              data = json.dumps(payload).encode() if payload is not None else None
+              headers = {
+                  "Accept": "application/json",
+                  "Cache-Control": "no-store",
+                  "Pragma": "no-cache",
+                  "User-Agent": "nico-preserved-run-recovery-v2",
+                  "X-NICO-Browser-Projection": "terminal-manifest-v1",
+              }
+              if data is not None:
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(url, data=data, headers=headers, method=method)
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      status, raw = response.status, response.read()
+              except urllib.error.HTTPError as exc:
+                  status, raw = exc.code, exc.read()
+              elapsed = round(time.monotonic() - started, 3)
+              try:
+                  body = json.loads(raw.decode())
+              except Exception:
+                  body = {"raw_body": raw.decode(errors="replace")}
+              return status, body, elapsed
+
+          def record(payload: Any) -> Mapping[str, Any]:
+              if not isinstance(payload, Mapping):
+                  return {}
+              value = payload.get("record")
+              return value if isinstance(value, Mapping) else payload
+
+          def final_stage(payload: Any) -> Mapping[str, Any]:
+              stages = record(payload).get("stage_results")
+              stages = stages if isinstance(stages, Mapping) else {}
+              value = stages.get("final_comprehensive_report_generation")
+              return value if isinstance(value, Mapping) else {}
+
+          def package(payload: Any) -> Mapping[str, Any]:
+              direct = final_stage(payload).get("report_package")
+              if isinstance(direct, Mapping):
+                  return direct
+              reports = payload.get("reports") if isinstance(payload, Mapping) else None
+              if isinstance(reports, Mapping):
+                  for key in ("final", "comprehensive", "report_package", "final_comprehensive_report_generation"):
+                      value = reports.get(key)
+                      if isinstance(value, Mapping):
+                          nested = value.get("report_package")
+                          return nested if isinstance(nested, Mapping) else value
+              return {}
+
+          pre_status, pre, pre_elapsed = call("GET", status_url + f"?pre={time.time_ns()}", timeout=240)
+          out.joinpath("pre.json").write_text(json.dumps(pre, indent=2, sort_keys=True, default=str) + "\n")
+          if pre_status != 200:
+              raise SystemExit(f"pre-recovery status failed: HTTP {pre_status}")
+          identity = record(pre).get("identity")
+          identity = identity if isinstance(identity, Mapping) else {}
+          if str(identity.get("run_id") or record(pre).get("run_id") or "") != run_id:
+              raise SystemExit("exact run identity mismatch before recovery")
+
+          post_status, post, post_elapsed = call(
+              "POST",
+              continue_url,
+              {
+                  "recovery_reason": "resume preserved report after finality-validator repair",
+                  "human_review_required": True,
+                  "client_delivery_allowed": False,
+              },
+          )
+          out.joinpath("continue.json").write_text(json.dumps(post, indent=2, sort_keys=True, default=str) + "\n")
+          if post_status not in {200, 201, 202, 409, 502, 503, 504}:
+              raise SystemExit(f"continue failed: HTTP {post_status}")
+
+          latest = post
+          for index in range(1, 73):
+              status, current, _ = call("GET", status_url + f"?poll={index}-{time.time_ns()}", timeout=240)
+              if status == 200:
+                  latest = current
+                  stage = final_stage(current)
+                  completed = record(current).get("completed_stages") or current.get("completed_stages") or []
+                  if str(stage.get("status") or "").casefold() == "complete" and "final_comprehensive_report_generation" in completed:
+                      break
+              time.sleep(10)
+          else:
+              raise SystemExit("preserved run did not complete final report generation")
+
+          stage = final_stage(latest)
+          completed = record(latest).get("completed_stages") or latest.get("completed_stages") or []
+          if str(stage.get("status") or "").casefold() != "complete":
+              raise SystemExit("final report stage is not complete: " + json.dumps(stage, sort_keys=True, default=str))
+          if stage.get("client_delivery_allowed") is True:
+              raise SystemExit("automated recovery improperly authorized client delivery")
+          execution = stage.get("stage_execution") if isinstance(stage.get("stage_execution"), Mapping) else {}
+          elapsed = execution.get("elapsed_seconds")
+          if isinstance(elapsed, (int, float)) and elapsed >= 240:
+              raise SystemExit(f"final report still exhausted the publication boundary: {elapsed}")
+
+          pkg = package(latest)
+          encoded = str(pkg.get("pdf_base64") or "") if pkg else ""
+          pdf_sha = None
+          pdf_pages = pkg.get("pdf_page_count") if pkg else None
+          if encoded:
+              pdf = base64.b64decode(encoded, validate=True)
+              if not pdf.startswith(b"%PDF"):
+                  raise SystemExit("recovered package PDF is invalid")
+              pdf_sha = hashlib.sha256(pdf).hexdigest()
+              out.joinpath("recovered-report.pdf").write_bytes(pdf)
+
+          finality = str(pkg.get("report_finality") or stage.get("report_finality") or "").casefold()
+          approval = str(pkg.get("approval_status") or stage.get("approval_status") or "").casefold()
+          delivery = str(pkg.get("delivery_status") or stage.get("delivery_status") or "").casefold()
+          if finality and finality != "automated_draft":
+              raise SystemExit(f"invalid finality: {finality}")
+          if approval and "pending" not in approval:
+              raise SystemExit(f"invalid approval state: {approval}")
+          if delivery and "blocked" not in delivery:
+              raise SystemExit(f"invalid delivery state: {delivery}")
+
+          summary = {
+              "artifact_schema": "nico.preserved-run-recovery.v2",
+              "run_id": run_id,
+              "deployed_commit": deployed_commit,
+              "pre_http_status": pre_status,
+              "pre_elapsed_seconds": pre_elapsed,
+              "continue_http_status": post_status,
+              "continue_elapsed_seconds": post_elapsed,
+              "completed_stage_count": len(completed),
+              "final_stage_status": stage.get("status"),
+              "final_stage_elapsed_seconds": elapsed,
+              "pdf_retained_in_projection": bool(encoded),
+              "pdf_sha256": pdf_sha,
+              "pdf_page_count": pdf_pages,
+              "report_finality": finality or "automated_draft",
+              "human_approval": approval or "pending_human_approval",
+              "client_delivery": delivery or "blocked_pending_human_approval",
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+              "recovery_succeeded": True,
+          }
+          out.joinpath("summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+          out.joinpath("final.json").write_text(json.dumps(latest, indent=2, sort_keys=True, default=str) + "\n")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: preserved-run-recovery-v2-${{ github.run_id }}
+          path: recovery-evidence/
+          if-no-files-found: error
+          retention-days: 14
