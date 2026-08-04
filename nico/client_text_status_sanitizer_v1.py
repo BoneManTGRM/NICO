@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "nico.client-text-status-sanitizer.v1"
+VERSION = "nico.client-text-status-sanitizer.v1.1"
 
 _REPLACEMENTS = (
     ("a final automated assessment", "an automated draft assessment"),
@@ -15,6 +15,10 @@ _REPLACEMENTS = (
     ("FINAL REPORT — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
     ("AUTOMATED FINAL", "AUTOMATED DRAFT"),
     ("INFORME FINAL PENDIENTE DE APROBACIÓN", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN"),
+    (
+        "No structured item was retained.",
+        "No additional structured finding detail was retained for this section.",
+    ),
 )
 
 
