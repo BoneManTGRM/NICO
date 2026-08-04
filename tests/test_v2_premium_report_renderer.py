@@ -6,6 +6,7 @@ from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 
 
 SHA = "7" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def _package(language: str = "en") -> dict:
@@ -18,8 +19,10 @@ def _package(language: str = "en") -> dict:
                 "evidence_ledger_id": "ledger-premium",
                 "customer_id": "customer-premium",
                 "project_id": "project-premium",
+                "generated_at": GENERATED_AT,
                 "report_language": language,
             },
+            "generated_at": GENERATED_AT,
             "report_language": language,
             "assessment": {
                 "report_language": language,
@@ -111,6 +114,7 @@ def test_english_premium_renderer_restores_multi_chapter_report():
     assert result["json"]["scanner_execution_records"][0]["scanner_name"] == "bandit"
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
     assert result["report_finality"] == "automated_draft"
+    assert result["json"]["identity"]["generated_at"] == GENERATED_AT
 
 
 def test_spanish_premium_renderer_keeps_localized_layout_and_truth():
@@ -130,3 +134,4 @@ def test_spanish_premium_renderer_keeps_localized_layout_and_truth():
     assert result["json"]["scanner_execution_records"][0]["scanner_name"] == "bandit"
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
     assert result["report_finality"] == "automated_draft"
+    assert result["json"]["identity"]["generated_at"] == GENERATED_AT
