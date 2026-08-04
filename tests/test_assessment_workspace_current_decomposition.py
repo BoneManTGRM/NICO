@@ -45,15 +45,15 @@ def test_public_workspace_is_one_semantic_comprehensive_engagement() -> None:
 
 def test_score_assurance_and_risk_remain_separate() -> None:
     workspace = read("apps/web/app/assessment/AssessmentWorkspace.tsx")
-    model = read("apps/web/app/assessment/assessmentModel.ts")
+    status = read("apps/web/app/assessment/assessmentStatus.ts")
 
     assert "sectionPresentation(section, copy)" in workspace
     assert "view.technicalTone" in workspace
     assert "view.assuranceTone" in workspace
     assert "view.riskTone" in workspace
-    assert "assurance_label" in model
-    assert "risk_disposition" in model
-    assert "scoreTone" in model
+    assert "assurance_label" in status
+    assert "risk_disposition" in status
+    assert "scoreTone" in status
 
 
 def test_polling_and_human_review_boundary_live_in_hook() -> None:
