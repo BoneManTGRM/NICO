@@ -35,6 +35,9 @@ from nico.comprehensive_placeholder_sanitization_v1 import (
 from nico.comprehensive_platform_parity_summary_v1 import (
     install_comprehensive_platform_parity_summary,
 )
+from nico.comprehensive_rendered_package_reuse_v1 import (
+    install_comprehensive_rendered_package_reuse_v1,
+)
 from nico.comprehensive_report_clarity_v1 import (
     install_comprehensive_report_clarity,
 )
@@ -66,6 +69,7 @@ _CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
 _TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
 _DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
 _PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
+_RENDERED_PACKAGE_REUSE = install_comprehensive_rendered_package_reuse_v1()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
 _PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
@@ -171,6 +175,7 @@ __all__ = [
     "_TRUTH_DIAGNOSTICS",
     "_DECISION_SUMMARY_TRUTH",
     "_PDF_NAVIGATION_TITLES",
+    "_RENDERED_PACKAGE_REUSE",
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
     "_PLACEHOLDER_SANITIZATION",
