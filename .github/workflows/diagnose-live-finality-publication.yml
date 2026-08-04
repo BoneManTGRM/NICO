@@ -1,0 +1,106 @@
+name: Diagnose Live Finality Publication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/diagnose-live-finality-publication.yml"
+      - "nico/v2_future_approval_guidance_layout_v1.py"
+      - "nico/comprehensive_artifact_manifest_approval_v1.py"
+      - "tests/test_v2_future_approval_guidance_layout_v1.py"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Capture preserved production run responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results/live-finality-diagnostic
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import pathlib
+          import urllib.error
+          import urllib.request
+
+          origin = "https://app.nicoaudit.com"
+          run_ids = (
+              "comprun_953eae918dcb4337b5ea2433b3531c91",
+              "comprun_d673519cefe14126b7ddcf87e6f57fa3",
+          )
+          suffixes = (
+              "",
+              "/recovery",
+              "/evidence",
+              "/stages",
+              "/stage/final_comprehensive_report_generation",
+          )
+          root = pathlib.Path("audit-results/live-finality-diagnostic")
+          summary: list[dict[str, object]] = []
+          for run_id in run_ids:
+              for suffix in suffixes:
+                  url = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}{suffix}"
+                  request = urllib.request.Request(
+                      url,
+                      headers={
+                          "Accept": "application/json",
+                          "Cache-Control": "no-store",
+                          "Pragma": "no-cache",
+                          "User-Agent": "nico-read-only-finality-diagnostic",
+                      },
+                  )
+                  status = 0
+                  content_type = ""
+                  try:
+                      with urllib.request.urlopen(request, timeout=45) as response:
+                          status = response.status
+                          content_type = response.headers.get("content-type", "")
+                          body = response.read()
+                  except urllib.error.HTTPError as exc:
+                      status = exc.code
+                      content_type = exc.headers.get("content-type", "")
+                      body = exc.read()
+                  except Exception as exc:
+                      body = json.dumps(
+                          {
+                              "status": "request_error",
+                              "error": f"{type(exc).__name__}: {exc}",
+                          },
+                          sort_keys=True,
+                      ).encode("utf-8")
+                  label = suffix.strip("/").replace("/", "-") or "status"
+                  path = root / f"{run_id}-{label}.txt"
+                  path.write_bytes(body)
+                  summary.append(
+                      {
+                          "run_id": run_id,
+                          "suffix": suffix,
+                          "url": url,
+                          "http_status": status,
+                          "content_type": content_type,
+                          "size_bytes": len(body),
+                          "file": str(path),
+                      }
+                  )
+          (root / "summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload read-only diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-finality-publication-diagnostic
+          path: audit-results/live-finality-diagnostic/
+          retention-days: 7
+          if-no-files-found: error
