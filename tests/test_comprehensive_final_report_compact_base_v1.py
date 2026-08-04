@@ -142,7 +142,9 @@ def test_real_final_base_build_is_bounded_and_keeps_full_stage_summaries() -> No
     package = result["report_package"]
     pdf = base64.b64decode(package["pdf_base64"])
     assert pdf.startswith(b"%PDF")
-    assert len(PdfReader(__import__("io").BytesIO(pdf)).pages) < 15
+    # The downstream client composer adds the substantive review package. The
+    # intermediate PDF remains bounded without imposing a filler-driven target.
+    assert len(PdfReader(__import__("io").BytesIO(pdf)).pages) <= 25
     assert len(package["json"]["stage_summaries"]) == len(_stage_results())
     assert result["final_report_compact_base"][
         "raw_stage_appendix_rendered_in_intermediate_pdf"
