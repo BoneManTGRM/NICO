@@ -14,6 +14,9 @@ from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.comprehensive_automated_draft_cross_format_v1 import (
     install_automated_draft_cross_format_contract,
 )
+from nico.comprehensive_client_truth_canonical_v2 import (
+    install_comprehensive_client_truth_canonical_v2,
+)
 from nico.comprehensive_compact_design_marker_v1 import (
     install_compact_design_marker_gate,
 )
@@ -50,6 +53,7 @@ _SCANNER_COMMAND_REPAIR = install_scanner_command_repair()
 _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
+_CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
 _PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
@@ -151,6 +155,7 @@ __all__ = [
     "_SCANNER_EVIDENCE_CONTRACT",
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
+    "_CANONICAL_CLIENT_TRUTH",
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
     "_PLACEHOLDER_SANITIZATION",
