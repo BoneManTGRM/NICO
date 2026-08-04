@@ -50,6 +50,9 @@ from nico.comprehensive_spanish_generated_at_v1 import (
 from nico.comprehensive_truth_diagnostics_v1 import (
     install_comprehensive_truth_diagnostics_v1,
 )
+from nico.comprehensive_zero_incomplete_validation_v1 import (
+    install_comprehensive_zero_incomplete_validation_v1,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -75,6 +78,7 @@ _CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
 _SPANISH_GENERATED_AT = install_comprehensive_spanish_generated_at_v1()
 _SCORE_PRESENCE_TRUTH = install_comprehensive_score_presence_truth_v1()
 _TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
+_ZERO_INCOMPLETE_VALIDATION = install_comprehensive_zero_incomplete_validation_v1()
 _DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
 _PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
 _RENDERED_PACKAGE_REUSE = install_comprehensive_rendered_package_reuse_v1()
@@ -183,6 +187,7 @@ __all__ = [
     "_SPANISH_GENERATED_AT",
     "_SCORE_PRESENCE_TRUTH",
     "_TRUTH_DIAGNOSTICS",
+    "_ZERO_INCOMPLETE_VALIDATION",
     "_DECISION_SUMMARY_TRUTH",
     "_PDF_NAVIGATION_TITLES",
     "_RENDERED_PACKAGE_REUSE",
