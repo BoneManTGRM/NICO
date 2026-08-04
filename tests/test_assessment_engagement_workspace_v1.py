@@ -4,12 +4,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
-CONTROLLER = ROOT / "apps" / "web" / "app" / "assessment" / "useAssessmentRun.ts"
-COPY = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentCopy.ts"
-TYPES = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentTypes.ts"
-STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "engagementWorkspace.module.css"
-INLINE_STYLES = ROOT / "apps" / "web" / "app" / "assessment" / "assessment-inline-readiness.css"
+ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
+WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
+CONTROLLER = ASSESSMENT / "useAssessmentRun.ts"
+REQUESTS = ASSESSMENT / "assessmentRunRequests.ts"
+PERSISTENCE = ASSESSMENT / "assessmentRunPersistence.ts"
+COPY = ASSESSMENT / "assessmentCopy.ts"
+TYPES = ASSESSMENT / "assessmentTypes.ts"
+STYLES = ASSESSMENT / "engagementWorkspace.module.css"
+INLINE_STYLES = ASSESSMENT / "assessment-inline-readiness.css"
 
 
 def test_workspace_uses_semantic_engagement_identity() -> None:
@@ -26,6 +29,7 @@ def test_workspace_uses_semantic_engagement_identity() -> None:
 def test_readiness_failure_is_one_authoritative_safe_notice() -> None:
     workspace = WORKSPACE.read_text(encoding="utf-8")
     controller = CONTROLLER.read_text(encoding="utf-8")
+    requests = REQUESTS.read_text(encoding="utf-8")
     copy = COPY.read_text(encoding="utf-8")
 
     assert "const preflightIssue = issue && !issue.runCreated ? issue : null" in workspace
@@ -37,24 +41,26 @@ def test_readiness_failure_is_one_authoritative_safe_notice() -> None:
     assert "{showStatePanel ? <section" in workspace
     assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in controller
     assert 'setPhase("checking")' in controller
-    assert 'kind: "configuration_blocked"' in controller
+    assert 'kind: "configuration_blocked"' in requests
     assert "No assessment was created and no repository processing began" in copy
     assert "SQLite" not in copy
     assert "persistent volume" not in copy.lower()
 
 
 def test_retry_resumes_exact_run_instead_of_creating_duplicate() -> None:
-    source = CONTROLLER.read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    persistence = PERSISTENCE.read_text(encoding="utf-8")
+    normalized = " ".join(controller.split())
 
-    assert "async function retry()" in source
-    assert "const persisted = readPersistedRun()" in source
-    assert 'const runId = String(result?.run_id || persisted?.runId || "").trim()' in source
-    assert "await resumePersistedRun(persisted ||" in source
-    assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in source
-    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
-    assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in source
-    assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in source
-    retry_body = source.split("async function retry()", 1)[1]
+    assert "async function retry()" in controller
+    assert "const persisted = readPersistedRun()" in controller
+    assert 'const runId = String(result?.run_id || persisted?.runId || "").trim()' in controller
+    assert "await resumePersistedRun( persisted ||" in normalized
+    assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in controller
+    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in controller
+    assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in persistence
+    assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in persistence
+    retry_body = controller.split("async function retry()", 1)[1]
     retry_body = retry_body.split("return {", 1)[0]
     assert '"/assessment/comprehensive-intake"' not in retry_body
 
