@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.full-assessment-delivery-digest-binding.v1.1"
+VERSION = "nico.full-assessment-delivery-digest-binding.v1.2"
 _MARKER = "__nico_full_assessment_delivery_digest_binding_v1__"
 
 
@@ -13,16 +13,60 @@ def _text(value: Any, limit: int = 1000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _canonical(report: Mapping[str, Any]) -> Mapping[str, Any]:
+    formats = report.get("formats") if isinstance(report.get("formats"), Mapping) else {}
+    value = formats.get("json") if isinstance(formats.get("json"), Mapping) else {}
+    return value if isinstance(value, Mapping) else {}
+
+
 def _draft_identity(report: Mapping[str, Any]) -> Mapping[str, Any]:
     direct = report.get("draft_artifact_identity")
     if isinstance(direct, Mapping):
         return direct
-    formats = report.get("formats") if isinstance(report.get("formats"), Mapping) else {}
-    canonical = formats.get("json") if isinstance(formats.get("json"), Mapping) else {}
-    nested = canonical.get("draft_artifact_identity") if isinstance(canonical, Mapping) else None
+    nested = _canonical(report).get("draft_artifact_identity")
     if isinstance(nested, Mapping):
         return nested
     return {}
+
+
+def _requires_exact_artifact_binding(
+    report: Mapping[str, Any],
+    approval: Mapping[str, Any],
+) -> bool:
+    """Enforce the new digest contract only after a report enters that lifecycle.
+
+    Historical approved-delivery records predate detached manifests. They continue
+    through the existing delivery validator. Any report or approval that advertises
+    a manifest, exact identity, digest, or exact-artifact requirement remains fully
+    fail-closed under the new contract.
+    """
+
+    canonical = _canonical(report)
+    report_markers = (
+        report.get("draft_artifact_identity"),
+        report.get("artifact_manifest"),
+        canonical.get("draft_artifact_identity"),
+        canonical.get("artifact_manifest"),
+    )
+    if any(isinstance(value, Mapping) for value in report_markers):
+        return True
+    if report.get("exact_artifact_approval_required") is True:
+        return True
+    if canonical.get("exact_artifact_approval_required") is True:
+        return True
+    if approval.get("exact_artifact_approval_required") is True:
+        return True
+    if isinstance(approval.get("draft_artifact_identity"), Mapping):
+        return True
+    return any(
+        _text(approval.get(key))
+        for key in (
+            "approved_pdf_sha256",
+            "approved_json_sha256",
+            "evidence_manifest_sha256",
+            "artifact_manifest_id",
+        )
+    )
 
 
 def _approval_digest(
@@ -42,13 +86,19 @@ def _approval_digest(
 def install_full_assessment_delivery_digest_binding_v1() -> dict[str, Any]:
     from nico import final_review_workflow as workflow
     from nico import full_assessment_delivery as delivery
+    from nico.exact_artifact_review_compat_v1 import (
+        install_exact_artifact_review_compat_v1,
+    )
 
     current = delivery.build_approved_delivery_artifact
     if getattr(current, _MARKER, False):
+        review_compat = install_exact_artifact_review_compat_v1()
         return {
             "status": "already_installed",
             "version": VERSION,
             "approved_delivery_bound_to_three_digests": True,
+            "legacy_non_manifest_delivery_compatibility_preserved": True,
+            "exact_artifact_review_compat": review_compat,
         }
 
     @wraps(current)
@@ -58,6 +108,9 @@ def install_full_assessment_delivery_digest_binding_v1() -> dict[str, Any]:
         *,
         approved_at: str,
     ) -> dict[str, Any]:
+        if not _requires_exact_artifact_binding(report, approval):
+            return deepcopy(current(report, approval, approved_at=approved_at))
+
         identity = _draft_identity(report)
         required = {
             "pdf_sha256": _text(identity.get("pdf_sha256")),
@@ -156,12 +209,16 @@ def install_full_assessment_delivery_digest_binding_v1() -> dict[str, Any]:
     setattr(build_approved_delivery_artifact, "_nico_previous", current)
     delivery.build_approved_delivery_artifact = build_approved_delivery_artifact
     workflow.build_approved_delivery_artifact = build_approved_delivery_artifact
+    review_compat = install_exact_artifact_review_compat_v1()
     return {
         "status": "installed",
         "version": VERSION,
         "approved_delivery_bound_to_three_digests": True,
         "digest_mismatch_blocks_delivery": True,
         "regeneration_invalidates_approval": True,
+        "legacy_non_manifest_delivery_compatibility_preserved": True,
+        "manifest_aware_missing_identity_fails_closed": True,
+        "exact_artifact_review_compat": review_compat,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -169,5 +226,6 @@ def install_full_assessment_delivery_digest_binding_v1() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "_requires_exact_artifact_binding",
     "install_full_assessment_delivery_digest_binding_v1",
 ]
