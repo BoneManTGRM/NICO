@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
-MODEL = Path("apps/web/app/assessment/assessmentModel.ts")
+EVIDENCE = Path("apps/web/app/assessment/assessmentEvidence.ts")
 WORKSPACE = Path("apps/web/app/assessment/AssessmentWorkspace.tsx")
 
 
 def test_terminal_stage_evidence_is_bounded_before_react_rendering() -> None:
-    source = MODEL.read_text(encoding="utf-8")
+    source = EVIDENCE.read_text(encoding="utf-8")
 
     assert "BROWSER_EVIDENCE_KEY_LIMIT = 24" in source
     assert "BROWSER_ARRAY_PREVIEW_LIMIT = 8" in source
@@ -22,11 +22,11 @@ def test_terminal_stage_evidence_is_bounded_before_react_rendering() -> None:
 
 
 def test_workspace_never_stringifies_unbounded_stage_evidence() -> None:
-    model = MODEL.read_text(encoding="utf-8")
+    evidence = EVIDENCE.read_text(encoding="utf-8")
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
     assert "JSON.stringify(item.evidence, null, 2)" in workspace
-    assert "browserEvidencePreview(value.evidence)" in model
-    assert "compactBrowserValue" in model
-    assert "item_count" in model
-    assert "key_count" in model
+    assert "browserEvidencePreview(value.evidence)" in evidence
+    assert "compactBrowserValue" in evidence
+    assert "item_count" in evidence
+    assert "key_count" in evidence
