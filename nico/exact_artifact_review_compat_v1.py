@@ -4,10 +4,13 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.exact-artifact-review-compat.v1"
+VERSION = "nico.exact-artifact-review-compat.v1.1"
 _VALIDATION_MARKER = "__nico_exact_artifact_review_validation_compat_v1__"
 _REQUEST_MARKER = "__nico_exact_artifact_review_request_compat_v1__"
 _TRANSITION_MARKER = "__nico_exact_artifact_review_transition_compat_v1__"
+_ARTIFACT_VALIDATION_MARKER = "__nico_artifact_manifest_validation_v1__"
+_ARTIFACT_REQUEST_MARKER = "__nico_artifact_manifest_request_v1__"
+_ARTIFACT_TRANSITION_MARKER = "__nico_artifact_manifest_transition_v1__"
 
 
 def _text(value: Any) -> str:
@@ -86,6 +89,9 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
             return deepcopy(current_validation(approval))
 
         setattr(final_review_validation, _VALIDATION_MARKER, True)
+        # Preserve the artifact patch's public marker so repeated runtime installs
+        # do not wrap the compatibility boundary again.
+        setattr(final_review_validation, _ARTIFACT_VALIDATION_MARKER, True)
         setattr(final_review_validation, "_nico_previous", current_validation)
         setattr(final_review_validation, "_nico_legacy", legacy_validation)
         workflow.final_review_validation = final_review_validation
@@ -102,6 +108,7 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
             return deepcopy(current_request(payload))
 
         setattr(request_final_review, _REQUEST_MARKER, True)
+        setattr(request_final_review, _ARTIFACT_REQUEST_MARKER, True)
         setattr(request_final_review, "_nico_previous", current_request)
         setattr(request_final_review, "_nico_legacy", legacy_request)
         workflow.request_final_review = request_final_review
@@ -143,6 +150,7 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
             )
 
         setattr(transition_final_review, _TRANSITION_MARKER, True)
+        setattr(transition_final_review, _ARTIFACT_TRANSITION_MARKER, True)
         setattr(transition_final_review, "_nico_previous", current_transition)
         setattr(transition_final_review, "_nico_legacy", legacy_transition)
         workflow.transition_final_review = transition_final_review
@@ -153,6 +161,7 @@ def install_exact_artifact_review_compat_v1() -> dict[str, Any]:
         "legacy_non_manifest_review_flow_preserved": True,
         "manifest_aware_review_requires_exact_identity": True,
         "manifest_aware_missing_identity_fails_closed": True,
+        "runtime_reentry_does_not_stack_review_wrappers": True,
         "reviewer_role_required_for_exact_artifact_approval": True,
         "reviewer_authorization_required_for_exact_artifact_approval": True,
         "human_review_required": True,
