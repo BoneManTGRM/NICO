@@ -13,8 +13,9 @@ LEGACY_SCRIPT = SCRIPTS / "two_service_live_acceptance.py"
 CANONICAL_SCRIPT = SCRIPTS / "two_service_live_acceptance_v3.py"
 PRODUCTION_SCRIPT = SCRIPTS / "unified_production_acceptance.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "two-service-production-acceptance.yml"
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
-MODEL = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentModel.ts"
+ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
+WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
+EVIDENCE = ASSESSMENT / "assessmentEvidence.ts"
 TERMINAL_CSS = ROOT / "apps" / "web" / "styles" / "assessment-terminal-mobile.css"
 
 
@@ -145,7 +146,7 @@ def test_production_acceptance_prefers_canonical_report_assessment() -> None:
 
 def test_terminal_mobile_workspace_surfaces_report_before_long_history() -> None:
     workspace = WORKSPACE.read_text(encoding="utf-8")
-    model = MODEL.read_text(encoding="utf-8")
+    evidence = EVIDENCE.read_text(encoding="utf-8")
     css = TERMINAL_CSS.read_text(encoding="utf-8")
     production = PRODUCTION_SCRIPT.read_text(encoding="utf-8")
 
@@ -155,8 +156,8 @@ def test_terminal_mobile_workspace_surfaces_report_before_long_history() -> None
     assert action_index < workspace.rindex("<Scorecard")
     assert history_index < workspace.rindex("<ProgressTimeline")
     assert 'data-assessment-report-ready={reportReady ? "true" : "false"}' in workspace
-    assert "canonicalReportAssessment" in model
-    assert "assessmentCompleteness" in model
+    assert "canonicalReportAssessment" in evidence
+    assert "assessmentCompleteness" in evidence
     assert 'overflow: visible !important' in css
     assert 'data-assessment-report-actions="true"' in css
     assert "canonical_assessment_payload" in production
