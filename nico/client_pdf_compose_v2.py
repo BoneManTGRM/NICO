@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.3"
+VERSION = "nico.client-pdf-compose.v3.4"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -76,13 +76,12 @@ def compose_compact_client_pdf(
     *,
     review_pdf: bytes | None = None,
 ) -> bytes:
-    """Retain the decision body and every generated client-review page.
+    """Retain one cover, the decision body, and every client-review page.
 
-    The review companion is compacted at its authoritative renderer. Composition
-    must not discard overflow pages that contain retained evidence or a human
-    decision worksheet. If the complete decision body, review companion, compact
-    register, and approval gate cannot fit within the client boundary, publication
-    fails closed instead of silently truncating the package.
+    The legacy premium body can contain its own title page after the branded cover
+    is applied. That second cover is not evidence and can introduce a second
+    generated timestamp, so it is removed here. Review pages are compacted at the
+    authoritative renderer and are never silently truncated.
     """
 
     if not base_pdf.startswith(b"%PDF"):
@@ -97,7 +96,7 @@ def compose_compact_client_pdf(
     gate = PdfReader(io.BytesIO(gate_pdf))
 
     retained: list[Any] = []
-    for page in base.pages:
+    for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
         if _page_heading(
             extracted,
@@ -120,9 +119,23 @@ def compose_compact_client_pdf(
             ),
         ):
             continue
+        if page_index > 0 and _page_heading(
+            extracted,
+            (
+                "comprehensive technical assessment",
+                "evaluacion tecnica integral",
+            ),
+        ):
+            # The branded cover is retained as page zero. A second legacy title
+            # page has no independent evidence and would create duplicate title,
+            # pagination, and generated-at facts.
+            continue
         if _finding_detail(extracted):
             continue
         retained.append(page)
+
+    if not retained:
+        raise ValueError("client-ready PDF composition removed every primary report page")
 
     register_and_gate_count = len(register.pages) + len(gate.pages)
     review_count = len(review.pages) if review is not None else 0
