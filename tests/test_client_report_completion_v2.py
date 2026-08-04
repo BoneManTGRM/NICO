@@ -15,6 +15,7 @@ from nico.client_report_completion_v2 import (
 
 
 SHA = "e" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def _base_pdf() -> bytes:
@@ -45,7 +46,9 @@ def _package() -> dict:
             "commit_sha": SHA,
             "run_id": "comprun_completion_v2",
             "evidence_ledger_id": "ledger_completion_v2",
+            "generated_at": GENERATED_AT,
         },
+        "generated_at": GENERATED_AT,
         "repository_evidence": {
             "file_evidence": {
                 "sampled_paths": [
@@ -136,7 +139,9 @@ def _package() -> dict:
             "report_contract_reason": "canonical_score_truth_mismatch",
         },
     }
-    markdown = """# NICO Comprehensive Technical Assessment
+    markdown = f"""# NICO Comprehensive Technical Assessment
+
+Generated: {GENERATED_AT}
 
 ## Detailed Canonical Findings
 
@@ -152,8 +157,9 @@ Client delivery remains blocked.
 """
     return {
         "json": canonical,
+        "generated_at": GENERATED_AT,
         "markdown": markdown,
-        "html": "<html><body>legacy</body></html>",
+        "html": f"<html><body><p>Generated: {GENERATED_AT}</p>legacy</body></html>",
         "pdf_base64": base64.b64encode(_base_pdf()).decode("ascii"),
         "premium_report_renderer": {},
         "phase17_artifact_rebuild": {},
@@ -207,6 +213,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert result["client_report_completion"]["duplicate_full_page_finding_cards_absent"] is True
     assert result["client_report_completion"]["raw_stage_dump_excluded_from_client_pdf"] is True
     assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["json"]["identity"]["generated_at"] == GENERATED_AT
     assert result["report_finality"] == "automated_draft"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
