@@ -9,8 +9,8 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.2"
-CORE_REVIEW_COMPANION_PAGES = 24
+VERSION = "nico.client-pdf-compose.v3.3"
+CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
     "functional qa",
@@ -76,14 +76,13 @@ def compose_compact_client_pdf(
     *,
     review_pdf: bytes | None = None,
 ) -> bytes:
-    """Retain the decision body and append bounded client-review artifacts.
+    """Retain the decision body and every generated client-review page.
 
-    The first 24 review-companion pages contain the evidence posture,
-    limitations, and human-decision worksheet for every restored Comprehensive
-    section. Later companion pages are action-planning worksheets and may be
-    omitted only when a larger legacy/premium base would otherwise exceed the
-    45-page client boundary. This keeps all eight review sections while avoiding
-    a false failure caused by a harmless difference in base-renderer pagination.
+    The review companion is compacted at its authoritative renderer. Composition
+    must not discard overflow pages that contain retained evidence or a human
+    decision worksheet. If the complete decision body, review companion, compact
+    register, and approval gate cannot fit within the client boundary, publication
+    fails closed instead of silently truncating the package.
     """
 
     if not base_pdf.startswith(b"%PDF"):
@@ -127,15 +126,12 @@ def compose_compact_client_pdf(
 
     register_and_gate_count = len(register.pages) + len(gate.pages)
     review_count = len(review.pages) if review is not None else 0
-    core_review_count = min(CORE_REVIEW_COMPANION_PAGES, review_count)
+    required_review_count = review_count
 
-    # If an unusually long legacy base competes with the decision-review core,
-    # keep the cover/decision body only up to the space that preserves all core
-    # review pages and the compact register/gate.
     if review is not None:
         max_retained = max(
             0,
-            MAX_CLIENT_PDF_PAGES - register_and_gate_count - core_review_count,
+            MAX_CLIENT_PDF_PAGES - register_and_gate_count - required_review_count,
         )
         retained = retained[:max_retained]
 
@@ -148,9 +144,9 @@ def compose_compact_client_pdf(
         if review is not None
         else []
     )
-    if review is not None and len(selected_review_pages) < core_review_count:
+    if review is not None and len(selected_review_pages) != required_review_count:
         raise ValueError(
-            "client-ready PDF cannot preserve the complete Comprehensive review core "
+            "client-ready PDF cannot preserve the complete Comprehensive review companion "
             f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
         )
 
