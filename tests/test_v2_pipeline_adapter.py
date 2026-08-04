@@ -4,6 +4,7 @@ from nico.v2_pipeline_adapter import apply_v2_pipeline
 
 
 SHA = "a" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def test_adapter_rebuilds_one_truth_and_review_state():
@@ -25,10 +26,17 @@ def test_adapter_rebuilds_one_truth_and_review_state():
             "record": {"status": "failed"},
             "report_package": {
                 "json": {
-                    "identity": {"repository": "BoneManTGRM/NICO", "commit_sha": SHA, "run_id": "run-v2"},
+                    "identity": {
+                        "repository": "BoneManTGRM/NICO",
+                        "commit_sha": SHA,
+                        "run_id": "run-v2",
+                        "generated_at": GENERATED_AT,
+                    },
+                    "generated_at": GENERATED_AT,
                     "assessment": {"technical_score": 82, "canonical_evidence_adjusted_score": 81, "sections": []},
                     "findings_register": [duplicate, prioritized],
                 },
+                "generated_at": GENERATED_AT,
                 "pdf_filename": "nico-report-FINAL-PENDING-APPROVAL.pdf",
             },
         }
@@ -41,5 +49,6 @@ def test_adapter_rebuilds_one_truth_and_review_state():
     assert package["canonical_truth_sha256"] == package["markdown_canonical_sha256"]
     assert package["canonical_truth_sha256"] == package["pdf_canonical_sha256"]
     assert package["canonical_truth_sha256"] == package["ui_canonical_sha256"]
+    assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert package["pdf_base64"]
     assert package["markdown"]
