@@ -50,20 +50,24 @@ def _package() -> dict:
     }
 
 
-def test_cover_uses_three_truthful_readiness_states_without_redesign() -> None:
+def test_cover_uses_truthful_readiness_states_without_redesign() -> None:
     install_dark_branded_cover_readiness_v4()
     result = apply_dark_branded_cover(_package())
     pdf = base64.b64decode(result["pdf_base64"])
     extracted = PdfReader(io.BytesIO(pdf)).pages[0].extract_text() or ""
     normalized = " ".join(extracted.split())
+    lowered = normalized.casefold()
 
-    assert "HUMAN APPROVAL" in extracted
+    assert "HUMAN REVIEW" in extracted
     assert "Pending" in extracted
-    assert "REVIEW PACKAGE" in extracted
-    assert "Ready" in extracted
+    assert "evidence-bound technical review package" in lowered
+    assert "CLIENT DELIVERY" in extracted
+    assert "Blocked" in extracted
     assert "CLIENT-READY" not in extracted
-    assert "Client delivery remains blocked until explicit approval" in normalized
-    assert "six-month roadmap framework pending stakeholder validation" in normalized
+    assert "Client delivery remains blocked until explicit authorized human approval" in normalized
+    assert "six-month roadmap framework pending stakeholder validation" in lowered
+    assert "completed an authorized" not in lowered
+    assert "generated an automated Comprehensive Technical Assessment draft" in normalized
     assert "NICO COMPREHENSIVE" in extracted
     assert "TECHNICAL MATURITY" in extracted
     assert "EVIDENCE-ADJUSTED" in extracted
