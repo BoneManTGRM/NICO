@@ -6,6 +6,9 @@ from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
 
+GENERATED_AT = "2026-08-04T16:15:00Z"
+
+
 def _finding(finding_id: str, *, enriched: bool) -> dict:
     result = {
         "finding_id": finding_id,
@@ -45,7 +48,9 @@ def _result() -> dict:
             "repository": "BoneManTGRM/NICO",
             "commit_sha": "a" * 40,
             "run_id": "comprun_phase17",
+            "generated_at": GENERATED_AT,
         },
+        "generated_at": GENERATED_AT,
         "assessment": {
             "technical_score": 83,
             "canonical_evidence_adjusted_score": 81,
@@ -73,6 +78,7 @@ def _result() -> dict:
         "record": {"status": "failed"},
         "report_package": {
             "json": canonical,
+            "generated_at": GENERATED_AT,
             "pdf_filename": "nico-report-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf",
             "pdf_base64": base64.b64encode(b"%PDF-1.4 stale duplicate artifact").decode("ascii"),
             "markdown": "stale duplicate artifact",
@@ -98,6 +104,7 @@ def test_phase17_renders_repaired_canonical_truth_not_stale_artifacts() -> None:
     assert package["phase17_artifact_rebuild"]["rebuilt_from_repaired_canonical_truth"] is True
     assert package["phase9_release_gate"]["artifacts_rebuilt_after_canonical_repair"] is True
     assert package["pdf_filename"] == f"nico-report-{APPROVAL_SUFFIX}.pdf"
+    assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert package["report_finality"] == "automated_draft"
     assert package["approval_status"] == "pending_human_approval"
     assert package["client_delivery_allowed"] is False
