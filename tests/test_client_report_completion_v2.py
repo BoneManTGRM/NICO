@@ -29,7 +29,7 @@ def _base_pdf() -> bytes:
             Paragraph(f"Generated: {GENERATED_AT}", styles["BodyText"]),
             Paragraph("Technical maturity: 78/100", styles["BodyText"]),
             Paragraph("Evidence-adjusted readiness: 78/100", styles["BodyText"]),
-            Paragraph("0 client-review section(s) remain limited", styles["BodyText"]),
+            Paragraph("7 client-review section(s) remain limited", styles["BodyText"]),
             Paragraph("Executive decision report", styles["BodyText"]),
             PageBreak(),
             Paragraph("Executive Risk Register and Decision Briefing", styles["Heading1"]),
@@ -181,7 +181,7 @@ Exact commit: {SHA}
 Generated: {GENERATED_AT}
 Technical maturity: 78/100
 Evidence-adjusted readiness: 78/100
-0 client-review section(s) remain limited
+7 client-review section(s) remain limited
 
 ## Detailed Canonical Findings
 
@@ -206,7 +206,7 @@ Client delivery remains blocked.
             f"<p>Generated: {GENERATED_AT}</p>"
             "<p>Technical maturity: 78/100</p>"
             "<p>Evidence-adjusted readiness: 78/100</p>"
-            "<p>0 client-review section(s) remain limited</p>legacy"
+            "<p>7 client-review section(s) remain limited</p>legacy"
             "</body></html>"
         ),
         "pdf_base64": base64.b64encode(_base_pdf()).decode("ascii"),
