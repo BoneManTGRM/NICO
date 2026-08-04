@@ -10,6 +10,9 @@ from nico.client_finding_remediation_register_v5 import (
     build_finding_remediation_register,
     synchronize_canonical_finding_surfaces,
 )
+from nico.comprehensive_artifact_filename_truth_v1 import (
+    install_comprehensive_artifact_filename_truth_v1,
+)
 from nico.comprehensive_client_ready_projection_v1 import APPROVAL_SUFFIX
 from nico.phase15_production_integration_v1 import integrate_production_truth
 from nico.phase16_client_delivery_verification_v1 import repair_client_delivery_package
@@ -17,7 +20,8 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v7.2"
+VERSION = "nico.v2.comprehensive.finalizer.v7.3"
+_ARTIFACT_FILENAME_TRUTH = install_comprehensive_artifact_filename_truth_v1()
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -266,6 +270,7 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "all_mirrored_finding_surfaces_synchronized": True,
         "automated_draft_is_default_unapproved_state": True,
         "complete_exact_artifact_idempotence": True,
+        "artifact_filename_truth_version": _ARTIFACT_FILENAME_TRUTH.get("version"),
     }
     return normalized
 
