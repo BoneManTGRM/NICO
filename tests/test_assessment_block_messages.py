@@ -18,7 +18,12 @@ ASSESSMENT_DIR = ROOT / "apps" / "web" / "app" / "assessment"
 def frontend_source() -> str:
     return "\n".join(
         (ASSESSMENT_DIR / name).read_text(encoding="utf-8")
-        for name in ("AssessmentWorkspace.tsx", "assessmentModel.ts", "useAssessmentRun.ts")
+        for name in (
+            "AssessmentWorkspace.tsx",
+            "assessmentModel.ts",
+            "assessmentTransport.ts",
+            "useAssessmentRun.ts",
+        )
     )
 
 
