@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
@@ -14,7 +16,7 @@ from nico.v2_assessment_pipeline import canonicalize_findings as v2_canonicalize
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 from nico.v2_scanner_reconciliation import reconcile_scanner_records
 
-VERSION = "nico.v2.comprehensive.finalizer.v7"
+VERSION = "nico.v2.comprehensive.finalizer.v7.1"
 _FINDING_SURFACES = (
     "canonical_findings",
     "findings_register",
@@ -23,10 +25,116 @@ _FINDING_SURFACES = (
     "executive_risk_register",
     "priority_findings",
 )
+_EXACT_MANIFEST_SCHEMA = "nico.comprehensive-artifact-manifest.v1"
+_EXACT_IDENTITY_SCHEMA = "nico.comprehensive-draft-artifact-identity.v1"
+_REQUIRED_ARTIFACT_TYPES = {
+    "comprehensive_pdf",
+    "canonical_json",
+    "evidence_manifest_json",
+}
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _digest(value: Any) -> str:
+    candidate = _text(value).lower()
+    if len(candidate) != 64:
+        return ""
+    return candidate if all(character in "0123456789abcdef" for character in candidate) else ""
+
+
+def _already_finalized_exact_artifact_result(result: Mapping[str, Any]) -> bool:
+    """Recognize only a complete, internally consistent unapproved artifact package.
+
+    Re-running publication over an already finalized package appends the manifest
+    pages again and necessarily changes the PDF and manifest digests. Preserve the
+    exact immutable bytes only after verifying all three detached digest bindings
+    and the fail-closed Automated Draft lifecycle.
+    """
+
+    package = result.get("report_package")
+    if not isinstance(package, Mapping):
+        return False
+    canonical = package.get("json")
+    if not isinstance(canonical, Mapping):
+        return False
+    canonical_manifest = canonical.get("artifact_manifest")
+    detached_manifest = package.get("artifact_manifest")
+    identity = package.get("draft_artifact_identity")
+    completion = package.get("client_report_completion")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (canonical_manifest, detached_manifest, identity, completion)
+    ):
+        return False
+    if canonical_manifest.get("artifact_schema") != _EXACT_MANIFEST_SCHEMA:
+        return False
+    if detached_manifest.get("artifact_schema") != _EXACT_MANIFEST_SCHEMA:
+        return False
+    if identity.get("artifact_schema") != _EXACT_IDENTITY_SCHEMA:
+        return False
+
+    manifest_id = _text(canonical_manifest.get("manifest_id"))
+    if not manifest_id or manifest_id != _text(detached_manifest.get("manifest_id")):
+        return False
+    if manifest_id != _text(identity.get("manifest_id")):
+        return False
+
+    artifact_types = {
+        _text(item.get("artifact_type"))
+        for item in canonical_manifest.get("artifacts") or []
+        if isinstance(item, Mapping)
+    }
+    if not _REQUIRED_ARTIFACT_TYPES.issubset(artifact_types):
+        return False
+
+    if completion.get("artifact_manifest_present") is not True:
+        return False
+    if package.get("review_package_ready") is not True:
+        return False
+    if package.get("human_review_required") is not True:
+        return False
+    if package.get("client_delivery_allowed") is not False:
+        return False
+    if _text(package.get("report_finality")).lower() != "automated_draft":
+        return False
+    if "pending" not in _text(package.get("approval_status")).lower():
+        return False
+    if "blocked" not in _text(package.get("delivery_status")).lower():
+        return False
+
+    expected_pdf = _digest(identity.get("pdf_sha256"))
+    expected_json = _digest(identity.get("canonical_json_sha256"))
+    expected_manifest = _digest(identity.get("evidence_manifest_sha256"))
+    if not all((expected_pdf, expected_json, expected_manifest)):
+        return False
+    if _digest(package.get("pdf_sha256")) != expected_pdf:
+        return False
+    if _digest(package.get("canonical_json_sha256")) != expected_json:
+        return False
+    if _digest(package.get("evidence_manifest_sha256")) != expected_manifest:
+        return False
+
+    try:
+        pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
+    except Exception:
+        return False
+    if not pdf.startswith(b"%PDF") or _sha256(pdf) != expected_pdf:
+        return False
+
+    canonical_json = str(package.get("canonical_json") or "").encode("utf-8")
+    manifest_json = str(package.get("evidence_manifest_json") or "").encode("utf-8")
+    if not canonical_json or _sha256(canonical_json) != expected_json:
+        return False
+    if not manifest_json or _sha256(manifest_json) != expected_manifest:
+        return False
+    return True
 
 
 def canonicalize_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -165,6 +273,9 @@ def finalize_report_package(
     boundary as an automated draft; approved-final identity requires a separate,
     authorized review transition.
     """
+
+    if _already_finalized_exact_artifact_result(result):
+        return deepcopy(dict(result))
 
     finalized = deepcopy(dict(result))
     package = deepcopy(
