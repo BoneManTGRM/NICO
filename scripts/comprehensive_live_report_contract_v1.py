@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-live-report-contract.v4"
+VERSION = "nico.comprehensive-live-report-contract.v5"
 
 _EN_EVIDENCE_SUMMARIES = (
     "Evidence Package Summary",
@@ -51,8 +51,51 @@ _AUTHORIZED_FUTURE_STATE_GUIDANCE = (
         "and CLIENT DELIVERY AUTHORIZED."
     ),
     (
+        "Automation cannot change this package to APPROVED FINAL or "
+        "CLIENT DELIVERY AUTHORIZED."
+    ),
+    (
         "Solo un revisor autorizado puede cambiar el estado a FINAL APROBADO "
         "y ENTREGA AL CLIENTE AUTORIZADA."
+    ),
+    (
+        "La automatización no puede cambiar este paquete a FINAL APROBADO ni "
+        "ENTREGA AL CLIENTE AUTORIZADA."
+    ),
+)
+
+# PDF extraction may place page labels, footers, or line fragments inside an
+# authorized explanatory sentence. These patterns are deliberately bounded and
+# clause-anchored. They remove only the recognized future-state or negative-
+# automation guidance through its final authorization term; a later independent
+# current-state assertion remains visible to the fail-closed finality scan.
+_AUTHORIZED_GUIDANCE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\bonly an authorized reviewer\b.{0,900}?\bmay\b.{0,300}?\bchange\b"
+        r".{0,300}?\bstatus\b.{0,900}?\bapproved\b.{0,300}?\bfinal\b"
+        r".{0,900}?\band\b.{0,300}?\bclient\b.{0,300}?\bdelivery\b"
+        r".{0,300}?\bauthorized\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\bautomation cannot\b.{0,900}?\bchange\b.{0,300}?\bpackage\b"
+        r".{0,900}?\bapproved\b.{0,300}?\bfinal\b.{0,900}?\bor\b"
+        r".{0,300}?\bclient\b.{0,300}?\bdelivery\b.{0,300}?\bauthorized\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\bsolo un revisor autorizado\b.{0,900}?\bpuede\b.{0,300}?\bcambiar\b"
+        r".{0,300}?\bestado\b.{0,900}?\bfinal\b.{0,300}?\baprobado\b"
+        r".{0,900}?\by\b.{0,300}?\bentrega\b.{0,300}?\bal cliente\b"
+        r".{0,300}?\bautorizada\b",
+        re.DOTALL,
+    ),
+    re.compile(
+        r"\bla automatizaci[oó]n no puede\b.{0,900}?\bcambiar\b"
+        r".{0,300}?\beste paquete\b.{0,900}?\bfinal\b.{0,300}?\baprobado\b"
+        r".{0,900}?\bni\b.{0,300}?\bentrega\b.{0,300}?\bal cliente\b"
+        r".{0,300}?\bautorizada\b",
+        re.DOTALL,
     ),
 )
 
@@ -79,11 +122,13 @@ def _assert_marker(value: str, marker: str, *, surface: str) -> None:
 
 
 def _current_state_finality_scope(value: str) -> str:
-    """Remove only the approved explanatory sentence about a possible future state."""
+    """Remove only approved guidance about a possible later human state."""
 
     current = _normalized_surface_text(value)
     for guidance in _AUTHORIZED_FUTURE_STATE_GUIDANCE:
         current = current.replace(_normalized_surface_text(guidance), " ")
+    for pattern in _AUTHORIZED_GUIDANCE_PATTERNS:
+        current = pattern.sub(" ", current)
     return " ".join(current.split())
 
 
@@ -246,6 +291,8 @@ def validate_report(
             "canonical_incomplete_analyzer_count_verified": True,
             "retired_evidence_appendix_absent": True,
             "automated_draft_language_verified": True,
+            "authorized_future_guidance_scoped": True,
+            "negative_automation_guidance_scoped": True,
             "unapproved_finality_absent": True,
             "stale_draft_language_absent": True,
             "control_characters_absent": True,
