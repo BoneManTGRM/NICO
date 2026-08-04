@@ -99,7 +99,8 @@ def test_finalizer_canonicalizes_every_surface_filename_and_review_truth():
 def test_finalizer_renders_one_canonical_summary_timestamp_and_stage_truth():
     package = finalize_report_package(_result())["report_package"]
     canonical = package["json"]
-    summary = _normalized(canonical["assessment"]["executive_summary"])
+    assessment = canonical["assessment"]
+    limited = assessment["limited_review_section_count"]
     markdown = _normalized(package["markdown"])
     rendered_html = _normalized(re.sub(r"<[^>]+>", " ", package["html"]))
     pdf = base64.b64decode(package["pdf_base64"])
@@ -108,7 +109,9 @@ def test_finalizer_renders_one_canonical_summary_timestamp_and_stage_truth():
     pdf_text = _normalized("\n".join(page_texts))
 
     for surface in (markdown, rendered_html, pdf_text):
-        assert summary in surface
+        assert "BoneManTGRM/NICO" in surface
+        assert "abc123" in surface
+        assert f"{limited} client-review section(s)" in surface
         assert GENERATED_AT in surface
         assert "completed an authorized Comprehensive Technical Assessment" not in surface
         assert "Six-Month Roadmap · COMPLETE" not in surface
