@@ -204,7 +204,7 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
     assert "Bandit failed" not in result["markdown"]
     assert "Gitleaks missing" not in result["markdown"]
     assert "ESLint missing" not in result["markdown"]
-    assert "bandit: completed" in result["markdown"].casefold()
+    assert "bandit: state=completed" in result["markdown"].casefold()
     assert "trufflehog" in result["markdown"].casefold()
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
 
