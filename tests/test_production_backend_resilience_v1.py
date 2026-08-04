@@ -4,7 +4,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROXY = ROOT / "apps/web/app/api/nico/[...path]/route.ts"
-HOOK = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
+ASSESSMENT = ROOT / "apps/web/app/assessment"
+HOOK = ASSESSMENT / "useAssessmentRun.ts"
+REQUESTS = ASSESSMENT / "assessmentRunRequests.ts"
+IDENTITY = ASSESSMENT / "assessmentRunIdentity.ts"
 
 
 def test_proxy_retries_transient_backend_failures_and_cold_starts() -> None:
@@ -37,21 +40,24 @@ def test_proxy_supports_bounded_backend_configuration_fallbacks() -> None:
 
 
 def test_frontend_retries_and_recovers_existing_run_state() -> None:
-    source = HOOK.read_text(encoding="utf-8")
+    hook = HOOK.read_text(encoding="utf-8")
+    requests = REQUESTS.read_text(encoding="utf-8")
+    identity = IDENTITY.read_text(encoding="utf-8")
 
-    assert "async function requestWithRetry" in source
-    assert "const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000]" in source
-    assert "async function recoverRun" in source
-    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in source
-    assert "const recovered = await recoverRun(runId, {" in source
-    assert "return preserveRunIdentity(recovered" in source
-    assert "async function resumePersistedRun" in source
-    assert "const recovered = preserveRunIdentity(recoveredResponse" in source
-    assert "setResult(recovered)" in source
-    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
-    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
-    assert 'window.addEventListener("online", restoreAfterPageResume)' in source
-    assert "runStatusUnavailableMessage" in source
+    assert "export async function requestWithRetry" in requests
+    assert "const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000]" in requests
+    assert "async function recoverRun" in hook
+    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}`' in hook
+    assert "const recovered = await recoverRun(runId, {" in hook
+    assert "return preserveRunIdentity(recovered" in hook
+    assert "export function preserveRunIdentity" in identity
+    assert "async function resumePersistedRun" in hook
+    assert "const recovered = preserveRunIdentity(recoveredResponse" in hook
+    assert "setResult(recovered)" in hook
+    assert "await continueRun(recovered, scope, token, persisted.startedAt)" in hook
+    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in hook
+    assert 'window.addEventListener("online", restoreAfterPageResume)' in hook
+    assert "runStatusUnavailableMessage" in requests
 
 
 def test_retry_logic_does_not_bypass_authorization_or_proxy_allowlist() -> None:
