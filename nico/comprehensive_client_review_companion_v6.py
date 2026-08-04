@@ -4,16 +4,13 @@ import html
 import io
 import re
 from copy import deepcopy
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from pypdf import PdfReader
 
-from nico.comprehensive_client_review_companion_v5 import (
-    SECTION_COUNT,
-    substantive_review_sections,
-)
+from nico.comprehensive_client_review_companion_v5 import SECTION_COUNT
 
-VERSION = "nico.comprehensive-client-review-companion.v6"
+VERSION = "nico.comprehensive-client-review-companion.v6.1"
 COMPANION_PAGE_COUNT = SECTION_COUNT
 _MARKER = "__nico_comprehensive_review_companion_v6__"
 
@@ -23,17 +20,30 @@ def _text(value: Any, limit: int = 1000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _unique(values: Iterable[Any], *, limit: int) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = _text(raw, 430)
+        key = value.casefold()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        output.append(value)
+        if len(output) >= limit:
+            break
+    return output
+
+
 def merge_compact_substantive_review_markdown(
     markdown: str,
     canonical: Mapping[str, Any],
     *,
     spanish: bool,
 ) -> str:
-    from nico.comprehensive_client_review_companion_v5 import (
-        merge_substantive_review_markdown,
-    )
+    from nico import comprehensive_client_review_companion_v5 as v5
 
-    output = merge_substantive_review_markdown(
+    output = v5.merge_substantive_review_markdown(
         markdown,
         canonical,
         spanish=spanish,
@@ -51,12 +61,14 @@ def render_compact_substantive_review_pdf(
 ) -> bytes:
     """Render one decision-useful worksheet per Comprehensive review section.
 
-    The complete evidence remains in JSON and CSV. The PDF retains bounded
-    evidence, conclusions, limitations, requested input, and the human decision
-    record on one physical page per section. KeepInFrame fails compactly rather
-    than creating filler or overflow pages.
+    Complete evidence remains in JSON and CSV. The PDF retains bounded evidence,
+    conclusions, limitations, requested input, and the human decision record on
+    one physical page per section. The section provider is resolved at execution
+    time so the final canonical truth and bounded parity wording installed later
+    in the runtime chain are consumed by this renderer.
     """
 
+    from nico import comprehensive_client_review_companion_v5 as v5
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -71,7 +83,7 @@ def render_compact_substantive_review_pdf(
         TableStyle,
     )
 
-    sections = substantive_review_sections(canonical, spanish=spanish)
+    sections = v5.substantive_review_sections(canonical, spanish=spanish)
     if len(sections) != SECTION_COUNT:
         raise ValueError(
             f"Comprehensive review companion requires {SECTION_COUNT} sections, got {len(sections)}"
@@ -83,8 +95,8 @@ def render_compact_substantive_review_pdf(
         "NICOReviewV6Title",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=14.2,
-        leading=16.6,
+        fontSize=15.2,
+        leading=17.6,
         textColor=colors.HexColor("#0f172a"),
         spaceAfter=4,
     )
@@ -92,35 +104,35 @@ def render_compact_substantive_review_pdf(
         "NICOReviewV6Heading",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=7.7,
-        leading=9.1,
+        fontSize=8.5,
+        leading=10.1,
         textColor=colors.HexColor("#075985"),
-        spaceBefore=2.2,
-        spaceAfter=1.3,
+        spaceBefore=2.5,
+        spaceAfter=1.6,
     )
     body = ParagraphStyle(
         "NICOReviewV6Body",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=6.25,
-        leading=7.45,
+        fontSize=7.4,
+        leading=8.8,
         textColor=colors.HexColor("#334155"),
-        spaceAfter=1.3,
+        spaceAfter=1.5,
     )
     small = ParagraphStyle(
         "NICOReviewV6Small",
         parent=body,
-        fontSize=5.75,
-        leading=6.8,
+        fontSize=6.9,
+        leading=8.15,
         textColor=colors.HexColor("#475569"),
-        spaceAfter=1,
+        spaceAfter=1.15,
     )
     warning = ParagraphStyle(
         "NICOReviewV6Warning",
         parent=body,
         fontName="Helvetica-Bold",
-        fontSize=6.1,
-        leading=7.2,
+        fontSize=7.0,
+        leading=8.25,
         textColor=colors.HexColor("#92400e"),
         backColor=colors.HexColor("#fef3c7"),
         borderColor=colors.HexColor("#f59e0b"),
@@ -142,14 +154,9 @@ def render_compact_substantive_review_pdf(
     def p(value: Any, style: ParagraphStyle = body, limit: int = 700) -> Paragraph:
         return Paragraph(html.escape(_text(value, limit)), style)
 
-    page_labels: dict[int, int] = {
-        index: index for index in range(1, SECTION_COUNT + 1)
-    }
-
     def footer(canvas: Any, doc: Any) -> None:
-        section_number = page_labels.get(doc.page, 0)
         canvas.saveState()
-        canvas.setFont("Helvetica", 6.4)
+        canvas.setFont("Helvetica", 6.7)
         canvas.setFillColor(colors.HexColor("#64748b"))
         canvas.drawString(
             .48 * inch,
@@ -159,12 +166,25 @@ def render_compact_substantive_review_pdf(
         canvas.drawRightString(
             8.02 * inch,
             .31 * inch,
-            f"Section {section_number} of {SECTION_COUNT} | Page 1 of 1",
+            f"Section {doc.page} of {SECTION_COUNT} | Page 1 of 1",
         )
         canvas.restoreState()
 
     story: list[Any] = []
     for index, section in enumerate(sections, start=1):
+        evidence = _unique(section.get("evidence") or [], limit=4)
+        findings = _unique(section.get("findings") or [], limit=3)
+        can_conclude = _unique(section.get("can_conclude") or [], limit=3)
+        cannot_conclude = _unique(
+            [
+                *(section.get("cannot_conclude") or []),
+                *(section.get("limitations") or []),
+            ],
+            limit=4,
+        )
+        required_input = _unique(section.get("required_input") or [], limit=3)
+        questions = _unique(section.get("questions") or [], limit=3)
+
         content: list[Any] = [
             p(section["title"], title),
             p(
@@ -201,22 +221,36 @@ def render_compact_substantive_review_pdf(
                 p("Evidencia conservada" if spanish else "Retained evidence", heading),
             ]
         )
-        for item in section["evidence"][:4]:
-            content.append(p(f"- {item}", small, 430))
-        if section["findings"]:
-            content.append(p("Observaciones prioritarias" if spanish else "Priority observations", heading))
-            for item in section["findings"][:3]:
-                content.append(p(f"- {item}", small, 430))
+        if evidence:
+            content.extend(p(f"- {item}", small, 430) for item in evidence)
+        else:
+            content.append(
+                p(
+                    "- No se conservó evidencia estructurada adicional."
+                    if spanish
+                    else "- No additional structured evidence was retained.",
+                    small,
+                )
+            )
+        if findings:
+            content.append(
+                p("Observaciones prioritarias" if spanish else "Priority observations", heading)
+            )
+            content.extend(p(f"- {item}", small, 430) for item in findings)
 
-        left: list[Any] = [p("Puede concluirse" if spanish else "What can be concluded", heading)]
-        left.extend(p(f"- {item}", small, 430) for item in section["can_conclude"][:3])
-        left.append(p("No puede concluirse" if spanish else "What cannot be concluded", heading))
-        left.extend(p(f"- {item}", small, 430) for item in section["cannot_conclude"][:3])
-        for item in section["limitations"][:2]:
-            left.append(p(f"- {item}", small, 430))
+        left: list[Any] = [
+            p("Puede concluirse" if spanish else "What can be concluded", heading)
+        ]
+        left.extend(p(f"- {item}", small, 430) for item in can_conclude)
+        left.append(
+            p("No puede concluirse" if spanish else "What cannot be concluded", heading)
+        )
+        left.extend(p(f"- {item}", small, 430) for item in cannot_conclude)
 
-        right: list[Any] = [p("Insumos requeridos" if spanish else "Required client input", heading)]
-        right.extend(p(f"- {item}", small, 430) for item in section["required_input"][:3])
+        right: list[Any] = [
+            p("Insumos requeridos" if spanish else "Required client input", heading)
+        ]
+        right.extend(p(f"- {item}", small, 430) for item in required_input)
         right.extend(
             [
                 p("Decisión recomendada" if spanish else "Recommended decision", heading),
@@ -224,10 +258,13 @@ def render_compact_substantive_review_pdf(
                 p("Disposición del revisor" if spanish else "Reviewer disposition", heading),
             ]
         )
-        right.extend(p(f"[ ] {item}", small, 430) for item in section["questions"][:3])
+        right.extend(p(f"[ ] {item}", small, 430) for item in questions)
 
         columns = Table(
-            [[KeepInFrame(3.58 * inch, 3.55 * inch, left, mode="shrink"), KeepInFrame(3.58 * inch, 3.55 * inch, right, mode="shrink")]],
+            [[
+                KeepInFrame(3.58 * inch, 3.55 * inch, left, mode="shrink"),
+                KeepInFrame(3.58 * inch, 3.55 * inch, right, mode="shrink"),
+            ]],
             colWidths=[3.72 * inch, 3.72 * inch],
         )
         columns.setStyle(
@@ -330,6 +367,8 @@ def install_comprehensive_review_companion_v6() -> dict[str, Any]:
         "one_review_sheet_per_section": True,
         "complete_evidence_retained_in_structured_artifacts": True,
         "orphan_markdown_headings_removed": True,
+        "duplicate_limitation_lines_removed": True,
+        "minimum_authored_body_font_points": 6.9,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
