@@ -71,6 +71,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_client_truth_final_v1 import (
         install_comprehensive_client_truth_final_v1,
     )
+    from nico.comprehensive_client_truth_validation_compat_v1 import (
+        install_comprehensive_client_truth_validation_compat_v1,
+    )
     from nico.comprehensive_failure_diagnostics_v1 import (
         install_comprehensive_failure_diagnostics_v1,
     )
@@ -154,6 +157,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
     finding_priority_calibration = install_client_finding_priority_calibration_v1()
     client_truth_final = install_comprehensive_client_truth_final_v1()
+    client_truth_validation_compat = (
+        install_comprehensive_client_truth_validation_compat_v1()
+    )
     manifest_navigation = install_comprehensive_manifest_navigation_v1()
     artifact_manifest_approval = install_comprehensive_artifact_manifest_approval_v1()
     approved_delivery_digest_binding = (
@@ -169,6 +175,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "client_pdf_sanitizer": client_pdf_sanitizer,
         "finding_priority_calibration": finding_priority_calibration,
         "client_truth_final": client_truth_final,
+        "client_truth_validation_compat": client_truth_validation_compat,
         "manifest_navigation": manifest_navigation,
         "artifact_manifest_approval": artifact_manifest_approval,
         "approved_delivery_digest_binding": approved_delivery_digest_binding,
