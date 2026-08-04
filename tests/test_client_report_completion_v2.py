@@ -27,6 +27,8 @@ def _base_pdf() -> bytes:
             Paragraph("Repository: example/product", styles["BodyText"]),
             Paragraph(f"Exact commit: {SHA}", styles["BodyText"]),
             Paragraph(f"Generated: {GENERATED_AT}", styles["BodyText"]),
+            Paragraph("Technical maturity: 78/100", styles["BodyText"]),
+            Paragraph("Evidence-adjusted readiness: 78/100", styles["BodyText"]),
             Paragraph("Executive decision report", styles["BodyText"]),
             PageBreak(),
             Paragraph("Executive Risk Register and Decision Briefing", styles["Heading1"]),
@@ -176,6 +178,8 @@ def _package() -> dict:
 Repository: example/product
 Exact commit: {SHA}
 Generated: {GENERATED_AT}
+Technical maturity: 78/100
+Evidence-adjusted readiness: 78/100
 
 ## Detailed Canonical Findings
 
@@ -197,7 +201,9 @@ Client delivery remains blocked.
             "<html><body>"
             "<p>Repository: example/product</p>"
             f"<p>Exact commit: {SHA}</p>"
-            f"<p>Generated: {GENERATED_AT}</p>legacy"
+            f"<p>Generated: {GENERATED_AT}</p>"
+            "<p>Technical maturity: 78/100</p>"
+            "<p>Evidence-adjusted readiness: 78/100</p>legacy"
             "</body></html>"
         ),
         "pdf_base64": base64.b64encode(_base_pdf()).decode("ascii"),
