@@ -38,6 +38,9 @@ from nico.comprehensive_platform_parity_summary_v1 import (
 from nico.comprehensive_report_clarity_v1 import (
     install_comprehensive_report_clarity,
 )
+from nico.comprehensive_truth_diagnostics_v1 import (
+    install_comprehensive_truth_diagnostics_v1,
+)
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 from nico.scanner_evidence_contract_v2 import install_scanner_evidence_contract_v2
@@ -60,6 +63,7 @@ _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 _CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
+_TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
 _DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
 _PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
@@ -164,6 +168,7 @@ __all__ = [
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
     "_CANONICAL_CLIENT_TRUTH",
+    "_TRUTH_DIAGNOSTICS",
     "_DECISION_SUMMARY_TRUTH",
     "_PDF_NAVIGATION_TITLES",
     "_INCOMPLETE_ANALYZER_SUMMARY",
