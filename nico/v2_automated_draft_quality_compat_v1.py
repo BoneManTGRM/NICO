@@ -18,7 +18,7 @@ from nico.comprehensive_client_ready_projection_v1 import (
     apply_automated_draft_truth,
 )
 
-VERSION = "nico.v2.automated-draft-quality-compat.v1"
+VERSION = "nico.v2.automated-draft-quality-compat.v2"
 _MARKER = "__nico_automated_draft_quality_compat_v1__"
 
 _PDF_REPLACEMENTS: tuple[tuple[str, str], ...] = (
@@ -57,9 +57,18 @@ _PDF_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("AUTOMATED FINAL", "AUTOMATED DRAFT"),
     (" · FINAL Page", " · AUTOMATED DRAFT Page"),
     (" · FINAL Página", " · BORRADOR AUTOMATIZADO Página"),
-    ("The package is a final automated assessment pending human approval", "The package is an automated draft pending human approval"),
-    ("The report is a final automated assessment pending human approval.", "The report is an automated draft pending human approval."),
-    ("The automated assessment is complete only as a draft.", "The automated draft assessment is complete and pending human approval."),
+    (
+        "The package is a final automated assessment pending human approval",
+        "The package is an automated draft pending human approval",
+    ),
+    (
+        "The report is a final automated assessment pending human approval.",
+        "The report is an automated draft pending human approval.",
+    ),
+    (
+        "The automated assessment is complete only as a draft.",
+        "The automated draft assessment is complete and pending human approval.",
+    ),
 )
 
 _TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
@@ -67,6 +76,27 @@ _TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (
         "The package is a review-gated final: automated evidence and recommendations are not client approval or delivery authorization.",
         "The package is an automated draft pending human approval; automated evidence and recommendations are not client approval or delivery authorization.",
+    ),
+)
+
+# These sentences describe a possible later human-authorized state. They are not
+# assertions about the current automated package. Removal is exact and narrow so a
+# second current-state assertion in the same PDF remains detectable.
+_AUTHORIZED_FUTURE_STATE_GUIDANCE: tuple[str, ...] = (
+    (
+        "Only an authorized reviewer may change the status to APPROVED FINAL "
+        "and CLIENT DELIVERY AUTHORIZED."
+    ),
+    (
+        "Solo un revisor autorizado puede cambiar el estado a FINAL APROBADO "
+        "y ENTREGA AL CLIENTE AUTORIZADA."
+    ),
+    (
+        "Automation cannot change this package to APPROVED FINAL or CLIENT DELIVERY AUTHORIZED."
+    ),
+    (
+        "La automatización no puede cambiar este paquete a FINAL APROBADO ni "
+        "ENTREGA AL CLIENTE AUTORIZADA."
     ),
 )
 
@@ -96,16 +126,27 @@ def _contains_legacy_bare_draft(value: str) -> bool:
     )
 
 
+def _current_state_finality_scope(value: str) -> str:
+    """Remove only exact explanatory sentences about a possible future state."""
+
+    current = _semantic(value)
+    for guidance in _AUTHORIZED_FUTURE_STATE_GUIDANCE:
+        current = current.replace(_semantic(guidance), " ")
+    return " ".join(current.split())
+
+
 def _contains_unapproved_finality(value: str) -> bool:
-    normalized = _semantic(value)
+    current_state = _current_state_finality_scope(value)
     return any(
-        marker in normalized
+        marker in current_state
         for marker in (
             "final report",
             "informe final",
             "automated final",
             "final aprobado",
             "approved final",
+            "client delivery authorized",
+            "entrega al cliente autorizada",
         )
     )
 
@@ -182,7 +223,11 @@ def _validate_review_pdf(
     ):
         raise ValueError("review PDF omitted automated-draft pending-approval semantics")
 
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
     for required in (_text(identity.get("run_id")), _text(identity.get("commit_sha"))):
         if required and required not in extracted:
             raise ValueError(f"review PDF omitted required identity text: {required}")
@@ -219,6 +264,7 @@ def install_automated_draft_quality_compat() -> dict[str, Any]:
             "version": VERSION,
             "bound": True,
             "automated_draft_is_valid_unapproved_state": True,
+            "future_approval_guidance_is_not_current_finality": True,
             "legacy_bare_draft_remains_blocked": True,
             "unapproved_finality_remains_blocked": True,
             "human_review_required": True,
@@ -244,7 +290,9 @@ def install_automated_draft_quality_compat() -> dict[str, Any]:
         "english_runtime_compat_bound": True,
         "spanish_runtime_compat_bound": True,
         "automated_draft_is_valid_unapproved_state": True,
+        "future_approval_guidance_is_not_current_finality": True,
         "legacy_bare_draft_remains_blocked": True,
+        "legacy_bare_draft_language_absent": True,
         "unapproved_finality_remains_blocked": True,
         "scorecard_and_identity_validation_preserved": True,
         "human_review_required": True,
@@ -259,11 +307,15 @@ def _project_result(value: Mapping[str, Any]) -> dict[str, Any]:
     )
     markdown = _normalize_review_text(
         str(result.get("markdown") or ""),
-        spanish=_semantic(canonical.get("report_language") or canonical.get("locale")).startswith("es"),
+        spanish=_semantic(
+            canonical.get("report_language") or canonical.get("locale")
+        ).startswith("es"),
     )
     rendered_html = _normalize_review_text(
         str(result.get("html") or ""),
-        spanish=_semantic(canonical.get("report_language") or canonical.get("locale")).startswith("es"),
+        spanish=_semantic(
+            canonical.get("report_language") or canonical.get("locale")
+        ).startswith("es"),
     )
     result.update(
         {
@@ -285,6 +337,8 @@ def _project_result(value: Mapping[str, Any]) -> dict[str, Any]:
         {
             "automated_draft_quality_compat_version": VERSION,
             "automated_draft_is_valid_unapproved_state": True,
+            "future_approval_guidance_is_not_current_finality": True,
+            "legacy_bare_draft_remains_blocked": True,
             "legacy_bare_draft_language_absent": True,
             "unapproved_finality_language_absent": True,
             "human_review_required": True,
@@ -313,6 +367,8 @@ def repair_localized_rendered_report(package: Mapping[str, Any]) -> dict[str, An
 
 __all__ = [
     "VERSION",
+    "_contains_unapproved_finality",
+    "_current_state_finality_scope",
     "install_automated_draft_quality_compat",
     "repair_localized_rendered_report",
     "repair_rendered_report",
