@@ -51,8 +51,8 @@ def test_review_companion_uses_one_readable_sheet_per_section() -> None:
     for section, page in zip(expected, pages, strict=True):
         assert section["title"] in page
         assert "Retained evidence" in page
-        assert "Retained limitations" in page
-        assert "Reviewer decisions" in page
+        assert "What cannot be concluded" in page
+        assert "Reviewer disposition" in page
         assert "Decision record" in page
         assert "CLIENT DELIVERY BLOCKED" in page
 
