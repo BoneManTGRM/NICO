@@ -6,17 +6,16 @@ from typing import Any, Mapping
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.v2.dark-branded-cover-readiness.v4.1"
+VERSION = "nico.v2.dark-branded-cover-readiness.v4.2"
 _MARKER = "__nico_dark_cover_readiness_v4__"
 
 _TEXT_REPLACEMENTS = {
-    "INTERNAL REVIEW": "HUMAN APPROVAL",
-    "REVISIÓN INTERNA": "APROBACIÓN HUMANA",
+    "INTERNAL REVIEW": "HUMAN REVIEW",
+    "REVISIÓN INTERNA": "REVISIÓN HUMANA",
     "Required": "Pending",
     "Obligatoria": "Pendiente",
     "CLIENT-READY": "REVIEW PACKAGE",
     "LISTO PARA CLIENTE": "PAQUETE DE REVISIÓN",
-    "No": "Ready",
 }
 
 
@@ -35,16 +34,18 @@ def _truthful_executive_posture(
     repository = _text(identity.get("repository"))
     if spanish:
         return (
-            f"NICO completó una evaluación técnica integral autorizada para {repository}. "
+            f"NICO generó un borrador automatizado de evaluación técnica integral para {repository}. "
             f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
-            "El paquete combina salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
-            "un marco de hoja de ruta de seis meses pendiente de validación y exportaciones estructuradas para revisión humana."
+            "El paquete conserva salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
+            "un marco de hoja de ruta de seis meses pendiente de validación y exportaciones estructuradas para revisión humana; "
+            "no constituye aprobación ni autorización de entrega."
         )
     return (
-        f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
+        f"NICO generated an automated Comprehensive Technical Assessment draft for {repository}. "
         f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
-        "The package combines repository health, exact-location findings, architecture evidence, "
-        "a six-month roadmap framework pending stakeholder validation, and structured exports for human review."
+        "The evidence-bound package retains repository health, exact-location findings, architecture evidence, "
+        "a six-month roadmap framework pending stakeholder validation, and structured exports for human review; "
+        "it is not approval or client-delivery authorization."
     )
 
 
