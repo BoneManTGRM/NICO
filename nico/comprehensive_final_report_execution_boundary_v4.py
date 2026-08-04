@@ -8,7 +8,11 @@ import threading
 import time
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v4"
+from nico.comprehensive_final_report_compact_base_v1 import (
+    install_comprehensive_final_report_compact_base_v1,
+)
+
+VERSION = "nico.comprehensive_final_report_execution_boundary.v5"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 240
 _IDENTITY_FIELDS = ("run_id", "repository", "commit_sha", "evidence_ledger_id")
@@ -189,6 +193,7 @@ def execute_final_report_stage(
         "elapsed_seconds": elapsed,
         "detached_background_execution": False,
         "full_context_deepcopy_skipped": True,
+        "compact_intermediate_pdf_projection_installed": True,
     }
     if kind == "timeout":
         return _blocked(
@@ -275,6 +280,9 @@ def execute_final_report_stage(
     )
     output["evidence"] = {**dict(retained), **evidence}
     return output
+
+
+install_comprehensive_final_report_compact_base_v1()
 
 
 __all__ = [
