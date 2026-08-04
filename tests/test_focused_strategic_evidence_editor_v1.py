@@ -4,19 +4,22 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTROLLER = ROOT / "apps" / "web" / "app" / "assessment" / "useAssessmentRun.ts"
-WORKSPACE = ROOT / "apps" / "web" / "app" / "assessment" / "AssessmentWorkspace.tsx"
-EVIDENCE_FORM = ROOT / "apps" / "web" / "app" / "assessment" / "StrategicEvidenceForm.tsx"
-EVIDENCE_STYLE = ROOT / "apps" / "web" / "app" / "assessment" / "strategicEvidence.module.css"
+ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
+CONTROLLER = ASSESSMENT / "useAssessmentRun.ts"
+REQUESTS = ASSESSMENT / "assessmentRunRequests.ts"
+WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
+EVIDENCE_FORM = ASSESSMENT / "StrategicEvidenceForm.tsx"
+EVIDENCE_STYLE = ASSESSMENT / "strategicEvidence.module.css"
 
 
 def test_preflight_block_is_one_typed_unavailable_state_without_a_false_run() -> None:
     controller = CONTROLLER.read_text(encoding="utf-8")
+    requests = REQUESTS.read_text(encoding="utf-8")
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
-    assert "export type AssessmentRunIssue" in controller
-    assert 'kind: "configuration_blocked"' in controller
-    assert '"comprehensive_sqlite_persistent_volume_required"' in controller
+    assert "export type AssessmentRunIssue" in requests
+    assert 'kind: "configuration_blocked"' in requests
+    assert '"comprehensive_sqlite_persistent_volume_required"' in requests
     assert "await verifyRuntimePersistence()" in controller
     assert controller.index("await verifyRuntimePersistence()") < controller.index('"/assessment/comprehensive-intake"')
     assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in controller
