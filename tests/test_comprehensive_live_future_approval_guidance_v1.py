@@ -46,6 +46,65 @@ def test_exact_spanish_future_state_guidance_is_not_current_finality() -> None:
     )
 
 
+def test_negative_automation_guidance_is_not_current_finality() -> None:
+    contract = _module()
+
+    contract._assert_no_unapproved_finality(
+        "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED\n"
+        "Automation cannot change this package to APPROVED FINAL or "
+        "CLIENT DELIVERY AUTHORIZED.",
+        surface="PDF",
+    )
+    contract._assert_no_unapproved_finality(
+        "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · "
+        "ENTREGA AL CLIENTE BLOQUEADA\n"
+        "La automatización no puede cambiar este paquete a FINAL APROBADO ni "
+        "ENTREGA AL CLIENTE AUTORIZADA.",
+        surface="PDF",
+    )
+
+
+def test_exact_live_pdf_guidance_pair_is_accepted() -> None:
+    contract = _module()
+
+    contract._assert_no_unapproved_finality(
+        "\n".join(
+            (
+                "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
+                "Only an authorized reviewer may change the status to APPROVED FINAL "
+                "and CLIENT DELIVERY AUTHORIZED.",
+                "NICO | exact-artifact review package | automated draft",
+                "Automation cannot change this package to APPROVED FINAL or "
+                "CLIENT DELIVERY AUTHORIZED.",
+            )
+        ),
+        surface="PDF",
+    )
+
+
+def test_bounded_pdf_layout_noise_inside_guidance_is_accepted() -> None:
+    contract = _module()
+
+    contract._assert_no_unapproved_finality(
+        "\n".join(
+            (
+                "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
+                "Only an authorized reviewer",
+                "NICO | Page 21 | automated draft",
+                "may change the status to APPROVED",
+                "Human Review and Acceptance Gate",
+                "FINAL and CLIENT DELIVERY AUTHORIZED.",
+                "Automation cannot",
+                "NICO | exact-artifact review package | automated draft",
+                "change this package to APPROVED FINAL or CLIENT",
+                "Integrity 2",
+                "DELIVERY AUTHORIZED.",
+            )
+        ),
+        surface="PDF",
+    )
+
+
 def test_standalone_approved_final_status_remains_blocked() -> None:
     contract = _module()
 
@@ -63,7 +122,24 @@ def test_guidance_does_not_hide_a_second_current_final_status() -> None:
         contract._assert_no_unapproved_finality(
             "Only an authorized reviewer may change the status to APPROVED FINAL "
             "and CLIENT DELIVERY AUTHORIZED.\n"
+            "Automation cannot change this package to APPROVED FINAL or "
+            "CLIENT DELIVERY AUTHORIZED.\n"
             "Current status: APPROVED FINAL",
+            surface="PDF",
+        )
+
+
+def test_negative_guidance_does_not_hide_delivery_authorization() -> None:
+    contract = _module()
+
+    with pytest.raises(
+        AssertionError,
+        match="unapproved finality: CLIENT DELIVERY AUTHORIZED",
+    ):
+        contract._assert_no_unapproved_finality(
+            "Automation cannot change this package to APPROVED FINAL or "
+            "CLIENT DELIVERY AUTHORIZED.\n"
+            "Current status: CLIENT DELIVERY AUTHORIZED",
             surface="PDF",
         )
 
@@ -84,4 +160,6 @@ def test_standalone_delivery_authorization_remains_blocked() -> None:
 def test_contract_version_records_future_guidance_boundary() -> None:
     contract = _module()
 
-    assert contract.VERSION == "nico.comprehensive-live-report-contract.v4"
+    assert contract.VERSION == "nico.comprehensive-live-report-contract.v5"
+    assert len(contract._AUTHORIZED_FUTURE_STATE_GUIDANCE) == 4
+    assert len(contract._AUTHORIZED_GUIDANCE_PATTERNS) == 4
