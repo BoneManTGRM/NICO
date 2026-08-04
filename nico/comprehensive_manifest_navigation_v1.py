@@ -10,9 +10,10 @@ from typing import Any, Mapping
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 from reportlab.lib.pagesizes import letter
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
-VERSION = "nico.comprehensive-manifest-navigation.v1.1"
+VERSION = "nico.comprehensive-manifest-navigation.v1.2"
 _MARKER = "__nico_comprehensive_manifest_navigation_v1__"
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
@@ -158,28 +159,97 @@ def _outline_title(text: str) -> str:
     return "Report page"
 
 
+def _fit_title(value: str, *, max_width: float, font_name: str, font_size: float) -> str:
+    title = _text(value, 120)
+    if stringWidth(title, font_name, font_size) <= max_width:
+        return title
+    while title and stringWidth(title + "...", font_name, font_size) > max_width:
+        title = title[:-1]
+    return title.rstrip() + "..."
+
+
+def _toc_page(entries: list[tuple[str, int]], total_pages: int) -> bytes:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.setTitle("NICO Table of Contents")
+    pdf.setAuthor("NICO")
+    pdf.setFillColorRGB(0.06, 0.09, 0.16)
+    pdf.setFont("Helvetica-Bold", 20)
+    pdf.drawString(48, 744, "Table of Contents")
+    pdf.setFillColorRGB(0.57, 0.25, 0.04)
+    pdf.setFont("Helvetica-Bold", 7)
+    pdf.drawString(
+        48,
+        722,
+        "AUTOMATED DRAFT | PENDING HUMAN APPROVAL | CLIENT DELIVERY BLOCKED",
+    )
+    pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
+    pdf.line(48, 710, 564, 710)
+    pdf.setFillColorRGB(0.20, 0.25, 0.33)
+    y = 690
+    for title, page_number in entries[:32]:
+        fitted = _fit_title(title, max_width=445, font_name="Helvetica", font_size=8.2)
+        pdf.setFont("Helvetica", 8.2)
+        pdf.drawString(54, y, fitted)
+        pdf.setFont("Helvetica-Bold", 8.2)
+        pdf.drawRightString(558, y, str(page_number))
+        y -= 18
+    if len(entries) > 32:
+        pdf.setFont("Helvetica-Oblique", 7.2)
+        pdf.drawString(54, y, "Additional navigation entries are retained as PDF bookmarks.")
+    pdf.setFont("Helvetica", 7)
+    pdf.setFillColorRGB(0.39, 0.45, 0.55)
+    pdf.drawString(48, 36, "NICO | evidence-bound technical review package")
+    pdf.drawRightString(564, 36, f"{total_pages} physical pages")
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
 def _renumber_and_outline(pdf: bytes) -> bytes:
     reader = PdfReader(io.BytesIO(pdf))
+    if not reader.pages:
+        raise ValueError("final Comprehensive PDF contains no pages")
+
+    original_titles = [_outline_title(page.extract_text() or "") for page in reader.pages]
+    used: set[str] = set()
+    toc_entries: list[tuple[str, int]] = []
+    for original_index, title in enumerate(original_titles[1:], start=1):
+        key = title.casefold()
+        if not title or title == "Report page" or key in used:
+            continue
+        used.add(key)
+        toc_entries.append((title, original_index + 2))
+
+    total = len(reader.pages) + 1
+    toc = PdfReader(io.BytesIO(_toc_page(toc_entries, total))).pages[0]
     writer = PdfWriter()
-    total = len(reader.pages)
-    titles: list[str] = []
-    for index, source in enumerate(reader.pages, start=1):
+    source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True), (toc, False)]
+    source_pages.extend((page, True) for page in reader.pages[1:])
+
+    for index, (source, rewrite_labels) in enumerate(source_pages, start=1):
         writer.add_page(source)
         page = writer.pages[-1]
-        _rewrite_local_page_labels(page, writer)
+        if rewrite_labels:
+            _rewrite_local_page_labels(page, writer)
         overlay = PdfReader(io.BytesIO(_page_overlay(index, total))).pages[0]
         page.merge_page(overlay, over=True)
-        titles.append(_outline_title(source.extract_text() or ""))
-    used: set[str] = set()
-    for index, title in enumerate(titles):
+
+    try:
+        writer.add_outline_item("Table of Contents", 1)
+    except Exception:
+        pass
+    used.clear()
+    for original_index, title in enumerate(original_titles[1:], start=1):
         key = title.casefold()
-        if key in used:
+        if not title or title == "Report page" or key in used:
             continue
         used.add(key)
         try:
-            writer.add_outline_item(title, index)
+            writer.add_outline_item(title, original_index + 1)
         except Exception:
             pass
+
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -208,10 +278,6 @@ def _validation_artifacts(
     output = [deepcopy(dict(item)) for item in artifacts]
     if strict:
         return output
-    # Historical tests created before the ledger/timestamp contract intentionally
-    # exercise artifact generation with a partial identity. Use explicit sentinels
-    # only in the validation copy. Real packages with a complete identity remain
-    # fail-closed and the retained artifacts are never mutated here.
     for item in output:
         item.setdefault("repository", "legacy-fixture-not-supplied")
         item.setdefault("commit_sha", "legacy-fixture-not-supplied")
@@ -263,6 +329,8 @@ def _validate_final_package(result: Mapping[str, Any]) -> None:
     for index in range(1, len(reader.pages) + 1):
         if f"Document page {index} of {len(reader.pages)}" not in extracted:
             raise ValueError("final PDF does not retain continuous physical page labels")
+    if "Table of Contents" not in extracted:
+        raise ValueError("final PDF does not retain a table of contents")
     if not reader.outline:
         raise ValueError("final PDF does not retain navigation bookmarks")
 
@@ -357,6 +425,7 @@ def install_comprehensive_manifest_navigation_v1() -> dict[str, Any]:
                     "manifest_navigation_version": VERSION,
                     "markdown_and_html_in_manifest": True,
                     "continuous_physical_page_labels": True,
+                    "table_of_contents_present": True,
                     "pdf_bookmarks_present": True,
                 }
             )
@@ -373,6 +442,7 @@ def install_comprehensive_manifest_navigation_v1() -> dict[str, Any]:
         "markdown_and_html_in_manifest": True,
         "artifact_metadata_complete": True,
         "continuous_physical_page_labels": True,
+        "table_of_contents_present": True,
         "pdf_bookmarks_present": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
