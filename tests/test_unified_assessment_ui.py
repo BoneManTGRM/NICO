@@ -7,6 +7,9 @@ ASSESSMENT = ROOT / "apps" / "web" / "app" / "assessment"
 WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
 HOOK = ASSESSMENT / "useAssessmentRun.ts"
 MODEL = ASSESSMENT / "assessmentModel.ts"
+EVIDENCE = ASSESSMENT / "assessmentEvidence.ts"
+STATUS = ASSESSMENT / "assessmentStatus.ts"
+TRANSPORT = ASSESSMENT / "assessmentTransport.ts"
 COPY = ASSESSMENT / "assessmentCopy.ts"
 TYPES = ASSESSMENT / "assessmentTypes.ts"
 STYLES = ASSESSMENT / "assessment.module.css"
@@ -21,7 +24,19 @@ def workspace_source() -> str:
 
 
 def assessment_source() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in (WORKSPACE, HOOK, MODEL, COPY, TYPES))
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            WORKSPACE,
+            HOOK,
+            MODEL,
+            EVIDENCE,
+            STATUS,
+            TRANSPORT,
+            COPY,
+            TYPES,
+        )
+    )
 
 
 def test_public_intake_has_one_canonical_assessment() -> None:
@@ -106,7 +121,7 @@ def test_normal_assessment_flow_has_no_manual_status_approval_or_delivery_button
 def test_autonomous_flow_stops_at_internal_review_without_approval_or_delivery_mutation() -> None:
     source = assessment_source()
 
-    assert 'value === "review_required"' in source or 'value === "review_required"' in MODEL.read_text(encoding="utf-8")
+    assert 'value === "review_required"' in source
     assert "Technical analysis and report preparation are complete. The engagement is awaiting internal technical review." in source
     assert "An authorized NICO reviewer must approve this exact evidence-bound edition before it becomes client-ready" in source
     assert "data-assessment-internal-review" in source
