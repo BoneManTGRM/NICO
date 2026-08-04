@@ -12,7 +12,7 @@ from nico.comprehensive_client_ready_projection_v1 import (
     clean_finding_title,
 )
 
-VERSION = "nico.v2.dark-branded-cover.v3"
+VERSION = "nico.v2.dark-branded-cover.v3.1"
 
 
 def _text(value: Any) -> str:
@@ -45,16 +45,16 @@ def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: s
     repository = _text(identity.get("repository"))
     if spanish:
         return (
-            f"NICO completó una evaluación técnica integral autorizada para {repository}. "
+            f"NICO generó un borrador automatizado de evaluación técnica integral para {repository}. "
             f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
-            "El paquete combina salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
-            "una hoja de ruta de seis meses y exportaciones estructuradas para revisión humana."
+            "El paquete conserva salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
+            "un marco de hoja de ruta y exportaciones estructuradas para revisión humana; no constituye aprobación ni autorización de entrega."
         )
     return (
-        f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
+        f"NICO generated an automated Comprehensive Technical Assessment draft for {repository}. "
         f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
-        "The package combines repository health, exact-location findings, architecture evidence, "
-        "a six-month roadmap, and structured exports for human review."
+        "The evidence-bound package retains repository health, exact-location findings, architecture evidence, "
+        "a roadmap framework, and structured exports for human review; it is not approval or client-delivery authorization."
     )
 
 
@@ -100,13 +100,19 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.drawString(left, height - 88, "NICO COMPREHENSIVE")
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 11)
-    pdf.drawString(left, height - 108, "Decision-Grade Technical Assessment" if not spanish else "Evaluación técnica para decisiones")
+    pdf.drawString(
+        left,
+        height - 108,
+        "Evidence-Bound Technical Review Package"
+        if not spanish
+        else "Paquete técnico basado en evidencia para revisión",
+    )
 
     labels = [
         ("TECHNICAL MATURITY" if not spanish else "MADUREZ TÉCNICA", technical, cyan),
         ("EVIDENCE-ADJUSTED" if not spanish else "AJUSTE POR EVIDENCIA", adjusted, teal),
-        ("INTERNAL REVIEW" if not spanish else "REVISIÓN INTERNA", "Required" if not spanish else "Obligatoria", colors.HexColor("#f5a623")),
-        ("CLIENT-READY" if not spanish else "LISTO PARA CLIENTE", "No", colors.HexColor("#d95df5")),
+        ("HUMAN REVIEW" if not spanish else "REVISIÓN HUMANA", "Pending" if not spanish else "Pendiente", colors.HexColor("#f5a623")),
+        ("CLIENT DELIVERY" if not spanish else "ENTREGA AL CLIENTE", "Blocked" if not spanish else "Bloqueada", colors.HexColor("#d95df5")),
     ]
     gap = 9
     card_w = (width - 84 - gap * 3) / 4
@@ -166,7 +172,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.roundRect(left, box_y, width - 84, 132, 10, fill=1, stroke=1)
     pdf.setFillColor(cyan)
     pdf.setFont("Helvetica-Bold", 6.5)
-    pdf.drawString(left + 14, box_y + 111, "PRIORITY DECISIONS" if not spanish else "DECISIONES PRIORITARIAS")
+    pdf.drawString(left + 14, box_y + 111, "PRIORITY REVIEW ITEMS" if not spanish else "ELEMENTOS PRIORITARIOS PARA REVISIÓN")
     for index, title in enumerate(priorities[:3], start=1):
         cy = box_y + 82 - (index - 1) * 28
         pdf.setFillColor(teal)
@@ -184,13 +190,13 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.drawString(left, 75, boundary[:115])
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 6.2)
-    pdf.drawString(left, 60, "READ-ONLY · IMMUTABLE SNAPSHOT · INTERNAL REVIEW REQUIRED")
+    pdf.drawString(left, 60, "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED")
     pdf.setFillColor(cyan)
     pdf.setFont("Helvetica-Bold", 6.2)
     pdf.drawRightString(width - left, 60, "POWERED BY REPARODYNAMICS")
     pdf.setFillColor(colors.HexColor("#f0a23a"))
     pdf.setFont("Helvetica", 6.2)
-    pdf.drawString(left, 45, "Client delivery remains blocked until explicit approval")
+    pdf.drawString(left, 45, "Client delivery remains blocked until explicit authorized human approval")
     pdf.setFillColor(muted)
     pdf.drawRightString(width - left, 45, "Page 1")
 
@@ -224,6 +230,8 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
         "golden_cover_layout_restored": True,
         "canonical_score_sheet_removed": True,
         "automated_draft_boundary_visible": True,
+        "authorized_automation_claims_absent": True,
+        "decision_grade_claim_absent": True,
     })
     page_count = len(writer.pages)
     result.update({
