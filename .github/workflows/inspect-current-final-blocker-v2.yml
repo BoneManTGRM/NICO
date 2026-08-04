@@ -13,6 +13,71 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Check out exact deployed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 96de8556466ccc51e5a7c8a88dc3844d305d9adc
+          fetch-depth: 1
+
+      - name: Retain source context for publication blocker
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results/final-blocker-v2
+          {
+            grep -RIn --exclude-dir=.git --exclude='*.map' \
+              -E 'unapproved review PDF|final-delivery language|FINAL REPORT|APPROVED FINAL|CLIENT DELIVERY AUTHORIZED' \
+              nico tests scripts apps .github || true
+          } > audit-results/final-blocker-v2/source-matches.txt
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path('.')
+          output = Path('audit-results/final-blocker-v2/source-context.json')
+          patterns = [
+              re.compile(r'unapproved review PDF', re.I),
+              re.compile(r'final-delivery language', re.I),
+              re.compile(r'APPROVED FINAL', re.I),
+              re.compile(r'CLIENT DELIVERY AUTHORIZED', re.I),
+          ]
+          matches = []
+          for top in ('nico', 'tests', 'scripts', 'apps', '.github'):
+              base = root / top
+              if not base.exists():
+                  continue
+              for path in base.rglob('*'):
+                  if not path.is_file() or '.git' in path.parts:
+                      continue
+                  try:
+                      text = path.read_text(encoding='utf-8')
+                  except Exception:
+                      continue
+                  lines = text.splitlines()
+                  for number, line in enumerate(lines, start=1):
+                      if not any(pattern.search(line) for pattern in patterns):
+                          continue
+                      start = max(1, number - 20)
+                      end = min(len(lines), number + 20)
+                      matches.append({
+                          'path': str(path),
+                          'line': number,
+                          'context_start': start,
+                          'context_end': end,
+                          'context': '\n'.join(
+                              f'{index}: {lines[index - 1]}'
+                              for index in range(start, end + 1)
+                          ),
+                      })
+          output.write_text(
+              json.dumps(matches, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(matches, indent=2, sort_keys=True))
+          PY
+
       - name: Inspect exact preserved run records
         env:
           ORIGIN: https://app.nicoaudit.com
