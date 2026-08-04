@@ -174,7 +174,10 @@ def test_detailed_duplicate_expansion_preserves_source_evidence_quality() -> Non
         == "Exact source payload retained for duplicate candidates."
         for item in records
     )
-    assert all("raw candidate payload was unavailable" not in item["evidence"] for item in records)
+    assert all(
+        "raw candidate payload was unavailable" not in item["evidence"]
+        for item in records
+    )
     assert expanded["totals"] == source["totals"]
     assert expanded["candidate_evidence_quality_totals_recomputed"] == source["totals"]
     assert expanded["candidate_evidence_quality_totals_match_source"] is True
@@ -223,11 +226,14 @@ def test_candidate_identity_population_mismatch_fails_closed() -> None:
     register["totals"]["raw"] = 18
 
     expanded = expand_candidate_identities(register)
+    discrepancies = {
+        item["reason"]: item for item in expanded["discrepancies"]
+    }
 
     assert expanded["status"] == "blocked"
     assert expanded["count_parity_verified"] is False
     assert expanded["candidate_record_count_matches_raw"] is False
-    assert expanded["discrepancies"][-1] == {
+    assert discrepancies["candidate_identity_population_mismatch"] == {
         "reason": "candidate_identity_population_mismatch",
         "raw_total": 18,
         "candidate_record_count": 17,
