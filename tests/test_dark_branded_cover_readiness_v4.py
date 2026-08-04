@@ -55,14 +55,15 @@ def test_cover_uses_three_truthful_readiness_states_without_redesign() -> None:
     result = apply_dark_branded_cover(_package())
     pdf = base64.b64decode(result["pdf_base64"])
     extracted = PdfReader(io.BytesIO(pdf)).pages[0].extract_text() or ""
+    normalized = " ".join(extracted.split())
 
     assert "HUMAN APPROVAL" in extracted
     assert "Pending" in extracted
     assert "REVIEW PACKAGE" in extracted
     assert "Ready" in extracted
     assert "CLIENT-READY" not in extracted
-    assert "Client delivery remains blocked until explicit approval" in extracted
-    assert "six-month roadmap framework pending stakeholder validation" in extracted
+    assert "Client delivery remains blocked until explicit approval" in normalized
+    assert "six-month roadmap framework pending stakeholder validation" in normalized
     assert "NICO COMPREHENSIVE" in extracted
     assert "TECHNICAL MATURITY" in extracted
     assert "EVIDENCE-ADJUSTED" in extracted
