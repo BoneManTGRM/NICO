@@ -133,14 +133,20 @@ def test_manifest_includes_all_client_artifacts_and_metadata() -> None:
         assert item["generated_at"] == "2026-08-04T15:22:00Z"
 
 
-def test_final_pdf_has_continuous_physical_labels_and_bookmarks() -> None:
+def test_final_pdf_has_toc_continuous_physical_labels_and_bookmarks() -> None:
     result = attach_artifact_manifest(_package())
     pdf = base64.b64decode(result["pdf_base64"])
     reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    pages = [page.extract_text() or "" for page in reader.pages]
+    extracted = "\n".join(pages)
 
+    assert len(reader.pages) == 5
     assert reader.outline
+    assert "Table of Contents" in pages[1]
+    assert "Functional QA" in pages[1]
+    assert "3" in pages[1]
     for index in range(1, len(reader.pages) + 1):
         assert f"Document page {index} of {len(reader.pages)}" in extracted
     assert "Section 1 of 8 | Sheet 1 of 2" in extracted
     assert "Page 1" not in extracted
+    assert result["client_report_completion"]["table_of_contents_present"] is True
