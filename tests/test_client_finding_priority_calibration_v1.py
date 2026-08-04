@@ -119,8 +119,8 @@ def test_register_distribution_and_top_order_are_deterministic() -> None:
     assert [item["finding_id"] for item in records] == [
         "OPERATIONS-52",
         "FINAL-REVIEW-40",
-        "GENERIC-35",
         "DELIVERY-31",
+        "GENERIC-35",
     ]
     assert summary["priority_distribution"] == {
         "P0": 0,
