@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-client-truth-canonical.v2.1"
+VERSION = "nico.comprehensive-client-truth-canonical.v2.2"
 _NORMALIZE_MARKER = "__nico_comprehensive_client_truth_canonical_v2__"
 _VALIDATE_MARKER = "__nico_comprehensive_client_truth_validation_v2__"
 _POSTURE_MARKER = "__nico_comprehensive_cover_posture_v2__"
@@ -20,6 +20,16 @@ _GENERATED_LABEL = re.compile(
     r"(20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)",
     re.IGNORECASE,
 )
+_LIMITED_STATUSES = {
+    "blocked",
+    "failed",
+    "unavailable",
+    "timed_out",
+    "review_required",
+    "limited",
+    "framework_only",
+    "not_assessed",
+}
 
 
 def _text(value: Any, limit: int = 12000) -> str:
@@ -126,6 +136,77 @@ def _validate_generated_labels(
         raise ValueError(f"{surface_name} omitted the canonical generated_at value")
 
 
+def _limited_count(assessment: Mapping[str, Any], stages: list[Mapping[str, Any]]) -> int:
+    value = assessment.get("limited_review_section_count")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return sum(
+        _text(stage.get("status"), 80).casefold() in _LIMITED_STATUSES
+        or bool(stage.get("unavailable"))
+        for stage in stages
+    )
+
+
+def _numeric_score(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        return max(0, min(100, int(round(value))))
+    return None
+
+
+def _validate_decision_facts(
+    canonical: Mapping[str, Any],
+    assessment: Mapping[str, Any],
+    surfaces: Mapping[str, str],
+) -> None:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    repository = _text(identity.get("repository"), 300)
+    commit = _text(identity.get("commit_sha"), 100)
+    if not repository or not commit:
+        raise ValueError("canonical Comprehensive identity is incomplete")
+
+    stages = [
+        stage for stage in canonical.get("stage_summaries") or [] if isinstance(stage, Mapping)
+    ]
+    limited = _limited_count(assessment, stages)
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or identity.get("report_language")
+        or "en",
+        20,
+    ).casefold()
+    maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
+    technical = _numeric_score(
+        assessment.get("technical_score"),
+        maturity.get("technical_score"),
+        maturity.get("presented_score"),
+        maturity.get("score"),
+    )
+    adjusted = _numeric_score(
+        assessment.get("canonical_evidence_adjusted_score"),
+        assessment.get("evidence_adjusted_score"),
+        maturity.get("canonical_evidence_adjusted_score"),
+        maturity.get("evidence_adjusted_score"),
+    )
+
+    for name, value in surfaces.items():
+        if repository not in value or commit not in value:
+            raise ValueError(f"{name} omitted canonical repository or exact commit identity")
+        if technical is not None and f"{technical}/100" not in value:
+            raise ValueError(f"{name} omitted the canonical technical score")
+        if adjusted is not None and f"{adjusted}/100" not in value:
+            raise ValueError(f"{name} omitted the canonical evidence-adjusted score")
+        if language.startswith("es"):
+            if str(limited) not in value:
+                raise ValueError(f"{name} omitted the canonical limited-review count")
+        elif f"{limited} client-review section(s)" not in value:
+            raise ValueError(
+                f"{name} does not render the canonical limited-review count {limited}"
+            )
+
+
 def _validate_final_cross_format_truth(package: Mapping[str, Any]) -> None:
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
@@ -147,20 +228,10 @@ def _validate_final_cross_format_truth(package: Mapping[str, Any]) -> None:
     _validate_generated_labels(
         "HTML", surfaces["HTML"], generated_at, label_required=True
     )
-    # The branded cover displays the immutable value in the repository identity
-    # card; the detached-manifest supplement later adds an explicit Generated row.
     _validate_generated_labels(
         "PDF", surfaces["PDF"], generated_at, label_required=False
     )
-
-    summary = _text(assessment.get("executive_summary"), 12000)
-    if not summary:
-        raise ValueError("canonical executive summary is missing")
-    for name, value in surfaces.items():
-        if summary not in value:
-            raise ValueError(
-                f"{name} does not render the exact canonical executive summary"
-            )
+    _validate_decision_facts(canonical, assessment, surfaces)
 
     combined = "\n".join(surfaces.values())
     forbidden = (
@@ -249,7 +320,8 @@ def install_comprehensive_client_truth_canonical_v2() -> dict[str, Any]:
         "version": VERSION,
         "canonical_truth_precedes_rendering": True,
         "generated_at_equal_across_formats": True,
-        "executive_summary_equal_across_formats": True,
+        "decision_facts_equal_across_formats": True,
+        "canonical_limitation_count_equal_across_formats": True,
         "roadmap_status_is_framework_only": True,
         "executive_briefing_requires_human_disposition": True,
         "punctuation_only_stage_evidence_removed": True,
