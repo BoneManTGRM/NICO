@@ -5,6 +5,9 @@ import base64
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
 
+GENERATED_AT = "2026-08-04T16:15:00Z"
+
+
 def _result():
     duplicate = {
         "finding_id": "ARCH-1",
@@ -22,13 +25,23 @@ def _result():
     return {
         "report_package": {
             "json": {
-                "identity": {"repository": "BoneManTGRM/NICO", "commit_sha": "abc123", "run_id": "run-1"},
+                "identity": {
+                    "repository": "BoneManTGRM/NICO",
+                    "commit_sha": "abc123",
+                    "run_id": "run-1",
+                    "customer_id": "customer-phase9",
+                    "project_id": "project-phase9",
+                    "evidence_ledger_id": "ledger-phase9",
+                    "generated_at": GENERATED_AT,
+                },
+                "generated_at": GENERATED_AT,
                 "findings_register": [duplicate, dict(duplicate)],
                 "executive_findings": [{"finding_id": "ARCH-1", "title": "High-complexity code hotspot"}],
                 "roadmap": [{"work_packages": [{"finding_id": "ARCH-1", "title": "High-complexity code hotspot"}]}],
                 "backlog": [{"finding_id": "ARCH-1", "title": "High-complexity code hotspot"}],
                 "assessment": {"executive_summary": "Production assessment completed."},
             },
+            "generated_at": GENERATED_AT,
             "pdf_filename": "nico-report-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf",
             "spanish_pdf_filename": "nico-report-es-FINAL-PENDING-APPROVAL-FINAL-PENDING-APPROVAL.pdf",
             "pdf_base64": base64.b64encode(b"%PDF-1.4 proof").decode("ascii"),
@@ -47,6 +60,7 @@ def test_finalizer_canonicalizes_every_surface_filename_and_review_truth():
     assert canonical["executive_findings"][0]["title"] == finding["title"]
     assert canonical["roadmap"][0]["work_packages"][0]["title"] == finding["title"]
     assert canonical["backlog"][0]["title"] == finding["title"]
+    assert canonical["identity"]["generated_at"] == GENERATED_AT
     assert package["pdf_filename"] == "nico-report-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
     assert package["spanish_pdf_filename"] == "nico-report-es-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
     assert package["report_finality"] == "automated_draft"
