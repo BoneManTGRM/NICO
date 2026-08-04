@@ -18,6 +18,13 @@ from nico.comprehensive_platform_parity_summary_v1 import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+EN_BOUNDED = (
+    "Repository indicator review complete; runtime platform parity not assessed."
+)
+ES_BOUNDED = (
+    "Revisión de indicadores del repositorio completa; "
+    "paridad de plataforma en ejecución no evaluada."
+)
 
 
 def _pdf() -> bytes:
@@ -54,22 +61,25 @@ def test_platform_parity_status_is_repository_only_when_stage_completed() -> Non
     canonical = _complete_canonical()
 
     assert canonical_platform_parity_status(canonical) == "complete_repository_only"
-    assert canonical_platform_parity_line(canonical, spanish=False) == (
-        "Platform Parity: Complete (repository evidence only); "
-        "human-context validation: Not assessed - human input required"
+    assert canonical_platform_parity_line(canonical, spanish=False) == EN_BOUNDED
+    assert "Platform Parity: Complete" not in canonical_platform_parity_line(
+        canonical,
+        spanish=False,
     )
 
 
 def test_unassessed_platform_parity_never_implies_completion() -> None:
     canonical = {"human_evidence_status": "not_assessed"}
+    line = canonical_platform_parity_line(canonical, spanish=False)
 
     assert canonical_platform_parity_status(canonical) == "not_assessed"
-    assert canonical_platform_parity_line(canonical, spanish=False) == (
-        "Platform Parity: Not assessed - human input required"
-    )
+    assert "Repository indicator review not established" in line
+    assert "runtime platform parity not assessed" in line
+    assert "human input required" in line
+    assert "Platform Parity: Complete" not in line
 
 
-def test_pdf_overlay_retains_layout_page_count_and_canonical_marker() -> None:
+def test_pdf_overlay_retains_layout_page_count_and_bounded_runtime_wording() -> None:
     original = _pdf()
     rendered = overlay_platform_parity_summary(
         original,
@@ -81,11 +91,12 @@ def test_pdf_overlay_retains_layout_page_count_and_canonical_marker() -> None:
         PdfReader(io.BytesIO(original)).pages
     )
     extracted = _extracted(rendered)
-    assert "Platform Parity: Complete (repository evidence only)" in extracted
-    assert "Not assessed - human input required" in extracted
+    assert EN_BOUNDED in extracted
+    assert "Platform Parity: Complete" not in extracted
+    assert "runtime platform parity not assessed" in extracted
 
 
-def test_spanish_pdf_keeps_localized_and_canonical_labels() -> None:
+def test_spanish_pdf_keeps_bounded_localized_runtime_wording() -> None:
     rendered = overlay_platform_parity_summary(
         _pdf(),
         _complete_canonical(),
@@ -93,8 +104,9 @@ def test_spanish_pdf_keeps_localized_and_canonical_labels() -> None:
     )
     extracted = _extracted(rendered)
 
-    assert "Paridad de plataforma: Completo" in extracted
-    assert "Platform Parity: Complete (repository evidence only)" in extracted
+    assert ES_BOUNDED in extracted
+    assert "Paridad de plataforma: Completo" not in extracted
+    assert "Platform Parity: Complete" not in extracted
 
 
 def test_installer_binds_projection_and_completion_pdf_aliases() -> None:
@@ -102,6 +114,11 @@ def test_installer_binds_projection_and_completion_pdf_aliases() -> None:
 
     assert state["pdf_bound"] is True
     assert state["completion_pdf_alias_bound"] is True
+    assert state["repository_indicator_review_can_be_complete"] is True
+    assert state["runtime_platform_parity_assessed"] is False
+    assert state["device_feature_permission_localization_parity_validated"] is False
+    assert state["prohibited_platform_complete_claim_absent"] is True
+    assert state["client_delivery_allowed"] is False
     assert (
         completion.render_evidence_review_gate_pdf
         is projection.render_evidence_review_gate_pdf
