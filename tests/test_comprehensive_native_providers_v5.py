@@ -164,13 +164,18 @@ def test_canonical_register_normalizes_exact_source_and_deduplicates() -> None:
     assert register["status"] == "complete"
     assert register["count_parity_verified"] is True
     assert register["totals"]["raw"] == 2
-    assert len(register["findings"]) == 1
-    record = register["findings"][0]
-    assert record["source_path"] == "apps/web/app/page.tsx"
-    assert record["line"] == 44
-    assert record["occurrence_count"] == 2
-    assert record["source_record_count"] == 2
-    assert record["finding_id"].startswith("NICO-SCAN-")
+    # The source payload is deduplicated into one aggregate fingerprint, then
+    # expanded into two stable auditable candidate identities.
+    assert len(register["findings"]) == 2
+    assert len({record["finding_id"] for record in register["findings"]}) == 2
+    assert len({record["duplicate_group_id"] for record in register["findings"]}) == 1
+    for record in register["findings"]:
+        assert record["source_path"] == "apps/web/app/page.tsx"
+        assert record["line"] == 44
+        assert record["occurrence_count"] == 1
+        assert record["aggregate_occurrence_count"] == 2
+        assert record["source_record_count"] == 2
+        assert record["finding_id"].startswith("NICO-CANDIDATE-")
 
 
 def test_missing_raw_payload_is_explicit_count_only_evidence() -> None:
