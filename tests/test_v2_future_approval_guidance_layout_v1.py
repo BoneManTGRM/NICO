@@ -46,16 +46,20 @@ def test_english_future_guidance_allows_bounded_pdf_layout_noise() -> None:
             EN_BOUNDARY,
             "Only an authorized reviewer",
             "NICO | exact-artifact review package | automated draft | Page 2",
-            "may change the status to APPROVED FINAL",
-            "Section footer retained between extracted text fragments",
-            "and CLIENT DELIVERY AUTHORIZED.",
+            "may change",
+            "Section footer inserted inside the source clause",
+            "the status to APPROVED",
+            "NICO page marker inserted between finality tokens",
+            "FINAL and CLIENT",
+            "another bounded footer fragment",
+            "DELIVERY AUTHORIZED.",
         )
     )
 
     assert _contains_unapproved_finality(value) is False
     scoped = _remove_bounded_future_guidance(value)
-    assert "approved final" not in scoped
-    assert "client delivery authorized" not in scoped
+    assert "approved" not in scoped
+    assert "delivery authorized" not in scoped
 
 
 def test_negative_automation_guidance_allows_bounded_layout_noise() -> None:
@@ -65,9 +69,13 @@ def test_negative_automation_guidance_allows_bounded_layout_noise() -> None:
             EN_BOUNDARY,
             "Automation cannot",
             "NICO footer Page 3",
-            "change this package to APPROVED FINAL",
+            "change this",
+            "layout marker",
+            "package to APPROVED",
             "AUTOMATED DRAFT footer",
-            "or CLIENT DELIVERY AUTHORIZED.",
+            "FINAL or CLIENT",
+            "page marker",
+            "DELIVERY AUTHORIZED.",
         )
     )
 
@@ -81,9 +89,13 @@ def test_spanish_future_guidance_allows_bounded_layout_noise() -> None:
             ES_BOUNDARY,
             "Solo un revisor autorizado puede",
             "NICO | paquete de revisión | Página 2",
-            "cambiar el estado a FINAL APROBADO",
+            "cambiar el",
             "pie de página intercalado",
-            "y ENTREGA AL CLIENTE AUTORIZADA.",
+            "estado a FINAL",
+            "otro marcador",
+            "APROBADO y ENTREGA",
+            "marcador entre palabras",
+            "AL CLIENTE AUTORIZADA.",
         )
     )
 
@@ -133,9 +145,13 @@ def test_pdf_validator_accepts_layout_noise_but_rejects_second_finality() -> Non
         COMMIT,
         "Only an authorized reviewer",
         "NICO | exact-artifact review package | automated draft | Page 2",
-        "may change the status to APPROVED FINAL",
-        "Section footer retained between extracted text fragments",
-        "and CLIENT DELIVERY AUTHORIZED.",
+        "may change",
+        "Section footer inserted inside the source clause",
+        "the status to APPROVED",
+        "NICO page marker inserted between finality tokens",
+        "FINAL and CLIENT",
+        "another bounded footer fragment",
+        "DELIVERY AUTHORIZED.",
     )
     _validate_review_pdf(
         accepted,
@@ -176,6 +192,9 @@ def test_compact_final_report_bootstrap_installs_layout_contract() -> None:
     assert result["bounded_future_guidance_layout_supported"] is True
     assert result["current_finality_gate_preserved"] is True
     assert result["future_approval_guidance_layout"]["version"] == VERSION
+    assert result["future_approval_guidance_layout"][
+        "token_level_layout_noise_supported"
+    ] is True
     assert result["future_approval_guidance_layout"][
         "second_current_state_assertion_remains_blocked"
     ] is True
