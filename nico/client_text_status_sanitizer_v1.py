@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "nico.client-text-status-sanitizer.v1.1"
+VERSION = "nico.client-text-status-sanitizer.v1.2"
 
 _REPLACEMENTS = (
     ("a final automated assessment", "an automated draft assessment"),
@@ -15,6 +15,14 @@ _REPLACEMENTS = (
     ("FINAL REPORT — PENDING HUMAN APPROVAL", "AUTOMATED DRAFT — PENDING HUMAN APPROVAL"),
     ("AUTOMATED FINAL", "AUTOMATED DRAFT"),
     ("INFORME FINAL PENDIENTE DE APROBACIÓN", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN"),
+    (
+        "NICO completed an authorized Comprehensive Technical Assessment for ",
+        "NICO generated an automated Comprehensive Technical Assessment draft for ",
+    ),
+    (
+        "The package combines repository health, exact-location findings, architecture evidence, a six-month roadmap, and actionable remediation guidance for engineering and executive review.",
+        "The evidence-bound package retains repository health, exact-location findings, architecture evidence, a roadmap framework, and structured exports for human review; it is not approval or client-delivery authorization.",
+    ),
     (
         "No structured item was retained.",
         "No additional structured finding detail was retained for this section.",
