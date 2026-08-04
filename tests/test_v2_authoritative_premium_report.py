@@ -8,6 +8,7 @@ from nico.v2_authoritative_premium_report import (
 )
 
 SHA = "a" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def _canonical(language: str = "en") -> dict:
@@ -20,7 +21,9 @@ def _canonical(language: str = "en") -> dict:
             "customer_id": "customer-authoritative",
             "project_id": "project-authoritative",
             "report_language": language,
+            "generated_at": GENERATED_AT,
         },
+        "generated_at": GENERATED_AT,
         "report_language": language,
         "assessment": {
             "report_language": language,
@@ -201,6 +204,7 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
     assert result["approval_status"] == "pending_human_approval"
     assert result["delivery_status"] == "blocked_pending_human_approval"
     assert result["client_delivery_allowed"] is False
+    assert result["json"]["identity"]["generated_at"] == GENERATED_AT
     assert "Bandit failed" not in result["markdown"]
     assert "Gitleaks missing" not in result["markdown"]
     assert "ESLint missing" not in result["markdown"]
@@ -213,6 +217,8 @@ def test_spanish_authoritative_renderer_preserves_pending_approval_boundary():
     result = rebuild_authoritative_premium_artifacts({"json": _canonical("es-MX")})
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     markdown = result["markdown"].upper()
+    assert "GENERADO:" in markdown
+    assert GENERATED_AT in result["markdown"]
     assert "APROBACIÓN" in markdown
     assert "PENDIENTE DE REVISIÓN HUMANA" in markdown
     assert "ENTREGA AL CLIENTE" in markdown
