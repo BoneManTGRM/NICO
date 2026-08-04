@@ -18,8 +18,10 @@ def _package() -> dict:
                 "evidence_ledger_id": "ledger-golden",
                 "customer_id": "customer-golden",
                 "project_id": "project-golden",
+                "generated_at": "2026-08-04T16:15:00Z",
                 "report_language": "en",
             },
+            "generated_at": "2026-08-04T16:15:00Z",
             "report_language": "en",
             "assessment": {
                 "technical_score": 81,
@@ -55,7 +57,8 @@ def test_golden_dark_cover_replaces_plain_canonical_score_sheet() -> None:
 
     assert "NICO / EVIDENCE-BOUND ENGINEERING INTELLIGENCE" in first_page
     assert "NICO COMPREHENSIVE" in first_page
-    assert "Decision-Grade Technical Assessment" in first_page
+    assert "Evidence-Bound Technical Review Package" in first_page
+    assert "Decision-Grade Technical Assessment" not in first_page
     assert "TECHNICAL MATURITY" in first_page
     assert "EVIDENCE-ADJUSTED" in first_page
     assert "HUMAN APPROVAL" in first_page
