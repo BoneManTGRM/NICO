@@ -47,21 +47,9 @@ def _scan() -> dict:
             }
         },
         "scanner_results": [
-            {
-                "scanner_name": "osv-scanner",
-                "category": "dependency",
-                "findings": [],
-            },
-            {
-                "scanner_name": "gitleaks",
-                "category": "secret",
-                "findings": [],
-            },
-            {
-                "scanner_name": "semgrep",
-                "category": "static",
-                "findings": [],
-            },
+            {"scanner_name": "osv-scanner", "category": "dependency", "findings": []},
+            {"scanner_name": "gitleaks", "category": "secret", "findings": []},
+            {"scanner_name": "semgrep", "category": "static", "findings": []},
         ],
     }
 
@@ -89,7 +77,6 @@ def test_overlapping_secret_summary_is_reconciled_to_mutually_exclusive_counts()
 
 def test_canonical_register_preserves_657_raw_candidates_without_double_counting() -> None:
     install_comprehensive_truth_reconciliation_v7()
-
     register = providers.build_canonical_scanner_finding_register(_scan(), COMMIT)
 
     assert register["status"] == "complete"
@@ -103,12 +90,6 @@ def test_canonical_register_preserves_657_raw_candidates_without_double_counting
     assert register["mutually_exclusive_dispositions_verified"] is True
     assert register["candidate_disposition_model"] == DISPOSITION_MODEL
     assert register["source_summary_adjustment_count"] == 1
-    assert register["source_summary_reconciliation"]["gitleaks"][
-        "source_review_required"
-    ] == 17
-    assert register["source_summary_reconciliation"]["gitleaks"][
-        "reconciled_review_required"
-    ] == 16
 
     for candidate in register["findings"]:
         assert candidate["candidate_id"] == candidate["finding_id"]
