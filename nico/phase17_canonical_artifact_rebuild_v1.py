@@ -23,6 +23,9 @@ from nico.comprehensive_compact_design_marker_v1 import (
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
+from nico.comprehensive_pdf_navigation_titles_v1 import (
+    install_comprehensive_pdf_navigation_titles_v1,
+)
 from nico.comprehensive_placeholder_sanitization_v1 import (
     install_comprehensive_placeholder_sanitization,
 )
@@ -54,6 +57,7 @@ _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 _CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
+_PDF_NAVIGATION_TITLES = install_comprehensive_pdf_navigation_titles_v1()
 _INCOMPLETE_ANALYZER_SUMMARY = install_comprehensive_incomplete_analyzer_summary()
 _PLATFORM_PARITY_SUMMARY = install_comprehensive_platform_parity_summary()
 _PLACEHOLDER_SANITIZATION = install_comprehensive_placeholder_sanitization()
@@ -156,6 +160,7 @@ __all__ = [
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
     "_CANONICAL_CLIENT_TRUTH",
+    "_PDF_NAVIGATION_TITLES",
     "_INCOMPLETE_ANALYZER_SUMMARY",
     "_PLATFORM_PARITY_SUMMARY",
     "_PLACEHOLDER_SANITIZATION",
