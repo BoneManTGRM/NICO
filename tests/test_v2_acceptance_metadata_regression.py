@@ -4,6 +4,7 @@ from nico.v2_pipeline_adapter import apply_v2_pipeline
 
 
 SHA = "a" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 
 
 def test_semicolon_metadata_fragments_are_removed_before_publication():
@@ -20,7 +21,9 @@ def test_semicolon_metadata_fragments_are_removed_before_publication():
                         "repository": "BoneManTGRM/NICO",
                         "commit_sha": SHA,
                         "run_id": "comprun_metadata",
+                        "generated_at": GENERATED_AT,
                     },
+                    "generated_at": GENERATED_AT,
                     "assessment": {
                         "technical_score": 80,
                         "canonical_evidence_adjusted_score": 79,
@@ -40,6 +43,7 @@ def test_semicolon_metadata_fragments_are_removed_before_publication():
                         }
                     ],
                 },
+                "generated_at": GENERATED_AT,
                 "pdf_filename": "nico-metadata.pdf",
             }
         }
