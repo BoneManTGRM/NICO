@@ -39,6 +39,34 @@ def _base_pdf() -> bytes:
     return buffer.getvalue()
 
 
+def _empty_scanner_register() -> dict:
+    zero = {
+        "raw": 0,
+        "material": 0,
+        "review_required": 0,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": 0,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
+    return {
+        "artifact_schema": "nico.canonical-scanner-findings.v1",
+        "findings": [],
+        "totals": dict(zero),
+        "summary_by_category": {
+            "dependency": dict(zero),
+            "secret": dict(zero),
+            "static": dict(zero),
+        },
+        "candidate_record_count": 0,
+        "candidate_record_count_matches_raw": True,
+        "count_parity_verified": True,
+        "candidate_evidence_quality_totals_match_source": True,
+    }
+
+
 def _package() -> dict:
     canonical = {
         "identity": {
@@ -134,6 +162,7 @@ def _package() -> dict:
             ],
             "technical_score": 78,
             "canonical_evidence_adjusted_score": 78,
+            "canonical_scanner_finding_register": _empty_scanner_register(),
             "final_report_input_scores_synchronized": True,
             "report_contract_status": "blocked",
             "report_contract_reason": "canonical_score_truth_mismatch",
