@@ -10,10 +10,6 @@ from pypdf import PdfReader
 
 from nico.canonical_section_status_v1 import normalize_report_package
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
-from nico.client_report_completion_v2 import (
-    finalize_client_report_package,
-    prepare_client_report_package,
-)
 from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.comprehensive_automated_draft_cross_format_v1 import (
     install_automated_draft_cross_format_contract,
@@ -84,13 +80,9 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
             "markdown": markdown,
-            "markdown_sha256": hashlib.sha256(
-                markdown.encode("utf-8")
-            ).hexdigest(),
+            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
             "html": rendered_html,
-            "html_sha256": hashlib.sha256(
-                rendered_html.encode("utf-8")
-            ).hexdigest(),
+            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
             "pdf_page_count": page_count,
             "core_report_page_count": page_count,
             "final_package_page_count": page_count,
@@ -119,7 +111,16 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Build one bounded client package from canonical finding and scanner truth."""
+    """Build one bounded client package from canonical finding and scanner truth.
+
+    Publication extensions patch ``client_report_completion_v2`` at runtime. Use
+    the module attributes at execution time rather than stale function references
+    captured when this module was imported. This guarantees that the final
+    canonical truth pass occurs before rendering and that the final cross-format
+    validator and exact-artifact manifest gate execute after sanitization.
+    """
+
+    from nico import client_report_completion_v2 as completion
 
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
@@ -127,13 +128,9 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # Scanner applicability, scanner-outcome truth, canonical finding identity,
     # and the structured remediation register must exist before the premium
     # compiler derives stages, scores, executive findings, and artifact content.
-    prepared = prepare_client_report_package(prepared)
+    prepared = completion.prepare_client_report_package(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
-    canonical = (
-        rendered.get("json")
-        if isinstance(rendered.get("json"), Mapping)
-        else {}
-    )
+    canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
         repair_localized_rendered_report(rendered)
         if _is_spanish(canonical)
@@ -145,8 +142,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # renderer or sanitizer may change retained bytes after that binding point.
     repaired = _reconcile(repaired)
     sanitized = _sanitize_published_artifacts(repaired)
-    finalized = finalize_client_report_package(sanitized)
-    return finalized
+    return completion.finalize_client_report_package(sanitized)
 
 
 __all__ = [
