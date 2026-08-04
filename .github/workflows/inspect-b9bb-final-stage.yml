@@ -1,0 +1,70 @@
+name: Inspect B9BB Final Stage
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Fetch exact production run records
+        env:
+          ORIGIN: https://app.nicoaudit.com
+          RUNS: comprun_61fb3fce2ddc411da39f4a30f5977073,comprun_891cf108b297485381cc866c30fc5696
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python - <<'PY'
+          import json, os, time, urllib.error, urllib.request
+          from pathlib import Path
+          from collections.abc import Mapping
+
+          origin=os.environ['ORIGIN'].rstrip('/')
+          out=Path('evidence')
+          for run_id in os.environ['RUNS'].split(','):
+              url=f'{origin}/api/nico/assessment/comprehensive-run/{run_id}?inspect={time.time_ns()}'
+              req=urllib.request.Request(url,headers={
+                  'Accept':'application/json','Cache-Control':'no-store','Pragma':'no-cache',
+                  'User-Agent':'nico-b9bb-final-stage-inspection','X-NICO-Browser-Projection':'terminal-manifest-v1',
+              })
+              try:
+                  with urllib.request.urlopen(req,timeout=240) as response:
+                      status=response.status; raw=response.read()
+              except urllib.error.HTTPError as exc:
+                  status=exc.code; raw=exc.read()
+              try: payload=json.loads(raw.decode())
+              except Exception: payload={'raw_body':raw.decode(errors='replace')}
+              record=payload.get('record') if isinstance(payload,Mapping) and isinstance(payload.get('record'),Mapping) else payload
+              stages=record.get('stage_results') if isinstance(record,Mapping) and isinstance(record.get('stage_results'),Mapping) else {}
+              final=stages.get('final_comprehensive_report_generation') if isinstance(stages,Mapping) else {}
+              summary={
+                  'run_id':run_id,'http_status':status,
+                  'response_status':payload.get('status') if isinstance(payload,Mapping) else None,
+                  'terminal':payload.get('terminal') if isinstance(payload,Mapping) else None,
+                  'record_status':record.get('status') if isinstance(record,Mapping) else None,
+                  'record_terminal':record.get('terminal') if isinstance(record,Mapping) else None,
+                  'current_stage':payload.get('current_stage') if isinstance(payload,Mapping) else None,
+                  'completed_stages':record.get('completed_stages') if isinstance(record,Mapping) else None,
+                  'blockers':record.get('blockers') if isinstance(record,Mapping) else None,
+                  'final_stage':final,
+                  'reports':payload.get('reports') if isinstance(payload,Mapping) else None,
+                  'response_projection':payload.get('response_projection') if isinstance(payload,Mapping) else None,
+              }
+              out.joinpath(run_id+'-full.json').write_text(json.dumps(payload,indent=2,sort_keys=True,default=str)+'\n')
+              out.joinpath(run_id+'-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True,default=str)+'\n')
+              print(json.dumps(summary,indent=2,sort_keys=True,default=str))
+          PY
+
+      - name: Upload exact failure evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: b9bb-final-stage-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
