@@ -68,6 +68,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_client_review_companion_v5 import (
         install_comprehensive_review_companion_v5,
     )
+    from nico.comprehensive_client_review_companion_v6 import (
+        install_comprehensive_review_companion_v6,
+    )
     from nico.comprehensive_client_truth_final_v1 import (
         install_comprehensive_client_truth_final_v1,
     )
@@ -154,9 +157,11 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     failure_diagnostics = install_comprehensive_failure_diagnostics_v1()
 
     # Preserve legacy compatibility first, then bind the substantive review,
-    # evidence-based finding priority, final truth, complete manifest, and exact receipt.
+    # compact decision worksheets, evidence-based priority, final truth, complete
+    # manifest, and exact receipt.
     install_comprehensive_review_companion_v4()
     client_review_companion = install_comprehensive_review_companion_v5()
+    compact_review_companion = install_comprehensive_review_companion_v6()
     client_pdf_sanitizer = install_client_pdf_status_sanitizer_v7()
     finding_priority_calibration = install_client_finding_priority_calibration_v1()
     client_truth_final = install_comprehensive_client_truth_final_v1()
@@ -176,6 +181,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         "candidate_identity": candidate_identity,
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
+        "compact_review_companion": compact_review_companion,
         "client_pdf_sanitizer": client_pdf_sanitizer,
         "finding_priority_calibration": finding_priority_calibration,
         "client_truth_final": client_truth_final,
