@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -9,6 +10,13 @@ PROVIDER_ACCEPTANCE = ROOT / ".github/workflows/provider-live-acceptance.yml"
 HARDENING_ACCEPTANCE = ROOT / ".github/workflows/post-release-hardening-acceptance.yml"
 PACKAGE = ROOT / "apps/web/package.json"
 CONFIG = ROOT / "apps/web/next.config.js"
+
+
+def _semver_core(version: str) -> tuple[int, int, int]:
+    core = version.split("-", 1)[0]
+    parts = core.split(".")
+    assert len(parts) >= 3, f"Expected a three-part semantic version, got {version!r}"
+    return tuple(int(part) for part in parts[:3])
 
 
 def test_security_workflow_uses_pinned_isolated_scanners_and_no_latest_installs() -> None:
@@ -31,10 +39,11 @@ def test_security_evidence_is_uploaded_before_fail_closed_enforcement() -> None:
 
 
 def test_frontend_dependency_override_removes_vulnerable_image_optimizer_path() -> None:
-    package = PACKAGE.read_text(encoding="utf-8")
+    package = json.loads(PACKAGE.read_text(encoding="utf-8"))
     config = CONFIG.read_text(encoding="utf-8")
-    assert '"next": "16.2.11"' in package
-    assert '"sharp": "0.35.0"' in package
+    next_version = package["dependencies"]["next"]
+    assert _semver_core(next_version) >= (16, 2, 11)
+    assert package["overrides"]["sharp"] == "0.35.0"
     assert "unoptimized: true" in config
 
 
