@@ -4,10 +4,23 @@ import io
 from functools import wraps
 from typing import Any, Iterator, Mapping
 
-VERSION = "nico.comprehensive-platform-parity-summary.v1"
+VERSION = "nico.comprehensive-platform-parity-summary.v1.2"
 _PDF_MARKER = "_nico_platform_parity_pdf_v1"
-_CANONICAL_LABEL = "Platform Parity"
-_SPANISH_LABEL = "Paridad de plataforma"
+_EN_REPOSITORY_ONLY = (
+    "Repository indicator review complete; runtime platform parity not assessed."
+)
+_ES_REPOSITORY_ONLY = (
+    "Revisión de indicadores del repositorio completa; "
+    "paridad de plataforma en ejecución no evaluada."
+)
+_EN_NOT_ASSESSED = (
+    "Repository indicator review not established; runtime platform parity not assessed; "
+    "human input required."
+)
+_ES_NOT_ASSESSED = (
+    "Revisión de indicadores del repositorio no establecida; "
+    "paridad de plataforma en ejecución no evaluada; se requiere intervención humana."
+)
 
 
 def _text(value: Any) -> str:
@@ -44,7 +57,7 @@ def _iter_platform_records(value: Any) -> Iterator[Mapping[str, Any]]:
 
 
 def canonical_platform_parity_status(canonical: Mapping[str, Any]) -> str:
-    """Return conservative client wording without implying human-context review."""
+    """Return conservative client wording without implying runtime parity review."""
 
     for record in _iter_platform_records(canonical):
         status = _normalized(
@@ -69,22 +82,9 @@ def canonical_platform_parity_line(
     spanish: bool,
 ) -> str:
     status = canonical_platform_parity_status(canonical)
-    if spanish:
-        if status == "complete_repository_only":
-            return (
-                f"{_SPANISH_LABEL}: Completo (solo evidencia del repositorio); "
-                f"{_CANONICAL_LABEL}: Complete (repository evidence only)"
-            )
-        return (
-            f"{_SPANISH_LABEL}: No evaluada - se requiere intervención humana; "
-            f"{_CANONICAL_LABEL}: Not assessed - human input required"
-        )
     if status == "complete_repository_only":
-        return (
-            f"{_CANONICAL_LABEL}: Complete (repository evidence only); "
-            "human-context validation: Not assessed - human input required"
-        )
-    return f"{_CANONICAL_LABEL}: Not assessed - human input required"
+        return _ES_REPOSITORY_ONLY if spanish else _EN_REPOSITORY_ONLY
+    return _ES_NOT_ASSESSED if spanish else _EN_NOT_ASSESSED
 
 
 def overlay_platform_parity_summary(
@@ -93,7 +93,7 @@ def overlay_platform_parity_summary(
     *,
     spanish: bool,
 ) -> bytes:
-    """Add one truthful line to the existing evidence-summary page without reflow."""
+    """Add one bounded platform-evidence line without changing page count."""
 
     if not pdf.startswith(b"%PDF"):
         raise ValueError("platform-parity summary requires a valid PDF")
@@ -106,11 +106,11 @@ def overlay_platform_parity_summary(
     if not reader.pages:
         raise ValueError("platform-parity summary requires at least one PDF page")
 
+    line = canonical_platform_parity_line(canonical, spanish=spanish)
     existing = "\n".join(page.extract_text() or "" for page in reader.pages)
-    if f"{_CANONICAL_LABEL}:".casefold() in existing.casefold():
+    if line.casefold() in existing.casefold():
         return pdf
 
-    line = canonical_platform_parity_line(canonical, spanish=spanish)
     first = reader.pages[0]
     width = float(first.mediabox.width)
     height = float(first.mediabox.height)
@@ -141,8 +141,10 @@ def overlay_platform_parity_summary(
     if len(rendered_reader.pages) != len(reader.pages):
         raise ValueError("platform-parity summary changed the client PDF page count")
     extracted = "\n".join(page.extract_text() or "" for page in rendered_reader.pages)
-    if f"{_CANONICAL_LABEL}:".casefold() not in extracted.casefold():
-        raise ValueError("platform-parity summary was not retained in PDF")
+    if line.casefold() not in extracted.casefold():
+        raise ValueError("bounded platform-parity summary was not retained in PDF")
+    if "platform parity: complete" in extracted.casefold():
+        raise ValueError("platform-parity summary retained prohibited completion language")
     return rendered
 
 
@@ -188,6 +190,10 @@ def install_comprehensive_platform_parity_summary() -> dict[str, Any]:
             completion.render_evidence_review_gate_pdf
             is projection.render_evidence_review_gate_pdf
         ),
+        "repository_indicator_review_can_be_complete": True,
+        "runtime_platform_parity_assessed": False,
+        "device_feature_permission_localization_parity_validated": False,
+        "prohibited_platform_complete_claim_absent": True,
         "page_count_unchanged": True,
         "report_layout_unchanged": True,
         "human_review_required": True,
