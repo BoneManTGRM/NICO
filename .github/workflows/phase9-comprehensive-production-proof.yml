@@ -31,12 +31,13 @@ jobs:
         run: |
           pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
           pytest -q tests/test_phase9_comprehensive_report_integration_v1.py
-          pytest -q tests/test_comprehensive_client_ready_projection_v1.py tests/test_client_pdf_status_sanitizer_v1.py tests/test_client_pdf_compose_v2.py tests/test_client_text_status_sanitizer_v1.py
+          pytest -q tests/test_comprehensive_client_ready_projection_v1.py tests/test_client_pdf_status_sanitizer_v1.py tests/test_client_pdf_compose_v2.py tests/test_client_text_status_sanitizer_v1.py tests/test_comprehensive_review_companion_compact_v1.py tests/test_comprehensive_manifest_navigation_v1.py tests/test_comprehensive_artifact_manifest_approval_v1.py
       - name: Generate retained real-package contract proof
         run: |
-          mkdir -p phase9-comprehensive-proof
+          rm -rf phase9-comprehensive-proof
+          mkdir -p phase9-comprehensive-proof/package
           python - <<'PY'
-          import base64, hashlib, io, json, os
+          import base64, hashlib, io, json, os, re
           from pathlib import Path
           from pypdf import PdfReader
           from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
@@ -89,7 +90,22 @@ jobs:
           page_count = len(reader.pages)
           pdf_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
           markdown = package['markdown']
-          html = package['html']
+          rendered_html = package['html']
+          completion = package['client_report_completion']
+          detached = package['artifact_manifest']
+          artifacts = detached['artifacts']
+          artifact_types = {item['artifact_type'] for item in artifacts}
+          required_manifest_types = {
+              'findings_csv',
+              'evidence_csv',
+              'candidate_register_json',
+              'remediation_backlog_json',
+              'markdown_report',
+              'html_report',
+              'comprehensive_pdf',
+              'canonical_json',
+          }
+          assert artifact_types == required_manifest_types
           assert len(canonical['canonical_findings']) == 1
           assert canonical['identity']['generated_at'] == generated_at
           assert package['phase9_release_gate']['valid'] is True
@@ -100,12 +116,17 @@ jobs:
           assert package['delivery_status'] == 'blocked_pending_human_approval'
           assert package['client_delivery_allowed'] is False
           assert page_count <= 45
+          assert completion['comprehensive_review_companion_page_count'] == 8
+          assert completion['table_of_contents_present'] is True
+          assert completion['all_manifest_hashes_recomputed_from_final_bytes'] is True
+          assert 'Table of Contents' in pdf_text
           assert 'AUTOMATED DRAFT' in markdown
           assert 'FINAL REPORT' not in markdown
           assert 'a automated' not in markdown
-          assert 'AUTOMATED DRAFT' in html
-          assert 'FINAL REPORT' not in html
-          assert 'a automated' not in html
+          assert not re.search(r'(?m)^#{1,6}\s*$', markdown)
+          assert 'AUTOMATED DRAFT' in rendered_html
+          assert 'FINAL REPORT' not in rendered_html
+          assert 'a automated' not in rendered_html
           assert 'AUTOMATED DRAFT' in pdf_text
           assert 'FINAL REPORT' not in pdf_text
           assert ' · FINAL' not in pdf_text
@@ -113,26 +134,75 @@ jobs:
           assert 'report_contract_reason' not in pdf_text
           assert 'comprehensive_final_report_semantic_contract_failed' not in pdf_text
           assert 'stage_execution.artifact_schema' not in pdf_text
+
+          content_by_type = {
+              'findings_csv': package['findings_csv'].encode('utf-8'),
+              'evidence_csv': package['evidence_csv'].encode('utf-8'),
+              'candidate_register_json': package['candidate_register_json'].encode('utf-8'),
+              'remediation_backlog_json': package['remediation_backlog_json'].encode('utf-8'),
+              'markdown_report': markdown.encode('utf-8'),
+              'html_report': rendered_html.encode('utf-8'),
+              'comprehensive_pdf': pdf,
+              'canonical_json': package['canonical_json'].encode('utf-8'),
+          }
           root = Path('phase9-comprehensive-proof')
-          (root / 'canonical.json').write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding='utf-8')
-          (root / 'release-gate.json').write_text(json.dumps(package['phase9_release_gate'], indent=2), encoding='utf-8')
-          (root / 'findings.csv').write_bytes(base64.b64decode(package['findings_csv_base64']))
-          (root / 'report-en.pdf').write_bytes(pdf)
-          (root / 'report-en.txt').write_text(pdf_text, encoding='utf-8')
-          (root / 'report-en.md').write_text(markdown, encoding='utf-8')
-          (root / 'report-en.html').write_text(html, encoding='utf-8')
-          manifest = {
+          package_root = root / 'package'
+          retained = {}
+          for item in artifacts:
+              artifact_type = item['artifact_type']
+              content = content_by_type[artifact_type]
+              actual_sha = hashlib.sha256(content).hexdigest()
+              assert actual_sha == item['sha256']
+              assert len(content) == item['size_bytes']
+              path = package_root / item['filename']
+              path.write_bytes(content)
+              retained[artifact_type] = {
+                  'filename': item['filename'],
+                  'sha256': actual_sha,
+                  'size_bytes': len(content),
+                  'media_type': item['media_type'],
+              }
+
+          evidence_manifest_name = next(
+              item['filename']
+              for item in canonical['artifacts']
+              if item.get('artifact_type') == 'evidence_manifest_json'
+          )
+          evidence_manifest = package['evidence_manifest_json'].encode('utf-8')
+          evidence_manifest_sha = hashlib.sha256(evidence_manifest).hexdigest()
+          assert evidence_manifest_sha == package['evidence_manifest_sha256']
+          (package_root / evidence_manifest_name).write_bytes(evidence_manifest)
+          retained['evidence_manifest_json'] = {
+              'filename': evidence_manifest_name,
+              'sha256': evidence_manifest_sha,
+              'size_bytes': len(evidence_manifest),
+              'media_type': 'application/json',
+          }
+
+          (root / 'report-text-extraction.txt').write_text(pdf_text, encoding='utf-8')
+          (root / 'release-gate.json').write_text(
+              json.dumps(package['phase9_release_gate'], indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
+          proof = {
+              'proof_schema': 'nico.phase9-comprehensive-production-proof.v2',
               'immutable_revision': revision,
               'repository': os.environ.get('GITHUB_REPOSITORY'),
-              'filenames': {'en': package['pdf_filename'], 'es': package['spanish_pdf_filename']},
-              'canonical_truth_sha256': package['canonical_truth_sha256'],
-              'artifact_sha256': {},
+              'run_id': canonical['identity']['run_id'],
+              'evidence_ledger_id': canonical['identity']['evidence_ledger_id'],
+              'generated_at': canonical['identity']['generated_at'],
+              'manifest_id': detached['manifest_id'],
+              'retained_artifacts': retained,
+              'artifact_count': len(retained),
               'finding_count': len(canonical['canonical_findings']),
               'pdf_page_count': page_count,
-              'generated_at': canonical['identity']['generated_at'],
+              'review_companion_page_count': completion['comprehensive_review_companion_page_count'],
               'report_finality': package['report_finality'],
               'approval_status': package['approval_status'],
               'delivery_status': package['delivery_status'],
+              'review_package_ready': package['review_package_ready'],
+              'human_review_required': package['human_review_required'],
+              'client_delivery_allowed': package['client_delivery_allowed'],
               'defects_absent': {
                   'duplicate_findings': True,
                   'duplicate_acceptance_criteria': True,
@@ -143,39 +213,56 @@ jobs:
                   'raw_internal_pdf_fields': True,
                   'bad_automated_draft_grammar': True,
                   'oversized_client_pdf': True,
+                  'missing_table_of_contents': True,
+                  'orphan_markdown_heading': True,
+                  'stale_markdown_manifest_hash': True,
+                  'stale_html_manifest_hash': True,
               },
           }
-          for path in sorted(root.iterdir()):
-              if path.is_file():
-                  manifest['artifact_sha256'][path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
-          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          (root / 'proof-summary.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True), encoding='utf-8'
+          )
           PY
       - name: Verify proof package
         run: |
           python - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
+
           root = Path('phase9-comprehensive-proof')
-          manifest = json.loads((root / 'manifest.json').read_text())
-          text = (root / 'report-en.txt').read_text(encoding='utf-8')
-          markdown = (root / 'report-en.md').read_text(encoding='utf-8')
-          html = (root / 'report-en.html').read_text(encoding='utf-8')
-          assert manifest['immutable_revision'] == os.environ['PHASE9_REVISION']
-          assert all(manifest['defects_absent'].values())
-          assert manifest['finding_count'] == 1
-          assert manifest['pdf_page_count'] <= 45
-          assert manifest['generated_at'] == '2026-08-04T16:15:00Z'
-          assert manifest['report_finality'] == 'automated_draft'
-          assert manifest['approval_status'] == 'pending_human_approval'
-          assert manifest['delivery_status'] == 'blocked_pending_human_approval'
-          for value in (text, markdown, html):
-              assert 'FINAL REPORT' not in value
-              assert 'a automated' not in value
-          assert ' · FINAL' not in text
-          assert 'report_contract_reason' not in text
-          assert (root / 'report-en.pdf').read_bytes().startswith(b'%PDF')
-          assert (root / 'canonical.json').is_file()
-          assert (root / 'findings.csv').is_file()
+          package_root = root / 'package'
+          proof = json.loads((root / 'proof-summary.json').read_text(encoding='utf-8'))
+          assert proof['immutable_revision'] == os.environ['PHASE9_REVISION']
+          assert all(proof['defects_absent'].values())
+          assert proof['finding_count'] == 1
+          assert proof['pdf_page_count'] <= 45
+          assert proof['review_companion_page_count'] == 8
+          assert proof['generated_at'] == '2026-08-04T16:15:00Z'
+          assert proof['report_finality'] == 'automated_draft'
+          assert proof['approval_status'] == 'pending_human_approval'
+          assert proof['delivery_status'] == 'blocked_pending_human_approval'
+          assert proof['review_package_ready'] is True
+          assert proof['human_review_required'] is True
+          assert proof['client_delivery_allowed'] is False
+          assert proof['artifact_count'] == 9
+          required = {
+              'findings_csv',
+              'evidence_csv',
+              'candidate_register_json',
+              'remediation_backlog_json',
+              'markdown_report',
+              'html_report',
+              'comprehensive_pdf',
+              'canonical_json',
+              'evidence_manifest_json',
+          }
+          assert set(proof['retained_artifacts']) == required
+          for item in proof['retained_artifacts'].values():
+              path = package_root / item['filename']
+              content = path.read_bytes()
+              assert hashlib.sha256(content).hexdigest() == item['sha256']
+              assert len(content) == item['size_bytes']
+          assert 'Table of Contents' in (root / 'report-text-extraction.txt').read_text(encoding='utf-8')
           PY
       - name: Upload comprehensive production proof
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
