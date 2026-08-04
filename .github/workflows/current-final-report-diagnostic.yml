@@ -1,0 +1,156 @@
+name: Current Final Report Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-exact-production-runs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out diagnostic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Fetch exact blocked run diagnostics
+        env:
+          FRONTEND_ORIGIN: https://app.nicoaudit.com
+          USER_RUN_ID: comprun_891cf108b297485381cc866c30fc5696
+          ACCEPTANCE_RUN_ID: comprun_d0937d54a7114d3d81605fd9d88ac181
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results/current-final-report-diagnostic
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          origin = os.environ["FRONTEND_ORIGIN"].rstrip("/")
+          run_ids = [os.environ["USER_RUN_ID"], os.environ["ACCEPTANCE_RUN_ID"]]
+          output = Path("audit-results/current-final-report-diagnostic")
+
+          def bounded(value: Any, *, depth: int = 0) -> Any:
+              if depth > 6:
+                  return "<depth-bounded>"
+              if value is None or isinstance(value, (bool, int, float)):
+                  return value
+              if isinstance(value, str):
+                  return value if len(value) <= 12000 else value[:12000] + "..."
+              if isinstance(value, list):
+                  return [bounded(item, depth=depth + 1) for item in value[:200]]
+              if isinstance(value, dict):
+                  return {
+                      str(key): bounded(item, depth=depth + 1)
+                      for index, (key, item) in enumerate(value.items())
+                      if index < 250
+                  }
+              return str(value)
+
+          def fetch(run_id: str) -> dict[str, Any]:
+              url = (
+                  f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
+                  f"?_nico_exact_run_diagnostic={time.time_ns()}"
+              )
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/json",
+                      "Cache-Control": "no-store, no-cache",
+                      "Pragma": "no-cache",
+                      "User-Agent": "nico-current-final-report-diagnostic",
+                      "X-NICO-Browser-Projection": "terminal-manifest-v1",
+                  },
+              )
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=240) as response:
+                      status = response.status
+                      raw = response.read()
+              except urllib.error.HTTPError as exc:
+                  status = exc.code
+                  raw = exc.read()
+              except Exception as exc:
+                  return {
+                      "run_id": run_id,
+                      "url": url,
+                      "transport_error": f"{type(exc).__name__}: {exc}",
+                      "elapsed_seconds": round(time.monotonic() - started, 3),
+                  }
+              elapsed = round(time.monotonic() - started, 3)
+              try:
+                  payload = json.loads(raw.decode("utf-8"))
+              except Exception as exc:
+                  return {
+                      "run_id": run_id,
+                      "url": url,
+                      "http_status": status,
+                      "decode_error": f"{type(exc).__name__}: {exc}",
+                      "body_preview": raw[:12000].decode("utf-8", errors="replace"),
+                      "elapsed_seconds": elapsed,
+                  }
+              payload_path = output / f"{run_id}-response.json"
+              payload_path.write_text(
+                  json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+                  encoding="utf-8",
+              )
+              record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+              stage_results = (
+                  record.get("stage_results")
+                  if isinstance(record.get("stage_results"), dict)
+                  else {}
+              )
+              stage = stage_results.get("final_comprehensive_report_generation")
+              stage = stage if isinstance(stage, dict) else {}
+              summary = {
+                  "run_id": run_id,
+                  "url": url,
+                  "http_status": status,
+                  "elapsed_seconds": elapsed,
+                  "response_status": payload.get("status"),
+                  "current_stage": payload.get("current_stage"),
+                  "terminal": payload.get("terminal"),
+                  "completed_stage_count": len(payload.get("completed_stages") or []),
+                  "blockers": bounded(record.get("blockers") or payload.get("blockers") or []),
+                  "final_stage": bounded(stage),
+                  "reports_present": isinstance(payload.get("reports"), dict),
+                  "assessment_present": isinstance(payload.get("assessment"), dict),
+                  "response_projection": bounded(payload.get("response_projection") or {}),
+              }
+              (output / f"{run_id}-summary.json").write_text(
+                  json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
+                  encoding="utf-8",
+              )
+              return summary
+
+          summaries = [fetch(run_id) for run_id in run_ids]
+          combined = {
+              "artifact_schema": "nico.current-final-report-diagnostic.v1",
+              "frontend_origin": origin,
+              "runs": summaries,
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+          }
+          (output / "combined-summary.json").write_text(
+              json.dumps(combined, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(combined, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Upload exact-run diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: current-final-report-diagnostic-${{ github.run_id }}
+          path: audit-results/current-final-report-diagnostic/
+          if-no-files-found: error
+          retention-days: 7
