@@ -139,11 +139,14 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         if _is_spanish(canonical)
         else repair_rendered_report(rendered)
     )
-    # Reconcile once more after report-quality repair, then compile the bounded
-    # cross-format client artifacts from the exact authoritative canonical state.
+    # Reconcile once more after report-quality repair, then sanitize every
+    # mutable rendered surface before the exact-artifact finalizer computes the
+    # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
+    # renderer or sanitizer may change retained bytes after that binding point.
     repaired = _reconcile(repaired)
-    finalized = finalize_client_report_package(repaired)
-    return _sanitize_published_artifacts(finalized)
+    sanitized = _sanitize_published_artifacts(repaired)
+    finalized = finalize_client_report_package(sanitized)
+    return finalized
 
 
 __all__ = [
