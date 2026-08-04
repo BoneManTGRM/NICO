@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.client-finding-priority-calibration.v1"
+VERSION = "nico.client-finding-priority-calibration.v1.1"
 MODEL = "evidence-critical-path-priority.v1"
 _MARKER = "__nico_client_finding_priority_calibration_v1__"
 
@@ -77,6 +77,7 @@ def _combined(item: Mapping[str, Any]) -> str:
         _text(item.get(key), 2500)
         for key in (
             "path",
+            "repository_relative_path",
             "location",
             "symbol",
             "title",
@@ -85,10 +86,15 @@ def _combined(item: Mapping[str, Any]) -> str:
             "finding_family",
             "rule_id",
             "observed_evidence",
+            "evidence",
             "fact",
+            "problematic_code",
+            "source_excerpt",
+            "interpretation",
             "business_impact",
             "impact",
             "recommended_correction",
+            "verification",
         )
     ).casefold()
 
@@ -98,6 +104,7 @@ def _complexity(item: Mapping[str, Any]) -> int:
         item.get("cyclomatic_complexity"),
         item.get("complexity"),
         item.get("measured_complexity"),
+        item.get("measured_cyclomatic_complexity"),
     ):
         parsed = _integer(value)
         if parsed:
@@ -178,10 +185,15 @@ def _priority_for_complexity(item: Mapping[str, Any]) -> dict[str, Any]:
     confidence_points = {"high": 8, "medium": 4, "low": 0}[confidence]
     priority_score = min(100, complexity_points + relevance_points + exposure_points + confidence_points)
     critical_path = any(relevance.values())
+    complexity_measurement_retained = complexity > 0
 
     # Complexity alone is a maintainability issue. P1 requires a separately
     # evidenced critical path and a sufficiently high combined risk score.
-    if critical_path and complexity >= 35 and priority_score >= 45:
+    # Missing numeric complexity evidence remains provisional P2 and may not be
+    # silently downgraded to P3 or promoted to P1.
+    if not complexity_measurement_retained:
+        priority = "P2"
+    elif critical_path and complexity >= 35 and priority_score >= 45:
         priority = "P1"
     elif complexity >= 30:
         priority = "P2"
@@ -189,14 +201,22 @@ def _priority_for_complexity(item: Mapping[str, Any]) -> dict[str, Any]:
         priority = "P3"
 
     technical_severity = (
-        "high"
+        "unknown"
+        if not complexity_measurement_retained
+        else "high"
         if complexity >= 40
         else "moderate"
         if complexity >= 30
         else "low"
     )
     relevant_names = [name.replace("_", " ") for name, active in relevance.items() if active]
-    if priority == "P1":
+    if not complexity_measurement_retained:
+        rationale = (
+            "P2 provisional maintainability priority: the record identifies a complexity hotspot, "
+            "but the numeric complexity measurement was not retained on this projection. Human review "
+            "must recover the exact measurement before severity can be lowered or elevated."
+        )
+    elif priority == "P1":
         rationale = (
             f"P1 elevation is based on measured cyclomatic complexity {complexity}, "
             f"{', '.join(relevant_names)} critical-path relevance, {exposure.replace('_', ' ')}, "
@@ -229,6 +249,7 @@ def _priority_for_complexity(item: Mapping[str, Any]) -> dict[str, Any]:
         "operations_relevance": relevance["operations"],
         "evidence_confidence": confidence,
         "measured_cyclomatic_complexity": complexity,
+        "complexity_measurement_retained": complexity_measurement_retained,
         "priority_model_version": MODEL,
         "complexity_alone_created_p1": False,
     }
