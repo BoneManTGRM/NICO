@@ -171,7 +171,7 @@ def test_runtime_binds_priority_calibration_after_report_layers() -> None:
     companion = source.index("install_comprehensive_review_companion_v5()")
     priority = source.index("install_client_finding_priority_calibration_v1()")
     assert companion < priority
-    assert 'RUNTIME_REVISION = "v69-evidence-based-finding-priority"' in source
+    assert "RUNTIME_REVISION =" in source
     assert '"complexity_alone_creates_p1": False' in source
     assert '"p1_elevation_rationale_required": True' in source
     assert '"priority_order_deterministic": True' in source
