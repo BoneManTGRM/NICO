@@ -24,6 +24,7 @@ def _base_pdf() -> bytes:
     SimpleDocTemplate(buffer, pagesize=letter, invariant=1).build(
         [
             Paragraph("NICO Comprehensive", styles["Title"]),
+            Paragraph(f"Generated: {GENERATED_AT}", styles["BodyText"]),
             Paragraph("Executive decision report", styles["BodyText"]),
             PageBreak(),
             Paragraph("Executive Risk Register and Decision Briefing", styles["Heading1"]),
@@ -224,6 +225,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     combined = "\n".join((markdown, html, extracted))
 
     assert pdf.startswith(b"%PDF")
+    assert GENERATED_AT in extracted
     assert markdown.count("## Compact Finding and Remediation Register") == 1
     assert "Decision findings: 1" in markdown
     assert "Complete exact-source index" in markdown
