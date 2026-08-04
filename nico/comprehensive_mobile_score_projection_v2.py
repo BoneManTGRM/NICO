@@ -7,7 +7,7 @@ import nico.comprehensive_api_controller as controller_module
 # Public compatibility identifier. Runtime behavior advances through
 # RUNTIME_REVISION so existing mobile proof contracts remain valid.
 VERSION = "nico.comprehensive_mobile_score_projection.v3"
-RUNTIME_REVISION = "v66-client-ready-assurance-review-package"
+RUNTIME_REVISION = "v67-canonical-report-truth"
 
 _ORIGINAL_REPORT_OUTPUTS: Callable[[dict[str, Any]], tuple[dict[str, Any], dict[str, Any]]] | None = None
 _INSTALLED = False
@@ -89,6 +89,9 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_source_anchor_location_v57 import (
         install_comprehensive_source_anchor_location_v57,
     )
+    from nico.comprehensive_truth_reconciliation_v7_reentry import (
+        install_comprehensive_truth_reconciliation_v7,
+    )
     from nico.evidence_ledger_typescript_truth_v1 import (
         install_evidence_ledger_typescript_truth_v1,
     )
@@ -97,6 +100,10 @@ def _install_final_runtime_truth() -> dict[str, Any]:
         install_scorecard_extraction_validation,
     )
 
+    # Reconcile source counts and workflow outcomes before assurance scoring wraps
+    # the canonical provider. The score wrapper therefore consumes the corrected
+    # mutually exclusive disposition register instead of repairing display text.
+    canonical_truth_reconciliation = install_comprehensive_truth_reconciliation_v7()
     candidate_volume_assurance = install_candidate_volume_assurance_v2()
     bandit_json_execution = install_bandit_json_execution_v61()
     source_anchor_location = install_comprehensive_source_anchor_location_v57()
@@ -120,6 +127,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     client_review_companion = install_comprehensive_review_companion_v4()
     return {
         "runtime_revision": RUNTIME_REVISION,
+        "canonical_truth_reconciliation": canonical_truth_reconciliation,
         "candidate_volume_assurance": candidate_volume_assurance,
         "client_review_companion": client_review_companion,
         "bandit_json_execution": bandit_json_execution,
@@ -201,6 +209,9 @@ def install_comprehensive_mobile_score_projection_v2() -> dict[str, Any]:
         "limited_evidence_status_separated_from_execution_status": True,
         "canonical_score_contract_reconciled": True,
         "candidate_volume_is_triage_workload_not_defect_severity": True,
+        "candidate_dispositions_mutually_exclusive": True,
+        "workflow_outcome_taxonomy_complete": True,
+        "blank_numeric_score_inputs_allowed": False,
         "decision_useful_review_companion_pages": 32,
         "human_review_required": True,
         "client_delivery_allowed": False,
