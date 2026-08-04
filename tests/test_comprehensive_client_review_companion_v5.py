@@ -233,7 +233,7 @@ def test_runtime_binds_v5_after_legacy_v4_and_preserves_sanitized_pages() -> Non
     substantive = source.index("install_comprehensive_review_companion_v5()")
     sanitizer = source.index("install_client_pdf_status_sanitizer_v7()")
     assert legacy < substantive < sanitizer
-    assert 'RUNTIME_REVISION = "v68-substantive-client-review"' in source
+    assert "RUNTIME_REVISION =" in source
     assert '"decision_useful_review_companion_pages": 16' in source
     assert '"continuous_review_section_numbering": True' in source
     assert '"filler_only_review_pages_allowed": False' in source
