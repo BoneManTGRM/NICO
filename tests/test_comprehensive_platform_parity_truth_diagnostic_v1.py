@@ -9,7 +9,10 @@ from nico.comprehensive_platform_parity_summary_v1 import (
     overlay_platform_parity_summary,
 )
 from nico.comprehensive_truth_diagnostics_v1 import (
-    install_comprehensive_truth_diagnostics_v1,
+    _FORBIDDEN,
+    _excerpt,
+    _pdf_text,
+    _visible_html,
 )
 
 
@@ -22,10 +25,7 @@ def _pdf() -> bytes:
     return buffer.getvalue()
 
 
-def test_bounded_platform_parity_pdf_is_not_rejected_as_a_complete_runtime_claim() -> None:
-    from nico import comprehensive_client_truth_final_v1 as truth
-
-    install_comprehensive_truth_diagnostics_v1()
+def test_bounded_platform_parity_pdf_is_clean_for_the_exact_contradiction_scanner() -> None:
     canonical = {
         "stage_summaries": [
             {
@@ -47,18 +47,25 @@ def test_bounded_platform_parity_pdf_is_not_rejected_as_a_complete_runtime_claim
         ),
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
     }
-
-    # This isolates the contradiction scanner used by the final publication gate.
-    # Other canonical package validators run elsewhere in the full pipeline tests.
-    validator = truth._validate_surfaces
-    previous = getattr(validator, "_nico_previous", None)
-    diagnostic = validator if previous is not None else None
-
-    assert diagnostic is not None
     surfaces = {
-        "Markdown": package["markdown"],
-        "HTML": package["html"],
-        "PDF": "Repository indicator review complete; runtime platform parity not assessed.",
+        "Markdown": " ".join(package["markdown"].split()),
+        "HTML": _visible_html(package["html"]),
+        "PDF": _pdf_text(package),
     }
-    forbidden = "Platform Parity: Complete"
-    assert all(forbidden not in value for value in surfaces.values())
+
+    assert "Platform Parity: Complete" in _FORBIDDEN
+    assert "runtime platform parity not assessed" in surfaces["PDF"]
+    for marker in _FORBIDDEN:
+        for value in surfaces.values():
+            assert _excerpt(value, marker) == ""
+
+
+def test_contradiction_scanner_still_detects_the_prohibited_runtime_completion_claim() -> None:
+    marker = "Platform Parity: Complete"
+    rendered = (
+        "Platform Parity: Complete (repository evidence only); "
+        "human-context validation: Not assessed."
+    )
+
+    assert marker in _FORBIDDEN
+    assert marker in _excerpt(rendered, marker)
