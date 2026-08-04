@@ -9,6 +9,7 @@ from nico.v2_scanner_reconciliation import normalize_record
 
 
 COMMIT = "a" * 40
+GENERATED_AT = "2026-08-04T16:15:00Z"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -41,7 +42,13 @@ def raw_result() -> dict:
     legacy = finding("RISK-LEGACY")
     prioritized = finding("RISK-P1-CANONICAL", enriched=True)
     canonical = {
-        "identity": {"repository": "BoneManTGRM/NICO", "commit_sha": COMMIT, "run_id": "comprun_v2"},
+        "identity": {
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": COMMIT,
+            "run_id": "comprun_v2",
+            "generated_at": GENERATED_AT,
+        },
+        "generated_at": GENERATED_AT,
         "assessment": {"technical_score": 82, "canonical_evidence_adjusted_score": 81, "sections": []},
         "canonical_findings": [legacy, prioritized],
         "findings_register": [legacy, prioritized],
@@ -57,6 +64,7 @@ def raw_result() -> dict:
         "record": {"status": "failed"},
         "report_package": {
             "json": canonical,
+            "generated_at": GENERATED_AT,
             "pdf_filename": f"nico-report-{duplicated}.pdf",
             "spanish_pdf_filename": f"nico-report-es-{duplicated}.pdf",
             "json_filename": f"nico-report-{duplicated}.json",
@@ -114,6 +122,7 @@ def test_finalizer_eliminates_production_contradictions_and_duplicates():
     for key in ("pdf_filename", "spanish_pdf_filename", "json_filename", "markdown_filename", "csv_filename"):
         assert package[key].count(APPROVAL_SUFFIX) == 1
         assert "FINAL-PENDING-APPROVAL" not in package[key]
+    assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert package["report_finality"] == "automated_draft"
     assert package["approval_status"] == "pending_human_approval"
     assert package["delivery_status"] == "blocked_pending_human_approval"
