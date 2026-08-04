@@ -5,9 +5,10 @@ import json
 from copy import deepcopy
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-candidate-identity.v1"
+VERSION = "nico.comprehensive-candidate-identity.v1.1"
 MODEL = "stable-per-candidate-count-only-identities.v1"
 _MARKER = "__nico_comprehensive_candidate_identity_v1__"
+_RECONCILIATION_MARKER = "__nico_truth_reconciled_register_v7__"
 
 
 def _integer(value: Any) -> int:
@@ -133,6 +134,11 @@ def install_comprehensive_candidate_identity_v1() -> dict[str, Any]:
             "version": VERSION,
             "model": MODEL,
             "every_raw_candidate_has_stable_identity": True,
+            "lower_reconciliation_marker_preserved": getattr(
+                current,
+                _RECONCILIATION_MARKER,
+                False,
+            ),
         }
 
     def build_canonical_scanner_finding_register(
@@ -142,6 +148,11 @@ def install_comprehensive_candidate_identity_v1() -> dict[str, Any]:
         return expand_candidate_identities(current(scan, commit_sha))
 
     setattr(build_canonical_scanner_finding_register, _MARKER, True)
+    # The candidate wrapper is intentionally the outer layer. Preserve the lower
+    # reconciliation marker so a later direct installer call remains idempotent
+    # instead of reusing the global reconciliation wrapper and forming a cycle.
+    if getattr(current, _RECONCILIATION_MARKER, False):
+        setattr(build_canonical_scanner_finding_register, _RECONCILIATION_MARKER, True)
     setattr(build_canonical_scanner_finding_register, "_nico_previous", current)
     providers.build_canonical_scanner_finding_register = (
         build_canonical_scanner_finding_register
@@ -152,6 +163,11 @@ def install_comprehensive_candidate_identity_v1() -> dict[str, Any]:
         "model": MODEL,
         "every_raw_candidate_has_stable_identity": True,
         "count_only_candidates_are_individually_auditable": True,
+        "lower_reconciliation_marker_preserved": getattr(
+            build_canonical_scanner_finding_register,
+            _RECONCILIATION_MARKER,
+            False,
+        ),
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
