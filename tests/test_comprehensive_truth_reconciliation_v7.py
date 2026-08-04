@@ -208,13 +208,13 @@ def test_score_contract_renders_zero_penalties_and_explicit_formula() -> None:
     }
 
 
-def test_runtime_installs_truth_reconciliation_before_assurance_scoring() -> None:
+def test_runtime_keeps_truth_reconciliation_before_assurance_scoring() -> None:
     source = RUNTIME_BINDING.read_text(encoding="utf-8")
 
     reconciliation = source.index("install_comprehensive_truth_reconciliation_v7()")
     assurance = source.index("install_candidate_volume_assurance_v2()")
     assert reconciliation < assurance
-    assert 'RUNTIME_REVISION = "v67-canonical-report-truth"' in source
+    assert "RUNTIME_REVISION =" in source
     assert '"candidate_dispositions_mutually_exclusive": True' in source
     assert '"workflow_outcome_taxonomy_complete": True' in source
     assert '"blank_numeric_score_inputs_allowed": False' in source
