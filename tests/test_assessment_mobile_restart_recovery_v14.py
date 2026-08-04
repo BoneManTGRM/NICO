@@ -4,22 +4,27 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HOOK = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
-WORKSPACE = ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx"
+ASSESSMENT = ROOT / "apps/web/app/assessment"
+HOOK = ASSESSMENT / "useAssessmentRun.ts"
+PERSISTENCE = ASSESSMENT / "assessmentRunPersistence.ts"
+REQUESTS = ASSESSMENT / "assessmentRunRequests.ts"
+WORKSPACE = ASSESSMENT / "AssessmentWorkspace.tsx"
 PROXY = ROOT / "apps/web/app/api/nico/[...path]/route.ts"
 BACKEND = ROOT / "nico/comprehensive_mobile_recovery_v1.py"
 INIT = ROOT / "nico/__init__.py"
 
 
 def test_exact_run_is_persisted_in_url_and_browser_storage() -> None:
-    source = HOOK.read_text(encoding="utf-8")
+    hook = HOOK.read_text(encoding="utf-8")
+    persistence = PERSISTENCE.read_text(encoding="utf-8")
 
-    assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in source
-    assert 'ACTIVE_RUN_QUERY_KEY = "run_id"' in source
-    assert "window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY" in source
-    assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in source
-    assert "persistExactRun(data, scope, startedAt)" in source
-    assert "persistExactRun(current, scope, startedAt)" in source
+    assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in persistence
+    assert 'ACTIVE_RUN_QUERY_KEY = "run_id"' in persistence
+    assert "window.localStorage.setItem(" in persistence
+    assert "ACTIVE_RUN_STORAGE_KEY" in persistence
+    assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in persistence
+    assert "persistExactRun(data, scope, startedAt)" in hook
+    assert "persistExactRun(current, scope, startedAt)" in hook
 
 
 def test_mobile_page_resume_recovers_and_continues_the_same_run() -> None:
@@ -35,7 +40,7 @@ def test_mobile_page_resume_recovers_and_continues_the_same_run() -> None:
 
 
 def test_browser_requests_select_bounded_terminal_manifest() -> None:
-    source = HOOK.read_text(encoding="utf-8")
+    source = REQUESTS.read_text(encoding="utf-8")
 
     assert 'BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"' in source
     assert 'BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in source
