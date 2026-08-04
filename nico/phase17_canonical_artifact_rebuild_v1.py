@@ -44,6 +44,9 @@ from nico.comprehensive_report_clarity_v1 import (
 from nico.comprehensive_score_presence_truth_v1 import (
     install_comprehensive_score_presence_truth_v1,
 )
+from nico.comprehensive_spanish_generated_at_v1 import (
+    install_comprehensive_spanish_generated_at_v1,
+)
 from nico.comprehensive_truth_diagnostics_v1 import (
     install_comprehensive_truth_diagnostics_v1,
 )
@@ -69,6 +72,7 @@ _SCANNER_EVIDENCE_CONTRACT = install_scanner_evidence_contract_v2()
 _AUTOMATED_DRAFT_CROSS_FORMAT = install_automated_draft_cross_format_contract()
 _AUTOMATED_DRAFT_QUALITY_COMPAT = install_automated_draft_quality_compat()
 _CANONICAL_CLIENT_TRUTH = install_comprehensive_client_truth_canonical_v2()
+_SPANISH_GENERATED_AT = install_comprehensive_spanish_generated_at_v1()
 _SCORE_PRESENCE_TRUTH = install_comprehensive_score_presence_truth_v1()
 _TRUTH_DIAGNOSTICS = install_comprehensive_truth_diagnostics_v1()
 _DECISION_SUMMARY_TRUTH = install_comprehensive_decision_summary_truth_v1()
@@ -176,6 +180,7 @@ __all__ = [
     "_AUTOMATED_DRAFT_CROSS_FORMAT",
     "_AUTOMATED_DRAFT_QUALITY_COMPAT",
     "_CANONICAL_CLIENT_TRUTH",
+    "_SPANISH_GENERATED_AT",
     "_SCORE_PRESENCE_TRUTH",
     "_TRUTH_DIAGNOSTICS",
     "_DECISION_SUMMARY_TRUTH",
