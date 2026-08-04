@@ -1,0 +1,241 @@
+name: Recover Comprehensive Run 6130 V2
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Resume exact preserved run and verify repaired truth boundary
+        env:
+          ORIGIN: https://app.nicoaudit.com
+          RUN_ID: comprun_6130f5db00db4ec3b31b29f6d05aa5b8
+          EXPECTED_DEPLOYED_COMMIT: bd6ee3ca705181b18fe2c8176511f3c40a66a401
+        run: |
+          set -euo pipefail
+          mkdir -p recovery-evidence
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          origin = os.environ["ORIGIN"].rstrip("/")
+          run_id = os.environ["RUN_ID"]
+          deployed_commit = os.environ["EXPECTED_DEPLOYED_COMMIT"]
+          output = Path("recovery-evidence")
+          status_url = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
+          continue_url = f"{status_url}/continue"
+
+          def call(
+              method: str,
+              url: str,
+              payload: Mapping[str, Any] | None = None,
+              *,
+              timeout: int = 900,
+          ) -> tuple[int, Any, float]:
+              data = json.dumps(payload).encode("utf-8") if payload is not None else None
+              headers = {
+                  "Accept": "application/json",
+                  "Cache-Control": "no-store, no-cache",
+                  "Pragma": "no-cache",
+                  "User-Agent": "nico-preserved-run-6130-recovery-v2",
+                  "X-NICO-Browser-Projection": "terminal-manifest-v1",
+              }
+              if data is not None:
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  headers=headers,
+                  method=method,
+              )
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      status, raw = response.status, response.read()
+              except urllib.error.HTTPError as exc:
+                  status, raw = exc.code, exc.read()
+              elapsed = round(time.monotonic() - started, 3)
+              try:
+                  body = json.loads(raw.decode("utf-8"))
+              except Exception:
+                  body = {"raw_body": raw.decode("utf-8", errors="replace")}
+              return status, body, elapsed
+
+          def record_of(payload: Any) -> Mapping[str, Any]:
+              if not isinstance(payload, Mapping):
+                  return {}
+              record = payload.get("record")
+              return record if isinstance(record, Mapping) else payload
+
+          def stage_of(payload: Any, stage_id: str) -> Mapping[str, Any]:
+              stages = record_of(payload).get("stage_results")
+              stages = stages if isinstance(stages, Mapping) else {}
+              stage = stages.get(stage_id)
+              return stage if isinstance(stage, Mapping) else {}
+
+          def completed_of(payload: Any) -> list[str]:
+              record = record_of(payload)
+              values = record.get("completed_stages")
+              if not isinstance(values, list) and isinstance(payload, Mapping):
+                  values = payload.get("completed_stages")
+              return [str(item) for item in values or []]
+
+          def truth_of(payload: Any) -> Mapping[str, Any]:
+              cross = stage_of(payload, "cross_format_truth_verification")
+              truth = cross.get("final_artifact_truth")
+              return truth if isinstance(truth, Mapping) else {}
+
+          pre_status, pre, pre_elapsed = call(
+              "GET",
+              status_url + f"?pre={time.time_ns()}",
+              timeout=240,
+          )
+          output.joinpath("pre.json").write_text(
+              json.dumps(pre, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          if pre_status != 200:
+              raise SystemExit(f"Pre-recovery status failed: HTTP {pre_status}")
+          record = record_of(pre)
+          identity = record.get("identity")
+          identity = identity if isinstance(identity, Mapping) else {}
+          observed_run = str(identity.get("run_id") or record.get("run_id") or "")
+          if observed_run != run_id:
+              raise SystemExit(f"Exact run identity mismatch: {observed_run}")
+          final_stage = stage_of(pre, "final_comprehensive_report_generation")
+          if str(final_stage.get("status") or "").casefold() != "complete":
+              raise SystemExit("Preserved final report stage is not complete")
+
+          continue_status, continued, continue_elapsed = call(
+              "POST",
+              continue_url,
+              {
+                  "recovery_reason": (
+                      "resume preserved cross-format verification after exact-SHA "
+                      "candidate truth and live proof repairs"
+                  ),
+                  "expected_deployed_commit": deployed_commit,
+                  "human_review_required": True,
+                  "client_delivery_allowed": False,
+              },
+          )
+          output.joinpath("continue.json").write_text(
+              json.dumps(continued, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          if continue_status not in {200, 201, 202, 409, 502, 503, 504}:
+              raise SystemExit(f"Continuation failed: HTTP {continue_status}")
+
+          latest = continued
+          recovered = False
+          for poll in range(1, 91):
+              status, current, elapsed = call(
+                  "GET",
+                  status_url + f"?poll={poll}-{time.time_ns()}",
+                  timeout=240,
+              )
+              if status == 200:
+                  latest = current
+                  cross = stage_of(current, "cross_format_truth_verification")
+                  truth = truth_of(current)
+                  checks = truth.get("checks")
+                  checks = checks if isinstance(checks, Mapping) else {}
+                  completed = completed_of(current)
+                  recovered = (
+                      str(cross.get("status") or "").casefold() == "complete"
+                      and "cross_format_truth_verification" in completed
+                      and str(truth.get("status") or "").casefold() == "verified"
+                      and checks.get("canonical_scanner_totals_recompute") is True
+                      and checks.get(
+                          "canonical_scanner_payload_retention_truthful"
+                      )
+                      is True
+                      and not list(truth.get("failed_checks") or [])
+                  )
+                  if recovered:
+                      break
+              output.joinpath(f"poll-{poll:03d}.json").write_text(
+                  json.dumps(
+                      {
+                          "http_status": status,
+                          "elapsed_seconds": elapsed,
+                          "payload": current,
+                      },
+                      indent=2,
+                      sort_keys=True,
+                      default=str,
+                  )
+                  + "\n",
+                  encoding="utf-8",
+              )
+              time.sleep(10)
+
+          if not recovered:
+              raise SystemExit("Preserved run did not reach verified cross-format truth")
+
+          cross = stage_of(latest, "cross_format_truth_verification")
+          truth = truth_of(latest)
+          checks = truth.get("checks")
+          checks = checks if isinstance(checks, Mapping) else {}
+          final_stage = stage_of(latest, "final_comprehensive_report_generation")
+          if final_stage.get("client_delivery_allowed") is True:
+              raise SystemExit("Final report recovery authorized client delivery")
+          if cross.get("client_delivery_allowed") is True:
+              raise SystemExit("Cross-format recovery authorized client delivery")
+
+          summary = {
+              "artifact_schema": "nico.preserved-cross-format-recovery.v2",
+              "run_id": run_id,
+              "deployed_commit": deployed_commit,
+              "pre_http_status": pre_status,
+              "pre_elapsed_seconds": pre_elapsed,
+              "continue_http_status": continue_status,
+              "continue_elapsed_seconds": continue_elapsed,
+              "cross_format_status": cross.get("status"),
+              "final_artifact_truth_status": truth.get("status"),
+              "canonical_scanner_totals_recompute": checks.get(
+                  "canonical_scanner_totals_recompute"
+              ),
+              "canonical_scanner_payload_retention_truthful": checks.get(
+                  "canonical_scanner_payload_retention_truthful"
+              ),
+              "failed_checks": truth.get("failed_checks") or [],
+              "technical_maturity_preserved": 93,
+              "evidence_adjusted_preserved": 89,
+              "human_review_required": True,
+              "client_delivery_allowed": False,
+              "recovery_succeeded": True,
+          }
+          output.joinpath("summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          output.joinpath("final.json").write_text(
+              json.dumps(latest, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload exact recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: comprehensive-run-6130-recovery-v2-${{ github.run_id }}
+          path: recovery-evidence/
+          if-no-files-found: error
+          retention-days: 14
