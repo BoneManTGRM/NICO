@@ -89,7 +89,7 @@ def _install_final_runtime_truth() -> dict[str, Any]:
     from nico.comprehensive_source_anchor_location_v57 import (
         install_comprehensive_source_anchor_location_v57,
     )
-    from nico.comprehensive_truth_reconciliation_v7 import (
+    from nico.comprehensive_truth_reconciliation_v7_reentry import (
         install_comprehensive_truth_reconciliation_v7,
     )
     from nico.evidence_ledger_typescript_truth_v1 import (
