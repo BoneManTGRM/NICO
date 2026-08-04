@@ -5,7 +5,11 @@ import time
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-final-report-compact-base.v1"
+from nico.v2_future_approval_guidance_layout_v1 import (
+    install_future_approval_guidance_layout_v1,
+)
+
+VERSION = "nico.comprehensive-final-report-compact-base.v1.1"
 _BUILD_MARKER = "__nico_final_report_compact_build_v1__"
 _PDF_MARKER = "__nico_final_report_compact_pdf_v1__"
 
@@ -44,6 +48,7 @@ def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
     from nico import comprehensive_native_providers as native
     from nico import comprehensive_report_package as report_module
 
+    guidance_layout = install_future_approval_guidance_layout_v1()
     pdf_current = report_module._pdf
     if not getattr(pdf_current, _PDF_MARKER, False):
 
@@ -94,6 +99,7 @@ def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
                 "full_stage_evidence_retained_in_durable_run": True,
                 "substantive_review_companion_required": True,
                 "compact_exact_source_register_required": True,
+                "future_approval_guidance_layout": guidance_layout,
                 "human_review_required": True,
                 "client_delivery_allowed": False,
                 "elapsed_ms": elapsed_ms,
@@ -118,6 +124,9 @@ def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
         "final_intermediate_pdf_is_decision_oriented": True,
         "raw_stage_appendix_rendered_in_intermediate_pdf": False,
         "full_stage_evidence_retained_outside_client_pdf": True,
+        "future_approval_guidance_layout": guidance_layout,
+        "bounded_future_guidance_layout_supported": True,
+        "current_finality_gate_preserved": True,
         "report_design_changed": False,
         "score_contract_changed": False,
         "human_review_required": True,
