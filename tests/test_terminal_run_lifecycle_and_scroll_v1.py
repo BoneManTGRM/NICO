@@ -1,14 +1,16 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-HOOK = (ROOT / "apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
-WORKSPACE = (ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+ASSESSMENT = ROOT / "apps/web/app/assessment"
+HOOK = (ASSESSMENT / "useAssessmentRun.ts").read_text(encoding="utf-8")
+PERSISTENCE = (ASSESSMENT / "assessmentRunPersistence.ts").read_text(encoding="utf-8")
+WORKSPACE = (ASSESSMENT / "AssessmentWorkspace.tsx").read_text(encoding="utf-8")
 CSS = (ROOT / "apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
 PROOF = (ROOT / "scripts/mobile_restart_live_acceptance_v1.py").read_text(encoding="utf-8")
 
 
 def test_terminal_runs_stop_being_active_jobs() -> None:
-    assert "function readStoredRun(): PersistedRun | null" in HOOK
+    assert "export function readStoredRun" in PERSISTENCE
     assert HOOK.count("clearPersistedRun(true);") == 2
     assert "const persisted = readStoredRun();" in HOOK
     assert "Safari resume events must not restart completed reports" in HOOK
@@ -16,7 +18,7 @@ def test_terminal_runs_stop_being_active_jobs() -> None:
 
 def test_new_assessment_clears_stale_identity() -> None:
     assert "function startNew(): void" in HOOK
-    assert "url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);" in HOOK
+    assert "url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);" in PERSISTENCE
     assert 'async function run(): Promise<void> {\n    clearPersistedRun(false);' in HOOK
     assert "setResult(null);" in HOOK
 

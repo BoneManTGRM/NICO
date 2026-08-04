@@ -3,16 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-HOOK = (ROOT / "apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
+ASSESSMENT = ROOT / "apps/web/app/assessment"
+HOOK = (ASSESSMENT / "useAssessmentRun.ts").read_text(encoding="utf-8")
+IDENTITY = (ASSESSMENT / "assessmentRunIdentity.ts").read_text(encoding="utf-8")
 
 
 def test_recovery_preserves_exact_identity_from_url_or_nested_record() -> None:
-    assert "function preserveRunIdentity(value: Result, fallback: RunIdentityFallback): Result" in HOOK
-    assert "value.run_id || identity.run_id || fallback.runId" in HOOK
-    assert "value.commit_sha" in HOOK
-    assert "value.repository_snapshot?.commit_sha" in HOOK
-    assert "record: {" in HOOK
-    assert "identity: {" in HOOK
+    assert "export function preserveRunIdentity" in IDENTITY
+    assert "value.run_id || identity.run_id || fallback.runId" in IDENTITY
+    assert "value.commit_sha" in IDENTITY
+    assert "value.repository_snapshot?.commit_sha" in IDENTITY
+    assert "record: {" in IDENTITY
+    assert "identity: {" in IDENTITY
 
 
 def test_every_recovery_path_normalizes_before_react_state() -> None:

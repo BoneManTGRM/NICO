@@ -39,12 +39,14 @@ def test_comprehensive_continues_the_exact_run_without_restarting() -> None:
 def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> None:
     body = continuation_body()
     assert 'const runId = String(current.run_id || "")' in body
-    assert 'if (!runId) throw new AssessmentApiError(copy.runIdMissing, {' in body
+    assert "if (!runId) {" in body
+    assert "throw new AssessmentApiError(copy.runIdMissing, {" in body
     assert 'code: "assessment_run_id_missing"' in body
     assert "const continued = await requestWithRetry(" in body
     assert "current = preserveRunIdentity(continued" in body
     assert "sequence.current" in body
-    assert body.count("if (token !== sequence.current) return") >= 1
+    assert "if (token !== sequence.current)" in body
+    assert "return;" in body
 
 
 def test_timeout_preserves_identity_instead_of_starting_a_replacement_run() -> None:
