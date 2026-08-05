@@ -11,6 +11,10 @@ from typing import Any, Callable
 import requests
 
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact
+from nico.scanner_execution_contract_v1 import (
+    attach_scanner_execution_contract,
+    scanner_suite_contract,
+)
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
 OSV_API = "https://api.osv.dev/v1/querybatch"
@@ -556,7 +560,7 @@ def _invoke_runner(
         return runner(command, cwd=cwd, limits=limits)
 
 
-def run_scanner_tool(
+def _run_scanner_tool_uncontracted(
     spec: ScannerToolSpec,
     workspace: WorkerWorkspace,
     *,
@@ -633,6 +637,24 @@ def run_scanner_tool(
     return redact_payload(payload)
 
 
+def run_scanner_tool(
+    spec: ScannerToolSpec,
+    workspace: WorkerWorkspace,
+    *,
+    runner: Callable[..., WorkerCommandResult] = run_command,
+    preparation: ProjectCommandPreparation | None = None,
+) -> dict[str, Any]:
+    """Run one scanner and bind its immutable execution contract."""
+
+    result = _run_scanner_tool_uncontracted(
+        spec,
+        workspace,
+        runner=runner,
+        preparation=preparation,
+    )
+    return attach_scanner_execution_contract(result, spec)
+
+
 def run_scanner_tools(
     workspace: WorkerWorkspace,
     specs: tuple[ScannerToolSpec, ...] = TOOL_SPECS,
@@ -658,6 +680,7 @@ def run_scanner_tools(
     ]
     return {
         "artifact_schema": "nico.scanner_worker.v2",
+        "scanner_suite_contract": scanner_suite_contract(specs),
         "tools": {item["tool"]: item for item in tool_results if isinstance(item, dict) and item.get("tool")},
         "normalized": normalized,
         "project_preparation": {
