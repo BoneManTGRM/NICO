@@ -5,6 +5,7 @@ from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-client-surface-structure-cleanup.v1"
 _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
+_DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _OUTCOME_LABELS = {
     "success": "Successful",
     "successful": "Successful",
@@ -93,17 +94,50 @@ def client_surface_values(
     return output
 
 
+def _install_raw_mapping_surface_diagnostic() -> bool:
+    from nico import comprehensive_full_report_finish_v1 as finish
+
+    current = finish.assert_no_raw_mapping_presentation
+    if getattr(current, _DIAGNOSTIC_MARKER, False):
+        return True
+
+    @wraps(current)
+    def validate(markdown: str, rendered_html: str, pdf: bytes) -> None:
+        surfaces = (
+            ("Markdown", markdown or ""),
+            ("HTML", finish._html_text(rendered_html)),
+            ("PDF", finish._pdf_text(pdf)),
+        )
+        for surface_name, surface in surfaces:
+            for raw_line in surface.splitlines():
+                line = raw_line.strip()
+                if line.startswith(("- ", "* ")):
+                    line = line[2:].strip()
+                if finish._mapping_tail(line)[1] is not None:
+                    raise ValueError(
+                        "client-facing artifact retained a raw mapping presentation "
+                        f"in {surface_name}: {_text(line, 500)}"
+                    )
+
+    setattr(validate, _DIAGNOSTIC_MARKER, True)
+    setattr(validate, "_nico_previous", current)
+    finish.assert_no_raw_mapping_presentation = validate
+    return finish.assert_no_raw_mapping_presentation is validate
+
+
 def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     """Patch the shared review-companion value renderer, not canonical evidence."""
 
     from nico import comprehensive_client_review_companion_v2 as companion
 
+    diagnostic_bound = _install_raw_mapping_surface_diagnostic()
     current = companion._values
     if getattr(current, _MARKER, False):
         return {
             "status": "already_installed",
             "version": VERSION,
             "review_companion_values_bound": True,
+            "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
             "canonical_json_unchanged": True,
         }
 
@@ -118,6 +152,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "review_companion_values_bound": companion._values is values,
+        "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
         "nested_mappings_rendered_as_labels": True,
         "canonical_json_unchanged": True,
         "scores_unchanged": True,
