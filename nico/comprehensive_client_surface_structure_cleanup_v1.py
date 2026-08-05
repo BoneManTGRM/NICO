@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-client-surface-structure-cleanup.v1"
 _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
+_FINAL_TRUTH_EVIDENCE_MARKER = "__nico_final_truth_structured_evidence_v1__"
 _STAGE_SANITIZER_MARKER = "__nico_structured_stage_sanitizer_v1__"
 _PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
 _PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
@@ -196,6 +197,32 @@ def premium_renderer_clean_lines(values: Any) -> list[str]:
     return output
 
 
+def _install_final_truth_evidence_cleanup() -> bool:
+    """Patch the last canonical truth pass that previously stringified mappings."""
+
+    from nico import comprehensive_client_truth_final_v1 as final_truth
+
+    current = final_truth._clean_evidence
+    if getattr(current, _FINAL_TRUTH_EVIDENCE_MARKER, False):
+        return True
+
+    @wraps(current)
+    def clean_evidence(values: Any) -> list[str]:
+        readable = client_surface_values(
+            values,
+            limit=_line_capacity(values),
+            item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
+        )
+        # Preserve every existing final-truth exclusion and deduplication rule by
+        # passing readable strings through the original implementation.
+        return current(readable)
+
+    setattr(clean_evidence, _FINAL_TRUTH_EVIDENCE_MARKER, True)
+    setattr(clean_evidence, "_nico_previous", current)
+    final_truth._clean_evidence = clean_evidence
+    return final_truth._clean_evidence is clean_evidence
+
+
 def _install_cleanup_stage_sanitizer() -> bool:
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
 
@@ -295,6 +322,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
 
     from nico import comprehensive_client_review_companion_v2 as companion
 
+    final_truth_bound = _install_final_truth_evidence_cleanup()
     stage_sanitizer_bound = _install_cleanup_stage_sanitizer()
     premium_bound = _install_premium_renderer_structured_line_cleanup()
     premium_entrypoint_bound = _install_premium_renderer_entrypoint_cleanup()
@@ -304,6 +332,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         return {
             "status": "already_installed",
             "version": VERSION,
+            "final_truth_evidence_cleanup_bound": final_truth_bound,
             "structured_stage_sanitizer_bound": stage_sanitizer_bound,
             "premium_renderer_clean_lines_bound": premium_bound,
             "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
@@ -322,6 +351,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "final_truth_evidence_cleanup_bound": final_truth_bound,
         "structured_stage_sanitizer_bound": stage_sanitizer_bound,
         "premium_renderer_clean_lines_bound": premium_bound,
         "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
