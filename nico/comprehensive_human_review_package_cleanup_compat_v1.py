@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.3"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.4"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -66,6 +66,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_final_six_client_report_cleanup_v1 import (
         install_final_six_client_report_cleanup_v1,
     )
+    from nico.comprehensive_final_six_package_projection_v1 import (
+        install_final_six_package_projection_v1,
+    )
     from nico.comprehensive_full_report_finish_v1 import (
         install_comprehensive_full_report_finish_v1,
     )
@@ -81,6 +84,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         finish = install_comprehensive_full_report_finish_v1()
         exact_source_index = install_exact_source_index_validation_v1()
         final_six_cleanup = install_final_six_client_report_cleanup_v1()
+        final_six_projection = install_final_six_package_projection_v1()
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -90,6 +94,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "full_report_finish": finish,
             "exact_source_index_validation": exact_source_index,
             "final_six_client_report_cleanup": final_six_cleanup,
+            "final_six_package_projection": final_six_projection,
         }
 
     @wraps(current)
@@ -112,6 +117,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     finish = install_comprehensive_full_report_finish_v1()
     exact_source_index = install_exact_source_index_validation_v1()
     final_six_cleanup = install_final_six_client_report_cleanup_v1()
+    final_six_projection = install_final_six_package_projection_v1()
     return {
         "status": "installed",
         "version": VERSION,
@@ -123,6 +129,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "full_report_finish": finish,
         "exact_source_index_validation": exact_source_index,
         "final_six_client_report_cleanup": final_six_cleanup,
+        "final_six_package_projection": final_six_projection,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
