@@ -53,13 +53,14 @@ def test_review_companion_pairs_two_complete_sections_per_sheet() -> None:
     assert len(reader.pages) == COMPANION_PAGE_COUNT == 4
     for page_number, page in enumerate(pages, start=1):
         pair = expected[(page_number - 1) * 2 : page_number * 2]
+        lines = [line.strip() for line in page.splitlines() if line.strip()]
         assert len(pair) == 2
         for section in pair:
             assert section["title"] in page
-        assert page.count("Retained evidence") == 2
-        assert page.count("What cannot be concluded") == 2
-        assert page.count("Reviewer disposition") == 2
-        assert page.count("Decision record") == 2
+        assert lines.count("Retained evidence") == 2
+        assert lines.count("What cannot be concluded") == 2
+        assert lines.count("Reviewer disposition") == 2
+        assert lines.count("Decision record") == 2
         assert page.count("CLIENT DELIVERY BLOCKED") == 2
         assert f"Review page {page_number} of 4" in page
 
