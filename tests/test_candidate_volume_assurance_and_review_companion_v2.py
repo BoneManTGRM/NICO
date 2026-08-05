@@ -15,35 +15,43 @@ from nico.comprehensive_candidate_volume_assurance_v2 import (
 )
 from nico.comprehensive_client_review_companion_v2 import (
     merge_review_companion_markdown,
-    render_comprehensive_review_companion_pdf,
     review_sections,
+)
+from nico.comprehensive_client_review_companion_v7 import (
+    COMPANION_PAGE_COUNT,
+    render_paired_substantive_review_pdf,
 )
 
 
 COMMIT = "a" * 40
 ROOT = Path(__file__).resolve().parents[1]
-MOBILE_BINDING = ROOT / "nico" / "comprehensive_mobile_score_projection_v2.py"
+FINAL_COMPAT = ROOT / "nico" / "comprehensive_human_review_package_cleanup_compat_v1.py"
+FINALIZER_BINDING = ROOT / "nico" / "comprehensive_client_review_companion_v7_finalizer_binding.py"
 COMPLETION = ROOT / "nico" / "client_report_completion_v2.py"
+
+
+def _category(raw: int) -> dict:
+    return {
+        "raw": raw,
+        "material": 0,
+        "review_required": raw,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": raw,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
 
 
 def _register() -> dict:
     return {
         "summary_by_category": {
-            "dependency": {"review_required": 59},
-            "secret": {"review_required": 17},
-            "static": {"review_required": 581},
+            "dependency": _category(59),
+            "secret": _category(17),
+            "static": _category(581),
         },
-        "totals": {
-            "raw": 657,
-            "material": 0,
-            "review_required": 657,
-            "approved_or_nonblocking": 0,
-            "excluded_test_only": 0,
-            "exact_source": 657,
-            "source_path": 0,
-            "payload_without_source": 0,
-            "count_only": 0,
-        },
+        "totals": _category(657),
     }
 
 
@@ -114,7 +122,7 @@ def _scan() -> dict:
             "approved_or_nonblocking": 0,
             "excluded_test_only": 0,
         }
-        for tool, _category in tools
+        for tool, _category_name in tools
     }
     by_tool["osv-scanner"].update({"raw": 59, "review_required": 59})
     by_tool["gitleaks"].update({"raw": 6, "review_required": 6})
@@ -224,28 +232,26 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     assert "not evidence that the repository materially worsened" in assessment["executive_summary"]
 
 
-def test_review_companion_restores_all_decision_sections_in_eight_substantive_pages() -> None:
+def test_review_companion_retains_all_eight_sections_across_four_paired_pages() -> None:
     canonical = _canonical()
     sections = review_sections(canonical, spanish=False)
-    pdf = render_comprehensive_review_companion_pdf(canonical, spanish=False)
+    pdf = render_paired_substantive_review_pdf(canonical, spanish=False)
     reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-    normalized = " ".join(extracted.casefold().split())
 
     assert len(sections) == 8
-    assert len(reader.pages) == 8
-    for section in sections:
-        assert section["title"].casefold() in normalized
-    for section_number in range(1, 9):
-        assert f"section {section_number} of 8 | page 1 of 1" in normalized
-    assert "what can be concluded" in normalized
-    assert "what cannot be concluded" in normalized
-    assert "required client input" in normalized
-    assert "recommended decision" in normalized
-    assert "automated draft | human decision pending | client delivery blocked" in normalized
-    assert "action and acceptance plan" not in normalized
-    assert "no additional structured observation was retained" not in normalized
-    assert "\x7f" not in extracted
+    assert len(reader.pages) == COMPANION_PAGE_COUNT == 4
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = " ".join((page.extract_text() or "").casefold().split())
+        pair = sections[(page_number - 1) * 2 : page_number * 2]
+        assert len(pair) == 2
+        for section in pair:
+            assert section["title"].casefold() in text
+        assert text.count("decision record") == 2
+        assert text.count("automated draft | human decision pending | client delivery blocked") == 2
+        assert f"review page {page_number} of 4" in text
+        assert "action and acceptance plan" not in text
+        assert "no additional structured observation was retained" not in text
+        assert "\x7f" not in text
 
 
 def test_review_companion_markdown_preserves_automated_draft_boundary() -> None:
@@ -275,18 +281,13 @@ def test_review_companion_markdown_preserves_automated_draft_boundary() -> None:
 
 
 def test_runtime_and_completion_bind_current_review_contracts() -> None:
-    mobile = MOBILE_BINDING.read_text(encoding="utf-8")
+    final_compat = FINAL_COMPAT.read_text(encoding="utf-8")
+    finalizer_binding = FINALIZER_BINDING.read_text(encoding="utf-8")
     completion = COMPLETION.read_text(encoding="utf-8")
 
-    assert "install_candidate_volume_assurance_v2" in mobile
-    assert "install_comprehensive_review_companion_v4" in mobile
-    assert "install_comprehensive_review_companion_v5" in mobile
-    assert "install_comprehensive_review_companion_v6" in mobile
-    assert '"decision_useful_review_companion_pages": 8' in mobile
-    assert '"continuous_review_section_numbering": True' in mobile
-    assert '"continuous_physical_page_labels": True' in mobile
-    assert '"filler_only_review_pages_allowed": False' in mobile
-    assert '"candidate_volume_is_triage_workload_not_defect_severity": True' in mobile
+    assert "install_comprehensive_review_companion_v7_rebind" in final_compat
+    assert "install_comprehensive_review_companion_v7_rebind" in finalizer_binding
+    assert "paired_renderer_reasserted_per_finalization" in finalizer_binding
     assert "render_comprehensive_review_companion_pdf" in completion
     assert "merge_review_companion_markdown" in completion
     assert '"decision_useful_comprehensive_sections_restored": True' in completion
