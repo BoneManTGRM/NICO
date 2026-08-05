@@ -40,11 +40,7 @@ jobs:
           function_anchor = "def run_scanner_tool(\n"
           if runners.count(function_anchor) != 1:
               raise SystemExit("expected one run_scanner_tool source function")
-          runners = runners.replace(
-              function_anchor,
-              "def _run_scanner_tool_uncontracted(\n",
-              1,
-          )
+          runners = runners.replace(function_anchor, "def _run_scanner_tool_uncontracted(\n", 1)
           next_anchor = "\n\ndef run_scanner_tools(\n"
           wrapper = '''
 
@@ -68,7 +64,6 @@ jobs:
           if next_anchor not in runners:
               raise SystemExit("run_scanner_tools insertion anchor not found")
           runners = runners.replace(next_anchor, wrapper + next_anchor, 1)
-
           return_anchor = '''    return {
                   "artifact_schema": "nico.scanner_worker.v2",
                   "tools": {item["tool"]: item for item in tool_results if isinstance(item, dict) and item.get("tool")},
@@ -96,27 +91,16 @@ jobs:
           if worker_helper_import not in worker:
               if worker_import_anchor not in worker:
                   raise SystemExit("snapshot worker import anchor not found")
-              worker = worker.replace(
-                  worker_import_anchor,
-                  worker_import_anchor + worker_helper_import,
-                  1,
-              )
+              worker = worker.replace(worker_import_anchor, worker_import_anchor + worker_helper_import, 1)
 
-          exception_anchor = '''                    except Exception as exc:  # pragma: no cover - defensive per-tool boundary
-                              result = {
-                                  "tool": spec.name,
-                                  "status": "failed",
-                                  "category": spec.category,
-                                  "reason": f"{spec.name} failed safely inside the snapshot worker: {type(exc).__name__}",
-                                  "findings": [],
-                                  "verified_for_this_report": False,
-                                  "current_run": True,
-                                  "scans_git_history": spec.scans_git_history,
-                              }
-                          redaction_applied = redaction_applied or "[REDACTED]" in str(result)
-                          results.append(result)
-          '''
-          exception_replacement = '''                    except Exception as exc:  # pragma: no cover - defensive per-tool boundary
+          start_marker = "                    except Exception as exc:  # pragma: no cover - defensive per-tool boundary\n"
+          end_marker = "                results.append(result)\n"
+          start = worker.find(start_marker)
+          end = worker.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("snapshot scanner result region not found")
+          end += len(end_marker)
+          replacement = '''                    except Exception as exc:  # pragma: no cover - defensive per-tool boundary
                               result = attach_scanner_execution_contract(
                                   {
                                       "tool": spec.name,
@@ -136,10 +120,7 @@ jobs:
                           result["snapshot_commit_sha"] = expected_commit
                           result["actual_commit_sha"] = actual_commit_sha
                           result["exact_commit_match"] = bool(actual_commit_sha) and actual_commit_sha == expected_commit
-                          result = persist_redacted_scanner_artifact(
-                              result,
-                              scan_id=scan_id,
-                          )
+                          result = persist_redacted_scanner_artifact(result, scan_id=scan_id)
                           validation = validate_scanner_execution_record(
                               result,
                               expected_commit_sha=expected_commit,
@@ -155,9 +136,7 @@ jobs:
                           redaction_applied = redaction_applied or "[REDACTED]" in str(result)
                           results.append(result)
           '''
-          if exception_anchor not in worker:
-              raise SystemExit("snapshot scanner result anchor not found")
-          worker = worker.replace(exception_anchor, exception_replacement, 1)
+          worker = worker[:start] + replacement + worker[end:]
 
           update_anchor = '''            "tools_requested": [spec.name for spec in specs],
                       "tools_run": completed,
@@ -169,7 +148,6 @@ jobs:
           if update_anchor not in worker:
               raise SystemExit("snapshot update suite anchor not found")
           worker = worker.replace(update_anchor, update_replacement, 1)
-
           evidence_anchor = '''                "tools_requested": len(specs),
                           "tools_run": len(completed),
           '''
