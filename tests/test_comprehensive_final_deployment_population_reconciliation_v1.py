@@ -9,23 +9,24 @@ from reportlab.pdfgen import canvas
 from nico.comprehensive_final_deployment_population_reconciliation_v1 import (
     assert_deployment_population_reconciled,
     assert_final_deployment_population_reconciliation,
+    project_deployment_population_package,
     reconcile_deployment_population,
 )
 
 
-RUN_ID = "comprun_36959bd62c444298a805fe4b2edc3131"
-COMMIT = "9d817fdd827086a089a6153a7b65cdbd4344b1b4"
+RUN_ID = "comprun_c1a9bc931086455a9e16054a1820264a"
+COMMIT = "7235a861b1ab4dea5280917d80c76a00fd9f16d5"
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / "nico" / "comprehensive_human_review_package_cleanup_compat_v1.py"
 
 
-def _stage(non_success: int) -> dict:
+def _stage(non_success: int, *, observed: int = 10, successful: int = 7) -> dict:
     return {
         "stage_id": "ci_cd_operational_readiness",
         "title": "CI/CD Operational Readiness and Historical Health",
         "evidence": [
-            "Deployments observed: 10.",
-            "Successful deployments: 7.",
+            f"Deployments observed: {observed}.",
+            f"Successful deployments: {successful}.",
             f"Non-success deployments: {non_success}.",
         ],
     }
@@ -77,12 +78,80 @@ def test_complete_10_7_3_numeric_classification_is_preserved() -> None:
     assert "Outcome classification breakdown: Not available." not in repaired["evidence"]
 
 
+def test_final_package_projection_repairs_every_rendered_stage_copy() -> None:
+    source = _stage(1)
+    package = {
+        "json": {
+            "identity": {"run_id": RUN_ID, "commit_sha": COMMIT},
+            "stage_summaries": [source],
+            "assessment": {
+                "stage_summaries": [source],
+                "sections": [source],
+            },
+        }
+    }
+
+    projected = project_deployment_population_package(package)
+    canonical = projected["json"]
+    copies = [
+        canonical["stage_summaries"][0],
+        canonical["assessment"]["stage_summaries"][0],
+        canonical["assessment"]["sections"][0],
+    ]
+
+    assert all(
+        "Non-success or unresolved deployment observations: 3."
+        in item["evidence"]
+        for item in copies
+    )
+    assert all(
+        "Outcome classification breakdown: Not available." in item["evidence"]
+        for item in copies
+    )
+    assert package["json"]["stage_summaries"][0]["evidence"][-1] == (
+        "Non-success deployments: 1."
+    )
+
+
 def test_validator_rejects_bullet_prefixed_incomplete_population() -> None:
     surface = "\n".join(
         (
             "- Deployments observed: 10.",
             "- Successful deployments: 7.",
             "- Non-success deployments: 1.",
+        )
+    )
+
+    with pytest.raises(ValueError, match="does not reconcile"):
+        assert_deployment_population_reconciled(surface)
+
+
+def test_repeated_populations_are_validated_independently() -> None:
+    surface = "\n".join(
+        (
+            "Summary deployment evidence",
+            "Deployments observed: 10.",
+            "Successful deployments: 7.",
+            "Non-success deployments: 3.",
+            "Detailed deployment evidence",
+            "Deployments observed: 12.",
+            "Successful deployments: 10.",
+            "Non-success deployments: 2.",
+        )
+    )
+
+    assert_deployment_population_reconciled(surface)
+
+
+def test_one_bad_repeated_population_still_fails_closed() -> None:
+    surface = "\n".join(
+        (
+            "Deployments observed: 10.",
+            "Successful deployments: 7.",
+            "Non-success deployments: 3.",
+            "Deployments observed: 12.",
+            "Successful deployments: 10.",
+            "Non-success deployments: 1.",
         )
     )
 
