@@ -29,6 +29,9 @@ from nico.comprehensive_executive_summary_semantic_truth_v1 import (
 from nico.comprehensive_human_review_package_cleanup_v1 import (
     install_comprehensive_human_review_package_cleanup_v1,
 )
+from nico.comprehensive_human_review_package_cleanup_compat_v1 import (
+    install_comprehensive_human_review_package_cleanup_compat_v1,
+)
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
@@ -109,6 +112,9 @@ _EXECUTIVE_SUMMARY_SEMANTIC_TRUTH = (
 # cleaned human-review package.
 _HUMAN_REVIEW_PACKAGE_CLEANUP = (
     install_comprehensive_human_review_package_cleanup_v1()
+)
+_HUMAN_REVIEW_PACKAGE_CLEANUP_COMPAT = (
+    install_comprehensive_human_review_package_cleanup_compat_v1()
 )
 
 
@@ -218,6 +224,7 @@ __all__ = [
     "_COMPACT_DESIGN_MARKER_GATE",
     "_PDF_CONTROL_CHARACTER_GUARD",
     "_HUMAN_REVIEW_PACKAGE_CLEANUP",
+    "_HUMAN_REVIEW_PACKAGE_CLEANUP_COMPAT",
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "rebuild_client_artifacts",
 ]
