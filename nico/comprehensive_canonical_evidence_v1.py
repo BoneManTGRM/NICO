@@ -104,12 +104,14 @@ _BINDING_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
 }
 
+# Mutable workflow and deployment observations are deliberately excluded. Stage
+# summaries can contain those observations, so immutable technical identity is
+# bound through the normalized scanner, candidate, finding, and scoring surfaces.
 _TECHNICAL_BINDINGS = (
     "scanner_evidence",
     "candidate_evidence",
     "finding_evidence",
     "scoring_evidence",
-    "stage_evidence",
 )
 
 
@@ -128,24 +130,16 @@ def _sha256(value: Any) -> str:
 
 
 def _clean(value: Any) -> Any:
-    """Remove self-referential manifests and rendered byte payloads.
-
-    The canonical JSON remains the authority. This helper only creates a stable
-    digest subject; it does not rewrite, infer, or independently recalculate any
-    evidence, finding, candidate, score, limitation, or lifecycle value.
-    """
+    """Remove self-referential manifests and rendered byte payloads."""
 
     if isinstance(value, Mapping):
-        output: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized = str(key)
-            if normalized in _SELF_KEYS or normalized in _FORMAT_PAYLOAD_KEYS:
-                continue
-            output[normalized] = _clean(item)
-        return output
-    if isinstance(value, list):
-        return [_clean(item) for item in value]
-    if isinstance(value, tuple):
+        return {
+            str(key): _clean(item)
+            for key, item in value.items()
+            if str(key) not in _SELF_KEYS
+            and str(key) not in _FORMAT_PAYLOAD_KEYS
+        }
+    if isinstance(value, (list, tuple)):
         return [_clean(item) for item in value]
     return deepcopy(value)
 
@@ -170,9 +164,9 @@ def _binding(root: Mapping[str, Any], paths: Sequence[Sequence[str]]) -> dict[st
         present, value = _read_path(root, path)
         if not present:
             continue
-        path_name = _path_text(path)
-        retained[path_name] = _clean(value)
-        present_paths.append(path_name)
+        name = _path_text(path)
+        retained[name] = _clean(value)
+        present_paths.append(name)
     return {
         "declared_paths": [_path_text(path) for path in paths],
         "present_paths": present_paths,
@@ -182,11 +176,7 @@ def _binding(root: Mapping[str, Any], paths: Sequence[Sequence[str]]) -> dict[st
 
 def _identity(root: Mapping[str, Any]) -> dict[str, str]:
     identity = root.get("identity") if isinstance(root.get("identity"), Mapping) else {}
-    assessment = (
-        root.get("assessment")
-        if isinstance(root.get("assessment"), Mapping)
-        else {}
-    )
+    assessment = root.get("assessment") if isinstance(root.get("assessment"), Mapping) else {}
     return {
         "repository": str(
             identity.get("repository")
@@ -216,43 +206,32 @@ def _identity(root: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _validation_errors(root: Mapping[str, Any], *, require_complete: bool) -> list[str]:
+    if not require_complete:
+        return []
+
     errors: list[str] = []
     identity = _identity(root)
-    commit_sha = identity["commit_sha"]
-    if commit_sha and not _SHA40.fullmatch(commit_sha):
+    for field in ("repository", "commit_sha", "run_id", "evidence_ledger_id"):
+        if not identity[field]:
+            errors.append(f"identity.{field}:required")
+    if identity["commit_sha"] and not _SHA40.fullmatch(identity["commit_sha"]):
         errors.append("identity.commit_sha:invalid_sha40")
-    if require_complete:
-        for field in ("repository", "commit_sha", "run_id", "evidence_ledger_id"):
-            if not identity[field]:
-                errors.append(f"identity.{field}:required")
 
-        bindings = {
-            name: _binding(root, paths)
-            for name, paths in _BINDING_PATHS.items()
-        }
-        for name in (
-            "scanner_evidence",
-            "candidate_evidence",
-            "finding_evidence",
-            "scoring_evidence",
-            "stage_evidence",
-            "lifecycle",
-        ):
-            if not bindings[name]["present_paths"]:
-                errors.append(f"bindings.{name}:required")
-    return sorted(set(errors))
-
-
-def _technical_subject(root: Mapping[str, Any], bindings: Mapping[str, Any]) -> dict[str, Any]:
-    identity = _identity(root)
-    return {
-        "repository": identity["repository"],
-        "commit_sha": identity["commit_sha"],
-        "bindings": {
-            name: str(bindings[name]["sha256"])
-            for name in _TECHNICAL_BINDINGS
-        },
+    bindings = {
+        name: _binding(root, paths)
+        for name, paths in _BINDING_PATHS.items()
     }
+    for name in (
+        "scanner_evidence",
+        "candidate_evidence",
+        "finding_evidence",
+        "scoring_evidence",
+        "stage_evidence",
+        "lifecycle",
+    ):
+        if not bindings[name]["present_paths"]:
+            errors.append(f"bindings.{name}:required")
+    return sorted(set(errors))
 
 
 def build_canonical_evidence_manifest(
@@ -260,12 +239,7 @@ def build_canonical_evidence_manifest(
     *,
     require_complete: bool = False,
 ) -> dict[str, Any]:
-    """Bind one authoritative canonical JSON object without duplicating truth.
-
-    Bindings contain source paths and digests only. Renderers and service routes
-    must read the canonical JSON fields themselves; the manifest cannot supply an
-    alternative score, count, finding, candidate, limitation, or lifecycle value.
-    """
+    """Bind the authoritative canonical JSON without duplicating truth values."""
 
     root = _clean(dict(canonical))
     bindings = {
@@ -273,7 +247,14 @@ def build_canonical_evidence_manifest(
         for name, paths in _BINDING_PATHS.items()
     }
     identity = _identity(root)
-    technical_subject = _technical_subject(root, bindings)
+    technical_subject = {
+        "repository": identity["repository"],
+        "commit_sha": identity["commit_sha"],
+        "bindings": {
+            name: str(bindings[name]["sha256"])
+            for name in _TECHNICAL_BINDINGS
+        },
+    }
     mutable_subject = {
         "repository": identity["repository"],
         "commit_sha": identity["commit_sha"],
@@ -329,7 +310,6 @@ def validate_canonical_evidence_manifest(
     *,
     require_complete: bool = False,
 ) -> dict[str, Any]:
-    errors: list[str] = []
     embedded = canonical.get(MANIFEST_KEY)
     if not isinstance(embedded, Mapping):
         return {
@@ -344,6 +324,7 @@ def validate_canonical_evidence_manifest(
         root,
         require_complete=require_complete,
     )
+    errors: list[str] = []
 
     for field in (
         "artifact_schema",
@@ -355,26 +336,16 @@ def validate_canonical_evidence_manifest(
         if embedded.get(field) != expected.get(field):
             errors.append(f"canonical_evidence_manifest.{field}:mismatch")
 
-    embedded_bindings = (
-        embedded.get("bindings")
-        if isinstance(embedded.get("bindings"), Mapping)
-        else {}
-    )
+    embedded_bindings = embedded.get("bindings") if isinstance(embedded.get("bindings"), Mapping) else {}
     for name, expected_binding in expected["bindings"].items():
-        actual = (
-            embedded_bindings.get(name)
-            if isinstance(embedded_bindings.get(name), Mapping)
-            else {}
-        )
+        actual = embedded_bindings.get(name) if isinstance(embedded_bindings.get(name), Mapping) else {}
         if actual.get("sha256") != expected_binding.get("sha256"):
             errors.append(f"canonical_evidence_manifest.bindings.{name}.sha256:mismatch")
         if actual.get("present_paths") != expected_binding.get("present_paths"):
             errors.append(f"canonical_evidence_manifest.bindings.{name}.present_paths:mismatch")
 
-    claimed = str(canonical.get(DIGEST_KEY) or "")
-    if claimed != expected["run_subject_sha256"]:
+    if str(canonical.get(DIGEST_KEY) or "") != expected["run_subject_sha256"]:
         errors.append(f"{DIGEST_KEY}:mismatch")
-
     errors.extend(expected["validation_errors"])
     return {
         "status": "valid" if not errors else "invalid",
