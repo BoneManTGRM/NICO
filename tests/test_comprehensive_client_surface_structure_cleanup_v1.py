@@ -84,8 +84,9 @@ def test_workflow_outcome_mapping_uses_client_readable_labels() -> None:
     assert "'success'" not in rendered
 
 
-def test_shared_renderer_helpers_are_patched() -> None:
+def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
+    from nico import v2_premium_evidence_appendix as appendix
     from nico import v2_premium_report_renderer as premium
 
     status = install_client_surface_structure_cleanup_v1()
@@ -101,4 +102,9 @@ def test_shared_renderer_helpers_are_patched() -> None:
     assert review_lines == ["Window: 31-90 days; Owner Role: Platform Engineer"]
     assert premium_lines == ["Window: 91-180 days; Owner Role: Delivery Lead"]
     assert status["premium_renderer_clean_lines_bound"] is True
+    assert status["premium_renderer_entrypoint_bound"] is True
+    assert (
+        appendix.rebuild_premium_client_artifacts
+        is premium.rebuild_premium_client_artifacts
+    )
     assert status["canonical_json_unchanged"] is True
