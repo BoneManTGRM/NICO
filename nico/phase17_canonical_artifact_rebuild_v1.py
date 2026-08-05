@@ -191,12 +191,18 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # compiler derives stages, scores, executive findings, and artifact content.
     prepared = completion.prepare_client_report_package(prepared)
     # Preparation extensions can legitimately rebind shared renderers. Reassert
-    # the client-surface structured-value contract at the exact render boundary,
-    # then project only client-facing stage fields into readable lines. Complete
-    # structured roadmap and trend objects remain retained in canonical JSON.
+    # the client-surface structured-value contract at the exact render boundary.
     install_client_surface_structure_cleanup_v1()
     prepared = project_client_stage_summaries(prepared)
-    rendered = rebuild_single_pass_premium_artifacts(prepared)
+
+    # The first pass derives the complete canonical stage population. Normalize
+    # only the derived client-facing stage fields, then render the final package
+    # from that cleaned population. Complete roadmap, trend, scanner, finding,
+    # and remediation source objects remain retained in canonical JSON.
+    derived = rebuild_single_pass_premium_artifacts(prepared)
+    final_input = project_client_stage_summaries(derived)
+    rendered = rebuild_single_pass_premium_artifacts(final_input)
+
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
         repair_localized_rendered_report(rendered)
