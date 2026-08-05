@@ -6,8 +6,11 @@ from pypdf import PdfReader
 
 from nico.comprehensive_client_review_companion_v2 import (
     merge_review_companion_markdown,
-    render_comprehensive_review_companion_pdf,
     review_sections,
+)
+from nico.comprehensive_client_review_companion_v7 import (
+    COMPANION_PAGE_COUNT,
+    render_paired_substantive_review_pdf,
 )
 
 
@@ -39,22 +42,27 @@ def _canonical() -> dict:
     }
 
 
-def test_review_companion_uses_one_readable_sheet_per_section() -> None:
+def test_review_companion_pairs_two_complete_sections_per_sheet() -> None:
     canonical = _canonical()
     expected = review_sections(canonical, spanish=False)
-    pdf = render_comprehensive_review_companion_pdf(canonical, spanish=False)
+    pdf = render_paired_substantive_review_pdf(canonical, spanish=False)
     reader = PdfReader(io.BytesIO(pdf))
     pages = [page.extract_text() or "" for page in reader.pages]
 
     assert len(expected) == 8
-    assert len(reader.pages) == 8
-    for section, page in zip(expected, pages, strict=True):
-        assert section["title"] in page
-        assert "Retained evidence" in page
-        assert "What cannot be concluded" in page
-        assert "Reviewer disposition" in page
-        assert "Decision record" in page
-        assert "CLIENT DELIVERY BLOCKED" in page
+    assert len(reader.pages) == COMPANION_PAGE_COUNT == 4
+    for page_number, page in enumerate(pages, start=1):
+        pair = expected[(page_number - 1) * 2 : page_number * 2]
+        lines = [line.strip() for line in page.splitlines() if line.strip()]
+        assert len(pair) == 2
+        for section in pair:
+            assert section["title"] in page
+        assert lines.count("Retained evidence") == 2
+        assert lines.count("What cannot be concluded") == 2
+        assert lines.count("Reviewer disposition") == 2
+        assert lines.count("Decision record") == 2
+        assert page.count("CLIENT DELIVERY BLOCKED") == 2
+        assert f"Review page {page_number} of 4" in page
 
 
 def test_companion_markdown_removes_orphan_heading_tokens() -> None:

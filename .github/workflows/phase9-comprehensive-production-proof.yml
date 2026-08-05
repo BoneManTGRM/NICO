@@ -116,7 +116,7 @@ jobs:
           assert package['delivery_status'] == 'blocked_pending_human_approval'
           assert package['client_delivery_allowed'] is False
           assert page_count <= 45
-          assert completion['comprehensive_review_companion_page_count'] == 8
+          assert completion['comprehensive_review_companion_page_count'] == 4
           assert completion['table_of_contents_present'] is True
           assert completion['all_manifest_hashes_recomputed_from_final_bytes'] is True
           assert 'Table of Contents' in pdf_text
@@ -185,7 +185,7 @@ jobs:
               encoding='utf-8',
           )
           proof = {
-              'proof_schema': 'nico.phase9-comprehensive-production-proof.v2',
+              'proof_schema': 'nico.phase9-comprehensive-production-proof.v3',
               'immutable_revision': revision,
               'repository': os.environ.get('GITHUB_REPOSITORY'),
               'run_id': canonical['identity']['run_id'],
@@ -197,6 +197,8 @@ jobs:
               'finding_count': len(canonical['canonical_findings']),
               'pdf_page_count': page_count,
               'review_companion_page_count': completion['comprehensive_review_companion_page_count'],
+              'review_companion_section_count': 8,
+              'review_companion_sections_per_page': 2,
               'report_finality': package['report_finality'],
               'approval_status': package['approval_status'],
               'delivery_status': package['delivery_status'],
@@ -232,11 +234,14 @@ jobs:
           root = Path('phase9-comprehensive-proof')
           package_root = root / 'package'
           proof = json.loads((root / 'proof-summary.json').read_text(encoding='utf-8'))
+          assert proof['proof_schema'] == 'nico.phase9-comprehensive-production-proof.v3'
           assert proof['immutable_revision'] == os.environ['PHASE9_REVISION']
           assert all(proof['defects_absent'].values())
           assert proof['finding_count'] == 1
           assert proof['pdf_page_count'] <= 45
-          assert proof['review_companion_page_count'] == 8
+          assert proof['review_companion_page_count'] == 4
+          assert proof['review_companion_section_count'] == 8
+          assert proof['review_companion_sections_per_page'] == 2
           assert proof['generated_at'] == '2026-08-04T16:15:00Z'
           assert proof['report_finality'] == 'automated_draft'
           assert proof['approval_status'] == 'pending_human_approval'

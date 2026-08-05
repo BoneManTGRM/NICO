@@ -13,14 +13,15 @@ from nico.comprehensive_client_review_companion_v5 import (
     merge_substantive_review_markdown,
     substantive_review_sections,
 )
-from nico.comprehensive_client_review_companion_v6 import (
+from nico.comprehensive_client_review_companion_v7 import (
     COMPANION_PAGE_COUNT,
-    render_compact_substantive_review_pdf,
+    render_paired_substantive_review_pdf,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_BINDING = ROOT / "nico" / "comprehensive_mobile_score_projection_v2.py"
+FINAL_COMPAT = ROOT / "nico" / "comprehensive_human_review_package_cleanup_compat_v1.py"
+FINALIZER_BINDING = ROOT / "nico" / "comprehensive_client_review_companion_v7_finalizer_binding.py"
 COMMIT = "3c4352ae1873c547dd01406da833d2faedb5039b"
 
 
@@ -155,22 +156,27 @@ def test_all_eight_sections_are_substantive_and_truthful() -> None:
     assert "framework" in by_id["six_month_roadmap"]["recommended_decision"].casefold()
 
 
-def test_companion_pdf_has_one_continuous_page_per_review_section() -> None:
-    pdf = render_compact_substantive_review_pdf(_canonical(), spanish=False)
+def test_companion_pdf_pairs_two_continuous_sections_per_page() -> None:
+    canonical = _canonical()
+    sections = substantive_review_sections(canonical, spanish=False)
+    pdf = render_paired_substantive_review_pdf(canonical, spanish=False)
     reader = PdfReader(io.BytesIO(pdf))
     extracted_pages = [page.extract_text() or "" for page in reader.pages]
-    extracted = "\n".join(extracted_pages)
 
-    assert len(reader.pages) == COMPANION_PAGE_COUNT == SECTION_COUNT == 8
-    for section_number in range(1, 9):
-        marker = f"Section {section_number} of 8 | Page 1 of 1"
-        assert marker in extracted
-    assert "Review 2" not in extracted
-    assert "Review 5" not in extracted
-    assert "Review 8" not in extracted
+    assert len(reader.pages) == COMPANION_PAGE_COUNT == 4
+    for page_number, page in enumerate(extracted_pages, start=1):
+        normalized = " ".join(page.split())
+        pair = sections[(page_number - 1) * 2 : page_number * 2]
+        assert len(pair) == 2
+        for section in pair:
+            assert section["title"] in normalized
+        assert normalized.count("Decision record") == 2
+        assert normalized.count("CLIENT DELIVERY BLOCKED") == 2
+        assert f"Review page {page_number} of 4" in normalized
+        assert page.strip()
+    extracted = "\n".join(extracted_pages)
     assert "No additional structured observation was retained" not in extracted
     assert "AUTOMATED DRAFT | HUMAN DECISION PENDING | CLIENT DELIVERY BLOCKED" in extracted
-    assert all(page.strip() for page in extracted_pages)
 
 
 def test_markdown_uses_specific_limitations_and_not_filler() -> None:
@@ -200,7 +206,7 @@ def test_status_sanitizer_preserves_client_review_pages_but_drops_raw_internal_p
         [
             [
                 "NICO | Comprehensive client review | automated draft",
-                "Section 1 of 8 | Page 1 of 1",
+                "Sections 1-2 of 8 | Review page 1 of 4",
                 "Retained evidence",
                 "artifact_schema",
                 "stage_execution.internal",
@@ -220,23 +226,15 @@ def test_status_sanitizer_preserves_client_review_pages_but_drops_raw_internal_p
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert len(reader.pages) == 2
-    assert "Section 1 of 8 | Page 1 of 1" in text
+    assert "Sections 1-2 of 8 | Review page 1 of 4" in text
     assert "Raw evidence appendix" not in text
     assert "Safe client page" in text
 
 
-def test_runtime_binds_v6_after_legacy_v5_and_preserves_sanitized_pages() -> None:
-    source = RUNTIME_BINDING.read_text(encoding="utf-8")
+def test_runtime_reasserts_v7_after_legacy_companion_installers() -> None:
+    final_compat = FINAL_COMPAT.read_text(encoding="utf-8")
+    finalizer = FINALIZER_BINDING.read_text(encoding="utf-8")
 
-    legacy = source.index("install_comprehensive_review_companion_v4()")
-    substantive = source.index("install_comprehensive_review_companion_v5()")
-    compact = source.index("install_comprehensive_review_companion_v6()")
-    sanitizer = source.index("install_client_pdf_status_sanitizer_v7()")
-    assert legacy < substantive < compact < sanitizer
-    assert 'RUNTIME_REVISION = "v72-exact-digest-approved-delivery"' in source
-    assert '"decision_useful_review_companion_pages": 8' in source
-    assert '"continuous_review_section_numbering": True' in source
-    assert '"continuous_physical_page_labels": True' in source
-    assert '"filler_only_review_pages_allowed": False' in source
-    assert '"roadmap_claim_is_framework_only": True' in source
-    assert '"runtime_platform_parity_not_assessed_without_device_evidence": True' in source
+    assert "install_comprehensive_review_companion_v7_rebind" in final_compat
+    assert "install_comprehensive_review_companion_v7_rebind" in finalizer
+    assert "paired_renderer_reasserted_per_finalization" in finalizer

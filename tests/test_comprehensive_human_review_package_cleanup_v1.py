@@ -5,7 +5,9 @@ import re
 
 import pytest
 from pypdf import PdfReader
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph, SimpleDocTemplate
 
 from nico.comprehensive_human_review_package_cleanup_v1 import (
     _digest_markup,
@@ -172,7 +174,9 @@ def test_operational_populations_render_separately_without_blank_values() -> Non
     assert "Workflow runs: 81 successful of 100 observed (81%)" in combined
     assert "Workflow jobs: 38 successful of 38 observed (100%)" in combined
     assert "Deployments: 7 successful of 10 observed (70%)" in combined
-    assert "Non-success deployment classification: Not available." in combined
+    assert "Non-success or unresolved deployment observations: 3." in combined
+    assert "Outcome classification breakdown: Not available." in combined
+    assert "Non-success deployment classification: Not available." not in combined
     assert "Non-success deployments: ." not in combined
 
 
