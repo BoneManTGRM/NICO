@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 from nico.client_assessment_truth_v3 import normalize_repository_path
 
@@ -31,16 +31,6 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
-
-
-def _list(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    if value in (None, ""):
-        return []
-    return [value]
 
 
 def _location(item: Mapping[str, Any]) -> tuple[str, int | None, str]:
@@ -88,9 +78,27 @@ def _finding_id(item: Mapping[str, Any]) -> str:
     return _text(item.get("finding_id") or item.get("id"))
 
 
+def _finding_family(item: Mapping[str, Any]) -> str:
+    """Return the canonical family component used by the finding register.
+
+    The authoritative register identifies exact-source findings by repository,
+    path, line, and finding family. Distinct rules or finding families may
+    truthfully share one source line and must not be collapsed or rejected.
+    """
+
+    declared = _text(
+        item.get("finding_family")
+        or item.get("rule_id")
+        or item.get("analyzer_rule")
+        or item.get("category")
+    ).casefold()
+    return declared or "technical_finding"
+
+
 def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
     finding_id = _finding_id(item)
     priority = _text(item.get("priority")).upper()
+    family = _finding_family(item)
     path, line, location = _location(item)
     evidence = _first_text(
         item,
@@ -99,7 +107,13 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
         "fact",
         "problematic_code",
     )
-    impact = _first_text(item, "impact", "business_impact", "probable_impact", "interpretation")
+    impact = _first_text(
+        item,
+        "impact",
+        "business_impact",
+        "probable_impact",
+        "interpretation",
+    )
     correction = _first_text(
         item,
         "correction",
@@ -113,6 +127,7 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
         item,
         "verification",
         "acceptance_criteria",
+        "exit_criteria",
         "verification_method",
         "test_strategy",
     )
@@ -120,12 +135,13 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
     if complexity in (None, ""):
         nested = item.get("complexity") if isinstance(item.get("complexity"), Mapping) else {}
         complexity = nested.get("cyclomatic_complexity") or nested.get("value")
+
     errors: list[str] = []
     if not finding_id:
         errors.append("finding_id:required")
-    if priority not in _VALID_PRIORITY:
-        errors.append("priority:invalid_or_missing")
     if kind == "code":
+        if priority not in _VALID_PRIORITY:
+            errors.append("priority:invalid_or_missing")
         if not path:
             errors.append("source.path:required")
         if line is None or line < 1:
@@ -138,11 +154,16 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
             errors.append("correction:required")
         if not verification:
             errors.append("verification:required")
+    elif priority and priority not in _VALID_PRIORITY:
+        errors.append("priority:invalid")
+
     anchor = f"{path.casefold()}:{line}" if path and line is not None else ""
+    source_identity = f"{anchor}|{family}" if anchor else ""
     subject = {
         "finding_id": finding_id,
         "kind": kind,
         "priority": priority,
+        "finding_family": family,
         "source": {"path": path, "line": line, "location": location},
         "evidence": evidence,
         "impact": impact,
@@ -154,6 +175,7 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
     return {
         **subject,
         "source_anchor": anchor,
+        "source_identity": source_identity,
         "record_sha256": _sha256(subject),
         "validation_errors": errors,
     }
@@ -196,9 +218,19 @@ def build_finding_integrity_manifest(
     records = _records(register)
     errors: list[str] = []
     ids = [item["finding_id"] for item in records]
-    anchors = [item["source_anchor"] for item in records if item["kind"] == "code"]
+    source_identities = [
+        item["source_identity"]
+        for item in records
+        if item["kind"] == "code" and item["source_identity"]
+    ]
     duplicate_ids = sorted({value for value in ids if value and ids.count(value) > 1})
-    duplicate_anchors = sorted({value for value in anchors if value and anchors.count(value) > 1})
+    duplicate_source_identities = sorted(
+        {
+            value
+            for value in source_identities
+            if source_identities.count(value) > 1
+        }
+    )
     for record in records:
         errors.extend(
             f"{record['finding_id'] or '<missing>'}.{error}"
@@ -206,8 +238,11 @@ def build_finding_integrity_manifest(
         )
     if duplicate_ids:
         errors.extend(f"duplicate_finding_id:{value}" for value in duplicate_ids)
-    if duplicate_anchors:
-        errors.extend(f"duplicate_exact_source_anchor:{value}" for value in duplicate_anchors)
+    if duplicate_source_identities:
+        errors.extend(
+            f"duplicate_exact_source_identity:{value}"
+            for value in duplicate_source_identities
+        )
 
     surface = _canonical_surface(canonical)
     surface_ids = sorted(_finding_id(item) for item in surface if _finding_id(item))
@@ -225,6 +260,11 @@ def build_finding_integrity_manifest(
         for item in surface
         if _finding_id(item)
     }
+    surface_families = {
+        _finding_id(item): _finding_family(item)
+        for item in surface
+        if _finding_id(item)
+    }
     for record in records:
         finding_id = record["finding_id"]
         if finding_id in surface_locations and surface_locations[finding_id] != record["source"]["location"]:
@@ -232,6 +272,12 @@ def build_finding_integrity_manifest(
                 f"{finding_id}.canonical_surface_location:mismatch;"
                 f"register={record['source']['location']};"
                 f"surface={surface_locations[finding_id]}"
+            )
+        if finding_id in surface_families and surface_families[finding_id] != record["finding_family"]:
+            errors.append(
+                f"{finding_id}.canonical_surface_family:mismatch;"
+                f"register={record['finding_family']};"
+                f"surface={surface_families[finding_id]}"
             )
 
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
@@ -266,7 +312,8 @@ def build_finding_integrity_manifest(
         **subject,
         "records": records,
         "duplicate_finding_ids": duplicate_ids,
-        "duplicate_exact_source_anchors": duplicate_anchors,
+        "duplicate_exact_source_identities": duplicate_source_identities,
+        "duplicate_exact_source_anchors": duplicate_source_identities,
         "validation_status": "valid" if not errors else "invalid",
         "validation_errors": sorted(set(errors)),
         "finding_integrity_sha256": _sha256(subject),
@@ -293,6 +340,8 @@ def attach_finding_integrity_manifest(
             "finding_integrity_version": VERSION,
             "exact_source_findings_field_complete": True,
             "finding_priority_policy_explicit": True,
+            "finding_identity_includes_source_and_family": True,
+            "distinct_finding_families_may_share_source_line": True,
             "bounded_executive_detail_preserves_full_index": True,
             "finding_disposition_remains_human_only": True,
         }
@@ -312,6 +361,7 @@ def validate_finding_integrity_manifest(canonical: Mapping[str, Any]) -> dict[st
             "finding_id": item.get("finding_id"),
             "kind": item.get("kind"),
             "priority": item.get("priority"),
+            "finding_family": item.get("finding_family"),
             "source": deepcopy(item.get("source") or {}),
             "evidence": item.get("evidence"),
             "impact": item.get("impact"),
