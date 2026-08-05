@@ -142,6 +142,34 @@ def test_redacted_result_is_retained_atomically_with_hash(tmp_path: Path) -> Non
     )["status"] == "valid"
 
 
+def test_configured_but_unwritable_artifact_store_fails_closed_without_exception(
+    tmp_path: Path,
+) -> None:
+    blocked_root = tmp_path / "not-a-directory"
+    blocked_root.write_text("occupied", encoding="utf-8")
+    contracted = attach_scanner_execution_contract(
+        _completed(),
+        _spec("bandit"),
+    )
+
+    retained = persist_redacted_scanner_artifact(
+        contracted,
+        scan_id="scan_fixture",
+        root=blocked_root,
+    )
+
+    metadata = retained["retained_redacted_artifact"]
+    assert metadata["status"] == "failed"
+    assert metadata["atomic_write"] is False
+    assert metadata["redacted"] is True
+    assert "NotADirectoryError" in metadata["reason"]
+    validation = validate_scanner_execution_record(retained)
+    assert validation["status"] == "invalid"
+    assert "retained_redacted_artifact.status:invalid" in validation[
+        "validation_errors"
+    ]
+
+
 def test_completed_result_cannot_claim_verification_without_complete_capture() -> None:
     contracted = attach_scanner_execution_contract(
         {
