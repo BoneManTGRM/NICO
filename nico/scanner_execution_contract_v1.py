@@ -160,7 +160,11 @@ def persist_redacted_scanner_artifact(
     scan_id: str,
     root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Persist one complete redacted scanner result atomically when configured."""
+    """Persist one complete redacted scanner result atomically when configured.
+
+    A configured-but-unwritable store is an explicit scanner evidence failure,
+    not an uncaught worker exception and not an inline-only success.
+    """
 
     output = deepcopy(dict(result))
     configured_root = str(
@@ -182,22 +186,39 @@ def persist_redacted_scanner_artifact(
         raise ValueError("scanner_artifact.tool:unsafe")
 
     destination_dir = Path(configured_root) / safe_scan_id
-    destination_dir.mkdir(parents=True, exist_ok=True)
     destination = destination_dir / f"{tool}.redacted.json"
     subject = _artifact_subject(output)
     encoded = json.dumps(subject, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()
+    temporary: Path | None = None
+    try:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination_dir,
+            prefix=f".{tool}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(encoded)
+            temporary = Path(handle.name)
+        temporary.replace(destination)
+    except OSError as exc:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        output["retained_redacted_artifact"] = {
+            "status": "failed",
+            "reason": f"durable scanner artifact retention failed: {type(exc).__name__}",
+            "sha256": digest,
+            "size_bytes": len(encoded),
+            "redacted": True,
+            "atomic_write": False,
+        }
+        return output
 
-    with tempfile.NamedTemporaryFile(
-        mode="wb",
-        dir=destination_dir,
-        prefix=f".{tool}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        handle.write(encoded)
-        temporary = Path(handle.name)
-    temporary.replace(destination)
     output["retained_redacted_artifact"] = {
         "status": "retained",
         "path": str(destination),
