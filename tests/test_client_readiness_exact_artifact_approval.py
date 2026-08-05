@@ -11,6 +11,7 @@ from nico.client_readiness_exact_artifact_approval_v2 import (
 
 SHA = "a" * 40
 DIGEST = "b" * 64
+_DETACHED_DIGESTS = ("c" * 64, "d" * 64, "e" * 64, "f" * 64, "1" * 64)
 
 
 def _identity() -> dict:
@@ -33,7 +34,7 @@ def _detached_artifacts() -> dict:
     return {
         name: {
             "filename": f"{name}.json" if name.endswith("json") or name == "evidence_manifest" else f"{name}.csv",
-            "sha256": chr(ord("c") + index) * 64,
+            "sha256": _DETACHED_DIGESTS[index],
             "size_bytes": 500 + index,
         }
         for index, name in enumerate(
