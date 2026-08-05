@@ -54,10 +54,18 @@ def normalize_missing_fixture_identity(canonical: Mapping[str, Any]) -> dict[str
 
 def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, Any]:
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+    from nico.comprehensive_full_report_finish_v1 import (
+        install_comprehensive_full_report_finish_v1,
+    )
 
     current = cleanup.assert_human_review_package_cleanup
     if getattr(current, _MARKER, False):
-        return {"status": "already_installed", "version": VERSION}
+        finish = install_comprehensive_full_report_finish_v1()
+        return {
+            "status": "already_installed",
+            "version": VERSION,
+            "full_report_finish": finish,
+        }
 
     @wraps(current)
     def validate(
@@ -76,11 +84,13 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     setattr(validate, _MARKER, True)
     setattr(validate, "_nico_previous", current)
     cleanup.assert_human_review_package_cleanup = validate
+    finish = install_comprehensive_full_report_finish_v1()
     return {
         "status": "installed",
         "version": VERSION,
         "legacy_fixture_identity_normalized": True,
         "production_contract_still_fail_closed": True,
+        "full_report_finish": finish,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
