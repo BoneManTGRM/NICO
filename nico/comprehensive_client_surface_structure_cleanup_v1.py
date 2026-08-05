@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from functools import wraps
 from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-client-surface-structure-cleanup.v1"
 _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
+_PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _OUTCOME_LABELS = {
     "success": "Successful",
@@ -94,6 +96,49 @@ def client_surface_values(
     return output
 
 
+def premium_renderer_clean_lines(values: Any) -> list[str]:
+    """Match the premium renderer contract while humanizing nested evidence first."""
+
+    if isinstance(values, Mapping):
+        raw_values: Iterable[Any] = (values,)
+    elif isinstance(values, (list, tuple, set)):
+        raw_values = values
+    elif values not in (None, ""):
+        raw_values = (values,)
+    else:
+        raw_values = ()
+
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        item = humanize_client_surface_value(raw, item_limit=1200)
+        if not item or not re.search(r"[A-Za-z0-9]", item):
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
+
+
+def _install_premium_renderer_structured_line_cleanup() -> bool:
+    from nico import v2_premium_report_renderer as premium
+
+    current = premium._clean_lines
+    if getattr(current, _PREMIUM_MARKER, False):
+        return True
+
+    @wraps(current)
+    def clean_lines(values: Any) -> list[str]:
+        return premium_renderer_clean_lines(values)
+
+    setattr(clean_lines, _PREMIUM_MARKER, True)
+    setattr(clean_lines, "_nico_previous", current)
+    premium._clean_lines = clean_lines
+    return premium._clean_lines is clean_lines
+
+
 def _install_raw_mapping_surface_diagnostic() -> bool:
     from nico import comprehensive_full_report_finish_v1 as finish
 
@@ -126,16 +171,18 @@ def _install_raw_mapping_surface_diagnostic() -> bool:
 
 
 def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
-    """Patch the shared review-companion value renderer, not canonical evidence."""
+    """Patch shared render-only helpers while preserving canonical evidence."""
 
     from nico import comprehensive_client_review_companion_v2 as companion
 
+    premium_bound = _install_premium_renderer_structured_line_cleanup()
     diagnostic_bound = _install_raw_mapping_surface_diagnostic()
     current = companion._values
     if getattr(current, _MARKER, False):
         return {
             "status": "already_installed",
             "version": VERSION,
+            "premium_renderer_clean_lines_bound": premium_bound,
             "review_companion_values_bound": True,
             "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
             "canonical_json_unchanged": True,
@@ -151,6 +198,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "premium_renderer_clean_lines_bound": premium_bound,
         "review_companion_values_bound": companion._values is values,
         "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
         "nested_mappings_rendered_as_labels": True,
@@ -167,4 +215,5 @@ __all__ = [
     "client_surface_values",
     "humanize_client_surface_value",
     "install_client_surface_structure_cleanup_v1",
+    "premium_renderer_clean_lines",
 ]
