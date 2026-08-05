@@ -1,17 +1,35 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from nico.client_readiness_exact_artifact_approval_v2 import (
+    build_approval_subject,
+    evaluate_exact_artifact_approval,
+)
 from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 
-VERSION = "nico.comprehensive_review_decision.v1"
+VERSION = "nico.comprehensive_review_decision.v3"
 _REPORT_STAGE_IDS = (
     "final_comprehensive_report_generation",
     "risk_reduction_and_executive_briefing",
     "decision_report_generation",
 )
+
+
+def _canonical_hash(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def report_package_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -89,6 +107,102 @@ def _evidence_bundle_hash(record: Mapping[str, Any], package: Mapping[str, Any])
     return ""
 
 
+def _accepted_risk_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
+    human = record.get("human_evidence") if isinstance(record.get("human_evidence"), Mapping) else {}
+    modules = human.get("modules") if isinstance(human.get("modules"), Mapping) else {}
+    accepted = modules.get("accepted_risks") if isinstance(modules.get("accepted_risks"), Mapping) else {}
+    evidence = accepted.get("evidence") if isinstance(accepted.get("evidence"), Mapping) else {}
+    return deepcopy(dict(evidence))
+
+
+def _bind_client_readiness_approval(
+    manifest: dict[str, Any],
+    record: Mapping[str, Any],
+    *,
+    reviewer: str,
+    reviewer_role: str,
+    reviewer_authorization_basis: str,
+    decision_reason: str,
+    decided_at: str | None,
+    client_readiness: Any,
+    residual_risk_acceptance: Any,
+) -> dict[str, Any]:
+    stored = _accepted_risk_evidence(record)
+    readiness = (
+        deepcopy(dict(client_readiness))
+        if isinstance(client_readiness, Mapping)
+        else deepcopy(dict(stored.get("client_readiness") or {}))
+        if isinstance(stored.get("client_readiness"), Mapping)
+        else {}
+    )
+    risk = (
+        deepcopy(dict(residual_risk_acceptance))
+        if isinstance(residual_risk_acceptance, Mapping)
+        else deepcopy(dict(stored.get("residual_risk_acceptance") or {}))
+        if isinstance(stored.get("residual_risk_acceptance"), Mapping)
+        else {}
+    )
+    authorization_basis = str(
+        reviewer_authorization_basis
+        or stored.get("reviewer_authorization_basis")
+        or ""
+    ).strip()
+    identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    subject = build_approval_subject(
+        identity={
+            "repository": identity.get("repository"),
+            "commit_sha": identity.get("commit_sha"),
+            "run_id": identity.get("run_id"),
+            "evidence_ledger_id": identity.get("evidence_ledger_id"),
+        },
+        report_artifact_digests=(
+            manifest.get("artifact_digests")
+            if isinstance(manifest.get("artifact_digests"), Mapping)
+            else {}
+        ),
+        artifact_manifest=readiness.get("artifact_manifest"),
+        readiness_gates=readiness.get("gates"),
+    )
+    timestamp = str(
+        decided_at
+        or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    ).strip()
+    approval = evaluate_exact_artifact_approval(
+        subject,
+        {
+            "reviewer": {
+                "identity": reviewer,
+                "role": reviewer_role,
+                "authorized": readiness.get("review_authorized") is True,
+                "authorization_basis": authorization_basis,
+                "recorded_at": timestamp,
+            },
+            "decision": "approved",
+            "decision_reason": decision_reason,
+            # The authenticated human approves the current report package; NICO binds
+            # that decision to the server-calculated immutable subject digest.
+            "approved_subject_sha256": subject.get("approval_subject_sha256"),
+            "residual_risk_acceptance": risk,
+        },
+    )
+    manifest["client_readiness_approval"] = approval
+    if approval.get("status") != "approved":
+        errors = [
+            "client_readiness:" + str(item)
+            for item in approval.get("validation_errors") or []
+        ]
+        manifest["validation_errors"] = sorted(
+            set(list(manifest.get("validation_errors") or []) + errors)
+        )
+        manifest["accepted_edition"] = False
+        manifest["delivery_status"] = "blocked"
+        manifest["client_delivery_allowed"] = False
+    manifest_payload = deepcopy(manifest)
+    manifest_payload.pop("accepted_edition_manifest_sha256", None)
+    manifest["accepted_edition_manifest_sha256"] = _canonical_hash(manifest_payload)
+    return manifest
+
+
 def build_reviewed_edition(
     record: Mapping[str, Any],
     *,
@@ -97,11 +211,16 @@ def build_reviewed_edition(
     decision: str,
     decision_reason: str,
     decided_at: str | None = None,
+    reviewer_authorization_basis: str = "",
+    client_readiness: Any = None,
+    residual_risk_acceptance: Any = None,
 ) -> dict[str, Any]:
     """Bind a human decision to the exact already-generated report artifacts.
 
-    This function never regenerates or edits the report. Missing identity, scanner,
-    evidence, or artifact data remains a validation error in the returned manifest.
+    Approval is additionally bound to the exact client-readiness artifact manifest,
+    all prerequisite gate digests, explicit reviewer authority, and authorized
+    residual-risk acceptance. The readiness package may be supplied directly by an
+    internal caller or retained in the accepted-risks human-evidence module.
     """
 
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
@@ -110,7 +229,7 @@ def build_reviewed_edition(
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
     except Exception:
         pdf = b""
-    return build_accepted_report_edition(
+    manifest = build_accepted_report_edition(
         repository=str(identity.get("repository") or ""),
         commit_sha=str(identity.get("commit_sha") or ""),
         tree_sha=_tree_sha(record),
@@ -131,6 +250,19 @@ def build_reviewed_edition(
         decision_reason=decision_reason,
         decided_at=decided_at,
     )
+    if str(decision or "").strip().casefold() == "approved":
+        manifest = _bind_client_readiness_approval(
+            manifest,
+            record,
+            reviewer=reviewer,
+            reviewer_role=reviewer_role,
+            reviewer_authorization_basis=reviewer_authorization_basis,
+            decision_reason=decision_reason,
+            decided_at=decided_at,
+            client_readiness=client_readiness,
+            residual_risk_acceptance=residual_risk_acceptance,
+        )
+    return manifest
 
 
 __all__ = ["VERSION", "build_reviewed_edition", "report_package_from_record"]
