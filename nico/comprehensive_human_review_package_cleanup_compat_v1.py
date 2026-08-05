@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.6"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.7"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -20,16 +20,7 @@ def _text(value: Any) -> str:
 
 
 def normalize_missing_fixture_identity(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize only packages that bypassed the production preparation contract.
-
-    The production preparation path sets a contract marker after projecting absent
-    or placeholder customer and project identity as ``Not supplied``. Historical
-    lower-level manifest fixtures intentionally call the finalizer directly with
-    ``default_*`` values and therefore do not carry that marker. Normalize those
-    legacy fixture inputs for validation only. Once the marker is present, explicit
-    placeholders remain untouched so the fail-closed production validator rejects
-    them.
-    """
+    """Normalize only packages that bypassed the production preparation contract."""
 
     result = deepcopy(dict(canonical))
     contract = (
@@ -81,6 +72,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_raw_mapping_string_recovery_v1 import (
         install_raw_mapping_string_recovery_v1,
     )
+    from nico.comprehensive_review_companion_v7_mobile_contract import (
+        install_comprehensive_review_companion_v7_mobile_contract,
+    )
 
     raw_mapping_recovery = install_raw_mapping_string_recovery_v1()
     surface_cleanup = install_client_surface_structure_cleanup_v1()
@@ -93,6 +87,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         final_six_projection = install_final_six_package_projection_v1()
         final_six_runtime = install_final_six_runtime_repair_v1()
         review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
+        mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -105,6 +100,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "final_six_package_projection": final_six_projection,
             "final_six_runtime_repair": final_six_runtime,
             "review_companion_v7_rebind": review_companion_rebind,
+            "review_companion_v7_mobile_contract": mobile_contract,
         }
 
     @wraps(current)
@@ -130,6 +126,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     final_six_projection = install_final_six_package_projection_v1()
     final_six_runtime = install_final_six_runtime_repair_v1()
     review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
+    mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
     return {
         "status": "installed",
         "version": VERSION,
@@ -144,6 +141,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "final_six_package_projection": final_six_projection,
         "final_six_runtime_repair": final_six_runtime,
         "review_companion_v7_rebind": review_companion_rebind,
+        "review_companion_v7_mobile_contract": mobile_contract,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
