@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Regression coverage for exact scanner contracts and candidate stability."""
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
