@@ -62,12 +62,9 @@ def test_exact_failed_taxonomy_line_renders_without_python_mapping_syntax() -> N
     )
 
     assert status["labelled_mapping_tails_recovered"] is True
-    assert len(rendered) == 1
-    assert rendered[0].startswith("Outcome Taxonomy: Failed: 19")
-    assert "Successful: 80" in rendered[0]
-    assert "Unknown: 1" in rendered[0]
-    assert "Action Required: 0" in rendered[0]
-    assert "Queued Or In Progress: 0" in rendered[0]
+    assert rendered == [
+        "Outcome Taxonomy: Failed: 19; Successful: 80; Unknown: 1"
+    ]
     assert "{" not in rendered[0]
     assert "}" not in rendered[0]
     assert "'failure'" not in rendered[0]
