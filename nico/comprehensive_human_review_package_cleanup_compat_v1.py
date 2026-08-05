@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.1"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -57,6 +57,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_client_surface_structure_cleanup_v1 import (
         install_client_surface_structure_cleanup_v1,
     )
+    from nico.comprehensive_exact_source_index_validation_v1 import (
+        install_exact_source_index_validation_v1,
+    )
     from nico.comprehensive_full_report_finish_v1 import (
         install_comprehensive_full_report_finish_v1,
     )
@@ -69,12 +72,14 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     current = cleanup.assert_human_review_package_cleanup
     if getattr(current, _MARKER, False):
         finish = install_comprehensive_full_report_finish_v1()
+        exact_source_index = install_exact_source_index_validation_v1()
         return {
             "status": "already_installed",
             "version": VERSION,
             "raw_mapping_string_recovery": raw_mapping_recovery,
             "client_surface_structure_cleanup": surface_cleanup,
             "full_report_finish": finish,
+            "exact_source_index_validation": exact_source_index,
         }
 
     @wraps(current)
@@ -95,6 +100,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     setattr(validate, "_nico_previous", current)
     cleanup.assert_human_review_package_cleanup = validate
     finish = install_comprehensive_full_report_finish_v1()
+    exact_source_index = install_exact_source_index_validation_v1()
     return {
         "status": "installed",
         "version": VERSION,
@@ -103,6 +109,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "raw_mapping_string_recovery": raw_mapping_recovery,
         "client_surface_structure_cleanup": surface_cleanup,
         "full_report_finish": finish,
+        "exact_source_index_validation": exact_source_index,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
