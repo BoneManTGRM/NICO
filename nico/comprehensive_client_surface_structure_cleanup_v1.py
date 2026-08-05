@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from functools import wraps
 from typing import Any, Iterable, Mapping
 
@@ -9,6 +10,8 @@ _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
 _PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
 _PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
+_CLIENT_STAGE_FIELDS = ("evidence", "findings", "unavailable", "limitations")
+_CLIENT_SURFACE_ITEM_LIMIT = 100_000
 _OUTCOME_LABELS = {
     "success": "Successful",
     "successful": "Successful",
@@ -41,7 +44,7 @@ def _label(value: Any) -> str:
 
 
 def humanize_client_surface_value(value: Any, *, item_limit: int = 700) -> str:
-    """Render structured evidence as readable prose without changing canonical JSON."""
+    """Render structured evidence as readable prose without changing source data."""
 
     if isinstance(value, Mapping):
         parts: list[str] = []
@@ -95,6 +98,58 @@ def client_surface_values(
         if len(output) >= limit:
             break
     return output
+
+
+def _line_capacity(value: Any) -> int:
+    if isinstance(value, Mapping):
+        return max(1, len(value))
+    if isinstance(value, (list, tuple, set)):
+        return max(1, len(value))
+    return 1
+
+
+def _project_stage_list(value: Any) -> list[dict[str, Any]]:
+    projected: list[dict[str, Any]] = []
+    for raw in value or []:
+        if not isinstance(raw, Mapping):
+            continue
+        stage = deepcopy(dict(raw))
+        for field in _CLIENT_STAGE_FIELDS:
+            if field not in stage:
+                continue
+            stage[field] = client_surface_values(
+                stage.get(field),
+                limit=_line_capacity(stage.get(field)),
+                item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
+            )
+        projected.append(stage)
+    return projected
+
+
+def project_client_stage_summaries(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Humanize only client stage fields; retain complete structured JSON sources."""
+
+    result = deepcopy(dict(package))
+    canonical = (
+        deepcopy(dict(result.get("json") or {}))
+        if isinstance(result.get("json"), Mapping)
+        else {}
+    )
+    assessment = (
+        deepcopy(dict(canonical.get("assessment") or {}))
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    source = canonical.get("stage_summaries")
+    if not isinstance(source, list):
+        source = assessment.get("stage_summaries")
+    stages = _project_stage_list(source if isinstance(source, list) else [])
+    if stages:
+        canonical["stage_summaries"] = deepcopy(stages)
+        assessment["stage_summaries"] = deepcopy(stages)
+    canonical["assessment"] = assessment
+    result["json"] = canonical
+    return result
 
 
 def premium_renderer_clean_lines(values: Any) -> list[str]:
@@ -155,7 +210,7 @@ def _install_premium_renderer_entrypoint_cleanup() -> bool:
     def rebuild(package: Mapping[str, Any]) -> dict[str, Any]:
         # The appendix module captures this renderer by direct import. Rebind the
         # original function's global helper at call time so every imported alias
-        # uses the same structured-value renderer without changing canonical JSON.
+        # uses the same structured-value renderer without changing source JSON.
         current.__globals__["_clean_lines"] = premium_renderer_clean_lines
         return current(package)
 
@@ -217,7 +272,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
             "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
             "review_companion_values_bound": True,
             "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
-            "canonical_json_unchanged": True,
+            "canonical_structured_sources_retained": True,
         }
 
     @wraps(current)
@@ -235,7 +290,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         "review_companion_values_bound": companion._values is values,
         "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
         "nested_mappings_rendered_as_labels": True,
-        "canonical_json_unchanged": True,
+        "canonical_structured_sources_retained": True,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
@@ -249,4 +304,5 @@ __all__ = [
     "humanize_client_surface_value",
     "install_client_surface_structure_cleanup_v1",
     "premium_renderer_clean_lines",
+    "project_client_stage_summaries",
 ]
