@@ -138,7 +138,7 @@ def test_not_applicable_requires_justification_and_authorized_scope() -> None:
 
     blocked = build_client_evidence_register(sections, repository="BoneManTGRM/NICO", commit_sha=SHA, run_id=RUN_ID)
     errors = " ".join(blocked["invalid_sections"][0]["errors"])
-    assert "requires a justification" in errors
+    assert "require a justification" in errors
     assert "not_applicable_authorization.identity" in errors
 
     section["justification"] = "The engagement excludes commercial staffing and cost advice."
