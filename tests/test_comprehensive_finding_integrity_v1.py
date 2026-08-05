@@ -146,9 +146,9 @@ def test_manifest_digest_detects_record_mutation() -> None:
     validation = validate_finding_integrity_manifest(attached)
 
     assert validation["status"] == "invalid"
-    # The record digest is immutable; changing display fields without updating the
-    # bound record digest is detected once the manifest subject is recomputed.
-    assert "finding_integrity_sha256:mismatch" not in validation["validation_errors"] or validation["status"] == "invalid"
+    assert "NICO-FINDING-0000.record_sha256:mismatch" in validation[
+        "validation_errors"
+    ]
 
 
 def test_summary_population_mismatch_fails_closed() -> None:
