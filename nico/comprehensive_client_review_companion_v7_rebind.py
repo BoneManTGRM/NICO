@@ -26,6 +26,9 @@ def install_comprehensive_review_companion_v7_rebind() -> dict[str, Any]:
     from nico import comprehensive_client_review_companion_v4 as v4
     from nico import comprehensive_client_review_companion_v5 as v5
     from nico import comprehensive_client_review_companion_v6 as v6
+    from nico.comprehensive_client_review_companion_v7_finalizer_binding import (
+        install_comprehensive_review_companion_v7_finalizer_binding,
+    )
 
     setattr(render_paired_substantive_review_pdf, _MARKER, True)
 
@@ -45,6 +48,7 @@ def install_comprehensive_review_companion_v7_rebind() -> dict[str, Any]:
     completion.render_comprehensive_review_companion_pdf = (
         render_paired_substantive_review_pdf
     )
+    finalizer_binding = install_comprehensive_review_companion_v7_finalizer_binding()
 
     return {
         "status": "installed",
@@ -59,6 +63,7 @@ def install_comprehensive_review_companion_v7_rebind() -> dict[str, Any]:
             v6.render_compact_substantive_review_pdf
             is render_paired_substantive_review_pdf
         ),
+        "finalizer_binding": finalizer_binding,
         "late_compatibility_rebind_safe": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
