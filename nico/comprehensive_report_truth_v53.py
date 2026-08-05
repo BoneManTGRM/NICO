@@ -6,8 +6,12 @@ from functools import wraps
 from typing import Any, Callable
 
 from nico import comprehensive_report_truth_stabilization_v52 as legacy
+from nico.comprehensive_canonical_deployment_evidence_v1 import (
+    assert_deployment_population_reconciled,
+    reconcile_deployment_populations,
+)
 
-VERSION = "nico.comprehensive_report_truth.v53"
+VERSION = "nico.comprehensive_report_truth.v53.1"
 _MARKER = "_nico_comprehensive_report_truth_v53"
 _COMPLETED = {
     "complete",
@@ -246,7 +250,9 @@ def _attach_score_reconciliation(stages: dict[str, Any]) -> dict[str, Any]:
 
 
 def prepare_report_stage_results(stage_results: dict[str, Any]) -> dict[str, Any]:
-    stages = legacy.prepare_report_stage_results(deepcopy(stage_results))
+    stages = reconcile_deployment_populations(deepcopy(stage_results))
+    assert_deployment_population_reconciled(stages)
+    stages = legacy.prepare_report_stage_results(stages)
     completed = authoritative_completed_scanners(stages)
     stages = _apply_completed(stages, completed)
 
@@ -275,11 +281,15 @@ def prepare_report_stage_results(stage_results: dict[str, Any]) -> dict[str, Any
     exact, operational, total = legacy._finding_metrics(stages)
     stages = legacy._apply_finding_metrics(stages, exact, operational, total)
     stages = _attach_score_reconciliation(stages)
+    stages = reconcile_deployment_populations(stages)
+    assert_deployment_population_reconciled(stages)
     return stages
 
 
 def stabilize_report_package(result: dict[str, Any]) -> dict[str, Any]:
-    output = legacy.stabilize_report_package(result)
+    output = reconcile_deployment_populations(
+        legacy.stabilize_report_package(result)
+    )
     completed = authoritative_completed_scanners(output)
     output = _apply_completed(output, completed)
     output = _clear_stale_mismatch(output)
@@ -287,6 +297,8 @@ def stabilize_report_package(result: dict[str, Any]) -> dict[str, Any]:
     output = _dedupe_all(output)
     exact, operational, total = legacy._finding_metrics(output)
     output = legacy._apply_finding_metrics(output, exact, operational, total)
+    output = reconcile_deployment_populations(output)
+    assert_deployment_population_reconciled(output)
 
     package = output.get("report_package") if isinstance(output.get("report_package"), dict) else {}
     canonical = package.get("json") if isinstance(package.get("json"), dict) else {}
@@ -298,9 +310,12 @@ def stabilize_report_package(result: dict[str, Any]) -> dict[str, Any]:
     quality["pre_render_truth_reconciliation"] = True
     quality["finding_register_deduplicated"] = True
     quality["scanner_state_reconciled"] = True
+    quality["deployment_population_reconciled_before_render"] = True
+    quality["deployment_arithmetic_remainder_required"] = True
     package["report_quality_contract"] = quality
     output["report_package"] = package
     output["pre_render_truth_reconciliation"] = True
+    output["deployment_population_reconciled_before_render"] = True
     return output
 
 
@@ -335,6 +350,8 @@ def install_comprehensive_report_truth_v53() -> dict[str, Any]:
         "score_reconciliation_manifest": True,
         "finding_register_deduplicated": True,
         "scanner_state_reconciled": True,
+        "deployment_population_reconciled_before_render": True,
+        "deployment_arithmetic_remainder_required": True,
         "identifier_integrity_repaired_before_render": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
