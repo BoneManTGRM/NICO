@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 VERSION = "nico.comprehensive-client-surface-structure-cleanup.v1"
 _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
 _PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
+_PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _OUTCOME_LABELS = {
     "success": "Successful",
@@ -139,6 +140,35 @@ def _install_premium_renderer_structured_line_cleanup() -> bool:
     return premium._clean_lines is clean_lines
 
 
+def _install_premium_renderer_entrypoint_cleanup() -> bool:
+    """Bind the repaired helper at the exact renderer entrypoint used by imports."""
+
+    from nico import v2_premium_evidence_appendix as appendix
+    from nico import v2_premium_report_renderer as premium
+
+    current = premium.rebuild_premium_client_artifacts
+    if getattr(current, _PREMIUM_ENTRYPOINT_MARKER, False):
+        appendix.rebuild_premium_client_artifacts = current
+        return appendix.rebuild_premium_client_artifacts is current
+
+    @wraps(current)
+    def rebuild(package: Mapping[str, Any]) -> dict[str, Any]:
+        # The appendix module captures this renderer by direct import. Rebind the
+        # original function's global helper at call time so every imported alias
+        # uses the same structured-value renderer without changing canonical JSON.
+        current.__globals__["_clean_lines"] = premium_renderer_clean_lines
+        return current(package)
+
+    setattr(rebuild, _PREMIUM_ENTRYPOINT_MARKER, True)
+    setattr(rebuild, "_nico_previous", current)
+    premium.rebuild_premium_client_artifacts = rebuild
+    appendix.rebuild_premium_client_artifacts = rebuild
+    return (
+        premium.rebuild_premium_client_artifacts is rebuild
+        and appendix.rebuild_premium_client_artifacts is rebuild
+    )
+
+
 def _install_raw_mapping_surface_diagnostic() -> bool:
     from nico import comprehensive_full_report_finish_v1 as finish
 
@@ -176,6 +206,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     from nico import comprehensive_client_review_companion_v2 as companion
 
     premium_bound = _install_premium_renderer_structured_line_cleanup()
+    premium_entrypoint_bound = _install_premium_renderer_entrypoint_cleanup()
     diagnostic_bound = _install_raw_mapping_surface_diagnostic()
     current = companion._values
     if getattr(current, _MARKER, False):
@@ -183,6 +214,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "premium_renderer_clean_lines_bound": premium_bound,
+            "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
             "review_companion_values_bound": True,
             "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
             "canonical_json_unchanged": True,
@@ -199,6 +231,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "premium_renderer_clean_lines_bound": premium_bound,
+        "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
         "review_companion_values_bound": companion._values is values,
         "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
         "nested_mappings_rendered_as_labels": True,
