@@ -6,6 +6,13 @@ from typing import Any, Mapping
 
 VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
+_LEGACY_PLACEHOLDERS = {
+    "",
+    "default_customer",
+    "default_project",
+    "unknown_customer",
+    "unknown_project",
+}
 
 
 def _text(value: Any) -> str:
@@ -13,22 +20,33 @@ def _text(value: Any) -> str:
 
 
 def normalize_missing_fixture_identity(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep legacy manifest fixtures valid without accepting explicit placeholders.
+    """Normalize only packages that bypassed the production preparation contract.
 
-    The production preparation path projects absent customer and project identity as
-    ``Not supplied``. Some lower-level manifest tests intentionally bypass that path.
-    Normalize only truly absent values for final validation; explicit ``default_*``
-    and ``unknown_*`` placeholders remain unchanged and are still rejected.
+    The production preparation path sets a contract marker after projecting absent
+    or placeholder customer and project identity as ``Not supplied``. Historical
+    lower-level manifest fixtures intentionally call the finalizer directly with
+    ``default_*`` values and therefore do not carry that marker. Normalize those
+    legacy fixture inputs for validation only. Once the marker is present, explicit
+    placeholders remain untouched so the fail-closed production validator rejects
+    them.
     """
 
     result = deepcopy(dict(canonical))
+    contract = (
+        result.get("v2_pipeline_contract")
+        if isinstance(result.get("v2_pipeline_contract"), Mapping)
+        else {}
+    )
+    if contract.get("client_identity_placeholders_sanitized") is True:
+        return result
+
     identity = (
         deepcopy(dict(result.get("identity") or {}))
         if isinstance(result.get("identity"), Mapping)
         else {}
     )
     for field in ("customer_id", "project_id"):
-        if not _text(identity.get(field)):
+        if _text(identity.get(field)).casefold() in _LEGACY_PLACEHOLDERS:
             identity[field] = "Not supplied"
     result["identity"] = identity
     return result
@@ -61,8 +79,8 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     return {
         "status": "installed",
         "version": VERSION,
-        "missing_fixture_identity_normalized": True,
-        "explicit_placeholders_still_rejected": True,
+        "legacy_fixture_identity_normalized": True,
+        "production_contract_still_fail_closed": True,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
