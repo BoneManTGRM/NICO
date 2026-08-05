@@ -70,7 +70,8 @@ def test_scanner_contract_is_deterministic_and_command_bound() -> None:
     assert first == second
     assert first["executor_version"] == "1.9.4"
     assert first["configuration"]["command"] == ["bandit", "--json"]
-    assert first["configuration"]["configuration_sha256"] if False else True
+    assert first["ruleset"]["configuration_sha256"]
+    assert first["ruleset"]["command_sha256"]
     assert first["contract_sha256"]
 
 
