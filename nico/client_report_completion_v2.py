@@ -24,6 +24,9 @@ from nico.comprehensive_canonical_evidence_v1 import (
     assert_canonical_evidence_manifest,
     attach_canonical_evidence_manifest,
 )
+from nico.comprehensive_operational_evidence_v1 import (
+    attach_canonical_deployment_population,
+)
 from nico.comprehensive_client_ready_projection_v1 import (
     APPROVAL_STATUS,
     DELIVERY_STATUS,
@@ -141,6 +144,7 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     canonical = _install_register(canonical)
     canonical = reconcile_authoritative_scanner_truth(canonical)
     canonical = apply_automated_draft_truth(canonical)
+    canonical = attach_canonical_deployment_population(canonical)
     canonical = attach_canonical_evidence_manifest(canonical)
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
@@ -279,6 +283,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     canonical = _install_register(canonical)
     canonical = reconcile_authoritative_scanner_truth(canonical)
     canonical = apply_automated_draft_truth(canonical)
+    canonical = attach_canonical_deployment_population(canonical)
     canonical = attach_canonical_evidence_manifest(canonical)
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
