@@ -186,6 +186,10 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     reconciled = _reconcile(package)
     prepared = repair_canonical_truth(reconciled)
     prepared = _reconcile(prepared)
+    # The final truth prepare wrapper is itself a stage-evidence normalization
+    # boundary. Install the structured-value cleaner before preparation so no
+    # retained mapping can be irreversibly converted to Python object text.
+    install_client_surface_structure_cleanup_v1()
     # Scanner applicability, scanner-outcome truth, canonical finding identity,
     # and the structured remediation register must exist before the premium
     # compiler derives stages, scores, executive findings, and artifact content.
