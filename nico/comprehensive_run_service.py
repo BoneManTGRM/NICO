@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-from nico.comprehensive_approved_delivery_v1 import attach_approved_delivery_package
+from nico.client_readiness_approved_delivery import attach_approved_delivery_package
 from nico.comprehensive_background_stage_execution_v1 import (
     BACKGROUND_STAGE_IDS,
     execute_background_stage,
