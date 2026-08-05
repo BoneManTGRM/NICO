@@ -36,6 +36,9 @@ from nico.comprehensive_human_review_package_cleanup_v1 import (
 from nico.comprehensive_human_review_package_cleanup_compat_v1 import (
     install_comprehensive_human_review_package_cleanup_compat_v1,
 )
+from nico.comprehensive_human_review_worksheet_title_contract_v1 import (
+    install_human_review_worksheet_title_contract_v1,
+)
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
@@ -120,6 +123,9 @@ _HUMAN_REVIEW_PACKAGE_CLEANUP = (
 _HUMAN_REVIEW_PACKAGE_CLEANUP_COMPAT = (
     install_comprehensive_human_review_package_cleanup_compat_v1()
 )
+_HUMAN_REVIEW_WORKSHEET_TITLE_CONTRACT = (
+    install_human_review_worksheet_title_contract_v1()
+)
 
 
 def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -195,8 +201,9 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # compiler derives stages, scores, executive findings, and artifact content.
     prepared = completion.prepare_client_report_package(prepared)
     # Preparation extensions can legitimately rebind shared renderers. Reassert
-    # the client-surface structured-value contract at the exact render boundary.
+    # the client-surface and worksheet-title contracts at the exact render boundary.
     install_client_surface_structure_cleanup_v1()
+    install_human_review_worksheet_title_contract_v1()
     prepared = project_client_stage_summaries(prepared)
 
     # The first pass derives the complete canonical stage population. Normalize
@@ -205,6 +212,9 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # and remediation source objects remain retained in canonical JSON.
     derived = rebuild_single_pass_premium_artifacts(prepared)
     final_input = project_client_stage_summaries(derived)
+    # The first render may pass through extensions that rebind the stage builder.
+    # Reassert the exact worksheet title contract before the final artifact render.
+    install_human_review_worksheet_title_contract_v1()
     rendered = rebuild_single_pass_premium_artifacts(final_input)
 
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
@@ -245,6 +255,7 @@ __all__ = [
     "_PDF_CONTROL_CHARACTER_GUARD",
     "_HUMAN_REVIEW_PACKAGE_CLEANUP",
     "_HUMAN_REVIEW_PACKAGE_CLEANUP_COMPAT",
+    "_HUMAN_REVIEW_WORKSHEET_TITLE_CONTRACT",
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "rebuild_client_artifacts",
 ]
