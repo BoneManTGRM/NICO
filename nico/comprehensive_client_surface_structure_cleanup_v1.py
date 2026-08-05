@@ -7,11 +7,17 @@ from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-client-surface-structure-cleanup.v1"
 _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
+_STAGE_SANITIZER_MARKER = "__nico_structured_stage_sanitizer_v1__"
 _PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
 _PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _CLIENT_STAGE_FIELDS = ("evidence", "findings", "unavailable", "limitations")
 _CLIENT_SURFACE_ITEM_LIMIT = 100_000
+_INTERNAL_DOTTED_LINE = re.compile(
+    r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+){2,}(?::|\s*$)",
+    re.IGNORECASE,
+)
+_COMPLEXITY_FINDING = re.compile(r"\breduce complexity in\b", re.IGNORECASE)
 _OUTCOME_LABELS = {
     "success": "Successful",
     "successful": "Successful",
@@ -108,21 +114,33 @@ def _line_capacity(value: Any) -> int:
     return 1
 
 
+def sanitize_client_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
+    """Humanize all shared stage fields before any client-facing renderer sees them."""
+
+    item = deepcopy(dict(stage))
+    stage_id = _text(item.get("stage_id")).casefold()
+    for field in _CLIENT_STAGE_FIELDS:
+        if field not in item:
+            continue
+        values = client_surface_values(
+            item.get(field),
+            limit=_line_capacity(item.get(field)),
+            item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
+        )
+        if field == "evidence":
+            values = [value for value in values if not _INTERNAL_DOTTED_LINE.match(value)]
+        if field == "findings" and stage_id == "dependency_security_static_analysis":
+            values = [value for value in values if not _COMPLEXITY_FINDING.search(value)]
+        item[field] = values
+    return item
+
+
 def _project_stage_list(value: Any) -> list[dict[str, Any]]:
     projected: list[dict[str, Any]] = []
     for raw in value or []:
         if not isinstance(raw, Mapping):
             continue
-        stage = deepcopy(dict(raw))
-        for field in _CLIENT_STAGE_FIELDS:
-            if field not in stage:
-                continue
-            stage[field] = client_surface_values(
-                stage.get(field),
-                limit=_line_capacity(stage.get(field)),
-                item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
-            )
-        projected.append(stage)
+        projected.append(sanitize_client_rendered_stage(raw))
     return projected
 
 
@@ -176,6 +194,23 @@ def premium_renderer_clean_lines(values: Any) -> list[str]:
         seen.add(key)
         output.append(item)
     return output
+
+
+def _install_cleanup_stage_sanitizer() -> bool:
+    from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+
+    current = cleanup.sanitize_rendered_stage
+    if getattr(current, _STAGE_SANITIZER_MARKER, False):
+        return True
+
+    @wraps(current)
+    def sanitize(stage: Mapping[str, Any]) -> dict[str, Any]:
+        return sanitize_client_rendered_stage(stage)
+
+    setattr(sanitize, _STAGE_SANITIZER_MARKER, True)
+    setattr(sanitize, "_nico_previous", current)
+    cleanup.sanitize_rendered_stage = sanitize
+    return cleanup.sanitize_rendered_stage is sanitize
 
 
 def _install_premium_renderer_structured_line_cleanup() -> bool:
@@ -260,6 +295,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
 
     from nico import comprehensive_client_review_companion_v2 as companion
 
+    stage_sanitizer_bound = _install_cleanup_stage_sanitizer()
     premium_bound = _install_premium_renderer_structured_line_cleanup()
     premium_entrypoint_bound = _install_premium_renderer_entrypoint_cleanup()
     diagnostic_bound = _install_raw_mapping_surface_diagnostic()
@@ -268,6 +304,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         return {
             "status": "already_installed",
             "version": VERSION,
+            "structured_stage_sanitizer_bound": stage_sanitizer_bound,
             "premium_renderer_clean_lines_bound": premium_bound,
             "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
             "review_companion_values_bound": True,
@@ -285,6 +322,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "structured_stage_sanitizer_bound": stage_sanitizer_bound,
         "premium_renderer_clean_lines_bound": premium_bound,
         "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
         "review_companion_values_bound": companion._values is values,
@@ -305,4 +343,5 @@ __all__ = [
     "install_client_surface_structure_cleanup_v1",
     "premium_renderer_clean_lines",
     "project_client_stage_summaries",
+    "sanitize_client_rendered_stage",
 ]
