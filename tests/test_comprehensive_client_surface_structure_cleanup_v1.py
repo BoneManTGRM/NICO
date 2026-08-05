@@ -8,6 +8,7 @@ from nico.comprehensive_client_surface_structure_cleanup_v1 import (
     install_client_surface_structure_cleanup_v1,
     premium_renderer_clean_lines,
     project_client_stage_summaries,
+    sanitize_client_rendered_stage,
 )
 
 
@@ -41,6 +42,29 @@ def test_nested_roadmap_objects_render_as_readable_lines_without_mutation() -> N
     assert "{" not in lines[0]
     assert "}" not in lines[0]
     assert roadmap == before
+
+
+def test_stage_sanitizer_humanizes_every_client_facing_stage_field() -> None:
+    stage = {
+        "stage_id": "six_month_roadmap",
+        "title": "Six-Month Roadmap",
+        "evidence": _roadmap(),
+        "findings": [{"risk": "Delivery regression", "priority": "P1"}],
+        "unavailable": [{"field": "Owner approval", "reason": "Human input required"}],
+        "limitations": [{"scope": "Repository evidence only"}],
+    }
+    before = deepcopy(stage)
+
+    rendered = sanitize_client_rendered_stage(stage)
+
+    for field in ("evidence", "findings", "unavailable", "limitations"):
+        assert rendered[field]
+        assert all("{" not in line and "}" not in line for line in rendered[field])
+    assert "Window: 0-30 days" in rendered["evidence"][0]
+    assert "Risk: Delivery regression" in rendered["findings"][0]
+    assert "Field: Owner approval" in rendered["unavailable"][0]
+    assert "Scope: Repository evidence only" in rendered["limitations"][0]
+    assert stage == before
 
 
 def test_stage_projection_humanizes_client_fields_and_retains_structured_sources() -> None:
@@ -110,6 +134,7 @@ def test_workflow_outcome_mapping_uses_client_readable_labels() -> None:
 
 def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
+    from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
     from nico import v2_premium_evidence_appendix as appendix
     from nico import v2_premium_report_renderer as premium
 
@@ -121,10 +146,16 @@ def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
     premium_lines = premium._clean_lines(
         [{"window": "91-180 days", "owner_role": "Delivery Lead"}]
     )
+    sanitized_stage = cleanup.sanitize_rendered_stage(
+        {"stage_id": "six_month_roadmap", "evidence": _roadmap()}
+    )
 
     assert status["status"] in {"installed", "already_installed"}
     assert review_lines == ["Window: 31-90 days; Owner Role: Platform Engineer"]
     assert premium_lines == ["Window: 91-180 days; Owner Role: Delivery Lead"]
+    assert "Window: 0-30 days" in sanitized_stage["evidence"][0]
+    assert "{" not in sanitized_stage["evidence"][0]
+    assert status["structured_stage_sanitizer_bound"] is True
     assert status["premium_renderer_clean_lines_bound"] is True
     assert status["premium_renderer_entrypoint_bound"] is True
     assert (
