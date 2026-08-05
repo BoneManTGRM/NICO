@@ -7,13 +7,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from nico.client_readiness_exact_artifact_approval import (
+from nico.client_readiness_exact_artifact_approval_v2 import (
     build_approval_subject,
     evaluate_exact_artifact_approval,
 )
 from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 
-VERSION = "nico.comprehensive_review_decision.v2"
+VERSION = "nico.comprehensive_review_decision.v3"
 _REPORT_STAGE_IDS = (
     "final_comprehensive_report_generation",
     "risk_reduction_and_executive_briefing",
@@ -107,6 +107,14 @@ def _evidence_bundle_hash(record: Mapping[str, Any], package: Mapping[str, Any])
     return ""
 
 
+def _accepted_risk_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
+    human = record.get("human_evidence") if isinstance(record.get("human_evidence"), Mapping) else {}
+    modules = human.get("modules") if isinstance(human.get("modules"), Mapping) else {}
+    accepted = modules.get("accepted_risks") if isinstance(modules.get("accepted_risks"), Mapping) else {}
+    evidence = accepted.get("evidence") if isinstance(accepted.get("evidence"), Mapping) else {}
+    return deepcopy(dict(evidence))
+
+
 def _bind_client_readiness_approval(
     manifest: dict[str, Any],
     record: Mapping[str, Any],
@@ -119,7 +127,26 @@ def _bind_client_readiness_approval(
     client_readiness: Any,
     residual_risk_acceptance: Any,
 ) -> dict[str, Any]:
-    readiness = client_readiness if isinstance(client_readiness, Mapping) else {}
+    stored = _accepted_risk_evidence(record)
+    readiness = (
+        deepcopy(dict(client_readiness))
+        if isinstance(client_readiness, Mapping)
+        else deepcopy(dict(stored.get("client_readiness") or {}))
+        if isinstance(stored.get("client_readiness"), Mapping)
+        else {}
+    )
+    risk = (
+        deepcopy(dict(residual_risk_acceptance))
+        if isinstance(residual_risk_acceptance, Mapping)
+        else deepcopy(dict(stored.get("residual_risk_acceptance") or {}))
+        if isinstance(stored.get("residual_risk_acceptance"), Mapping)
+        else {}
+    )
+    authorization_basis = str(
+        reviewer_authorization_basis
+        or stored.get("reviewer_authorization_basis")
+        or ""
+    ).strip()
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
     subject = build_approval_subject(
         identity={
@@ -147,13 +174,15 @@ def _bind_client_readiness_approval(
                 "identity": reviewer,
                 "role": reviewer_role,
                 "authorized": readiness.get("review_authorized") is True,
-                "authorization_basis": reviewer_authorization_basis,
+                "authorization_basis": authorization_basis,
                 "recorded_at": timestamp,
             },
             "decision": "approved",
             "decision_reason": decision_reason,
-            "approved_subject_sha256": readiness.get("approved_subject_sha256"),
-            "residual_risk_acceptance": residual_risk_acceptance,
+            # The authenticated human approves the current report package; NICO binds
+            # that decision to the server-calculated immutable subject digest.
+            "approved_subject_sha256": subject.get("approval_subject_sha256"),
+            "residual_risk_acceptance": risk,
         },
     )
     manifest["client_readiness_approval"] = approval
@@ -190,8 +219,8 @@ def build_reviewed_edition(
 
     Approval is additionally bound to the exact client-readiness artifact manifest,
     all prerequisite gate digests, explicit reviewer authority, and authorized
-    residual-risk acceptance. Nonapproval decisions remain delivery-blocked and do
-    not require an approval receipt.
+    residual-risk acceptance. The readiness package may be supplied directly by an
+    internal caller or retained in the accepted-risks human-evidence module.
     """
 
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
