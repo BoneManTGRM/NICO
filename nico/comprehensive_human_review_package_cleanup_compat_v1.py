@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.5"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.6"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -57,6 +57,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_blank_deployment_metric_repair_v1 import (
         install_blank_deployment_metric_repair_v1,
     )
+    from nico.comprehensive_client_review_companion_v7_rebind import (
+        install_comprehensive_review_companion_v7_rebind,
+    )
     from nico.comprehensive_client_surface_structure_cleanup_v1 import (
         install_client_surface_structure_cleanup_v1,
     )
@@ -89,6 +92,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         final_six_cleanup = install_final_six_client_report_cleanup_v1()
         final_six_projection = install_final_six_package_projection_v1()
         final_six_runtime = install_final_six_runtime_repair_v1()
+        review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -100,6 +104,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "final_six_client_report_cleanup": final_six_cleanup,
             "final_six_package_projection": final_six_projection,
             "final_six_runtime_repair": final_six_runtime,
+            "review_companion_v7_rebind": review_companion_rebind,
         }
 
     @wraps(current)
@@ -124,6 +129,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     final_six_cleanup = install_final_six_client_report_cleanup_v1()
     final_six_projection = install_final_six_package_projection_v1()
     final_six_runtime = install_final_six_runtime_repair_v1()
+    review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
     return {
         "status": "installed",
         "version": VERSION,
@@ -137,6 +143,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "final_six_client_report_cleanup": final_six_cleanup,
         "final_six_package_projection": final_six_projection,
         "final_six_runtime_repair": final_six_runtime,
+        "review_companion_v7_rebind": review_companion_rebind,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
