@@ -26,6 +26,9 @@ from nico.comprehensive_decision_summary_truth_v1 import (
 from nico.comprehensive_executive_summary_semantic_truth_v1 import (
     install_comprehensive_executive_summary_semantic_truth_v1,
 )
+from nico.comprehensive_human_review_package_cleanup_v1 import (
+    install_comprehensive_human_review_package_cleanup_v1,
+)
 from nico.comprehensive_incomplete_analyzer_summary_v1 import (
     install_comprehensive_incomplete_analyzer_summary,
 )
@@ -98,10 +101,14 @@ install_pipeline_projection()
 install_client_ready_truth_projection()
 _AUTHORITATIVE_REVIEW_GATE = install_authoritative_review_gate()
 _PDF_CONTROL_CHARACTER_GUARD = install_pdf_control_character_guard()
-# Install last so format-specific executive prose is checked through the complete
-# canonical decision-fact validators after every renderer and compatibility layer.
 _EXECUTIVE_SUMMARY_SEMANTIC_TRUTH = (
     install_comprehensive_executive_summary_semantic_truth_v1()
+)
+# Install last after every renderer, compatibility layer, manifest, navigation,
+# and semantic-truth extension so the final exact-artifact boundary validates the
+# cleaned human-review package.
+_HUMAN_REVIEW_PACKAGE_CLEANUP = (
+    install_comprehensive_human_review_package_cleanup_v1()
 )
 
 
@@ -210,6 +217,7 @@ __all__ = [
     "_REPORT_CLARITY",
     "_COMPACT_DESIGN_MARKER_GATE",
     "_PDF_CONTROL_CHARACTER_GUARD",
+    "_HUMAN_REVIEW_PACKAGE_CLEANUP",
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "rebuild_client_artifacts",
 ]
