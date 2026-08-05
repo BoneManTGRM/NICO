@@ -7,11 +7,12 @@ from nico.comprehensive_client_surface_structure_cleanup_v1 import (
     humanize_client_surface_value,
     install_client_surface_structure_cleanup_v1,
     premium_renderer_clean_lines,
+    project_client_stage_summaries,
 )
 
 
-def test_nested_roadmap_objects_render_as_readable_lines_without_mutation() -> None:
-    roadmap = [
+def _roadmap() -> list[dict]:
+    return [
         {
             "window": "0-30 days",
             "objective": "Remove the highest-risk constraints.",
@@ -25,6 +26,10 @@ def test_nested_roadmap_objects_render_as_readable_lines_without_mutation() -> N
             ],
         }
     ]
+
+
+def test_nested_roadmap_objects_render_as_readable_lines_without_mutation() -> None:
+    roadmap = _roadmap()
     before = deepcopy(roadmap)
 
     lines = client_surface_values(roadmap, limit=8)
@@ -38,21 +43,40 @@ def test_nested_roadmap_objects_render_as_readable_lines_without_mutation() -> N
     assert roadmap == before
 
 
-def test_premium_renderer_clean_lines_humanizes_existing_stage_evidence() -> None:
-    evidence = [
-        {
-            "window": "0-30 days",
-            "objective": "Remove the highest-risk delivery constraints.",
-            "work_packages": [
-                {
-                    "work_package_id": "WP-001",
-                    "title": "Decompose page.tsx",
-                    "owner_role": "Product Engineer",
-                    "effort": "M",
-                }
-            ],
+def test_stage_projection_humanizes_client_fields_and_retains_structured_sources() -> None:
+    roadmap = _roadmap()
+    stage = {
+        "stage_id": "six_month_roadmap",
+        "title": "Six-Month Roadmap",
+        "evidence": deepcopy(roadmap),
+        "findings": [],
+        "unavailable": [],
+    }
+    package = {
+        "json": {
+            "roadmap": deepcopy(roadmap),
+            "stage_summaries": [deepcopy(stage)],
+            "assessment": {"stage_summaries": [deepcopy(stage)]},
         }
-    ]
+    }
+    before = deepcopy(package)
+
+    projected = project_client_stage_summaries(package)
+    canonical = projected["json"]
+    evidence = canonical["stage_summaries"][0]["evidence"]
+
+    assert len(evidence) == 1
+    assert "Window: 0-30 days" in evidence[0]
+    assert "Work Package Id: WP-001" in evidence[0]
+    assert "{" not in evidence[0]
+    assert "'window'" not in evidence[0]
+    assert canonical["roadmap"] == roadmap
+    assert canonical["assessment"]["stage_summaries"] == canonical["stage_summaries"]
+    assert package == before
+
+
+def test_premium_renderer_clean_lines_humanizes_existing_stage_evidence() -> None:
+    evidence = _roadmap()
 
     lines = premium_renderer_clean_lines(evidence)
 
@@ -107,4 +131,4 @@ def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
         appendix.rebuild_premium_client_artifacts
         is premium.rebuild_premium_client_artifacts
     )
-    assert status["canonical_json_unchanged"] is True
+    assert status["canonical_structured_sources_retained"] is True
