@@ -127,10 +127,19 @@ def test_dark_cover_uses_separately_calculated_language_at_render_time() -> None
     assert "independently evidence-adjusted readiness" not in text
 
 
-def test_late_compat_binding_installs_final_two_truth_after_mobile_contract() -> None:
+def test_late_compat_binding_keeps_final_two_after_mobile_and_final_population_last() -> None:
     source = COMPAT.read_text(encoding="utf-8")
 
-    mobile = source.rindex("mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()")
+    mobile = source.rindex(
+        "mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()"
+    )
     final_two = source.rindex("final_two_truth = install_final_two_report_truth_v1()")
-    assert mobile < final_two
-    assert 'VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.8"' in source
+    final_population = source.rindex(
+        "install_final_deployment_population_reconciliation_v1()"
+    )
+
+    assert mobile < final_two < final_population
+    assert (
+        'VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.9"'
+        in source
+    )
