@@ -25,6 +25,14 @@ def _result():
         "location": "apps/web/app/operations/page.tsx:177",
         "priority": "P1",
         "status": "open",
+        "evidence": (
+            "The operations route retains orchestration and presentation logic "
+            "at the same exact source location."
+        ),
+        "impact": (
+            "Combined responsibilities increase change risk and make the route "
+            "harder to verify independently."
+        ),
         "recommendation": "Split orchestration from presentation logic.",
         "acceptance_criteria": [
             "Operations route complexity is reduced [method: static analysis]",
