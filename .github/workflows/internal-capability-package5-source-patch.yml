@@ -1,0 +1,240 @@
+name: Internal Capability Package 5 Source Patch
+
+on:
+  push:
+    branches:
+      - internal-capabilities/05-finding-complexity-reliability
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    if: ${{ !contains(github.event.head_commit.message, '[finding-integrity-patched]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: internal-capabilities/05-finding-complexity-reliability
+          fetch-depth: 1
+
+      - name: Patch finding integrity and disposition seams
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # Recompute every retained record digest during validation.
+          integrity_path = Path("nico/comprehensive_finding_integrity_v1.py")
+          integrity = integrity_path.read_text(encoding="utf-8")
+          anchor = '''    records = [item for item in manifest.get("records") or [] if isinstance(item, Mapping)]
+              subject = {
+          '''
+          replacement = '''    records = [item for item in manifest.get("records") or [] if isinstance(item, Mapping)]
+              for item in records:
+                  record_subject = {
+                      "finding_id": item.get("finding_id"),
+                      "kind": item.get("kind"),
+                      "priority": item.get("priority"),
+                      "source": deepcopy(item.get("source") or {}),
+                      "evidence": item.get("evidence"),
+                      "impact": item.get("impact"),
+                      "correction": item.get("correction"),
+                      "verification": item.get("verification"),
+                      "cyclomatic_complexity": item.get("cyclomatic_complexity"),
+                      "disposition": item.get("disposition"),
+                  }
+                  if _sha256(record_subject) != _text(item.get("record_sha256")):
+                      errors.append(
+                          f"{_text(item.get('finding_id')) or '<missing>'}.record_sha256:mismatch"
+                      )
+              subject = {
+          '''
+          if anchor not in integrity:
+              raise SystemExit("finding integrity validation anchor not found")
+          integrity = integrity.replace(anchor, replacement, 1)
+          integrity_path.write_text(integrity, encoding="utf-8")
+
+          # Bind the finding-integrity manifest into the canonical technical subject.
+          evidence_path = Path("nico/comprehensive_canonical_evidence_v1.py")
+          evidence = evidence_path.read_text(encoding="utf-8")
+          binding_anchor = '''    "finding_evidence": (
+                  ("canonical_findings",),
+          '''
+          binding_replacement = '''    "finding_evidence": (
+                  ("finding_integrity_manifest",),
+                  ("canonical_findings",),
+          '''
+          if binding_anchor not in evidence:
+              raise SystemExit("canonical finding binding anchor not found")
+          evidence = evidence.replace(binding_anchor, binding_replacement, 1)
+          evidence_path.write_text(evidence, encoding="utf-8")
+
+          # Attach and validate finding integrity after final scanner reconciliation,
+          # before the canonical evidence manifest and every renderer.
+          completion_path = Path("nico/client_report_completion_v2.py")
+          completion = completion_path.read_text(encoding="utf-8")
+          import_anchor = '''from nico.comprehensive_canonical_evidence_v1 import (
+              assert_canonical_evidence_manifest,
+              attach_canonical_evidence_manifest,
+          )
+          '''
+          helper_import = '''from nico.comprehensive_finding_integrity_v1 import (
+              attach_finding_integrity_manifest,
+              validate_finding_integrity_manifest,
+          )
+          '''
+          if helper_import not in completion:
+              if import_anchor not in completion:
+                  raise SystemExit("client completion import anchor not found")
+              completion = completion.replace(import_anchor, import_anchor + helper_import, 1)
+          attach_anchor = '''    canonical = apply_automated_draft_truth(canonical)
+              canonical = attach_canonical_deployment_population(canonical)
+          '''
+          attach_replacement = '''    canonical = apply_automated_draft_truth(canonical)
+              canonical = attach_finding_integrity_manifest(
+                  canonical,
+                  canonical["client_finding_remediation_register"],
+              )
+              canonical = attach_canonical_deployment_population(canonical)
+          '''
+          if completion.count(attach_anchor) != 2:
+              raise SystemExit(
+                  f"expected two finding-integrity attachment seams, found {completion.count(attach_anchor)}"
+              )
+          completion = completion.replace(attach_anchor, attach_replacement)
+          validate_anchor = '''    assert_canonical_evidence_manifest(canonical)
+              summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
+          '''
+          validate_replacement = '''    assert_canonical_evidence_manifest(canonical)
+              finding_integrity = validate_finding_integrity_manifest(canonical)
+              if finding_integrity["status"] != "valid":
+                  raise ValueError(
+                      "final client report finding integrity is invalid: "
+                      + ",".join(finding_integrity["validation_errors"])
+                  )
+              summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
+          '''
+          if validate_anchor not in completion:
+              raise SystemExit("final surface validation anchor not found")
+          completion = completion.replace(validate_anchor, validate_replacement, 1)
+          result_anchor = '''    return {
+                  "canonical_evidence_manifest_verified": True,
+          '''
+          result_replacement = '''    return {
+                  "canonical_evidence_manifest_verified": True,
+                  "finding_integrity_manifest_verified": True,
+          '''
+          if result_anchor not in completion:
+              raise SystemExit("final validation result anchor not found")
+          completion = completion.replace(result_anchor, result_replacement, 1)
+          completion_path.write_text(completion, encoding="utf-8")
+
+          # Add an explicit human-only request-more-evidence state.
+          disposition_path = Path("nico/client_readiness_finding_disposition.py")
+          disposition = disposition_path.read_text(encoding="utf-8")
+          disposition = disposition.replace(
+              'DECISIONS = {"accept", "remediate", "defer", "reject"}',
+              'DECISIONS = {"accept", "remediate", "defer", "reject", "requires_more_evidence"}',
+              1,
+          )
+          state_anchor = '''    if state not in DECISIONS:
+                  errors.append(f"unsupported finding decision: {state or 'blank'}")
+          '''
+          state_replacement = '''    if state not in DECISIONS:
+                  errors.append(f"unsupported finding decision: {state or 'blank'}")
+              if state == "requires_more_evidence" and not _text(decision.get("evidence_request")):
+                  errors.append("evidence_request is required when requesting more evidence")
+          '''
+          if state_anchor not in disposition:
+              raise SystemExit("finding decision state anchor not found")
+          disposition = disposition.replace(state_anchor, state_replacement, 1)
+          old_risk = '''    if state in {"accept", "defer"} or (finding.get("release_blocking") and state != "reject"):
+                  errors.extend(_risk_acceptance_errors(decision))
+          '''
+          new_risk = '''    if state in {"accept", "defer"} or (
+                  finding.get("release_blocking") and state in {"accept", "defer", "remediate"}
+              ):
+                  errors.extend(_risk_acceptance_errors(decision))
+          '''
+          if old_risk not in disposition:
+              raise SystemExit("finding risk acceptance anchor not found")
+          disposition = disposition.replace(old_risk, new_risk, 1)
+          record_anchor = '''        record = {
+                      **finding,
+                      "decision_status": "complete" if decision else "pending_human_decision",
+                      "decision": decision or {},
+                  }
+          '''
+          record_replacement = '''        decision_status = "pending_human_decision"
+                  if decision:
+                      decision_status = (
+                          "requires_more_evidence"
+                          if decision["decision"] == "requires_more_evidence"
+                          else "complete"
+                      )
+                  record = {
+                      **finding,
+                      "decision_status": decision_status,
+                      "decision": decision or {},
+                  }
+          '''
+          if record_anchor not in disposition:
+              raise SystemExit("finding decision record anchor not found")
+          disposition = disposition.replace(record_anchor, record_replacement, 1)
+          blocker_anchor = '''            elif decision["decision"] == "remediate":
+                          verification = decision.get("verification") if isinstance(decision.get("verification"), Mapping) else {}
+                          if _text(verification.get("status")).lower() != "passed":
+                              release_blockers.append(f"{finding['finding_id']} remediation is not verified")
+          '''
+          blocker_replacement = '''            elif decision["decision"] == "requires_more_evidence":
+                          release_blockers.append(
+                              f"{finding['finding_id']} requires more evidence before disposition"
+                          )
+                      elif decision["decision"] == "remediate":
+                          verification = decision.get("verification") if isinstance(decision.get("verification"), Mapping) else {}
+                          if _text(verification.get("status")).lower() != "passed":
+                              release_blockers.append(f"{finding['finding_id']} remediation is not verified")
+          '''
+          if blocker_anchor not in disposition:
+              raise SystemExit("release blocker anchor not found")
+          disposition = disposition.replace(blocker_anchor, blocker_replacement, 1)
+          counts_anchor = '''    decision_counts = Counter(
+                  item["decision"].get("decision") if item["decision_status"] == "complete" else "pending_human_decision"
+                  for item in records
+              )
+          '''
+          counts_replacement = '''    decision_counts = Counter(
+                  item["decision"].get("decision") if item["decision"] else "pending_human_decision"
+                  for item in records
+              )
+          '''
+          if counts_anchor not in disposition:
+              raise SystemExit("finding decision count anchor not found")
+          disposition = disposition.replace(counts_anchor, counts_replacement, 1)
+          disposition = disposition.replace(
+              "only an authorized human may accept, remediate, defer, or reject a finding.",
+              "only an authorized human may accept, remediate, defer, reject, or request more evidence for a finding.",
+              1,
+          )
+          disposition_path.write_text(disposition, encoding="utf-8")
+
+          Path(".github/workflows/internal-capability-package5-source-patch.yml").unlink()
+
+      - name: Compile and commit source patch
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            nico/comprehensive_finding_integrity_v1.py \
+            nico/comprehensive_canonical_evidence_v1.py \
+            nico/client_report_completion_v2.py \
+            nico/client_readiness_finding_disposition.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            nico/comprehensive_finding_integrity_v1.py \
+            nico/comprehensive_canonical_evidence_v1.py \
+            nico/client_report_completion_v2.py \
+            nico/client_readiness_finding_disposition.py \
+            .github/workflows/internal-capability-package5-source-patch.yml
+          git commit -m "Bind exact-source finding integrity [finding-integrity-patched]"
+          git push origin HEAD:internal-capabilities/05-finding-complexity-reliability
