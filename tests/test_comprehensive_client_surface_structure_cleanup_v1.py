@@ -132,8 +132,9 @@ def test_workflow_outcome_mapping_uses_client_readable_labels() -> None:
     assert "'success'" not in rendered
 
 
-def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
+def test_shared_renderer_helpers_and_final_truth_cleaner_are_patched() -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
+    from nico import comprehensive_client_truth_final_v1 as final_truth
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
     from nico import v2_premium_evidence_appendix as appendix
     from nico import v2_premium_report_renderer as premium
@@ -149,12 +150,17 @@ def test_shared_renderer_helpers_and_captured_entrypoint_are_patched() -> None:
     sanitized_stage = cleanup.sanitize_rendered_stage(
         {"stage_id": "six_month_roadmap", "evidence": _roadmap()}
     )
+    final_truth_lines = final_truth._clean_evidence(_roadmap())
 
     assert status["status"] in {"installed", "already_installed"}
     assert review_lines == ["Window: 31-90 days; Owner Role: Platform Engineer"]
     assert premium_lines == ["Window: 91-180 days; Owner Role: Delivery Lead"]
     assert "Window: 0-30 days" in sanitized_stage["evidence"][0]
     assert "{" not in sanitized_stage["evidence"][0]
+    assert "Window: 0-30 days" in final_truth_lines[0]
+    assert "Work Package Id: WP-001" in final_truth_lines[0]
+    assert "{" not in final_truth_lines[0]
+    assert status["final_truth_evidence_cleanup_bound"] is True
     assert status["structured_stage_sanitizer_bound"] is True
     assert status["premium_renderer_clean_lines_bound"] is True
     assert status["premium_renderer_entrypoint_bound"] is True
