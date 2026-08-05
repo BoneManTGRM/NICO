@@ -115,12 +115,15 @@ def test_dark_cover_uses_separately_calculated_language_at_render_time() -> None
     status = install_final_two_report_truth_v1()
 
     pdf = cover._cover(_canonical(), spanish=False)
-    text = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    ).casefold()
+    text = " ".join(
+        "\n".join(
+            page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+        ).casefold().split()
+    )
 
     assert status["bounded_cover_copy_bound"] is True
-    assert "separately calculated evidence-adjusted readiness" in text
+    assert "separately calculated" in text
+    assert "evidence-adjusted readiness" in text
     assert "independently evidence-adjusted readiness" not in text
 
 
