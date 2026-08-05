@@ -95,6 +95,7 @@ def test_dark_blue_header_paragraphs_are_forced_to_white() -> None:
 
     assert table._cellStyles[0][0].color == colors.white
     assert all(fragment.textColor == colors.white for fragment in header.frags)
+    assert gray.textColor == colors.HexColor("#475569")
 
 
 def test_shared_reportlab_style_patch_covers_future_tables() -> None:
@@ -154,15 +155,15 @@ def test_generation_timestamp_is_projected_from_canonical_metadata() -> None:
 
 def test_raw_workflow_mapping_becomes_readable_labels() -> None:
     raw = (
-        "{'failure': 10, 'success': 81, 'cancelled': 2, "
+        "workflow_outcome_classes: {'failure': 10, 'success': 81, 'cancelled': 2, "
         "'skipped': 3, 'timed_out': 1, 'unknown': 9, 'in_progress': 4}"
     )
 
     rendered = humanize_structured_value(raw)
 
     assert rendered == (
-        "Failed: 10; Successful: 81; Cancelled: 2; Skipped: 3; "
-        "Timed out: 1; Unknown: 9; In progress: 4"
+        "Workflow Outcome Classes: Failed: 10; Successful: 81; Cancelled: 2; "
+        "Skipped: 3; Timed out: 1; Unknown: 9; In progress: 4"
     )
     assert "{" not in rendered
     assert "'failure'" not in rendered
