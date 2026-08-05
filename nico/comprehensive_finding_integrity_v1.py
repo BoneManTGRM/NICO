@@ -103,8 +103,10 @@ def _finding_record(item: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
     correction = _first_text(
         item,
         "correction",
+        "recommended_correction",
         "recommendation",
         "remediation",
+        "remediation_plan",
         "recommended_action",
     )
     verification = _first_text(
