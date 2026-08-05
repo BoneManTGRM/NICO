@@ -19,6 +19,7 @@ def _finding(index: int, *, priority: str | None = None) -> dict:
         "finding_id": f"NICO-FINDING-{index:04d}",
         "title": f"Reduce complexity in function_{index}",
         "priority": priority or ("P1" if index < 17 else "P2"),
+        "finding_family": "complexity_hotspot",
         "path": f"nico/module_{index}.py",
         "line": 10 + index,
         "location": f"nico/module_{index}.py:{10 + index}",
@@ -97,7 +98,7 @@ def test_missing_exact_source_field_fails_with_finding_specific_diagnostic() -> 
         attach_finding_integrity_manifest(canonical, register)
 
 
-def test_duplicate_id_and_source_anchor_fail_closed() -> None:
+def test_duplicate_id_and_source_identity_fail_closed() -> None:
     register = _register()
     register["code_findings"][1]["finding_id"] = register["code_findings"][0][
         "finding_id"
@@ -114,9 +115,10 @@ def test_duplicate_id_and_source_anchor_fail_closed() -> None:
     assert "duplicate_finding_id:NICO-FINDING-0000" in manifest[
         "validation_errors"
     ]
-    assert "duplicate_exact_source_anchor:nico/module_0.py:10" in manifest[
-        "validation_errors"
-    ]
+    assert (
+        "duplicate_exact_source_identity:nico/module_0.py:10|complexity_hotspot"
+        in manifest["validation_errors"]
+    )
 
 
 def test_canonical_surface_id_and_location_mismatch_fail_closed() -> None:
