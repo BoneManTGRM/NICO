@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Iterable, Mapping
 
 VERSION = "nico.client-readiness-finding-disposition.v1"
-DECISIONS = {"accept", "remediate", "defer", "reject"}
+DECISIONS = {"accept", "remediate", "defer", "reject", "requires_more_evidence"}
 
 
 def _text(value: Any) -> str:
@@ -100,6 +100,8 @@ def _decision_errors(decision: Mapping[str, Any], finding: Mapping[str, Any]) ->
     state = _text(decision.get("decision")).lower()
     if state not in DECISIONS:
         errors.append(f"unsupported finding decision: {state or 'blank'}")
+    if state == "requires_more_evidence" and not _text(decision.get("evidence_request")):
+        errors.append("evidence_request is required when requesting more evidence")
     if _text(decision.get("finding_digest")) != finding.get("finding_digest"):
         errors.append("finding_digest does not match the exact current finding")
     for key in ("risk", "probable_impact", "owner", "verification_method"):
@@ -119,7 +121,9 @@ def _decision_errors(decision: Mapping[str, Any], finding: Mapping[str, Any]) ->
     if state == "reject":
         if not _text(decision.get("rejection_evidence")):
             errors.append("rejection_evidence is required when rejecting a finding")
-    if state in {"accept", "defer"} or (finding.get("release_blocking") and state != "reject"):
+    if state in {"accept", "defer"} or (
+        finding.get("release_blocking") and state in {"accept", "defer", "remediate"}
+    ):
         errors.extend(_risk_acceptance_errors(decision))
     if finding.get("release_blocking") and state == "remediate" and _text(verification.get("status")).lower() != "passed":
         errors.append("release-blocking remediation must be verified as passed")
@@ -167,15 +171,26 @@ def build_finding_disposition_register(
     release_blockers: list[str] = []
     for finding in sorted(normalized, key=lambda item: item["finding_id"]):
         decision = applied.get(finding["finding_id"])
+        decision_status = "pending_human_decision"
+        if decision:
+            decision_status = (
+                "requires_more_evidence"
+                if decision["decision"] == "requires_more_evidence"
+                else "complete"
+            )
         record = {
             **finding,
-            "decision_status": "complete" if decision else "pending_human_decision",
+            "decision_status": decision_status,
             "decision": decision or {},
         }
         records.append(record)
         if finding["release_blocking"]:
             if not decision:
                 release_blockers.append(f"{finding['finding_id']} has no authorized decision")
+            elif decision["decision"] == "requires_more_evidence":
+                release_blockers.append(
+                    f"{finding['finding_id']} requires more evidence before disposition"
+                )
             elif decision["decision"] == "remediate":
                 verification = decision.get("verification") if isinstance(decision.get("verification"), Mapping) else {}
                 if _text(verification.get("status")).lower() != "passed":
@@ -183,7 +198,7 @@ def build_finding_disposition_register(
 
     pending = [item["finding_id"] for item in records if item["decision_status"] != "complete"]
     decision_counts = Counter(
-        item["decision"].get("decision") if item["decision_status"] == "complete" else "pending_human_decision"
+        item["decision"].get("decision") if item["decision"] else "pending_human_decision"
         for item in records
     )
     complete = not invalid_decisions and not pending and not release_blockers
@@ -212,7 +227,7 @@ def build_finding_disposition_register(
         "invalid_decisions": invalid_decisions,
         "records": records,
         "register_digest": _sha256(basis),
-        "rule": "NICO may prepare exact-source finding records and verification criteria, but only an authorized human may accept, remediate, defer, or reject a finding.",
+        "rule": "NICO may prepare exact-source finding records and verification criteria, but only an authorized human may accept, remediate, defer, reject, or request more evidence for a finding.",
     }
 
 

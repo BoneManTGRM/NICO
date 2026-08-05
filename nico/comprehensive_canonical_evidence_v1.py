@@ -49,6 +49,7 @@ _BINDING_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("assessment", "evidence_coverage"),
     ),
     "finding_evidence": (
+        ("finding_integrity_manifest",),
         ("canonical_findings",),
         ("findings_register",),
         ("client_finding_remediation_register",),

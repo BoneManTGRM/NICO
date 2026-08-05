@@ -305,6 +305,23 @@ def validate_finding_integrity_manifest(canonical: Mapping[str, Any]) -> dict[st
         return {"status": "invalid", "validation_errors": [f"{MANIFEST_KEY}:required"]}
     errors = list(manifest.get("validation_errors") or [])
     records = [item for item in manifest.get("records") or [] if isinstance(item, Mapping)]
+    for item in records:
+        record_subject = {
+            "finding_id": item.get("finding_id"),
+            "kind": item.get("kind"),
+            "priority": item.get("priority"),
+            "source": deepcopy(item.get("source") or {}),
+            "evidence": item.get("evidence"),
+            "impact": item.get("impact"),
+            "correction": item.get("correction"),
+            "verification": item.get("verification"),
+            "cyclomatic_complexity": item.get("cyclomatic_complexity"),
+            "disposition": item.get("disposition"),
+        }
+        if _sha256(record_subject) != _text(item.get("record_sha256")):
+            errors.append(
+                f"{_text(item.get('finding_id')) or '<missing>'}.record_sha256:mismatch"
+            )
     subject = {
         "record_digests": [item.get("record_sha256") for item in records],
         "priority_counts": deepcopy(manifest.get("priority_counts") or {}),
