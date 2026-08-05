@@ -241,12 +241,16 @@ def test_review_companion_retains_all_eight_sections_across_four_paired_pages() 
     assert len(sections) == 8
     assert len(reader.pages) == COMPANION_PAGE_COUNT == 4
     for page_number, page in enumerate(reader.pages, start=1):
-        text = " ".join((page.extract_text() or "").casefold().split())
+        raw_text = (page.extract_text() or "").casefold()
+        text = " ".join(raw_text.split())
         pair = sections[(page_number - 1) * 2 : page_number * 2]
         assert len(pair) == 2
         for section in pair:
             assert section["title"].casefold() in text
-        assert text.count("decision record") == 2
+        decision_record_headings = sum(
+            1 for line in raw_text.splitlines() if line.strip() == "decision record"
+        )
+        assert decision_record_headings == 2
         assert text.count("automated draft | human decision pending | client delivery blocked") == 2
         assert f"review page {page_number} of 4" in text
         assert "action and acceptance plan" not in text
