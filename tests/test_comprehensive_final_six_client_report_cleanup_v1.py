@@ -22,18 +22,28 @@ RUN_ID = "comprun_93972b7929b34f4194a27484d8be78dc"
 COMMIT = "75a5c530763a077e2b2b93881d4185c84168f586"
 
 
+def _category(raw: int) -> dict:
+    return {
+        "raw": raw,
+        "material": 0,
+        "review_required": raw,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": raw,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
+
+
 def _register() -> dict:
     return {
         "summary_by_category": {
-            "dependency": {"review_required": 59},
-            "secret": {"review_required": 17},
-            "static": {"review_required": 586},
+            "dependency": _category(59),
+            "secret": _category(17),
+            "static": _category(586),
         },
-        "totals": {
-            "raw": 662,
-            "material": 0,
-            "review_required": 662,
-        },
+        "totals": _category(662),
     }
 
 
