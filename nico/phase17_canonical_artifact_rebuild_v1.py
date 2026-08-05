@@ -16,6 +16,7 @@ from nico.comprehensive_automated_draft_cross_format_v1 import (
 )
 from nico.comprehensive_client_surface_structure_cleanup_v1 import (
     install_client_surface_structure_cleanup_v1,
+    project_client_stage_summaries,
 )
 from nico.comprehensive_client_truth_canonical_v2 import (
     install_comprehensive_client_truth_canonical_v2,
@@ -190,10 +191,11 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # compiler derives stages, scores, executive findings, and artifact content.
     prepared = completion.prepare_client_report_package(prepared)
     # Preparation extensions can legitimately rebind shared renderers. Reassert
-    # the client-surface structured-value contract at the exact render boundary so
-    # nested roadmap and trend objects remain structured in JSON but are rendered
-    # as readable labels in Markdown, HTML, and PDF.
+    # the client-surface structured-value contract at the exact render boundary,
+    # then project only client-facing stage fields into readable lines. Complete
+    # structured roadmap and trend objects remain retained in canonical JSON.
     install_client_surface_structure_cleanup_v1()
+    prepared = project_client_stage_summaries(prepared)
     rendered = rebuild_single_pass_premium_artifacts(prepared)
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
