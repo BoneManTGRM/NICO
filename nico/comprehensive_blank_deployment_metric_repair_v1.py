@@ -10,9 +10,10 @@ _MARKER = "__nico_blank_deployment_metric_repair_v1__"
 _STAGE_MARKER = "__nico_blank_deployment_metric_stage_repair_v1__"
 
 _BLANK_NON_SUCCESS_METRIC = re.compile(
-    r"(?im)^(?P<prefix>\s*[-*]?\s*)"
+    r"^(?P<prefix>[ \t]*[-*]?[ \t]*)"
     r"(?:non-success deployments|non-success deployment classification)"
-    r"\s*:\s*[.\-–—_:;|/\\]*\s*$"
+    r"[ \t]*:[ \t]*[.\-–—_:;|/\\]*[ \t]*$",
+    re.IGNORECASE,
 )
 _REPLACEMENT = "Non-success deployment classification: Not available."
 _STAGE_FIELDS = ("summary", "evidence", "findings", "unavailable", "limitations")
@@ -29,10 +30,11 @@ def normalize_blank_non_success_deployment_metric(value: Any) -> Any:
 
     if not isinstance(value, str):
         return value
-    return _BLANK_NON_SUCCESS_METRIC.sub(
-        lambda match: f"{match.group('prefix')}{_REPLACEMENT}",
-        value,
-    )
+    candidate = " ".join(value.split()) if "\n" in value or "\r" in value else value
+    match = _BLANK_NON_SUCCESS_METRIC.fullmatch(candidate)
+    if not match:
+        return value
+    return f"{match.group('prefix')}{_REPLACEMENT}"
 
 
 def _normalize_value(value: Any) -> Any:
