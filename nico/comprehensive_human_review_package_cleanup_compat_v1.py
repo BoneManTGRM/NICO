@@ -60,7 +60,11 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_full_report_finish_v1 import (
         install_comprehensive_full_report_finish_v1,
     )
+    from nico.comprehensive_raw_mapping_string_recovery_v1 import (
+        install_raw_mapping_string_recovery_v1,
+    )
 
+    raw_mapping_recovery = install_raw_mapping_string_recovery_v1()
     surface_cleanup = install_client_surface_structure_cleanup_v1()
     current = cleanup.assert_human_review_package_cleanup
     if getattr(current, _MARKER, False):
@@ -68,6 +72,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         return {
             "status": "already_installed",
             "version": VERSION,
+            "raw_mapping_string_recovery": raw_mapping_recovery,
             "client_surface_structure_cleanup": surface_cleanup,
             "full_report_finish": finish,
         }
@@ -95,6 +100,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "version": VERSION,
         "legacy_fixture_identity_normalized": True,
         "production_contract_still_fail_closed": True,
+        "raw_mapping_string_recovery": raw_mapping_recovery,
         "client_surface_structure_cleanup": surface_cleanup,
         "full_report_finish": finish,
         "scores_unchanged": True,
