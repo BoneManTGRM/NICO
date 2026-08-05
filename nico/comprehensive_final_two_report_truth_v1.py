@@ -7,7 +7,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-final-two-report-truth.v1"
+VERSION = "nico.comprehensive-final-two-report-truth.v1.1"
 _OLD_COVER_COPY = "independently evidence-adjusted"
 _NEW_COVER_COPY = "separately calculated evidence-adjusted"
 _STAGE_MARKER = "__nico_final_two_report_stage_truth_v1__"
@@ -49,6 +49,15 @@ _CLASSIFICATION_BREAKDOWN = re.compile(
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _cover_text_is_bounded(value: Any) -> bool:
+    text = _text(value).casefold()
+    return (
+        _OLD_COVER_COPY not in text
+        and "separately calculated" in text
+        and "evidence-adjusted readiness" in text
+    )
 
 
 def _deployment_population(lines: list[str]) -> tuple[int | None, int | None]:
@@ -132,10 +141,11 @@ def repair_deployment_population(stage: Mapping[str, Any]) -> dict[str, Any]:
         return result
 
     insertion = min(target_indexes) if target_indexes else len(lines)
+    target_set = set(target_indexes)
     cleaned = [
         line
         for index, line in enumerate(lines)
-        if index not in set(target_indexes)
+        if index not in target_set
     ]
     desired = [
         f"Non-success or unresolved deployment observations: {remainder}.",
@@ -194,7 +204,7 @@ def assert_final_two_report_truth(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
     )
     combined = "\n".join((str(markdown or ""), str(rendered_html or ""), extracted))
-    if _OLD_COVER_COPY in combined.casefold():
+    if _OLD_COVER_COPY in _text(combined).casefold():
         raise ValueError("client report retained overstated independent-adjustment language")
     for surface in (markdown, rendered_html, extracted):
         _assert_deployment_surface(str(surface or ""))
@@ -272,8 +282,8 @@ def install_final_two_report_truth_v1() -> dict[str, Any]:
                 text = "\n".join(
                     page.extract_text() or ""
                     for page in PdfReader(io.BytesIO(pdf)).pages[:1]
-                ).casefold()
-                if _OLD_COVER_COPY in text or _NEW_COVER_COPY not in text:
+                )
+                if not _cover_text_is_bounded(text):
                     raise ValueError("dark branded cover did not use bounded evidence-adjustment language")
             return pdf
 
@@ -297,8 +307,8 @@ def install_final_two_report_truth_v1() -> dict[str, Any]:
                 text = "\n".join(
                     page.extract_text() or ""
                     for page in PdfReader(io.BytesIO(pdf)).pages[:1]
-                ).casefold()
-                if _OLD_COVER_COPY in text or _NEW_COVER_COPY not in text:
+                )
+                if not _cover_text_is_bounded(text):
                     raise ValueError("final branded cover retained overstated adjustment language")
             return result
 
