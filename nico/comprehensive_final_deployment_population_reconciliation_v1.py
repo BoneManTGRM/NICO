@@ -7,9 +7,10 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-final-deployment-population-reconciliation.v1"
+VERSION = "nico.comprehensive-final-deployment-population-reconciliation.v1.1"
 _STAGE_MARKER = "__nico_final_deployment_population_stage_v1__"
 _BUILD_MARKER = "__nico_final_deployment_population_build_v1__"
+_PREPARE_MARKER = "__nico_final_deployment_population_prepare_v1__"
 _VALIDATE_MARKER = "__nico_final_deployment_population_validation_v1__"
 
 _PREFIX = r"\s*(?:[-*•]\s*)?"
@@ -45,10 +46,33 @@ _CLASSIFICATION_BREAKDOWN = re.compile(
     r"(?:not[ _-]+available|unavailable)\.?\s*$",
     re.IGNORECASE,
 )
+_STAGE_CONTAINER_KEYS = (
+    "stage_summaries",
+    "stages",
+    "sections",
+    "report_sections",
+    "client_sections",
+    "prior_stage_results",
+    "human_evidence_summary",
+)
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _surface_lines(value: str) -> list[str]:
+    return [_text(line) for line in str(value or "").splitlines() if _text(line)]
+
+
+def _visible_html(value: str) -> str:
+    source = str(value or "")
+    source = re.sub(
+        r"(?i)</(?:li|p|div|tr|h[1-6]|section|article)>|<br\s*/?>",
+        "\n",
+        source,
+    )
+    return html.unescape(re.sub(r"<[^>]+>", " ", source))
 
 
 def _deployment_population(lines: list[str]) -> tuple[int | None, int | None]:
@@ -70,11 +94,40 @@ def _deployment_population(lines: list[str]) -> tuple[int | None, int | None]:
     return observed, successful
 
 
-def reconcile_deployment_population(stage: Mapping[str, Any]) -> dict[str, Any]:
-    """Reconcile the complete client-facing deployment population.
+def _starts_deployment_population(line: str) -> bool:
+    return bool(
+        _DEPLOYMENTS_OBSERVED.fullmatch(line)
+        or _DEPLOYMENT_RATIO.fullmatch(line)
+    )
 
-    Canonical evidence is not changed. When a retained numeric non-success class does
-    not equal ``observed - successful``, the client surface reports the complete
+
+def _deployment_blocks(text: str, *, lookahead: int = 12) -> list[list[str]]:
+    """Return bounded local deployment evidence blocks.
+
+    Reports can legitimately repeat deployment evidence in a summary and a detailed
+    worksheet. Each population must be reconciled independently; values from separate
+    blocks must never be combined into one synthetic population.
+    """
+
+    lines = _surface_lines(text)
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if _starts_deployment_population(line)
+    ]
+    blocks: list[list[str]] = []
+    for offset, start in enumerate(starts):
+        next_start = starts[offset + 1] if offset + 1 < len(starts) else len(lines)
+        end = min(next_start, start + lookahead)
+        blocks.append(lines[start:end])
+    return blocks
+
+
+def reconcile_deployment_population(stage: Mapping[str, Any]) -> dict[str, Any]:
+    """Reconcile one client-facing deployment evidence stage.
+
+    Source objects are not mutated. When a retained numeric non-success class does
+    not equal ``observed - successful``, the client projection reports the complete
     arithmetic remainder as non-success *or unresolved* and states that the outcome
     classification breakdown is unavailable. A complete numeric class is preserved.
     """
@@ -141,8 +194,66 @@ def reconcile_deployment_population(stage: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _visible_html(value: str) -> str:
-    return _text(html.unescape(re.sub(r"<[^>]+>", " ", str(value or ""))))
+def _project_stage_container(value: Any, *, depth: int = 0) -> Any:
+    if depth > 8:
+        return deepcopy(value)
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = deepcopy(dict(value))
+        if isinstance(result.get("evidence"), list):
+            result = reconcile_deployment_population(result)
+        for key in _STAGE_CONTAINER_KEYS:
+            if key in result:
+                result[key] = _project_stage_container(result[key], depth=depth + 1)
+        return result
+    if isinstance(value, list):
+        return [_project_stage_container(item, depth=depth + 1) for item in value]
+    if isinstance(value, tuple):
+        return tuple(
+            _project_stage_container(item, depth=depth + 1) for item in value
+        )
+    return deepcopy(value)
+
+
+def project_deployment_population_package(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Project reconciled stage evidence before the legacy base PDF is rendered."""
+
+    result = deepcopy(dict(package))
+    canonical = (
+        deepcopy(dict(result.get("json") or {}))
+        if isinstance(result.get("json"), Mapping)
+        else {}
+    )
+    for key in _STAGE_CONTAINER_KEYS:
+        if key in canonical:
+            canonical[key] = _project_stage_container(canonical[key])
+
+    assessment = (
+        deepcopy(dict(canonical.get("assessment") or {}))
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    for key in _STAGE_CONTAINER_KEYS:
+        if key in assessment:
+            assessment[key] = _project_stage_container(assessment[key])
+    if assessment:
+        canonical["assessment"] = assessment
+
+    contract = deepcopy(dict(canonical.get("v2_pipeline_contract") or {}))
+    contract.update(
+        {
+            "deployment_population_reconciliation_version": VERSION,
+            "deployment_populations_reconciled_before_base_pdf": True,
+            "deployment_blocks_validated_independently": True,
+            "canonical_source_objects_not_mutated": True,
+            "scores_unchanged": True,
+            "candidate_dispositions_unchanged": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    )
+    canonical["v2_pipeline_contract"] = contract
+    result["json"] = canonical
+    return result
 
 
 def _pdf_text(pdf: bytes) -> str:
@@ -153,11 +264,8 @@ def _pdf_text(pdf: bytes) -> str:
     )
 
 
-def assert_deployment_population_reconciled(text: str) -> None:
-    """Reject an incomplete or ambiguous client-facing deployment population."""
-
-    lines = [_text(line) for line in str(text or "").splitlines() if _text(line)]
-    observed, successful = _deployment_population(lines)
+def _assert_deployment_block(block: list[str]) -> None:
+    observed, successful = _deployment_population(block)
     if observed is None or successful is None:
         return
     if successful > observed:
@@ -166,18 +274,18 @@ def assert_deployment_population_reconciled(text: str) -> None:
     remainder = observed - successful
     numeric = [
         int(match.group(1))
-        for line in lines
+        for line in block
         if (match := _NUMERIC_NON_SUCCESS.fullmatch(line))
     ]
     unresolved = [
         int(match.group(1))
-        for line in lines
+        for line in block
         if (match := _UNRESOLVED_DEPLOYMENTS.fullmatch(line))
     ]
     unavailable = any(
-        _UNAVAILABLE_CLASSIFICATION.fullmatch(line) for line in lines
+        _UNAVAILABLE_CLASSIFICATION.fullmatch(line) for line in block
     )
-    breakdown = any(_CLASSIFICATION_BREAKDOWN.fullmatch(line) for line in lines)
+    breakdown = any(_CLASSIFICATION_BREAKDOWN.fullmatch(line) for line in block)
 
     if numeric:
         if any(value != remainder for value in numeric):
@@ -198,6 +306,13 @@ def assert_deployment_population_reconciled(text: str) -> None:
         )
 
 
+def assert_deployment_population_reconciled(text: str) -> None:
+    """Validate each repeated deployment evidence block independently."""
+
+    for block in _deployment_blocks(text):
+        _assert_deployment_block(block)
+
+
 def assert_final_deployment_population_reconciliation(
     canonical: Mapping[str, Any],
     markdown: str,
@@ -210,11 +325,22 @@ def assert_final_deployment_population_reconciliation(
 
 
 def install_final_deployment_population_reconciliation_v1() -> dict[str, Any]:
-    """Install reconciliation after all earlier report compatibility layers."""
+    """Install projection and validation after earlier compatibility layers."""
 
+    from nico import client_report_completion_v2 as completion
     from nico import comprehensive_client_surface_structure_cleanup_v1 as surface
     from nico import comprehensive_final_six_client_report_cleanup_v1 as final_six
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+
+    current_prepare = completion.prepare_client_report_package
+    if not getattr(current_prepare, _PREPARE_MARKER, False):
+        @wraps(current_prepare)
+        def prepare(package: Mapping[str, Any]) -> dict[str, Any]:
+            return project_deployment_population_package(current_prepare(package))
+
+        setattr(prepare, _PREPARE_MARKER, True)
+        setattr(prepare, "_nico_previous", current_prepare)
+        completion.prepare_client_report_package = prepare
 
     current_final_six = final_six.sanitize_client_report_stage
     if not getattr(current_final_six, _STAGE_MARKER, False):
@@ -284,6 +410,9 @@ def install_final_deployment_population_reconciliation_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "pre_base_pdf_projection_bound": getattr(
+            completion.prepare_client_report_package, _PREPARE_MARKER, False
+        ),
         "final_six_stage_bound": getattr(
             final_six.sanitize_client_report_stage, _STAGE_MARKER, False
         ),
@@ -299,7 +428,8 @@ def install_final_deployment_population_reconciliation_v1() -> dict[str, Any]:
         "final_validator_bound": getattr(
             cleanup.assert_human_review_package_cleanup, _VALIDATE_MARKER, False
         ),
-        "canonical_source_values_unchanged": True,
+        "deployment_blocks_validated_independently": True,
+        "canonical_source_objects_not_mutated": True,
         "scores_unchanged": True,
         "scanner_candidates_unchanged": True,
         "candidate_dispositions_unchanged": True,
@@ -314,5 +444,6 @@ __all__ = [
     "assert_deployment_population_reconciled",
     "assert_final_deployment_population_reconciliation",
     "install_final_deployment_population_reconciliation_v1",
+    "project_deployment_population_package",
     "reconcile_deployment_population",
 ]
