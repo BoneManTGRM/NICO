@@ -10,6 +10,7 @@ _MARKER = "__nico_comprehensive_client_surface_structure_cleanup_v1__"
 _FINAL_TRUTH_EVIDENCE_MARKER = "__nico_final_truth_structured_evidence_v1__"
 _STAGE_SANITIZER_MARKER = "__nico_structured_stage_sanitizer_v1__"
 _PREMIUM_MARKER = "__nico_premium_structured_line_cleanup_v1__"
+_PREMIUM_STAGE_MARKER = "__nico_premium_structured_stage_population_v1__"
 _PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _CLIENT_STAGE_FIELDS = ("evidence", "findings", "unavailable", "limitations")
@@ -213,8 +214,6 @@ def _install_final_truth_evidence_cleanup() -> bool:
             limit=_line_capacity(values),
             item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
         )
-        # Preserve every existing final-truth exclusion and deduplication rule by
-        # passing readable strings through the original implementation.
         return current(readable)
 
     setattr(clean_evidence, _FINAL_TRUTH_EVIDENCE_MARKER, True)
@@ -257,8 +256,31 @@ def _install_premium_renderer_structured_line_cleanup() -> bool:
     return premium._clean_lines is clean_lines
 
 
+def _install_premium_stage_population_cleanup() -> bool:
+    """Normalize the complete derived stage population before every format renders."""
+
+    from nico import v2_premium_report_renderer as premium
+
+    current = premium._canonical_stages
+    if getattr(current, _PREMIUM_STAGE_MARKER, False):
+        return True
+
+    @wraps(current)
+    def canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
+        return [
+            sanitize_client_rendered_stage(stage)
+            for stage in current(canonical)
+            if isinstance(stage, Mapping)
+        ]
+
+    setattr(canonical_stages, _PREMIUM_STAGE_MARKER, True)
+    setattr(canonical_stages, "_nico_previous", current)
+    premium._canonical_stages = canonical_stages
+    return premium._canonical_stages is canonical_stages
+
+
 def _install_premium_renderer_entrypoint_cleanup() -> bool:
-    """Bind the repaired helper at the exact renderer entrypoint used by imports."""
+    """Bind the repaired helpers at the exact renderer entrypoint used by imports."""
 
     from nico import v2_premium_evidence_appendix as appendix
     from nico import v2_premium_report_renderer as premium
@@ -270,10 +292,8 @@ def _install_premium_renderer_entrypoint_cleanup() -> bool:
 
     @wraps(current)
     def rebuild(package: Mapping[str, Any]) -> dict[str, Any]:
-        # The appendix module captures this renderer by direct import. Rebind the
-        # original function's global helper at call time so every imported alias
-        # uses the same structured-value renderer without changing source JSON.
         current.__globals__["_clean_lines"] = premium_renderer_clean_lines
+        current.__globals__["_canonical_stages"] = premium._canonical_stages
         return current(package)
 
     setattr(rebuild, _PREMIUM_ENTRYPOINT_MARKER, True)
@@ -325,6 +345,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
     final_truth_bound = _install_final_truth_evidence_cleanup()
     stage_sanitizer_bound = _install_cleanup_stage_sanitizer()
     premium_bound = _install_premium_renderer_structured_line_cleanup()
+    premium_stages_bound = _install_premium_stage_population_cleanup()
     premium_entrypoint_bound = _install_premium_renderer_entrypoint_cleanup()
     diagnostic_bound = _install_raw_mapping_surface_diagnostic()
     current = companion._values
@@ -335,6 +356,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
             "final_truth_evidence_cleanup_bound": final_truth_bound,
             "structured_stage_sanitizer_bound": stage_sanitizer_bound,
             "premium_renderer_clean_lines_bound": premium_bound,
+            "premium_stage_population_cleanup_bound": premium_stages_bound,
             "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
             "review_companion_values_bound": True,
             "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
@@ -354,6 +376,7 @@ def install_client_surface_structure_cleanup_v1() -> dict[str, Any]:
         "final_truth_evidence_cleanup_bound": final_truth_bound,
         "structured_stage_sanitizer_bound": stage_sanitizer_bound,
         "premium_renderer_clean_lines_bound": premium_bound,
+        "premium_stage_population_cleanup_bound": premium_stages_bound,
         "premium_renderer_entrypoint_bound": premium_entrypoint_bound,
         "review_companion_values_bound": companion._values is values,
         "raw_mapping_surface_diagnostic_bound": diagnostic_bound,
