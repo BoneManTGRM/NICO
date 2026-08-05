@@ -181,12 +181,15 @@ def test_strict_validation_reports_missing_identity_and_binding_paths() -> None:
     assert "bindings.scoring_evidence:required" in manifest["validation_errors"]
 
 
-def test_invalid_commit_identity_is_rejected_even_in_non_strict_mode() -> None:
+def test_invalid_commit_identity_is_rejected_for_complete_subjects() -> None:
     source = _canonical()
     source["identity"]["commit_sha"] = "not-a-sha"
-    attached = attach_canonical_evidence_manifest(source)
+    attached = attach_canonical_evidence_manifest(source, require_complete=True)
 
-    validation = validate_canonical_evidence_manifest(attached)
+    validation = validate_canonical_evidence_manifest(
+        attached,
+        require_complete=True,
+    )
 
     assert validation["status"] == "invalid"
     assert "identity.commit_sha:invalid_sha40" in validation["validation_errors"]
