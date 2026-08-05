@@ -4,25 +4,22 @@ import ast
 import base64
 import html
 import io
+import json
 import re
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping
 
 from pypdf import PdfReader
 
 VERSION = "nico.comprehensive-full-report-finish.v1"
 _MARKER = "__nico_comprehensive_full_report_finish_v1__"
 _TABLE_MARKER = "__nico_dark_header_paragraph_contrast_v1__"
-
 _DARK_BLUE = "#0c4a6e"
 _WHITE = "#ffffff"
 _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
-_SUPPORTED_EXTENSIONS = (".csv", ".json", ".html", ".md", ".pdf")
-_RAW_MAPPING_LINE = re.compile(
-    r"(?m)^\s*(?:[-*]\s+)?\{\s*(?:['\"][^'\"]+['\"]\s*:\s*[^{}\n]+)(?:,\s*['\"][^'\"]+['\"]\s*:\s*[^{}\n]+)*\s*\}\s*$"
-)
-_NULL_LIKE = {"", "none", "null", "not available", "unknown", "n/a", "na"}
+_EXTENSIONS = (".csv", ".json", ".html", ".md", ".pdf")
+_NULLISH = {"", "none", "null", "not available", "unknown", "n/a", "na"}
 
 _WORKSHEET_TITLES = (
     "Functional QA",
@@ -34,7 +31,6 @@ _WORKSHEET_TITLES = (
     "Six-Month Roadmap",
     "Staffing, Sequencing, and Cost",
 )
-
 _OUTCOME_LABELS = {
     "success": "Successful",
     "successful": "Successful",
@@ -53,11 +49,11 @@ _OUTCOME_LABELS = {
 
 
 def _text(value: Any, limit: int = 12000) -> str:
-    normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
-    return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+    text = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
-def _mapping(value: Any) -> Mapping[str, Any] | None:
+def _parse_mapping(value: Any) -> Mapping[str, Any] | None:
     if isinstance(value, Mapping):
         return value
     if not isinstance(value, str):
@@ -69,32 +65,41 @@ def _mapping(value: Any) -> Mapping[str, Any] | None:
         parsed = ast.literal_eval(candidate)
     except (SyntaxError, ValueError):
         try:
-            import json
-
             parsed = json.loads(candidate)
         except (TypeError, ValueError):
             return None
     return parsed if isinstance(parsed, Mapping) else None
 
 
-def _label(key: Any) -> str:
-    raw = _text(key, 180)
-    folded = raw.casefold().replace("-", "_").replace(" ", "_")
-    if folded in _OUTCOME_LABELS:
-        return _OUTCOME_LABELS[folded]
-    return raw.replace("_", " ").replace("-", " ").strip().title() or "Value"
+def _mapping_tail(value: Any) -> tuple[str, Mapping[str, Any] | None]:
+    direct = _parse_mapping(value)
+    if direct is not None:
+        return "", direct
+    if not isinstance(value, str):
+        return "", None
+    candidate = value.strip()
+    opening = candidate.find("{")
+    if opening <= 0 or not candidate.endswith("}"):
+        return "", None
+    prefix = candidate[:opening].strip()
+    if not prefix.endswith((":", "=")):
+        return "", None
+    return prefix.rstrip(":= "), _parse_mapping(candidate[opening:])
 
 
-def humanize_structured_value(value: Any) -> str:
-    """Render a retained mapping as readable labels without mutating structured JSON."""
+def _label(value: Any) -> str:
+    raw = _text(value, 180)
+    key = raw.casefold().replace("-", "_").replace(" ", "_")
+    return _OUTCOME_LABELS.get(
+        key, raw.replace("_", " ").replace("-", " ").strip().title() or "Value"
+    )
 
-    structured = _mapping(value)
-    if structured is None:
-        return _text(value)
+
+def _render_mapping(value: Mapping[str, Any]) -> str:
     parts: list[str] = []
-    for key, raw in structured.items():
+    for key, raw in value.items():
         if isinstance(raw, Mapping):
-            rendered = humanize_structured_value(raw)
+            rendered = _render_mapping(raw)
         elif isinstance(raw, (list, tuple)):
             rendered = ", ".join(humanize_structured_value(item) for item in raw)
         else:
@@ -104,100 +109,83 @@ def humanize_structured_value(value: Any) -> str:
     return "; ".join(parts) or "Not available"
 
 
+def humanize_structured_value(value: Any) -> str:
+    """Turn a retained mapping into readable labels without changing canonical JSON."""
+
+    prefix, structured = _mapping_tail(value)
+    if structured is None:
+        return _text(value)
+    rendered = _render_mapping(structured)
+    if not prefix:
+        return rendered
+    return f"{_label(prefix.rsplit('.', 1)[-1])}: {rendered}"
+
+
 def sanitize_stage_structures(stage: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(stage))
     for field in ("evidence", "findings", "unavailable", "limitations"):
         values = result.get(field)
-        if not isinstance(values, (list, tuple)):
-            continue
-        result[field] = [
-            rendered
-            for rendered in (humanize_structured_value(item) for item in values)
-            if rendered
-        ]
-    if _mapping(result.get("summary")) is not None:
+        if isinstance(values, (list, tuple)):
+            result[field] = [
+                line
+                for line in (humanize_structured_value(item) for item in values)
+                if line
+            ]
+    if _mapping_tail(result.get("summary"))[1] is not None:
         result["summary"] = humanize_structured_value(result.get("summary"))
     return result
 
 
-def _separator_split(text: str, maximum: int, minimum_tail: int = 8) -> int:
-    upper = min(maximum, len(text) - minimum_tail)
-    if upper <= 0:
-        return min(maximum, len(text))
-    lower = max(12, upper - 14)
-    candidates = [
-        index + 1
-        for index in range(lower, upper)
-        if text[index] in "-_."
-    ]
-    return candidates[-1] if candidates else upper
-
-
-def _balanced_chunks(text: str, maximum: int, minimum_tail: int = 8) -> list[str]:
-    remainder = text
-    chunks: list[str] = []
+def _chunks(value: str, maximum: int, minimum_tail: int = 8) -> list[str]:
+    output: list[str] = []
+    remainder = value
     while len(remainder) > maximum:
-        split_at = _separator_split(remainder, maximum, minimum_tail)
-        if split_at <= 1:
-            split_at = min(maximum, len(remainder) - minimum_tail)
-        chunks.append(remainder[:split_at])
-        remainder = remainder[split_at:]
+        upper = min(maximum, len(remainder) - minimum_tail)
+        lower = max(12, upper - 14)
+        breaks = [i + 1 for i in range(lower, upper) if remainder[i] in "-_."]
+        split = breaks[-1] if breaks else upper
+        output.append(remainder[:split])
+        remainder = remainder[split:]
     if remainder:
-        chunks.append(remainder)
-    if len(chunks) > 1 and len(chunks[-1]) < minimum_tail:
-        needed = minimum_tail - len(chunks[-1])
-        movable = max(0, len(chunks[-2]) - 12)
-        take = min(needed, movable)
+        output.append(remainder)
+    if len(output) > 1 and len(output[-1]) < minimum_tail:
+        need = minimum_tail - len(output[-1])
+        take = min(need, max(0, len(output[-2]) - 12))
         if take:
-            chunks[-1] = chunks[-2][-take:] + chunks[-1]
-            chunks[-2] = chunks[-2][:-take]
-    return [chunk for chunk in chunks if chunk]
+            output[-1] = output[-2][-take:] + output[-1]
+            output[-2] = output[-2][:-take]
+    return [item for item in output if item]
 
 
 def filename_markup(value: Any, maximum: int = 42) -> str:
     raw = _text(value, 900)
     if not raw:
         return "Not available"
-    extension = next(
-        (suffix for suffix in _SUPPORTED_EXTENSIONS if raw.casefold().endswith(suffix)),
-        "",
-    )
+    extension = next((ext for ext in _EXTENSIONS if raw.casefold().endswith(ext)), "")
     stem = raw[: -len(extension)] if extension else raw
-    reserve = len(extension)
-    chunks = _balanced_chunks(stem, max(18, maximum - reserve) if len(stem) <= maximum else maximum)
+    chunks = _chunks(stem, maximum)
     if extension:
-        if not chunks:
-            chunks = [extension]
-        elif len(chunks[-1]) + len(extension) <= maximum:
+        if chunks and len(chunks[-1]) + len(extension) <= maximum:
             chunks[-1] += extension
         else:
-            tail_room = max(8, maximum - len(extension))
-            last = chunks.pop()
-            head, tail = last[:-tail_room], last[-tail_room:]
-            if head:
-                chunks.append(head)
-            chunks.append(tail + extension)
-    if len(chunks) > 1 and len(chunks[-1]) == 1:
-        chunks[-1] = chunks[-2][-1:] + chunks[-1]
-        chunks[-2] = chunks[-2][:-1]
-    return "<br/>".join(html.escape(chunk) for chunk in chunks if chunk)
+            last = chunks.pop() if chunks else ""
+            room = max(8, maximum - len(extension))
+            if len(last) > room:
+                chunks.append(last[:-room])
+                last = last[-room:]
+            chunks.append(last + extension)
+    return "<br/>".join(html.escape(item) for item in chunks if item)
 
 
 def digest_markup(value: Any) -> str:
     raw = _text(value, 900)
     if _HEX64.fullmatch(raw):
-        return f"{html.escape(raw[:32])}<br/>{html.escape(raw[32:])}"
+        return f"{raw[:32]}<br/>{raw[32:]}"
     return html.escape(raw or "Not available")
 
 
-def _meaningful_timestamp(value: Any) -> str:
-    rendered = _text(value, 220)
-    return "" if rendered.casefold() in _NULL_LIKE else rendered
-
-
 def canonical_generation_timestamp(canonical: Mapping[str, Any]) -> str:
-    containers: list[Mapping[str, Any]] = []
-    for value in (
+    containers = (
         canonical.get("identity"),
         canonical,
         canonical.get("run_metadata"),
@@ -205,9 +193,7 @@ def canonical_generation_timestamp(canonical: Mapping[str, Any]) -> str:
         canonical.get("metadata"),
         canonical.get("artifact_manifest"),
         canonical.get("assessment"),
-    ):
-        if isinstance(value, Mapping):
-            containers.append(value)
+    )
     keys = (
         "generated_at",
         "generation_timestamp",
@@ -218,108 +204,82 @@ def canonical_generation_timestamp(canonical: Mapping[str, Any]) -> str:
         "completed_at",
     )
     for container in containers:
+        if not isinstance(container, Mapping):
+            continue
         for key in keys:
-            value = _meaningful_timestamp(container.get(key))
-            if value:
+            value = _text(container.get(key), 220)
+            if value and value.casefold() not in _NULLISH:
                 return value
     return ""
 
 
-def _rgb(color: Any) -> tuple[float, float, float] | None:
-    try:
-        from reportlab.lib import colors
+def _rgb(value: Any) -> tuple[float, float, float] | None:
+    from reportlab.lib import colors
 
-        resolved = colors.toColorOrNone(color)
+    try:
+        color = colors.toColorOrNone(value)
     except (AttributeError, TypeError, ValueError):
         return None
-    if resolved is None:
-        return None
-    return float(resolved.red), float(resolved.green), float(resolved.blue)
+    return None if color is None else (float(color.red), float(color.green), float(color.blue))
 
 
-def _is_dark_fill(color: Any) -> bool:
-    rgb = _rgb(color)
-    if rgb is None:
+def _dark(value: Any) -> bool:
+    color = _rgb(value)
+    if color is None:
         return False
-    red, green, blue = rgb
-    luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
-    return luminance <= 0.38
+    red, green, blue = color
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue <= 0.38
 
 
-def _set_flowable_white(value: Any) -> None:
-    from reportlab.lib import colors
-    from reportlab.platypus import Paragraph
+def _cell_range(table: Any, start: tuple[int, int], end: tuple[int, int]):
+    rows, columns = table._nrows, table._ncols
+    start_column, start_row = start
+    end_column, end_row = end
+    start_column = start_column + columns if start_column < 0 else start_column
+    end_column = end_column + columns if end_column < 0 else end_column
+    start_row = start_row + rows if start_row < 0 else start_row
+    end_row = end_row + rows if end_row < 0 else end_row
+    for row in range(max(0, start_row), min(rows - 1, end_row) + 1):
+        for column in range(max(0, start_column), min(columns - 1, end_column) + 1):
+            yield row, column
 
-    values: Iterable[Any]
-    if isinstance(value, (list, tuple)):
-        values = value
-    else:
-        values = (value,)
+
+def _paragraph_fragments(value: Any):
+    values = value if isinstance(value, (list, tuple)) else (value,)
     for item in values:
-        if not isinstance(item, Paragraph):
-            continue
-        item.style.textColor = colors.white
         for fragment in getattr(item, "frags", ()):
-            if hasattr(fragment, "textColor"):
-                fragment.textColor = colors.white
+            yield fragment
         broken = getattr(item, "blPara", None)
         for line in getattr(broken, "lines", ()) if broken is not None else ():
-            for fragment in getattr(line, "words", ()):
-                if hasattr(fragment, "textColor"):
-                    fragment.textColor = colors.white
+            yield from getattr(line, "words", ())
 
 
 def enforce_dark_table_contrast(table: Any) -> None:
-    """Make every cell covered by a dark fill use white text, including Paragraph fragments."""
-
     from reportlab.lib import colors
 
-    rows = int(getattr(table, "_nrows", 0) or 0)
-    columns = int(getattr(table, "_ncols", 0) or 0)
-    if not rows or not columns:
-        return
     for command in getattr(table, "_bkgrndcmds", ()):
-        if not command or command[0] != "BACKGROUND" or len(command) < 4:
+        if len(command) < 4 or command[0] != "BACKGROUND" or not _dark(command[3]):
             continue
-        _, (start_column, start_row), (end_column, end_row), fill = command
-        if not _is_dark_fill(fill):
-            continue
-        start_column = start_column + columns if start_column < 0 else start_column
-        end_column = end_column + columns if end_column < 0 else end_column
-        start_row = start_row + rows if start_row < 0 else start_row
-        end_row = end_row + rows if end_row < 0 else end_row
-        for row in range(max(0, start_row), min(rows - 1, end_row) + 1):
-            for column in range(max(0, start_column), min(columns - 1, end_column) + 1):
-                table._cellStyles[row][column].color = colors.white
-                _set_flowable_white(table._cellvalues[row][column])
+        for row, column in _cell_range(table, command[1], command[2]):
+            table._cellStyles[row][column].color = colors.white
+            for fragment in _paragraph_fragments(table._cellvalues[row][column]):
+                if hasattr(fragment, "textColor"):
+                    fragment.textColor = colors.white
 
 
 def assert_dark_table_contrast(table: Any) -> None:
     from reportlab.lib import colors
 
-    rows = int(getattr(table, "_nrows", 0) or 0)
-    columns = int(getattr(table, "_ncols", 0) or 0)
+    white = _rgb(colors.white)
     for command in getattr(table, "_bkgrndcmds", ()):
-        if not command or command[0] != "BACKGROUND" or len(command) < 4:
+        if len(command) < 4 or command[0] != "BACKGROUND" or not _dark(command[3]):
             continue
-        _, (start_column, start_row), (end_column, end_row), fill = command
-        if not _is_dark_fill(fill):
-            continue
-        start_column = start_column + columns if start_column < 0 else start_column
-        end_column = end_column + columns if end_column < 0 else end_column
-        start_row = start_row + rows if start_row < 0 else start_row
-        end_row = end_row + rows if end_row < 0 else end_row
-        for row in range(max(0, start_row), min(rows - 1, end_row) + 1):
-            for column in range(max(0, start_column), min(columns - 1, end_column) + 1):
-                color = table._cellStyles[row][column].color
-                if _rgb(color) != _rgb(colors.white):
-                    raise ValueError("dark table cell does not use white foreground text")
-                cell = table._cellvalues[row][column]
-                values = cell if isinstance(cell, (list, tuple)) else (cell,)
-                for item in values:
-                    for fragment in getattr(item, "frags", ()):
-                        if _rgb(getattr(fragment, "textColor", None)) != _rgb(colors.white):
-                            raise ValueError("dark table Paragraph fragment does not use white text")
+        for row, column in _cell_range(table, command[1], command[2]):
+            if _rgb(table._cellStyles[row][column].color) != white:
+                raise ValueError("dark table cell does not use white foreground text")
+            for fragment in _paragraph_fragments(table._cellvalues[row][column]):
+                if _rgb(getattr(fragment, "textColor", None)) != white:
+                    raise ValueError("dark table Paragraph fragment does not use white text")
 
 
 def install_reportlab_dark_header_contrast() -> bool:
@@ -345,15 +305,18 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
 
 
-def _strip_html(rendered_html: str) -> str:
+def _html_text(rendered_html: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "\n", rendered_html or ""))
 
 
 def assert_no_raw_mapping_presentation(markdown: str, rendered_html: str, pdf: bytes) -> None:
-    surfaces = (markdown or "", _strip_html(rendered_html), _pdf_text(pdf))
-    for surface in surfaces:
-        if _RAW_MAPPING_LINE.search(surface):
-            raise ValueError("client-facing artifact retained a raw mapping presentation")
+    for surface in (markdown or "", _html_text(rendered_html), _pdf_text(pdf)):
+        for raw_line in surface.splitlines():
+            line = raw_line.strip()
+            if line.startswith(("- ", "* ")):
+                line = line[2:].strip()
+            if _mapping_tail(line)[1] is not None:
+                raise ValueError("client-facing artifact retained a raw mapping presentation")
 
 
 def _assessment(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -361,27 +324,22 @@ def _assessment(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _stage_titles(canonical: Mapping[str, Any]) -> set[str]:
-    stages = canonical.get("stage_summaries")
-    if not isinstance(stages, list):
-        stages = _assessment(canonical).get("stage_summaries")
-    return {
-        _text(item.get("title"), 300)
-        for item in stages or []
-        if isinstance(item, Mapping) and _text(item.get("title"), 300)
-    }
+def _stages(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    values = canonical.get("stage_summaries")
+    if not isinstance(values, list):
+        values = _assessment(canonical).get("stage_summaries")
+    return [item for item in values or [] if isinstance(item, Mapping)]
 
 
-def _score_sections(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    sections = _assessment(canonical).get("sections")
-    return [item for item in sections or [] if isinstance(item, Mapping)]
+def _sections(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    return [item for item in _assessment(canonical).get("sections") or [] if isinstance(item, Mapping)]
 
 
-def _scanner_records(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    records = canonical.get("scanner_execution_records")
-    if not isinstance(records, list):
-        records = _assessment(canonical).get("scanner_execution_records")
-    return [item for item in records or [] if isinstance(item, Mapping)]
+def _scanners(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    values = canonical.get("scanner_execution_records")
+    if not isinstance(values, list):
+        values = _assessment(canonical).get("scanner_execution_records")
+    return [item for item in values or [] if isinstance(item, Mapping)]
 
 
 def _candidate_register(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -398,76 +356,62 @@ def _candidate_register(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _candidate_total(canonical: Mapping[str, Any]) -> int:
-    assessment = _assessment(canonical)
-    for value in (
+    for summary in (
         canonical.get("review_candidate_summary"),
-        assessment.get("review_candidate_summary"),
+        _assessment(canonical).get("review_candidate_summary"),
     ):
-        if not isinstance(value, Mapping):
+        if not isinstance(summary, Mapping):
             continue
         for key in ("review_required_total", "raw_total", "candidate_total"):
-            raw = value.get(key)
-            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-                return max(0, int(raw))
+            value = summary.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return max(0, int(value))
     findings = _candidate_register(canonical).get("findings")
     return len(findings) if isinstance(findings, list) else 0
 
 
-def _exact_source_findings(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+def _findings(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     register = canonical.get("client_finding_remediation_register")
-    if isinstance(register, Mapping):
-        code = register.get("code_findings")
-        if isinstance(code, list):
-            return [item for item in code if isinstance(item, Mapping)]
-    findings = canonical.get("canonical_findings")
-    return [item for item in findings or [] if isinstance(item, Mapping)]
-
-
-def _fixture_identity(canonical: Mapping[str, Any]) -> bool:
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    joined = " ".join(
-        _text(identity.get(key) or canonical.get(key), 300).casefold()
-        for key in ("customer_id", "project_id", "run_id")
-    )
-    return any(token in joined for token in ("fixture", "phase9-proof", "test-customer", "test-project"))
+    if isinstance(register, Mapping) and isinstance(register.get("code_findings"), list):
+        return [item for item in register["code_findings"] if isinstance(item, Mapping)]
+    return [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
 
 
 def classify_report_proof(canonical: Mapping[str, Any]) -> str:
-    """Distinguish renderer fixtures from evidence-rich Comprehensive packages."""
-
-    signals = 0
-    titles = _stage_titles(canonical)
-    if _score_sections(canonical):
-        signals += 1
-    if set(_WORKSHEET_TITLES).issubset(titles):
-        signals += 2
-    if _scanner_records(canonical) or _candidate_register(canonical):
-        signals += 1
-    if isinstance(canonical.get("artifact_manifest"), Mapping) and isinstance(canonical.get("approval"), Mapping):
-        signals += 1
-    if len(titles) >= 12:
-        signals += 1
-    return "full_comprehensive" if signals >= 4 and not _fixture_identity(canonical) else "sparse_fixture"
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    identity_text = " ".join(
+        _text(identity.get(key) or canonical.get(key), 300).casefold()
+        for key in ("customer_id", "project_id", "run_id")
+    )
+    if any(value in identity_text for value in ("fixture", "phase9-proof", "test-customer", "test-project")):
+        return "sparse_fixture"
+    titles = {_text(item.get("title"), 300) for item in _stages(canonical)}
+    signals = int(bool(_sections(canonical)))
+    signals += 2 if set(_WORKSHEET_TITLES).issubset(titles) else 0
+    signals += int(bool(_scanners(canonical) or _candidate_register(canonical)))
+    signals += int(
+        isinstance(canonical.get("artifact_manifest"), Mapping)
+        and isinstance(canonical.get("approval"), Mapping)
+    )
+    signals += int(len(titles) >= 12)
+    return "full_comprehensive" if signals >= 4 else "sparse_fixture"
 
 
 def assert_full_data_parity(
-    canonical: Mapping[str, Any],
-    markdown: str,
-    rendered_html: str,
-    pdf: bytes,
+    canonical: Mapping[str, Any], markdown: str, rendered_html: str, pdf: bytes
 ) -> dict[str, Any]:
     if classify_report_proof(canonical) != "full_comprehensive":
         raise ValueError("sparse fixture cannot satisfy full-data Comprehensive parity validation")
     extracted = _pdf_text(pdf)
-    combined = "\n".join((markdown or "", _strip_html(rendered_html), extracted))
-    sections = _score_sections(canonical)
+    combined = "\n".join((markdown or "", _html_text(rendered_html), extracted))
+    sections = _sections(canonical)
     if not sections:
         raise ValueError("full-data proof is missing the canonical scorecard")
-    titles = _stage_titles(canonical)
-    missing_worksheets = [title for title in _WORKSHEET_TITLES if title not in titles or title not in combined]
-    if missing_worksheets:
-        raise ValueError("full-data proof is missing human-review worksheets: " + ", ".join(missing_worksheets))
-    scanners = _scanner_records(canonical)
+    titles = {_text(item.get("title"), 300) for item in _stages(canonical)}
+    missing = [title for title in _WORKSHEET_TITLES if title not in titles or title not in combined]
+    if missing:
+        raise ValueError("full-data proof is missing human-review worksheets: " + ", ".join(missing))
+    scanners = _scanners(canonical)
     requested = _assessment(canonical).get("requested_scanner_records") or canonical.get("requested_scanner_records")
     if requested and not scanners:
         raise ValueError("full-data proof is missing applicable scanner execution evidence")
@@ -476,16 +420,14 @@ def assert_full_data_parity(
         raise ValueError("full-data proof has candidates but no canonical candidate register")
     if candidates and "Review-Required Candidate Register" not in combined:
         raise ValueError("full-data PDF is missing the candidate register section")
-    findings = _exact_source_findings(canonical)
-    missing_findings: list[str] = []
-    for finding in findings:
-        identifier = _text(finding.get("finding_id") or finding.get("id"), 300)
-        if identifier and identifier not in extracted:
-            missing_findings.append(identifier)
-    if missing_findings:
-        raise ValueError(
-            f"full-data PDF index omitted {len(missing_findings)} canonical exact-source finding(s)"
-        )
+    findings = _findings(canonical)
+    omitted = [
+        _text(item.get("finding_id") or item.get("id"), 300)
+        for item in findings
+        if _text(item.get("finding_id") or item.get("id"), 300) not in extracted
+    ]
+    if omitted:
+        raise ValueError(f"full-data PDF index omitted {len(omitted)} canonical exact-source finding(s)")
     for title in (
         "Client Artifact Manifest",
         "Human Review and Exact-Artifact Approval Record",
@@ -517,11 +459,10 @@ def assert_exact_artifact_binding(result: Mapping[str, Any]) -> None:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     run_id = _text(identity.get("run_id") or canonical.get("run_id"), 300)
     commit = _text(identity.get("commit_sha") or canonical.get("commit_sha"), 120)
-    manifest = result.get("evidence_manifest") or result.get("detached_evidence_manifest") or canonical.get("artifact_manifest")
+    manifest = result.get("artifact_manifest") or canonical.get("artifact_manifest")
     if not isinstance(manifest, Mapping):
         raise ValueError("full-data proof is missing the detached evidence manifest")
-    entries = manifest.get("artifacts") or manifest.get("entries") or []
-    for entry in entries:
+    for entry in manifest.get("artifacts") or manifest.get("entries") or []:
         if not isinstance(entry, Mapping):
             continue
         entry_run = _text(entry.get("run_id"), 300)
@@ -569,15 +510,10 @@ def install_comprehensive_full_report_finish_v1() -> dict[str, Any]:
     if not getattr(current_assert, _MARKER, False):
         @wraps(current_assert)
         def assert_cleanup(
-            canonical: Mapping[str, Any],
-            markdown: str,
-            rendered_html: str,
-            pdf: bytes,
+            canonical: Mapping[str, Any], markdown: str, rendered_html: str, pdf: bytes
         ) -> None:
             current_assert(canonical, markdown, rendered_html, pdf)
             assert_no_raw_mapping_presentation(markdown, rendered_html, pdf)
-            if classify_report_proof(canonical) == "full_comprehensive":
-                assert_full_data_parity(canonical, markdown, rendered_html, pdf)
 
         setattr(assert_cleanup, _MARKER, True)
         setattr(assert_cleanup, "_nico_previous", current_assert)
@@ -588,6 +524,14 @@ def install_comprehensive_full_report_finish_v1() -> dict[str, Any]:
         @wraps(current_final)
         def validate_final(result: Mapping[str, Any]) -> None:
             current_final(result)
+            canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
+            if classify_report_proof(canonical) == "full_comprehensive":
+                assert_full_data_parity(
+                    canonical,
+                    str(result.get("markdown") or ""),
+                    str(result.get("html") or ""),
+                    base64.b64decode(str(result.get("pdf_base64") or ""), validate=True),
+                )
             assert_exact_artifact_binding(result)
 
         setattr(validate_final, _MARKER, True)
