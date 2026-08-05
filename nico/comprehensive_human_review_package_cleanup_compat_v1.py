@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.1"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.2"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -54,6 +54,9 @@ def normalize_missing_fixture_identity(canonical: Mapping[str, Any]) -> dict[str
 
 def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, Any]:
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+    from nico.comprehensive_blank_deployment_metric_repair_v1 import (
+        install_blank_deployment_metric_repair_v1,
+    )
     from nico.comprehensive_client_surface_structure_cleanup_v1 import (
         install_client_surface_structure_cleanup_v1,
     )
@@ -69,6 +72,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
 
     raw_mapping_recovery = install_raw_mapping_string_recovery_v1()
     surface_cleanup = install_client_surface_structure_cleanup_v1()
+    blank_deployment_metric = install_blank_deployment_metric_repair_v1()
     current = cleanup.assert_human_review_package_cleanup
     if getattr(current, _MARKER, False):
         finish = install_comprehensive_full_report_finish_v1()
@@ -78,6 +82,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "version": VERSION,
             "raw_mapping_string_recovery": raw_mapping_recovery,
             "client_surface_structure_cleanup": surface_cleanup,
+            "blank_deployment_metric_repair": blank_deployment_metric,
             "full_report_finish": finish,
             "exact_source_index_validation": exact_source_index,
         }
@@ -108,6 +113,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "production_contract_still_fail_closed": True,
         "raw_mapping_string_recovery": raw_mapping_recovery,
         "client_surface_structure_cleanup": surface_cleanup,
+        "blank_deployment_metric_repair": blank_deployment_metric,
         "full_report_finish": finish,
         "exact_source_index_validation": exact_source_index,
         "scores_unchanged": True,
