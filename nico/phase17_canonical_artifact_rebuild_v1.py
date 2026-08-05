@@ -14,6 +14,9 @@ from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
 from nico.comprehensive_automated_draft_cross_format_v1 import (
     install_automated_draft_cross_format_contract,
 )
+from nico.comprehensive_client_surface_structure_cleanup_v1 import (
+    install_client_surface_structure_cleanup_v1,
+)
 from nico.comprehensive_client_truth_canonical_v2 import (
     install_comprehensive_client_truth_canonical_v2,
 )
@@ -186,6 +189,11 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # and the structured remediation register must exist before the premium
     # compiler derives stages, scores, executive findings, and artifact content.
     prepared = completion.prepare_client_report_package(prepared)
+    # Preparation extensions can legitimately rebind shared renderers. Reassert
+    # the client-surface structured-value contract at the exact render boundary so
+    # nested roadmap and trend objects remain structured in JSON but are rendered
+    # as readable labels in Markdown, HTML, and PDF.
+    install_client_surface_structure_cleanup_v1()
     rendered = rebuild_single_pass_premium_artifacts(prepared)
     canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
     repaired = (
