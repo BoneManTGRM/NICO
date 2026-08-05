@@ -54,16 +54,21 @@ def normalize_missing_fixture_identity(canonical: Mapping[str, Any]) -> dict[str
 
 def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, Any]:
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+    from nico.comprehensive_client_surface_structure_cleanup_v1 import (
+        install_client_surface_structure_cleanup_v1,
+    )
     from nico.comprehensive_full_report_finish_v1 import (
         install_comprehensive_full_report_finish_v1,
     )
 
+    surface_cleanup = install_client_surface_structure_cleanup_v1()
     current = cleanup.assert_human_review_package_cleanup
     if getattr(current, _MARKER, False):
         finish = install_comprehensive_full_report_finish_v1()
         return {
             "status": "already_installed",
             "version": VERSION,
+            "client_surface_structure_cleanup": surface_cleanup,
             "full_report_finish": finish,
         }
 
@@ -90,6 +95,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "version": VERSION,
         "legacy_fixture_identity_normalized": True,
         "production_contract_still_fail_closed": True,
+        "client_surface_structure_cleanup": surface_cleanup,
         "full_report_finish": finish,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
