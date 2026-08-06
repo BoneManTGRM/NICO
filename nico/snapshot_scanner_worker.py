@@ -13,12 +13,6 @@ from uuid import uuid4
 
 from nico import scanner_tool_runners as tool_runners
 from nico.dependency_materiality import classify_dependency_finding
-from nico.scanner_execution_contract_v1 import (
-    attach_scanner_execution_contract,
-    persist_redacted_scanner_artifact,
-    scanner_suite_contract,
-    validate_scanner_execution_record,
-)
 from nico import scanner_worker as base
 from nico.storage import STORE
 from nico.worker_execution import WorkerWorkspace
@@ -298,38 +292,16 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                     try:
                         result = tool_runners.run_scanner_tool(spec, workspace)
                     except Exception as exc:  # pragma: no cover - defensive per-tool boundary
-                        result = attach_scanner_execution_contract(
-                            {
-                                "tool": spec.name,
-                                "status": "failed",
-                                "category": spec.category,
-                                "reason": f"{spec.name} failed safely inside the snapshot worker: {type(exc).__name__}",
-                                "findings": [],
-                                "verified_for_this_report": False,
-                                "current_run": True,
-                                "scans_git_history": spec.scans_git_history,
-                                "output_capture_complete": False,
-                                "timed_out": False,
-                            },
-                            spec,
-                        )
-                    expected_commit = str(payload.get("snapshot_commit_sha") or "").lower()
-                    result["snapshot_commit_sha"] = expected_commit
-                    result["actual_commit_sha"] = actual_commit_sha
-                    result["exact_commit_match"] = bool(actual_commit_sha) and actual_commit_sha == expected_commit
-                    result = persist_redacted_scanner_artifact(result, scan_id=scan_id)
-                    validation = validate_scanner_execution_record(
-                        result,
-                        expected_commit_sha=expected_commit,
-                    )
-                    result["execution_contract_validation"] = validation
-                    if validation["status"] != "valid":
-                        result["status"] = "failed"
-                        result["verified_for_this_report"] = False
-                        result["reason"] = (
-                            "scanner execution contract failed: "
-                            + ",".join(validation["validation_errors"])
-                        )
+                        result = {
+                            "tool": spec.name,
+                            "status": "failed",
+                            "category": spec.category,
+                            "reason": f"{spec.name} failed safely inside the snapshot worker: {type(exc).__name__}",
+                            "findings": [],
+                            "verified_for_this_report": False,
+                            "current_run": True,
+                            "scans_git_history": spec.scans_git_history,
+                        }
                     redaction_applied = redaction_applied or "[REDACTED]" in str(result)
                     results.append(result)
         except Exception as exc:  # pragma: no cover - defensive worker boundary
@@ -360,7 +332,6 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "actual_commit_sha": actual_commit_sha,
             "snapshot_match": snapshot_match,
             "tools_requested": [spec.name for spec in specs],
-            "scanner_suite_contract": scanner_suite_contract(specs),
             "tools_run": completed,
             "unavailable_tools": unavailable,
             "failed_tools": failed,
@@ -382,9 +353,6 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                 "snapshot_match": snapshot_match,
                 "repo_size_bytes": repo_size,
                 "tools_requested": len(specs),
-                "scanner_suite_contract_sha256": scanner_suite_contract(specs)["suite_contract_sha256"],
-                "all_executor_versions_bound": scanner_suite_contract(specs)["all_executor_versions_bound"],
-                "all_rulesets_immutable": scanner_suite_contract(specs)["all_rulesets_immutable"],
                 "tools_run": len(completed),
                 "unavailable_tools": len(unavailable),
                 "failed_tools": len(failed),

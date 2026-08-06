@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.9"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.7"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -57,9 +57,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_exact_source_index_validation_v1 import (
         install_exact_source_index_validation_v1,
     )
-    from nico.comprehensive_final_deployment_population_reconciliation_v1 import (
-        install_final_deployment_population_reconciliation_v1,
-    )
     from nico.comprehensive_final_six_client_report_cleanup_v1 import (
         install_final_six_client_report_cleanup_v1,
     )
@@ -68,9 +65,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     )
     from nico.comprehensive_final_six_runtime_repair_v1 import (
         install_final_six_runtime_repair_v1,
-    )
-    from nico.comprehensive_final_two_report_truth_v1 import (
-        install_final_two_report_truth_v1,
     )
     from nico.comprehensive_full_report_finish_v1 import (
         install_comprehensive_full_report_finish_v1,
@@ -94,10 +88,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         final_six_runtime = install_final_six_runtime_repair_v1()
         review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
         mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
-        final_two_truth = install_final_two_report_truth_v1()
-        final_deployment_population = (
-            install_final_deployment_population_reconciliation_v1()
-        )
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -111,10 +101,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "final_six_runtime_repair": final_six_runtime,
             "review_companion_v7_rebind": review_companion_rebind,
             "review_companion_v7_mobile_contract": mobile_contract,
-            "final_two_report_truth": final_two_truth,
-            "final_deployment_population_reconciliation": (
-                final_deployment_population
-            ),
         }
 
     @wraps(current)
@@ -141,8 +127,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     final_six_runtime = install_final_six_runtime_repair_v1()
     review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
     mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
-    final_two_truth = install_final_two_report_truth_v1()
-    final_deployment_population = install_final_deployment_population_reconciliation_v1()
     return {
         "status": "installed",
         "version": VERSION,
@@ -158,10 +142,6 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "final_six_runtime_repair": final_six_runtime,
         "review_companion_v7_rebind": review_companion_rebind,
         "review_companion_v7_mobile_contract": mobile_contract,
-        "final_two_report_truth": final_two_truth,
-        "final_deployment_population_reconciliation": (
-            final_deployment_population
-        ),
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,

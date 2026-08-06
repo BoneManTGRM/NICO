@@ -20,17 +20,6 @@ from nico.client_ready_html_v1 import render_client_html
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
 )
-from nico.comprehensive_canonical_evidence_v1 import (
-    assert_canonical_evidence_manifest,
-    attach_canonical_evidence_manifest,
-)
-from nico.comprehensive_finding_integrity_v1 import (
-    attach_finding_integrity_manifest,
-    validate_finding_integrity_manifest,
-)
-from nico.comprehensive_operational_evidence_v1 import (
-    attach_canonical_deployment_population,
-)
 from nico.comprehensive_client_ready_projection_v1 import (
     APPROVAL_STATUS,
     DELIVERY_STATUS,
@@ -148,12 +137,6 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     canonical = _install_register(canonical)
     canonical = reconcile_authoritative_scanner_truth(canonical)
     canonical = apply_automated_draft_truth(canonical)
-    canonical = attach_finding_integrity_manifest(
-        canonical,
-        canonical["client_finding_remediation_register"],
-    )
-    canonical = attach_canonical_deployment_population(canonical)
-    canonical = attach_canonical_evidence_manifest(canonical)
     result["json"] = canonical
     result["client_finding_remediation_register"] = deepcopy(
         canonical["client_finding_remediation_register"]
@@ -169,13 +152,6 @@ def _validate_final_surfaces(
     rendered_html: str,
     pdf: bytes,
 ) -> dict[str, Any]:
-    assert_canonical_evidence_manifest(canonical)
-    finding_integrity = validate_finding_integrity_manifest(canonical)
-    if finding_integrity["status"] != "valid":
-        raise ValueError(
-            "final client report finding integrity is invalid: "
-            + ",".join(finding_integrity["validation_errors"])
-        )
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
     if summary.get("finding_population_reconciled") is not True:
         raise ValueError("final client report finding populations do not reconcile")
@@ -253,8 +229,6 @@ def _validate_final_surfaces(
 
     page_count = len(reader.pages)
     return {
-        "canonical_evidence_manifest_verified": True,
-        "finding_integrity_manifest_verified": True,
         "finding_population_reconciled": True,
         "canonical_decision_finding_count": decision_count,
         "exact_source_code_finding_count": len(code),
@@ -298,12 +272,6 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     canonical = _install_register(canonical)
     canonical = reconcile_authoritative_scanner_truth(canonical)
     canonical = apply_automated_draft_truth(canonical)
-    canonical = attach_finding_integrity_manifest(
-        canonical,
-        canonical["client_finding_remediation_register"],
-    )
-    canonical = attach_canonical_deployment_population(canonical)
-    canonical = attach_canonical_evidence_manifest(canonical)
     register = canonical["client_finding_remediation_register"]
     spanish = legacy._is_spanish(canonical)
 

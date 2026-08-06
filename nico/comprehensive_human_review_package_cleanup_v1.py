@@ -11,11 +11,6 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-from nico.comprehensive_operational_evidence_v1 import (
-    deployment_population_from_context,
-    format_deployment_classification,
-)
-
 VERSION = "nico.comprehensive-human-review-package-cleanup.v1"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_v1__"
 
@@ -370,12 +365,10 @@ def build_ci_operational_stage(
             "are not reported because a supported numerator was not retained."
         )
 
-    population = deployment_population_from_context(context)
-    deployments = population.get("deployments_observed")
-    successful_deployments = population.get("successful_deployments")
-    non_success_or_unresolved = population.get(
-        "non_success_or_unresolved_deployments"
-    )
+    deployments = _integer(context.get("deployments_observed"))
+    successful_deployments = _integer(context.get("successful_deployments"))
+    non_success_raw = context.get("non_success_deployments")
+    non_success = _integer(non_success_raw) if _meaningful(non_success_raw) else None
     if deployments is not None:
         if successful_deployments is not None:
             evidence.append(
@@ -383,21 +376,10 @@ def build_ci_operational_stage(
                 f"({_percent(successful_deployments, deployments)})."
             )
         else:
-            evidence.append(
-                f"Deployments: {deployments} observed; successful count: Not available."
-            )
-        if non_success_or_unresolved is not None:
-            evidence.append(
-                "Non-success or unresolved deployment observations: "
-                f"{non_success_or_unresolved}."
-            )
-        else:
-            evidence.append(
-                "Non-success or unresolved deployment observations: Not available."
-            )
+            evidence.append(f"Deployments: {deployments} observed; successful count: Not available.")
         evidence.append(
-            "Outcome classification breakdown: "
-            + format_deployment_classification(population)
+            "Non-success deployment classification: "
+            + (str(non_success) if non_success is not None else "Not available")
             + "."
         )
 
