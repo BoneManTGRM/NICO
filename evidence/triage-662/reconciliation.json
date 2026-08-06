@@ -1,0 +1,73 @@
+{
+  "canonical_candidate_count": 662,
+  "canonical_counts": {
+    "dependency": 59,
+    "secret": 17,
+    "static": 586
+  },
+  "excluded_observation_count": 5,
+  "excluded_observations": [
+    {
+      "canonical_observation_retained": true,
+      "category": "secret",
+      "exclusion_id": "NICO-EXCLUDED-DUPLICATE-20B59FD9B00B51E34A7D",
+      "history_commit": "6232c7897a05e5ca46b41185a956101e3acd15af",
+      "line": 1,
+      "path": "tests/test_persistent_storage.py",
+      "reason": "exact_duplicate_scanner_observation",
+      "scanner": "trufflehog",
+      "secret_material_omitted": true
+    },
+    {
+      "canonical_observation_retained": true,
+      "category": "secret",
+      "exclusion_id": "NICO-EXCLUDED-DUPLICATE-62A94CAA550EA33D5D32",
+      "history_commit": "6232c7897a05e5ca46b41185a956101e3acd15af",
+      "line": 1,
+      "path": "tests/test_persistent_storage.py",
+      "reason": "exact_duplicate_scanner_observation",
+      "scanner": "trufflehog",
+      "secret_material_omitted": true
+    },
+    {
+      "canonical_observation_retained": true,
+      "category": "secret",
+      "exclusion_id": "NICO-EXCLUDED-DUPLICATE-8247D170F6EE222C8913",
+      "history_commit": "941294f0a97bf52da00606a552a59123815bbcd7",
+      "line": 93,
+      "path": "tests/test_scanner_result_truth_v1.py",
+      "reason": "exact_duplicate_scanner_observation",
+      "scanner": "trufflehog",
+      "secret_material_omitted": true
+    },
+    {
+      "canonical_observation_retained": true,
+      "category": "secret",
+      "exclusion_id": "NICO-EXCLUDED-DUPLICATE-AF60BAFAC57AB13A6E3D",
+      "history_commit": "c9c649b0c67b54b69cd410db48fcf32013e6958b",
+      "line": 1,
+      "path": "tests/test_comprehensive_hosted_persistence_guard_v1.py",
+      "reason": "exact_duplicate_scanner_observation",
+      "scanner": "trufflehog",
+      "secret_material_omitted": true
+    },
+    {
+      "canonical_observation_retained": false,
+      "category": "secret",
+      "exclusion_id": "NICO-EXCLUDED-EXAMPLE-226B56D703F7A0481810",
+      "history_commit": "693f893de82ddf1f968127ae3c1e88272f00da47",
+      "line": 23,
+      "path": ".env.example",
+      "reason": "unverified_example_template_observation",
+      "scanner": "trufflehog",
+      "secret_material_omitted": true
+    }
+  ],
+  "no_silent_deletion": true,
+  "raw_nonzero_observation_count": 667,
+  "reconciliation_complete": true,
+  "repository": "BoneManTGRM/NICO",
+  "schema": "nico.triage_candidate_reconciliation.v1",
+  "secret_material_omitted": true,
+  "target_commit_sha": "9c876ba4e3e9bb152de52567232038e52a6bbb3e"
+}
