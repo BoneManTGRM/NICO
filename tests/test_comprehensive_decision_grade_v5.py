@@ -212,9 +212,12 @@ def test_report_package_is_decision_grade_and_page_truth_matches() -> None:
 def test_decision_grade_binding_is_the_production_bootstrap_path() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
     assert "install_decision_grade_binding" in source
-    assert source.index("report_binding = install_decision_grade_binding()") < source.index(
-        "native_providers = install_native_comprehensive_providers(target)"
+    binding = source.index("report_binding = install_decision_grade_binding()")
+    lineage = source.index("candidate_lineage_runtime = install_candidate_lineage_runtime_patch()")
+    providers = source.index(
+        "native_providers = native_provider_v5.install_native_comprehensive_providers(target)"
     )
+    assert binding < lineage < providers
 
 
 def test_binding_installs_all_decision_grade_controls() -> None:
