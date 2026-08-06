@@ -45,6 +45,16 @@ _REPAIRED_OPERATIONAL_CAPABILITIES = frozenset(
     }
 )
 
+_CURRENT_SOURCE_PATH_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "operational_workflow_deployment_analysis": (
+        "nico/comprehensive_human_review_package_cleanup_v1.py",
+        "nico/snapshot_repository_evidence.py",
+    ),
+}
+_CURRENT_ENTRY_POINT_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "operational_workflow_deployment_analysis": ("build_ci_operational_stage",),
+}
+
 _DEPENDENCY_PATH_PREFIXES: tuple[tuple[str, int], ...] = (
     ("nico/client_readiness_evidence_intake.py", 1085),
     ("nico/strategic_human_evidence_binding_v1.py", 1085),
@@ -94,7 +104,28 @@ def current_capability_matrix(
     for historical in historical_capability_matrix():
         item = deepcopy(historical)
         capability_id = str(item["capability_id"])
-        source_paths = [str(path) for path in item.get("source_paths") or []]
+        historical_source_paths = [
+            str(path) for path in item.get("source_paths") or []
+        ]
+        historical_entry_points = [
+            str(value) for value in item.get("entry_points") or []
+        ]
+        source_paths = list(
+            _CURRENT_SOURCE_PATH_OVERRIDES.get(
+                capability_id,
+                tuple(historical_source_paths),
+            )
+        )
+        entry_points = list(
+            _CURRENT_ENTRY_POINT_OVERRIDES.get(
+                capability_id,
+                tuple(historical_entry_points),
+            )
+        )
+        item["historical_source_paths"] = historical_source_paths
+        item["historical_entry_points"] = historical_entry_points
+        item["source_paths"] = source_paths
+        item["entry_points"] = entry_points
         existing = [path for path in source_paths if (root / path).is_file()]
         missing = [path for path in source_paths if path not in existing]
 
