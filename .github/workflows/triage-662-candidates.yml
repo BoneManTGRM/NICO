@@ -1,0 +1,18 @@
+name: Triage 662 Candidates Evidence Capture
+
+on:
+  push:
+    branches:
+      - triage/662-candidates-20260806
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: read
+
+jobs:
+  capture-exact-sha-candidates:
+    uses: ./.github/workflows/frozen-sha-scanner-proof.yml
+    with:
+      target_sha: 9c876ba4e3e9bb152de52567232038e52a6bbb3e
