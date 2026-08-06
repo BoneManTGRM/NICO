@@ -1,9 +1,7 @@
 name: Triage 662 Raw Scanner Evidence
 
 on:
-  push:
-    branches:
-      - triage/662-candidates-20260806
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +11,7 @@ permissions:
 
 jobs:
   capture-raw-candidates:
-    name: Capture two exact-SHA scanner passes
+    name: Capture and reconcile all 662 candidates
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -98,6 +96,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git rev-parse --is-shallow-repository)" = "false"
 
+      - name: Run candidate reconciliation unit tests
+        working-directory: runner
+        run: pytest -q tests/test_build_triage_candidate_register.py
+
       - name: Run two complete exact-SHA scanner passes
         working-directory: runner
         run: |
@@ -113,5 +115,57 @@ jobs:
         with:
           name: triage-662-raw-scanner-evidence-${{ env.TARGET_SHA }}
           path: runner/frozen-scanner-proof
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Build canonical 662-candidate package
+        working-directory: runner
+        run: |
+          python scripts/build_triage_candidate_register.py \
+            --scanner-run-one frozen-scanner-proof/scanner-run-1.json \
+            --scanner-run-two frozen-scanner-proof/scanner-run-2.json \
+            --scanner-proof frozen-scanner-proof/frozen-scanner-proof.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --output triage-662-package
+
+      - name: Verify exact count, blocked delivery, and committed package parity
+        working-directory: runner
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          generated = Path("triage-662-package")
+          register = json.loads((generated / "candidate-register.json").read_text(encoding="utf-8"))
+          reconciliation = json.loads((generated / "reconciliation.json").read_text(encoding="utf-8"))
+          manifest = json.loads((generated / "manifest.json").read_text(encoding="utf-8"))
+          assert register["candidate_count"] == 662
+          assert register["counts"] == {"dependency": 59, "secret": 17, "static": 586}
+          assert register["confirmed_material_findings"] == 0
+          assert register["human_review_status"] == "pending"
+          assert register["client_delivery_status"] == "blocked"
+          assert register["two_run_parity_verified"] is True
+          assert reconciliation["raw_nonzero_observation_count"] == 667
+          assert reconciliation["excluded_observation_count"] == 5
+          assert reconciliation["reconciliation_complete"] is True
+          assert reconciliation["no_silent_deletion"] is True
+          assert manifest["client_delivery_status"] == "blocked"
+          PY
+          for name in \
+            candidate-register.json \
+            candidate-register.csv \
+            candidate-clusters.json \
+            reconciliation.json \
+            comprehensive-triage-report.md \
+            manifest.json
+          do
+            diff -u "evidence/triage-662/$name" "triage-662-package/$name"
+          done
+
+      - name: Upload canonical candidate register and report surfaces
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: triage-662-canonical-package-${{ env.TARGET_SHA }}
+          path: runner/triage-662-package
           if-no-files-found: error
           retention-days: 90
