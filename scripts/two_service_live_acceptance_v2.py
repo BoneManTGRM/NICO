@@ -22,8 +22,6 @@ _LEGACY_MODULE_NAME = "_nico_two_service_live_acceptance_v2_legacy"
 _LEGACY_PATH = _MODULE_DIR / "two_service_live_acceptance_v2_legacy.py"
 _BOUNDED_MODULE_NAME = "_nico_bounded_terminal_reconnect_v1"
 _BOUNDED_PATH = _MODULE_DIR / "bounded_terminal_reconnect_v1.py"
-_DIAGNOSTICS_MODULE_NAME = "_nico_final_stage_diagnostics_v1"
-_DIAGNOSTICS_PATH = _MODULE_DIR / "final_stage_diagnostics_v1.py"
 
 
 def _load_sibling(name: str, path: Path) -> ModuleType:
@@ -49,14 +47,8 @@ def _load_legacy() -> ModuleType:
 
 _bounded = _load_sibling(_BOUNDED_MODULE_NAME, _BOUNDED_PATH)
 install_bounded_terminal_reconnect = _bounded.install
-_diagnostics = _load_sibling(_DIAGNOSTICS_MODULE_NAME, _DIAGNOSTICS_PATH)
-install_final_stage_diagnostics = _diagnostics.install
 _legacy = _load_legacy()
 BOUNDED_TERMINAL_RECONNECT = install_bounded_terminal_reconnect(
-    _legacy,
-    _legacy.acceptance,
-)
-FINAL_STAGE_DIAGNOSTICS = install_final_stage_diagnostics(
     _legacy,
     _legacy.acceptance,
 )
@@ -67,7 +59,7 @@ for _name in dir(_legacy):
     globals()[_name] = getattr(_legacy, _name)
 
 # Preserve an explicit loader identity while exposing the established module API.
-LOADER_VERSION = "nico.two_service_live_acceptance_v2.loader.v3"
+LOADER_VERSION = "nico.two_service_live_acceptance_v2.loader.v2"
 
 
 def __getattr__(name: str) -> Any:

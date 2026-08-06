@@ -20,9 +20,6 @@ from nico.comprehensive_run_record import (
 from nico.comprehensive_run_service import ComprehensiveRunService
 
 
-_DETACHED_DIGESTS = ("c" * 64, "d" * 64, "e" * 64, "f" * 64, "1" * 64)
-
-
 def _valid_pdf() -> bytes:
     writer = PdfWriter()
     for _ in range(3):
@@ -30,54 +27,6 @@ def _valid_pdf() -> bytes:
     buffer = io.BytesIO()
     writer.write(buffer)
     return buffer.getvalue()
-
-
-def _client_readiness() -> dict:
-    names = (
-        "findings_csv",
-        "evidence_csv",
-        "candidate_register_json",
-        "remediation_backlog_json",
-        "evidence_manifest",
-    )
-    return {
-        "review_authorized": True,
-        "artifact_manifest": {
-            name: {
-                "filename": f"{name}.json" if name.endswith("json") or name == "evidence_manifest" else f"{name}.csv",
-                "sha256": _DETACHED_DIGESTS[index],
-                "size_bytes": 500 + index,
-            }
-            for index, name in enumerate(names)
-        },
-        "gates": {
-            "candidate_triage": {"status": "passed", "register_digest": "1" * 64},
-            "operational_proof": {"status": "passed", "proof_manifest_sha256": "2" * 64},
-            "finding_disposition": {"status": "passed", "register_digest": "3" * 64},
-            "client_evidence": {"status": "passed", "register_digest": "4" * 64},
-            "cross_format_parity": {"status": "passed", "parity_digest": "5" * 64},
-        },
-    }
-
-
-def _residual_risk_acceptance() -> dict:
-    return {
-        "identity": "authorized-risk-owner",
-        "role": "Residual Risk Owner",
-        "authorized": True,
-        "authorization_basis": "client-risk-authority",
-        "recorded_at": "2026-07-26T01:05:00+00:00",
-        "scope": "Exact report run and exact artifact digest set",
-        "statement": "The retained residual risks and limitations are accepted for this exact package.",
-    }
-
-
-def _approval_kwargs() -> dict:
-    return {
-        "reviewer_authorization_basis": "engagement-approval-matrix",
-        "client_readiness": _client_readiness(),
-        "residual_risk_acceptance": _residual_risk_acceptance(),
-    }
 
 
 def _review_ready_record() -> dict:
@@ -145,7 +94,6 @@ def _review_ready_record() -> dict:
 
 
 def _manifest(record: dict, decision: str = "approved") -> dict:
-    kwargs = _approval_kwargs() if decision == "approved" else {}
     return build_reviewed_edition(
         record,
         reviewer="reviewer@example.com",
@@ -153,7 +101,6 @@ def _manifest(record: dict, decision: str = "approved") -> dict:
         decision=decision,
         decision_reason="The exact immutable evidence and report artifacts were reviewed.",
         decided_at="2026-07-26T01:05:00+00:00",
-        **kwargs,
     )
 
 
@@ -166,7 +113,6 @@ def test_approved_review_unlocks_only_the_exact_existing_artifacts() -> None:
     assert approved["client_delivery_allowed"] is True
     assert approved["human_review_completed"] is True
     assert approved["accepted_edition"]["accepted_edition"] is True
-    assert approved["accepted_edition"]["client_readiness_approval"]["status"] == "approved"
     assert approved["review_context"]["report_regenerated_during_review"] is False
     assert validate_comprehensive_run_record(approved)["status"] == "valid"
 
@@ -203,7 +149,6 @@ def test_request_more_evidence_preserves_review_history_before_later_approval() 
         decision="approved",
         decision_reason="The requested evidence was supplied and reviewed.",
         decided_at="2026-07-26T01:10:00+00:00",
-        **_approval_kwargs(),
     )
     approved = apply_comprehensive_review_decision(requested, manifest=approved_manifest)
 
@@ -249,7 +194,6 @@ def test_service_persists_review_and_certified_delivery_with_one_revision() -> N
         decision="approved",
         decision_reason="Approved after exact-artifact review.",
         decided_at="2026-07-26T01:15:00+00:00",
-        **_approval_kwargs(),
     )
 
     assert approved["revision"] == record["revision"] + 1
@@ -258,8 +202,6 @@ def test_service_persists_review_and_certified_delivery_with_one_revision() -> N
     delivery = store.record["approved_delivery_package"]
     assert delivery["status"] == "approved_for_delivery"
     assert delivery["client_delivery_allowed"] is True
-    assert delivery["certificate"]["client_readiness_approval_subject_sha256"]
-    assert delivery["certificate"]["client_readiness_approval_receipt_sha256"]
     assert validate_approved_delivery_package(store.record, delivery)["status"] == "valid"
 
 
@@ -288,5 +230,4 @@ def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request
             decision="approved",
             decision_reason="Approve unchanged report.",
             decided_at="2026-07-26T01:20:00+00:00",
-            **_approval_kwargs(),
         )
