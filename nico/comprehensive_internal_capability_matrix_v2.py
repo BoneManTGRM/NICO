@@ -50,6 +50,13 @@ _CURRENT_SOURCE_PATH_OVERRIDES: dict[str, tuple[str, ...]] = {
         "nico/comprehensive_human_review_package_cleanup_v1.py",
         "nico/snapshot_repository_evidence.py",
     ),
+    "browser_mobile_operation": (
+        "apps/web/app/assessment/page.tsx",
+        "scripts/mobile_restart_live_acceptance_v5.py",
+        "scripts/mobile_restart_live_acceptance_v6.py",
+        ".github/workflows/mobile-restart-production-proof.yml",
+        ".github/workflows/ios-webkit-paint-proof.yml",
+    ),
 }
 _CURRENT_ENTRY_POINT_OVERRIDES: dict[str, tuple[str, ...]] = {
     "operational_workflow_deployment_analysis": ("build_ci_operational_stage",),
