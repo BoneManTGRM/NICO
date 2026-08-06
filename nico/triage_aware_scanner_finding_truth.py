@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-TRIAGE_AWARE_SCANNER_TRUTH_VERSION = "nico.triage_aware_scanner_finding_truth.v1"
+TRIAGE_AWARE_SCANNER_TRUTH_VERSION = "nico.triage_aware_scanner_finding_truth.v2"
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -45,7 +45,6 @@ def _category_counts(summary: dict[str, Any], category: str) -> dict[str, int]:
             "excluded_test_only": _int(value.get("excluded_test_only")),
         }
 
-    # Legacy scanner summaries exposed a single raw count plus severity buckets.
     raw = _int(value)
     severities = _dict(_dict(summary.get("severity_by_category")).get(category))
     material = _int(severities.get("critical")) + _int(severities.get("high"))
@@ -62,12 +61,7 @@ def apply_triage_aware_scanner_finding_truth(
     assessment: dict[str, Any],
     scanner_evidence: dict[str, Any],
 ) -> dict[str, Any]:
-    """Apply score caps only to material findings, not raw or test-only counts.
-
-    Review-required findings remain visible and affect confidence, but they do not
-    automatically receive the same score cap as confirmed high-risk production
-    findings. This function never upgrades missing scanner evidence to clean proof.
-    """
+    """Apply score caps only to material findings, not raw or test-only counts."""
 
     from nico import full_assessment_scanner_contract as contract
 
@@ -174,11 +168,19 @@ def apply_triage_aware_scanner_finding_truth(
 
 def install_triage_aware_scanner_finding_truth() -> dict[str, Any]:
     from nico import full_assessment_scanner_contract as contract
+    from nico.candidate_lineage_runtime_patch_v1 import (
+        install_candidate_lineage_runtime_patch,
+    )
 
+    lineage_runtime = install_candidate_lineage_runtime_patch()
     current = contract.apply_scanner_finding_truth
-    if getattr(current, "_nico_triage_aware_scanner_truth_v1", False):
-        return {"status": "already_installed", "version": TRIAGE_AWARE_SCANNER_TRUTH_VERSION}
-    setattr(apply_triage_aware_scanner_finding_truth, "_nico_triage_aware_scanner_truth_v1", True)
+    if getattr(current, "_nico_triage_aware_scanner_truth_v2", False):
+        return {
+            "status": "already_installed",
+            "version": TRIAGE_AWARE_SCANNER_TRUTH_VERSION,
+            "candidate_lineage_runtime": lineage_runtime,
+        }
+    setattr(apply_triage_aware_scanner_finding_truth, "_nico_triage_aware_scanner_truth_v2", True)
     setattr(apply_triage_aware_scanner_finding_truth, "_nico_previous", current)
     contract.apply_scanner_finding_truth = apply_triage_aware_scanner_finding_truth
     return {
@@ -186,6 +188,7 @@ def install_triage_aware_scanner_finding_truth() -> dict[str, Any]:
         "version": TRIAGE_AWARE_SCANNER_TRUTH_VERSION,
         "raw_finding_counts_used_as_material": False,
         "test_only_findings_score_blocking": False,
+        "candidate_lineage_runtime": lineage_runtime,
         "human_review_required": True,
     }
 
