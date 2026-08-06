@@ -1,0 +1,28 @@
+{
+  "artifacts": {
+    "candidate-clusters.json": "97d42e4b6f4aa8223778f8935a146d8f0715885a16f75f468ee20afb79d73234",
+    "candidate-register.csv": "d0f8c02695181c334daf84cf72e2541f4ff16c2ff283a5bfd073233eb1ca3e9d",
+    "candidate-register.json": "8cba692c557a0503da37bdbadc77cfd57e687421fcf8d6044d98f781922182a2",
+    "comprehensive-triage-report.md": "1731bc397c9aa89a357b1d631b6827407bc5fe8ee56f7e7d5f08146c16df00a8",
+    "reconciliation.json": "9d1883401985d7c58d2887d1269c48a5692942edb28b025a8fe6ee85c2c02f94"
+  },
+  "automated_status": "automated_draft",
+  "candidate_count": 662,
+  "client_delivery_status": "blocked",
+  "counts": {
+    "dependency": 59,
+    "secret": 17,
+    "static": 586
+  },
+  "excluded_observation_count": 5,
+  "human_review_status": "pending",
+  "raw_nonzero_observation_count": 667,
+  "repository": "BoneManTGRM/NICO",
+  "schema": "nico.triage_candidate_package_manifest.v1",
+  "source_run_ids": [
+    "frozen-9c876ba4e3e9-1",
+    "frozen-9c876ba4e3e9-2"
+  ],
+  "target_commit_sha": "9c876ba4e3e9bb152de52567232038e52a6bbb3e",
+  "two_run_parity_verified": true
+}
