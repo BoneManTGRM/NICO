@@ -69,11 +69,12 @@ def _patch_candidate_stage() -> bool:
             "The prior canonical register was imported, cross-SHA lineage was reconciled, "
             "and new or changed observations remain human-review work."
         )
-        output["unavailable_data_notes"] = [
-            item
-            for item in output.get("unavailable_data_notes") or []
-            if "prior structured risk register was unavailable" not in str(item).casefold()
-        ]
+        for key in ("unavailable", "unavailable_data_notes"):
+            output[key] = [
+                item
+                for item in output.get(key) or []
+                if "prior structured risk register was unavailable" not in str(item).casefold()
+            ]
         output["candidate_lineage"] = deepcopy(dict(lineage))
         return output
 
