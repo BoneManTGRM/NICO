@@ -1,6 +1,9 @@
 name: Triage 662 Raw Scanner Evidence
 
 on:
+  push:
+    branches:
+      - triage/662-candidates-20260806
   workflow_dispatch:
 
 permissions:
@@ -152,9 +155,6 @@ jobs:
           assert manifest["client_delivery_status"] == "blocked"
           PY
           for name in \
-            candidate-register.json \
-            candidate-register.csv \
-            candidate-clusters.json \
             reconciliation.json \
             comprehensive-triage-report.md \
             manifest.json
