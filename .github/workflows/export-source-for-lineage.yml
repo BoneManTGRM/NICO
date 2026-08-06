@@ -1,0 +1,26 @@
+name: Export Source for Lineage Repair
+
+on:
+  push:
+    branches:
+      - tmp/export-lineage-source-20260806
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nico-lineage-source
+          path: |
+            nico
+            tests
+            scripts
+            evidence/triage-662
+          retention-days: 1
