@@ -12,9 +12,11 @@ from nico.comprehensive_final_report_compact_base_v1 import (
     install_comprehensive_final_report_compact_base_v1,
 )
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v5"
+VERSION = "nico.comprehensive_final_report_execution_boundary.v6"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
-DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 240
+DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 600
+MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS = 30
+MAX_FINAL_REPORT_TIMEOUT_SECONDS = 900
 _IDENTITY_FIELDS = ("run_id", "repository", "commit_sha", "evidence_ledger_id")
 
 
@@ -24,7 +26,7 @@ def _text(value: Any) -> str:
 
 def _timeout_seconds(value: int | None) -> int:
     if value is not None:
-        return max(1, min(900, int(value)))
+        return max(1, min(MAX_FINAL_REPORT_TIMEOUT_SECONDS, int(value)))
     try:
         configured = int(
             os.getenv(
@@ -34,7 +36,10 @@ def _timeout_seconds(value: int | None) -> int:
         )
     except (TypeError, ValueError):
         configured = DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS
-    return max(30, min(900, configured))
+    return max(
+        MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS,
+        min(MAX_FINAL_REPORT_TIMEOUT_SECONDS, configured),
+    )
 
 
 def _blocked(
@@ -43,8 +48,10 @@ def _blocked(
     reason: str,
     message: str,
     execution: Mapping[str, Any] | None = None,
+    recovery_supported: bool = False,
+    recovery_scope: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    blocked = {
         "status": "blocked",
         "reason": reason,
         "error_code": reason,
@@ -67,6 +74,14 @@ def _blocked(
             "detached_background_execution": False,
         },
     }
+    if recovery_supported:
+        blocked["recovery_supported"] = True
+        blocked["recovery_scope"] = recovery_scope or "final_report_only"
+        blocked["stage_execution"]["recovery_supported"] = True
+        blocked["stage_execution"]["recovery_scope"] = (
+            recovery_scope or "final_report_only"
+        )
+    return blocked
 
 
 def _exact_identity_matches(
@@ -201,9 +216,12 @@ def execute_final_report_stage(
             reason="final_report_execution_timeout",
             message=(
                 f"Final report generation exceeded the {limit}-second bounded "
-                "publication window."
+                "publication window. The exact run may resume from final report "
+                "generation without rerunning completed scanners."
             ),
             execution=execution,
+            recovery_supported=True,
+            recovery_scope="final_report_only",
         )
     if kind == "error":
         raise value
@@ -288,6 +306,8 @@ install_comprehensive_final_report_compact_base_v1()
 __all__ = [
     "DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS",
     "FINAL_REPORT_STAGE_ID",
+    "MAX_FINAL_REPORT_TIMEOUT_SECONDS",
+    "MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS",
     "VERSION",
     "execute_final_report_stage",
 ]
