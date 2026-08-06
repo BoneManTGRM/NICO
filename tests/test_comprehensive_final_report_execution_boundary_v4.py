@@ -3,7 +3,11 @@ from __future__ import annotations
 import base64
 import time
 
+from nico import comprehensive_final_report_execution_boundary_v4 as boundary
 from nico.comprehensive_final_report_execution_boundary_v4 import (
+    DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS,
+    MAX_FINAL_REPORT_TIMEOUT_SECONDS,
+    MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS,
     execute_final_report_stage,
 )
 
@@ -49,6 +53,23 @@ def _report(context: dict) -> dict:
     }
 
 
+def test_default_final_report_timeout_supports_large_evidence_packages(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("NICO_COMPREHENSIVE_FINAL_REPORT_TIMEOUT_SECONDS", raising=False)
+    assert DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS == 600
+    assert boundary._timeout_seconds(None) == 600
+
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_TIMEOUT_SECONDS", "invalid")
+    assert boundary._timeout_seconds(None) == 600
+
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_TIMEOUT_SECONDS", "5")
+    assert boundary._timeout_seconds(None) == MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS
+
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_TIMEOUT_SECONDS", "5000")
+    assert boundary._timeout_seconds(None) == MAX_FINAL_REPORT_TIMEOUT_SECONDS
+
+
 def test_atomic_final_report_validates_and_retains_exact_artifacts() -> None:
     result = execute_final_report_stage(_report, _context(), timeout_seconds=5)
 
@@ -66,7 +87,7 @@ def test_atomic_final_report_validates_and_retains_exact_artifacts() -> None:
     assert result["client_delivery_allowed"] is False
 
 
-def test_atomic_final_report_times_out_fail_closed_not_running() -> None:
+def test_atomic_final_report_times_out_fail_closed_and_is_recoverable() -> None:
     def slow(_context: dict) -> dict:
         time.sleep(2)
         return {"status": "complete"}
@@ -78,7 +99,13 @@ def test_atomic_final_report_times_out_fail_closed_not_running() -> None:
     assert result["status"] == "blocked"
     assert result["reason"] == "final_report_execution_timeout"
     assert result.get("reason") != "background_stage_execution_in_progress"
+    assert result["recovery_supported"] is True
+    assert result["recovery_scope"] == "final_report_only"
+    assert result["stage_execution"]["execution_timeout_seconds"] == 1
+    assert result["stage_execution"]["recovery_supported"] is True
+    assert result["stage_execution"]["recovery_scope"] == "final_report_only"
     assert result["stage_execution"]["detached_background_execution"] is False
+    assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
 
 
