@@ -59,7 +59,8 @@ def lineage_keys(record: Mapping[str, Any]) -> dict[str, Any]:
 def load_default_baseline(path: Path | None = None) -> dict[str, Any]:
     source = path or _BASELINE_FILE
     encoded = "".join(source.read_text(encoding="utf-8").split())
-    decoded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+    padding = "=" * (-len(encoded) % 4)
+    decoded = gzip.decompress(base64.b64decode(encoded + padding, validate=True)).decode("utf-8")
     baseline = json.loads(decoded)
     if baseline.get("s") != "nico.candidate-lineage-baseline.v2":
         raise ValueError("candidate_lineage_baseline_schema_invalid")
