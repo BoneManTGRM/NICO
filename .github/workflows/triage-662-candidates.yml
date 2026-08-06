@@ -1,9 +1,12 @@
 name: Triage 662 Candidates Evidence Capture
 
+# The automatic branch run is owned by triage-662-raw-evidence.yml, which
+# performs exact-SHA scanner parity, canonical 662-candidate reconciliation,
+# committed evidence comparison, and retained package upload. Keep this
+# reusable legacy proof available only for explicit diagnostics so it cannot
+# create a duplicate, misleading red check for the same candidate population.
 on:
-  push:
-    branches:
-      - triage/662-candidates-20260806
+  workflow_dispatch:
 
 permissions:
   contents: read
