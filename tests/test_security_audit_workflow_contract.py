@@ -10,6 +10,8 @@ PROVIDER_ACCEPTANCE = ROOT / ".github/workflows/provider-live-acceptance.yml"
 HARDENING_ACCEPTANCE = ROOT / ".github/workflows/post-release-hardening-acceptance.yml"
 PACKAGE = ROOT / "apps/web/package.json"
 CONFIG = ROOT / "apps/web/next.config.js"
+REQUIREMENTS = ROOT / "requirements.txt"
+PYPROJECT = ROOT / "pyproject.toml"
 
 
 def _semver_core(version: str) -> tuple[int, int, int]:
@@ -45,6 +47,20 @@ def test_frontend_dependency_override_removes_vulnerable_image_optimizer_path() 
     assert _semver_core(next_version) >= (16, 2, 11)
     assert package["overrides"]["sharp"] == "0.35.0"
     assert "unoptimized: true" in config
+
+
+def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
+    requirements = {
+        line.strip()
+        for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    pyproject = PYPROJECT.read_text(encoding="utf-8")
+
+    assert "pypdf==6.15.0" in requirements
+    assert "pypdf==6.14.2" not in requirements
+    assert '"pypdf>=6.15.0,<7"' in pyproject
+    assert '"pypdf>=6.14.2,<7"' not in pyproject
 
 
 def test_provider_dispatch_inputs_are_passed_through_environment() -> None:

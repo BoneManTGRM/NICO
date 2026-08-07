@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import html
 import re
-from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-client-identity-publication-guard.v2"
+VERSION = "nico.comprehensive-client-identity-publication-guard.v2.1"
 _MARKER = "__nico_comprehensive_client_identity_publication_guard_v2__"
 
 _IDENTITY_SENTINELS = {
@@ -89,75 +88,79 @@ def _identity_placeholder(field: str, value: Any) -> bool:
     return normalized in _IDENTITY_SENTINELS.get(field.casefold(), set())
 
 
-def _public_identity_parent(path: tuple[str, ...]) -> bool:
-    if not path:
-        return True
-    parent = path[-1].casefold()
-    return parent in _IDENTITY_CONTAINER_KEYS or (
-        len(path) == 1 and parent in _DIRECT_IDENTITY_CONTAINERS
-    )
+def _project_identity_container(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy only a bounded public-identity container.
 
-
-def sanitize_public_identity_fields(
-    value: Any,
-    *,
-    _path: tuple[str, ...] = (),
-) -> Any:
-    """Sanitize public identity fields while preserving literal technical evidence.
-
-    Internal sentinel values are valid processing identities, but they are not client
-    identities. Only explicit identity fields at public identity boundaries are
-    projected to ``Not supplied``. Free-form and structured scanner/source evidence
-    is retained exactly, even if the assessed repository contains ``default_project``.
+    Comprehensive technical evidence can be very large. Identity projection must not
+    recursively copy or inspect scanner payloads, candidate registers, source evidence,
+    or other unrelated structures. Known identity subcontainers remain copy-on-write.
     """
 
-    if isinstance(value, Mapping):
-        output: dict[str, Any] = {}
-        for raw_key, raw_value in value.items():
-            key = str(raw_key)
-            normalized_key = key.casefold()
-            if (
-                _public_identity_parent(_path)
-                and normalized_key in _IDENTITY_SENTINELS
-                and _identity_placeholder(normalized_key, raw_value)
-            ):
-                output[key] = "Not supplied"
-            else:
-                output[key] = sanitize_public_identity_fields(
-                    raw_value,
-                    _path=(*_path, key),
-                )
-        return output
-    if isinstance(value, list):
-        return [
-            sanitize_public_identity_fields(item, _path=(*_path, "[]"))
-            for item in value
-        ]
-    if isinstance(value, tuple):
-        return tuple(
-            sanitize_public_identity_fields(item, _path=(*_path, "[]"))
-            for item in value
-        )
-    return deepcopy(value)
+    output = dict(value)
+    for raw_key, raw_value in value.items():
+        key = str(raw_key)
+        normalized_key = key.casefold()
+        if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
+            normalized_key, raw_value
+        ):
+            output[key] = "Not supplied"
+            continue
+        if (
+            normalized_key in _IDENTITY_CONTAINER_KEYS
+            or normalized_key in _DIRECT_IDENTITY_CONTAINERS
+        ) and isinstance(raw_value, Mapping):
+            output[key] = _project_identity_container(raw_value)
+    return output
+
+
+def sanitize_public_identity_fields(value: Any) -> Any:
+    """Project client-safe identity without traversing technical evidence.
+
+    Only the canonical root, known public identity containers, and known direct
+    identity-bearing metadata containers are copied. Every unrelated object is kept by
+    reference. This keeps identity sanitization bounded even for very large reports and
+    preserves literal or structured technical evidence containing ``default_project``.
+    """
+
+    if not isinstance(value, Mapping):
+        return value
+
+    output = dict(value)
+    for raw_key, raw_value in value.items():
+        key = str(raw_key)
+        normalized_key = key.casefold()
+        if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
+            normalized_key, raw_value
+        ):
+            output[key] = "Not supplied"
+            continue
+        if (
+            normalized_key in _IDENTITY_CONTAINER_KEYS
+            or normalized_key in _DIRECT_IDENTITY_CONTAINERS
+        ) and isinstance(raw_value, Mapping):
+            output[key] = _project_identity_container(raw_value)
+    return output
 
 
 def sanitize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Project client-safe identity without changing technical evidence or scores."""
+    """Project client-safe identity without copying the full report package."""
 
-    result = deepcopy(dict(package))
+    result = dict(package)
     canonical = (
-        sanitize_public_identity_fields(result.get("json"))
-        if isinstance(result.get("json"), Mapping)
+        sanitize_public_identity_fields(package.get("json"))
+        if isinstance(package.get("json"), Mapping)
         else {}
     )
     if not isinstance(canonical, dict):
         canonical = {}
 
-    contract = deepcopy(dict(canonical.get("v2_pipeline_contract") or {}))
+    contract = dict(canonical.get("v2_pipeline_contract") or {})
     contract.update(
         {
             "client_identity_publication_guard_version": VERSION,
             "client_identity_fields_recursively_sanitized": True,
+            "client_identity_projection_bounded_copy_on_write": True,
+            "technical_evidence_traversal_by_identity_guard": False,
             "literal_source_evidence_preserved": True,
             "numeric_scores_unchanged_by_identity_projection": True,
             "candidate_dispositions_unchanged_by_identity_projection": True,
@@ -168,45 +171,65 @@ def sanitize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     canonical["v2_pipeline_contract"] = contract
     result["json"] = canonical
 
-    for field in _IDENTITY_SENTINELS:
-        if field in result and _identity_placeholder(field, result.get(field)):
-            result[field] = "Not supplied"
+    for raw_key, raw_value in package.items():
+        key = str(raw_key)
+        normalized_key = key.casefold()
+        if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
+            normalized_key, raw_value
+        ):
+            result[key] = "Not supplied"
+        elif normalized_key in _IDENTITY_CONTAINER_KEYS and isinstance(
+            raw_value, Mapping
+        ):
+            result[key] = _project_identity_container(raw_value)
     return result
 
 
-def _identity_field_violations(
-    value: Any,
-    path: str = "",
-    _parts: tuple[str, ...] = (),
+def _identity_container_violations(
+    value: Mapping[str, Any],
+    *,
+    path: str,
 ) -> list[str]:
     violations: list[str] = []
-    if isinstance(value, Mapping):
-        for raw_key, raw_value in value.items():
-            key = str(raw_key)
-            child = f"{path}.{key}" if path else key
-            normalized_key = key.casefold()
-            if (
-                _public_identity_parent(_parts)
-                and normalized_key in _IDENTITY_SENTINELS
-                and _identity_placeholder(normalized_key, raw_value)
-            ):
-                violations.append(child)
-            else:
-                violations.extend(
-                    _identity_field_violations(
-                        raw_value,
-                        child,
-                        (*_parts, key),
-                    )
-                )
-    elif isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
+    for raw_key, raw_value in value.items():
+        key = str(raw_key)
+        child = f"{path}.{key}" if path else key
+        normalized_key = key.casefold()
+        if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
+            normalized_key, raw_value
+        ):
+            violations.append(child)
+            continue
+        if (
+            normalized_key in _IDENTITY_CONTAINER_KEYS
+            or normalized_key in _DIRECT_IDENTITY_CONTAINERS
+        ) and isinstance(raw_value, Mapping):
             violations.extend(
-                _identity_field_violations(
-                    item,
-                    f"{path}[{index}]",
-                    (*_parts, "[]"),
-                )
+                _identity_container_violations(raw_value, path=child)
+            )
+    return violations
+
+
+def _identity_field_violations(value: Any) -> list[str]:
+    """Inspect only public identity boundaries, never the technical evidence graph."""
+
+    if not isinstance(value, Mapping):
+        return []
+    violations: list[str] = []
+    for raw_key, raw_value in value.items():
+        key = str(raw_key)
+        normalized_key = key.casefold()
+        if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
+            normalized_key, raw_value
+        ):
+            violations.append(key)
+            continue
+        if (
+            normalized_key in _IDENTITY_CONTAINER_KEYS
+            or normalized_key in _DIRECT_IDENTITY_CONTAINERS
+        ) and isinstance(raw_value, Mapping):
+            violations.extend(
+                _identity_container_violations(raw_value, path=key)
             )
     return violations
 
@@ -235,8 +258,8 @@ def _surface_identity_violations(surface: str) -> list[str]:
     return violations
 
 
-def _effective_canonical(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    """Preserve legacy fixture compatibility but fail closed for production contracts."""
+def _effective_canonical(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Preserve legacy fixture compatibility without copying production evidence."""
 
     contract = (
         canonical.get("v2_pipeline_contract")
@@ -244,9 +267,9 @@ def _effective_canonical(canonical: Mapping[str, Any]) -> dict[str, Any]:
         else {}
     )
     if contract.get("client_identity_placeholders_sanitized") is True:
-        return deepcopy(dict(canonical))
+        return canonical
     projected = sanitize_public_identity_fields(canonical)
-    return projected if isinstance(projected, dict) else {}
+    return projected if isinstance(projected, Mapping) else {}
 
 
 def assert_client_identity_publication_guard(
@@ -382,6 +405,8 @@ def install_client_identity_publication_guard_v2() -> dict[str, Any]:
             _MARKER,
             False,
         ),
+        "client_identity_projection_bounded_copy_on_write": True,
+        "technical_evidence_traversal_by_identity_guard": False,
         "literal_source_evidence_preserved": True,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
