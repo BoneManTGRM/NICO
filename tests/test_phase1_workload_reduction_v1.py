@@ -180,6 +180,55 @@ def test_real_project_identity_remains_fail_closed() -> None:
     assert result["findings"][0]["lineage_status"] == "newly_observed"
 
 
+def test_nested_real_workspace_identity_is_not_lost_when_default_project_is_removed() -> None:
+    subject, normalization = scan_assessment_subject(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "project_id": "default_project",
+            "context": {"workspace_id": "workspace-7"},
+        }
+    )
+
+    assert subject == {
+        "repository": "bonemantgrm/nico",
+        "workspace_id": "workspace-7",
+    }
+    assert normalization["ignored_optional_placeholders"] == {
+        "project_id": "default_project"
+    }
+    assert normalization["identity_conflicts"] == {}
+    assert normalization["identity_conflict_fail_closed"] is False
+
+
+def test_conflicting_subject_identity_sources_fail_closed() -> None:
+    subject, normalization = scan_assessment_subject(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "context": {"repository": "OtherOrg/OtherRepo"},
+        }
+    )
+
+    assert subject == {}
+    assert normalization["identity_conflict_fail_closed"] is True
+    assert normalization["identity_conflicts"] == {
+        "repository": ["bonemantgrm/nico", "otherorg/otherrepo"]
+    }
+
+
+def test_one_deduplicated_record_with_multiple_occurrences_is_not_fake_grouping() -> None:
+    result = refine_candidate_review_workload(
+        _register([_candidate("ONLY", occurrence_count=5)])
+    )
+    finding = result["findings"][0]
+    metrics = result["technical_triage"]["workload_metrics"]
+
+    assert finding["grouped_review_eligible"] is False
+    assert metrics["candidates_requiring_individual_human_attention"] == 5
+    assert metrics["individual_human_review_record_count"] == 1
+    assert metrics["grouped_review_cluster_count"] == 0
+    assert metrics["human_review_work_units"] == 1
+
+
 def test_repetitive_lower_risk_static_candidates_become_one_grouped_work_unit() -> None:
     findings = [
         _candidate("A", path="nico/a.py", line=10),
@@ -311,6 +360,8 @@ def test_historical_shape_reduces_human_work_without_creating_approval() -> None
     assert metrics["candidates_requiring_individual_human_attention"] == 1
     assert metrics["grouped_review_cluster_count"] == 1
     assert metrics["human_review_work_units"] == 2
+    assert metrics["quality_control_sample_pool"] == 606
+    assert metrics["quality_control_sample_record_count"] == 606
     boundaries = result["technical_triage"]["workload_refinement"]
     assert boundaries["human_disposition_created"] is False
     assert boundaries["human_approval_created"] is False
