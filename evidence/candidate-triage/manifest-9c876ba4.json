@@ -1,0 +1,21 @@
+{
+  "schema": "nico.candidate-technical-triage-manifest.v1",
+  "repository": "BoneManTGRM/NICO",
+  "assessed_commit_sha": "9c876ba4e3e9bb152de52567232038e52a6bbb3e",
+  "source_triage_schema": "nico.technical-candidate-triage.v1",
+  "source_triage_sha256": "93f35cf18dd808e8c5a2c1a4fbe5fa430971550a08b419b6cc2445ca08c8d8be",
+  "candidate_count": 662,
+  "verdict_counts": {
+    "not_actionable": 624,
+    "needs_review": 38,
+    "confirmed": 0
+  },
+  "proposed_disposition_counts": {
+    "approved_or_nonblocking": 607,
+    "excluded_test_only": 17,
+    "review_required": 38
+  },
+  "runtime_validation_performed": false,
+  "human_approval_status": "pending",
+  "client_delivery_allowed": false
+}

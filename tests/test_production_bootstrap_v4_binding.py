@@ -5,6 +5,9 @@ from pathlib import Path
 
 def test_production_bootstrap_imports_current_scoring_provider() -> None:
     source = Path("nico/api/comprehensive_production_bootstrap.py").read_text(encoding="utf-8")
-    assert "from nico.comprehensive_native_providers_v5 import install_native_comprehensive_providers" in source
+    assert "from nico import comprehensive_native_providers_v5 as native_provider_v5" in source
+    assert "native_provider_v5.install_native_comprehensive_providers(target)" in source
+    assert "install_candidate_lineage_runtime_patch" in source
+    assert "from nico.comprehensive_native_providers_v5 import install_native_comprehensive_providers" not in source
     assert "from nico.comprehensive_native_providers_v4 import install_native_comprehensive_providers" not in source
     assert "from nico.comprehensive_native_providers_v3 import install_native_comprehensive_providers" not in source

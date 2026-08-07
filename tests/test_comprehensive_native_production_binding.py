@@ -44,16 +44,25 @@ def test_native_provider_install_covers_every_required_capability() -> None:
 def test_production_entrypoint_installs_providers_before_building_executors() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    assert "from nico.comprehensive_native_providers_v5 import install_native_comprehensive_providers" in source
-    provider_install = source.index("native_providers = install_native_comprehensive_providers(target)")
+    assert "from nico import comprehensive_native_providers_v5 as native_provider_v5" in source
+    assert "install_candidate_lineage_runtime_patch" in source
+    lineage_install = source.index(
+        "candidate_lineage_runtime = install_candidate_lineage_runtime_patch()"
+    )
+    provider_install = source.index(
+        "native_providers = native_provider_v5.install_native_comprehensive_providers(target)"
+    )
     executor_build = source.index("executors = build_production_capability_executors(target)")
     runtime_install = source.index("controller = install_comprehensive_production_bootstrap(")
-    assert provider_install < executor_build < runtime_install
+    assert lineage_install < provider_install < executor_build < runtime_install
+    assert '"candidate_lineage_runtime_before_provider_install": True' in source
+    assert '"candidate_lineage_runtime_bound": candidate_lineage_runtime_bound' in source
     assert '"provider_install_before_executor_build": True' in source
     assert '"category_specific_scoring_bound": category_specific_scoring_bound' in source
     assert '"same_sha_score_deterministic": same_sha_score_deterministic' in source
     assert '"mutable_operational_history_affects_score": mutable_operational_history_affects_score' in source
     assert '"score_override_allowed": False' in source
+    assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["candidate_lineage_runtime_bound"] is not True:' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["missing_capabilities"]:' in source
 
 
