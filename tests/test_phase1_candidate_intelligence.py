@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from nico.candidate_evidence_context_v1 import enrich_canonical_candidate_evidence
 from tests.phase1_candidate_fixtures import (
     SUBJECT, baseline_for, candidate, lineage_then_triage, register, retained_triage,
 )
