@@ -5,15 +5,17 @@ from functools import wraps
 from typing import Any, Mapping
 
 from nico.candidate_lineage_migration_v1 import VERSION as LINEAGE_VERSION
-from nico.candidate_lineage_migration_v1 import apply_candidate_lineage
+from nico.candidate_lineage_migration_v1 import apply_candidate_lineage, load_default_baseline
 from nico.candidate_technical_triage_v1 import VERSION as TECHNICAL_TRIAGE_VERSION
 from nico.candidate_technical_triage_v1 import apply_candidate_technical_triage
 
-VERSION = "nico.candidate-lineage-runtime-patch.v2"
-_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v2"
-_INSTALL_MARKER = "_nico_candidate_lineage_install_v2"
-_STAGE_MARKER = "_nico_candidate_lineage_stage_v2"
+VERSION = "nico.candidate-lineage-runtime-patch.v3"
+_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v3"
+_INSTALL_MARKER = "_nico_candidate_lineage_install_v3"
+_STAGE_MARKER = "_nico_candidate_lineage_stage_v3"
 _HEAVY = {"pdf_base64", "html", "markdown", "scanner_results", "raw_output", "stdout", "stderr"}
+_EXPECTED_BASELINE_COMMIT = "9c876ba4e3e9bb152de52567232038e52a6bbb3e"
+_EXPECTED_BASELINE_COUNT = 662
 
 
 def _find_mapping(node: Any, field: str, depth: int = 0) -> Mapping[str, Any]:
@@ -131,14 +133,29 @@ def _patch_candidate_stage() -> bool:
     return True
 
 
+def _load_verified_baseline() -> tuple[dict[str, Any] | None, bool, str]:
+    try:
+        baseline = load_default_baseline()
+    except Exception as exc:
+        return None, False, type(exc).__name__
+    available = (
+        baseline.get("c") == _EXPECTED_BASELINE_COMMIT
+        and int(baseline.get("n") or 0) == _EXPECTED_BASELINE_COUNT
+        and baseline.get("a") == "none"
+    )
+    return (baseline if available else None), available, ("" if available else "baseline_identity_mismatch")
+
+
 def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
     from nico import comprehensive_native_providers_v5 as providers
 
+    baseline, baseline_available, baseline_reason = _load_verified_baseline()
     current_builder = providers.build_canonical_scanner_finding_register
     if not getattr(current_builder, _PROVIDER_MARKER, False):
         @wraps(current_builder)
         def build_with_lineage(scan: Mapping[str, Any], commit_sha: str):
-            lineage_register = apply_candidate_lineage(current_builder(scan, commit_sha))
+            canonical = current_builder(scan, commit_sha)
+            lineage_register = apply_candidate_lineage(canonical, baseline=baseline) if baseline is not None else apply_candidate_lineage(canonical)
             return apply_candidate_technical_triage(lineage_register)
 
         setattr(build_with_lineage, _PROVIDER_MARKER, True)
@@ -155,6 +172,10 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
                 {
                     "candidate_lineage_migration_bound": True,
                     "candidate_lineage_schema": LINEAGE_VERSION,
+                    "candidate_lineage_baseline_available": baseline_available,
+                    "candidate_lineage_baseline_candidate_count": _EXPECTED_BASELINE_COUNT if baseline_available else 0,
+                    "candidate_lineage_baseline_target_commit_sha": _EXPECTED_BASELINE_COMMIT if baseline_available else "",
+                    "candidate_lineage_baseline_reason": baseline_reason,
                     "candidate_technical_triage_bound": True,
                     "candidate_technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
                     "technical_triage_authority": "proposal_only_pending_authorized_human_review",
@@ -172,13 +193,19 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
         providers.install_native_comprehensive_providers = install_with_lineage
 
     stage_bound = _patch_candidate_stage()
+    provider_bound = getattr(providers.build_canonical_scanner_finding_register, _PROVIDER_MARKER, False)
+    provider_install_bound = getattr(providers.install_native_comprehensive_providers, _INSTALL_MARKER, False)
     return {
-        "status": "installed",
+        "status": "installed" if baseline_available else "blocked",
         "version": VERSION,
-        "provider_bound": getattr(providers.build_canonical_scanner_finding_register, _PROVIDER_MARKER, False),
-        "provider_install_bound": getattr(providers.install_native_comprehensive_providers, _INSTALL_MARKER, False),
-        "report_stage_bound": stage_bound,
+        "provider_bound": bool(baseline_available and provider_bound),
+        "provider_install_bound": bool(baseline_available and provider_install_bound),
+        "report_stage_bound": bool(baseline_available and stage_bound),
         "lineage_schema": LINEAGE_VERSION,
+        "baseline_available": baseline_available,
+        "baseline_candidate_count": _EXPECTED_BASELINE_COUNT if baseline_available else 0,
+        "baseline_target_commit_sha": _EXPECTED_BASELINE_COMMIT if baseline_available else "",
+        "baseline_reason": baseline_reason,
         "technical_triage_bound": True,
         "technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
         "technical_triage_authority": "proposal_only_pending_authorized_human_review",

@@ -1,0 +1,65 @@
+{
+  "schema": "nico.candidate-lineage-baseline-chunks.v1",
+  "baseline_schema": "nico.candidate-lineage-baseline.v2",
+  "repository": "BoneManTGRM/NICO",
+  "target_commit_sha": "9c876ba4e3e9bb152de52567232038e52a6bbb3e",
+  "candidate_count": 662,
+  "counts": {
+    "dependency": 59,
+    "secret": 17,
+    "static": 586
+  },
+  "approval_authority": "none",
+  "source_candidate_register_sha256": "8cba692c557a0503da37bdbadc77cfd57e687421fcf8d6044d98f781922182a2",
+  "encoded_sha256": "97f8307f3a4ca4e37232637acc1877f69c603bd1484c984f868c61cdaacba509",
+  "chunks": [
+    {
+      "file": "part-00.b64",
+      "index": 0,
+      "length": 5138,
+      "sha256": "04785b5ee11496911225cd0fb44278b95b5e22fa438b4d9059ae45ab9bd2b8d3"
+    },
+    {
+      "file": "part-01.b64",
+      "index": 1,
+      "length": 5138,
+      "sha256": "6a115a074fd9ef7c134bd667efbb4e4c2792b128810a7c6ab952eebaed0b8299"
+    },
+    {
+      "file": "part-02.b64",
+      "index": 2,
+      "length": 5138,
+      "sha256": "b913db8cd2ac7658116d1894b119818c0a768ea3f8cb6105faf92d822b84133c"
+    },
+    {
+      "file": "part-03.b64",
+      "index": 3,
+      "length": 5138,
+      "sha256": "b7e91e8ab95881931dfa334cb5ecfb4e21a7c9caf09a697ba94cdfa4d4996ea6"
+    },
+    {
+      "file": "part-04.b64",
+      "index": 4,
+      "length": 5138,
+      "sha256": "00a722736c166a726dc40d09fb78d26bd51014303ce4e4c19a35bc2f18bff930"
+    },
+    {
+      "file": "part-05.b64",
+      "index": 5,
+      "length": 5138,
+      "sha256": "d1cd30db0abd72f45f1c87a046f7fa35ce80d699588f99259ca3ff9c1d998df2"
+    },
+    {
+      "file": "part-06.b64",
+      "index": 6,
+      "length": 5138,
+      "sha256": "43ee5674365ef8ec2d161f532b7e8f94b75fba266ad73ce1a298281d9d4961ee"
+    },
+    {
+      "file": "part-07.b64",
+      "index": 7,
+      "length": 5134,
+      "sha256": "7aa45ca760af768e6611539b7c52f0bf6df244d2d2000b8af13a230db86bd8a6"
+    }
+  ]
+}
