@@ -24,7 +24,7 @@ def _pdf(*lines: str) -> bytes:
     return buffer.getvalue()
 
 
-def test_recursive_identity_projection_sanitizes_nested_ids_but_preserves_source_evidence() -> None:
+def test_recursive_identity_projection_sanitizes_public_ids_but_preserves_source_evidence() -> None:
     canonical = {
         "identity": {
             "repository": "BoneManTGRM/NICO",
@@ -40,7 +40,11 @@ def test_recursive_identity_projection_sanitizes_nested_ids_but_preserves_source
                 {
                     "stage_id": "static_analysis",
                     "evidence": [
-                        "Source compares project_id to default_project for internal routing."
+                        "Source compares project_id to default_project for internal routing.",
+                        {
+                            "source_symbol": "normalize_subject",
+                            "project_id": "default_project",
+                        },
                     ],
                 }
             ],
@@ -53,10 +57,9 @@ def test_recursive_identity_projection_sanitizes_nested_ids_but_preserves_source
     assert projected["assessment"]["identity"]["project_id"] == "Not supplied"
     assert projected["assessment"]["identity"]["workspace_id"] == "Not supplied"
     assert projected["assessment"]["project_id"] == "Not supplied"
-    assert (
-        projected["assessment"]["stage_summaries"][0]["evidence"][0]
-        == "Source compares project_id to default_project for internal routing."
-    )
+    evidence = projected["assessment"]["stage_summaries"][0]["evidence"]
+    assert evidence[0] == "Source compares project_id to default_project for internal routing."
+    assert evidence[1]["project_id"] == "default_project"
 
 
 def test_real_identity_values_are_preserved() -> None:
