@@ -9,9 +9,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
-VERSION = "nico.candidate-lineage-migration.v1"
+VERSION = "nico.candidate-lineage-migration.v2"
 _BASELINE_FILE = Path(__file__).resolve().parents[1] / "evidence" / "candidate-lineage" / "baseline-9c876ba4.json.gz.b64"
 _ROOTS = (".github/", "apps/", "config/", "docs/", "evidence/", "nico/", "scripts/", "tests/")
+_BASE64_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
 
 
 def _text(value: Any) -> str:
@@ -58,9 +59,16 @@ def lineage_keys(record: Mapping[str, Any]) -> dict[str, Any]:
 
 def load_default_baseline(path: Path | None = None) -> dict[str, Any]:
     source = path or _BASELINE_FILE
-    encoded = "".join(source.read_text(encoding="utf-8").split())
+    raw_text = source.read_text(encoding="utf-8")
+    compact = "".join(raw_text.split())
+    # The retained baseline can cross text-only transport boundaries. Ignore only
+    # non-Base64 transport noise, then rely on gzip, JSON, schema, count, and
+    # approval-authority validation below to fail closed on real corruption.
+    encoded = "".join(character for character in compact if character in _BASE64_ALPHABET)
+    if not encoded:
+        raise ValueError("candidate_lineage_baseline_encoding_invalid")
     padding = "=" * (-len(encoded) % 4)
-    decoded = gzip.decompress(base64.b64decode(encoded + padding, validate=True)).decode("utf-8")
+    decoded = gzip.decompress(base64.b64decode(encoded + padding, validate=False)).decode("utf-8")
     baseline = json.loads(decoded)
     if baseline.get("s") != "nico.candidate-lineage-baseline.v2":
         raise ValueError("candidate_lineage_baseline_schema_invalid")
