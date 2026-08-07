@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Mapping, Sequence
 
@@ -105,22 +105,48 @@ def scan_assessment_subject(scan: Mapping[str, Any]) -> tuple[dict[str, str], di
         if isinstance(nested, Mapping):
             candidates.append((key, nested))
 
-    selected_source = "unavailable"
-    selected: dict[str, str] = {}
+    merged: dict[str, str] = {}
+    raw_by_source: dict[str, dict[str, str]] = {}
+    ignored: dict[str, str] = {}
+    conflicts: dict[str, list[str]] = {}
     for source_name, candidate in candidates:
-        identity = subject_identity(candidate)
-        quality = (1 if "repository" in identity else 0, len(identity))
-        selected_quality = (1 if "repository" in selected else 0, len(selected))
-        if quality > selected_quality:
-            selected_source = source_name
-            selected = identity
+        raw = subject_identity(candidate)
+        if not raw:
+            continue
+        raw_by_source[source_name] = raw
+        normalized, metadata = normalize_optional_assessment_subject(
+            {"assessment_subject": raw}
+        )
+        for field, value in (
+            metadata.get("ignored_optional_placeholders") or {}
+        ).items():
+            ignored[field] = value
+        for field, value in normalized.items():
+            prior = merged.get(field)
+            if prior is None:
+                merged[field] = value
+            elif prior != value:
+                conflicts[field] = sorted({prior, value})
 
-    normalized, metadata = normalize_optional_assessment_subject(
-        {"assessment_subject": selected}
-    )
-    metadata["source"] = selected_source
-    metadata["repository_identity_available"] = "repository" in normalized
-    return normalized, metadata
+    fail_closed = bool(conflicts)
+    subject = {} if fail_closed else merged
+    metadata = {
+        "artifact_schema": VERSION,
+        "source": "merged_scan_context",
+        "raw_subjects_by_source": raw_by_source,
+        "normalized_subject": subject,
+        "ignored_optional_placeholders": ignored,
+        "placeholder_normalization_applied": bool(ignored),
+        "identity_conflicts": conflicts,
+        "identity_conflict_fail_closed": fail_closed,
+        "repository_identity_available": "repository" in subject,
+        "real_optional_identities_remain_partitioning_boundaries": True,
+        "cross_repository_carry_forward_allowed": False,
+        "cross_project_carry_forward_allowed": False,
+        "cross_workspace_carry_forward_allowed": False,
+        "cross_target_carry_forward_allowed": False,
+    }
+    return subject, metadata
 
 
 def _dependency_identity(record: Mapping[str, Any]) -> tuple[str, str, str, str]:
@@ -147,6 +173,7 @@ def _review_profile(record: Mapping[str, Any]) -> tuple[Any, ...] | None:
     rationale = _norm(
         record.get("technical_triage_rationale_code") or record.get("rationale_code")
     )
+    triage_source = _norm(record.get("technical_triage_source"))
     gaps = _proof_gaps(record)
     evidence_quality = _norm(record.get("evidence_quality"))
 
@@ -188,6 +215,7 @@ def _review_profile(record: Mapping[str, Any]) -> tuple[Any, ...] | None:
             severity,
             confidence,
             rationale,
+            triage_source,
             gaps,
         )
 
@@ -200,6 +228,7 @@ def _review_profile(record: Mapping[str, Any]) -> tuple[Any, ...] | None:
         severity,
         confidence,
         rationale,
+        triage_source,
         gaps,
     )
 
@@ -244,7 +273,7 @@ def _refined_clusters(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cluster_size = sum(_count(item) for item in members)
         verdicts = {_norm(item.get("technical_triage_verdict")) for item in members}
         routes = {_text(item.get("review_routing_class"), 80) for item in members}
-        eligible = review_profile is not None and cluster_size > 1 and len(verdicts) == 1
+        eligible = review_profile is not None and len(members) > 1 and len(verdicts) == 1
         digest = hashlib.sha256(
             json.dumps(key, sort_keys=True, separators=(",", ":"), default=str).encode()
         ).hexdigest()[:20].upper()
@@ -324,7 +353,25 @@ def _refined_metrics(
     grouped_human_clusters = sum(
         1 for cluster in clusters if cluster.get("grouped_human_review_cluster") is True
     )
-    work_units = individual + grouped_human_clusters
+    individual_records = sum(
+        1
+        for item in records
+        if item.get("review_routing_class") in _HUMAN_ROUTES
+        and item.get("grouped_review_eligible") is not True
+    )
+    quality_control_records = [
+        item
+        for item in records
+        if item.get("review_routing_class")
+        in {"QUALITY_CONTROL_ELIGIBLE", "STABLE_CARRY_FORWARD"}
+        and _norm(item.get("technical_triage_verdict")) == "not_actionable"
+        and _norm(item.get("technical_triage_confidence")) == "high"
+        and not _proof_gaps(item)
+        and item.get("evidence_changed") is not True
+        and not _explicit_conflict(item)
+    ]
+    quality_control_pool = sum(_count(item) for item in quality_control_records)
+    work_units = individual_records + grouped_human_clusters
     reduction = max(0, human_before - work_units)
     metrics.update(
         {
@@ -334,11 +381,15 @@ def _refined_metrics(
             "grouped_human_review_candidate_count": grouped_human_candidates,
             "grouped_review_cluster_count": grouped_human_clusters,
             "human_attention_candidate_count_before_grouping": human_before,
+            "individual_human_review_record_count": individual_records,
             "human_review_work_units": work_units,
             "review_workload_reduction_count": reduction,
             "review_workload_reduction_pct": (
                 round(reduction * 100 / human_before, 2) if human_before else 0.0
             ),
+            "quality_control_sample_pool": quality_control_pool,
+            "quality_control_sample_record_count": len(quality_control_records),
+            "stable_carry_forward_quality_control_eligible": True,
         }
     )
     return metrics
