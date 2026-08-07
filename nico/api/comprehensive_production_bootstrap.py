@@ -4,8 +4,12 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from nico import comprehensive_native_providers_v5 as native_provider_v5
 from nico.accepted_edition_report_identity_v1 import install_accepted_edition_report_identity
 from nico.api.production_bootstrap import app as production_app
+from nico.candidate_lineage_runtime_patch_v1 import (
+    install_candidate_lineage_runtime_patch,
+)
 from nico.comprehensive_api_routes import COMPREHENSIVE_API_ROUTES
 from nico.comprehensive_core_report_readiness_v1 import install_comprehensive_core_report_readiness
 from nico.comprehensive_decision_grade_v5 import install_decision_grade_binding
@@ -13,7 +17,6 @@ from nico.comprehensive_final_artifact_truth_v53 import (
     install_comprehensive_final_artifact_truth_v53,
 )
 from nico.comprehensive_final_report_execution_v1 import install_comprehensive_final_report_execution
-from nico.comprehensive_native_providers_v5 import install_native_comprehensive_providers
 from nico.comprehensive_production_bootstrap import install_comprehensive_production_bootstrap
 from nico.comprehensive_production_capabilities import (
     PROVIDER_STATE_KEY,
@@ -26,7 +29,7 @@ from nico.decision_grade_scanner_executions_v1 import install_structured_scanner
 from nico.strategic_human_evidence_binding_v1 import install_strategic_human_evidence_binding
 from nico.v2_production_authority import install_v2_production_authority
 
-VERSION = "nico.api.comprehensive_production_bootstrap.v18"
+VERSION = "nico.api.comprehensive_production_bootstrap.v19"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
 
 
@@ -73,7 +76,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     # Install the authoritative pre-render truth wrapper after every decision-grade
     # report builder has been composed, but before production providers are registered.
     report_truth = install_comprehensive_report_truth_v53()
-    native_providers = install_native_comprehensive_providers(target)
+    candidate_lineage_runtime = install_candidate_lineage_runtime_patch()
+    native_providers = native_provider_v5.install_native_comprehensive_providers(target)
     strategic_human_evidence = install_strategic_human_evidence_binding(target)
     scanner_execution_normalization = install_structured_scanner_executions(
         __import__("nico.comprehensive_native_providers", fromlist=["_scan"])
@@ -119,6 +123,15 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     mutable_operational_history_affects_score = native_status.get("mutable_operational_history_affects_score") is True
     score_override_disabled = native_status.get("score_override_allowed") is False
     score_truth_scope_bound = score_truth_scope.get("bound") is True
+    candidate_lineage_runtime_bound = (
+        candidate_lineage_runtime.get("provider_bound") is True
+        and candidate_lineage_runtime.get("provider_install_bound") is True
+        and candidate_lineage_runtime.get("report_stage_bound") is True
+        and candidate_lineage_runtime.get("human_approval_carried_forward") is False
+        and candidate_lineage_runtime.get("client_delivery_allowed") is False
+        and native_status.get("candidate_lineage_migration_bound") is True
+        and native_status.get("human_approval_may_carry_forward") is False
+    )
     ready = (
         controller is not None
         and runtime.get("configured") is True
@@ -134,6 +147,7 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and accepted_edition_report_identity.get("bound") is True
         and score_truth_scope_bound
         and report_truth.get("bound") is True
+        and candidate_lineage_runtime_bound
         and strategic_human_evidence.get("bound") is True
         and scanner_execution_normalization.get("bound") is True
         and core_report_readiness.get("bound") is True
@@ -159,6 +173,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         reason = "score_truth_scope_binding_incomplete"
     if not reason and report_truth.get("bound") is not True:
         reason = "pre_render_report_truth_binding_incomplete"
+    if not reason and not candidate_lineage_runtime_bound:
+        reason = "candidate_lineage_runtime_binding_incomplete"
     if not reason and strategic_human_evidence.get("bound") is not True:
         reason = "strategic_human_evidence_binding_incomplete"
     if not reason and final_artifact_truth.get("bound") is not True:
@@ -196,6 +212,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "accepted_edition_report_identity": accepted_edition_report_identity,
         "score_truth_scope": score_truth_scope,
         "report_truth": report_truth,
+        "candidate_lineage_runtime": candidate_lineage_runtime,
+        "candidate_lineage_runtime_bound": candidate_lineage_runtime_bound,
         "strategic_human_evidence": strategic_human_evidence,
         "scanner_execution_normalization": scanner_execution_normalization,
         "core_report_readiness": core_report_readiness,
@@ -215,6 +233,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "report_binding_before_accepted_edition_identity": True,
         "accepted_edition_identity_before_score_truth_scope": True,
         "score_truth_scope_before_report_truth": True,
+        "report_truth_before_candidate_lineage_runtime": True,
+        "candidate_lineage_runtime_before_provider_install": True,
         "report_truth_before_provider_install": True,
         "score_truth_scope_before_provider_install": True,
         "accepted_edition_identity_before_provider_install": True,
@@ -271,6 +291,8 @@ if COMPREHENSIVE_PRODUCTION_RUNTIME["score_truth_scope_bound"] is not True:
     raise RuntimeError("Overall score alias synchronization scope was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["report_truth"].get("bound") is not True:
     raise RuntimeError("Pre-render Comprehensive report truth was not installed")
+if COMPREHENSIVE_PRODUCTION_RUNTIME["candidate_lineage_runtime_bound"] is not True:
+    raise RuntimeError("Cross-SHA candidate lineage runtime was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["strategic_human_evidence"].get("bound") is not True:
     raise RuntimeError("Strategic human-evidence binding was not installed")
 if COMPREHENSIVE_PRODUCTION_RUNTIME["scanner_execution_normalization"].get("bound") is not True:
