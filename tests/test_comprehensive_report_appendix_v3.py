@@ -234,10 +234,16 @@ def test_production_bootstrap_binds_decision_grade_runtime_before_provider_insta
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
     binding = source.index("report_binding = install_decision_grade_binding()")
-    providers = source.index("native_providers = install_native_comprehensive_providers(target)")
+    lineage = source.index(
+        "candidate_lineage_runtime = install_candidate_lineage_runtime_patch()"
+    )
+    providers = source.index(
+        "native_providers = native_provider_v5.install_native_comprehensive_providers(target)"
+    )
     executors = source.index("executors = build_production_capability_executors(target)")
 
-    assert binding < providers < executors
+    assert binding < lineage < providers < executors
     assert '"report_binding_before_provider_install": True' in source
+    assert '"candidate_lineage_runtime_bound": candidate_lineage_runtime_bound' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("bound") is not True:' in source
     assert 'if COMPREHENSIVE_PRODUCTION_RUNTIME["report_binding"].get("canonical_scoring_bound") is not True:' in source
