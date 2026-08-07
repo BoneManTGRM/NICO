@@ -40,6 +40,10 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
   "assessment_run_status_timeout",
 ]);
 
+type AttemptResult =
+  | {retry: true}
+  | {retry: false; result: Result};
+
 function browserHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
   if (!headers.has("Accept")) {
@@ -98,7 +102,7 @@ export async function requestWithRetry(
     let timeoutId: number | null = null;
 
     try {
-      const requestPromise = (async (): Promise<Result> => {
+      const requestPromise = (async (): Promise<AttemptResult> => {
         const response = await fetch(apiUrl(path), {
           ...init,
           headers: browserHeaders(init.headers),
@@ -110,27 +114,31 @@ export async function requestWithRetry(
           attempt < retryDelays.length - 1
         ) {
           await response.arrayBuffer();
-          throw new AssessmentApiError(copy.backendError, {
-            status: response.status,
-            code: "assessment_transient_retry",
-            retryable: true,
-            requestId: response.headers.get("x-request-id") || "",
-          });
+          return {retry: true};
         }
-        return await parseJson(response, copy);
+        return {
+          retry: false,
+          result: await parseJson(response, copy),
+        };
       })();
 
+      let attemptResult: AttemptResult;
       if (!boundedRequest) {
-        return await requestPromise;
+        attemptResult = await requestPromise;
+      } else {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            controller?.abort();
+            reject(timeoutErrorFor(readinessPreflight, copy));
+          }, requestTimeoutMs);
+        });
+        attemptResult = await Promise.race([requestPromise, timeoutPromise]);
       }
 
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = window.setTimeout(() => {
-          controller?.abort();
-          reject(timeoutErrorFor(readinessPreflight, copy));
-        }, requestTimeoutMs);
-      });
-      return await Promise.race([requestPromise, timeoutPromise]);
+      if (attemptResult.retry) {
+        continue;
+      }
+      return attemptResult.result;
     } catch (error) {
       lastError = error;
       const retryable =
