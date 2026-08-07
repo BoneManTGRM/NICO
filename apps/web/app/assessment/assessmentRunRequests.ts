@@ -135,7 +135,7 @@ export async function requestWithRetry(
         attemptResult = await Promise.race([requestPromise, timeoutPromise]);
       }
 
-      if (attemptResult.retry) {
+      if (!("result" in attemptResult)) {
         continue;
       }
       return attemptResult.result;
