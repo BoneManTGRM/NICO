@@ -12,6 +12,11 @@ from nico.comprehensive_client_identity_publication_guard_v2 import (
 )
 
 
+class _OpaqueTechnicalEvidence:
+    def __deepcopy__(self, memo):  # pragma: no cover - must never be invoked
+        raise AssertionError("client identity guard traversed opaque technical evidence")
+
+
 def _pdf(*lines: str) -> bytes:
     buffer = io.BytesIO()
     document = canvas.Canvas(buffer, invariant=1)
@@ -98,9 +103,71 @@ def test_report_package_projection_marks_contract_without_changing_scores() -> N
     assert projected["json"]["assessment"]["canonical_evidence_adjusted_score"] == 89
     contract = projected["json"]["v2_pipeline_contract"]
     assert contract["client_identity_fields_recursively_sanitized"] is True
+    assert contract["client_identity_projection_bounded_copy_on_write"] is True
+    assert contract["technical_evidence_traversal_by_identity_guard"] is False
     assert contract["literal_source_evidence_preserved"] is True
     assert contract["human_review_required"] is True
     assert contract["client_delivery_allowed"] is False
+
+
+def test_projection_is_copy_on_write_and_never_traverses_technical_evidence() -> None:
+    opaque = _OpaqueTechnicalEvidence()
+    stage_summaries = [
+        {
+            "stage_id": "static_analysis",
+            "evidence": [opaque],
+            "structured_source": {
+                "project_id": "default_project",
+                "opaque": opaque,
+            },
+        }
+    ]
+    scanner_records = [{"scanner_name": "semgrep", "payload": opaque}]
+    package = {
+        "json": {
+            "identity": {"project_id": "default_project"},
+            "assessment": {
+                "project_id": "default_project",
+                "stage_summaries": stage_summaries,
+                "scanner_execution_records": scanner_records,
+            },
+            "scanner_execution_records": scanner_records,
+        },
+        "opaque_top_level_artifact": opaque,
+    }
+
+    projected = sanitize_client_report_package(package)
+
+    assert projected["json"]["identity"]["project_id"] == "Not supplied"
+    assert projected["json"]["assessment"]["project_id"] == "Not supplied"
+    assert projected["json"]["assessment"]["stage_summaries"] is stage_summaries
+    assert projected["json"]["assessment"]["scanner_execution_records"] is scanner_records
+    assert projected["json"]["scanner_execution_records"] is scanner_records
+    assert projected["opaque_top_level_artifact"] is opaque
+    assert stage_summaries[0]["structured_source"]["project_id"] == "default_project"
+
+
+def test_public_identity_metadata_is_projected_without_touching_sibling_evidence() -> None:
+    opaque = _OpaqueTechnicalEvidence()
+    canonical = {
+        "metadata": {
+            "project_id": "default_project",
+            "identity": {"workspace_id": "default_workspace"},
+            "technical_evidence": opaque,
+        },
+        "artifact_manifest": {
+            "project_id": "unknown_project",
+            "entries": [opaque],
+        },
+    }
+
+    projected = sanitize_public_identity_fields(canonical)
+
+    assert projected["metadata"]["project_id"] == "Not supplied"
+    assert projected["metadata"]["identity"]["workspace_id"] == "Not supplied"
+    assert projected["metadata"]["technical_evidence"] is opaque
+    assert projected["artifact_manifest"]["project_id"] == "Not supplied"
+    assert projected["artifact_manifest"]["entries"] is canonical["artifact_manifest"]["entries"]
 
 
 def test_publication_guard_allows_literal_default_project_in_source_evidence() -> None:
@@ -142,6 +209,28 @@ def test_publication_guard_allows_literal_default_project_in_source_evidence() -
         markdown,
         rendered_html,
         pdf,
+    )
+
+
+def test_publication_guard_does_not_copy_nested_technical_evidence() -> None:
+    opaque = _OpaqueTechnicalEvidence()
+    canonical = {
+        "identity": {"project_id": "Not supplied"},
+        "assessment": {
+            "identity": {"project_id": "Not supplied"},
+            "stage_summaries": [{"evidence": [opaque]}],
+        },
+        "v2_pipeline_contract": {
+            "client_identity_placeholders_sanitized": True,
+        },
+        "stage_summaries": [],
+    }
+
+    assert_client_identity_publication_guard(
+        canonical,
+        "Project: Not supplied",
+        "<p>Project: Not supplied</p>",
+        _pdf("Project: Not supplied"),
     )
 
 
