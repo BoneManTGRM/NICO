@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.7"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.8"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -48,6 +48,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_blank_deployment_metric_repair_v1 import (
         install_blank_deployment_metric_repair_v1,
     )
+    from nico.comprehensive_client_identity_publication_guard_v2 import (
+        install_client_identity_publication_guard_v2,
+    )
     from nico.comprehensive_client_review_companion_v7_rebind import (
         install_comprehensive_review_companion_v7_rebind,
     )
@@ -88,6 +91,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         final_six_runtime = install_final_six_runtime_repair_v1()
         review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
         mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
+        identity_publication_guard = install_client_identity_publication_guard_v2()
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -101,6 +105,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "final_six_runtime_repair": final_six_runtime,
             "review_companion_v7_rebind": review_companion_rebind,
             "review_companion_v7_mobile_contract": mobile_contract,
+            "client_identity_publication_guard_v2": identity_publication_guard,
         }
 
     @wraps(current)
@@ -127,6 +132,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     final_six_runtime = install_final_six_runtime_repair_v1()
     review_companion_rebind = install_comprehensive_review_companion_v7_rebind()
     mobile_contract = install_comprehensive_review_companion_v7_mobile_contract()
+    identity_publication_guard = install_client_identity_publication_guard_v2()
     return {
         "status": "installed",
         "version": VERSION,
@@ -142,6 +148,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "final_six_runtime_repair": final_six_runtime,
         "review_companion_v7_rebind": review_companion_rebind,
         "review_companion_v7_mobile_contract": mobile_contract,
+        "client_identity_publication_guard_v2": identity_publication_guard,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
