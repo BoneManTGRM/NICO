@@ -30,6 +30,18 @@ def _status_bool(
     return None
 
 
+def _first_present(value: Mapping[str, Any], *keys: str) -> Any:
+    """Return the first meaningful present value without discarding explicit False."""
+
+    for key in keys:
+        if key not in value:
+            continue
+        candidate = value.get(key)
+        if candidate not in (None, ""):
+            return candidate
+    return None
+
+
 def _path(finding: Mapping[str, Any]) -> str:
     source = finding.get("source") if isinstance(finding.get("source"), Mapping) else {}
     value = finding.get("dependency_path") or finding.get("source_path") or finding.get("file_path") or finding.get("filename") or finding.get("path") or source.get("path") or ""
@@ -110,66 +122,62 @@ def _safe_context(raw: Mapping[str, Any]) -> dict[str, Any]:
         "dependency_manifest_source": _text(manifest, 500),
         "dependency_scope": _text(raw.get("dependency_scope") or raw.get("scope"), 120),
         "direct_dependency": _status_bool(
-            raw.get("direct_dependency") or raw.get("is_direct"),
+            _first_present(raw, "direct_dependency", "is_direct"),
             true_values={"direct"},
             false_values={"transitive"},
         ),
         "installed_version_affected": _status_bool(
-            raw.get("installed_version_affected")
-            if "installed_version_affected" in raw
-            else raw.get("version_affected") or raw.get("is_affected"),
+            _first_present(raw, "installed_version_affected", "version_affected", "is_affected"),
             true_values={"affected", "vulnerable", "in_range"},
             false_values={"unaffected", "not_affected", "not_vulnerable", "out_of_range", "safe"},
         ),
         "current_resolution_fixed": _status_bool(
-            raw.get("current_resolution_fixed")
-            if "current_resolution_fixed" in raw
-            else raw.get("patched") or raw.get("fixed") or raw.get("resolved_safe"),
+            _first_present(raw, "current_resolution_fixed", "patched", "fixed", "resolved_safe"),
             true_values={"fixed", "patched", "resolved", "safe", "remediated"},
             false_values={"unfixed", "unpatched", "unresolved", "not_fixed", "not_patched"},
         ),
         "first_party_reachable": _status_bool(
-            raw.get("first_party_reachable") or raw.get("reachable"),
+            _first_present(raw, "first_party_reachable", "reachable"),
             true_values={"reachable", "first_party_reachable"},
             false_values={"unreachable", "not_reachable"},
         ),
         "environment_relevant": _status_bool(
-            raw.get("environment_relevant") or raw.get("deployment_relevant") or raw.get("runtime_relevant"),
+            _first_present(raw, "environment_relevant", "deployment_relevant", "runtime_relevant"),
             true_values={"relevant", "environment_relevant", "deployment_relevant", "runtime_relevant", "production"},
             false_values={"not_relevant", "environment_not_relevant", "deployment_not_relevant", "runtime_not_relevant"},
         ),
         "exploitable": _status_bool(
-            raw.get("exploitable") or raw.get("exploitability"),
+            _first_present(raw, "exploitable", "exploitability"),
             true_values={"exploitable", "supportable", "realistic", "confirmed"},
             false_values={"not_exploitable", "not_supportable", "unrealistic"},
         ),
         "supported_security_boundary_crossed": _status_bool(
-            raw.get("supported_security_boundary_crossed") or raw.get("boundary_crossed"),
+            _first_present(raw, "supported_security_boundary_crossed", "boundary_crossed"),
             true_values={"crossed", "boundary_crossed", "supported_boundary_crossed"},
             false_values={"not_crossed", "same_privilege", "trusted_input_only"},
         ),
         "verified": _status_bool(
-            raw.get("Verified") if "Verified" in raw else raw.get("verified") or raw.get("verification_status"),
+            _first_present(raw, "Verified", "verified", "verification_status"),
             true_values={"verified", "live", "active", "confirmed", "valid"},
             false_values={"unverified", "not_verified", "inactive", "invalid", "revoked"},
         ),
         "synthetic": _status_bool(
-            raw.get("synthetic") or raw.get("fixture") or raw.get("example_credential"),
+            _first_present(raw, "synthetic", "fixture", "example_credential"),
             true_values={"synthetic", "fixture", "example", "test", "mock"},
             false_values={"real", "live", "production", "genuine"},
         ),
         "executable_code": _status_bool(
-            raw.get("executable_code") or raw.get("is_executable"),
+            _first_present(raw, "executable_code", "is_executable"),
             true_values={"executable", "executable_code", "code"},
             false_values={"non_executable", "not_executable", "comment", "string", "documentation"},
         ),
         "comment_or_string": _status_bool(
-            raw.get("comment_or_string") or raw.get("non_executable_text") or raw.get("documentation_only"),
+            _first_present(raw, "comment_or_string", "non_executable_text", "documentation_only"),
             true_values={"comment", "string", "comment_or_string", "documentation", "non_executable_text"},
             false_values={"executable", "code"},
         ),
         "mitigated": _status_bool(
-            raw.get("mitigated") or raw.get("existing_mitigation") or raw.get("safeguard_present"),
+            _first_present(raw, "mitigated", "existing_mitigation", "safeguard_present"),
             true_values={"mitigated", "protected", "guarded", "safeguard_present"},
             false_values={"unmitigated", "unprotected", "unguarded", "no_mitigation"},
         ),
