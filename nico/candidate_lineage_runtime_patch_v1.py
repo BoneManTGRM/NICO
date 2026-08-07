@@ -6,33 +6,43 @@ from typing import Any, Mapping
 
 from nico.candidate_lineage_migration_v1 import VERSION as LINEAGE_VERSION
 from nico.candidate_lineage_migration_v1 import apply_candidate_lineage
+from nico.candidate_technical_triage_v1 import VERSION as TECHNICAL_TRIAGE_VERSION
+from nico.candidate_technical_triage_v1 import apply_candidate_technical_triage
 
-VERSION = "nico.candidate-lineage-runtime-patch.v1"
-_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v1"
-_INSTALL_MARKER = "_nico_candidate_lineage_install_v1"
-_STAGE_MARKER = "_nico_candidate_lineage_stage_v1"
+VERSION = "nico.candidate-lineage-runtime-patch.v2"
+_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v2"
+_INSTALL_MARKER = "_nico_candidate_lineage_install_v2"
+_STAGE_MARKER = "_nico_candidate_lineage_stage_v2"
 _HEAVY = {"pdf_base64", "html", "markdown", "scanner_results", "raw_output", "stdout", "stderr"}
 
 
-def _find_lineage(node: Any, depth: int = 0) -> Mapping[str, Any]:
+def _find_mapping(node: Any, field: str, depth: int = 0) -> Mapping[str, Any]:
     if depth > 8:
         return {}
     if isinstance(node, Mapping):
-        direct = node.get("candidate_lineage")
+        direct = node.get(field)
         if isinstance(direct, Mapping):
             return direct
         for key, value in node.items():
             if str(key).casefold() in _HEAVY:
                 continue
-            found = _find_lineage(value, depth + 1)
+            found = _find_mapping(value, field, depth + 1)
             if found:
                 return found
     elif isinstance(node, list) and len(node) <= 250:
         for value in node:
-            found = _find_lineage(value, depth + 1)
+            found = _find_mapping(value, field, depth + 1)
             if found:
                 return found
     return {}
+
+
+def _find_lineage(node: Any, depth: int = 0) -> Mapping[str, Any]:
+    return _find_mapping(node, "candidate_lineage", depth)
+
+
+def _find_technical_triage(node: Any, depth: int = 0) -> Mapping[str, Any]:
+    return _find_mapping(node, "technical_candidate_triage", depth)
 
 
 def _patch_candidate_stage() -> bool:
@@ -50,6 +60,7 @@ def _patch_candidate_stage() -> bool:
         lineage = _find_lineage(canonical)
         if not lineage or lineage.get("status") != "complete":
             return stage
+        technical_triage = _find_technical_triage(canonical)
         output = deepcopy(stage)
         evidence = [str(item) for item in output.get("evidence") or []]
         evidence.extend(
@@ -63,11 +74,47 @@ def _patch_candidate_stage() -> bool:
                 "Prior proposed dispositions were preserved with provenance; human approval was not carried forward.",
             ]
         )
+        if technical_triage.get("status") == "complete":
+            evidence.extend(
+                [
+                    (
+                        "Retained technical triage imported: "
+                        f"{technical_triage.get('matched_current_candidate_records', 0)} current candidate records matched."
+                    ),
+                    (
+                        "Imported technical verdicts: "
+                        f"not_actionable={technical_triage.get('imported_not_actionable_records', 0)}; "
+                        f"needs_review={technical_triage.get('imported_needs_review_records', 0)}."
+                    ),
+                    (
+                        "Current-only candidates awaiting technical triage: "
+                        f"{technical_triage.get('current_only_candidate_records', 0)} records "
+                        f"({technical_triage.get('current_only_candidate_occurrences', 0)} occurrences)."
+                    ),
+                    (
+                        "Technical triage is proposal-only retained evidence. "
+                        "It does not mutate canonical dispositions, carry human approval forward, "
+                        "or authorize client delivery."
+                    ),
+                ]
+            )
+            output["technical_candidate_triage"] = deepcopy(dict(technical_triage))
+        elif technical_triage:
+            evidence.append(
+                "Retained technical triage could not be imported; current candidates remain review-required."
+            )
+            output["technical_candidate_triage"] = deepcopy(dict(technical_triage))
+
         output["evidence"] = evidence
         output["summary"] = (
             "Scanner candidates remain separate from confirmed material findings. "
-            "The prior canonical register was imported, cross-SHA lineage was reconciled, "
-            "and new or changed observations remain human-review work."
+            "The prior canonical register was imported and cross-SHA lineage was reconciled. "
+            + (
+                "Retained technical triage distinguishes prior not-actionable proposals, "
+                "remaining needs-review work, and current-only candidates; authorized human approval is still pending."
+                if technical_triage.get("status") == "complete"
+                else "New or changed observations remain human-review work."
+            )
         )
         for key in ("unavailable", "unavailable_data_notes"):
             output[key] = [
@@ -91,7 +138,8 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
     if not getattr(current_builder, _PROVIDER_MARKER, False):
         @wraps(current_builder)
         def build_with_lineage(scan: Mapping[str, Any], commit_sha: str):
-            return apply_candidate_lineage(current_builder(scan, commit_sha))
+            lineage_register = apply_candidate_lineage(current_builder(scan, commit_sha))
+            return apply_candidate_technical_triage(lineage_register)
 
         setattr(build_with_lineage, _PROVIDER_MARKER, True)
         setattr(build_with_lineage, "_nico_previous", current_builder)
@@ -107,6 +155,10 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
                 {
                     "candidate_lineage_migration_bound": True,
                     "candidate_lineage_schema": LINEAGE_VERSION,
+                    "candidate_technical_triage_bound": True,
+                    "candidate_technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
+                    "technical_triage_authority": "proposal_only_pending_authorized_human_review",
+                    "technical_triage_mutates_canonical_disposition": False,
                     "prior_proposed_dispositions_may_carry_forward": True,
                     "human_approval_may_carry_forward": False,
                     "client_delivery_allowed": False,
@@ -127,6 +179,10 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
         "provider_install_bound": getattr(providers.install_native_comprehensive_providers, _INSTALL_MARKER, False),
         "report_stage_bound": stage_bound,
         "lineage_schema": LINEAGE_VERSION,
+        "technical_triage_bound": True,
+        "technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
+        "technical_triage_authority": "proposal_only_pending_authorized_human_review",
+        "canonical_dispositions_mutated_by_technical_triage": False,
         "human_approval_carried_forward": False,
         "client_delivery_allowed": False,
     }
