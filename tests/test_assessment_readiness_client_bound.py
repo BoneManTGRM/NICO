@@ -42,7 +42,9 @@ def test_normal_assessment_requests_retain_existing_retry_policy() -> None:
     assert "const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000]" in source
     assert "TRANSIENT_STATUS.has(response.status)" in source
     assert "attempt < retryDelays.length - 1" in source
-    assert 'code: "assessment_transient_retry"' in source
+    assert "return {retry: true}" in source
+    assert "if (attemptResult.retry)" in source
+    assert "continue;" in source
 
 
 def test_readiness_and_run_status_timeouts_route_to_recoverable_service_unavailable_state() -> None:
