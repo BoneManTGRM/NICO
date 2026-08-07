@@ -43,7 +43,7 @@ def test_normal_assessment_requests_retain_existing_retry_policy() -> None:
     assert "TRANSIENT_STATUS.has(response.status)" in source
     assert "attempt < retryDelays.length - 1" in source
     assert "return {retry: true}" in source
-    assert "if (attemptResult.retry)" in source
+    assert 'if (!("result" in attemptResult))' in source
     assert "continue;" in source
 
 
