@@ -7,12 +7,13 @@ from pathlib import Path
 from nico.candidate_technical_triage_v1 import load_default_technical_triage
 
 
+TRIAGE_DIR = Path("evidence/candidate-triage")
+
+
 def test_compact_triage_artifact_matches_retained_manifest() -> None:
     triage = load_default_technical_triage()
     manifest = json.loads(
-        Path("evidence/candidate-triage/manifest-9c876ba4.json").read_text(
-            encoding="utf-8"
-        )
+        (TRIAGE_DIR / "manifest-9c876ba4.json").read_text(encoding="utf-8")
     )
 
     assert triage["c"] == manifest["assessed_commit_sha"]
@@ -24,11 +25,20 @@ def test_compact_triage_artifact_matches_retained_manifest() -> None:
     assert triage["runtime_validation_performed"] is False
 
 
+def test_compact_triage_artifact_parts_are_contiguous_and_bounded() -> None:
+    parts = sorted(TRIAGE_DIR.glob("technical-triage-9c876ba4.part-*.b64"))
+
+    assert [part.name for part in parts] == [
+        f"technical-triage-9c876ba4.part-{index:02d}.b64"
+        for index in range(5)
+    ]
+    assert all(part.stat().st_size <= 5001 for part in parts)
+    assert not (TRIAGE_DIR / "technical-triage-9c876ba4.json.gz.b64").exists()
+
+
 def test_manifest_source_digest_is_sha256_shaped() -> None:
     manifest = json.loads(
-        Path("evidence/candidate-triage/manifest-9c876ba4.json").read_text(
-            encoding="utf-8"
-        )
+        (TRIAGE_DIR / "manifest-9c876ba4.json").read_text(encoding="utf-8")
     )
     digest = manifest["source_triage_sha256"]
 
