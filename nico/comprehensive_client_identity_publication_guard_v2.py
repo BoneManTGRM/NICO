@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import html
-import io
 import re
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
-
-from pypdf import PdfReader
 
 VERSION = "nico.comprehensive-client-identity-publication-guard.v2"
 _MARKER = "__nico_comprehensive_client_identity_publication_guard_v2__"
@@ -47,6 +44,27 @@ _IDENTITY_LABELS = {
     "target id",
     "target name",
 }
+_IDENTITY_CONTAINER_KEYS = {
+    "identity",
+    "client_identity",
+    "customer_identity",
+    "project_identity",
+    "workspace_identity",
+    "target_identity",
+    "assessment_identity",
+    "report_identity",
+    "run_identity",
+    "engagement_identity",
+    "artifact_identity",
+}
+_DIRECT_IDENTITY_CONTAINERS = {
+    "assessment",
+    "metadata",
+    "report_metadata",
+    "run_metadata",
+    "artifact_manifest",
+    "approval_subject",
+}
 _DIRECT_IDENTITY_LINE = re.compile(
     r"^\s*(?:[-*]\s*)?"
     r"(client|customer|project|workspace|target)"
@@ -71,13 +89,26 @@ def _identity_placeholder(field: str, value: Any) -> bool:
     return normalized in _IDENTITY_SENTINELS.get(field.casefold(), set())
 
 
-def sanitize_public_identity_fields(value: Any) -> Any:
-    """Sanitize exact client-identity fields while preserving literal source evidence.
+def _public_identity_parent(path: tuple[str, ...]) -> bool:
+    if not path:
+        return True
+    parent = path[-1].casefold()
+    return parent in _IDENTITY_CONTAINER_KEYS or (
+        len(path) == 1 and parent in _DIRECT_IDENTITY_CONTAINERS
+    )
+
+
+def sanitize_public_identity_fields(
+    value: Any,
+    *,
+    _path: tuple[str, ...] = (),
+) -> Any:
+    """Sanitize public identity fields while preserving literal technical evidence.
 
     Internal sentinel values are valid processing identities, but they are not client
-    identities. Only values stored under explicit identity field names are projected
-    to ``Not supplied``. Free-form source evidence is intentionally left unchanged,
-    because a repository can legitimately contain strings such as ``default_project``.
+    identities. Only explicit identity fields at public identity boundaries are
+    projected to ``Not supplied``. Free-form and structured scanner/source evidence
+    is retained exactly, even if the assessed repository contains ``default_project``.
     """
 
     if isinstance(value, Mapping):
@@ -85,22 +116,33 @@ def sanitize_public_identity_fields(value: Any) -> Any:
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             normalized_key = key.casefold()
-            if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
-                normalized_key, raw_value
+            if (
+                _public_identity_parent(_path)
+                and normalized_key in _IDENTITY_SENTINELS
+                and _identity_placeholder(normalized_key, raw_value)
             ):
                 output[key] = "Not supplied"
             else:
-                output[key] = sanitize_public_identity_fields(raw_value)
+                output[key] = sanitize_public_identity_fields(
+                    raw_value,
+                    _path=(*_path, key),
+                )
         return output
     if isinstance(value, list):
-        return [sanitize_public_identity_fields(item) for item in value]
+        return [
+            sanitize_public_identity_fields(item, _path=(*_path, "[]"))
+            for item in value
+        ]
     if isinstance(value, tuple):
-        return tuple(sanitize_public_identity_fields(item) for item in value)
+        return tuple(
+            sanitize_public_identity_fields(item, _path=(*_path, "[]"))
+            for item in value
+        )
     return deepcopy(value)
 
 
 def sanitize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Project public identity fields in the report package without changing evidence text."""
+    """Project client-safe identity without changing technical evidence or scores."""
 
     result = deepcopy(dict(package))
     canonical = (
@@ -132,22 +174,40 @@ def sanitize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     return result
 
 
-def _identity_field_violations(value: Any, path: str = "") -> list[str]:
+def _identity_field_violations(
+    value: Any,
+    path: str = "",
+    _parts: tuple[str, ...] = (),
+) -> list[str]:
     violations: list[str] = []
     if isinstance(value, Mapping):
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             child = f"{path}.{key}" if path else key
             normalized_key = key.casefold()
-            if normalized_key in _IDENTITY_SENTINELS and _identity_placeholder(
-                normalized_key, raw_value
+            if (
+                _public_identity_parent(_parts)
+                and normalized_key in _IDENTITY_SENTINELS
+                and _identity_placeholder(normalized_key, raw_value)
             ):
                 violations.append(child)
             else:
-                violations.extend(_identity_field_violations(raw_value, child))
+                violations.extend(
+                    _identity_field_violations(
+                        raw_value,
+                        child,
+                        (*_parts, key),
+                    )
+                )
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            violations.extend(_identity_field_violations(item, f"{path}[{index}]"))
+            violations.extend(
+                _identity_field_violations(
+                    item,
+                    f"{path}[{index}]",
+                    (*_parts, "[]"),
+                )
+            )
     return violations
 
 
@@ -161,15 +221,15 @@ def _surface_identity_violations(surface: str) -> list[str]:
     for index, line in enumerate(lines):
         matched = _TABLE_IDENTITY_LINE.match(line) or _DIRECT_IDENTITY_LINE.match(line)
         if matched:
-            value = _text(matched.group(3), 300).strip("`*_ ").casefold()
-            if value in _ALL_SENTINELS:
+            rendered = _text(matched.group(3), 300).strip("`*_ ").casefold()
+            if rendered in _ALL_SENTINELS:
                 violations.append(line)
                 continue
 
         label = line.casefold().rstrip(":")
         if label in _IDENTITY_LABELS and index + 1 < len(lines):
-            value = lines[index + 1].strip("`*_ |:").casefold()
-            if value in _ALL_SENTINELS:
+            rendered = lines[index + 1].strip("`*_ |:").casefold()
+            if rendered in _ALL_SENTINELS:
                 violations.append(f"{line}: {lines[index + 1]}")
 
     return violations
@@ -236,8 +296,8 @@ def assert_client_identity_publication_guard(
         if not isinstance(stage, Mapping):
             continue
         for line in stage.get("evidence") or []:
-            value = cleanup._text(line)
-            if not value or cleanup._PUNCTUATION_ONLY.fullmatch(value):
+            normalized = cleanup._text(line)
+            if not normalized or cleanup._PUNCTUATION_ONLY.fullmatch(normalized):
                 raise ValueError(
                     "client stage evidence retained a blank or punctuation-only value"
                 )
