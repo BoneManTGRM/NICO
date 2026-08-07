@@ -61,19 +61,22 @@ def test_health_warmup_never_substitutes_for_authoritative_readiness() -> None:
     assert "health_used_as_readiness_evidence: false" in source
 
 
-def test_transient_readiness_failures_delegate_retry_to_browser() -> None:
+def test_transient_failure_returns_one_semantic_block_without_retry_multiplication() -> None:
     source = ROUTE.read_text(encoding="utf-8")
     blocked = source[source.index("function blockedReadiness"):source.index("function upstreamReason")]
     terminal = source[source.index("const reason = upstreamReason"):]
 
-    assert 'transportStatus = 200' in blocked
-    assert 'const retryable = TRANSIENT_STATUS.has(transportStatus)' in blocked
+    assert "retryable = false" in blocked
+    assert "upstreamStatus: number | null = null" in blocked
     assert 'detail: {' in blocked
     assert 'request_id: requestId' in blocked
-    assert 'browser_retry_authoritative: retryable' in blocked
-    assert '"Retry-After": "2"' in blocked
+    assert 'browser_retry_authoritative: false' in blocked
+    assert 'retry_requires_explicit_user_action: retryable' in blocked
+    assert 'status: 200' in blocked
+    assert '"Retry-After"' not in blocked
     assert 'diagnostic.httpStatus == null || TRANSIENT_STATUS.has(diagnostic.httpStatus)' in terminal
-    assert 'transient ? 503 : 200' in terminal
+    assert "transient,\n    diagnostic.httpStatus" in terminal
+    assert "transient ? 503 : 200" not in terminal
 
 
 def test_successful_upstream_readiness_is_forwarded_without_reinterpretation() -> None:

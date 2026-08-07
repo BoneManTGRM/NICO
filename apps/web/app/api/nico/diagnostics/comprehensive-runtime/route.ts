@@ -86,9 +86,9 @@ function blockedReadiness(
   message: string,
   upstreamRequests: number,
   extra: JsonRecord = {},
-  transportStatus = 200,
+  retryable = false,
+  upstreamStatus: number | null = null,
 ): Response {
-  const retryable = TRANSIENT_STATUS.has(transportStatus);
   return Response.json(
     {
       status: "blocked",
@@ -110,22 +110,24 @@ function blockedReadiness(
       preflight_proxy: {
         status: retryable ? "transient_failure" : "bounded_failure",
         upstream_requests: upstreamRequests,
+        upstream_status: upstreamStatus,
         health_warmup_budget_ms: HEALTH_WARMUP_BUDGET_MS,
         health_request_timeout_ms: HEALTH_REQUEST_TIMEOUT_MS,
         health_retry_delay_ms: HEALTH_RETRY_DELAY_MS,
         diagnostic_timeout_ms: DIAGNOSTIC_TIMEOUT_MS,
-        browser_retry_authoritative: retryable,
+        browser_retry_authoritative: false,
+        retry_requires_explicit_user_action: retryable,
         ...extra,
       },
       human_review_required: true,
       client_delivery_allowed: false,
     },
     {
-      status: transportStatus,
-      headers: {
-        ...boundedHeaders(requestId, upstreamRequests),
-        ...(retryable ? {"Retry-After": "2"} : {}),
-      },
+      // The dedicated route already owns the complete bounded warm-up cycle.
+      // Returning a semantic blocked payload over HTTP 200 prevents the browser's
+      // generic retry policy from repeating that entire 42-second cycle.
+      status: 200,
+      headers: boundedHeaders(requestId, upstreamRequests),
     },
   );
 }
@@ -289,6 +291,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       diagnostic_failure_class: diagnostic.failureClass,
       health_used_as_readiness_evidence: false,
     },
-    transient ? 503 : 200,
+    transient,
+    diagnostic.httpStatus,
   );
 }

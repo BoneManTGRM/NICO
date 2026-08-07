@@ -19,6 +19,8 @@ export type AssessmentRunIssue = {
 
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
+const READINESS_PATH = "/diagnostics/comprehensive-runtime";
+const READINESS_CLIENT_TIMEOUT_MS = 48_000;
 const BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection";
 const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const PERSISTENCE_BLOCK_CODES = new Set([
@@ -32,6 +34,7 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
   "assessment_backend_configuration_conflict",
   "assessment_backend_unreachable",
   "assessment_invalid_json",
+  "assessment_readiness_timeout",
 ]);
 
 function browserHeaders(init?: HeadersInit): Headers {
@@ -48,36 +51,59 @@ export async function requestWithRetry(
   init: RequestInit,
   copy: ReturnType<typeof copyFor>,
 ): Promise<Result> {
+  const readinessPreflight = path === READINESS_PATH;
+  // The dedicated readiness route already performs its own bounded Railway
+  // warm-up and authoritative diagnostic request. Repeating that complete
+  // server cycle in the browser can keep mobile Safari in "Checking readiness"
+  // for minutes, so readiness gets exactly one browser request.
+  const retryDelays = readinessPreflight ? [0] : CLIENT_RETRY_DELAYS_MS;
   let lastError: unknown = null;
-  for (
-    let attempt = 0;
-    attempt < CLIENT_RETRY_DELAYS_MS.length;
-    attempt += 1
-  ) {
-    const delay = CLIENT_RETRY_DELAYS_MS[attempt];
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    const delay = retryDelays[attempt];
     if (delay) {
       await wait(delay);
     }
+
+    const controller = readinessPreflight ? new AbortController() : null;
+    let readinessTimedOut = false;
+    const timeoutId = controller
+      ? window.setTimeout(() => {
+          readinessTimedOut = true;
+          controller.abort();
+        }, READINESS_CLIENT_TIMEOUT_MS)
+      : null;
+
     try {
       const response = await fetch(apiUrl(path), {
         ...init,
         headers: browserHeaders(init.headers),
         cache: "no-store",
+        signal: controller?.signal || init.signal,
       });
       if (
         TRANSIENT_STATUS.has(response.status) &&
-        attempt < CLIENT_RETRY_DELAYS_MS.length - 1
+        attempt < retryDelays.length - 1
       ) {
         await response.arrayBuffer();
         continue;
       }
       return await parseJson(response, copy);
     } catch (error) {
-      lastError = error;
+      lastError = readinessTimedOut
+        ? new AssessmentApiError(copy.serviceUnavailableMessage, {
+            status: 504,
+            code: "assessment_readiness_timeout",
+            retryable: true,
+          })
+        : error;
       const retryable =
-        error instanceof AssessmentApiError ? error.retryable : true;
-      if (!retryable || attempt >= CLIENT_RETRY_DELAYS_MS.length - 1) {
+        lastError instanceof AssessmentApiError ? lastError.retryable : true;
+      if (!retryable || attempt >= retryDelays.length - 1) {
         break;
+      }
+    } finally {
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
       }
     }
   }
