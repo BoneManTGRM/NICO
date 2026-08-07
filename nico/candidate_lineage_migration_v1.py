@@ -1,17 +1,35 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import gzip
 import hashlib
 import json
-from collections import defaultdict, deque
+import re
+from collections import Counter, defaultdict, deque
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
-VERSION = "nico.candidate-lineage-migration.v1"
-_BASELINE_FILE = Path(__file__).resolve().parents[1] / "evidence" / "candidate-lineage" / "baseline-9c876ba4.json.gz.b64"
+VERSION = "nico.candidate-lineage-migration.v3"
+_ROOT = Path(__file__).resolve().parents[1]
+_BASELINE_DIR = _ROOT / "evidence" / "candidate-lineage" / "baseline-9c876ba4-chunks"
+_BASELINE_MANIFEST = _BASELINE_DIR / "manifest.json"
+_TRIAGE_MANIFEST = _ROOT / "evidence" / "triage-662" / "manifest.json"
+_EXPECTED_REPOSITORY = "BoneManTGRM/NICO"
+_EXPECTED_COMMIT = "9c876ba4e3e9bb152de52567232038e52a6bbb3e"
+_EXPECTED_COUNT = 662
+_EXPECTED_COUNTS = {"dependency": 59, "secret": 17, "static": 586}
+_EXPECTED_REGISTER_SHA256 = "8cba692c557a0503da37bdbadc77cfd57e687421fcf8d6044d98f781922182a2"
+_EXPECTED_ENCODED_SHA256 = "97f8307f3a4ca4e37232637acc1877f69c603bd1484c984f868c61cdaacba509"
+_EXPECTED_PROPOSALS = {
+    "dependency": "dependency_reachability_and_upgrade_review",
+    "secret": "test_fixture_confirmation_required",
+    "static": "source_review_required",
+}
 _ROOTS = (".github/", "apps/", "config/", "docs/", "evidence/", "nico/", "scripts/", "tests/")
+_HEX20 = re.compile(r"^[0-9a-f]{20}$")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _text(value: Any) -> str:
@@ -56,20 +74,165 @@ def lineage_keys(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_default_baseline(path: Path | None = None) -> dict[str, Any]:
-    source = path or _BASELINE_FILE
-    encoded = "".join(source.read_text(encoding="utf-8").split())
-    padding = "=" * (-len(encoded) % 4)
-    decoded = gzip.decompress(base64.b64decode(encoded + padding, validate=True)).decode("utf-8")
-    baseline = json.loads(decoded)
-    if baseline.get("s") != "nico.candidate-lineage-baseline.v2":
+def _json_object(path: Path, error: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(error) from exc
+    if not isinstance(value, dict):
+        raise ValueError(error)
+    return value
+
+
+def _counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    try:
+        result = {str(key): int(raw) for key, raw in value.items()}
+    except (TypeError, ValueError):
+        return {}
+    return result if all(number >= 0 for number in result.values()) else {}
+
+
+def _validate_source_manifest() -> dict[str, Any]:
+    source = _json_object(_TRIAGE_MANIFEST, "candidate_lineage_source_manifest_invalid")
+    artifacts = source.get("artifacts") if isinstance(source.get("artifacts"), Mapping) else {}
+    try:
+        candidate_count = int(source.get("candidate_count") or -1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("candidate_lineage_source_manifest_mismatch") from exc
+    required = (
+        source.get("schema") == "nico.triage_candidate_package_manifest.v1"
+        and source.get("repository") == _EXPECTED_REPOSITORY
+        and source.get("target_commit_sha") == _EXPECTED_COMMIT
+        and candidate_count == _EXPECTED_COUNT
+        and _counts(source.get("counts")) == _EXPECTED_COUNTS
+        and source.get("automated_status") == "automated_draft"
+        and source.get("human_review_status") == "pending"
+        and source.get("client_delivery_status") == "blocked"
+        and source.get("two_run_parity_verified") is True
+        and artifacts.get("candidate-register.json") == _EXPECTED_REGISTER_SHA256
+    )
+    if not required:
+        raise ValueError("candidate_lineage_source_manifest_mismatch")
+    return source
+
+
+def _validate_baseline(baseline: Mapping[str, Any], retained: bool) -> dict[str, Any]:
+    value = dict(baseline)
+    records = value.get("x")
+    try:
+        count = int(value.get("n"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("candidate_lineage_baseline_count_invalid") from exc
+    if value.get("s") != "nico.candidate-lineage-baseline.v2":
         raise ValueError("candidate_lineage_baseline_schema_invalid")
-    records = baseline.get("x")
-    if not isinstance(records, list) or len(records) != int(baseline.get("n") or -1):
+    if not isinstance(records, list) or len(records) != count:
         raise ValueError("candidate_lineage_baseline_count_invalid")
-    if baseline.get("a") != "none":
+    if value.get("a") != "none":
         raise ValueError("candidate_lineage_baseline_approval_authority_invalid")
-    return baseline
+    if retained:
+        if value.get("r") != _EXPECTED_REPOSITORY or value.get("c") != _EXPECTED_COMMIT:
+            raise ValueError("candidate_lineage_baseline_identity_invalid")
+        if count != _EXPECTED_COUNT or _counts(value.get("k")) != _EXPECTED_COUNTS:
+            raise ValueError("candidate_lineage_baseline_count_invalid")
+        ids: set[str] = set()
+        categories: Counter[str] = Counter()
+        for raw in records:
+            if not isinstance(raw, list) or len(raw) != 7:
+                raise ValueError("candidate_lineage_baseline_record_invalid")
+            exact, semantic, group, line, candidate, proposal, cluster = raw
+            if not all(_HEX20.fullmatch(str(item)) for item in (exact, semantic, group)):
+                raise ValueError("candidate_lineage_baseline_identity_hash_invalid")
+            if not isinstance(line, int) or line < 0:
+                raise ValueError("candidate_lineage_baseline_line_invalid")
+            candidate = str(candidate)
+            proposal = str(proposal)
+            if not candidate or candidate in ids or not str(cluster):
+                raise ValueError("candidate_lineage_baseline_record_identity_invalid")
+            category = next(
+                (name for name in _EXPECTED_COUNTS if candidate.startswith(f"NICO-{name.upper()}-")),
+                "",
+            )
+            if not category or proposal != _EXPECTED_PROPOSALS[category]:
+                raise ValueError("candidate_lineage_baseline_proposal_invalid")
+            ids.add(candidate)
+            categories[category] += 1
+        if dict(categories) != _EXPECTED_COUNTS or len(ids) != _EXPECTED_COUNT:
+            raise ValueError("candidate_lineage_baseline_category_counts_invalid")
+    return value
+
+
+def _load_retained_baseline() -> dict[str, Any]:
+    source = _validate_source_manifest()
+    manifest = _json_object(_BASELINE_MANIFEST, "candidate_lineage_baseline_manifest_invalid")
+    try:
+        manifest_count = int(manifest.get("candidate_count") or -1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("candidate_lineage_baseline_manifest_mismatch") from exc
+    if not (
+        manifest.get("schema") == "nico.candidate-lineage-baseline-chunks.v1"
+        and manifest.get("baseline_schema") == "nico.candidate-lineage-baseline.v2"
+        and manifest.get("repository") == _EXPECTED_REPOSITORY
+        and manifest.get("target_commit_sha") == _EXPECTED_COMMIT
+        and manifest_count == _EXPECTED_COUNT
+        and _counts(manifest.get("counts")) == _EXPECTED_COUNTS
+        and manifest.get("approval_authority") == "none"
+        and manifest.get("source_candidate_register_sha256") == source["artifacts"]["candidate-register.json"]
+        and manifest.get("encoded_sha256") == _EXPECTED_ENCODED_SHA256
+    ):
+        raise ValueError("candidate_lineage_baseline_manifest_mismatch")
+    chunks = manifest.get("chunks")
+    if not isinstance(chunks, list) or not chunks:
+        raise ValueError("candidate_lineage_baseline_chunks_invalid")
+    encoded_parts: list[str] = []
+    for expected_index, meta in enumerate(chunks):
+        if not isinstance(meta, Mapping):
+            raise ValueError("candidate_lineage_baseline_chunk_metadata_invalid")
+        try:
+            index = int(meta.get("index", -1))
+            length = int(meta.get("length"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("candidate_lineage_baseline_chunk_metadata_invalid") from exc
+        if index != expected_index:
+            raise ValueError("candidate_lineage_baseline_chunk_index_invalid")
+        filename = str(meta.get("file") or "")
+        digest = str(meta.get("sha256") or "")
+        if Path(filename).name != filename or not filename.endswith(".b64") or not _HEX64.fullmatch(digest):
+            raise ValueError("candidate_lineage_baseline_chunk_metadata_invalid")
+        try:
+            encoded = "".join((_BASELINE_DIR / filename).read_text(encoding="ascii").split())
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("candidate_lineage_baseline_chunk_unreadable") from exc
+        if len(encoded) != length or hashlib.sha256(encoded.encode("ascii")).hexdigest() != digest:
+            raise ValueError("candidate_lineage_baseline_chunk_digest_invalid")
+        encoded_parts.append(encoded)
+    encoded = "".join(encoded_parts)
+    if hashlib.sha256(encoded.encode("ascii")).hexdigest() != _EXPECTED_ENCODED_SHA256:
+        raise ValueError("candidate_lineage_baseline_encoded_digest_invalid")
+    try:
+        compressed = base64.b64decode(encoded + "=" * (-len(encoded) % 4), validate=True)
+        baseline = json.loads(gzip.decompress(compressed).decode("utf-8"))
+    except (ValueError, binascii.Error, UnicodeError, gzip.BadGzipFile, json.JSONDecodeError) as exc:
+        raise ValueError("candidate_lineage_baseline_payload_invalid") from exc
+    if not isinstance(baseline, Mapping):
+        raise ValueError("candidate_lineage_baseline_payload_invalid")
+    return _validate_baseline(baseline, retained=True)
+
+
+def load_default_baseline(path: Path | None = None) -> dict[str, Any]:
+    if path is None:
+        return _load_retained_baseline()
+    source = Path(path)
+    try:
+        encoded = "".join(source.read_text(encoding="utf-8").split())
+        compressed = base64.b64decode(encoded + "=" * (-len(encoded) % 4), validate=True)
+        baseline = json.loads(gzip.decompress(compressed).decode("utf-8"))
+    except (OSError, ValueError, binascii.Error, UnicodeError, gzip.BadGzipFile, json.JSONDecodeError) as exc:
+        raise ValueError("candidate_lineage_legacy_baseline_invalid") from exc
+    if not isinstance(baseline, Mapping):
+        raise ValueError("candidate_lineage_legacy_baseline_invalid")
+    return _validate_baseline(baseline, retained=False)
 
 
 def _baseline_rows(baseline: Mapping[str, Any]) -> list[dict[str, Any]]:
