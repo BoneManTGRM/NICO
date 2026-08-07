@@ -4,18 +4,16 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
 VERSION = "nico.candidate-technical-triage.v1"
-_TRIAGE_FILE = (
-    Path(__file__).resolve().parents[1]
-    / "evidence"
-    / "candidate-triage"
-    / "technical-triage-9c876ba4.json.gz.b64"
-)
+_TRIAGE_DIR = Path(__file__).resolve().parents[1] / "evidence" / "candidate-triage"
+_TRIAGE_PART_GLOB = "technical-triage-9c876ba4.part-*.b64"
+_PART_RE = re.compile(r"^technical-triage-9c876ba4\.part-(\d{2})\.b64$")
 _SAFE_LINEAGE_STATUSES = frozenset(
     {"carried_forward_exact", "carried_forward_location_changed"}
 )
@@ -25,9 +23,33 @@ _ALLOWED_PROPOSALS = frozenset(
 )
 
 
+def _default_triage_parts() -> list[Path]:
+    parts = sorted(_TRIAGE_DIR.glob(_TRIAGE_PART_GLOB), key=lambda path: path.name)
+    if not parts:
+        raise FileNotFoundError("candidate_technical_triage_parts_missing")
+
+    indexes: list[int] = []
+    for part in parts:
+        match = _PART_RE.fullmatch(part.name)
+        if match is None:
+            raise ValueError("candidate_technical_triage_part_name_invalid")
+        indexes.append(int(match.group(1)))
+    if indexes != list(range(len(parts))):
+        raise ValueError("candidate_technical_triage_parts_incomplete")
+    return parts
+
+
+def _read_encoded_source(path: Path | None = None) -> str:
+    if path is not None:
+        return "".join(path.read_text(encoding="utf-8").split())
+    return "".join(
+        "".join(part.read_text(encoding="utf-8").split())
+        for part in _default_triage_parts()
+    )
+
+
 def load_default_technical_triage(path: Path | None = None) -> dict[str, Any]:
-    source = path or _TRIAGE_FILE
-    encoded = "".join(source.read_text(encoding="utf-8").split())
+    encoded = _read_encoded_source(path)
     padding = "=" * (-len(encoded) % 4)
     decoded = gzip.decompress(
         base64.b64decode(encoded + padding, validate=True)
@@ -117,7 +139,9 @@ def _triage_rows(payload: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             "technical_triage_rationale": str(rationale),
             "technical_triage_boundary_assessment": str(boundary_assessment),
             "technical_triage_recommended_next_step": str(recommended_next_step),
-            "technical_triage_proof_gaps": deepcopy(proof_gaps if isinstance(proof_gaps, list) else []),
+            "technical_triage_proof_gaps": deepcopy(
+                proof_gaps if isinstance(proof_gaps, list) else []
+            ),
             "technical_triage_exploitability_stack_rank": rank,
             "technical_triage_rank_basis": str(rank_basis or ""),
         }
