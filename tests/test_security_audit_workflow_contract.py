@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
 
@@ -56,13 +55,12 @@ def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
         for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
-    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    production_dependencies = set(project["project"]["dependencies"])
+    pyproject = PYPROJECT.read_text(encoding="utf-8")
 
     assert "pypdf==6.15.0" in requirements
     assert "pypdf==6.14.2" not in requirements
-    assert "pypdf>=6.15.0,<7" in production_dependencies
-    assert "pypdf>=6.14.2,<7" not in production_dependencies
+    assert '"pypdf>=6.15.0,<7"' in pyproject
+    assert '"pypdf>=6.14.2,<7"' not in pyproject
 
 
 def test_provider_dispatch_inputs_are_passed_through_environment() -> None:
