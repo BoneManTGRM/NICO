@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-EXPECTED = {"static": 586, "dependency": 59, "secret": 17}
+EXPECTED = {"static": 586, "dependency": 59, "secret": 17}  # nosec B105 - candidate counts, not credentials
 
 
 def read_json(path: Path) -> dict[str, Any]:
