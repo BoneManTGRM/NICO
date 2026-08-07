@@ -28,7 +28,11 @@ def secret_record(run: dict[str, Any], sha: str, *, scanner: str, rule: str, pat
                    "relevance require authorized human review; raw credential material is omitted."),
         sha=sha, evidence_fingerprint=fingerprint(run, scanner),
     )
-    row.update({"history_commit": commit, "verified": verified, "secret_material_omitted": True})
+    row.update({
+        "history_commit": commit,
+        "verified": verified,
+        "secret_material_omitted": True,  # nosec B105 - redaction metadata flag, not a credential
+    })
     return row
 
 
@@ -61,7 +65,7 @@ def secret_candidates(run: dict[str, Any], sha: str) -> tuple[list[dict[str, Any
                 "scanner": "trufflehog", "category": "secret",
                 "reason": "exact_duplicate_scanner_observation", "path": path, "line": line,
                 "history_commit": commit, "canonical_observation_retained": True,
-                "secret_material_omitted": True,
+                "secret_material_omitted": True,  # nosec B105 - redaction metadata flag, not a credential
             })
         if path.casefold() == ".env.example" and verified is False:
             excluded.append({
@@ -69,7 +73,7 @@ def secret_candidates(run: dict[str, Any], sha: str) -> tuple[list[dict[str, Any
                 "scanner": "trufflehog", "category": "secret",
                 "reason": "unverified_example_template_observation", "path": path, "line": line,
                 "history_commit": commit, "canonical_observation_retained": False,
-                "secret_material_omitted": True,
+                "secret_material_omitted": True,  # nosec B105 - redaction metadata flag, not a credential
             })
             continue
         output.append(secret_record(run, sha, scanner="trufflehog", rule=detector, path=path,
