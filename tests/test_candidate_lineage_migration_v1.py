@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from nico.candidate_lineage_migration_v1 import (
-    apply_candidate_lineage,
-    lineage_keys,
-    load_default_baseline,
-)
+from nico.candidate_lineage_migration_v1 import apply_candidate_lineage, lineage_keys, load_default_baseline
 
 
 def _baseline_record(record: dict, candidate: str, proposal: str = "source_review_required") -> list:
@@ -13,26 +9,11 @@ def _baseline_record(record: dict, candidate: str, proposal: str = "source_revie
 
 
 def _baseline(records: list[list]) -> dict:
-    return {
-        "s": "nico.candidate-lineage-baseline.v2",
-        "r": "BoneManTGRM/NICO",
-        "c": "a" * 40,
-        "n": len(records),
-        "k": {"static": len(records)},
-        "a": "none",
-        "x": records,
-    }
+    return {"s": "nico.candidate-lineage-baseline.v2", "r": "BoneManTGRM/NICO", "c": "a" * 40, "n": len(records), "k": {"static": len(records)}, "a": "none", "x": records}
 
 
 def _register(findings: list[dict]) -> dict:
-    return {
-        "artifact_schema": "nico.canonical-scanner-findings.v1",
-        "status": "complete",
-        "exact_commit_sha": "b" * 40,
-        "findings": findings,
-        "totals": {"raw": sum(item.get("occurrence_count", 1) for item in findings)},
-        "canonical_digest_sha256": "old",
-    }
+    return {"artifact_schema": "nico.canonical-scanner-findings.v1", "status": "complete", "assessment_subject": {"repository": "BoneManTGRM/NICO"}, "exact_commit_sha": "b" * 40, "findings": findings, "totals": {"raw": sum(item.get("occurrence_count", 1) for item in findings)}, "canonical_digest_sha256": "old"}
 
 
 def test_default_baseline_is_decodable_and_complete() -> None:
@@ -44,22 +25,8 @@ def test_default_baseline_is_decodable_and_complete() -> None:
 
 
 def test_exact_candidate_carries_proposal_but_never_human_approval() -> None:
-    current = {
-        "finding_id": "NICO-SCAN-CURRENT",
-        "scanner": "bandit",
-        "category": "static",
-        "rule_id": "B101",
-        "source_path": "scripts/example.py",
-        "line": 12,
-        "evidence": "assert used",
-        "disposition": "review_required",
-        "occurrence_count": 1,
-        "exact_commit_sha": "b" * 40,
-    }
-    result = apply_candidate_lineage(
-        _register([current]),
-        baseline=_baseline([_baseline_record(current, "NICO-OLD-1")]),
-    )
+    current = {"finding_id": "NICO-SCAN-CURRENT", "scanner": "bandit", "category": "static", "rule_id": "B101", "source_path": "scripts/example.py", "line": 12, "evidence": "assert used", "disposition": "review_required", "occurrence_count": 1, "exact_commit_sha": "b" * 40}
+    result = apply_candidate_lineage(_register([current]), baseline=_baseline([_baseline_record(current, "NICO-OLD-1")]))
     migrated = result["findings"][0]
     lineage = result["candidate_lineage"]
     assert migrated["lineage_status"] == "carried_forward_exact"
@@ -75,42 +42,10 @@ def test_exact_candidate_carries_proposal_but_never_human_approval() -> None:
 
 
 def test_line_shift_uses_semantic_lineage_and_new_candidate_stays_new() -> None:
-    prior = {
-        "scanner": "bandit",
-        "category": "static",
-        "rule_id": "B101",
-        "source_path": "scripts/example.py",
-        "line": 12,
-        "evidence": "assert used",
-    }
-    shifted = {
-        "finding_id": "NICO-SCAN-SHIFTED",
-        "scanner": "bandit",
-        "category": "static",
-        "rule_id": "B101",
-        "source_path": "/tmp/work/repo/scripts/example.py",
-        "line": 19,
-        "evidence": "assert used",
-        "disposition": "review_required",
-        "occurrence_count": 1,
-        "exact_commit_sha": "b" * 40,
-    }
-    new = {
-        "finding_id": "NICO-SCAN-NEW",
-        "scanner": "bandit",
-        "category": "static",
-        "rule_id": "B608",
-        "source_path": "scripts/new.py",
-        "line": 4,
-        "evidence": "hardcoded SQL",
-        "disposition": "review_required",
-        "occurrence_count": 1,
-        "exact_commit_sha": "b" * 40,
-    }
-    result = apply_candidate_lineage(
-        _register([shifted, new]),
-        baseline=_baseline([_baseline_record(prior, "NICO-OLD-1")]),
-    )
+    prior = {"scanner": "bandit", "category": "static", "rule_id": "B101", "source_path": "scripts/example.py", "line": 12, "evidence": "assert used"}
+    shifted = {"finding_id": "NICO-SCAN-SHIFTED", "scanner": "bandit", "category": "static", "rule_id": "B101", "source_path": "/tmp/work/repo/scripts/example.py", "line": 19, "evidence": "assert used", "disposition": "review_required", "occurrence_count": 1, "exact_commit_sha": "b" * 40}
+    new = {"finding_id": "NICO-SCAN-NEW", "scanner": "bandit", "category": "static", "rule_id": "B608", "source_path": "scripts/new.py", "line": 4, "evidence": "hardcoded SQL", "disposition": "review_required", "occurrence_count": 1, "exact_commit_sha": "b" * 40}
+    result = apply_candidate_lineage(_register([shifted, new]), baseline=_baseline([_baseline_record(prior, "NICO-OLD-1")]))
     assert result["findings"][0]["lineage_status"] == "carried_forward_location_changed"
     assert result["findings"][1]["lineage_status"] == "newly_observed"
     assert result["candidate_lineage"]["carried_forward_total"] == 1
@@ -119,18 +54,8 @@ def test_line_shift_uses_semantic_lineage_and_new_candidate_stays_new() -> None:
 
 
 def test_missing_prior_candidate_becomes_explicit_tombstone() -> None:
-    prior = {
-        "scanner": "bandit",
-        "category": "static",
-        "rule_id": "B101",
-        "source_path": "scripts/removed.py",
-        "line": 12,
-        "evidence": "assert used",
-    }
-    result = apply_candidate_lineage(
-        _register([]),
-        baseline=_baseline([_baseline_record(prior, "NICO-OLD-REMOVED")]),
-    )
+    prior = {"scanner": "bandit", "category": "static", "rule_id": "B101", "source_path": "scripts/removed.py", "line": 12, "evidence": "assert used"}
+    result = apply_candidate_lineage(_register([]), baseline=_baseline([_baseline_record(prior, "NICO-OLD-REMOVED")]))
     lineage = result["candidate_lineage"]
     assert lineage["no_longer_observed"] == 1
     assert lineage["tombstones"][0]["prior_candidate_id"] == "NICO-OLD-REMOVED"

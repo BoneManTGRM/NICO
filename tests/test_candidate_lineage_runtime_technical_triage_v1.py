@@ -3,16 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_runtime_patch_applies_lineage_before_technical_triage() -> None:
+def test_runtime_patch_orders_context_lineage_and_technical_triage() -> None:
     source = Path("nico/candidate_lineage_runtime_patch_v1.py").read_text(
         encoding="utf-8"
     )
 
-    lineage = source.index(
-        "register = apply_candidate_lineage(current_builder(scan, commit_sha))"
-    )
+    canonical = source.index("register = current_builder(scan, commit_sha)")
+    context = source.index("register = enrich_canonical_candidate_evidence(register, scan)")
+    lineage = source.index("register = apply_candidate_lineage(register)")
     technical = source.index("return apply_candidate_technical_triage(register)")
-    assert lineage < technical
+    assert canonical < context < lineage < technical
     assert "install_osv_scanner_context_patch()" in source
     assert '"human_approval_carried_forward": False' in source
     assert '"client_delivery_allowed": False' in source
