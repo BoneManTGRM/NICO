@@ -151,9 +151,11 @@ def test_unknown_prior_rule_fails_closed_instead_of_inventing_a_verdict() -> Non
 def test_runtime_patch_imports_lineage_before_technical_triage() -> None:
     source = Path("nico/candidate_lineage_runtime_patch_v1.py").read_text(encoding="utf-8")
 
-    lineage = source.index("lineage_register = apply_candidate_lineage(current_builder(scan, commit_sha))")
+    canonical = source.index("canonical = current_builder(scan, commit_sha)")
+    lineage = source.index("lineage_register = apply_candidate_lineage(canonical, baseline=baseline)")
     technical = source.index("return apply_candidate_technical_triage(lineage_register)")
-    assert lineage < technical
+    assert canonical < lineage < technical
+    assert "baseline, baseline_available, baseline_reason = _load_verified_baseline()" in source
     assert '"technical_triage_mutates_canonical_disposition": False' in source
     assert '"human_approval_may_carry_forward": False' in source
     assert '"client_delivery_allowed": False' in source
