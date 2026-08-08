@@ -43,50 +43,40 @@ def _record() -> dict:
     }
 
 
-def test_final_stage_uses_loaded_stage_result_snapshot_by_reference(monkeypatch) -> None:
+def test_final_stage_uses_loaded_stage_result_snapshot_by_reference() -> None:
     record = _record()
     observed: dict = {}
 
     def final_executor(context):
-        raise AssertionError("executor should be intercepted by the atomic boundary")
+        raise AssertionError("executor should be owned by the publication coordinator")
 
-    def execute_final_report_stage(executor, context):
-        observed["executor"] = executor
-        observed["context"] = context
-        return {
-            "status": "blocked",
-            "reason": "test_boundary",
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
-
-    def apply_result(source, *, stage_id, result):
-        assert stage_id == FINAL_REPORT_STAGE_ID
-        assert result["reason"] == "test_boundary"
-        return {**source, "revision": 8, "captured_result": result}
-
-    monkeypatch.setattr(
-        service_module,
-        "execute_final_report_stage",
-        execute_final_report_stage,
-    )
-    monkeypatch.setattr(
-        service_module,
-        "apply_comprehensive_stage_result",
-        apply_result,
-    )
+    class _Publication:
+        def advance(self, source, executor, context):
+            observed["source"] = source
+            observed["executor"] = executor
+            observed["context"] = context
+            return {
+                **source,
+                "revision": 8,
+                "captured_result": {
+                    "status": "running",
+                    "reason": "final_report_background_publication_in_progress",
+                },
+            }
 
     service = object.__new__(ComprehensiveRunService)
     service._store = _Store()
     service._stage_executors = {FINAL_REPORT_STAGE_ID: final_executor}
+    service._final_report_publication = _Publication()
 
     updated = service._run_next_stage(record)
 
+    assert observed["source"] is record
     assert observed["executor"] is final_executor
     assert observed["context"]["prior_stage_results"] is record["stage_results"]
     assert observed["context"]["human_review_required"] is True
     assert observed["context"]["client_delivery_allowed"] is False
-    assert updated["captured_result"]["status"] == "blocked"
+    assert updated["captured_result"]["status"] == "running"
 
 
 def test_nonfinal_stage_still_receives_an_isolated_copy(monkeypatch) -> None:
