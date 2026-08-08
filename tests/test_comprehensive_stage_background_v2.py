@@ -27,7 +27,7 @@ def _executors(calls: dict[str, int]) -> dict:
         def execute(context, *, _capability=capability):
             calls[_capability] = calls.get(_capability, 0) + 1
             if _capability == "authorization":
-                time.sleep(0.15)
+                time.sleep(1.0)
             return {
                 "status": "complete",
                 "capability": _capability,
@@ -68,7 +68,7 @@ def test_continuation_returns_running_marker_before_provider_finishes(tmp_path: 
     elapsed = time.monotonic() - started
 
     first_stage = COMPREHENSIVE_STAGES[0]
-    assert elapsed < 0.10
+    assert elapsed < 0.50
     assert response["status"] == "running"
     assert response["terminal"] is False
     assert response["revision"] == 2
@@ -92,7 +92,7 @@ def test_repeated_continue_does_not_launch_duplicate_stage(tmp_path: Path) -> No
     second = service.resume("comprun_detached_boundary", max_stages=1)
     assert second["revision"] == first["revision"]
 
-    deadline = time.monotonic() + 3.0
+    deadline = time.monotonic() + 4.0
     completed = service.load("comprun_detached_boundary")
     while COMPREHENSIVE_STAGES[0] not in completed["completed_stages"]:
         assert time.monotonic() < deadline
