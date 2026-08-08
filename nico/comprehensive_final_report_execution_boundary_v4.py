@@ -12,7 +12,7 @@ from nico.comprehensive_final_report_compact_base_v1 import (
     install_comprehensive_final_report_compact_base_v1,
 )
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v6"
+VERSION = "nico.comprehensive_final_report_execution_boundary.v7"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 600
 MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS = 30
@@ -51,6 +51,7 @@ def _blocked(
     recovery_supported: bool = False,
     recovery_scope: str | None = None,
 ) -> dict[str, Any]:
+    retained_execution = dict(execution or {})
     blocked = {
         "status": "blocked",
         "reason": reason,
@@ -67,11 +68,13 @@ def _blocked(
         "human_review_required": True,
         "client_delivery_allowed": False,
         "stage_execution": {
-            **dict(execution or {}),
+            **retained_execution,
             "artifact_schema": VERSION,
             "mode": "atomic_final_report_publication",
             "canonical_run_write_required": True,
-            "detached_background_execution": False,
+            "detached_background_execution": bool(
+                retained_execution.get("detached_background_execution")
+            ),
         },
     }
     if recovery_supported:
@@ -191,22 +194,63 @@ def _execute_bounded(
     return kind, value, elapsed
 
 
+def _execute_background_owned(
+    executor,
+    context: Mapping[str, Any],
+) -> tuple[str, Any, float]:
+    """Execute on the durable coordinator's tracked worker without nesting a timer thread.
+
+    A Python thread cannot be safely terminated after a join timeout. Creating a second
+    inner thread under the durable publication worker allowed a timed-out provider to
+    continue consuming the single production process after the canonical run had been
+    marked blocked. The durable coordinator already owns lifecycle, heartbeat, restart
+    recovery, and exact-run publication, so its tracked worker must own the provider
+    call directly.
+    """
+
+    started = time.perf_counter()
+    try:
+        value = executor(dict(context))
+    except BaseException as exc:
+        return "error", exc, round(time.perf_counter() - started, 3)
+    return "result", value, round(time.perf_counter() - started, 3)
+
+
 def execute_final_report_stage(
     executor,
     context: Mapping[str, Any],
     *,
     timeout_seconds: int | None = None,
+    background_worker_owned: bool = False,
 ) -> dict[str, Any]:
-    """Generate, validate, and return one exact final package for atomic run storage."""
+    """Generate, validate, and return one exact final package for atomic run storage.
 
-    limit = _timeout_seconds(timeout_seconds)
-    kind, value, elapsed = _execute_bounded(executor, context, limit)
+    Synchronous callers retain the bounded worker-thread contract. The durable
+    background publication coordinator sets ``background_worker_owned`` so it invokes
+    the provider on its already tracked worker and never leaves an untracked timeout
+    thread running after a canonical blocked result.
+    """
+
+    if background_worker_owned:
+        limit: int | None = None
+        kind, value, elapsed = _execute_background_owned(executor, context)
+    else:
+        limit = _timeout_seconds(timeout_seconds)
+        kind, value, elapsed = _execute_bounded(executor, context, limit)
     execution = {
         "artifact_schema": VERSION,
         "mode": "atomic_final_report_publication",
         "execution_timeout_seconds": limit,
         "elapsed_seconds": elapsed,
-        "detached_background_execution": False,
+        "detached_background_execution": background_worker_owned,
+        "background_worker_owned": background_worker_owned,
+        "provider_thread_owned_by_background_coordinator": background_worker_owned,
+        "nested_timeout_worker_created": not background_worker_owned,
+        "timeout_boundary": (
+            "durable_background_coordinator"
+            if background_worker_owned
+            else "bounded_worker_thread"
+        ),
         "full_context_deepcopy_skipped": True,
         "compact_intermediate_pdf_projection_installed": True,
     }
@@ -289,7 +333,7 @@ def execute_final_report_stage(
     output["stage_execution"] = {
         **execution,
         "canonical_run_write_required": True,
-        "canonical_run_written_only_by_request_thread": True,
+        "canonical_run_written_only_by_request_thread": not background_worker_owned,
         "artifact_validation_complete": True,
         "exact_identity_verified": True,
     }
