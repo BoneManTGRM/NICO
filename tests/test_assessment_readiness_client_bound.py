@@ -13,7 +13,9 @@ def test_readiness_preflight_uses_one_browser_attempt_with_absolute_timeout() ->
     assert 'const READINESS_PATH = "/diagnostics/comprehensive-runtime"' in source
     assert "const READINESS_CLIENT_TIMEOUT_MS = 48_000" in source
     assert "const readinessPreflight = path === READINESS_PATH" in source
-    assert "const boundedRequest = readinessPreflight || runStatusRequest" in source
+    assert (
+        "readinessPreflight || runStatusRequest || runContinueRequest" in source
+    )
     assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS" in source
     assert "new AbortController()" in source
     assert "new Promise<never>" in source
@@ -36,6 +38,24 @@ def test_persisted_run_status_recovery_has_its_own_absolute_timeout() -> None:
     assert '"assessment_run_status_timeout",' in source
 
 
+def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> None:
+    source = REQUESTS.read_text(encoding="utf-8")
+
+    assert "const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 90_000" in source
+    assert (
+        "const RUN_CONTINUE_PATH = "
+        "/^\\/assessment\\/comprehensive-run\\/[^/]+\\/continue$/" in source
+    )
+    assert (
+        'const runContinueRequest = method === "POST" && '
+        "RUN_CONTINUE_PATH.test(path)" in source
+    )
+    assert "readinessPreflight || runStatusRequest || runContinueRequest" in source
+    assert "runContinueRequest\n        ? RUN_CONTINUE_CLIENT_TIMEOUT_MS" in source
+    assert '"assessment_run_continue_timeout"' in source
+    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS" in source
+
+
 def test_normal_assessment_requests_retain_existing_retry_policy() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
@@ -52,6 +72,7 @@ def test_readiness_and_run_status_timeouts_route_to_recoverable_service_unavaila
 
     assert '"assessment_readiness_timeout"' in source
     assert '"assessment_run_status_timeout"' in source
+    assert '"assessment_run_continue_timeout"' in source
     assert 'kind: "service_unavailable"' in source
     assert "retryable," in source
 
