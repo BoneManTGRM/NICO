@@ -75,12 +75,15 @@ def test_operations_and_retainer_explain_their_distinct_purpose() -> None:
     assert 'placeholder="Leave blank to use the latest verified baseline"' in retainer
 
 
-def test_home_redirect_masks_the_legacy_command_center_before_navigation() -> None:
+def test_home_redirect_masks_legacy_command_center_and_opens_comprehensive() -> None:
     source = (APP / "AssessmentHomeRedirect.tsx").read_text(encoding="utf-8")
     css = (STYLES / "workspace-clarity.css").read_text(encoding="utf-8")
 
     assert "useLayoutEffect" in source
-    assert 'window.location.replace("/assessment?tier=express#assessment")' in source
+    assert 'window.location.replace("/assessment?tier=comprehensive#assessment")' in source
+    assert 'tier=express' not in source
+    assert 'legacy=1' not in source
     assert 'className="nico-home-redirect"' in source
+    assert "Opening NICO Comprehensive" in source
     assert ".nico-home-redirect" in css
     assert "z-index: 10000" in css
