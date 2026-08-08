@@ -17,8 +17,10 @@ const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";
 const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [0, 1_500, 4_000];
+const SINGLE_ATTEMPT_DELAYS_MS = [0];
 const ARTIFACT_RETRY_DELAYS_MS = [0];
 const SHORT_READ_TIMEOUT_MS = 20_000;
+const CONTINUATION_WRITE_TIMEOUT_MS = 80_000;
 const ARTIFACT_READ_TIMEOUT_MS = 240_000;
 const WRITE_TIMEOUT_MS = 240_000;
 
@@ -98,6 +100,14 @@ function upstreamReadPolicy(method: string, path: string): {timeoutMs: number; r
       timeoutMs: ARTIFACT_READ_TIMEOUT_MS,
       retryDelaysMs: ARTIFACT_RETRY_DELAYS_MS,
       readClass: "exact-run-artifact",
+    };
+  }
+  const continuationWrite = method === "POST" && COMPREHENSIVE_CONTINUE.test(path);
+  if (continuationWrite) {
+    return {
+      timeoutMs: CONTINUATION_WRITE_TIMEOUT_MS,
+      retryDelaysMs: SINGLE_ATTEMPT_DELAYS_MS,
+      readClass: "single-attempt-continuation",
     };
   }
   const shortRead = method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(path);
@@ -213,10 +223,16 @@ async function proxyNico(
     }
   }
 
+  const continuationFailure = policy.readClass === "single-attempt-continuation";
+  const timeoutFailure = lastFailure === "timeout";
   return jsonError(
-    502,
-    "assessment_backend_unreachable",
-    "The canonical assessment backend could not be reached after bounded cold-start retries.",
+    timeoutFailure ? 504 : 502,
+    continuationFailure && timeoutFailure
+      ? "assessment_run_continue_timeout"
+      : "assessment_backend_unreachable",
+    continuationFailure
+      ? "The Comprehensive continuation request did not complete within its bounded single-attempt transport window. Recover the exact run status before attempting any further stage advancement."
+      : "The canonical assessment backend could not be reached after bounded cold-start retries.",
     {
       request_id: requestId,
       attempts: policy.retryDelaysMs.length,
