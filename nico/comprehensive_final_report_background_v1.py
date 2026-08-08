@@ -78,6 +78,32 @@ def _marker_lease(record: Mapping[str, Any]) -> str:
     return _text(execution.get("lease_id"))
 
 
+def _local_task_active(lease_id: str) -> bool:
+    """Return whether this process still owns a live publication task.
+
+    Durable heartbeat timestamps can become temporarily stale while report rendering
+    is CPU-heavy. A stale heartbeat must not cause this same process to launch a
+    second final-report worker while the original worker is still alive. After a
+    process restart the in-memory task map is empty, so genuinely orphaned durable
+    leases remain reclaimable.
+    """
+
+    normalized = _text(lease_id)
+    if not normalized:
+        return False
+    with _LOCAL_TASKS_LOCK:
+        state = _LOCAL_TASKS.get(normalized)
+        if not isinstance(state, Mapping):
+            return False
+        stop = state.get("stop")
+        if not isinstance(stop, threading.Event) or stop.is_set():
+            return False
+        invoke_thread = state.get("invoke_thread")
+        if not isinstance(invoke_thread, threading.Thread):
+            return True
+        return invoke_thread.is_alive() or invoke_thread.ident is None
+
+
 def _job_fresh(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
     if not isinstance(job, Mapping):
         return False
@@ -174,6 +200,8 @@ class FinalReportPublicationCoordinator:
 
         lease_id = _marker_lease(record)
         if lease_id:
+            if _local_task_active(lease_id):
+                return record
             job = self._store.load_final_report_job(lease_id)
             if _job_fresh(job, now_epoch=time.time()):
                 return record
@@ -234,9 +262,6 @@ class FinalReportPublicationCoordinator:
         context: Mapping[str, Any],
     ) -> None:
         stop = threading.Event()
-        state = {"stop": stop}
-        with _LOCAL_TASKS_LOCK:
-            _LOCAL_TASKS[lease_id] = state
 
         def heartbeat() -> None:
             interval = _heartbeat_seconds()
@@ -263,16 +288,34 @@ class FinalReportPublicationCoordinator:
                 with _LOCAL_TASKS_LOCK:
                     _LOCAL_TASKS.pop(lease_id, None)
 
-        threading.Thread(
+        heartbeat_thread = threading.Thread(
             target=heartbeat,
             name=f"nico-final-report-heartbeat-{lease_id[-8:]}",
             daemon=True,
-        ).start()
-        threading.Thread(
+        )
+        invoke_thread = threading.Thread(
             target=invoke,
             name=f"nico-final-report-publication-{lease_id[-8:]}",
             daemon=True,
-        ).start()
+        )
+        state = {
+            "stop": stop,
+            "heartbeat_thread": heartbeat_thread,
+            "invoke_thread": invoke_thread,
+        }
+        with _LOCAL_TASKS_LOCK:
+            _LOCAL_TASKS[lease_id] = state
+
+        try:
+            heartbeat_thread.start()
+            invoke_thread.start()
+        except BaseException:
+            stop.set()
+            self._safe_job_update(lease_id, status="failed")
+            with _LOCAL_TASKS_LOCK:
+                if _LOCAL_TASKS.get(lease_id) is state:
+                    _LOCAL_TASKS.pop(lease_id, None)
+            raise
 
     def _publish_result(
         self,

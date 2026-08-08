@@ -1,0 +1,68 @@
+{
+  "artifact_schema": "nico.production.final_report_local_lease_fanout_observation.v1",
+  "observed_release_sha": "22d0f2aba327debd8f5329401407a9fa9f5e95fa",
+  "state": "repair_in_progress",
+  "authoritative_program_dependency": "exact_head_release_gate_repair_before_any_new_work_package",
+  "deployment_identity": {
+    "vercel": "passed",
+    "railway": "passed"
+  },
+  "failed_exact_head_gates": {
+    "two_service_production_acceptance": {
+      "workflow_run_id": 31280259662,
+      "artifact_id": 9028545546,
+      "run_id": "comprun_6687e67b80ed49a58782a435208465e3"
+    },
+    "mobile_restart_production_proof": {
+      "workflow_run_id": 31280259696,
+      "artifact_id": 9028443059,
+      "run_id": "comprun_00d9f43672924a3592310b4b1e8d9df5"
+    },
+    "ios_webkit_paint_proof": {
+      "workflow_run_id": 31280259719,
+      "artifact_id": 9028452836,
+      "run_id": "comprun_2626115456fb45f898b2956cac0cc700"
+    }
+  },
+  "observed_failure": {
+    "terminal_stage": "final_report",
+    "client_delivery_allowed": false,
+    "human_review_reached": false,
+    "status_transport_timeouts_observed": true,
+    "continuation_request_count_in_unified_diagnostic": 64,
+    "revision_churn_observed": true,
+    "final_report_blocked": true
+  },
+  "root_cause": {
+    "classification": "same_process_stale_heartbeat_reclaim_can_fan_out_final_report_workers",
+    "confidence": "high",
+    "is_inference_from_immutable_evidence_and_source": true,
+    "mechanism": [
+      "A CPU-heavy final report worker can temporarily delay its durable heartbeat beyond the orphan threshold.",
+      "The coordinator previously consulted only the durable heartbeat before reclaiming a lease.",
+      "Repeated continuation requests could therefore launch replacement workers while the original local worker remained alive.",
+      "Concurrent final-report workers can starve status and readiness requests and eventually publish a blocked timeout result."
+    ]
+  },
+  "repair_contract": {
+    "live_local_task_prevents_same_process_lease_reclaim": true,
+    "stale_lease_without_local_task_remains_reclaimable_after_restart": true,
+    "exact_run_identity_preserved": true,
+    "atomic_final_report_boundary_preserved": true,
+    "report_truth_preserved": true,
+    "fail_closed_behavior_preserved": true,
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "scores_changed_to_satisfy_gate": false
+  },
+  "completion_gate": {
+    "all_pull_request_checks_required": true,
+    "unresolved_review_threads_required": 0,
+    "exact_merged_sha_vercel_identity_required": true,
+    "exact_merged_sha_railway_identity_required": true,
+    "two_service_production_acceptance_required": true,
+    "mobile_restart_production_proof_required": true,
+    "ios_webkit_paint_proof_required": true,
+    "state": "pending"
+  }
+}
