@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
+from nico.comprehensive_background_stage_execution_v1 import BACKGROUND_STAGE_IDS
 from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -44,7 +45,9 @@ class _DetachedProductionComprehensiveRunService(ComprehensiveRunService):
 
     Provider work must never own the lifetime of ``POST .../continue``. The request
     commits a small canonical running marker and returns; one detached worker then
-    executes the exact stage and publishes its result under optimistic concurrency.
+    executes synchronous stage providers and publishes their result under optimistic
+    concurrency. Stages that already have a durable asynchronous coordinator retain
+    that established boundary rather than being wrapped in a second detached lease.
     Final report generation keeps its dedicated atomic publication coordinator.
     """
 
@@ -62,7 +65,11 @@ class _DetachedProductionComprehensiveRunService(ComprehensiveRunService):
             return record
 
         stage_id = COMPREHENSIVE_STAGES[len(completed)]
-        if stage_id == FINAL_REPORT_STAGE_ID:
+        # The base service already gives these stages a durable asynchronous boundary.
+        # Wrapping them again would replace the outer canonical lease with the inner
+        # background-running projection, causing repeated continuation requests to
+        # reclaim the same stage and churn the run revision without observable progress.
+        if stage_id in BACKGROUND_STAGE_IDS or stage_id == FINAL_REPORT_STAGE_ID:
             return super()._run_next_stage(record)
 
         executor = self._stage_executors.get(stage_id)
@@ -123,11 +130,12 @@ def configure_comprehensive_runtime(
     Every required capability must be provided before routes are exposed; missing
     executors are never treated as passing evidence.
 
-    The production Postgres path executes stage providers behind a canonical detached
-    stage marker. This keeps continuation transport bounded independently of provider
-    runtime and makes an ambiguous browser/proxy timeout unnecessary for normal stage
-    execution. Explicit test factories retain the synchronous contract for deterministic
-    unit and compatibility coverage.
+    The production Postgres path executes synchronous stage providers behind a
+    canonical detached stage marker while preserving existing durable background-stage
+    and atomic final-report coordinators. This keeps continuation transport bounded
+    independently of provider runtime without nesting asynchronous leases. Explicit
+    test factories retain the synchronous contract for deterministic unit and
+    compatibility coverage.
     """
 
     required = _required_capabilities()

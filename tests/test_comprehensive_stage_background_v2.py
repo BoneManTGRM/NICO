@@ -3,9 +3,12 @@ from __future__ import annotations
 import sqlite3
 import time
 from pathlib import Path
+from unittest.mock import patch
 
+from nico.comprehensive_background_stage_execution_v1 import BACKGROUND_STAGE_IDS
 from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.comprehensive_runtime import _DetachedProductionComprehensiveRunService
 
@@ -103,3 +106,27 @@ def test_repeated_continue_does_not_launch_duplicate_stage(tmp_path: Path) -> No
     assert completed["revision"] == 3
     assert completed["completed_stages"] == [COMPREHENSIVE_STAGES[0]]
     assert completed["terminal"] is False
+
+
+def test_existing_durable_background_stages_are_not_double_detached(tmp_path: Path) -> None:
+    calls: dict[str, int] = {}
+    service = _DetachedProductionComprehensiveRunService(
+        _store(tmp_path / "native-background.db"),
+        _executors(calls),
+    )
+    stage_id = "dependency_security_static_analysis"
+    assert stage_id in BACKGROUND_STAGE_IDS
+    stage_index = COMPREHENSIVE_STAGES.index(stage_id)
+    record = {"completed_stages": list(COMPREHENSIVE_STAGES[:stage_index])}
+    native_result = {"native_background_boundary": True}
+
+    with patch.object(
+        ComprehensiveRunService,
+        "_run_next_stage",
+        autospec=True,
+        return_value=native_result,
+    ) as native_boundary:
+        result = service._run_next_stage(record)
+
+    assert result is native_result
+    native_boundary.assert_called_once_with(service, record)
