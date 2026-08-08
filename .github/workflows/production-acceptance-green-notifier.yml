@@ -1,0 +1,191 @@
+name: Notify when NICO production acceptance is fully green
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: read
+  issues: write
+
+concurrency:
+  group: nico-production-acceptance-green-notifier
+  cancel-in-progress: true
+
+jobs:
+  notify:
+    name: Check exact-main production acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify once when all required production contexts pass
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NICO_REPOSITORY: ${{ github.repository }}
+          NICO_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          NICO_WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from datetime import UTC, datetime
+
+          API = "https://api.github.com"
+          TOKEN = os.environ["GITHUB_TOKEN"]
+          REPOSITORY = os.environ["NICO_REPOSITORY"]
+          OWNER = os.environ["NICO_REPOSITORY_OWNER"]
+          WORKFLOW_RUN_ID = os.environ["NICO_WORKFLOW_RUN_ID"]
+          NOTIFICATION_MARKER = "<!-- nico-production-acceptance-green-notifier:v1 -->"
+          NOTIFICATION_TITLE = "NICO production acceptance is fully green"
+          REQUIRED_CONTEXTS = (
+              "Vercel",
+              "successful-cat - NICO",
+              "NICO Two-Service Production Acceptance",
+              "NICO Mobile Restart Production Proof",
+              "NICO iOS WebKit Paint Proof",
+          )
+
+
+          def api_request(method: str, path: str, payload: dict | None = None):
+              body = None
+              if payload is not None:
+                  body = json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  API + path,
+                  data=body,
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {TOKEN}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-production-acceptance-green-notifier",
+                      "Content-Type": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      raw = response.read().decode("utf-8")
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(
+                      f"GitHub API {method} {path} failed with HTTP {exc.code}: {detail}"
+                  ) from exc
+              return json.loads(raw) if raw else {}
+
+
+          recent_issues = api_request(
+              "GET",
+              f"/repos/{REPOSITORY}/issues?state=all&per_page=100&sort=created&direction=desc",
+          )
+          for item in recent_issues:
+              if item.get("pull_request"):
+                  continue
+              if NOTIFICATION_MARKER in str(item.get("body") or ""):
+                  print(
+                      "Green notification already exists:",
+                      item.get("html_url") or item.get("url"),
+                      flush=True,
+                  )
+                  raise SystemExit(0)
+
+          branch = api_request("GET", f"/repos/{REPOSITORY}/branches/main")
+          main_sha = str(branch["commit"]["sha"])
+          status_payload = api_request(
+              "GET",
+              f"/repos/{REPOSITORY}/commits/{main_sha}/status?per_page=100",
+          )
+
+          states: dict[str, str] = {}
+          targets: dict[str, str] = {}
+          for item in status_payload.get("statuses") or []:
+              context = str(item.get("context") or "")
+              if context not in REQUIRED_CONTEXTS or context in states:
+                  continue
+              states[context] = str(item.get("state") or "missing").lower()
+              targets[context] = str(item.get("target_url") or "")
+
+          observed = {
+              context: states.get(context, "missing") for context in REQUIRED_CONTEXTS
+          }
+          print(
+              "Exact-main production acceptance:",
+              json.dumps(
+                  {
+                      "main_sha": main_sha,
+                      "required_contexts": observed,
+                  },
+                  sort_keys=True,
+              ),
+              flush=True,
+          )
+
+          if not all(state == "success" for state in observed.values()):
+              raise SystemExit(0)
+
+          rows: list[str] = []
+          for context in REQUIRED_CONTEXTS:
+              target = targets.get(context, "")
+              state_text = "success"
+              if target.startswith("https://"):
+                  state_text = f"[success]({target})"
+              rows.append(f"| {context} | {state_text} |")
+
+          observed_at = datetime.now(UTC).isoformat()
+          workflow_url = (
+              f"https://github.com/{REPOSITORY}/actions/runs/{WORKFLOW_RUN_ID}"
+          )
+          body = "\n".join(
+              [
+                  NOTIFICATION_MARKER,
+                  f"@{OWNER}",
+                  "",
+                  "NICO production acceptance is fully green for the exact current `main` commit.",
+                  "",
+                  f"- Exact `main` SHA: `{main_sha}`",
+                  f"- Observed at: `{observed_at}`",
+                  f"- Notifier workflow: {workflow_url}",
+                  "",
+                  "| Required production context | State |",
+                  "| --- | --- |",
+                  *rows,
+                  "",
+                  "This notification is emitted once. The workflow will not create a duplicate issue.",
+              ]
+          )
+
+          issue = api_request(
+              "POST",
+              f"/repos/{REPOSITORY}/issues",
+              {
+                  "title": NOTIFICATION_TITLE,
+                  "body": body,
+              },
+          )
+          issue_number = int(issue["number"])
+
+          try:
+              api_request(
+                  "POST",
+                  f"/repos/{REPOSITORY}/issues/{issue_number}/assignees",
+                  {"assignees": [OWNER]},
+              )
+          except RuntimeError as exc:
+              print(
+                  f"Issue created, but automatic assignment was unavailable: {exc}",
+                  flush=True,
+              )
+
+          print(
+              "Created production acceptance notification:",
+              issue.get("html_url") or issue.get("url"),
+              flush=True,
+          )
+          PY
