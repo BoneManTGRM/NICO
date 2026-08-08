@@ -9,7 +9,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_final_artifact_truth.v53.2"
+VERSION = "nico.comprehensive_final_artifact_truth.v53.3"
 _MARKER = "_nico_comprehensive_final_artifact_truth_v53"
 
 
@@ -195,6 +195,17 @@ def _weighted_scores_recompute(canonical: dict[str, Any]) -> bool:
         sum(_score(row.get("technical_score")) * float(row.get("weight") or 0.0) for row in included)
         / denominator
     )
+    canonical_technical, canonical_adjusted = _score_truth(canonical)
+    if technical != canonical_technical:
+        return False
+
+    if _strict_truth_package(canonical):
+        contract = _dict(assessment.get("score_contract"))
+        payload_penalty = _nonnegative_int(contract.get("missing_raw_payload_penalty"))
+        execution_penalty = _nonnegative_int(contract.get("incomplete_analyzer_penalty"))
+        expected_adjusted = max(0, technical - payload_penalty - execution_penalty)
+        return canonical_adjusted == expected_adjusted
+
     adjusted = round(
         sum(
             _score(row.get("technical_score"))
@@ -204,8 +215,7 @@ def _weighted_scores_recompute(canonical: dict[str, Any]) -> bool:
         )
         / denominator
     )
-    canonical_technical, canonical_adjusted = _score_truth(canonical)
-    return technical == canonical_technical and adjusted == canonical_adjusted
+    return adjusted == canonical_adjusted
 
 
 def _scanner_consistency(canonical: dict[str, Any]) -> tuple[bool, bool, bool]:
@@ -277,6 +287,7 @@ def _canonical_scanner_register_truth(canonical: dict[str, Any]) -> dict[str, bo
         "canonical_scanner_coverage_reference_matches",
         "evidence_adjusted_penalty_recomputes",
         "candidate_volume_does_not_change_technical_score",
+        "candidate_volume_does_not_change_numeric_score",
         "ci_configuration_and_operational_health_separated",
     )
     if not required:
@@ -357,20 +368,32 @@ def _canonical_scanner_register_truth(canonical: dict[str, Any]) -> dict[str, bo
     volume_penalty = _nonnegative_int(contract.get("candidate_volume_penalty"))
     payload_penalty = _nonnegative_int(contract.get("missing_raw_payload_penalty"))
     execution_penalty = _nonnegative_int(contract.get("incomplete_analyzer_penalty"))
-    assurance_penalty = min(30, volume_penalty + payload_penalty + execution_penalty)
-    expected_adjusted = None if technical is None else max(0, technical - assurance_penalty)
+    evidence_completeness_penalty = payload_penalty + execution_penalty
+    expected_adjusted = (
+        None if technical is None else max(0, technical - evidence_completeness_penalty)
+    )
     penalty_recomputes = (
         technical is not None
         and adjusted == expected_adjusted
         and _score(contract.get("technical_score")) == technical
         and _score(contract.get("evidence_adjusted_score")) == adjusted
-        and _nonnegative_int(contract.get("assurance_penalty")) == assurance_penalty
+        and volume_penalty == 0
+        and _nonnegative_int(contract.get("assurance_penalty")) == evidence_completeness_penalty
+        and _nonnegative_int(contract.get("evidence_completeness_penalty"))
+        == evidence_completeness_penalty
     )
     candidate_flags = (
-        contract.get("candidate_volume_affects_technical_score") is False
-        and contract.get("candidate_volume_affects_evidence_adjusted_score") is True
+        volume_penalty == 0
+        and contract.get("candidate_volume_affects_technical_score") is False
+        and contract.get("candidate_volume_affects_evidence_adjusted_score") is False
+        and contract.get("candidate_volume_affects_numeric_score") is False
+        and contract.get("review_workload_affects_numeric_score") is False
+        and contract.get("candidate_volume_affects_assurance_state") is True
         and coverage.get("candidate_volume_affects_technical_score") is False
-        and coverage.get("candidate_volume_affects_evidence_adjusted_score") is True
+        and coverage.get("candidate_volume_affects_evidence_adjusted_score") is False
+        and coverage.get("candidate_volume_affects_numeric_score") is False
+        and coverage.get("review_workload_affects_numeric_score") is False
+        and coverage.get("candidate_volume_affects_assurance_state") is True
     )
 
     operational = _dict(assessment.get("ci_cd_operational_health"))
@@ -407,6 +430,7 @@ def _canonical_scanner_register_truth(canonical: dict[str, Any]) -> dict[str, bo
         "canonical_scanner_coverage_reference_matches": coverage_matches,
         "evidence_adjusted_penalty_recomputes": penalty_recomputes,
         "candidate_volume_does_not_change_technical_score": candidate_flags,
+        "candidate_volume_does_not_change_numeric_score": candidate_flags,
         "ci_configuration_and_operational_health_separated": ci_separated,
     }
 
@@ -547,6 +571,7 @@ def install_comprehensive_final_artifact_truth_v53() -> dict[str, Any]:
         "canonical_scanner_count_parity_required": True,
         "canonical_scanner_digest_required": True,
         "evidence_adjusted_penalty_recalculation_required": True,
+        "candidate_volume_numeric_score_effect_forbidden": True,
         "ci_configuration_operational_separation_required": True,
         "automated_delivery_boundary_required": True,
         "finding_deduplication_required": True,
