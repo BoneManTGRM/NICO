@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,24 @@ def _start(service: ComprehensiveRunService) -> dict:
     )
 
 
+def _run_to_review(
+    service: ComprehensiveRunService,
+    run_id: str = "comprun_001",
+    *,
+    timeout: float = 4.0,
+) -> dict:
+    deadline = time.time() + timeout
+    last: dict = {}
+    while time.time() < deadline:
+        last = service.run_to_review(run_id)
+        if last.get("status") == "review_required":
+            return last
+        assert last.get("status") == "running"
+        assert last.get("client_delivery_allowed") is False
+        time.sleep(0.02)
+    raise AssertionError(f"run did not reach human review before timeout: {last}")
+
+
 def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "runs.db"
     first = ComprehensiveRunService(_store(database), _executors())
@@ -92,7 +111,7 @@ def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -
     assert partial["terminal"] is False
 
     restarted = ComprehensiveRunService(_store(database), _executors())
-    final = restarted.run_to_review("comprun_001")
+    final = _run_to_review(restarted)
 
     assert final["completed_stages"] == list(COMPREHENSIVE_STAGES)
     assert final["status"] == "review_required"
@@ -103,7 +122,9 @@ def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -
     final_report = final["stage_results"]["final_comprehensive_report_generation"]
     assert final_report["report_package"]["report_id"] == "report_comprun_001"
     assert final_report["stage_execution"]["mode"] == "atomic_final_report_publication"
-    assert final_report["stage_execution"]["detached_background_execution"] is False
+    assert final_report["stage_execution"]["detached_background_execution"] is True
+    assert final_report["stage_execution"]["canonical_run_written_by_final_report_coordinator"] is True
+    assert final_report["stage_execution"]["full_result_job_serialization"] is False
 
 
 def test_prior_stage_evidence_is_forwarded_in_order(tmp_path: Path) -> None:
@@ -137,7 +158,7 @@ def test_missing_capability_blocks_without_false_progress(tmp_path: Path) -> Non
 def test_terminal_record_is_idempotent_on_resume(tmp_path: Path) -> None:
     service = ComprehensiveRunService(_store(tmp_path / "runs.db"), _executors())
     _start(service)
-    final = service.run_to_review("comprun_001")
+    final = _run_to_review(service)
     resumed = service.resume("comprun_001")
 
     assert resumed == final
