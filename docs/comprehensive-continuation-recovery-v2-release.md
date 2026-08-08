@@ -1,0 +1,1 @@
+Release scope is limited to Comprehensive production continuation execution. Express behavior, report scoring, findings, artifact validation, review decisions, and client-delivery authorization are not changed by this repair.
