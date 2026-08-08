@@ -1,1 +1,0 @@
-Observed production failure signature: `assessment_run_continue_timeout` with HTTP 504 on `/assessment/comprehensive-run/{run_id}/continue` while the canonical run remained active. The repair moves provider execution behind the canonical exact-run stage lease so request transport is no longer the provider execution boundary.

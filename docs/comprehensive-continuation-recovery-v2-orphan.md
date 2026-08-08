@@ -1,1 +1,0 @@
-A detached stage lease is treated as an orphan only after its bounded execution window. Replacement uses the run store's optimistic revision control, and publication checks the lease id before writing so a superseded worker cannot overwrite newer canonical state.

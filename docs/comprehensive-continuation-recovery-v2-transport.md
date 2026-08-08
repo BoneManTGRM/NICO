@@ -1,1 +1,0 @@
-Transport is now expected to carry only canonical state transitions, not the provider's full execution lifetime. This prevents an 80–90 second mobile/proxy budget from deciding whether a valid long-running stage is allowed to finish.
