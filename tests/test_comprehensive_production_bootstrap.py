@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import sqlite3
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -74,6 +75,21 @@ def _payload(run_id: str = "comprun_bootstrap_001") -> dict:
     }
 
 
+def _continue_to_review(client: TestClient, run_id: str, *, timeout: float = 4.0) -> dict:
+    deadline = time.time() + timeout
+    last: dict = {}
+    while time.time() < deadline:
+        response = client.post(f"/assessment/comprehensive-run/{run_id}/continue")
+        assert response.status_code == 200
+        last = response.json()
+        if last.get("status") == "review_required":
+            return last
+        assert last.get("status") == "running"
+        assert last.get("client_delivery_allowed") is False
+        time.sleep(0.02)
+    raise AssertionError(f"run did not reach human review before timeout: {last}")
+
+
 def test_missing_capabilities_mount_complete_routes_but_fail_closed() -> None:
     app = FastAPI()
     controller = install_comprehensive_production_bootstrap(app)
@@ -136,11 +152,10 @@ def test_explicit_sqlite_durable_fallback_activates_without_database_url(
     client = TestClient(app)
     started = client.post("/assessment/comprehensive-run", json=_payload())
     assert started.status_code == 200
-    completed = client.post("/assessment/comprehensive-run/comprun_bootstrap_001/continue")
-    assert completed.status_code == 200
-    assert completed.json()["status"] == "review_required"
-    assert completed.json()["progress_percent"] == 100.0
-    assert completed.json()["reports"]["report_id"] == "report_comprun_bootstrap_001"
+    completed = _continue_to_review(client, "comprun_bootstrap_001")
+    assert completed["status"] == "review_required"
+    assert completed["progress_percent"] == 100.0
+    assert completed["reports"]["report_id"] == "report_comprun_bootstrap_001"
 
 
 def test_later_installation_upgrades_existing_routes_to_durable_controller(tmp_path: Path) -> None:
@@ -161,13 +176,12 @@ def test_later_installation_upgrades_existing_routes_to_durable_controller(tmp_p
     client = TestClient(app)
     started = client.post("/assessment/comprehensive-run", json=_payload())
     assert started.status_code == 200
-    completed = client.post("/assessment/comprehensive-run/comprun_bootstrap_001/continue")
-    assert completed.status_code == 200
-    assert completed.json()["status"] == "review_required"
-    assert completed.json()["progress_percent"] == 100.0
-    assert completed.json()["reports"]["report_id"] == "report_comprun_bootstrap_001"
-    assert completed.json()["human_review_required"] is True
-    assert completed.json()["client_delivery_allowed"] is False
+    completed = _continue_to_review(client, "comprun_bootstrap_001")
+    assert completed["status"] == "review_required"
+    assert completed["progress_percent"] == 100.0
+    assert completed["reports"]["report_id"] == "report_comprun_bootstrap_001"
+    assert completed["human_review_required"] is True
+    assert completed["client_delivery_allowed"] is False
 
 
 def test_restart_reuses_exact_persisted_record(tmp_path: Path) -> None:
@@ -181,7 +195,7 @@ def test_restart_reuses_exact_persisted_record(tmp_path: Path) -> None:
     )
     client = TestClient(app)
     assert client.post("/assessment/comprehensive-run", json=_payload()).status_code == 200
-    terminal = client.post("/assessment/comprehensive-run/comprun_bootstrap_001/continue").json()
+    terminal = _continue_to_review(client, "comprun_bootstrap_001")
 
     restarted = FastAPI()
     install_comprehensive_production_bootstrap(
@@ -213,9 +227,7 @@ def test_environment_sqlite_fallback_survives_process_restart(
         "/assessment/comprehensive-run",
         json=_payload("comprun_environment_restart"),
     ).status_code == 200
-    terminal = first_client.post(
-        "/assessment/comprehensive-run/comprun_environment_restart/continue"
-    ).json()
+    terminal = _continue_to_review(first_client, "comprun_environment_restart")
 
     restarted = FastAPI()
     install_comprehensive_production_bootstrap(restarted, capability_executors=_executors())
