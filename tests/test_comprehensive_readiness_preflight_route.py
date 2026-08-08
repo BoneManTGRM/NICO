@@ -14,9 +14,10 @@ def test_comprehensive_readiness_preflight_is_bounded_and_fail_closed() -> None:
     assert 'const HEALTH_REQUEST_TIMEOUT_MS = 8_000' in source
     assert 'const HEALTH_RETRY_DELAY_MS = 2_000' in source
     assert 'const DIAGNOSTIC_TIMEOUT_MS = 14_000' in source
+    assert 'const DIAGNOSTIC_RETRY_DELAY_MS = 1_000' in source
     assert 'signal: AbortSignal.timeout(timeoutMs)' in source
     assert 'new URL("/health", backend)' in source
-    assert 'new URL("/diagnostics/comprehensive-runtime", resolution.backend)' in source
+    assert 'new URL("/diagnostics/comprehensive-runtime", backend)' in source
     assert '"assessment_backend_unreachable"' in source
     assert 'survives_container_replacement_verified: false' in source
     assert 'human_review_required: true' in source
@@ -36,7 +37,7 @@ def test_permanent_configuration_blocks_use_successful_transport() -> None:
 
 def test_health_warmup_retries_immediate_edge_failures_inside_one_budget() -> None:
     source = ROUTE.read_text(encoding="utf-8")
-    warm = source[source.index("async function warmBackend"):source.index("export async function GET")]
+    warm = source[source.index("async function warmBackend"):source.index("function retryableDiagnostic")]
 
     assert "const deadline = startedAt + HEALTH_WARMUP_BUDGET_MS" in warm
     assert "while (Date.now() < deadline)" in warm
@@ -47,10 +48,25 @@ def test_health_warmup_retries_immediate_edge_failures_inside_one_budget() -> No
     assert "healthy: false" in warm
 
 
+def test_authoritative_diagnostic_retries_only_transient_or_retryable_results_inside_one_budget() -> None:
+    source = ROUTE.read_text(encoding="utf-8")
+    diagnostic = source[source.index("function retryableDiagnostic"):source.index("export async function GET")]
+
+    assert 'runtimeStatus === "ready"' in diagnostic
+    assert "observation.failureClass" in diagnostic
+    assert "observation.httpStatus == null || TRANSIENT_STATUS.has(observation.httpStatus)" in diagnostic
+    assert "observation.payload.retryable === true || detail.retryable === true" in diagnostic
+    assert "const deadline = startedAt + DIAGNOSTIC_TIMEOUT_MS" in diagnostic
+    assert "new URL(\"/diagnostics/comprehensive-runtime\", backend)" in diagnostic
+    assert "if (!retryableDiagnostic(latest))" in diagnostic
+    assert "Math.min(\n      DIAGNOSTIC_RETRY_DELAY_MS" in diagnostic
+    assert "await wait(delay)" in diagnostic
+
+
 def test_health_warmup_never_substitutes_for_authoritative_readiness() -> None:
     source = ROUTE.read_text(encoding="utf-8")
     warmup_start = source.index("const warmup = await warmBackend")
-    diagnostic_start = source.index("const diagnostic = await observeUpstream")
+    diagnostic_start = source.index("const diagnostic = await observeDiagnostic")
     success_start = source.index("if (\n    diagnostic.httpStatus")
     success_end = source.index("const reason = upstreamReason")
     success = source[success_start:success_end]
@@ -61,7 +77,7 @@ def test_health_warmup_never_substitutes_for_authoritative_readiness() -> None:
     assert "health_used_as_readiness_evidence: false" in source
 
 
-def test_transient_failure_returns_one_semantic_block_without_retry_multiplication() -> None:
+def test_transient_failure_returns_one_semantic_block_without_browser_retry_multiplication() -> None:
     source = ROUTE.read_text(encoding="utf-8")
     blocked = source[source.index("function blockedReadiness"):source.index("function upstreamReason")]
     terminal = source[source.index("const reason = upstreamReason"):]
@@ -86,6 +102,7 @@ def test_successful_upstream_readiness_is_forwarded_without_reinterpretation() -
     assert "Response.json(diagnostic.payload" in success
     assert "status: 200" in success
     assert "boundedHeaders(requestId, upstreamRequests)" in success
+    assert "const upstreamRequests = warmup.attempts + diagnostic.attempts" in source
 
 
 def test_total_upstream_budget_fits_external_production_probe() -> None:
