@@ -142,8 +142,12 @@ def test_final_report_returns_running_marker_without_holding_request_open(tmp_pa
     assert final["client_delivery_allowed"] is False
 
 
-def test_repeated_continuation_does_not_launch_duplicate_final_report_worker(tmp_path: Path) -> None:
+def test_stale_heartbeat_does_not_reclaim_live_local_final_report_worker(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     reset_final_report_publication_tasks_for_tests()
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_HEARTBEAT_SECONDS", "30")
     store = _store(tmp_path)
     record = _record_at_final_report()
     store.create(record)
@@ -163,18 +167,89 @@ def test_repeated_continuation_does_not_launch_duplicate_final_report_worker(tmp
 
     first = coordinator.advance(record, executor, _context(record))
     assert started.wait(1.0)
-    second = coordinator.advance(store.load(RUN_ID), executor, _context(record))
+    first_marker = first["stage_results"][FINAL_REPORT_STAGE_ID]
+    first_lease = first_marker["stage_execution"]["lease_id"]
 
-    first_lease = first["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
-    second_lease = second["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
-    assert second_lease == first_lease
+    fresh_repeat = coordinator.advance(store.load(RUN_ID), executor, _context(record))
+    assert fresh_repeat["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"] == first_lease
+
+    store.update_final_report_job(
+        first_lease,
+        status="running",
+        heartbeat_epoch=time.time() - 3600.0,
+        updated_at="2026-08-08T00:00:00+00:00",
+    )
+    before_revision = int(store.load(RUN_ID)["revision"])
+    stale_repeat = coordinator.advance(store.load(RUN_ID), executor, _context(record))
+
+    stale_marker = stale_repeat["stage_results"][FINAL_REPORT_STAGE_ID]
+    assert stale_marker["stage_execution"]["lease_id"] == first_lease
+    assert int(stale_repeat["revision"]) == before_revision
     with calls_lock:
         assert calls == 1
 
     release.set()
-    _wait_for_final(store)
+    final = _wait_for_final(store)
+    assert final["client_delivery_allowed"] is False
+    assert final["human_review_required"] is True
     with calls_lock:
         assert calls == 1
+
+
+def test_stale_lease_without_local_task_is_reclaimed_after_process_loss(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    reset_final_report_publication_tasks_for_tests()
+    store = _store(tmp_path)
+    record = _record_at_final_report()
+    store.create(record)
+    orphaning_coordinator = FinalReportPublicationCoordinator(store)
+    monkeypatch.setattr(orphaning_coordinator, "_start_worker", lambda **_kwargs: None)
+
+    orphaned = orphaning_coordinator.advance(
+        record,
+        lambda _context: (_ for _ in ()).throw(AssertionError("orphan executor must not run")),
+        _context(record),
+    )
+    orphaned_lease = orphaned["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+    store.update_final_report_job(
+        orphaned_lease,
+        status="running",
+        heartbeat_epoch=time.time() - 3600.0,
+        updated_at="2026-08-08T00:00:00+00:00",
+    )
+
+    replacement_coordinator = FinalReportPublicationCoordinator(store)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def replacement_executor(_context: dict) -> dict:
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(2.0)
+        return _valid_final_result()
+
+    replacement = replacement_coordinator.advance(
+        store.load(RUN_ID),
+        replacement_executor,
+        _context(orphaned),
+    )
+    replacement_lease = replacement["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+
+    assert replacement_lease != orphaned_lease
+    assert int(replacement["revision"]) == int(orphaned["revision"]) + 1
+    assert started.wait(1.0)
+    assert calls == 1
+
+    release.set()
+    final = _wait_for_final(store)
+    assert final["stage_results"][FINAL_REPORT_STAGE_ID]["status"] == "complete"
+    assert final["client_delivery_allowed"] is False
+    assert final["human_review_required"] is True
+    assert calls == 1
 
 
 def test_final_report_lease_table_retains_only_small_recovery_metadata(tmp_path: Path) -> None:
