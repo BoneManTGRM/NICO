@@ -61,11 +61,13 @@ class ComprehensiveRunService:
     committed once through the canonical optimistic-concurrency run transaction.
 
     Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    The exact final stage receives only the already-completed immutable stage-results
-    snapshot by shallow reference, excluding its own running marker. Final-report
-    processing remains copy-on-write, so the persisted run cannot be mutated by the
-    renderer. Scores, scanner findings, report design, human review, and blocked client
-    delivery remain unchanged.
+    On first entry to the final stage, the exact already-loaded completed-stage result
+    mapping is passed by reference so the large scanner tree is not cloned. During
+    recovery from an existing final-report running marker, a shallow mapping excludes
+    only that marker while retaining each completed stage result by reference.
+    Final-report processing remains copy-on-write, so the persisted run cannot be
+    mutated by the renderer. Scores, scanner findings, report design, human review,
+    and blocked client delivery remain unchanged.
     """
 
     def __init__(
@@ -200,11 +202,14 @@ class ComprehensiveRunService:
                 else {}
             )
             if stage_id == FINAL_REPORT_STAGE_ID:
-                prior_stage_results = {
-                    completed_stage: retained_stage_results[completed_stage]
-                    for completed_stage in completed
-                    if completed_stage in retained_stage_results
-                }
+                if FINAL_REPORT_STAGE_ID not in retained_stage_results:
+                    prior_stage_results = retained_stage_results
+                else:
+                    prior_stage_results = {
+                        completed_stage: retained_stage_results[completed_stage]
+                        for completed_stage in completed
+                        if completed_stage in retained_stage_results
+                    }
             else:
                 prior_stage_results = deepcopy(retained_stage_results)
             context = {
