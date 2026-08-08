@@ -8,6 +8,7 @@ const HEALTH_WARMUP_BUDGET_MS = 28_000;
 const HEALTH_REQUEST_TIMEOUT_MS = 8_000;
 const HEALTH_RETRY_DELAY_MS = 2_000;
 const DIAGNOSTIC_TIMEOUT_MS = 14_000;
+const DIAGNOSTIC_RETRY_DELAY_MS = 1_000;
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 type JsonRecord = Record<string, unknown>;
@@ -28,6 +29,11 @@ type WarmupResult = UpstreamObservation & {
   attempts: number;
   elapsedMs: number;
   healthy: boolean;
+};
+
+type DiagnosticResult = UpstreamObservation & {
+  attempts: number;
+  elapsedMs: number;
 };
 
 function record(value: unknown): JsonRecord {
@@ -115,6 +121,7 @@ function blockedReadiness(
         health_request_timeout_ms: HEALTH_REQUEST_TIMEOUT_MS,
         health_retry_delay_ms: HEALTH_RETRY_DELAY_MS,
         diagnostic_timeout_ms: DIAGNOSTIC_TIMEOUT_MS,
+        diagnostic_retry_delay_ms: DIAGNOSTIC_RETRY_DELAY_MS,
         browser_retry_authoritative: false,
         retry_requires_explicit_user_action: retryable,
         ...extra,
@@ -125,7 +132,7 @@ function blockedReadiness(
     {
       // The dedicated route already owns the complete bounded warm-up cycle.
       // Returning a semantic blocked payload over HTTP 200 prevents the browser's
-      // generic retry policy from repeating that entire 42-second cycle.
+      // generic retry policy from repeating that entire cycle.
       status: 200,
       headers: boundedHeaders(requestId, upstreamRequests),
     },
@@ -220,6 +227,67 @@ async function warmBackend(backend: URL, requestId: string): Promise<WarmupResul
   };
 }
 
+function retryableDiagnostic(observation: UpstreamObservation): boolean {
+  const runtimeStatus = String(observation.payload.status || "").toLowerCase();
+  const transportReady = (
+    observation.httpStatus != null
+    && observation.httpStatus >= 200
+    && observation.httpStatus < 300
+  );
+  if (transportReady && runtimeStatus === "ready") {
+    return false;
+  }
+  if (observation.failureClass) {
+    return true;
+  }
+  if (observation.httpStatus == null || TRANSIENT_STATUS.has(observation.httpStatus)) {
+    return true;
+  }
+  if (!transportReady) {
+    return false;
+  }
+  const detail = record(observation.payload.detail);
+  return observation.payload.retryable === true || detail.retryable === true;
+}
+
+async function observeDiagnostic(backend: URL, requestId: string): Promise<DiagnosticResult> {
+  const startedAt = Date.now();
+  const deadline = startedAt + DIAGNOSTIC_TIMEOUT_MS;
+  let attempts = 0;
+  let latest: UpstreamObservation = {
+    httpStatus: null,
+    payload: {},
+    failureClass: "not_attempted",
+  };
+
+  while (Date.now() < deadline) {
+    attempts += 1;
+    const remaining = Math.max(1, deadline - Date.now());
+    latest = await observeUpstream(
+      new URL("/diagnostics/comprehensive-runtime", backend),
+      requestId,
+      remaining,
+    );
+    if (!retryableDiagnostic(latest)) {
+      break;
+    }
+    const delay = Math.min(
+      DIAGNOSTIC_RETRY_DELAY_MS,
+      Math.max(0, deadline - Date.now()),
+    );
+    if (delay <= 0) {
+      break;
+    }
+    await wait(delay);
+  }
+
+  return {
+    ...latest,
+    attempts,
+    elapsedMs: Date.now() - startedAt,
+  };
+}
+
 export async function GET(request: NextRequest): Promise<Response> {
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   const resolution = configuredBackend();
@@ -246,14 +314,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   // Railway can return a temporary edge error while a sleeping container imports
   // the production application. Poll only the lightweight health endpoint inside
   // one bounded warm-up budget, then ask the authoritative Comprehensive route.
-  // Health can wake the process but can never authorize an assessment.
+  // The diagnostic may be retried only for transient/retryable observations and
+  // only inside the existing 14-second diagnostic budget. Health can wake the
+  // process but can never authorize an assessment.
   const warmup = await warmBackend(resolution.backend, requestId);
-  const diagnostic = await observeUpstream(
-    new URL("/diagnostics/comprehensive-runtime", resolution.backend),
-    requestId,
-    DIAGNOSTIC_TIMEOUT_MS,
-  );
-  const upstreamRequests = warmup.attempts + 1;
+  const diagnostic = await observeDiagnostic(resolution.backend, requestId);
+  const upstreamRequests = warmup.attempts + diagnostic.attempts;
 
   if (
     diagnostic.httpStatus != null
@@ -287,6 +353,8 @@ export async function GET(request: NextRequest): Promise<Response> {
       warmup_elapsed_ms: warmup.elapsedMs,
       warmup_http_status: warmup.httpStatus,
       warmup_failure_class: warmup.failureClass,
+      diagnostic_attempts: diagnostic.attempts,
+      diagnostic_elapsed_ms: diagnostic.elapsedMs,
       diagnostic_http_status: diagnostic.httpStatus,
       diagnostic_failure_class: diagnostic.failureClass,
       health_used_as_readiness_evidence: false,
