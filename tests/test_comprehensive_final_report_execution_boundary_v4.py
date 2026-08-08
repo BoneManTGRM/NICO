@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 import time
 
 from nico import comprehensive_final_report_execution_boundary_v4 as boundary
@@ -77,12 +78,48 @@ def test_atomic_final_report_validates_and_retains_exact_artifacts() -> None:
     assert result["artifacts_available"] is True
     assert result["stage_execution"]["mode"] == "atomic_final_report_publication"
     assert result["stage_execution"]["detached_background_execution"] is False
+    assert result["stage_execution"]["background_worker_owned"] is False
+    assert result["stage_execution"]["nested_timeout_worker_created"] is True
     assert result["stage_execution"]["full_context_deepcopy_skipped"] is True
     assert result["stage_execution"]["artifact_validation_complete"] is True
     assert result["stage_execution"]["canonical_run_written_only_by_request_thread"] is True
     assert result["evidence"]["pdf_valid"] is True
     assert result["evidence"]["exact_run_identity_verified"] is True
     assert result["evidence"]["exact_evidence_ledger_identity_verified"] is True
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+
+
+def test_background_owned_final_report_uses_tracked_worker_without_nested_timeout(
+    monkeypatch,
+) -> None:
+    caller_thread = threading.get_ident()
+    observed_threads: list[int] = []
+
+    def forbidden_bounded_executor(*_args, **_kwargs):
+        raise AssertionError("durable background publication must not create a nested timeout worker")
+
+    monkeypatch.setattr(boundary, "_execute_bounded", forbidden_bounded_executor)
+
+    def provider(context: dict) -> dict:
+        observed_threads.append(threading.get_ident())
+        return _report(context)
+
+    result = execute_final_report_stage(
+        provider,
+        _context(),
+        background_worker_owned=True,
+    )
+
+    assert result["status"] == "complete"
+    assert observed_threads == [caller_thread]
+    execution = result["stage_execution"]
+    assert execution["execution_timeout_seconds"] is None
+    assert execution["background_worker_owned"] is True
+    assert execution["provider_thread_owned_by_background_coordinator"] is True
+    assert execution["nested_timeout_worker_created"] is False
+    assert execution["detached_background_execution"] is True
+    assert execution["canonical_run_written_only_by_request_thread"] is False
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
 
