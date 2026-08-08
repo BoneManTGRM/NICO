@@ -15,10 +15,10 @@ from nico.comprehensive_background_terminal_order_v2 import (
 from nico.comprehensive_blocked_run_recovery_v1 import (
     rewind_blocked_run_for_final_artifact_recovery,
 )
-from nico.comprehensive_final_report_execution_boundary_v4 import (
-    FINAL_REPORT_STAGE_ID,
-    execute_final_report_stage,
+from nico.comprehensive_final_report_background_v1 import (
+    FinalReportPublicationCoordinator,
 )
+from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
@@ -42,7 +42,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v12"
+VERSION = "nico.comprehensive_run_service.v13"
 
 
 class ComprehensiveRunService:
@@ -53,20 +53,18 @@ class ComprehensiveRunService:
     it never reruns report generation or changes the assessed commit. An approved
     delivery archive is generated only after the accepted-edition manifest validates.
 
-    Scanner, triage, and executive-analysis providers can execute behind the durable
-    polling boundary. Final report publication is different: the PDF, HTML, Markdown,
-    and JSON must be validated together and committed through the canonical run-store
-    transaction. It therefore uses a bounded atomic publication path rather than the
-    process-local background task/result surface that produced terminal 83-percent
-    timeouts for complete or nearly complete report work.
+    Long-running scanner stages execute behind a durable polling boundary. Final report
+    publication keeps its stricter atomic package validation, but generation now runs
+    behind a dedicated durable lease so the browser continuation request never has to
+    remain open for the full PDF/HTML/Markdown/JSON render. Only a small running marker
+    and lease heartbeat are persisted during generation; the complete report package is
+    committed once through the canonical optimistic-concurrency run transaction.
 
     Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    The exact final stage receives the already-loaded immutable stage-results snapshot
-    by reference rather than cloning the complete scanner and repository evidence tree.
-    Final-report processing remains copy-on-write, so the persisted run cannot be
-    mutated by the renderer. Evidence flattening carries one bounded visit budget, and
-    the report builder recognizes the retained manifest to skip duplicate full-tree
-    work. Scores, scanner findings, report design, human review, and blocked client
+    The exact final stage receives only the already-completed immutable stage-results
+    snapshot by shallow reference, excluding its own running marker. Final-report
+    processing remains copy-on-write, so the persisted run cannot be mutated by the
+    renderer. Scores, scanner findings, report design, human review, and blocked client
     delivery remain unchanged.
     """
 
@@ -77,6 +75,7 @@ class ComprehensiveRunService:
     ) -> None:
         self._store = store
         self._stage_executors = bind_capability_executors(capability_executors)
+        self._final_report_publication = FinalReportPublicationCoordinator(store)
 
     def start(
         self,
@@ -136,8 +135,13 @@ class ComprehensiveRunService:
             else max(0, min(remaining, int(max_stages)))
         )
         for _ in range(budget):
+            before_revision = int(record.get("revision") or 0)
             record = self._run_next_stage(record)
             if record.get("terminal"):
+                break
+            # An asynchronous final-report marker is progress, but a subsequent loop
+            # iteration in the same request must not spin repeatedly on the same lease.
+            if int(record.get("revision") or 0) == before_revision:
                 break
         return record
 
@@ -195,6 +199,14 @@ class ComprehensiveRunService:
                 if isinstance(record.get("stage_results"), dict)
                 else {}
             )
+            if stage_id == FINAL_REPORT_STAGE_ID:
+                prior_stage_results = {
+                    completed_stage: retained_stage_results[completed_stage]
+                    for completed_stage in completed
+                    if completed_stage in retained_stage_results
+                }
+            else:
+                prior_stage_results = deepcopy(retained_stage_results)
             context = {
                 "artifact_schema": VERSION,
                 "service_id": "comprehensive",
@@ -208,18 +220,14 @@ class ComprehensiveRunService:
                 "assessment_depth": identity["assessment_depth"],
                 "report_language": identity["report_language"],
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
-                "prior_stage_results": (
-                    retained_stage_results
-                    if stage_id == FINAL_REPORT_STAGE_ID
-                    else deepcopy(retained_stage_results)
-                ),
+                "prior_stage_results": prior_stage_results,
                 "recovery_history": deepcopy(record.get("recovery_history") or []),
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
             if stage_id == FINAL_REPORT_STAGE_ID:
-                result = execute_final_report_stage(executor, context)
-            elif stage_id in BACKGROUND_STAGE_IDS:
+                return self._final_report_publication.advance(record, executor, context)
+            if stage_id in BACKGROUND_STAGE_IDS:
                 raw = execute_background_stage(
                     executor,
                     context,
