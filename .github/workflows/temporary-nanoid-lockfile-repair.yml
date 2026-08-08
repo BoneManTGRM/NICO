@@ -1,19 +1,23 @@
 name: Temporary Nanoid Lockfile Repair
 
 on:
-  push:
-    branches:
-      - codex/fix-current-review-candidate-truth-gate
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: write
 
+concurrency:
+  group: temporary-nanoid-lockfile-repair-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/fix-current-review-candidate-truth-gate'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repair branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: codex/fix-current-review-candidate-truth-gate
           fetch-depth: 0
@@ -34,19 +38,26 @@ jobs:
               "version": "3.3.17",
               "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.17.tgz",
               "integrity": "sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==",'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one vulnerable nanoid lock entry, found {text.count(old)}")
-          path.write_text(text.replace(old, new), encoding="utf-8")
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one vulnerable nanoid lock entry, found {text.count(old)}")
+              path.write_text(text.replace(old, new), encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("nanoid lock entry was neither the expected vulnerable nor repaired form")
           PY
 
-      - name: Remove temporary workflow and commit repair
+      - name: Remove temporary repair files and commit
         shell: bash
         run: |
-          rm .github/workflows/temporary-nanoid-lockfile-repair.yml
+          rm -f .github/workflows/temporary-nanoid-lockfile-repair.yml
+          rm -f .github/nanoid-repair-trigger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/web/package-lock.json .github/workflows/temporary-nanoid-lockfile-repair.yml
+          git add apps/web/package-lock.json .github/workflows/temporary-nanoid-lockfile-repair.yml .github/nanoid-repair-trigger
           git diff --cached --check
           git diff --cached -- apps/web/package-lock.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
           git commit -m "Fix production npm audit nanoid advisory"
           git push origin HEAD:codex/fix-current-review-candidate-truth-gate
