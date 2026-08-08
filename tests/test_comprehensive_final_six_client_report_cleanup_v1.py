@@ -129,7 +129,7 @@ def test_deployment_population_discloses_remainder_without_calling_it_failure() 
     assert source["evidence"][-1] == "Non-success deployment classification: Not available."
 
 
-def test_existing_assurance_model_is_explained_without_changing_score() -> None:
+def test_candidate_workload_is_explained_without_changing_numeric_score() -> None:
     canonical = _canonical()
     before = canonical["assessment"]["evidence_adjusted_score"]
 
@@ -137,16 +137,21 @@ def test_existing_assurance_model_is_explained_without_changing_score() -> None:
     contract = explained["assessment"]["score_contract"]
 
     assert explained["assessment"]["evidence_adjusted_score"] == before
-    assert contract["candidate_volume_penalty"] == 4
+    assert contract["candidate_volume_penalty"] == 0
+    assert contract["candidate_volume_penalty_cap"] == 0
     assert contract["candidate_volume_active_category_count"] == 3
-    assert contract["candidate_volume_category_points"] == 3
     assert contract["candidate_volume_band"] == "100-999"
-    assert contract["candidate_volume_increment"] == 1
+    assert contract["candidate_volume_increment"] == 0
     assert contract["candidate_volume_penalty_arithmetic_verified"] is True
+    assert contract["candidate_volume_affects_technical_score"] is False
+    assert contract["candidate_volume_affects_evidence_adjusted_score"] is False
+    assert contract["candidate_volume_affects_numeric_score"] is False
+    assert contract["review_workload_affects_numeric_score"] is False
+    assert contract["candidate_volume_affects_assurance_state"] is True
     assert (
-        "3 active review categories x 1 point, plus 1 volume point for 662 "
-        "review-required candidates in the 100-999 band; bounded total=4 points"
-        in contract["candidate_volume_penalty_basis"]
+        "Candidate volume and reviewer workload are operational review metrics and have no "
+        "numeric technical-maturity or Evidence-Adjusted score effect."
+        == contract["candidate_volume_penalty_basis"]
     )
 
 
