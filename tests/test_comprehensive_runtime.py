@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,21 @@ def _payload() -> dict:
     }
 
 
+def _continue_to_review(client: TestClient, run_id: str, *, timeout: float = 4.0) -> dict:
+    deadline = time.time() + timeout
+    last: dict = {}
+    while time.time() < deadline:
+        response = client.post(f"/assessment/comprehensive-run/{run_id}/continue")
+        assert response.status_code == 200
+        last = response.json()
+        if last.get("status") == "review_required":
+            return last
+        assert last.get("status") == "running"
+        assert last.get("client_delivery_allowed") is False
+        time.sleep(0.02)
+    raise AssertionError(f"run did not reach human review before timeout: {last}")
+
+
 def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
     path = tmp_path / "comprehensive.db"
     app = FastAPI()
@@ -90,9 +106,7 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
     assert started.status_code == 200
     assert started.json()["run_id"] == "comprun_runtime_001"
 
-    completed = client.post("/assessment/comprehensive-run/comprun_runtime_001/continue")
-    assert completed.status_code == 200
-    body = completed.json()
+    body = _continue_to_review(client, "comprun_runtime_001")
     assert body["status"] == "review_required"
     assert body["progress_percent"] == 100.0
     assert body["human_review_required"] is True

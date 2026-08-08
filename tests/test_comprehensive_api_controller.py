@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,24 @@ def _payload() -> dict:
     }
 
 
+def _continue_to_review(
+    controller: ComprehensiveApiController,
+    run_id: str,
+    *,
+    timeout: float = 4.0,
+) -> dict:
+    deadline = time.time() + timeout
+    last: dict = {}
+    while time.time() < deadline:
+        last = controller.continue_run(run_id)
+        if last.get("status") == "review_required":
+            return last
+        assert last.get("status") == "running"
+        assert last.get("client_delivery_allowed") is False
+        time.sleep(0.02)
+    raise AssertionError(f"run did not reach human review before timeout: {last}")
+
+
 def test_start_returns_canonical_two_service_identity(tmp_path: Path) -> None:
     response = _controller(tmp_path / "runs.db").start(_payload())
 
@@ -126,12 +145,22 @@ def test_continue_can_advance_bounded_number_of_stages(tmp_path: Path) -> None:
     assert response["client_delivery_allowed"] is False
 
 
-def test_continue_without_bound_runs_to_human_review(tmp_path: Path) -> None:
+def test_continue_without_bound_stops_at_async_final_report_boundary_then_reaches_review(
+    tmp_path: Path,
+) -> None:
     controller = _controller(tmp_path / "runs.db")
     controller.start(_payload())
 
-    response = controller.continue_run("comprun_api_001")
+    first = controller.continue_run("comprun_api_001")
 
+    assert first["status"] == "running"
+    assert first["terminal"] is False
+    assert first["client_delivery_allowed"] is False
+    marker = first["record"]["stage_results"]["final_comprehensive_report_generation"]
+    assert marker["status"] == "running"
+    assert marker["reason"] == "final_report_background_publication_in_progress"
+
+    response = _continue_to_review(controller, "comprun_api_001")
     assert response["status"] == "review_required"
     assert response["progress_percent"] == 100.0
     assert response["completed_stages"] == list(COMPREHENSIVE_STAGES)
