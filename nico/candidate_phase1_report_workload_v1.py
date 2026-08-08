@@ -12,10 +12,14 @@ from nico.candidate_phase1_report_workload_text_v1 import (
     VERSION as TEXT_VERSION,
     rewrite_compact_markdown,
 )
+from nico.phase1_completion_truth_v1 import (
+    VERSION as COMPLETION_TRUTH_VERSION,
+    install_phase1_completion_truth_patch,
+)
 
-VERSION = "nico.candidate-phase1-report-workload.v1"
-_PDF_MARKER = "_nico_phase1_workload_pdf_v1"
-_MARKDOWN_MARKER = "_nico_phase1_workload_markdown_v1"
+VERSION = "nico.candidate-phase1-report-workload.v2"
+_PDF_MARKER = "_nico_phase1_workload_pdf_v2"
+_MARKDOWN_MARKER = "_nico_phase1_workload_markdown_v2"
 
 
 def _replace_aliases(name: str, original: Any, replacement: Any) -> None:
@@ -32,6 +36,8 @@ def _replace_aliases(name: str, original: Any, replacement: Any) -> None:
 def install_phase1_report_workload_patch() -> dict[str, Any]:
     from nico import comprehensive_client_ready_projection_v1 as projection
 
+    completion_truth = install_phase1_completion_truth_patch()
+
     current_pdf = projection.render_evidence_review_gate_pdf
     if not getattr(current_pdf, _PDF_MARKER, False):
         replacement_pdf = render_phase1_evidence_review_gate_pdf
@@ -42,6 +48,7 @@ def install_phase1_report_workload_patch() -> dict[str, Any]:
 
     current_markdown = projection.compact_client_markdown
     if not getattr(current_markdown, _MARKDOWN_MARKER, False):
+
         @wraps(current_markdown)
         def compact_with_workload(existing, canonical, register, *, spanish):
             rendered = current_markdown(existing, canonical, register, spanish=spanish)
@@ -57,10 +64,18 @@ def install_phase1_report_workload_patch() -> dict[str, Any]:
         "version": VERSION,
         "pdf_schema": PDF_VERSION,
         "text_schema": TEXT_VERSION,
-        "evidence_review_gate_pdf_bound": getattr(projection.render_evidence_review_gate_pdf, _PDF_MARKER, False),
-        "compact_client_markdown_bound": getattr(projection.compact_client_markdown, _MARKDOWN_MARKER, False),
+        "completion_truth_schema": COMPLETION_TRUTH_VERSION,
+        "completion_truth_bound": completion_truth.get("status") == "installed",
+        "evidence_review_gate_pdf_bound": getattr(
+            projection.render_evidence_review_gate_pdf, _PDF_MARKER, False
+        ),
+        "compact_client_markdown_bound": getattr(
+            projection.compact_client_markdown, _MARKDOWN_MARKER, False
+        ),
         "technical_triage_distinguished_from_human_disposition": True,
         "grouped_review_workload_disclosed": True,
+        "review_workload_affects_numeric_score": False,
+        "candidate_volume_affects_numeric_score": False,
         "human_approval_created": False,
         "client_delivery_allowed": False,
     }
