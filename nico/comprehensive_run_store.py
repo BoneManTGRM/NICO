@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterator, Protocol
 
 from nico.comprehensive_run_record import restore_comprehensive_run_record, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_run_store.v1"
+VERSION = "nico.comprehensive_run_store.v2"
 
 
 class ConnectionLike(Protocol):
@@ -35,6 +35,10 @@ class ComprehensiveRunStore:
     overwrite the same run. Payload integrity is revalidated on every write
     and read. The SQL is intentionally limited to portable DB-API operations;
     production can use a psycopg connection factory with ``dialect='postgres'``.
+
+    Final-report background coordination stores only a tiny lease/heartbeat row in
+    the same durable database. The generated report package never passes through the
+    lease table; it is committed only through the canonical run transaction.
     """
 
     def __init__(self, connection_factory: ConnectionFactory, *, dialect: str = "sqlite") -> None:
@@ -62,7 +66,8 @@ class ComprehensiveRunStore:
     def ensure_schema(self) -> None:
         payload_type = "JSONB" if self._dialect == "postgres" else "TEXT"
         boolean_type = "BOOLEAN" if self._dialect == "postgres" else "INTEGER"
-        statement = f"""
+        epoch_type = "DOUBLE PRECISION" if self._dialect == "postgres" else "REAL"
+        run_statement = f"""
         CREATE TABLE IF NOT EXISTS nico_comprehensive_runs (
             run_id TEXT PRIMARY KEY,
             customer_id TEXT NOT NULL,
@@ -78,9 +83,20 @@ class ComprehensiveRunStore:
             payload {payload_type} NOT NULL
         )
         """
+        final_report_job_statement = f"""
+        CREATE TABLE IF NOT EXISTS nico_comprehensive_final_report_jobs (
+            lease_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_epoch {epoch_type} NOT NULL,
+            heartbeat_epoch {epoch_type} NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
         with self._connection() as connection:
             cursor = connection.cursor()
-            cursor.execute(statement)
+            cursor.execute(run_statement)
+            cursor.execute(final_report_job_statement)
             connection.commit()
 
     def create(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -150,6 +166,109 @@ class ComprehensiveRunStore:
                 )
             connection.commit()
         return deepcopy(canonical)
+
+    def create_final_report_job(
+        self,
+        *,
+        lease_id: str,
+        run_id: str,
+        started_epoch: float,
+        heartbeat_epoch: float,
+        updated_at: str,
+    ) -> dict[str, Any]:
+        lease = str(lease_id or "").strip()
+        run = str(run_id or "").strip()
+        if not lease or not run:
+            raise ValueError("final_report_lease_and_run_required")
+        p = self.placeholder
+        statement = f"""
+        INSERT INTO nico_comprehensive_final_report_jobs (
+            lease_id, run_id, status, started_epoch, heartbeat_epoch, updated_at
+        ) VALUES ({','.join([p] * 6)})
+        """
+        values = (
+            lease,
+            run,
+            "running",
+            float(started_epoch),
+            float(heartbeat_epoch),
+            str(updated_at),
+        )
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(statement, values)
+            except Exception as exc:
+                connection.rollback()
+                raise ComprehensiveRunConflict(f"final_report_lease_exists:{lease}") from exc
+            connection.commit()
+        return {
+            "lease_id": lease,
+            "run_id": run,
+            "status": "running",
+            "started_epoch": float(started_epoch),
+            "heartbeat_epoch": float(heartbeat_epoch),
+            "updated_at": str(updated_at),
+        }
+
+    def load_final_report_job(self, lease_id: str) -> dict[str, Any] | None:
+        lease = str(lease_id or "").strip()
+        if not lease:
+            return None
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT lease_id, run_id, status, started_epoch, heartbeat_epoch, updated_at
+                FROM nico_comprehensive_final_report_jobs
+                WHERE lease_id = {p}
+                """,
+                (lease,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "lease_id": str(row[0]),
+            "run_id": str(row[1]),
+            "status": str(row[2]),
+            "started_epoch": float(row[3]),
+            "heartbeat_epoch": float(row[4]),
+            "updated_at": str(row[5]),
+        }
+
+    def update_final_report_job(
+        self,
+        lease_id: str,
+        *,
+        status: str,
+        heartbeat_epoch: float,
+        updated_at: str,
+    ) -> bool:
+        lease = str(lease_id or "").strip()
+        normalized_status = str(status or "").strip().lower()
+        if not lease or not normalized_status:
+            raise ValueError("final_report_lease_and_status_required")
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_final_report_jobs
+                SET status = {p}, heartbeat_epoch = {p}, updated_at = {p}
+                WHERE lease_id = {p}
+                """,
+                (
+                    normalized_status,
+                    float(heartbeat_epoch),
+                    str(updated_at),
+                    lease,
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
 
     def list_recent(self, *, customer_id: str, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         customer = str(customer_id or "").strip()
