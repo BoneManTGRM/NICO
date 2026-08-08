@@ -3,8 +3,8 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-semantic-content-gate.v67"
-_MARKER = "_nico_comprehensive_semantic_content_gate_v67"
+VERSION = "nico.comprehensive-report-semantic-content-gate.v68"
+_MARKER = "_nico_comprehensive_semantic_content_gate_v68"
 _FINDING_REGISTER_MARKERS = (
     "finding and remediation register",
     "registro de hallazgos y remediación",
@@ -12,6 +12,28 @@ _FINDING_REGISTER_MARKERS = (
     "detailed canonical findings",
     "hallazgos canónicos detallados",
     "hallazgos canonicos detallados",
+)
+_CURRENT_REVIEW_SCORE_EFFECT_MARKERS = (
+    (
+        "score effect: assurance-only while authorized human disposition remains pending; "
+        "nico automated technical triage is complete"
+    ),
+    (
+        "score effect: assurance-only while human disposition remains pending; "
+        "nico technical triage is complete"
+    ),
+    (
+        "efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; "
+        "el triage técnico de nico está completo"
+    ),
+    (
+        "efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; "
+        "el triage técnico de nico está completo"
+    ),
+)
+_SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS = (
+    "score effect: assurance-only until triaged",
+    "efecto en la puntuación: solo aseguramiento hasta su clasificación",
 )
 
 
@@ -28,6 +50,13 @@ def _integer(value: Any) -> int:
         return max(0, int(str(value or "0").strip()))
     except (TypeError, ValueError):
         return 0
+
+
+def _review_score_effect_marker(lowered: str) -> str:
+    return next(
+        (marker for marker in _CURRENT_REVIEW_SCORE_EFFECT_MARKERS if marker in lowered),
+        "",
+    )
 
 
 def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -114,17 +143,40 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
 
     review_total = _integer(review_summary.get("review_required_total"))
     material_total = _integer(review_summary.get("verified_material_total"))
+    score_effect_marker = ""
+    superseded_score_effect_marker = ""
     if review_total:
         required_markers = (
             f"review-required candidates: {review_total}",
             f"confirmed material findings: {material_total}",
-            "score effect: assurance-only until triaged",
             "review-required candidate register",
         )
         missing = [marker for marker in required_markers if marker.casefold() not in lowered]
         if missing:
             raise ValueError(
                 "client report omitted review-candidate truth: " + ", ".join(missing)
+            )
+
+        superseded_score_effect_marker = next(
+            (
+                marker
+                for marker in _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS
+                if marker in lowered
+            ),
+            "",
+        )
+        if superseded_score_effect_marker:
+            raise ValueError(
+                "client report retained superseded review-candidate score-effect language: "
+                + superseded_score_effect_marker
+            )
+
+        score_effect_marker = _review_score_effect_marker(lowered)
+        if not score_effect_marker:
+            raise ValueError(
+                "client report omitted review-candidate truth: score effect must state that "
+                "assurance remains limited while human disposition is pending and NICO technical "
+                "triage is complete"
             )
 
     if ci_context and "ci/cd operational readiness and historical health" not in lowered:
@@ -138,6 +190,11 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
         "architecture_hotspot_count_checked": len(hotspots),
         "review_required_candidate_count_rendered": review_total,
         "confirmed_material_candidate_count_rendered": material_total,
+        "review_candidate_score_effect_marker": score_effect_marker,
+        "review_candidate_score_effect_truth_present": not review_total or bool(score_effect_marker),
+        "superseded_review_candidate_score_effect_absent": not bool(
+            superseded_score_effect_marker
+        ),
         "ci_operational_context_rendered": bool(ci_context),
         "finding_register_marker": finding_register_marker,
         "authoritative_finding_register_present": not finding_count or bool(finding_register_marker),
@@ -187,6 +244,8 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "false_zero_finding_publication_blocked": True,
         "authoritative_finding_register_omission_blocked": True,
         "review_candidate_omission_blocked": True,
+        "superseded_review_candidate_score_effect_blocked": True,
+        "current_phase1_review_candidate_score_effect_required": True,
         "ci_operational_context_omission_blocked": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
