@@ -195,15 +195,15 @@ def _canonical() -> dict:
     }
 
 
-def test_657_untriaged_candidates_receive_bounded_workload_penalty() -> None:
+def test_657_review_candidates_are_workload_context_not_numeric_penalty() -> None:
     penalty, by_category = calibrated_candidate_volume_penalty(_register())
 
-    assert penalty == 4
-    assert by_category == {"dependency": 1, "secret": 1, "static": 2}
-    assert penalty < 16
+    assert penalty == 0
+    assert by_category == {"dependency": 0, "secret": 0, "static": 0}
+    assert MODEL == "review-workload-observability-v3"
 
 
-def test_provider_reports_triage_workload_without_technical_deterioration(monkeypatch) -> None:
+def test_provider_reports_triage_workload_without_numeric_score_deterioration(monkeypatch) -> None:
     install_candidate_volume_assurance_v2()
     monkeypatch.setattr(v4, "canonical_scoring_provider", lambda context: _baseline())
     monkeypatch.setattr(legacy, "_scan", lambda context: _scan())
@@ -222,14 +222,16 @@ def test_provider_reports_triage_workload_without_technical_deterioration(monkey
     contract = assessment["score_contract"]
 
     assert assessment["technical_score"] == 93
-    assert assessment["evidence_adjusted_score"] == 89
-    assert contract["candidate_volume_penalty"] == 4
+    assert assessment["evidence_adjusted_score"] == 93
+    assert contract["candidate_volume_penalty"] == 0
     assert contract["missing_raw_payload_penalty"] == 0
     assert contract["incomplete_analyzer_penalty"] == 0
     assert contract["candidate_volume_penalty_model"] == MODEL
     assert contract["candidate_volume_confirmed_material_total"] == 0
     assert contract["candidate_volume_is_triage_workload_not_defect_severity"] is True
-    assert "not evidence that the repository materially worsened" in assessment["executive_summary"]
+    assert contract["candidate_volume_affects_numeric_score"] is False
+    assert contract["review_workload_affects_numeric_score"] is False
+    assert "do not change numeric security or readiness scores" in assessment["executive_summary"]
 
 
 def test_review_companion_retains_all_eight_sections_across_four_paired_pages() -> None:

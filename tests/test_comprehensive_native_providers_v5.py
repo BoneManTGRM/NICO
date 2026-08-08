@@ -164,8 +164,6 @@ def test_canonical_register_normalizes_exact_source_and_deduplicates() -> None:
     assert register["status"] == "complete"
     assert register["count_parity_verified"] is True
     assert register["totals"]["raw"] == 2
-    # The source payload is deduplicated into one aggregate fingerprint, then
-    # expanded into two stable auditable candidate identities.
     assert len(register["findings"]) == 2
     assert len({record["finding_id"] for record in register["findings"]}) == 2
     assert len({record["duplicate_group_id"] for record in register["findings"]}) == 1
@@ -191,7 +189,7 @@ def test_missing_raw_payload_is_explicit_count_only_evidence() -> None:
     assert register["raw_payload_retention_complete"] is False
 
 
-def test_candidate_volume_changes_evidence_adjusted_not_technical_score(monkeypatch) -> None:
+def test_candidate_volume_does_not_change_numeric_scores(monkeypatch) -> None:
     monkeypatch.setattr(v4, "canonical_scoring_provider", lambda context: _baseline())
     monkeypatch.setattr(legacy, "_repo", lambda context: _repo())
 
@@ -209,14 +207,15 @@ def test_candidate_volume_changes_evidence_adjusted_not_technical_score(monkeypa
 
     assert small_assessment["technical_score"] == 93
     assert large_assessment["technical_score"] == 93
-    assert large_assessment["evidence_adjusted_score"] < small_assessment["evidence_adjusted_score"]
-    assert large_assessment["evidence_adjusted_score"] < 90
+    assert large_assessment["evidence_adjusted_score"] == small_assessment["evidence_adjusted_score"]
+    assert large_assessment["score_contract"]["candidate_volume_penalty"] == 0
     assert large_assessment["score_contract"]["candidate_volume_affects_technical_score"] is False
-    assert large_assessment["score_contract"]["candidate_volume_affects_evidence_adjusted_score"] is True
+    assert large_assessment["score_contract"]["candidate_volume_affects_evidence_adjusted_score"] is False
+    assert large_assessment["score_contract"]["review_workload_affects_numeric_score"] is False
     assert large_assessment["canonical_scanner_finding_register"]["totals"]["raw"] == 657
 
 
-def test_removing_candidates_improves_readiness_on_same_commit(monkeypatch) -> None:
+def test_removing_candidates_reduces_workload_not_numeric_readiness(monkeypatch) -> None:
     monkeypatch.setattr(v4, "canonical_scoring_provider", lambda context: _baseline())
     monkeypatch.setattr(legacy, "_repo", lambda context: _repo())
 
@@ -224,13 +223,14 @@ def test_removing_candidates_improves_readiness_on_same_commit(monkeypatch) -> N
     after = _scan(static_review=0, include_payload=True)
 
     monkeypatch.setattr(legacy, "_scan", lambda context: before)
-    before_score = scoring.canonical_scoring_provider(_context())["assessment"]["evidence_adjusted_score"]
+    before_assessment = scoring.canonical_scoring_provider(_context())["assessment"]
 
     monkeypatch.setattr(legacy, "_scan", lambda context: after)
-    after_score = scoring.canonical_scoring_provider(_context())["assessment"]["evidence_adjusted_score"]
+    after_assessment = scoring.canonical_scoring_provider(_context())["assessment"]
 
-    assert after_score > before_score
-    assert after_score <= 93
+    assert after_assessment["evidence_adjusted_score"] == before_assessment["evidence_adjusted_score"]
+    assert after_assessment["score_contract"]["candidate_volume_review_required_total"] < before_assessment["score_contract"]["candidate_volume_review_required_total"]
+    assert after_assessment["score_contract"]["candidate_volume_penalty"] == 0
 
 
 def test_ci_configuration_and_operational_health_are_separate(monkeypatch) -> None:
