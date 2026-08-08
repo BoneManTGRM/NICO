@@ -37,7 +37,8 @@ def test_native_provider_install_covers_every_required_capability() -> None:
     assert native["canonical_scanner_finding_register_bound"] is True
     assert native["canonical_scanner_finding_count_parity_fail_closed"] is True
     assert native["candidate_volume_affects_technical_score"] is False
-    assert native["candidate_volume_affects_evidence_adjusted_score"] is True
+    assert native["candidate_volume_affects_evidence_adjusted_score"] is False
+    assert native["review_workload_affects_numeric_score"] is False
     assert native["ci_cd_configuration_and_operational_health_separated"] is True
 
 
