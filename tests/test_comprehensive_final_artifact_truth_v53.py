@@ -83,6 +83,26 @@ def _scanner_register() -> dict:
     }
 
 
+def _set_adjusted(package: dict, score: int) -> None:
+    assessment = package["json"]["assessment"]
+    assessment["evidence_adjusted_score"] = score
+    assessment["canonical_evidence_adjusted_score"] = score
+    assessment["maturity_signal"]["evidence_adjusted_score"] = score
+    assessment["maturity_signal"]["canonical_evidence_adjusted_score"] = score
+    if isinstance(assessment.get("score_contract"), dict):
+        assessment["score_contract"]["evidence_adjusted_score"] = score
+    evidence = package["json"]["stage_summaries"][0]["evidence"]
+    package["json"]["stage_summaries"][0]["evidence"] = [
+        item.replace("evidence_adjusted_score: 91", f"evidence_adjusted_score: {score}")
+        .replace("canonical_evidence_adjusted_score: 91", f"canonical_evidence_adjusted_score: {score}")
+        .replace("evidence_adjusted_score: 92", f"evidence_adjusted_score: {score}")
+        .replace("canonical_evidence_adjusted_score: 92", f"canonical_evidence_adjusted_score: {score}")
+        for item in evidence
+    ]
+    package["markdown"] = package["markdown"].replace("Evidence-Adjusted 91/100", f"Evidence-Adjusted {score}/100").replace("Evidence-Adjusted 92/100", f"Evidence-Adjusted {score}/100")
+    package["html"] = package["html"].replace("Evidence-Adjusted 91/100", f"Evidence-Adjusted {score}/100").replace("Evidence-Adjusted 92/100", f"Evidence-Adjusted {score}/100")
+
+
 def _package(*, include_v5_truth: bool = False) -> dict:
     rows = [
         {"technical_score": 96, "weight": 0.20, "assurance_factor": 1.00, "included": True},
@@ -162,18 +182,27 @@ def _package(*, include_v5_truth: bool = False) -> dict:
                     "canonical_finding_register_status": "complete",
                     "canonical_finding_count": 1,
                     "canonical_finding_digest_sha256": register["canonical_digest_sha256"],
+                    "candidate_volume_penalty": 0,
                     "candidate_volume_affects_technical_score": False,
-                    "candidate_volume_affects_evidence_adjusted_score": True,
+                    "candidate_volume_affects_evidence_adjusted_score": False,
+                    "candidate_volume_affects_numeric_score": False,
+                    "review_workload_affects_numeric_score": False,
+                    "candidate_volume_affects_assurance_state": True,
                 },
                 "score_contract": {
                     "technical_score": 92,
-                    "evidence_adjusted_score": 91,
+                    "evidence_adjusted_score": 92,
                     "candidate_volume_affects_technical_score": False,
-                    "candidate_volume_affects_evidence_adjusted_score": True,
-                    "candidate_volume_penalty": 1,
+                    "candidate_volume_affects_evidence_adjusted_score": False,
+                    "candidate_volume_affects_numeric_score": False,
+                    "review_workload_affects_numeric_score": False,
+                    "candidate_volume_affects_assurance_state": True,
+                    "candidate_volume_penalty": 0,
                     "missing_raw_payload_penalty": 0,
                     "incomplete_analyzer_penalty": 0,
-                    "assurance_penalty": 1,
+                    "evidence_completeness_penalty": 0,
+                    "assurance_penalty": 0,
+                    "scoring_model_version": "technical-minus-evidence-completeness-deductions.v1",
                     "canonical_finding_register_required": True,
                     "canonical_finding_count_parity_required": True,
                     "canonical_finding_count_parity_verified": True,
@@ -202,6 +231,7 @@ def _package(*, include_v5_truth: bool = False) -> dict:
                 "client_delivery_allowed": False,
             }
         )
+        _set_adjusted(package, 92)
     return package
 
 
@@ -223,7 +253,7 @@ def test_final_artifact_validation_accepts_complete_v5_truth(monkeypatch) -> Non
     monkeypatch.setattr(
         artifact_truth,
         "_pdf_text",
-        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 91/100 _spanish_pdf",
+        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 92/100 _spanish_pdf",
     )
 
     result = artifact_truth.validate_final_report_package(_package(include_v5_truth=True))
@@ -231,8 +261,57 @@ def test_final_artifact_validation_accepts_complete_v5_truth(monkeypatch) -> Non
     assert result["status"] == "verified"
     assert result["checks"]["canonical_scanner_totals_recompute"] is True
     assert result["checks"]["evidence_adjusted_penalty_recomputes"] is True
+    assert result["checks"]["candidate_volume_does_not_change_numeric_score"] is True
     assert result["checks"]["ci_configuration_and_operational_health_separated"] is True
     assert result["checks"]["automated_package_remains_human_review_gated"] is True
+
+
+def test_final_artifact_validation_accepts_real_evidence_completeness_penalty(monkeypatch) -> None:
+    package = _package(include_v5_truth=True)
+    assessment = package["json"]["assessment"]
+    assessment["incomplete_analyzers"] = ["semgrep"]
+    assessment["analyzer_execution_coverage"] = 89
+    assessment["score_contract"]["incomplete_analyzer_penalty"] = 2
+    assessment["score_contract"]["evidence_completeness_penalty"] = 2
+    assessment["score_contract"]["assurance_penalty"] = 2
+    _set_adjusted(package, 90)
+    monkeypatch.setattr(
+        artifact_truth,
+        "_pdf_text",
+        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 90/100 _spanish_pdf",
+    )
+
+    result = artifact_truth.validate_final_report_package(package)
+
+    assert result["status"] == "verified"
+    assert result["checks"]["weighted_scores_recompute"] is True
+    assert result["checks"]["evidence_adjusted_penalty_recomputes"] is True
+
+
+def test_final_artifact_validation_rejects_legacy_candidate_volume_score_penalty(monkeypatch) -> None:
+    package = _package(include_v5_truth=True)
+    assessment = package["json"]["assessment"]
+    coverage = assessment["evidence_coverage"]
+    contract = assessment["score_contract"]
+    contract["candidate_volume_penalty"] = 1
+    contract["candidate_volume_affects_evidence_adjusted_score"] = True
+    contract["candidate_volume_affects_numeric_score"] = True
+    contract["assurance_penalty"] = 1
+    coverage["candidate_volume_penalty"] = 1
+    coverage["candidate_volume_affects_evidence_adjusted_score"] = True
+    coverage["candidate_volume_affects_numeric_score"] = True
+    _set_adjusted(package, 91)
+    monkeypatch.setattr(
+        artifact_truth,
+        "_pdf_text",
+        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 91/100 _spanish_pdf",
+    )
+
+    result = artifact_truth.validate_final_report_package(package)
+
+    assert result["status"] == "blocked"
+    assert "evidence_adjusted_penalty_recomputes" in result["failed_checks"]
+    assert "candidate_volume_does_not_change_numeric_score" in result["failed_checks"]
 
 
 def test_final_artifact_validation_blocks_stale_scanner_duplicate_and_identifier(monkeypatch) -> None:
@@ -263,18 +342,14 @@ def test_v5_truth_blocks_count_score_ci_and_delivery_drift(monkeypatch) -> None:
     assessment["canonical_scanner_finding_register"]["totals"]["raw"] = 2
     assessment["ci_cd_operational_health"]["score_effect"] = "technical_score"
     assessment["sections"][0]["operational_health"] = assessment["ci_cd_operational_health"]
-    assessment["evidence_adjusted_score"] = 92
-    assessment["canonical_evidence_adjusted_score"] = 92
-    assessment["maturity_signal"]["evidence_adjusted_score"] = 92
-    assessment["maturity_signal"]["canonical_evidence_adjusted_score"] = 92
-    assessment["score_contract"]["evidence_adjusted_score"] = 92
+    _set_adjusted(package, 91)
     package["client_delivery_allowed"] = True
     package["json"]["client_delivery_allowed"] = True
     assessment["client_delivery_allowed"] = True
     monkeypatch.setattr(
         artifact_truth,
         "_pdf_text",
-        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 92/100 _spanish_pdf",
+        lambda _pdf: "Technical maturity 92/100 Evidence-Adjusted 91/100 _spanish_pdf",
     )
 
     result = artifact_truth.validate_final_report_package(package)
