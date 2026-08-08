@@ -1,0 +1,1 @@
+Test plan: prove continuation returns a running canonical marker before a deliberately slow provider finishes; prove repeated continuation while that lease is active does not invoke the provider twice; require the full NICO CI suite and production acceptance workflows before merge.
