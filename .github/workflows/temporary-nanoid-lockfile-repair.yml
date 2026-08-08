@@ -30,21 +30,29 @@ jobs:
 
           path = Path("apps/web/package-lock.json")
           text = path.read_text(encoding="utf-8")
-          old = '''    "node_modules/nanoid": {
-              "version": "3.3.16",
-              "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz",
-              "integrity": "sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==",'''
-          new = '''    "node_modules/nanoid": {
-              "version": "3.3.17",
-              "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.17.tgz",
-              "integrity": "sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==",'''
-          if old in text:
-              if text.count(old) != 1:
-                  raise SystemExit(f"expected exactly one vulnerable nanoid lock entry, found {text.count(old)}")
-              path.write_text(text.replace(old, new), encoding="utf-8")
-          elif new not in text:
-              raise SystemExit("nanoid lock entry was neither the expected vulnerable nor repaired form")
+          replacements = {
+              '"version": "3.3.16"': '"version": "3.3.17"',
+              '"resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz"': '"resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.17.tgz"',
+              '"integrity": "sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q=="': '"integrity": "sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g=="',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count == 1:
+                  text = text.replace(old, new)
+              elif count == 0 and new in text:
+                  continue
+              else:
+                  raise SystemExit(f"unexpected nanoid lock value count for {old!r}: {count}")
+          path.write_text(text, encoding="utf-8")
           PY
+
+      - name: Verify only the nanoid lock entry changed
+        shell: bash
+        run: |
+          git diff --check -- apps/web/package-lock.json
+          git diff -- apps/web/package-lock.json
+          test "$(git diff --numstat -- apps/web/package-lock.json | awk '{print $1+$2}')" = "6"
+          grep -A4 '"node_modules/nanoid"' apps/web/package-lock.json | grep -q '"version": "3.3.17"'
 
       - name: Remove temporary repair files and commit
         shell: bash
@@ -55,9 +63,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/web/package-lock.json .github/workflows/temporary-nanoid-lockfile-repair.yml .github/nanoid-repair-trigger
           git diff --cached --check
-          git diff --cached -- apps/web/package-lock.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
           git commit -m "Fix production npm audit nanoid advisory"
           git push origin HEAD:codex/fix-current-review-candidate-truth-gate
