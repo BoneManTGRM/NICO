@@ -99,8 +99,8 @@ export async function requestWithRetry(
   const runContinueRequest = method === "POST" && RUN_CONTINUE_PATH.test(path);
   // Readiness and exact-run status are idempotent checks. Comprehensive continuation
   // is not safely replayable: it can advance the canonical run. Give all three a
-  // finite Safari-safe deadline, but continuation is strictly single-attempt so a
-  // transport retry can never execute the same stage twice.
+  // finite Safari-safe deadline, keep continuation strictly single-attempt, and retry
+  // only the idempotent readiness/status reads needed to recover authoritative truth.
   const boundedRequest =
     readinessPreflight || runStatusRequest || runContinueRequest;
   const requestTimeoutMs = readinessPreflight
@@ -110,7 +110,7 @@ export async function requestWithRetry(
       : runContinueRequest
         ? RUN_CONTINUE_CLIENT_TIMEOUT_MS
         : 0;
-  const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS;
+  const retryDelays = runContinueRequest ? [0] : CLIENT_RETRY_DELAYS_MS;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
@@ -237,15 +237,28 @@ export function issueFor(
     };
   }
 
+  // A request/control-plane error after intake is not authoritative evidence that the
+  // durable assessment failed. Preserve the exact run and offer status recovery. Only
+  // an explicit terminal run payload may project the run_failed state in the browser.
+  if (runCreated) {
+    return {
+      kind: "service_unavailable",
+      title: copy.serviceUnavailableTitle,
+      message: copy.runStatusUnavailableMessage,
+      code,
+      requestId,
+      retryable: true,
+      runCreated: true,
+    };
+  }
+
   return {
     kind: "run_failed",
     title: copy.runFailureTitle,
-    message: runCreated
-      ? copy.runFailureAfterCreationMessage
-      : copy.runCreationFailureMessage,
+    message: copy.runCreationFailureMessage,
     code,
     requestId,
     retryable,
-    runCreated,
+    runCreated: false,
   };
 }
