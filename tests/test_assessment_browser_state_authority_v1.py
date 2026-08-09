@@ -13,10 +13,11 @@ RUN_CONTROLLER = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
 def test_exact_run_status_retries_without_replaying_continuation() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
-    assert "const retryDelays = runContinueRequest ? [0] : CLIENT_RETRY_DELAYS_MS;" in source
-    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS;" not in source
-    assert "keep continuation strictly single-attempt" in source
-    assert "retry only the idempotent readiness/status reads" in source
+    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS;" in source
+    assert "async function requestExactRunStatusWithRetry" in source
+    assert "attempt < CLIENT_RETRY_DELAYS_MS.length" in source
+    assert 'return await requestWithRetry(path, {method: "GET"}, copy);' in source
+    assert "can never replay continuation" in source
 
 
 def test_terminal_continuation_is_confirmed_by_exact_run_status() -> None:
@@ -25,8 +26,8 @@ def test_terminal_continuation_is_confirmed_by_exact_run_status() -> None:
     assert "function statusPathForContinuation(path: string): string" in source
     assert "if (runContinueRequest && result.terminal === true)" in source
     assert "Confirm every terminal" in source
+    assert "requestExactRunStatusWithRetry(" in source
     assert "statusPathForContinuation(path)" in source
-    assert '{method: "GET"}' in source
 
 
 def test_created_run_transport_uncertainty_is_not_promoted_to_run_failure() -> None:
