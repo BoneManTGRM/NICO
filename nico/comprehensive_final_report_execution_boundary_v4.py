@@ -12,7 +12,7 @@ from nico.comprehensive_final_report_compact_base_v1 import (
     install_comprehensive_final_report_compact_base_v1,
 )
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v6"
+VERSION = "nico.comprehensive_final_report_execution_boundary.v7"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 600
 MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS = 30
@@ -51,6 +51,7 @@ def _blocked(
     recovery_supported: bool = False,
     recovery_scope: str | None = None,
 ) -> dict[str, Any]:
+    execution_metadata = dict(execution or {})
     blocked = {
         "status": "blocked",
         "reason": reason,
@@ -67,11 +68,13 @@ def _blocked(
         "human_review_required": True,
         "client_delivery_allowed": False,
         "stage_execution": {
-            **dict(execution or {}),
+            **execution_metadata,
             "artifact_schema": VERSION,
             "mode": "atomic_final_report_publication",
             "canonical_run_write_required": True,
-            "detached_background_execution": False,
+            "detached_background_execution": bool(
+                execution_metadata.get("detached_background_execution")
+            ),
         },
     }
     if recovery_supported:
@@ -191,26 +194,61 @@ def _execute_bounded(
     return kind, value, elapsed
 
 
+def _execute_managed(
+    executor,
+    context: Mapping[str, Any],
+) -> tuple[str, Any, float]:
+    """Execute in the durable coordinator's already-detached worker.
+
+    The coordinator owns the provider lifetime, heartbeat, lease replacement, and
+    canonical publication. Starting another timeout thread here would be
+    uncancellable: after the timeout result was published, the renderer would keep
+    consuming the process while no lease tracked it.
+    """
+
+    started = time.perf_counter()
+    try:
+        value = executor(dict(context))
+    except BaseException as exc:
+        return "error", exc, round(time.perf_counter() - started, 3)
+    return "result", value, round(time.perf_counter() - started, 3)
+
+
 def execute_final_report_stage(
     executor,
     context: Mapping[str, Any],
     *,
     timeout_seconds: int | None = None,
+    durable_coordinator_owns_lifetime: bool = False,
 ) -> dict[str, Any]:
     """Generate, validate, and return one exact final package for atomic run storage."""
 
-    limit = _timeout_seconds(timeout_seconds)
-    kind, value, elapsed = _execute_bounded(executor, context, limit)
+    if durable_coordinator_owns_lifetime:
+        limit: int | None = None
+        kind, value, elapsed = _execute_managed(executor, context)
+    else:
+        limit = _timeout_seconds(timeout_seconds)
+        kind, value, elapsed = _execute_bounded(executor, context, limit)
+
     execution = {
         "artifact_schema": VERSION,
         "mode": "atomic_final_report_publication",
         "execution_timeout_seconds": limit,
         "elapsed_seconds": elapsed,
-        "detached_background_execution": False,
+        "detached_background_execution": durable_coordinator_owns_lifetime,
+        "provider_lifetime_owner": (
+            "durable_final_report_coordinator"
+            if durable_coordinator_owns_lifetime
+            else "bounded_execution_boundary"
+        ),
+        "provider_lifetime_bounded_by_http_request": False,
+        "nested_timeout_thread": not durable_coordinator_owns_lifetime,
+        "durable_coordinator_owns_lifetime": durable_coordinator_owns_lifetime,
         "full_context_deepcopy_skipped": True,
         "compact_intermediate_pdf_projection_installed": True,
     }
     if kind == "timeout":
+        assert limit is not None
         return _blocked(
             context,
             reason="final_report_execution_timeout",
@@ -289,7 +327,9 @@ def execute_final_report_stage(
     output["stage_execution"] = {
         **execution,
         "canonical_run_write_required": True,
-        "canonical_run_written_only_by_request_thread": True,
+        "canonical_run_written_only_by_request_thread": (
+            not durable_coordinator_owns_lifetime
+        ),
         "artifact_validation_complete": True,
         "exact_identity_verified": True,
     }
