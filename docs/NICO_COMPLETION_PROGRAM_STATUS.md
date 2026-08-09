@@ -188,6 +188,12 @@ Carryover items:
 
 ## Next dependency-ordered package
 
-No Phase 2 work package is declared by this closure update.
+Phase 2 Work Package 1 is declared as:
 
-The completion program pauses at the verified Phase 1 boundary. A later package may begin only after it is added to the authoritative machine-readable state under the same merge, report-preservation, security, and commercial-readiness gates.
+`exception_first_reviewer_interface`
+
+Declaration state: `declared_not_started`.
+
+This authority-only declaration does not itself start implementation. Implementation may begin only after this declaration is merged under the same exact-head workflow, zero-unresolved-review-thread, report-preservation, security, commercial-readiness, exact deployment-identity, Mobile Restart, iOS WebKit, and Two-Service Production Acceptance gates.
+
+The work package is intentionally narrow. It may consume the existing Phase 1 canonical candidate register, deterministic cluster metadata, and workload-routing fields to present human review in exception-first order. It must not create a second analysis system, change scanner or score semantics, suppress or relabel candidates, change the Comprehensive client report, automate human dispositions or reviewer identity, approve an assessment, authorize client delivery, or absorb later Phase 2 carryover items such as candidate-level disposition controls, quality-control sampling, or reviewer-time measurement.
