@@ -4,8 +4,6 @@ import {useEffect, useRef, useState} from "react";
 
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
-const ACTIVE_RUN_MAX_AGE_MS = 2 * 60 * 60_000;
-const STALE_CHECK_INTERVAL_MS = 30_000;
 const SHORT_REQUEST_TIMEOUT_MS = 45_000;
 const LONG_REQUEST_TIMEOUT_MS = 300_000;
 const LIFECYCLE_PATH = /^\/api\/nico\/(?:diagnostics\/comprehensive-runtime|assessment\/comprehensive-(?:intake|run\/[^/?#]+(?:\/continue)?))(?:[?#]|$)/;
@@ -89,15 +87,13 @@ function combinedRequest(
   });
 }
 
-function readStoredRun(): {runId: string; startedAt: number} | null {
+function readStoredRun(): {runId: string} | null {
   try {
     const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
     if (!raw) return null;
     const value = JSON.parse(raw) as Record<string, unknown>;
     const runId = String(value.runId || "").trim();
-    const startedAt = Number(value.startedAt);
-    if (!runId) return null;
-    return {runId, startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now()};
+    return runId ? {runId} : null;
   } catch {
     return null;
   }
@@ -152,59 +148,20 @@ export default function ComprehensiveStuckRunRecovery() {
   const [reason, setReason] = useState("");
   const [recoveryRunId, setRecoveryRunId] = useState("");
   const timedOutRunId = useRef("");
-  const dismissedRunId = useRef("");
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
     const boundedFetch: typeof window.fetch = (input, init) => combinedRequest(originalFetch, input, init);
     window.fetch = boundedFetch;
 
-    const inspect = () => {
-      if (!window.location.pathname.includes("assessment")) {
-        setVisible(false);
-        return;
-      }
-
-      const stored = readStoredRun();
-      const runId = stored?.runId
-        || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
-        || recoveryRunId
-        || "";
-      if (dismissedRunId.current && dismissedRunId.current !== runId) {
-        dismissedRunId.current = "";
-      }
-      if (timedOutRunId.current && timedOutRunId.current !== runId) {
-        timedOutRunId.current = "";
-      }
-
-      const stale = Boolean(stored && Date.now() - stored.startedAt > ACTIVE_RUN_MAX_AGE_MS);
-      const timedOut = Boolean(timedOutRunId.current && timedOutRunId.current === runId);
-      const dismissed = Boolean(runId && dismissedRunId.current === runId);
-
-      if (dismissed || (!stale && !timedOut)) {
-        setVisible(false);
-        return;
-      }
-      if (stale) {
-        setRecoveryRunId(runId);
-        setReason("The saved assessment is older than the recovery limit.");
-        setVisible(true);
-        return;
-      }
-      if (timedOut) {
-        setRecoveryRunId(runId);
-        setVisible(true);
-      }
-    };
-
     const timeoutListener = (event: Event) => {
       const detail = (event as CustomEvent<TimeoutDetail>).detail || {};
       const path = String(detail.path || "");
       const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path);
 
-      // A readiness request without an accepted exact run belongs in the normal
-      // assessment error UI. Recovery controls are shown only when NICO can retain
-      // and retry a concrete run identity.
+      // Browser age is not evidence that a durable run is invalid or unrecoverable.
+      // Recovery controls appear only after a bounded lifecycle request actually
+      // times out, and the canonical controller then reads the exact backend run.
       if (!timeoutRunId) {
         timedOutRunId.current = "";
         setRecoveryRunId("");
@@ -214,7 +171,6 @@ export default function ComprehensiveStuckRunRecovery() {
 
       retainExactRunIdentity(timeoutRunId);
       timedOutRunId.current = timeoutRunId;
-      dismissedRunId.current = "";
       setRecoveryRunId(timeoutRunId);
       setReason(
         path.endsWith("/continue")
@@ -223,30 +179,32 @@ export default function ComprehensiveStuckRunRecovery() {
       );
       setVisible(true);
     };
-    const interval = window.setInterval(inspect, STALE_CHECK_INTERVAL_MS);
+
     window.addEventListener("nico:comprehensive-request-timeout", timeoutListener);
-    inspect();
 
     return () => {
-      window.clearInterval(interval);
       window.removeEventListener("nico:comprehensive-request-timeout", timeoutListener);
       if (window.fetch === boundedFetch) window.fetch = originalFetch;
       activeControllers.forEach((controller) => controller.abort());
       activeControllers.clear();
     };
-  }, [recoveryRunId]);
+  }, []);
 
   if (!visible) return null;
 
   const runId = recoveryRunId || currentRunId();
   const keepWaiting = () => {
-    dismissedRunId.current = runId;
     timedOutRunId.current = "";
     setVisible(false);
   };
   const retryExactRun = () => {
     retainExactRunIdentity(runId);
-    window.location.reload();
+    const url = new URL(window.location.href);
+    url.searchParams.set("tier", "comprehensive");
+    url.searchParams.set(ACTIVE_RUN_QUERY_KEY, runId);
+    url.searchParams.set("recovery_attempt", Date.now().toString());
+    url.hash = "assessment";
+    window.location.replace(`${url.pathname}${url.search}${url.hash}`);
   };
 
   return <aside
