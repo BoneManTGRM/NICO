@@ -14,9 +14,10 @@ from nico.comprehensive_final_report_execution_boundary_v4 import (
 from nico.comprehensive_run_record import apply_comprehensive_stage_result
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
 
-VERSION = "nico.comprehensive_final_report_background.v2"
+VERSION = "nico.comprehensive_final_report_background.v3"
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 DEFAULT_ORPHAN_SECONDS = 30.0
+DEFAULT_MAX_PUBLICATION_SECONDS = 900.0
 _RUNNING_REASON = "final_report_background_publication_in_progress"
 _LOCAL_TASKS: dict[str, dict[str, Any]] = {}
 _LOCAL_TASKS_LOCK = threading.RLock()
@@ -54,6 +55,15 @@ def _orphan_seconds() -> float:
         DEFAULT_ORPHAN_SECONDS,
         10.0,
         300.0,
+    )
+
+
+def _max_publication_seconds() -> float:
+    return _bounded_float(
+        "NICO_COMPREHENSIVE_FINAL_REPORT_MAX_PUBLICATION_SECONDS",
+        DEFAULT_MAX_PUBLICATION_SECONDS,
+        120.0,
+        3600.0,
     )
 
 
@@ -110,6 +120,16 @@ def _job_fresh(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
     return heartbeat > 0.0 and max(0.0, now_epoch - heartbeat) < _orphan_seconds()
 
 
+def _job_overdue(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
+    if not isinstance(job, Mapping):
+        return False
+    try:
+        started = float(job.get("started_epoch") or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return started > 0.0 and max(0.0, now_epoch - started) >= _max_publication_seconds()
+
+
 def _running_result(
     context: Mapping[str, Any],
     *,
@@ -139,6 +159,7 @@ def _running_result(
             "started_epoch": started_epoch,
             "heartbeat_interval_seconds": _heartbeat_seconds(),
             "orphan_after_seconds": _orphan_seconds(),
+            "max_publication_seconds": _max_publication_seconds(),
             "detached_background_execution": True,
             "canonical_run_write_pending": True,
             "canonical_run_written_by_final_report_coordinator": True,
@@ -148,6 +169,53 @@ def _running_result(
             "provider_lifetime_owner": "durable_final_report_coordinator",
             "nested_timeout_thread": False,
             "process_local_render_capacity": 1,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+    }
+
+
+def _overdue_result(
+    context: Mapping[str, Any],
+    *,
+    lease_id: str,
+    started_epoch: float,
+) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": "final_report_publication_deadline_exceeded",
+        "error_code": "final_report_publication_deadline_exceeded",
+        "error_message": (
+            "Final report publication exceeded the durable publication deadline. "
+            "The exact run can retry final-report publication without rerunning completed scanners."
+        ),
+        "technical_reason": (
+            f"final_report_publication_deadline_exceeded:stage={FINAL_REPORT_STAGE_ID}"
+        ),
+        "retryable": True,
+        "cancelable": True,
+        "artifacts_available": False,
+        "recovery_supported": True,
+        "recovery_scope": "final_report_only",
+        "run_id": _text(context.get("run_id")),
+        "repository": _text(context.get("repository")),
+        "commit_sha": _text(context.get("commit_sha")),
+        "evidence_ledger_id": _text(context.get("evidence_ledger_id")),
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+        "stage_execution": {
+            "artifact_schema": VERSION,
+            "mode": "durable_final_report_publication",
+            "publication_lease_id": lease_id,
+            "started_epoch": started_epoch,
+            "max_publication_seconds": _max_publication_seconds(),
+            "deadline_enforced_by": "durable_final_report_coordinator",
+            "provider_lifetime_owner": "durable_final_report_coordinator",
+            "nested_timeout_thread": False,
+            "detached_background_execution": True,
+            "canonical_run_write_required": True,
+            "recovery_supported": True,
+            "recovery_scope": "final_report_only",
             "human_review_required": True,
             "client_delivery_allowed": False,
         },
@@ -174,6 +242,7 @@ def _with_publication_metadata(
             "provider_lifetime_owner": "durable_final_report_coordinator",
             "nested_timeout_thread": False,
             "process_local_render_capacity": 1,
+            "max_publication_seconds": _max_publication_seconds(),
         }
     )
     output["stage_execution"] = execution
@@ -197,6 +266,11 @@ class FinalReportPublicationCoordinator:
     never serialized through the lease table. The durable worker owns provider
     lifetime directly and process-local rendering is serialized so concurrent runs do
     not starve status and readiness transport in the single production process.
+
+    A live heartbeat is liveness evidence, not permission to remain in the same stage
+    forever. The coordinator therefore enforces one durable wall-clock publication
+    deadline. On expiry it publishes a recoverable blocked result for the exact run,
+    preserving completed scanner evidence and fail-closed client delivery.
     """
 
     def __init__(self, store: ComprehensiveRunStore) -> None:
@@ -214,10 +288,18 @@ class FinalReportPublicationCoordinator:
 
         lease_id = _marker_lease(record)
         if lease_id:
+            job = self._store.load_final_report_job(lease_id)
+            now_epoch = time.time()
+            if _job_overdue(job, now_epoch=now_epoch):
+                return self._expire_publication(
+                    record,
+                    lease_id=lease_id,
+                    context=context,
+                    job=job,
+                )
             if _local_task_active(lease_id):
                 return record
-            job = self._store.load_final_report_job(lease_id)
-            if _job_fresh(job, now_epoch=time.time()):
+            if _job_fresh(job, now_epoch=now_epoch):
                 return record
             latest = self._store.load(run_id)
             if int(latest.get("revision") or 0) != int(record.get("revision") or 0):
@@ -225,6 +307,46 @@ class FinalReportPublicationCoordinator:
             record = latest
 
         return self._claim_and_launch(record, executor, context)
+
+    def _expire_publication(
+        self,
+        record: dict[str, Any],
+        *,
+        lease_id: str,
+        context: Mapping[str, Any],
+        job: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        run_id = _text(context.get("run_id"))
+        latest = self._store.load(run_id)
+        if int(latest.get("revision") or 0) != int(record.get("revision") or 0):
+            return latest
+        if _marker_lease(latest) != lease_id:
+            return latest
+
+        started_epoch = 0.0
+        if isinstance(job, Mapping):
+            try:
+                started_epoch = float(job.get("started_epoch") or 0.0)
+            except (TypeError, ValueError):
+                started_epoch = 0.0
+        result = _overdue_result(
+            context,
+            lease_id=lease_id,
+            started_epoch=started_epoch,
+        )
+        expected_revision = int(latest["revision"])
+        updated = apply_comprehensive_stage_result(
+            latest,
+            stage_id=FINAL_REPORT_STAGE_ID,
+            result=result,
+        )
+        try:
+            persisted = self._store.save(updated, expected_revision=expected_revision)
+        except ComprehensiveRunConflict:
+            return self._store.load(run_id)
+        self._stop_local_task(lease_id)
+        self._safe_job_update(lease_id, status="expired")
+        return persisted
 
     def _claim_and_launch(
         self,
@@ -305,9 +427,6 @@ class FinalReportPublicationCoordinator:
                     result=_with_publication_metadata(result, lease_id=lease_id),
                 )
             except BaseException:
-                # Keep the canonical run on its running marker. A failed or crashed
-                # worker is retried by the next continuation using a replacement
-                # durable lease; it is never converted into a passing result.
                 outcome = "failed"
             finally:
                 if slot_acquired:
@@ -347,6 +466,15 @@ class FinalReportPublicationCoordinator:
                 if _LOCAL_TASKS.get(lease_id) is state:
                     _LOCAL_TASKS.pop(lease_id, None)
             raise
+
+    def _stop_local_task(self, lease_id: str) -> None:
+        with _LOCAL_TASKS_LOCK:
+            state = _LOCAL_TASKS.get(lease_id)
+            if not isinstance(state, Mapping):
+                return
+            stop = state.get("stop")
+            if isinstance(stop, threading.Event):
+                stop.set()
 
     def _publish_result(
         self,
@@ -388,9 +516,6 @@ class FinalReportPublicationCoordinator:
                 updated_at=_now_iso(),
             )
         except Exception:
-            # Lease telemetry is recovery metadata. Canonical run truth remains in the
-            # optimistic-concurrency run store and must never be weakened if a
-            # heartbeat write is temporarily unavailable.
             pass
 
 
@@ -405,6 +530,7 @@ def reset_final_report_publication_tasks_for_tests() -> None:
 
 __all__ = [
     "DEFAULT_HEARTBEAT_SECONDS",
+    "DEFAULT_MAX_PUBLICATION_SECONDS",
     "DEFAULT_ORPHAN_SECONDS",
     "FinalReportPublicationCoordinator",
     "VERSION",
