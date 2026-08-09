@@ -31,6 +31,12 @@ TERMINAL_PHASES = {
     "Expert review required",
     "Se requiere revisión experta",
 }
+TERMINAL_UI_PENDING_SCORE_MARKERS = (
+    "awaiting",
+    "not scored",
+    "en espera",
+    "sin puntuar",
+)
 
 
 def _bounded(value: Any, limit: int = 500) -> str:
@@ -140,6 +146,49 @@ def _wait_for_terminal(page: Page, run_id: str, timeout_seconds: float) -> dict[
     raise AssertionError(f"Timed out waiting for terminal run {run_id}: {last}")
 
 
+def _terminal_ui_ready(state: dict[str, str], run_id: str, expected_sha: str) -> bool:
+    score = state.get("score", "").strip()
+    lowered_score = score.lower()
+    return bool(
+        state.get("run_id") == run_id
+        and state.get("phase") in TERMINAL_PHASES
+        and state.get("commit_sha") == expected_sha
+        and state.get("report_actions_present") == "true"
+        and state.get("report_actions_visible") == "true"
+        and state.get("markdown_enabled") == "true"
+        and state.get("pdf_enabled") == "true"
+        and score
+        and not any(marker in lowered_score for marker in TERMINAL_UI_PENDING_SCORE_MARKERS)
+    )
+
+
+def _wait_for_terminal_ui_ready(
+    page: Page,
+    run_id: str,
+    expected_sha: str,
+    timeout_seconds: float,
+) -> dict[str, str]:
+    """Wait for the complete terminal UI contract, not only the phase label.
+
+    The canonical run may reach ``review_required`` before React has projected the
+    exact commit, score, and on-demand Markdown/PDF controls. Treat that interval
+    as bounded UI synchronization rather than weakening any terminal assertion.
+    """
+
+    deadline = time.monotonic() + timeout_seconds
+    last: dict[str, str] = {}
+    while time.monotonic() < deadline:
+        last = _ui_state(page)
+        if _terminal_ui_ready(last, run_id, expected_sha):
+            return last
+        if last.get("phase") in {"Assessment requires attention", "La evaluación requiere atención"}:
+            raise AssertionError(f"Assessment failed while waiting for terminal report UI: {last}")
+        page.wait_for_timeout(500)
+    raise AssertionError(
+        f"Terminal phase did not converge to the complete exact-run report UI for {run_id}: {last}"
+    )
+
+
 def _start_count(requests: list[dict[str, str]]) -> int:
     return sum(
         1
@@ -245,36 +294,35 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         running_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=True)
         assert _start_count(requests) == 1, "Running-page reload created a duplicate assessment"
 
-        terminal_before_reload = _wait_for_terminal(page, run_id, args.timeout_seconds)
-        assert terminal_before_reload.get("commit_sha") == args.expected_sha
-        assert terminal_before_reload.get("report_actions_present") == "true"
-        assert terminal_before_reload.get("report_actions_visible") == "true"
-        assert terminal_before_reload.get("markdown_enabled") == "true"
-        assert terminal_before_reload.get("pdf_enabled") == "true"
-        assert "Awaiting" not in terminal_before_reload.get("score", "")
-        assert "Not scored" not in terminal_before_reload.get("score", "")
+        _wait_for_terminal(page, run_id, args.timeout_seconds)
+        terminal_before_reload = _wait_for_terminal_ui_ready(page, run_id, args.expected_sha, 240.0)
 
         terminal_storage = _stored_run(page)
         assert not terminal_storage.get("run_id"), terminal_storage
         assert terminal_storage.get("url_run_id") == run_id
         terminal_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=False)
-        terminal_after_reload = _wait_for_terminal(page, run_id, 120.0)
+        _wait_for_terminal(page, run_id, 120.0)
+        terminal_after_reload = _wait_for_terminal_ui_ready(page, run_id, args.expected_sha, 120.0)
         assert _start_count(requests) == 1, "Terminal-page reload created a duplicate assessment"
-        assert terminal_after_reload.get("commit_sha") == args.expected_sha
-        assert terminal_after_reload.get("report_actions_visible") == "true"
-        assert terminal_after_reload.get("markdown_enabled") == "true"
-        assert terminal_after_reload.get("pdf_enabled") == "true"
 
         actions = page.locator(REPORT_ACTIONS_SELECTOR).first
         actions.scroll_into_view_if_needed(timeout=args.navigation_timeout_ms)
         page.wait_for_timeout(250)
         scroll_before_resume = float(page.evaluate("() => window.scrollY"))
-        status_before = sum(1 for item in requests if item.get("method") == "GET" and item.get("path", "").endswith(run_id))
+        status_before = sum(
+            1
+            for item in requests
+            if item.get("method") == "GET" and item.get("path", "").endswith(run_id)
+        )
         page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
         page.wait_for_timeout(750)
         scroll_after_resume = float(page.evaluate("() => window.scrollY"))
         terminal_after_pageshow = _ui_state(page)
-        status_after = sum(1 for item in requests if item.get("method") == "GET" and item.get("path", "").endswith(run_id))
+        status_after = sum(
+            1
+            for item in requests
+            if item.get("method") == "GET" and item.get("path", "").endswith(run_id)
+        )
         assert terminal_after_pageshow.get("run_id") == run_id
         assert terminal_after_pageshow.get("phase") in TERMINAL_PHASES
         assert abs(scroll_after_resume - scroll_before_resume) <= 2
@@ -315,7 +363,9 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
             "report_actions_recovered": True,
             **artifacts,
             "screenshot": screenshot_path.as_posix() if screenshot_path.exists() else "",
-            "screenshot_sha256": hashlib.sha256(screenshot_path.read_bytes()).hexdigest() if screenshot_path.exists() else "",
+            "screenshot_sha256": hashlib.sha256(screenshot_path.read_bytes()).hexdigest()
+            if screenshot_path.exists()
+            else "",
             "screenshot_error": screenshot_error,
         }
     finally:
