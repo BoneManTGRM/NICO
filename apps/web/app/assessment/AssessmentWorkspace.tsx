@@ -24,10 +24,12 @@ import {
   sectionPresentation,
   statusClass,
 } from "./assessmentModel";
-import type {Copy, Locale} from "./assessmentTypes";
+import type {Copy, Locale, Result} from "./assessmentTypes";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
+
+const FINAL_REPORT_STAGE = "final_comprehensive_report_generation";
 
 function IdentifierValue({value, fallback, copy}: {value?: string; fallback: string; copy: Copy}) {
   const [didCopy, setDidCopy] = useState(false);
@@ -59,6 +61,59 @@ function List({items, empty}: {items?: string[]; empty: string}) {
 function numeric(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function activeStageExecutionFor(result: Result | null) {
+  const runRecord = objectRecord(result?.record);
+  const execution = objectRecord(result?.active_stage_execution)
+    || objectRecord(runRecord?.active_stage_execution);
+  const stageId = String(
+    execution?.stage_id
+      || execution?.stage
+      || execution?.stage_name
+      || result?.current_stage
+      || result?.record?.current_stage
+      || "",
+  ).trim();
+  const state = String(
+    execution?.state
+      || execution?.status
+      || execution?.execution_state
+      || "",
+  ).trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const heartbeatRaw = Number(
+    execution?.heartbeat_age_seconds
+      ?? execution?.heartbeat_age
+      ?? execution?.heartbeat_seconds,
+  );
+  const heartbeatAgeSeconds = Number.isFinite(heartbeatRaw) && heartbeatRaw >= 0
+    ? Math.round(heartbeatRaw)
+    : null;
+  if (!stageId && !state && heartbeatAgeSeconds == null) return null;
+  return {stageId, state, heartbeatAgeSeconds};
+}
+
+function finalReportLivenessStatus(result: Result | null, locale: Locale): string | null {
+  const execution = activeStageExecutionFor(result);
+  if (!execution || execution.stageId !== FINAL_REPORT_STAGE) return null;
+
+  const rendering = ["rendering", "running", "in_progress", "generating", "generating_report"].includes(execution.state);
+  const base = execution.state === "queued"
+    ? locale === "es-MX" ? "Informe final de evaluación en cola" : "Final assessment report queued"
+    : rendering
+      ? locale === "es-MX" ? "Generando el informe final de evaluación" : "Final assessment report rendering"
+      : locale === "es-MX" ? "Preparando el informe final de evaluación" : "Preparing final assessment report";
+
+  if (execution.heartbeatAgeSeconds == null) return base;
+  return locale === "es-MX"
+    ? `${base} · señal de actividad hace ${execution.heartbeatAgeSeconds}s`
+    : `${base} · heartbeat ${execution.heartbeatAgeSeconds}s ago`;
 }
 
 function safeFilename(value: string, fallback: string): string {
@@ -230,7 +285,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const markdownAvailable = Boolean(report?.markdown || report?.markdown_available);
     const pdfAvailable = Boolean(report?.pdf_base64 || report?.pdf_available);
     const reportReady = Boolean(markdownAvailable || pdfAvailable || report?.html || report?.html_available || report?.json || report?.json_available || report?.report_id);
-    const reportStatus = reportReady ? copy.phases.complete : running ? copy.awaitingScanner : copy.awaitingStage;
+    const finalReportStatus = finalReportLivenessStatus(result, locale);
+    const reportStatus = reportReady ? copy.phases.complete : running ? finalReportStatus || copy.awaitingScanner : copy.awaitingStage;
     return {immutableCommit, scannerStatus, markdownAvailable, pdfAvailable, reportReady, reportStatus};
   }
 
