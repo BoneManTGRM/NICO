@@ -61,6 +61,7 @@ export type Result = Assessment & {
   canonical_truth_sha256?: string;
   service_id?: string;
   status?: string;
+  terminal?: boolean;
   reason?: string;
   run_id?: string;
   repository?: string;

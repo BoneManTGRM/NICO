@@ -9,6 +9,7 @@ MODEL = ASSESSMENT / "assessmentModel.ts"
 EVIDENCE = ASSESSMENT / "assessmentEvidence.ts"
 STATUS = ASSESSMENT / "assessmentStatus.ts"
 TRANSPORT = ASSESSMENT / "assessmentTransport.ts"
+TERMINAL_AUTHORITY = ASSESSMENT / "assessmentTerminalAuthority.ts"
 
 
 def test_assessment_model_is_a_thin_compatibility_barrel() -> None:
@@ -18,6 +19,7 @@ def test_assessment_model_is_a_thin_compatibility_barrel() -> None:
         'export * from "./assessmentEvidence";',
         'export * from "./assessmentStatus";',
         'export * from "./assessmentTransport";',
+        'export {terminal} from "./assessmentTerminalAuthority";',
     ]
     assert "function " not in source
     assert "class " not in source
@@ -76,3 +78,14 @@ def test_assessment_transport_module_preserves_error_and_download_boundaries() -
     assert "window.atob" in source
     assert "URL.revokeObjectURL" in source
     assert "application/pdf" in source
+
+
+def test_assessment_terminal_authority_is_isolated_and_fail_closed() -> None:
+    source = TERMINAL_AUTHORITY.read_text(encoding="utf-8")
+
+    assert "export function terminal" in source
+    assert "result.terminal !== true" in source
+    assert 'return "failed";' in source
+    assert 'return "review_required";' in source
+    assert 'return "complete";' in source
+    assert "client_delivery_allowed" in source

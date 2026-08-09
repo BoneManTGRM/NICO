@@ -56,6 +56,10 @@ function browserHeaders(init?: HeadersInit): Headers {
   return headers;
 }
 
+function statusPathForContinuation(path: string): string {
+  return path.replace(/\/continue$/, "");
+}
+
 function timeoutErrorFor(
   readinessPreflight: boolean,
   runContinueRequest: boolean,
@@ -88,6 +92,49 @@ function timeoutErrorFor(
   );
 }
 
+async function requestExactRunStatusWithRetry(
+  path: string,
+  copy: ReturnType<typeof copyFor>,
+): Promise<Result> {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < CLIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+    const delay = CLIENT_RETRY_DELAYS_MS[attempt];
+    if (delay) {
+      await wait(delay);
+    }
+
+    try {
+      // Each exact-run status read remains independently bounded and idempotent.
+      // This helper may retry status truth, but it can never replay continuation.
+      return await requestWithRetry(path, {method: "GET"}, copy);
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        error instanceof AssessmentApiError ? error.retryable : true;
+      if (!retryable || attempt >= CLIENT_RETRY_DELAYS_MS.length - 1) {
+        break;
+      }
+    }
+  }
+
+  if (lastError instanceof AssessmentApiError) {
+    throw lastError;
+  }
+  if (lastError instanceof Error) {
+    throw new AssessmentApiError(lastError.message || copy.backendError, {
+      status: 0,
+      code: "assessment_network_error",
+      retryable: true,
+    });
+  }
+  throw new AssessmentApiError(copy.backendError, {
+    status: 0,
+    code: "assessment_network_error",
+    retryable: true,
+  });
+}
+
 export async function requestWithRetry(
   path: string,
   init: RequestInit,
@@ -97,10 +144,9 @@ export async function requestWithRetry(
   const readinessPreflight = path === READINESS_PATH;
   const runStatusRequest = method === "GET" && RUN_STATUS_PATH.test(path);
   const runContinueRequest = method === "POST" && RUN_CONTINUE_PATH.test(path);
-  // Readiness and exact-run status are idempotent checks. Comprehensive continuation
-  // is not safely replayable: it can advance the canonical run. Give all three a
-  // finite Safari-safe deadline, but continuation is strictly single-attempt so a
-  // transport retry can never execute the same stage twice.
+  // Readiness, exact-run status, and continuation are each bounded to one browser
+  // attempt. Continuation is not safely replayable. Only the dedicated helper above
+  // retries idempotent exact-run status confirmation after a terminal continuation.
   const boundedRequest =
     readinessPreflight || runStatusRequest || runContinueRequest;
   const requestTimeoutMs = readinessPreflight
@@ -165,7 +211,20 @@ export async function requestWithRetry(
       if (!("result" in attemptResult)) {
         continue;
       }
-      return attemptResult.result;
+      const result = attemptResult.result;
+      if (runContinueRequest && result.terminal === true) {
+        // A continuation response can race durable publication. Confirm every terminal
+        // projection through idempotent exact-run status authority before React sees it.
+        if (timeoutId != null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        return requestExactRunStatusWithRetry(
+          statusPathForContinuation(path),
+          copy,
+        );
+      }
+      return result;
     } catch (error) {
       lastError = error;
       const retryable =
@@ -237,15 +296,28 @@ export function issueFor(
     };
   }
 
+  // A request/control-plane error after intake is not authoritative evidence that the
+  // durable assessment failed. Preserve the exact run and offer status recovery. Only
+  // an explicit terminal run payload may project the run_failed state in the browser.
+  if (runCreated) {
+    return {
+      kind: "service_unavailable",
+      title: copy.serviceUnavailableTitle,
+      message: copy.runStatusUnavailableMessage,
+      code,
+      requestId,
+      retryable: true,
+      runCreated: true,
+    };
+  }
+
   return {
     kind: "run_failed",
     title: copy.runFailureTitle,
-    message: runCreated
-      ? copy.runFailureAfterCreationMessage
-      : copy.runCreationFailureMessage,
+    message: copy.runCreationFailureMessage,
     code,
     requestId,
     retryable,
-    runCreated,
+    runCreated: false,
   };
 }
