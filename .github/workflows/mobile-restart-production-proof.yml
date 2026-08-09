@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: mobile-restart-production-proof-${{ github.ref }}
+  group: nico-production-assessment-proof-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
