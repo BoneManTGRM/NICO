@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: ios-webkit-paint-proof-${{ github.ref }}
+  group: nico-production-assessment-proof-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
