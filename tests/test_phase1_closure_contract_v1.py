@@ -10,7 +10,8 @@ MOBILE_PROOF = ROOT / "scripts/mobile_restart_live_acceptance_v1.py"
 TWO_SERVICE_WORKFLOW = ROOT / ".github/workflows/two-service-production-acceptance.yml"
 IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 MOBILE_WORKFLOW = ROOT / ".github/workflows/mobile-restart-production-proof.yml"
-SHARED_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
+MOBILE_IOS_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
+TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-${{ github.ref }}"
 
 
 def _load_audit_module() -> Any:
@@ -125,14 +126,21 @@ def _synthetic_payload(module: Any) -> dict[str, Any]:
     }
 
 
-def test_all_destructive_production_assessment_proofs_share_one_lock() -> None:
-    for path in (TWO_SERVICE_WORKFLOW, IOS_WORKFLOW, MOBILE_WORKFLOW):
-        source = path.read_text(encoding="utf-8")
-        assert SHARED_CONCURRENCY in source
-        assert "cancel-in-progress: false" in source
-    assert "group: unified-production-acceptance-${{ github.ref }}" not in TWO_SERVICE_WORKFLOW.read_text(
-        encoding="utf-8"
-    )
+def test_production_assessment_proofs_serialize_without_pending_cancellation() -> None:
+    ios = IOS_WORKFLOW.read_text(encoding="utf-8")
+    mobile = MOBILE_WORKFLOW.read_text(encoding="utf-8")
+    two_service = TWO_SERVICE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert MOBILE_IOS_CONCURRENCY in ios
+    assert MOBILE_IOS_CONCURRENCY in mobile
+    assert MOBILE_IOS_CONCURRENCY not in two_service
+    assert TWO_SERVICE_CONCURRENCY in two_service
+    assert all("cancel-in-progress: false" in source for source in (ios, mobile, two_service))
+
+    assert "Wait for serialized Mobile and iOS production proofs" in two_service
+    assert "NICO Mobile Restart Production Proof" in two_service
+    assert "NICO iOS WebKit Paint Proof" in two_service
+    assert "A prerequisite production proof failed for the exact release" in two_service
 
 
 def test_mobile_proof_waits_for_complete_terminal_report_ui() -> None:
