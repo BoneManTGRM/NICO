@@ -30,6 +30,26 @@ Implementation and verification:
 - Two-Service Production Acceptance: passed
 - Deterministic Phase 1 structured candidate-artifact audit: passed
 
+## Phase 1 definition of done
+
+The original Phase 1 prompt contains nine Definition-of-Done requirements. The authoritative status must preserve all nine explicitly rather than allowing item #9 to disappear from the completion record:
+
+1. New and evidence-changed scanner candidates receive fresh proposal-only technical triage.
+2. Insufficient evidence fails safely to `needs_review`.
+3. Exact unchanged same-subject candidates may retain valid prior technical analysis.
+4. Deterministic clustering reduces repetitive review without removing candidate identities or evidence.
+5. Canonical workload metrics expose the true reviewer exception workload.
+6. Technical triage remains separate from human disposition.
+7. Human approval remains explicit and authorized-human-only.
+8. Candidate volume, clustering, and workload have no numeric score effect.
+9. Required exact-head, deployment, Mobile Restart, iOS WebKit, Two-Service Production Acceptance, and structured-artifact verification gates pass.
+
+Item #9 is satisfied by the exact-head and exact-production evidence recorded in this document and the retained immutable workflow artifacts.
+
+**PHASE 1 DEFINITION OF DONE ITEM #9: PASS**
+
+**PHASE 1: COMPLETE**
+
 ## Root causes and corrective boundary
 
 The prior iOS WebKit failure was a proof synchronization defect. The terminal phase label became visible before React had finished projecting the exact-run score and Markdown/PDF controls. The proof now waits boundedly for the complete terminal UI contract while preserving every identity, report, recovery, PDF, and delivery-blocking assertion.
