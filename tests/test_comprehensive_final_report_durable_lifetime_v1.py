@@ -224,3 +224,44 @@ def test_concurrent_final_reports_are_serialized_without_losing_exact_runs(
         )
 
     reset_final_report_publication_tasks_for_tests()
+
+
+def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    reset_final_report_publication_tasks_for_tests()
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_MAX_PUBLICATION_SECONDS", "120")
+    store = _store(tmp_path)
+    record = _record("comprun_deadline")
+    store.create(record)
+    coordinator = FinalReportPublicationCoordinator(store)
+
+    claimed = coordinator.advance(record, lambda supplied: _valid_result(supplied), _context(record))
+    marker = claimed["stage_results"][FINAL_REPORT_STAGE_ID]
+    lease_id = marker["stage_execution"]["lease_id"]
+    job = store.load_final_report_job(lease_id)
+    assert job is not None
+
+    old_started = time.time() - 180.0
+    with store._connection() as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            "UPDATE nico_comprehensive_final_report_jobs SET started_epoch = ?, heartbeat_epoch = ?, status = ? WHERE lease_id = ?",
+            (old_started, time.time(), "running", lease_id),
+        )
+        connection.commit()
+
+    expired = coordinator.advance(claimed, lambda supplied: _valid_result(supplied), _context(claimed))
+    result = expired["stage_results"][FINAL_REPORT_STAGE_ID]
+    assert expired["terminal"] is True
+    assert expired["status"] == "blocked"
+    assert result["status"] == "blocked"
+    assert result["reason"] == "final_report_publication_deadline_exceeded"
+    assert result["retryable"] is True
+    assert result["recovery_supported"] is True
+    assert result["recovery_scope"] == "final_report_only"
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+    assert store.load_final_report_job(lease_id)["status"] == "expired"
+    reset_final_report_publication_tasks_for_tests()
