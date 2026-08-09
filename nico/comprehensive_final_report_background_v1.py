@@ -14,11 +14,13 @@ from nico.comprehensive_final_report_execution_boundary_v4 import (
 from nico.comprehensive_run_record import apply_comprehensive_stage_result
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
 
-VERSION = "nico.comprehensive_final_report_background.v3"
+VERSION = "nico.comprehensive_final_report_background.v4"
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 DEFAULT_ORPHAN_SECONDS = 30.0
-DEFAULT_MAX_PUBLICATION_SECONDS = 900.0
+DEFAULT_MAX_PUBLICATION_SECONDS = 3600.0
+DEFAULT_MAX_QUEUE_SECONDS = 7200.0
 _RUNNING_REASON = "final_report_background_publication_in_progress"
+_ACTIVE_JOB_STATUSES = {"queued", "rendering", "running"}
 _LOCAL_TASKS: dict[str, dict[str, Any]] = {}
 _LOCAL_TASKS_LOCK = threading.RLock()
 _PUBLICATION_SLOT = threading.BoundedSemaphore(value=1)
@@ -63,7 +65,16 @@ def _max_publication_seconds() -> float:
         "NICO_COMPREHENSIVE_FINAL_REPORT_MAX_PUBLICATION_SECONDS",
         DEFAULT_MAX_PUBLICATION_SECONDS,
         120.0,
-        3600.0,
+        7200.0,
+    )
+
+
+def _max_queue_seconds() -> float:
+    return _bounded_float(
+        "NICO_COMPREHENSIVE_FINAL_REPORT_MAX_QUEUE_SECONDS",
+        DEFAULT_MAX_QUEUE_SECONDS,
+        120.0,
+        14400.0,
     )
 
 
@@ -111,7 +122,7 @@ def _local_task_active(lease_id: str) -> bool:
 def _job_fresh(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
     if not isinstance(job, Mapping):
         return False
-    if _text(job.get("status")).casefold() != "running":
+    if _text(job.get("status")).casefold() not in _ACTIVE_JOB_STATUSES:
         return False
     try:
         heartbeat = float(job.get("heartbeat_epoch") or 0.0)
@@ -120,14 +131,49 @@ def _job_fresh(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
     return heartbeat > 0.0 and max(0.0, now_epoch - heartbeat) < _orphan_seconds()
 
 
-def _job_overdue(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
+def _job_deadline_state(
+    job: Mapping[str, Any] | None,
+    *,
+    now_epoch: float,
+) -> dict[str, Any]:
     if not isinstance(job, Mapping):
-        return False
+        return {
+            "active": False,
+            "overdue": False,
+            "phase": "missing",
+            "started_epoch": 0.0,
+            "elapsed_seconds": 0.0,
+            "deadline_seconds": 0.0,
+        }
+
+    status = _text(job.get("status")).casefold()
+    if status not in _ACTIVE_JOB_STATUSES:
+        return {
+            "active": False,
+            "overdue": False,
+            "phase": status or "unknown",
+            "started_epoch": 0.0,
+            "elapsed_seconds": 0.0,
+            "deadline_seconds": 0.0,
+        }
+
     try:
-        started = float(job.get("started_epoch") or 0.0)
+        started_epoch = float(job.get("started_epoch") or 0.0)
     except (TypeError, ValueError):
-        return False
-    return started > 0.0 and max(0.0, now_epoch - started) >= _max_publication_seconds()
+        started_epoch = 0.0
+
+    phase = "queued" if status == "queued" else "rendering"
+    deadline_seconds = _max_queue_seconds() if phase == "queued" else _max_publication_seconds()
+    elapsed_seconds = max(0.0, now_epoch - started_epoch) if started_epoch > 0.0 else 0.0
+    return {
+        "active": True,
+        "overdue": started_epoch > 0.0 and elapsed_seconds >= deadline_seconds,
+        "phase": phase,
+        "lease_status": status,
+        "started_epoch": started_epoch,
+        "elapsed_seconds": elapsed_seconds,
+        "deadline_seconds": deadline_seconds,
+    }
 
 
 def _running_result(
@@ -157,9 +203,12 @@ def _running_result(
             "mode": "durable_final_report_publication",
             "lease_id": lease_id,
             "started_epoch": started_epoch,
+            "publication_phase_at_claim": "queued",
             "heartbeat_interval_seconds": _heartbeat_seconds(),
             "orphan_after_seconds": _orphan_seconds(),
+            "max_queue_seconds": _max_queue_seconds(),
             "max_publication_seconds": _max_publication_seconds(),
+            "publication_deadline_scope": "renderer_execution_only",
             "detached_background_execution": True,
             "canonical_run_write_pending": True,
             "canonical_run_written_by_final_report_coordinator": True,
@@ -179,18 +228,28 @@ def _overdue_result(
     context: Mapping[str, Any],
     *,
     lease_id: str,
-    started_epoch: float,
+    deadline: Mapping[str, Any],
 ) -> dict[str, Any]:
+    phase = _text(deadline.get("phase")) or "rendering"
+    if phase == "queued":
+        message = (
+            "Final report publication could not acquire bounded renderer capacity before "
+            "the durable queue deadline. The exact run can retry final-report publication "
+            "without rerunning completed scanners."
+        )
+    else:
+        message = (
+            "Final report rendering exceeded the durable renderer-execution deadline. "
+            "The exact run can retry final-report publication without rerunning completed scanners."
+        )
     return {
         "status": "blocked",
         "reason": "final_report_publication_deadline_exceeded",
         "error_code": "final_report_publication_deadline_exceeded",
-        "error_message": (
-            "Final report publication exceeded the durable publication deadline. "
-            "The exact run can retry final-report publication without rerunning completed scanners."
-        ),
+        "error_message": message,
         "technical_reason": (
-            f"final_report_publication_deadline_exceeded:stage={FINAL_REPORT_STAGE_ID}"
+            "final_report_publication_deadline_exceeded:"
+            f"stage={FINAL_REPORT_STAGE_ID}:phase={phase}"
         ),
         "retryable": True,
         "cancelable": True,
@@ -207,8 +266,13 @@ def _overdue_result(
             "artifact_schema": VERSION,
             "mode": "durable_final_report_publication",
             "publication_lease_id": lease_id,
-            "started_epoch": started_epoch,
+            "deadline_phase": phase,
+            "started_epoch": float(deadline.get("started_epoch") or 0.0),
+            "elapsed_seconds": float(deadline.get("elapsed_seconds") or 0.0),
+            "deadline_seconds": float(deadline.get("deadline_seconds") or 0.0),
+            "max_queue_seconds": _max_queue_seconds(),
             "max_publication_seconds": _max_publication_seconds(),
+            "publication_deadline_scope": "renderer_execution_only",
             "deadline_enforced_by": "durable_final_report_coordinator",
             "provider_lifetime_owner": "durable_final_report_coordinator",
             "nested_timeout_thread": False,
@@ -226,6 +290,7 @@ def _with_publication_metadata(
     result: Mapping[str, Any],
     *,
     lease_id: str,
+    render_started_epoch: float,
 ) -> dict[str, Any]:
     output = dict(result)
     prior = output.get("stage_execution")
@@ -234,6 +299,8 @@ def _with_publication_metadata(
         {
             "publication_coordinator_schema": VERSION,
             "publication_lease_id": lease_id,
+            "publication_phase": "published",
+            "render_started_epoch": render_started_epoch,
             "detached_background_execution": True,
             "canonical_run_write_required": True,
             "canonical_run_written_by_final_report_coordinator": True,
@@ -242,7 +309,9 @@ def _with_publication_metadata(
             "provider_lifetime_owner": "durable_final_report_coordinator",
             "nested_timeout_thread": False,
             "process_local_render_capacity": 1,
+            "max_queue_seconds": _max_queue_seconds(),
             "max_publication_seconds": _max_publication_seconds(),
+            "publication_deadline_scope": "renderer_execution_only",
         }
     )
     output["stage_execution"] = execution
@@ -267,10 +336,12 @@ class FinalReportPublicationCoordinator:
     lifetime directly and process-local rendering is serialized so concurrent runs do
     not starve status and readiness transport in the single production process.
 
-    A live heartbeat is liveness evidence, not permission to remain in the same stage
-    forever. The coordinator therefore enforces one durable wall-clock publication
-    deadline. On expiry it publishes a recoverable blocked result for the exact run,
-    preserving completed scanner evidence and fail-closed client delivery.
+    Queue wait and renderer execution are bounded independently. Waiting for the single
+    renderer does not consume the renderer-execution deadline. Once capacity is acquired,
+    the durable lease atomically transitions from ``queued`` to ``rendering`` and resets
+    the deadline clock. Either bound still fails closed into exact-run final-report-only
+    recovery; scoring, artifact validation, human review, and client-delivery gates are
+    unchanged.
     """
 
     def __init__(self, store: ComprehensiveRunStore) -> None:
@@ -288,14 +359,21 @@ class FinalReportPublicationCoordinator:
 
         lease_id = _marker_lease(record)
         if lease_id:
+            latest = self._store.load(run_id)
+            if int(latest.get("revision") or 0) != int(record.get("revision") or 0):
+                return latest
+            if _marker_lease(latest) != lease_id:
+                return latest
+            record = latest
+
             job = self._store.load_final_report_job(lease_id)
             now_epoch = time.time()
-            if _job_overdue(job, now_epoch=now_epoch):
+            deadline = _job_deadline_state(job, now_epoch=now_epoch)
+            if bool(deadline.get("overdue")):
                 return self._expire_publication(
                     record,
                     lease_id=lease_id,
                     context=context,
-                    job=job,
                 )
             if _local_task_active(lease_id):
                 return record
@@ -314,7 +392,6 @@ class FinalReportPublicationCoordinator:
         *,
         lease_id: str,
         context: Mapping[str, Any],
-        job: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         run_id = _text(context.get("run_id"))
         latest = self._store.load(run_id)
@@ -323,16 +400,15 @@ class FinalReportPublicationCoordinator:
         if _marker_lease(latest) != lease_id:
             return latest
 
-        started_epoch = 0.0
-        if isinstance(job, Mapping):
-            try:
-                started_epoch = float(job.get("started_epoch") or 0.0)
-            except (TypeError, ValueError):
-                started_epoch = 0.0
+        job = self._store.load_final_report_job(lease_id)
+        deadline = _job_deadline_state(job, now_epoch=time.time())
+        if not bool(deadline.get("overdue")):
+            return latest
+
         result = _overdue_result(
             context,
             lease_id=lease_id,
-            started_epoch=started_epoch,
+            deadline=deadline,
         )
         expected_revision = int(latest["revision"])
         updated = apply_comprehensive_stage_result(
@@ -365,6 +441,7 @@ class FinalReportPublicationCoordinator:
             started_epoch=started_epoch,
             heartbeat_epoch=started_epoch,
             updated_at=started_at,
+            status="queued",
         )
         marker = _running_result(
             context,
@@ -398,24 +475,42 @@ class FinalReportPublicationCoordinator:
         context: Mapping[str, Any],
     ) -> None:
         stop = threading.Event()
-        state: dict[str, Any] = {"stop": stop, "phase": "queued"}
+        state_lock = threading.Lock()
+        state: dict[str, Any] = {
+            "stop": stop,
+            "phase": "queued",
+            "state_lock": state_lock,
+        }
 
         def heartbeat() -> None:
             interval = _heartbeat_seconds()
             while not stop.wait(interval):
-                self._safe_job_update(lease_id, status="running")
+                with state_lock:
+                    phase = _text(state.get("phase")) or "queued"
+                    self._safe_job_update(lease_id, status=phase)
 
         def invoke() -> None:
             outcome = "failed"
             slot_acquired = False
+            render_started_epoch = 0.0
             try:
                 slot_acquired = _acquire_publication_slot(stop)
                 if not slot_acquired:
                     outcome = "cancelled"
                     return
-                with _LOCAL_TASKS_LOCK:
-                    if _LOCAL_TASKS.get(lease_id) is state:
+
+                render_started_epoch = time.time()
+                with state_lock:
+                    transitioned = self._transition_job_to_rendering(
+                        lease_id,
+                        render_started_epoch=render_started_epoch,
+                    )
+                    if transitioned:
                         state["phase"] = "rendering"
+                if not transitioned:
+                    outcome = "superseded"
+                    return
+
                 result = execute_final_report_stage(
                     executor,
                     context,
@@ -424,7 +519,11 @@ class FinalReportPublicationCoordinator:
                 outcome = self._publish_result(
                     lease_id=lease_id,
                     run_id=_text(context.get("run_id")),
-                    result=_with_publication_metadata(result, lease_id=lease_id),
+                    result=_with_publication_metadata(
+                        result,
+                        lease_id=lease_id,
+                        render_started_epoch=render_started_epoch,
+                    ),
                 )
             except BaseException:
                 outcome = "failed"
@@ -467,6 +566,22 @@ class FinalReportPublicationCoordinator:
                     _LOCAL_TASKS.pop(lease_id, None)
             raise
 
+    def _transition_job_to_rendering(
+        self,
+        lease_id: str,
+        *,
+        render_started_epoch: float,
+    ) -> bool:
+        try:
+            return self._store.transition_final_report_job_to_rendering(
+                lease_id,
+                started_epoch=render_started_epoch,
+                heartbeat_epoch=render_started_epoch,
+                updated_at=_now_iso(),
+            )
+        except Exception:
+            return False
+
     def _stop_local_task(self, lease_id: str) -> None:
         with _LOCAL_TASKS_LOCK:
             state = _LOCAL_TASKS.get(lease_id)
@@ -507,11 +622,18 @@ class FinalReportPublicationCoordinator:
             )
         return "failed"
 
-    def _safe_job_update(self, lease_id: str, *, status: str) -> None:
+    def _safe_job_update(
+        self,
+        lease_id: str,
+        *,
+        status: str,
+        started_epoch: float | None = None,
+    ) -> None:
         try:
             self._store.update_final_report_job(
                 lease_id,
                 status=status,
+                started_epoch=started_epoch,
                 heartbeat_epoch=time.time(),
                 updated_at=_now_iso(),
             )
@@ -531,6 +653,7 @@ def reset_final_report_publication_tasks_for_tests() -> None:
 __all__ = [
     "DEFAULT_HEARTBEAT_SECONDS",
     "DEFAULT_MAX_PUBLICATION_SECONDS",
+    "DEFAULT_MAX_QUEUE_SECONDS",
     "DEFAULT_ORPHAN_SECONDS",
     "FinalReportPublicationCoordinator",
     "VERSION",
