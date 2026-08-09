@@ -14,7 +14,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v9"
+VERSION = "nico.comprehensive_api_routes.v10"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -447,8 +447,9 @@ def register_comprehensive_api_routes(
             raw = await request.body()
             payload = await request.json() if raw else {}
             controller_value = _controller(request)
-            response = controller_value.continue_run(run_id, payload)
+            controller_value.continue_run(run_id, payload)
             record = _service(controller_value).load(run_id)
+            response = controller_value._response(record, operation="continued")
             return _with_runtime_truth(
                 request,
                 _review_projection(response, record),
