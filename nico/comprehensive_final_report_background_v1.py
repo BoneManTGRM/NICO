@@ -14,12 +14,13 @@ from nico.comprehensive_final_report_execution_boundary_v4 import (
 from nico.comprehensive_run_record import apply_comprehensive_stage_result
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
 
-VERSION = "nico.comprehensive_final_report_background.v1"
+VERSION = "nico.comprehensive_final_report_background.v2"
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 DEFAULT_ORPHAN_SECONDS = 30.0
 _RUNNING_REASON = "final_report_background_publication_in_progress"
 _LOCAL_TASKS: dict[str, dict[str, Any]] = {}
 _LOCAL_TASKS_LOCK = threading.RLock()
+_PUBLICATION_SLOT = threading.BoundedSemaphore(value=1)
 
 
 def _text(value: Any) -> str:
@@ -79,14 +80,7 @@ def _marker_lease(record: Mapping[str, Any]) -> str:
 
 
 def _local_task_active(lease_id: str) -> bool:
-    """Return whether this process still owns a live publication task.
-
-    Durable heartbeat timestamps can become temporarily stale while report rendering
-    is CPU-heavy. A stale heartbeat must not cause this same process to launch a
-    second final-report worker while the original worker is still alive. After a
-    process restart the in-memory task map is empty, so genuinely orphaned durable
-    leases remain reclaimable.
-    """
+    """Return whether this process still owns a live publication task."""
 
     normalized = _text(lease_id)
     if not normalized:
@@ -116,7 +110,12 @@ def _job_fresh(job: Mapping[str, Any] | None, *, now_epoch: float) -> bool:
     return heartbeat > 0.0 and max(0.0, now_epoch - heartbeat) < _orphan_seconds()
 
 
-def _running_result(context: Mapping[str, Any], *, lease_id: str, started_epoch: float) -> dict[str, Any]:
+def _running_result(
+    context: Mapping[str, Any],
+    *,
+    lease_id: str,
+    started_epoch: float,
+) -> dict[str, Any]:
     return {
         "status": "running",
         "reason": _RUNNING_REASON,
@@ -146,13 +145,20 @@ def _running_result(context: Mapping[str, Any], *, lease_id: str, started_epoch:
             "canonical_run_written_only_by_request_thread": False,
             "full_result_job_serialization": False,
             "exact_run_recovery_supported": True,
+            "provider_lifetime_owner": "durable_final_report_coordinator",
+            "nested_timeout_thread": False,
+            "process_local_render_capacity": 1,
             "human_review_required": True,
             "client_delivery_allowed": False,
         },
     }
 
 
-def _with_publication_metadata(result: Mapping[str, Any], *, lease_id: str) -> dict[str, Any]:
+def _with_publication_metadata(
+    result: Mapping[str, Any],
+    *,
+    lease_id: str,
+) -> dict[str, Any]:
     output = dict(result)
     prior = output.get("stage_execution")
     execution = dict(prior) if isinstance(prior, Mapping) else {}
@@ -165,6 +171,9 @@ def _with_publication_metadata(result: Mapping[str, Any], *, lease_id: str) -> d
             "canonical_run_written_by_final_report_coordinator": True,
             "canonical_run_written_only_by_request_thread": False,
             "full_result_job_serialization": False,
+            "provider_lifetime_owner": "durable_final_report_coordinator",
+            "nested_timeout_thread": False,
+            "process_local_render_capacity": 1,
         }
     )
     output["stage_execution"] = execution
@@ -173,16 +182,21 @@ def _with_publication_metadata(result: Mapping[str, Any], *, lease_id: str) -> d
     return output
 
 
+def _acquire_publication_slot(stop: threading.Event) -> bool:
+    while not stop.is_set():
+        if _PUBLICATION_SLOT.acquire(timeout=0.25):
+            return True
+    return False
+
+
 class FinalReportPublicationCoordinator:
     """Run final report generation outside the HTTP continuation lifetime.
 
     The canonical run receives one small running marker. A separate durable lease row
     receives only heartbeat metadata. The generated PDF/HTML/Markdown/JSON package is
-    never serialized through the lease table: the worker validates it with the
-    existing atomic final-report boundary and commits it directly to the exact run via
-    the optimistic-concurrency store. A stale lease can be replaced after process
-    loss, while the lease id in the canonical marker prevents a late superseded worker
-    from overwriting the replacement.
+    never serialized through the lease table. The durable worker owns provider
+    lifetime directly and process-local rendering is serialized so concurrent runs do
+    not starve status and readiness transport in the single production process.
     """
 
     def __init__(self, store: ComprehensiveRunStore) -> None:
@@ -262,6 +276,7 @@ class FinalReportPublicationCoordinator:
         context: Mapping[str, Any],
     ) -> None:
         stop = threading.Event()
+        state: dict[str, Any] = {"stop": stop, "phase": "queued"}
 
         def heartbeat() -> None:
             interval = _heartbeat_seconds()
@@ -270,8 +285,20 @@ class FinalReportPublicationCoordinator:
 
         def invoke() -> None:
             outcome = "failed"
+            slot_acquired = False
             try:
-                result = execute_final_report_stage(executor, context)
+                slot_acquired = _acquire_publication_slot(stop)
+                if not slot_acquired:
+                    outcome = "cancelled"
+                    return
+                with _LOCAL_TASKS_LOCK:
+                    if _LOCAL_TASKS.get(lease_id) is state:
+                        state["phase"] = "rendering"
+                result = execute_final_report_stage(
+                    executor,
+                    context,
+                    durable_coordinator_owns_lifetime=True,
+                )
                 outcome = self._publish_result(
                     lease_id=lease_id,
                     run_id=_text(context.get("run_id")),
@@ -283,10 +310,13 @@ class FinalReportPublicationCoordinator:
                 # durable lease; it is never converted into a passing result.
                 outcome = "failed"
             finally:
+                if slot_acquired:
+                    _PUBLICATION_SLOT.release()
                 stop.set()
                 self._safe_job_update(lease_id, status=outcome)
                 with _LOCAL_TASKS_LOCK:
-                    _LOCAL_TASKS.pop(lease_id, None)
+                    if _LOCAL_TASKS.get(lease_id) is state:
+                        _LOCAL_TASKS.pop(lease_id, None)
 
         heartbeat_thread = threading.Thread(
             target=heartbeat,
@@ -298,11 +328,12 @@ class FinalReportPublicationCoordinator:
             name=f"nico-final-report-publication-{lease_id[-8:]}",
             daemon=True,
         )
-        state = {
-            "stop": stop,
-            "heartbeat_thread": heartbeat_thread,
-            "invoke_thread": invoke_thread,
-        }
+        state.update(
+            {
+                "heartbeat_thread": heartbeat_thread,
+                "invoke_thread": invoke_thread,
+            }
+        )
         with _LOCAL_TASKS_LOCK:
             _LOCAL_TASKS[lease_id] = state
 
@@ -342,7 +373,8 @@ class FinalReportPublicationCoordinator:
                 continue
             return (
                 "complete"
-                if _text(result.get("status")).casefold() in {"complete", "completed", "success", "succeeded", "passed"}
+                if _text(result.get("status")).casefold()
+                in {"complete", "completed", "success", "succeeded", "passed"}
                 else "blocked"
             )
         return "failed"
