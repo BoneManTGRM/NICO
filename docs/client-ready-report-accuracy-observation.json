@@ -6,7 +6,7 @@
   "work_package": "phase1_automated_technical_triage_and_production_closure",
   "dependency_state": "completed",
   "state": "post_merge_verified",
-  "program_state": "awaiting_authoritative_next_work_package",
+  "program_state": "phase2_work_package_declared_not_started",
   "implementation_starting_main_sha": "d27dc9eda653f5a67ca8f030bcb0e549e79b22bb",
   "verified_release_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
   "continuation_branch": null,
@@ -244,8 +244,8 @@
     "review_assignment_and_specialist_collaboration",
     "critical_and_high_impact_escalation"
   ],
-  "next_work_package": null,
-  "next_work_package_state": "not_declared_in_authoritative_program",
+  "next_work_package": "exception_first_reviewer_interface",
+  "next_work_package_state": "declared_not_started",
   "current_main_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
   "audited_supporting_artifacts": {
     "run_id": "comprun_53ed58f19df74031b634024dd44938da",
