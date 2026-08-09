@@ -14,6 +14,7 @@ _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
 _RECOVERABLE_REASONS_BY_STAGE = {
     _FINAL_REPORT_STAGE: {
         "final_report_execution_timeout",
+        "final_report_publication_deadline_exceeded",
     },
     _CROSS_FORMAT_STAGE: {
         "final_artifact_truth_verification_failed",
@@ -95,9 +96,9 @@ def final_artifact_failed_checks(record: Mapping[str, Any]) -> set[str]:
 def final_artifact_recovery_stage(record: Mapping[str, Any]) -> str:
     """Choose the earliest authoritative stage required to apply the repair.
 
-    A final-report execution timeout resumes only final report generation using the
-    already-persisted exact-run evidence. Cross-format scanner-register total or
-    payload-retention failures originate in evidence reconciliation and therefore
+    A final-report execution or publication timeout resumes only final report generation
+    using the already-persisted exact-run evidence. Cross-format scanner-register total
+    or payload-retention failures originate in evidence reconciliation and therefore
     rewind to that boundary. Other recognized final-artifact failures regenerate only
     the final report package.
     """
