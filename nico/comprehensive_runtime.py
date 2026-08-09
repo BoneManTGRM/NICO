@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from copy import deepcopy
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from typing import Any
 
 from fastapi import FastAPI
@@ -11,6 +11,9 @@ from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
 from nico.comprehensive_background_stage_execution_v1 import BACKGROUND_STAGE_IDS
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_final_report_activity_v1 import (
+    ObservableComprehensiveApiController,
+)
 from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
@@ -18,7 +21,7 @@ from nico.comprehensive_run_store import ComprehensiveRunStore, ConnectionFactor
 from nico.comprehensive_stage_adapter import CapabilityExecutor
 from nico.comprehensive_stage_background_v2 import ComprehensiveStagePublicationCoordinator
 
-VERSION = "nico.comprehensive_runtime.v2"
+VERSION = "nico.comprehensive_runtime.v3"
 
 
 def _required_capabilities() -> tuple[str, ...]:
@@ -135,7 +138,8 @@ def configure_comprehensive_runtime(
     and atomic final-report coordinators. This keeps continuation transport bounded
     independently of provider runtime without nesting asynchronous leases. Explicit
     test factories retain the synchronous contract for deterministic unit and
-    compatibility coverage.
+    compatibility coverage. Active final-report responses include a bounded lease
+    heartbeat projection without mutating canonical run truth or revision.
     """
 
     required = _required_capabilities()
@@ -167,7 +171,7 @@ def configure_comprehensive_runtime(
         else ComprehensiveRunService
     )
     service = service_class(store, {name: supplied[name] for name in required})
-    controller = ComprehensiveApiController(service)
+    controller = ObservableComprehensiveApiController(service)
     register_comprehensive_api_routes(app, controller=controller)
 
     app.state.comprehensive_runtime = {
@@ -183,6 +187,8 @@ def configure_comprehensive_runtime(
         "exact_run_stage_lease": "canonical_stage_result"
         if detached_stage_execution
         else "not_enabled",
+        "final_report_activity_projection": "durable_lease_heartbeat_v1",
+        "canonical_run_revision_mutated_for_activity": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
