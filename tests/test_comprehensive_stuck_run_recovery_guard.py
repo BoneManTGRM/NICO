@@ -19,12 +19,14 @@ def test_guard_bounds_comprehensive_lifecycle_requests() -> None:
     assert "(?:\\/continue)?" in source
 
 
-def test_guard_expires_stale_browser_run_identity() -> None:
+def test_saved_run_age_never_overrides_durable_backend_authority() -> None:
     source = GUARD.read_text(encoding="utf-8")
-    assert "const ACTIVE_RUN_MAX_AGE_MS = 2 * 60 * 60_000" in source
-    assert "Date.now() - stored.startedAt > ACTIVE_RUN_MAX_AGE_MS" in source
-    assert 'window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY)' in source
-    assert 'url.searchParams.delete(ACTIVE_RUN_QUERY_KEY)' in source
+    assert "ACTIVE_RUN_MAX_AGE_MS" not in source
+    assert "STALE_CHECK_INTERVAL_MS" not in source
+    assert "Date.now() - stored.startedAt" not in source
+    assert "The saved assessment is older than the recovery limit." not in source
+    assert "Browser age is not evidence that a durable run is invalid" in source
+    assert "Recovery controls appear only after a bounded lifecycle request" in source
 
 
 def test_guard_exposes_mobile_safe_recovery_controls() -> None:
@@ -42,18 +44,17 @@ def test_guard_does_not_treat_every_active_run_as_stuck() -> None:
     assert "RECOVERY_CONTROL_DELAY_MS" not in source
     assert "RUNNING_COPY" not in source
     assert "document.body?.innerText" not in source
-    assert "const stale = Boolean(" in source
-    assert "const timedOut = Boolean(" in source
-    assert "if (dismissed || (!stale && !timedOut))" in source
+    assert "const stale = Boolean(" not in source
+    assert "setInterval(" not in source
+    assert 'window.addEventListener("nico:comprehensive-request-timeout"' in source
 
 
-def test_keep_waiting_dismisses_the_current_run_until_identity_changes() -> None:
+def test_keep_waiting_dismisses_the_current_timeout_notice() -> None:
     source = GUARD.read_text(encoding="utf-8")
-    assert 'const dismissedRunId = useRef("")' in source
-    assert "dismissedRunId.current = runId" in source
+    assert "const keepWaiting = () =>" in source
     assert 'timedOutRunId.current = ""' in source
+    assert "setVisible(false)" in source
     assert "onClick={keepWaiting}" in source
-    assert "dismissedRunId.current !== runId" in source
 
 
 def test_timeout_recovers_run_identity_from_the_exact_request_path() -> None:
@@ -62,7 +63,7 @@ def test_timeout_recovers_run_identity_from_the_exact_request_path() -> None:
     assert "const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path)" in source
     assert "retainExactRunIdentity(timeoutRunId)" in source
     assert 'url.searchParams.set(ACTIVE_RUN_QUERY_KEY, exactRunId)' in source
-    assert 'window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY' in source
+    assert "window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY" in source
     assert "setRecoveryRunId(timeoutRunId)" in source
 
 
@@ -71,14 +72,17 @@ def test_readiness_timeout_without_an_accepted_run_does_not_show_recovery() -> N
     assert "if (!timeoutRunId)" in source
     assert 'setRecoveryRunId("")' in source
     assert "setVisible(false)" in source
-    assert "Recovery controls are shown only when NICO can retain" in source
+    assert "Recovery controls appear only after a bounded lifecycle request" in source
 
 
-def test_retry_action_restores_exact_identity_before_reload() -> None:
+def test_retry_action_restores_exact_identity_and_cache_busts_navigation() -> None:
     source = GUARD.read_text(encoding="utf-8")
     assert "const retryExactRun = () =>" in source
     assert "retainExactRunIdentity(runId)" in source
-    assert "window.location.reload()" in source
+    assert 'url.searchParams.set(ACTIVE_RUN_QUERY_KEY, runId)' in source
+    assert 'url.searchParams.set("recovery_attempt", Date.now().toString())' in source
+    assert "window.location.replace" in source
+    assert "window.location.reload()" not in source
     assert "onClick={retryExactRun}" in source
 
 
