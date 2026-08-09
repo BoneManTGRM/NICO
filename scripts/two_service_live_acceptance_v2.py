@@ -17,11 +17,14 @@ from typing import Any
 # COMPREHENSIVE_STALE_SECONDS
 # backend_status_history
 # runtime-diagnostic.json
+# FINAL_REPORT_ACTIVITY = install_final_report_activity(_legacy)
 _MODULE_DIR = Path(__file__).resolve().parent
 _LEGACY_MODULE_NAME = "_nico_two_service_live_acceptance_v2_legacy"
 _LEGACY_PATH = _MODULE_DIR / "two_service_live_acceptance_v2_legacy.py"
 _BOUNDED_MODULE_NAME = "_nico_bounded_terminal_reconnect_v1"
 _BOUNDED_PATH = _MODULE_DIR / "bounded_terminal_reconnect_v1.py"
+_ACTIVITY_MODULE_NAME = "_nico_final_report_activity_acceptance_v1"
+_ACTIVITY_PATH = _MODULE_DIR / "final_report_activity_acceptance_v1.py"
 
 
 def _load_sibling(name: str, path: Path) -> ModuleType:
@@ -46,12 +49,15 @@ def _load_legacy() -> ModuleType:
 
 
 _bounded = _load_sibling(_BOUNDED_MODULE_NAME, _BOUNDED_PATH)
+_activity = _load_sibling(_ACTIVITY_MODULE_NAME, _ACTIVITY_PATH)
 install_bounded_terminal_reconnect = _bounded.install
+install_final_report_activity = _activity.install
 _legacy = _load_legacy()
 BOUNDED_TERMINAL_RECONNECT = install_bounded_terminal_reconnect(
     _legacy,
     _legacy.acceptance,
 )
+FINAL_REPORT_ACTIVITY = install_final_report_activity(_legacy)
 
 for _name in dir(_legacy):
     if _name.startswith("__"):
@@ -59,7 +65,7 @@ for _name in dir(_legacy):
     globals()[_name] = getattr(_legacy, _name)
 
 # Preserve an explicit loader identity while exposing the established module API.
-LOADER_VERSION = "nico.two_service_live_acceptance_v2.loader.v2"
+LOADER_VERSION = "nico.two_service_live_acceptance_v2.loader.v3"
 
 
 def __getattr__(name: str) -> Any:
