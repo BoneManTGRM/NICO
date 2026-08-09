@@ -7,6 +7,9 @@ import time
 from pathlib import Path
 
 import nico.comprehensive_final_report_execution_boundary_v4 as boundary
+from nico.comprehensive_blocked_run_recovery_v1 import (
+    rewind_blocked_run_for_final_artifact_recovery,
+)
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
     reset_final_report_publication_tasks_for_tests,
@@ -236,8 +239,16 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
     record = _record("comprun_deadline")
     store.create(record)
     coordinator = FinalReportPublicationCoordinator(store)
+    worker_started = threading.Event()
+    release_worker = threading.Event()
 
-    claimed = coordinator.advance(record, lambda supplied: _valid_result(supplied), _context(record))
+    def stalled_executor(context: dict) -> dict:
+        worker_started.set()
+        assert release_worker.wait(3.0)
+        return _valid_result(context)
+
+    claimed = coordinator.advance(record, stalled_executor, _context(record))
+    assert worker_started.wait(1.0)
     marker = claimed["stage_results"][FINAL_REPORT_STAGE_ID]
     lease_id = marker["stage_execution"]["lease_id"]
     job = store.load_final_report_job(lease_id)
@@ -252,7 +263,7 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
         )
         connection.commit()
 
-    expired = coordinator.advance(claimed, lambda supplied: _valid_result(supplied), _context(claimed))
+    expired = coordinator.advance(claimed, stalled_executor, _context(claimed))
     result = expired["stage_results"][FINAL_REPORT_STAGE_ID]
     assert expired["terminal"] is True
     assert expired["status"] == "blocked"
@@ -264,4 +275,22 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
     assert store.load_final_report_job(lease_id)["status"] == "expired"
+
+    recovered = rewind_blocked_run_for_final_artifact_recovery(expired)
+    assert recovered["terminal"] is False
+    assert recovered["status"] == "running"
+    assert recovered["completed_stages"] == record["completed_stages"]
+    assert FINAL_REPORT_STAGE_ID not in recovered["stage_results"]
+    assert recovered["recovery_history"][-1]["source_reason"] == (
+        "final_report_publication_deadline_exceeded"
+    )
+    assert recovered["recovery_history"][-1]["recovery_scope"] == "final_report_only"
+
+    release_worker.set()
+    time.sleep(0.05)
+    persisted = store.load(record["identity"]["run_id"])
+    persisted_result = persisted["stage_results"][FINAL_REPORT_STAGE_ID]
+    assert persisted["terminal"] is True
+    assert persisted["status"] == "blocked"
+    assert persisted_result["reason"] == "final_report_publication_deadline_exceeded"
     reset_final_report_publication_tasks_for_tests()
