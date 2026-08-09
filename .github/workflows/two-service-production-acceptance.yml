@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: nico-production-assessment-proof-${{ github.ref }}
+  group: unified-production-acceptance-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -113,7 +113,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     environment: production-smoke
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
@@ -197,6 +197,57 @@ jobs:
               time.sleep(20)
           else:
               raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Wait for serialized Mobile and iOS production proofs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required = {
+              "NICO Mobile Restart Production Proof",
+              "NICO iOS WebKit Paint Proof",
+          }
+          deadline = time.time() + 150 * 60
+          last = {}
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-serialized-production-acceptance",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last = {}
+              for item in payload.get("statuses") or []:
+                  context = str(item.get("context") or "")
+                  last.setdefault(context, str(item.get("state") or "unknown"))
+              observed = {context: last.get(context, "missing") for context in required}
+              print(f"Serialized prerequisite statuses: {observed}", flush=True)
+              if all(observed[context] == "success" for context in required):
+                  break
+              if any(observed[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(
+                      "A prerequisite production proof failed for the exact release: "
+                      + json.dumps(observed, sort_keys=True)
+                  )
+              time.sleep(20)
+          else:
+              raise SystemExit(
+                  "Timed out waiting for serialized Mobile and iOS production proofs: "
+                  + json.dumps(last, sort_keys=True)
+              )
           PY
 
       - name: Verify exact production frontend release and copy contract
