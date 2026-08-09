@@ -6,130 +6,269 @@ The machine-readable source of truth is:
 
 `docs/client-ready-report-accuracy-observation.json`
 
-Earlier exact production observations remain available in the `docs/production-*observation.json` files, merged pull-request records, immutable workflow artifacts, and repository history. This document records the latest verified boundary without deleting the earlier verified repair chain.
+Earlier verified boundaries remain available in repository history, prior `docs/production-*observation.json` records, merged pull-request records, and immutable GitHub Actions artifacts. This document records the latest verified Phase 1 boundary without deleting the earlier repair chain.
 
-## Current verified production release
+## Current verified production code release
 
-The current verified production code release is:
+The verified production code release is:
 
-`76ccc08a5b3522efbf39d4f8ffece2c04be67ac6`
+`5695e2c284ed838b82d7d5955a03f438d534d55d`
+
+This authority synchronization changes only the two completion-state files. It does not modify runtime behavior, candidate analysis, report rendering, scoring, security, approval, or client delivery.
 
 Repository state at synchronization:
 
-- before the documentation-only authority merge, `main` equaled the verified production code release exactly;
-- PR #1025 was the sole open pull request and changed only the two authority files;
-- the authority merge changed repository documentation only and did not change the deployed production code identity;
-- stale authority PR #1021 was closed unmerged as superseded;
-- PR #1023 and PR #1024 each passed all 17 exact-head workflows;
-- both PRs had zero unresolved review threads before merge;
-- Vercel and Railway serve the exact final production code release;
-- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all pass on the exact final production code release.
+- Phase 1 closure PR #1131 merged from exact head `aadc253a94292fff70abb686912f1af312c03c30`.
+- PR #1131 merged as `5695e2c284ed838b82d7d5955a03f438d534d55d`.
+- All 17 exact-head workflows passed on the final PR head.
+- Unresolved review threads before merge: 0.
+- Vercel and Railway serve the exact verified production code release.
+- Mobile Restart, iOS WebKit, and Two-Service Production Acceptance all pass on that exact release.
+- The Phase 1 structured candidate-artifact audit passes against the second exact production Comprehensive run.
+- No later Phase 2 package is declared or started.
 
-## Completed corrective chain
+## Phase 1 completion result
 
-The earlier workstream-1 and workstream-2 dependencies remain completed and mandatory. The client-ready Comprehensive package then advanced through the following bounded corrective-maintenance chain:
+Phase 1 of the automated technical-triage, candidate-intelligence, and human-workload-reduction program is complete at the verified production code boundary.
 
-- PR #1009, compact client-review package and automated-draft lifecycle, merged as `1a8ff546e02410389310dbf3de5c660c594d2ac0`.
-- PR #1010, automated-draft premium quality compatibility, merged as `f1b6754c1d609506fc7b07f8567be5624e24ff90`.
-- PR #1011, wrapped scorecard-row preservation, merged as `214a6393dc432316dd1df0a27eaa6a3ba28a4cf6`.
-- PR #1012, canonical incomplete-analyzer count restoration, merged as `f65ffdc0e795bb0ee03d61b89a32f64508f658d1`.
-- PR #1013, compact evidence-summary contract, merged as `67605c098c2aec3cbcc0a977c09a3f53cfcaf552`.
-- PR #1014, post-merge Comprehensive proof repair, merged as `bdaa9d4b38157ce89c40d189eb918d8fac4b3f40`.
-- PR #1015, live compact-evidence acceptance, merged as `80a65f0328b492cac167244ed57e5008c2117dce`.
-- PR #1018, wrapped PDF section-identity normalization, merged as `e6647726ff71bb886c3cdb81b9bb90e5b6d47d57`.
-- PR #1019, future approval-guidance distinction, merged as `1167acf9e32785542065bc2f88f50eedf85a761f`.
-- PR #1020, parser-placeholder removal, merged as `caf099499841e6b5ac6ef4c92a211e2c8fa3f9de`.
-- PR #1022, production PostCSS advisory remediation, merged as `7e094aaf26efeae7ff93e93c7b74ddbf8bc6596b`.
-- PR #1023, candidate-summary and Architecture clarity correction, merged as `18f338502d7584cb6ec7509259f13ef9c48ce431`.
-- PR #1024, evidence-bound provisional-status live acceptance, merged as `76ccc08a5b3522efbf39d4f8ffece2c04be67ac6`.
+The completed requirements are:
 
-PR #1021 was not merged. It described release `caf099499841e6b5ac6ef4c92a211e2c8fa3f9de`, had been superseded by later security and report corrections, and was closed to prevent stale authority from reaching `main`.
+1. New and evidence-changed scanner candidates receive fresh proposal-only technical triage.
+2. Insufficient evidence fails safely to `needs_review`.
+3. Exact unchanged same-subject candidates may retain valid prior technical analysis.
+4. Deterministic clustering reduces repetitive review without removing candidate identities or evidence.
+5. Canonical workload metrics expose the true reviewer exception workload.
+6. Technical triage remains separate from human disposition.
+7. Human approval remains explicit and authorized-human-only.
+8. Candidate volume, clustering, and workload have no numeric score effect.
+9. Required exact-head, deployment, Mobile, iOS WebKit, Two-Service, and structured-artifact gates pass.
 
-## Report-clarity result
+## Protected Comprehensive report baseline
 
-The final live Comprehensive package fixes the three requested report defects while preserving the approved compact design and all numeric truth:
+The successful report run `comprun_6f3ad3990baf43f2879f1d777a950817` at commit `d27dc9eda653f5a67ca8f030bcb0e549e79b22bb` remains a protected semantic baseline.
 
-- Dependency, Secrets, and Static Analysis no longer repeat the same material/review/assurance disclosure in their summaries or section limitations.
-- Each candidate-heavy section presents `Provisional Strong — Human Review Required · 96/100`.
-- Each candidate-heavy section retains exactly one confirmed-material count, one review-required count, and one assurance-only score-effect statement.
-- Static Analysis truthfully discloses 581 review-required candidates and 0 confirmed material findings.
-- Architecture no longer says `Complexity risk: unknown` when exact-source findings exist.
-- Architecture now states that complexity risk is observed and that 50 exact-source complexity findings remain pending human review.
-- The literal and escaped parser placeholder `<arrow>` is absent from retained Markdown, HTML, canonical JSON, and extracted PDF text.
-- The report remains an Automated Draft, not an Approved Final.
-
-The final scorecard remains:
+That run demonstrated:
 
 - Technical maturity: 93/100.
-- Evidence-adjusted score: 90/100.
-- Code Audit: Strong · 96/100.
-- Dependency / Library Ecosystem: Provisional Strong — Human Review Required · 96/100.
-- Secrets Exposure Review: Provisional Strong — Human Review Required · 96/100.
-- Static Analysis: Provisional Strong — Human Review Required · 96/100.
-- CI/CD Analysis: Strong · 100/100.
-- Architecture & Technical Debt: Moderate · 78/100.
-- Velocity / Complexity: Strong · 87/100.
+- Evidence-Adjusted: 93/100.
+- Applicable scanners: 9/9 complete.
+- Total scanner candidates: 638.
+- Exact carry-forward: 602.
+- Newly observed: 32.
+- Evidence-changed: 4.
+- Fresh triage required and completed: 36/36.
+- Total technical-triage coverage: 638/638.
+- Automated technical verdicts: 602 `not_actionable`, 36 `needs_review`, 0 `confirmed`.
+- Individual-attention candidates: 23.
+- Grouped-review candidates: 13.
+- Grouped clusters: 3.
+- Human-review work units: 26.
+- Quality-control sample pool: 214.
+- Exact-source decision findings: 50.
+- Confirmed material scanner findings: 0.
+- Human review pending.
+- Client delivery blocked.
 
-No score, scanner disposition, candidate count, or confirmed-finding count was changed to satisfy a gate.
+These numbers are run-specific evidence, not constants. Later runs are allowed to produce different counts when the current evidence changes.
+
+## Structured candidate-artifact verification
+
+The deterministic audit `nico.phase1-structured-artifact-audit.v1` passed against production run:
+
+`comprun_53ed58f19df74031b634024dd44938da`
+
+Audit result:
+
+- Candidate population: 627.
+- Candidate-register filename: `nico-comprun_53ed58f19df74031b634024dd44938da-candidate-register.json`.
+- Candidate-register size: 6,169,581 bytes.
+- Expected candidate-register SHA-256: `0e825da28fef05fb01bc8e78398720a46b6cc9c6a5d44b191d3eb8802d4969e6`.
+- Observed candidate-register SHA-256: `0e825da28fef05fb01bc8e78398720a46b6cc9c6a5d44b191d3eb8802d4969e6`.
+- Dependency candidates: 20.
+- Secret candidates: 17.
+- Static-analysis candidates: 590.
+- Technical verdicts: 627 `needs_review`.
+- Lineage: 627 newly observed in this exact production partition.
+- Routing: 627 `HUMAN_TECHNICAL_REVIEW`.
+- Deterministic clusters: 49.
+- Grouped candidates: 589.
+- Individual-attention candidates: 38.
+- Human-review work units: 49.
+- Cluster integrity errors: 0.
+- Missing required field counts: none.
+- Audit errors: none.
+- Human review required: true.
+- Client delivery allowed: false.
+- Workload score effect: none.
+
+The audit verifies exact candidate identity and count parity, evidence-bound dependency/secret/static context, triage fields, cluster membership and homogeneity, workload reconciliation, manifest-bound SHA-256, pending human approval, absent automated human disposition, and blocked delivery.
+
+## Root-cause closure
+
+### iOS WebKit
+
+Classification: proof synchronization defect.
+
+The prior WebKit workflow observed `Internal review required` before React had completed the exact-run projection of the commit, score, and Markdown/PDF controls. The proof then asserted terminal report controls immediately.
+
+PR #1131 now waits boundedly for the complete terminal UI contract while preserving every identity, recovery, PDF, failure-layout, and delivery-blocking assertion. The production WebKit proof passes without weakening acceptance.
+
+### Two-Service Production Acceptance
+
+Classification: acceptance-orchestration capacity/concurrency defect.
+
+Mobile, iOS, and Two-Service proofs were able to launch simultaneous heavyweight Comprehensive assessments against the same finite report renderer because Two-Service used a separate production concurrency boundary.
+
+PR #1131 serializes the three destructive production proofs under one non-cancelling release boundary. The product requirements remain unchanged, and Two-Service still completes two distinct real Comprehensive assessments.
 
 ## Exact-head verification
 
-PR #1023 exact head `e88412da65c712afd399c3c770ccddeccd118a1a` passed all 17 required workflows, including NICO CI, CodeQL, Security Audit Evidence, Remediation Evidence, frontend production proof, Postgres restart, resilience, Mobile Restart, iOS WebKit, Comprehensive production proof, client-delivery proof, and Unified Production Acceptance. No unresolved review threads remained before merge.
+PR #1131:
 
-PR #1024 exact head `76f70463c13159f78a8138538458e084f79f3024` passed the same 17-workflow boundary and had zero unresolved review threads before merge. Its fail-closed validator accepts the provisional Strong label only when canonical evidence proves a Strong numeric band, review-required candidates, mandatory human review, and assurance-only candidate scoring.
+- Branch: `repair/phase1-production-closure`.
+- Final head: `aadc253a94292fff70abb686912f1af312c03c30`.
+- Merge SHA: `5695e2c284ed838b82d7d5955a03f438d534d55d`.
+- Required workflow count: 17.
+- Required workflow failures: 0.
+- Unresolved review threads: 0.
+
+Changed runtime/proof files:
+
+- `.github/workflows/two-service-production-acceptance.yml`
+- `scripts/mobile_restart_live_acceptance_v1.py`
+- `scripts/phase1_structured_artifact_audit_v1.py`
+- `tests/test_phase1_closure_contract_v1.py`
+
+The repair does not change candidate triage, lineage, clustering, workload formulas, scores, findings, report layout, report section order, human disposition, approval, or client-delivery rules.
 
 ## Exact production verification
 
-Vercel and Railway both identify exact release `76ccc08a5b3522efbf39d4f8ffece2c04be67ac6` as successfully deployed in production.
+### Deployment identity
 
-Post-merge production proofs passed:
+- Vercel: success for `5695e2c284ed838b82d7d5955a03f438d534d55d`.
+- Railway: success for `5695e2c284ed838b82d7d5955a03f438d534d55d`.
+- Deployment environment: production.
+- UI contract: `expert-engagement-v2`.
 
-- Mobile Restart workflow `30847976049`, artifact `8869652413`, artifact digest `sha256:efc4ab83830f04964fb3c9ca9c0d8b63b57e51989a4550312d97fa26f5358048`, run `comprun_47237c5f6a4a4ef4b08d2e258e2fe0a7`.
-- iOS WebKit workflow `30847976128`, artifact `8869906159`, artifact digest `sha256:6e8d058df1a1512ea704a9c7805d2b0cbe5c9762fa731eb615e83025a495e5e9`, run `comprun_30a9cc2fe69c46e1b0809e80e4ab33c9`.
-- Two-Service Production Acceptance workflow `30847976258`, artifact `8869826209`, artifact digest `sha256:b530f812eb2f0779b4d589448b8410f5e9fed232d867b4387e2efb36943bcab9`.
+### Mobile Restart
 
-Two-Service acceptance completed two distinct live Comprehensive runs:
+- Workflow run: `31313580097`.
+- Artifact: `9038270964`.
+- Artifact digest: `sha256:e658f99a5e120d77ea2e229bb3c74d031a9ace8f31652f27b50858a6afc69e40`.
+- Comprehensive run: `comprun_e785814dd0124d9ebe541f31de8e0dfb`.
+- Terminal state: `review_required`.
+- Report status: Complete.
+- Technical score: 93/100.
+- Exact-run reload and pageshow behavior: verified.
+- Exact review PDF download: verified.
+- PDF SHA-256: `0a95dd4177f3fc36cb6892aded32fbaea44d5a53839081c3308092ac6f647bb8`.
+- Human review remains required.
+- Client delivery remains blocked.
 
-- `comprun_27f01c6018364a0b9227cbe61533fa60`
-- `comprun_d22ccee021814cef8ed0052fbee8cc23`
+### iOS WebKit
 
-Both runs:
+- Workflow run: `31313580113`.
+- Artifact: `9038463161`.
+- Artifact digest: `sha256:95e6270c561b2781cf5f13fc6f61f51874570e583a09accb47b2007ca72e3870`.
+- Comprehensive run: `comprun_25f9c1e6b92741cfa29859670fc452e3`.
+- Terminal state: `review_required`.
+- Report status: Complete.
+- Technical score: 93/100.
+- English and Mexican Spanish failure-layout matrix: 10/10 passed.
+- Exact-run reload and pageshow behavior: verified.
+- Exact review PDF download: verified.
+- PDF SHA-256: `4fd02b1cfe178839cbfa5645962b553f9003b2364d2cbde7697bef36cbc1e93d`.
+- Human review remains required.
+- Client delivery remains blocked.
 
-- reached `review_required`;
-- retained Markdown, HTML, canonical JSON, and PDF artifacts;
-- produced 21-page PDFs;
-- retained technical/evidence-adjusted scores of 93/90;
-- preserved deterministic score, section-status, scanner-status, and semantic-assessment evidence;
-- verified the evidence-bound provisional-status contract;
-- retained exact-run and exact-release identity;
-- required human review;
-- blocked client delivery.
+### Two-Service Production Acceptance
 
-## Direct artifact and visual verification
+- Workflow run: `31313580177`.
+- Artifact: `9038855918`.
+- Artifact digest: `sha256:ae017b2153f7f7250c9cbeb6d3d322eb91171e20090d300bc81c76ad89287323`.
+- Pass 1: `comprun_eaae1cdf83a54a5397ab448948fe82bd`.
+- Pass 2: `comprun_53ed58f19df74031b634024dd44938da`.
+- Distinct run IDs: verified.
+- Both reached `review_required`.
+- Both retained Markdown, HTML, canonical JSON, and valid PDF.
+- Both produced 39-page PDFs.
+- Technical score pair: 93/100 and 93/100.
+- Evidence-Adjusted pair: 93/100 and 93/100.
+- Maturity: Exceptional.
+- Semantic assessment SHA-256: `e1591008141ff1f2a8e016e1dc912e9f472c27f024659c39c31e66b19ba37fc3`.
+- Deterministic score, section-status, scanner-status, and semantic-assessment evidence: verified.
+- Human review required: true.
+- Client delivery allowed: false.
 
-Direct retained-artifact inspection verified both live packages:
+Pass-1 artifacts:
 
-- candidate-summary disclosure is absent from the section summaries;
-- the three material/review/assurance evidence statements occur exactly once per Dependency, Secrets, and Static section;
-- review-required candidate counts remain 59 Dependency, 17 Secrets, and 581 Static Analysis;
-- confirmed material findings remain 0 for those three sections;
-- Architecture retains 50 exact-source complexity findings and the observed-risk statement;
-- `Complexity risk: unknown`, `<arrow>`, escaped `<arrow>`, and false `FINAL REPORT` text are absent;
-- `Incomplete applicable analyzers: 0`, Platform Parity, Human Review and Acceptance Gate, Automated Draft, pending approval, and blocked delivery remain present.
+- Markdown SHA-256: `637372d39c7db34dd00033656cf7aa4ae4ad06cb89bfa9e37774099a1955c422`.
+- HTML SHA-256: `e36c2edb99cc0fbe026360fed8a276bacce53b44aeb0714056d659a8b66b94ae`.
+- Canonical JSON SHA-256: `94db73c0152de14c63ada346b5428de8cad23ce485d6b917b69ac71f11039a31`.
+- PDF SHA-256: `3965d76ed01c39be4fa235c32c332e32742d5ee6539a9686c2b9d9285eb7449e`.
 
-Render-first visual inspection of the scorecard and Dependency, Secrets, Static Analysis, and Architecture pages found no clipping, overlap, broken glyphs, or unreadable status text.
+Pass-2 artifacts:
 
-## Commercial and approval state
+- Markdown SHA-256: `19b22883a3b1de3c5dfa64fb1cf6d2ede680a8b75490ea980bdbcb7ad975ff76`.
+- HTML SHA-256: `62317e559062614fa5a481002af11b0f584db8f6a7950e834d7571078a6135f9`.
+- Canonical JSON SHA-256: `74b01d522e8d432fa090d0e4fe6a6cf865fbbe2c5f5775f6fb96c77cc6a33419`.
+- PDF SHA-256: `dd17e7dadd1ba4e8c2bb577fe511f2ce31130d9da15ae4a6d31fb681f45ce5d5`.
 
-Automated reports remain human-review packages, not automatically approved client deliverables.
+## Report, security, and commercial boundaries
 
-- Human review reached: yes.
-- Human review required: yes.
-- Client delivery authorized: no.
-- Client delivery remains blocked until explicit human approval of the exact report digest.
+- One public product remains: NICO Comprehensive.
+- One client report remains: the existing Comprehensive report.
+- Candidate counts were not cosmetically altered.
+- Scanner findings were not suppressed.
+- Candidate volume and workload remain unscored.
+- Scores were not targeted, clamped, or raised to satisfy a gate.
+- Technical triage remains a NICO recommendation.
+- Human disposition remains human-only.
+- Reviewer identity remains human-only.
+- Risk acceptance remains human-only.
+- Approval remains human-only.
+- Client delivery remains blocked before authorized approval.
+- Any evidence, score, finding, disposition, or artifact change creates a new draft and invalidates prior approval.
+
+## Reviewer-time limitation
+
+Phase 1 proves deterministic workload reduction and exception routing. It does not empirically prove the target of four combined specialist hours.
+
+Phase 2 must:
+
+`Empirically validate combined reviewer time and calibrate the quality-control sampling policy against real specialist review sessions.`
+
+## Phase 2 carryover
+
+Phase 2 is not started by this authority update. The declared carryover is:
+
+1. Exception-first reviewer interface.
+2. Expandable deterministic clusters.
+3. Candidate-level reviewer dispositions.
+4. Group-review disposition with underlying-candidate accounting.
+5. Professional quality-control sampling interface.
+6. Reviewer workload timer and empirical combined-hours study.
+7. Calibration of the four-hour combined target.
+8. Reviewer identity and authorization UX.
+9. Residual-risk recording.
+10. Evidence requests for unresolved proof gaps.
+11. Client/stakeholder evidence intake.
+12. Reviewer audit trail.
+13. Immutable approval receipt UX.
+14. Bilingual reviewer experience where required.
+15. Review assignment and specialist collaboration.
+16. Critical/high-impact exception escalation.
+
+Phase 2 must consume the existing Phase 1 canonical artifacts rather than creating a second analysis system.
+
+## Completion declarations
+
+PHASE 1 DEFINITION OF DONE ITEM #9: PASS
+
+PHASE 1: COMPLETE
 
 ## Next dependency-ordered package
 
-No later work package is declared in the authoritative completion state.
+No later package is active.
 
-The completion program pauses at this verified boundary. It does not invent, re-plan, or begin an undeclared package. A later package may begin only after it is added to the authoritative machine-readable program state under the same merge, report-preservation, security, and commercial-readiness gates.
+The program pauses at the verified Phase 1 boundary. Phase 2 may begin only through an explicit authoritative declaration under the same report-preservation, security, approval, and commercial-readiness gates.
