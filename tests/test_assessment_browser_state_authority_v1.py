@@ -19,6 +19,16 @@ def test_exact_run_status_retries_without_replaying_continuation() -> None:
     assert "retry only the idempotent readiness/status reads" in source
 
 
+def test_terminal_continuation_is_confirmed_by_exact_run_status() -> None:
+    source = REQUESTS.read_text(encoding="utf-8")
+
+    assert "function statusPathForContinuation(path: string): string" in source
+    assert "if (runContinueRequest && result.terminal === true)" in source
+    assert "Confirm every terminal" in source
+    assert "statusPathForContinuation(path)" in source
+    assert '{method: "GET"}' in source
+
+
 def test_created_run_transport_uncertainty_is_not_promoted_to_run_failure() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
     guard = source.index("if (runCreated) {")
