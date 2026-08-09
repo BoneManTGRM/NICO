@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterator, Protocol
 
 from nico.comprehensive_run_record import restore_comprehensive_run_record, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_run_store.v2"
+VERSION = "nico.comprehensive_run_store.v3"
 
 
 class ConnectionLike(Protocol):
@@ -175,11 +175,13 @@ class ComprehensiveRunStore:
         started_epoch: float,
         heartbeat_epoch: float,
         updated_at: str,
+        status: str = "running",
     ) -> dict[str, Any]:
         lease = str(lease_id or "").strip()
         run = str(run_id or "").strip()
-        if not lease or not run:
-            raise ValueError("final_report_lease_and_run_required")
+        normalized_status = str(status or "").strip().lower()
+        if not lease or not run or not normalized_status:
+            raise ValueError("final_report_lease_run_and_status_required")
         p = self.placeholder
         statement = f"""
         INSERT INTO nico_comprehensive_final_report_jobs (
@@ -189,7 +191,7 @@ class ComprehensiveRunStore:
         values = (
             lease,
             run,
-            "running",
+            normalized_status,
             float(started_epoch),
             float(heartbeat_epoch),
             str(updated_at),
@@ -205,7 +207,7 @@ class ComprehensiveRunStore:
         return {
             "lease_id": lease,
             "run_id": run,
-            "status": "running",
+            "status": normalized_status,
             "started_epoch": float(started_epoch),
             "heartbeat_epoch": float(heartbeat_epoch),
             "updated_at": str(updated_at),
@@ -238,6 +240,42 @@ class ComprehensiveRunStore:
             "updated_at": str(row[5]),
         }
 
+    def transition_final_report_job_to_rendering(
+        self,
+        lease_id: str,
+        *,
+        started_epoch: float,
+        heartbeat_epoch: float,
+        updated_at: str,
+    ) -> bool:
+        """Atomically start rendering only from an active pre-render lease state."""
+
+        lease = str(lease_id or "").strip()
+        if not lease:
+            raise ValueError("final_report_lease_required")
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_final_report_jobs
+                SET status = {p}, started_epoch = {p}, heartbeat_epoch = {p}, updated_at = {p}
+                WHERE lease_id = {p} AND status IN ({p}, {p})
+                """,
+                (
+                    "rendering",
+                    float(started_epoch),
+                    float(heartbeat_epoch),
+                    str(updated_at),
+                    lease,
+                    "queued",
+                    "running",
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
+
     def update_final_report_job(
         self,
         lease_id: str,
@@ -245,27 +283,41 @@ class ComprehensiveRunStore:
         status: str,
         heartbeat_epoch: float,
         updated_at: str,
+        started_epoch: float | None = None,
     ) -> bool:
         lease = str(lease_id or "").strip()
         normalized_status = str(status or "").strip().lower()
         if not lease or not normalized_status:
             raise ValueError("final_report_lease_and_status_required")
         p = self.placeholder
-        with self._connection() as connection:
-            cursor = connection.cursor()
-            cursor.execute(
-                f"""
+        if started_epoch is None:
+            statement = f"""
                 UPDATE nico_comprehensive_final_report_jobs
                 SET status = {p}, heartbeat_epoch = {p}, updated_at = {p}
                 WHERE lease_id = {p}
-                """,
-                (
-                    normalized_status,
-                    float(heartbeat_epoch),
-                    str(updated_at),
-                    lease,
-                ),
+            """
+            values = (
+                normalized_status,
+                float(heartbeat_epoch),
+                str(updated_at),
+                lease,
             )
+        else:
+            statement = f"""
+                UPDATE nico_comprehensive_final_report_jobs
+                SET status = {p}, started_epoch = {p}, heartbeat_epoch = {p}, updated_at = {p}
+                WHERE lease_id = {p}
+            """
+            values = (
+                normalized_status,
+                float(started_epoch),
+                float(heartbeat_epoch),
+                str(updated_at),
+                lease,
+            )
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(statement, values)
             changed = int(cursor.rowcount or 0) == 1
             connection.commit()
         return changed
