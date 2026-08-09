@@ -56,6 +56,10 @@ function browserHeaders(init?: HeadersInit): Headers {
   return headers;
 }
 
+function statusPathForContinuation(path: string): string {
+  return path.replace(/\/continue$/, "");
+}
+
 function timeoutErrorFor(
   readinessPreflight: boolean,
   runContinueRequest: boolean,
@@ -165,7 +169,22 @@ export async function requestWithRetry(
       if (!("result" in attemptResult)) {
         continue;
       }
-      return attemptResult.result;
+      const result = attemptResult.result;
+      if (runContinueRequest && result.terminal === true) {
+        // A continuation response can race durable publication. Confirm every terminal
+        // projection through the idempotent exact-run status authority before React
+        // receives it; this cannot replay or advance the canonical run.
+        if (timeoutId != null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        return requestWithRetry(
+          statusPathForContinuation(path),
+          {method: "GET"},
+          copy,
+        );
+      }
+      return result;
     } catch (error) {
       lastError = error;
       const retryable =
