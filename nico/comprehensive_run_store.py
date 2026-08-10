@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol
@@ -28,6 +29,19 @@ class ComprehensiveRunNotFound(KeyError):
     pass
 
 
+def _copy_record_for_store(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Detach mutable record boundaries without cloning retained stage evidence."""
+
+    copied: dict[str, Any] = {}
+    for key, value in record.items():
+        if key == "stage_results" and isinstance(value, Mapping):
+            copied[key] = dict(value)
+        else:
+            copied[key] = deepcopy(value)
+    copied.setdefault("stage_results", {})
+    return copied
+
+
 class ComprehensiveRunStore:
     """Transactional persistence for canonical Comprehensive run records.
 
@@ -39,6 +53,12 @@ class ComprehensiveRunStore:
     Final-report background coordination stores only a tiny lease/heartbeat row in
     the same durable database. The generated report package never passes through the
     lease table; it is committed only through the canonical run transaction.
+
+    Completed stage results are append-only canonical evidence. Persistence copies
+    the mutable record and stage-map boundaries, while retaining prior stage values
+    by reference until canonical JSON serialization. This avoids multiplying the
+    multi-megabyte evidence tree during late-stage continuation without weakening
+    integrity validation or optimistic revision checks.
     """
 
     def __init__(self, connection_factory: ConnectionFactory, *, dialect: str = "sqlite") -> None:
@@ -119,7 +139,7 @@ class ComprehensiveRunStore:
                 connection.rollback()
                 raise ComprehensiveRunConflict(f"run_already_exists:{identity['run_id']}") from exc
             connection.commit()
-        return deepcopy(canonical)
+        return _copy_record_for_store(canonical)
 
     def load(self, run_id: str) -> dict[str, Any]:
         normalized = str(run_id or "").strip()
@@ -165,7 +185,7 @@ class ComprehensiveRunStore:
                     f"stale_revision:{identity['run_id']}:expected:{int(expected_revision)}"
                 )
             connection.commit()
-        return deepcopy(canonical)
+        return _copy_record_for_store(canonical)
 
     def create_final_report_job(
         self,
@@ -350,7 +370,7 @@ class ComprehensiveRunStore:
     def _validated_copy(self, record: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record, dict):
             raise TypeError("run_record_must_be_object")
-        canonical = deepcopy(record)
+        canonical = _copy_record_for_store(record)
         validation = validate_comprehensive_run_record(canonical)
         if validation["status"] != "valid":
             raise ValueError("invalid_run_record:" + ",".join(validation["violations"]))
