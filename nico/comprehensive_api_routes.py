@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 from nico.admin_security import require_admin_write
 from nico.comprehensive_api_controller import ComprehensiveApiController
@@ -15,7 +16,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v11"
+VERSION = "nico.comprehensive_api_routes.v12"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -580,7 +581,7 @@ def register_comprehensive_api_routes(
             raw = await request.body()
             payload = await request.json() if raw else {}
             controller_value = _controller(request)
-            controller_value.continue_run(run_id, payload)
+            await run_in_threadpool(controller_value.continue_run, run_id, payload)
             record = _service(controller_value).load(run_id)
             response = controller_value._response(record, operation="continued")
             return _with_runtime_truth(
