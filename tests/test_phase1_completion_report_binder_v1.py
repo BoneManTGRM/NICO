@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from nico.phase1_completion_report_contract_v1 import dod_rows, extract_report, validate_external
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "phase1-completion-bound-report.yml"
+BINDER = ROOT / "scripts" / "phase1_completion_report_binder_v1.py"
 
 
 def report_text(sha: str) -> str:
@@ -101,3 +105,18 @@ def test_workflow_creates_one_post_acceptance_comprehensive_report() -> None:
     assert 'manifest["additional_report_product_created"] is False' in source
     assert 'manifest["human_approval_status"] == "pending"' in source
     assert 'manifest["client_delivery_allowed"] is False' in source
+
+
+def test_binder_script_bootstraps_repository_root_imports() -> None:
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    completed = subprocess.run(
+        [sys.executable, str(BINDER), "--help"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Bind successful Phase 1 acceptance evidence" in completed.stdout
