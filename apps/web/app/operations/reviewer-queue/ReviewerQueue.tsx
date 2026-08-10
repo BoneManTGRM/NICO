@@ -4,14 +4,18 @@ import {FormEvent, useEffect, useState} from "react";
 import styles from "./reviewer-queue.module.css";
 
 type JsonRecord = Record<string, unknown>;
-type ComprehensiveStatus = {
+type ReviewQueuePayload = {
   run_id?: string;
   commit_sha?: string;
   status?: string;
   terminal?: boolean;
+  read_only?: boolean;
+  source?: string;
+  candidate_count?: number;
+  human_review_work_units?: number;
   human_review_required?: boolean;
   client_delivery_allowed?: boolean;
-  reports?: JsonRecord;
+  candidate_register?: JsonRecord;
 };
 type QueueUnit = {id: string; kind: "individual" | "group"; candidates: JsonRecord[]; representative: JsonRecord};
 type QueueModel = {
@@ -33,9 +37,8 @@ function asRecords(value: unknown): JsonRecord[] {
 function text(value: unknown): string { return String(value ?? "").trim(); }
 function textList(value: unknown): string[] { return Array.isArray(value) ? value.map(text).filter(Boolean) : []; }
 function candidateId(candidate: JsonRecord): string { return text(candidate.candidate_id) || "candidate-id-missing"; }
-function canonicalRegister(payload: ComprehensiveStatus): JsonRecord {
-  const canonical = asRecord(asRecord(payload.reports).json);
-  return asRecord(asRecord(canonical.assessment).canonical_scanner_finding_register);
+function canonicalRegister(payload: ReviewQueuePayload): JsonRecord {
+  return asRecord(payload.candidate_register);
 }
 function routingPriority(candidate: JsonRecord): number {
   return ({CRITICAL_ATTENTION: 0, HUMAN_TECHNICAL_REVIEW: 1, QUALITY_CONTROL_ELIGIBLE: 2, STABLE_CARRY_FORWARD: 3, AUTOMATED_TRIAGE_COMPLETE: 4} as Record<string, number>)[text(candidate.review_routing_class)] ?? 5;
@@ -53,7 +56,7 @@ function compareCandidates(left: JsonRecord, right: JsonRecord): number {
     || candidateId(left).localeCompare(candidateId(right));
 }
 
-function buildQueue(payload: ComprehensiveStatus): QueueModel {
+function buildQueue(payload: ReviewQueuePayload): QueueModel {
   const register = canonicalRegister(payload);
   const findings = asRecords(register.findings);
   if (!findings.length) throw new Error("The exact terminal report does not contain a canonical scanner candidate register.");
@@ -97,6 +100,8 @@ function buildQueue(payload: ComprehensiveStatus): QueueModel {
   if (candidateCount !== findings.length) integrityErrors.push("Candidate count does not match the canonical register.");
   if (new Set(queuedIds).size !== findings.length || queuedIds.length !== findings.length) integrityErrors.push("The queue does not preserve every canonical candidate exactly once.");
   if (Number.isFinite(expectedWorkUnits) && expectedWorkUnits !== units.length) integrityErrors.push("Displayed work units do not reconcile with the canonical workload metric.");
+  if (Number.isFinite(Number(payload.candidate_count)) && Number(payload.candidate_count) !== candidateCount) integrityErrors.push("Protected queue candidate count does not match the canonical register.");
+  if (Number.isFinite(Number(payload.human_review_work_units)) && Number(payload.human_review_work_units) !== units.length) integrityErrors.push("Protected queue work-unit count does not reconcile with the displayed queue.");
   return {units, individualUnits, groupedUnits, candidateCount, integrityErrors};
 }
 
@@ -128,7 +133,7 @@ function CandidateSummary({candidate}: {candidate: JsonRecord}) {
 export default function ReviewerQueue() {
   const [runId, setRunId] = useState("");
   const [adminToken, setAdminToken] = useState("");
-  const [payload, setPayload] = useState<ComprehensiveStatus | null>(null);
+  const [payload, setPayload] = useState<ReviewQueuePayload | null>(null);
   const [model, setModel] = useState<QueueModel | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -143,19 +148,24 @@ export default function ReviewerQueue() {
     }
     setLoading(true); setError(""); setPayload(null); setModel(null);
     try {
-      const response = await fetch(new URL(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`, window.location.origin), {
+      const response = await fetch(new URL(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review-queue`, window.location.origin), {
         cache: "no-store",
         headers: {Accept: "application/json", "X-NICO-Admin-Token": adminToken.trim()},
       });
-      if (!response.ok) throw new Error(`Unable to load the exact run (${response.status}).`);
-      const next = await response.json() as ComprehensiveStatus;
+      if (!response.ok) throw new Error(`Unable to load the exact protected review queue (${response.status}).`);
+      const next = await response.json() as ReviewQueuePayload;
       if (!next.terminal || text(next.status) !== "review_required") throw new Error("The exact run must reach the terminal human-review boundary before its reviewer queue can open.");
-      if (next.human_review_required !== true) throw new Error("The exact run does not preserve the mandatory human-review boundary.");
+      if (next.read_only !== true) throw new Error("The protected reviewer queue did not preserve its read-only contract.");
+      if (text(next.source) !== "canonical_terminal_comprehensive_report_json") throw new Error("The reviewer queue is not bound to the terminal canonical Comprehensive report.");
+      if (next.human_review_required !== true || next.client_delivery_allowed === true) throw new Error("The exact run does not preserve the mandatory pre-approval human-review boundary.");
       const queue = buildQueue(next);
       setPayload(next); setModel(queue);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load the exact review queue.");
-    } finally { setLoading(false); }
+    } finally {
+      setAdminToken("");
+      setLoading(false);
+    }
   }
 
   return <main className={styles.shell} data-review-queue-contract="exception-first-v1" data-human-disposition-controls="absent" data-client-delivery-authorization="absent">
@@ -163,7 +173,7 @@ export default function ReviewerQueue() {
       <p className={styles.eyebrow}>NICO PHASE 2 · WORK PACKAGE 1</p>
       <h1>Exception-first technical review queue</h1>
       <p>Review candidates that require individual attention first, followed by deterministic grouped work units from the same immutable Comprehensive report package.</p>
-      <div className={styles.boundary}>Read-only technical review routing. No candidate disposition, reviewer identity, risk acceptance, approval, score change, or client-delivery authorization is created here.</div>
+      <div className={styles.boundary}>Authenticated, read-only technical review routing. No candidate disposition, reviewer identity, risk acceptance, approval, score change, or client-delivery authorization is created here.</div>
     </section>
     <section className={styles.panel}>
       <h2>Open an exact terminal run</h2>
