@@ -1,5 +1,14 @@
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES, EXPRESS_STAGES
-from nico.comprehensive_stage_adapter import build_comprehensive_run_state, run_comprehensive_stages
+from nico.comprehensive_stage_adapter import (
+    bind_capability_executors,
+    build_comprehensive_run_state,
+    run_comprehensive_stages,
+)
+
+
+class _NoDeepcopy:
+    def __deepcopy__(self, memo):
+        raise AssertionError("retained final-report evidence must not be deep-copied")
 
 
 def _state():
@@ -80,3 +89,46 @@ def test_unauthorized_state_never_executes() -> None:
     assert result["status"] == "blocked"
     assert "explicit_authorization_required" in result["blockers"]
     assert called == []
+
+
+def test_final_report_capability_retains_large_prior_evidence_by_reference() -> None:
+    retained = {"scanner": {"sentinel": _NoDeepcopy()}}
+    original = {
+        "prior_stage_results": retained,
+        "human_evidence": {"approved": False},
+        "recovery_history": [{"attempt": 1}],
+    }
+    observed = []
+
+    def final_report(context):
+        observed.append(context)
+        return {"status": "complete"}
+
+    bound = bind_capability_executors({"final_report_generation": final_report})
+    result = bound["final_comprehensive_report_generation"](original)
+
+    assert result == {"status": "complete"}
+    assert observed[0] is not original
+    assert observed[0]["prior_stage_results"] is retained
+    assert observed[0]["human_evidence"] is not original["human_evidence"]
+    assert observed[0]["recovery_history"] is not original["recovery_history"]
+    assert observed[0]["capability"] == "final_report_generation"
+
+
+def test_non_final_capability_keeps_deep_copy_isolation() -> None:
+    retained = {"snapshot": {"paths": ["one.py"]}}
+    original = {"prior_stage_results": retained}
+    observed = []
+
+    def authorization(context):
+        observed.append(context)
+        return {"status": "complete"}
+
+    bound = bind_capability_executors({"authorization": authorization})
+    result = bound["authorization_and_scope"](original)
+
+    assert result == {"status": "complete"}
+    assert observed[0] is not original
+    assert observed[0]["prior_stage_results"] is not retained
+    assert observed[0]["prior_stage_results"]["snapshot"] is not retained["snapshot"]
+    assert observed[0]["capability"] == "authorization"
