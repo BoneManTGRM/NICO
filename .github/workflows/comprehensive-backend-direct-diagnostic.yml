@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 10
     env:
       NICO_PRODUCTION_BACKEND_URL: https://nico-production-690a.up.railway.app
-      TARGET_RELEASE_SHA: ba3363c3e0172be5c95effab6fc2b3d9a41af6f3
+      TARGET_RELEASE_SHA: aef10e2db9bbfa44ea33b01e020d749b0a0bd518
     steps:
       - name: Capture bounded direct-backend evidence
         run: |
