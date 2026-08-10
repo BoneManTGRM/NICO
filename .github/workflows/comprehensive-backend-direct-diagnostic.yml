@@ -58,7 +58,7 @@ jobs:
               safe = {}
               if isinstance(payload, dict):
                   for key in (
-                      "artifact_schema", "service_id", "status", "configured", "reason",
+                      "artifact_schema", "service_id", "status", "configured", "reason", "code", "message",
                       "persistence_adapter", "storage_source", "database_url_source",
                       "persistence_proof_source", "durability_verified",
                       "survives_container_replacement_verified", "run_store_shared_across_workers",
@@ -69,7 +69,8 @@ jobs:
                       "client_delivery_allowed", "release_sha", "commit_sha", "version",
                   ):
                       if key in payload:
-                          safe[key] = payload[key]
+                          value = payload[key]
+                          safe[key] = value[:500] if isinstance(value, str) else value
               return {"http_status": status, "json": True, "payload": safe}
 
           result = {
