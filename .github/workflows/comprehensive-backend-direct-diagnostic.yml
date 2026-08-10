@@ -1,0 +1,94 @@
+name: Comprehensive Backend Direct Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/phase2-production-readiness-cause
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: Compare backend health and Comprehensive readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NICO_PRODUCTION_BACKEND_URL: https://nico-production-690a.up.railway.app
+      TARGET_RELEASE_SHA: ba3363c3e0172be5c95effab6fc2b3d9a41af6f3
+    steps:
+      - name: Capture bounded direct-backend evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          origin = os.environ["NICO_PRODUCTION_BACKEND_URL"].rstrip("/")
+          target_sha = os.environ["TARGET_RELEASE_SHA"]
+
+          def probe(path: str) -> dict:
+              request = urllib.request.Request(
+                  f"{origin}{path}?_nico_direct_probe={time.time_ns()}",
+                  headers={
+                      "Accept": "application/json",
+                      "Cache-Control": "no-store",
+                      "Pragma": "no-cache",
+                      "User-Agent": "nico-direct-backend-readiness-diagnostic",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      raw = response.read(262_144)
+                      status = int(response.status)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read(262_144)
+                  status = int(exc.code)
+              except Exception as exc:
+                  return {"http_status": 0, "error_type": type(exc).__name__, "error": str(exc)[:500]}
+              try:
+                  payload = json.loads(raw.decode("utf-8"))
+              except Exception:
+                  return {"http_status": status, "json": False, "body_preview": raw.decode("utf-8", errors="replace")[:500]}
+              safe = {}
+              if isinstance(payload, dict):
+                  for key in (
+                      "artifact_schema", "service_id", "status", "configured", "reason",
+                      "persistence_adapter", "storage_source", "database_url_source",
+                      "persistence_proof_source", "durability_verified",
+                      "survives_container_replacement_verified", "run_store_shared_across_workers",
+                      "required_capability_count", "supplied_capability_count", "native_provider_count",
+                      "missing_capabilities", "diagnostics_route_count", "category_specific_scoring_bound",
+                      "same_sha_score_deterministic", "mutable_operational_history_affects_score",
+                      "score_truth_scope_bound", "score_override_allowed", "human_review_required",
+                      "client_delivery_allowed", "release_sha", "commit_sha", "version",
+                  ):
+                      if key in payload:
+                          safe[key] = payload[key]
+              return {"http_status": status, "json": True, "payload": safe}
+
+          result = {
+              "artifact_schema": "nico.comprehensive_backend_direct_diagnostic.v1",
+              "target_release_sha": target_sha,
+              "health": probe("/health"),
+              "runtime_readiness": probe("/diagnostics/comprehensive-runtime"),
+          }
+          Path("audit-results").mkdir(parents=True, exist_ok=True)
+          Path("audit-results/comprehensive-backend-direct-diagnostic.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
+          )
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
+      - name: Upload bounded direct-backend evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: comprehensive-backend-direct-diagnostic-${{ env.TARGET_RELEASE_SHA }}-${{ github.run_id }}
+          path: audit-results/comprehensive-backend-direct-diagnostic.json
+          if-no-files-found: error
+          retention-days: 30
