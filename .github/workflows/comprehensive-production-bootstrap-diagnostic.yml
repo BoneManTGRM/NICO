@@ -1,0 +1,108 @@
+name: Comprehensive Production Bootstrap Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/phase2-production-readiness-cause
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Import production app with Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nico"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nico
+      NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE: "true"
+      NICO_REQUIRE_DURABLE_DELIVERY_STORAGE: "true"
+      NICO_ENABLE_SQLITE_DURABLE_STORAGE: "false"
+      NICO_TRUST_PROXY_HEADERS: "true"
+      NICO_WEB_WORKERS: "1"
+      NICO_SCANNER_RAW_ARTIFACT_ROOT: /tmp/nico-scanner-artifacts
+      NICO_HOSTED_REPORT_ROOT: /tmp/nico-reports
+    steps:
+      - name: Check out diagnostic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install production Python package
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check --no-deps .
+      - name: Import exact production bootstrap and query health
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nico-scanner-artifacts /tmp/nico-reports audit-results
+          python - <<'PY'
+          import json
+          import traceback
+          from pathlib import Path
+
+          result = {"artifact_schema": "nico.production_bootstrap_diagnostic.v1"}
+          try:
+              from fastapi.testclient import TestClient
+              from nico.api.terminal_authority_bootstrap import app
+              result["imported"] = True
+              result["route_count"] = len(app.routes)
+              with TestClient(app) as client:
+                  health = client.get("/health")
+                  readiness = client.get("/diagnostics/comprehensive-runtime")
+              result["health"] = {"status_code": health.status_code, "body": health.json()}
+              ready_payload = readiness.json()
+              result["readiness"] = {
+                  "status_code": readiness.status_code,
+                  "status": ready_payload.get("status"),
+                  "reason": ready_payload.get("reason"),
+                  "configured": ready_payload.get("configured"),
+                  "persistence_adapter": ready_payload.get("persistence_adapter"),
+                  "storage_source": ready_payload.get("storage_source"),
+                  "survives_container_replacement_verified": ready_payload.get("survives_container_replacement_verified"),
+                  "human_review_required": ready_payload.get("human_review_required"),
+                  "client_delivery_allowed": ready_payload.get("client_delivery_allowed"),
+              }
+          except Exception as exc:
+              result["imported"] = False
+              result["error_type"] = type(exc).__name__
+              result["error"] = str(exc)[:2000]
+              result["traceback"] = traceback.format_exc()[-12000:]
+          Path("audit-results/comprehensive-production-bootstrap-diagnostic.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True, default=str), encoding="utf-8"
+          )
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          if result.get("imported") is not True:
+              raise SystemExit(1)
+          if result.get("health", {}).get("status_code") != 200:
+              raise SystemExit(1)
+          if result.get("readiness", {}).get("status") != "ready":
+              raise SystemExit(1)
+          PY
+      - name: Upload bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: comprehensive-production-bootstrap-diagnostic-${{ github.sha }}-${{ github.run_id }}
+          path: audit-results/comprehensive-production-bootstrap-diagnostic.json
+          if-no-files-found: warn
+          retention-days: 30
