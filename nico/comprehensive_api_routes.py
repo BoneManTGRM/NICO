@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -14,13 +15,14 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v10"
+VERSION = "nico.comprehensive_api_routes.v11"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
     ("POST", "/assessment/comprehensive-run"),
     ("GET", "/assessment/comprehensive-run/{run_id}"),
     ("POST", "/assessment/comprehensive-run/{run_id}/continue"),
+    ("GET", "/assessment/comprehensive-run/{run_id}/review-queue"),
     ("POST", "/assessment/comprehensive-run/{run_id}/review"),
     ("GET", "/assessment/comprehensive-run/{run_id}/approved-delivery-package"),
 }
@@ -42,6 +44,14 @@ _SAFE_RUNTIME_REASONS = {
         "Comprehensive is temporarily unavailable because its production database configuration is invalid."
     ),
 }
+
+_REVIEW_QUEUE_STAGE_IDS = (
+    "final_comprehensive_report_generation",
+    "risk_reduction_and_executive_briefing",
+    "decision_report_generation",
+    "report_generation",
+    "reports",
+)
 
 
 def _controller(request: Request) -> ComprehensiveApiController:
@@ -208,6 +218,129 @@ def _review_projection(
         public_record["client_delivery_allowed"] = allowed
         public_record["delivery_status"] = projected["delivery_status"]
     return projected
+
+
+def _review_queue_error(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": code,
+            "message": message,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+    )
+
+
+def _canonical_review_queue_register(record: Mapping[str, Any]) -> Mapping[str, Any]:
+    if record.get("terminal") is not True or str(record.get("status") or "") != "review_required":
+        raise _review_queue_error(
+            "comprehensive_review_queue_terminal_run_required",
+            "The exception-first reviewer queue is available only at the exact terminal human-review boundary.",
+        )
+    if record.get("human_review_completed") is True or record.get("client_delivery_allowed") is True:
+        raise _review_queue_error(
+            "comprehensive_review_queue_preapproval_boundary_required",
+            "The exception-first queue is a pre-approval technical-review surface and cannot project an approved delivery state.",
+        )
+
+    identity = record.get("identity")
+    if not isinstance(identity, Mapping):
+        raise _review_queue_error(
+            "comprehensive_review_queue_identity_missing",
+            "The exact run identity is unavailable.",
+        )
+    stage_results = record.get("stage_results")
+    stage_results = stage_results if isinstance(stage_results, Mapping) else {}
+
+    report_candidates: list[Mapping[str, Any]] = []
+    for stage_id in _REVIEW_QUEUE_STAGE_IDS:
+        stage = stage_results.get(stage_id)
+        if not isinstance(stage, Mapping):
+            continue
+        package = stage.get("report_package")
+        if not isinstance(package, Mapping):
+            package = stage.get("reports")
+        if isinstance(package, Mapping):
+            report_candidates.append(package)
+    top_level_report = record.get("reports")
+    if isinstance(top_level_report, Mapping):
+        report_candidates.append(top_level_report)
+
+    for package in report_candidates:
+        canonical = package.get("json")
+        if not isinstance(canonical, Mapping):
+            continue
+        canonical_identity = canonical.get("identity")
+        if not isinstance(canonical_identity, Mapping):
+            continue
+        identity_matches = all(
+            str(canonical_identity.get(field) or "").strip()
+            == str(identity.get(field) or "").strip()
+            for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id")
+        )
+        if not identity_matches:
+            raise _review_queue_error(
+                "comprehensive_review_queue_identity_mismatch",
+                "The terminal report candidate register does not match the exact run identity.",
+            )
+        assessment = canonical.get("assessment")
+        if not isinstance(assessment, Mapping):
+            continue
+        register = assessment.get("canonical_scanner_finding_register")
+        if not isinstance(register, Mapping):
+            continue
+        findings = register.get("findings")
+        if not isinstance(findings, list):
+            raise _review_queue_error(
+                "comprehensive_review_queue_findings_missing",
+                "The terminal report candidate register does not contain its canonical findings list.",
+            )
+        try:
+            declared_count = int(register.get("candidate_record_count"))
+        except (TypeError, ValueError):
+            declared_count = -1
+        if declared_count != len(findings):
+            raise _review_queue_error(
+                "comprehensive_review_queue_candidate_count_mismatch",
+                "The terminal report candidate count does not reconcile with the canonical findings list.",
+            )
+        return register
+
+    raise _review_queue_error(
+        "comprehensive_review_queue_register_unavailable",
+        "The exact terminal report does not contain the canonical scanner candidate register.",
+    )
+
+
+def _review_queue_projection(record: dict[str, Any]) -> dict[str, Any]:
+    identity = record.get("identity")
+    if not isinstance(identity, Mapping):
+        raise _review_queue_error(
+            "comprehensive_review_queue_identity_missing",
+            "The exact run identity is unavailable.",
+        )
+    register = _canonical_review_queue_register(record)
+    triage = register.get("technical_triage")
+    triage = triage if isinstance(triage, Mapping) else {}
+    return {
+        "artifact_schema": "nico.exception_first_reviewer_queue.v1",
+        "service_id": "comprehensive",
+        "operation": "review_queue",
+        "run_id": str(identity.get("run_id") or ""),
+        "repository": str(identity.get("repository") or ""),
+        "commit_sha": str(identity.get("commit_sha") or ""),
+        "evidence_ledger_id": str(identity.get("evidence_ledger_id") or ""),
+        "status": "review_required",
+        "terminal": True,
+        "read_only": True,
+        "source": "canonical_terminal_comprehensive_report_json",
+        "candidate_count": int(register.get("candidate_record_count") or 0),
+        "human_review_work_units": int(triage.get("human_review_work_units") or 0),
+        "candidate_register": dict(register),
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
 
 
 def _approved_delivery_response(record: dict[str, Any]) -> Response:
@@ -453,6 +586,25 @@ def register_comprehensive_api_routes(
             return _with_runtime_truth(
                 request,
                 _review_projection(response, record),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _translate_error(exc) from exc
+
+    @app.get("/assessment/comprehensive-run/{run_id}/review-queue")
+    async def get_comprehensive_review_queue(
+        run_id: str,
+        request: Request,
+        x_nico_admin_token: str = Header(default=""),
+    ) -> dict[str, Any]:
+        try:
+            _authorize_review(x_nico_admin_token)
+            controller_value = _controller(request)
+            record = _service(controller_value).load(run_id)
+            return _with_runtime_truth(
+                request,
+                _review_queue_projection(record),
             )
         except HTTPException:
             raise

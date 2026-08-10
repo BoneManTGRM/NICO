@@ -9,6 +9,7 @@ const EXPRESS_STATUS = /^\/assessment\/express-run\/[^/?#]+\/status$/;
 const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake";
 const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
+const COMPREHENSIVE_REVIEW_QUEUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-queue$/;
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
@@ -78,6 +79,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "POST" && path === COMPREHENSIVE_INTAKE) return true;
   if (method === "GET" && COMPREHENSIVE_STATUS.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
+  if (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
@@ -85,7 +87,8 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
 }
 
 function protectedReviewRoute(method: string, path: string): boolean {
-  return (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
+  return (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path))
+    || (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
     || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path));
 }
 

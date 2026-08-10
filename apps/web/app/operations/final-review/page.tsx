@@ -1,3 +1,4 @@
+import Link from "next/link";
 import FinalReviewWorkspace from "./FinalReviewWorkspace";
 
 /*
@@ -38,5 +39,12 @@ Final-review endpoint returned invalid JSON
 */
 
 export default function FinalReviewOperationsPage() {
-  return <FinalReviewWorkspace />;
+  return <>
+    <FinalReviewWorkspace />
+    <nav aria-label="Technical review workspaces" style={{background: "#071018", padding: "0 24px 40px", textAlign: "center"}}>
+      <Link href="/operations/reviewer-queue" style={{color: "#9be2d5", fontWeight: 800}}>
+        Open the read-only exception-first technical review queue
+      </Link>
+    </nav>
+  </>;
 }
