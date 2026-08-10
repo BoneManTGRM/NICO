@@ -57,11 +57,12 @@ def test_package_remains_read_only_and_does_not_absorb_later_work() -> None:
     assert "quality_control_sampling" not in component
 
 
-def test_internal_final_review_exposes_the_queue_without_changing_client_report() -> None:
+def test_internal_final_review_exposes_queue_without_changing_client_report() -> None:
     page = source(PAGE)
     final_review = source(FINAL_REVIEW_PAGE)
+    component = source(COMPONENT)
     assert "ReviewerQueue" in page
     assert "/operations/reviewer-queue" in final_review
     assert "FinalReviewWorkspace" in final_review
-    assert "report_package" not in component_source := source(COMPONENT)
-    assert "pdf_base64" not in component_source
+    assert "report_package" not in component
+    assert "pdf_base64" not in component
