@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from pypdf import PdfReader
+from reportlab.pdfgen import canvas
 
 from nico.phase1_completion_report_contract_v1 import dod_rows, extract_report, validate_external
 
@@ -40,6 +44,7 @@ def evidence(sha: str):
         "artifact_schema": "nico.phase1-structured-artifact-audit.v1",
         "status": "passed",
         "commit_sha": sha,
+        "candidate_count": 629,
         "candidate_register_sha256_expected": "a" * 64,
         "candidate_register_sha256_observed": "a" * 64,
         "cluster_integrity_error_count": 0,
@@ -65,9 +70,27 @@ def evidence(sha: str):
         "artifact_schema": "nico.phase1-current-head-status.v1",
         "commit_sha": sha,
         "required_contexts": required,
-        "contexts": {name: {"state": "success"} for name in required},
+        "contexts": {
+            name: {"state": "success", "description": f"{name} passed"}
+            for name in required
+        },
     }
     return acceptance, audit, release, status
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_source_pdf(path: Path, sha: str) -> None:
+    pdf = canvas.Canvas(str(path))
+    text = pdf.beginText(48, 760)
+    text.setFont("Helvetica", 8)
+    for line in report_text(sha).splitlines():
+        if line.strip():
+            text.textLine(line.strip())
+    pdf.drawText(text)
+    pdf.save()
 
 
 def test_report_contract_covers_items_one_through_eight() -> None:
@@ -107,6 +130,16 @@ def test_workflow_creates_one_post_acceptance_comprehensive_report() -> None:
     assert 'manifest["client_delivery_allowed"] is False' in source
 
 
+def _isolated_env(tmp_path: Path) -> dict[str, str]:
+    (tmp_path / "requests.py").write_text(
+        'raise RuntimeError("application requests dependency imported")\n',
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(tmp_path)
+    return env
+
+
 def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: Path) -> None:
     source = BINDER.read_text(encoding="utf-8")
     assert 'types.ModuleType("nico")' in source
@@ -114,22 +147,77 @@ def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: 
     assert "_load_support_module(" in source
     assert "from nico." not in source
 
-    # Fail loudly if the subprocess reaches the application package startup path.
-    # The deterministic report binder must not import hosted runtime dependencies.
-    (tmp_path / "requests.py").write_text(
-        'raise RuntimeError("application requests dependency imported")\n',
-        encoding="utf-8",
-    )
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(tmp_path)
     completed = subprocess.run(
         [sys.executable, str(BINDER), "--help"],
         cwd=ROOT,
-        env=env,
+        env=_isolated_env(tmp_path),
         capture_output=True,
         text=True,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
     assert "Bind successful Phase 1 acceptance evidence" in completed.stdout
+    assert "application requests dependency imported" not in completed.stderr
+
+
+def test_binder_end_to_end_produces_item_nine_report_without_application_startup(tmp_path: Path) -> None:
+    sha = "3" * 40
+    source_pdf = tmp_path / "source.pdf"
+    output_pdf = tmp_path / "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf"
+    output_manifest = tmp_path / "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.manifest.json"
+    acceptance_path = tmp_path / "acceptance.json"
+    audit_path = tmp_path / "audit.json"
+    release_path = tmp_path / "release.json"
+    status_path = tmp_path / "status.json"
+
+    _write_source_pdf(source_pdf, sha)
+    acceptance, audit, release, status = evidence(sha)
+    _write_json(acceptance_path, acceptance)
+    _write_json(audit_path, audit)
+    _write_json(release_path, release)
+    _write_json(status_path, status)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(BINDER),
+            "--source-pdf", str(source_pdf),
+            "--acceptance-json", str(acceptance_path),
+            "--audit-json", str(audit_path),
+            "--release-json", str(release_path),
+            "--status-json", str(status_path),
+            "--expected-sha", sha,
+            "--workflow-run-id", "1001",
+            "--mobile-run-id", "1002",
+            "--ios-run-id", "1003",
+            "--artifact-id", "1004",
+            "--artifact-name", "unified-production-acceptance-test",
+            "--artifact-digest", "sha256:" + "b" * 64,
+            "--acceptance-completed-at", "2026-08-10T00:00:00Z",
+            "--output-pdf", str(output_pdf),
+            "--output-manifest", str(output_manifest),
+        ],
+        cwd=ROOT,
+        env=_isolated_env(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert output_pdf.is_file()
+    manifest = json.loads(output_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "passed"
+    assert manifest["commit_sha"] == sha
+    assert len(manifest["phase1_definition_of_done"]) == 9
+    assert manifest["phase1_definition_of_done"][8]["status"] == "passed"
+    assert manifest["human_approval_status"] == "pending"
+    assert manifest["client_delivery_allowed"] is False
+
+    reader = PdfReader(str(output_pdf))
+    assert len(reader.pages) == 3
+    closure_text = "\n".join(page.extract_text() or "" for page in reader.pages[-2:])
+    assert "9. Required current-head checks pass" in closure_text
+    assert "PHASE 1 COMPLETE" in closure_text
+    assert "HUMAN APPROVAL PENDING" in closure_text
+    assert "CLIENT DELIVERY BLOCKED" in closure_text
     assert "application requests dependency imported" not in completed.stderr
