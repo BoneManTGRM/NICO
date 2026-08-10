@@ -22,6 +22,7 @@ from nico.strategic_human_evidence_v1 import (
 
 VERSION = "nico.comprehensive_run_record.v5"
 LEGACY_VERSION = "nico.comprehensive_run_record.v2"
+FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 TERMINAL_STATUSES = {"review_required", "approved", "rejected", "failed", "blocked"}
 ACTIVE_STAGE_STATUSES = {"queued", "running", "pending", "planned", "in_progress"}
 SUCCESS_STAGE_STATUSES = {"complete", "completed", "passed", "review_required"}
@@ -36,14 +37,52 @@ def _required(value: Any, field: str) -> str:
 
 
 def _canonical_hash(payload: Any) -> str:
-    encoded = json.dumps(
-        payload,
+    """Hash canonical JSON without materializing a second full JSON string."""
+
+    encoder = json.JSONEncoder(
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
         default=str,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    )
+    digest = hashlib.sha256()
+    for chunk in encoder.iterencode(payload):
+        digest.update(chunk.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _copy_record_for_update(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy a run record while retaining completed stage payloads by reference.
+
+    Stage results are append-only canonical evidence. Deep-copying the entire
+    retained evidence tree on every continuation multiplies peak memory once
+    scanner candidates and report artifacts are present. Copy the mutable map
+    boundary, while preserving the prior immutable stage values. Other fields
+    remain deeply isolated.
+    """
+
+    copied: dict[str, Any] = {}
+    for key, value in record.items():
+        if key == "stage_results" and isinstance(value, Mapping):
+            copied[key] = dict(value)
+        else:
+            copied[key] = deepcopy(value)
+    copied.setdefault("stage_results", {})
+    return copied
+
+
+def _copy_stage_result(stage_id: str, result: Mapping[str, Any]) -> dict[str, Any]:
+    """Preserve normal executor isolation without cloning the final package."""
+
+    if stage_id != FINAL_REPORT_STAGE_ID:
+        return deepcopy(dict(result))
+    copied: dict[str, Any] = {}
+    for key, value in result.items():
+        if key == "report_package" and isinstance(value, Mapping):
+            copied[key] = dict(value)
+        else:
+            copied[key] = deepcopy(value)
+    return copied
 
 
 def create_comprehensive_run_record(
@@ -96,9 +135,12 @@ def create_comprehensive_run_record(
     return record
 
 
-def _record_hash(record: dict[str, Any]) -> str:
-    payload = deepcopy(record)
-    payload.pop("integrity_sha256", None)
+def _record_hash(record: Mapping[str, Any]) -> str:
+    payload = {
+        key: value
+        for key, value in record.items()
+        if key != "integrity_sha256"
+    }
     return _canonical_hash(payload)
 
 
@@ -272,7 +314,7 @@ def apply_comprehensive_stage_result(
     validation = validate_comprehensive_run_record(record)
     if validation["status"] != "valid":
         raise ValueError("invalid_run_record:" + ",".join(validation["violations"]))
-    updated = deepcopy(record)
+    updated = _copy_record_for_update(record)
     completed = list(updated["completed_stages"])
     expected_stage = (
         COMPREHENSIVE_STAGES[len(completed)]
@@ -287,7 +329,11 @@ def apply_comprehensive_stage_result(
         if supplied != identity[field]:
             raise ValueError(f"{stage_id}:{field}_identity_drift")
     status = str(result.get("status") or "complete").strip().lower()
-    normalized = {**deepcopy(result), "stage_id": stage_id, "status": status}
+    normalized = {
+        **_copy_stage_result(stage_id, result),
+        "stage_id": stage_id,
+        "status": status,
+    }
     for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
         normalized[field] = identity[field]
     normalized["assessment_depth"] = identity["assessment_depth"]
@@ -341,7 +387,7 @@ def apply_comprehensive_review_decision(
     if errors:
         raise ValueError("invalid_review_manifest:" + ",".join(errors))
 
-    updated = deepcopy(record)
+    updated = _copy_record_for_update(record)
     candidate = deepcopy(dict(manifest))
     review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
     decision = str(review.get("decision") or "").casefold()
@@ -386,7 +432,7 @@ def apply_comprehensive_review_decision(
 
 
 def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
-    restored = deepcopy(payload)
+    restored = _copy_record_for_update(payload)
     validation = validate_comprehensive_run_record(restored)
     if validation["status"] != "valid":
         raise ValueError(
@@ -410,6 +456,7 @@ def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "ACTIVE_STAGE_STATUSES",
+    "FINAL_REPORT_STAGE_ID",
     "SUCCESS_STAGE_STATUSES",
     "TERMINAL_STATUSES",
     "VERSION",
