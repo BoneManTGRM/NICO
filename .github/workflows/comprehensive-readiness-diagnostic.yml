@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 10
     env:
       NICO_PRODUCTION_FRONTEND_URL: https://app.nicoaudit.com
-      TARGET_RELEASE_SHA: ba3363c3e0172be5c95effab6fc2b3d9a41af6f3
+      TARGET_RELEASE_SHA: aef10e2db9bbfa44ea33b01e020d749b0a0bd518
     steps:
       - name: Check out diagnostic branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
