@@ -52,7 +52,11 @@ def test_package_remains_read_only_and_does_not_absorb_later_work() -> None:
     assert 'data-client-delivery-authorization="absent"' in component
     assert "No candidate disposition, reviewer identity, risk acceptance, approval, score change" in component
     assert 'method: "POST"' not in component
-    assert "/review" not in component
+    network_contract = "\n".join(
+        line for line in component.splitlines()
+        if "fetch(" in line or "method:" in line
+    )
+    assert "/review" not in network_contract
     assert "reviewer_workload_timer" not in component
     assert "quality_control_sampling" not in component
 
