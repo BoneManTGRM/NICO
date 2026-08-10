@@ -1,25 +1,54 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
+import types
 from datetime import datetime, timezone
 from pathlib import Path
+from types import ModuleType
 
 _ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+_NICO_ROOT = _ROOT / "nico"
 
-from nico.phase1_completion_report_contract_v1 import (
-    SCHEMA,
-    dod_rows,
-    extract_report,
-    load_json,
-    pdf_text,
-    sha256,
-    validate_external,
+
+def _load_support_module(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load Phase 1 report support module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# The application package performs runtime installer work in nico/__init__.py.
+# This post-acceptance binder needs only two deterministic report modules and
+# must not initialize the hosted application or inherit its dependency graph.
+_nico_package = types.ModuleType("nico")
+_nico_package.__path__ = [str(_NICO_ROOT)]
+_nico_package.__package__ = "nico"
+sys.modules["nico"] = _nico_package
+
+_contract = _load_support_module(
+    "nico.phase1_completion_report_contract_v1",
+    _NICO_ROOT / "phase1_completion_report_contract_v1.py",
 )
-from nico.phase1_completion_report_pdf_v1 import build_appendix, merge_pdf
+_pdf = _load_support_module(
+    "nico.phase1_completion_report_pdf_v1",
+    _NICO_ROOT / "phase1_completion_report_pdf_v1.py",
+)
+
+SCHEMA = _contract.SCHEMA
+dod_rows = _contract.dod_rows
+extract_report = _contract.extract_report
+load_json = _contract.load_json
+pdf_text = _contract.pdf_text
+sha256 = _contract.sha256
+validate_external = _contract.validate_external
+build_appendix = _pdf.build_appendix
+merge_pdf = _pdf.merge_pdf
 
 
 def main() -> int:
