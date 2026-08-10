@@ -107,9 +107,21 @@ def test_workflow_creates_one_post_acceptance_comprehensive_report() -> None:
     assert 'manifest["client_delivery_allowed"] is False' in source
 
 
-def test_binder_script_bootstraps_repository_root_imports() -> None:
+def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: Path) -> None:
+    source = BINDER.read_text(encoding="utf-8")
+    assert 'types.ModuleType("nico")' in source
+    assert 'sys.modules["nico"] = _nico_package' in source
+    assert "_load_support_module(" in source
+    assert "from nico." not in source
+
+    # Fail loudly if the subprocess reaches the application package startup path.
+    # The deterministic report binder must not import hosted runtime dependencies.
+    (tmp_path / "requests.py").write_text(
+        'raise RuntimeError("application requests dependency imported")\n',
+        encoding="utf-8",
+    )
     env = dict(os.environ)
-    env.pop("PYTHONPATH", None)
+    env["PYTHONPATH"] = str(tmp_path)
     completed = subprocess.run(
         [sys.executable, str(BINDER), "--help"],
         cwd=ROOT,
@@ -120,3 +132,4 @@ def test_binder_script_bootstraps_repository_root_imports() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "Bind successful Phase 1 acceptance evidence" in completed.stdout
+    assert "application requests dependency imported" not in completed.stderr
