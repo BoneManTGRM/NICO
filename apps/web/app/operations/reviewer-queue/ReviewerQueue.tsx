@@ -58,8 +58,8 @@ function compareCandidates(left: JsonRecord, right: JsonRecord): number {
 
 function buildQueue(payload: ReviewQueuePayload): QueueModel {
   const register = canonicalRegister(payload);
+  if (!Array.isArray(register.findings)) throw new Error("The exact terminal report does not contain a canonical scanner candidate register.");
   const findings = asRecords(register.findings);
-  if (!findings.length) throw new Error("The exact terminal report does not contain a canonical scanner candidate register.");
 
   const individuals: JsonRecord[] = [];
   const grouped = new Map<string, JsonRecord[]>();
