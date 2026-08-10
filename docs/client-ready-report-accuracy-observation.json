@@ -1,195 +1,142 @@
 {
   "artifact_schema": "nico.completion.work_package_state.v1",
-  "program_phase": 1,
-  "workstream": 2,
-  "workstream_name": "client_readiness",
-  "work_package": "phase1_automated_technical_triage_and_production_closure",
+  "program_phase": 2,
+  "workstream": 1,
+  "workstream_name": "human_review_workload_reduction",
+  "work_package": "exception_first_reviewer_interface",
   "dependency_state": "completed",
   "state": "post_merge_verified",
-  "program_state": "phase2_work_package_declared_not_started",
-  "implementation_starting_main_sha": "d27dc9eda653f5a67ca8f030bcb0e549e79b22bb",
-  "verified_release_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
+  "program_state": "phase2_next_work_package_declared_not_started",
+  "implementation_starting_main_sha": "62d0049cd92e794d0421753878d20c0b0cee253b",
+  "verified_release_sha": "535dbef1b49e86940bb1d5664eac159c90b341de",
+  "current_main_sha": "535dbef1b49e86940bb1d5664eac159c90b341de",
   "continuation_branch": null,
   "continuation_pr": null,
   "prior_authority": {
-    "work_package": "exact_head_client_report_accuracy",
-    "verified_release_sha": "76ccc08a5b3522efbf39d4f8ffece2c04be67ac6",
+    "work_package": "phase1_automated_technical_triage_and_production_closure",
+    "verified_release_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
+    "phase1_item_9": "passed",
+    "phase1": "complete",
     "preserved_in_repository_history": true
   },
   "implementation": {
-    "pull_request": 1131,
-    "branch": "repair/phase1-production-closure",
-    "head_sha": "aadc253a94292fff70abb686912f1af312c03c30",
-    "merge_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
+    "pull_request": 1146,
+    "branch": "phase2/exception-first-reviewer-interface",
+    "head_sha": "176256dc668f9ad79448c765800e8bb69269fc22",
+    "merge_sha": "535dbef1b49e86940bb1d5664eac159c90b341de",
     "files_changed": [
-      ".github/workflows/two-service-production-acceptance.yml",
-      "scripts/mobile_restart_live_acceptance_v1.py",
-      "scripts/phase1_structured_artifact_audit_v1.py",
-      "tests/test_phase1_closure_contract_v1.py"
+      "apps/web/app/api/nico/[...path]/route.ts",
+      "apps/web/app/operations/final-review/page.tsx",
+      "apps/web/app/operations/reviewer-queue/ReviewerQueue.tsx",
+      "apps/web/app/operations/reviewer-queue/page.tsx",
+      "apps/web/app/operations/reviewer-queue/reviewer-queue.module.css",
+      "nico/comprehensive_api_routes.py",
+      "tests/test_exception_first_reviewer_api_v1.py",
+      "tests/test_exception_first_reviewer_interface_v1.py"
     ],
     "all_required_checks_passed": true,
-    "required_workflow_count": 17,
     "zero_unresolved_review_threads": true,
     "report_preservation_gate_passed": true,
     "security_gate_passed": true,
     "commercial_readiness_gate_passed": true
   },
-  "root_causes": {
-    "ios_webkit": {
-      "classification": "proof_synchronization_defect",
-      "prior_workflow_run_id": 31301890699,
-      "description": "The terminal phase label became visible before React projected the exact-run score and Markdown/PDF controls. Acceptance asserted the controls immediately instead of waiting boundedly for the complete terminal UI contract.",
-      "repair": "Wait boundedly for exact run, exact commit, visible enabled report controls, and a non-pending score while retaining every existing WebKit, recovery, PDF, and blocked-delivery assertion."
-    },
-    "two_service_production_acceptance": {
-      "classification": "capacity_and_workflow_concurrency_defect",
-      "prior_workflow_run_id": 31301890696,
-      "description": "Two-Service used a separate destructive-production concurrency group while Mobile and iOS exercised the same finite final-report renderer.",
-      "repair": "Serialize Mobile, iOS, and Two-Service destructive production assessment work without weakening product or evidence assertions."
-    }
-  },
-  "protected_report_baseline": {
-    "run_id": "comprun_6f3ad3990baf43f2879f1d777a950817",
-    "assessed_commit_sha": "d27dc9eda653f5a67ca8f030bcb0e549e79b22bb",
-    "technical_maturity": 93,
-    "evidence_adjusted": 93,
-    "applicable_scanners_completed": 9,
-    "applicable_scanners_total": 9,
-    "total_candidates": 638,
-    "exact_carry_forward_count": 602,
-    "new_candidate_count": 32,
-    "evidence_changed_count": 4,
-    "fresh_triage_required": 36,
-    "fresh_triage_completed": 36,
-    "technical_triage_completed": 638,
-    "technical_triage_pending": 0,
-    "not_actionable_count": 602,
-    "needs_review_count": 36,
-    "confirmed_count": 0,
-    "candidates_requiring_individual_human_attention": 23,
-    "candidates_eligible_for_grouped_review": 13,
-    "cluster_count": 3,
-    "human_review_work_units": 26,
-    "quality_control_sample_pool": 214,
-    "exact_source_decision_findings": 50,
-    "confirmed_material_scanner_findings": 0,
-    "human_review_required": true,
-    "approval_state": "pending",
-    "client_delivery_allowed": false,
-    "counts_dynamic_and_evidence_derived": true
-  },
-  "structured_artifact_audit": {
-    "schema": "nico.phase1-structured-artifact-audit.v1",
-    "status": "passed",
-    "source_workflow_run_id": 31313580177,
-    "source_workflow_artifact_id": 9038855918,
-    "source_production_run_id": "comprun_53ed58f19df74031b634024dd44938da",
-    "candidate_count": 627,
-    "candidate_register_sha256_expected": "0e825da28fef05fb01bc8e78398720a46b6cc9c6a5d44b191d3eb8802d4969e6",
-    "candidate_register_sha256_observed": "0e825da28fef05fb01bc8e78398720a46b6cc9c6a5d44b191d3eb8802d4969e6",
-    "candidate_identity_and_count_parity": true,
-    "triage_field_contract": true,
-    "dependency_secret_static_context_contract": true,
-    "cluster_integrity_error_count": 0,
-    "workload_reconciliation": true,
-    "automation_created_human_disposition": false,
-    "human_review_required": true,
-    "approval_state": "pending",
-    "client_delivery_allowed": false,
-    "score_effect": "none",
-    "errors": [],
-    "candidate_register_filename": "nico-comprun_53ed58f19df74031b634024dd44938da-candidate-register.json",
-    "candidate_register_size_bytes": 6169581,
-    "category_counts": {
-      "dependency": 20,
-      "secret": 17,
-      "static": 590
-    },
-    "verdict_counts": {
-      "needs_review": 627
-    },
-    "lineage_counts": {
-      "newly_observed": 627
-    },
-    "routing_counts": {
-      "HUMAN_TECHNICAL_REVIEW": 627
-    },
-    "cluster_count": 49,
-    "grouped_candidate_count": 589,
-    "individual_attention_count": 38,
-    "human_review_work_units": 49,
-    "quality_control_sample_pool": 0,
-    "missing_field_counts": {}
+  "work_package_result": {
+    "reviewer_route": "/operations/reviewer-queue",
+    "api_route": "GET /assessment/comprehensive-run/{run_id}/review-queue",
+    "source": "canonical_terminal_comprehensive_report_json",
+    "admin_authentication_required": true,
+    "terminal_review_required_boundary": true,
+    "read_only": true,
+    "individual_attention_first": true,
+    "deterministic_grouped_units_second": true,
+    "every_candidate_preserved_exactly_once": true,
+    "canonical_candidate_count_reconciled": true,
+    "canonical_work_units_reconciled": true,
+    "cross_run_identity_drift_rejected": true,
+    "operator_token_browser_persistence": false,
+    "human_disposition_controls_created": false,
+    "reviewer_identity_created": false,
+    "risk_acceptance_created": false,
+    "approval_created": false,
+    "client_delivery_authorization_created": false
   },
   "current_production_identity": {
-    "release_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
+    "release_sha": "535dbef1b49e86940bb1d5664eac159c90b341de",
     "vercel": "verified_success",
     "railway": "verified_success",
     "deployment_environment": "production",
-    "ui_contract": "expert-engagement-v2"
+    "ui_contract": "expert-engagement-v2",
+    "frontend_origin": "https://app.nicoaudit.com",
+    "exact_frontend_backend_identity_aligned": true
   },
   "post_merge_verification": {
-    "mobile_restart": {
-      "workflow_run_id": 31313580097,
-      "workflow_artifact_id": 9038270964,
-      "artifact_sha256": "e658f99a5e120d77ea2e229bb3c74d031a9ace8f31652f27b50858a6afc69e40",
-      "status": "passed",
-      "run_id": "comprun_e785814dd0124d9ebe541f31de8e0dfb",
-      "terminal_status": "review_required",
-      "technical_score": 93,
-      "pdf_sha256": "0a95dd4177f3fc36cb6892aded32fbaea44d5a53839081c3308092ac6f647bb8",
-      "pdf_signature_verified": true,
-      "exact_run_identity_preserved": true,
-      "active_restart_recovery_verified": true,
-      "terminal_restart_recovery_verified": true,
-      "duplicate_intake_absent": true
-    },
     "ios_webkit": {
-      "workflow_run_id": 31313580113,
-      "workflow_artifact_id": 9038463161,
-      "artifact_sha256": "95e6270c561b2781cf5f13fc6f61f51874570e583a09accb47b2007ca72e3870",
-      "status": "passed",
-      "run_id": "comprun_25f9c1e6b92741cfa29859670fc452e3",
-      "browser_engine": "webkit",
-      "terminal_status": "review_required",
-      "technical_score": 93,
-      "pdf_sha256": "4fd02b1cfe178839cbfa5645962b553f9003b2364d2cbde7697bef36cbc1e93d",
-      "pdf_signature_verified": true,
-      "exact_run_identity_preserved": true,
-      "duplicate_intake_absent": true,
-      "terminal_ui_contract_converged": true,
-      "review_pdf_download_verified": true
+      "workflow_run_id": 31401959926,
+      "workflow_artifact_id": 9068963504,
+      "artifact_sha256": "b8dd49d481248b146cbce1bf7800bea45505fd04a50bdcbb3806f19dcb379c33",
+      "status": "passed"
+    },
+    "mobile_restart": {
+      "workflow_run_id": 31401960542,
+      "workflow_artifact_id": 9069817522,
+      "artifact_sha256": "f943724fee47b11b0d9c8850c6fd10bbe7e99998674330877e4e7e782de96a6c",
+      "status": "passed"
     },
     "two_service_production_acceptance": {
-      "workflow_run_id": 31313580177,
-      "workflow_artifact_id": 9038855918,
-      "artifact_sha256": "ae017b2153f7f7250c9cbeb6d3d322eb91171e20090d300bc81c76ad89287323",
+      "workflow_run_id": 31401960034,
+      "workflow_artifact_id": 9071251525,
+      "artifact_sha256": "85ef59cc4574a775d1103e16050ab5782c83c46c4547b9b39d1a8d7677c7512e",
       "status": "passed",
       "passes_required": 2,
       "passes_completed": 2,
-      "run_ids": [
-        "comprun_eaae1cdf83a54a5397ab448948fe82bd",
-        "comprun_53ed58f19df74031b634024dd44938da"
-      ],
-      "distinct_run_ids": true,
-      "both_reached_review_required": true,
       "all_required_report_artifacts_retained": true,
-      "structured_phase1_audit_passed": true,
-      "human_review_required": true,
-      "client_delivery_allowed": false,
-      "technical_score_each": 93,
-      "evidence_adjusted_score_each": 93,
-      "maturity_label_each": "Exceptional",
-      "pdf_page_count_each": 39,
-      "assessment_semantic_sha256": "e1591008141ff1f2a8e016e1dc912e9f472c27f024659c39c31e66b19ba37fc3",
-      "pass_1_identity_bound_canonical_truth_sha256": "10c7edb9d876cd41e5866f0ad6f9faaa24ac87463ce8b68dbbb49f4594bf8e69",
-      "pass_2_identity_bound_canonical_truth_sha256": "e6ea5a56d96dbc1bf387734b0e3ff3c683013e1d2769327d898310ba83d02172",
+      "structured_candidate_artifact_audit_passed": true,
       "markdown_html_pdf_json_parity": true,
       "deterministic_score_pair": true,
       "deterministic_section_status_vector": true,
       "deterministic_scanner_status_vector": true,
-      "deterministic_semantic_assessment_hash": true
+      "deterministic_semantic_assessment_hash": true,
+      "human_review_required": true,
+      "client_delivery_allowed": false
+    },
+    "completion_bound_comprehensive_report": {
+      "workflow_run_id": 31410255643,
+      "workflow_artifact_id": 9071265661,
+      "artifact_sha256": "136af04f158161e4dddd94e79578deebeac7409890117a0f584bea31b5e2d97b",
+      "status": "passed",
+      "report_product": "NICO COMPREHENSIVE",
+      "additional_report_product_created": false,
+      "source_report_preserved": true,
+      "source_report_page_count": 39,
+      "final_report_page_count": 41,
+      "final_report_sha256": "4066d86da795df768b6f2500710d205733869958ca6c9d5e6a46d58b039ed704",
+      "all_nine_phase1_items_present": true,
+      "human_approval_status": "pending",
+      "client_delivery_allowed": false
     }
+  },
+  "protected_report_baseline": {
+    "run_id": "comprun_04b639e9f13e4a39864ce87d0cb966ec",
+    "assessed_commit_sha": "535dbef1b49e86940bb1d5664eac159c90b341de",
+    "technical_maturity": 93,
+    "evidence_adjusted": 93,
+    "applicable_scanners_completed": 9,
+    "applicable_scanners_total": 9,
+    "total_candidates": 629,
+    "needs_review_count": 629,
+    "confirmed_count": 0,
+    "cluster_count": 49,
+    "candidates_eligible_for_grouped_review": 591,
+    "candidates_requiring_individual_human_attention": 38,
+    "human_review_work_units": 49,
+    "quality_control_sample_pool": 0,
+    "candidate_register_sha256": "7dd19e65995347cde52ddc4659f7c4b3127734b577718beceeb33a366d029693",
+    "cluster_integrity_error_count": 0,
+    "score_effect": "none",
+    "human_review_required": true,
+    "approval_state": "pending",
+    "client_delivery_allowed": false,
+    "counts_dynamic_and_evidence_derived": true
   },
   "phase1_definition_of_done": {
     "fresh_triage_for_new_or_evidence_changed": true,
@@ -204,11 +151,24 @@
     "item_9": "passed",
     "phase1": "complete"
   },
+  "phase2_work_package_1_definition_of_done": {
+    "canonical_exception_queue_is_primary_entry": true,
+    "exact_terminal_run_identity_required": true,
+    "individual_attention_precedes_grouped_review": true,
+    "every_candidate_identity_preserved_exactly_once": true,
+    "candidate_and_work_unit_parity_fail_closed": true,
+    "read_only_internal_surface": true,
+    "no_parallel_analysis_or_report_system": true,
+    "no_human_disposition_or_approval_automation": true,
+    "required_exact_head_and_production_checks_passed": true,
+    "work_package": "complete"
+  },
   "preserved_boundaries": {
     "one_public_product": "NICO Comprehensive",
     "one_client_report": true,
     "candidate_counts_cosmetically_changed": false,
     "scanner_findings_suppressed": false,
+    "technical_triage_or_cluster_semantics_changed": false,
     "scores_changed_to_satisfy_gate": false,
     "report_design_changed": false,
     "report_section_order_changed": false,
@@ -227,7 +187,6 @@
     "phase2_requirement": "Empirically validate combined reviewer time and calibrate the quality-control sampling policy against real specialist review sessions."
   },
   "phase2_carryover": [
-    "exception_first_reviewer_interface",
     "expandable_deterministic_clusters",
     "candidate_level_human_disposition_controls",
     "group_review_with_underlying_candidate_accounting",
@@ -244,53 +203,23 @@
     "review_assignment_and_specialist_collaboration",
     "critical_and_high_impact_escalation"
   ],
-  "next_work_package": "exception_first_reviewer_interface",
+  "next_work_package": "expandable_deterministic_clusters",
   "next_work_package_state": "declared_not_started",
-  "current_main_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
-  "audited_supporting_artifacts": {
-    "run_id": "comprun_53ed58f19df74031b634024dd44938da",
-    "commit_sha": "5695e2c284ed838b82d7d5955a03f438d534d55d",
-    "findings_csv": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da-findings.csv",
-      "size_bytes": 81177,
-      "sha256": "5284e911aea8e16e759c204825d78a80f369e6d8c29e40aea8e1e2aae7c8fe1e"
-    },
-    "evidence_csv": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da-evidence.csv",
-      "size_bytes": 266689,
-      "sha256": "61cd56f3052a6167d9026c428b0f5753813ed6823f8eb820b872d5d469d3c53d"
-    },
-    "candidate_register_json": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da-candidate-register.json",
-      "size_bytes": 6169581,
-      "sha256": "0e825da28fef05fb01bc8e78398720a46b6cc9c6a5d44b191d3eb8802d4969e6"
-    },
-    "remediation_backlog_json": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da-remediation-backlog.json",
-      "size_bytes": 131,
-      "sha256": "10fa36c4558637edb2e005cb67715da0a63e7b035d2b1c87b86d7bcfc2667c5f"
-    },
-    "markdown": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da.md",
-      "size_bytes": 52488,
-      "sha256": "19b22883a3b1de3c5dfa64fb1cf6d2ede680a8b75490ea980bdbcb7ad975ff76"
-    },
-    "html": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da.html",
-      "size_bytes": 58761,
-      "sha256": "62317e559062614fa5a481002af11b0f584db8f6a7950e834d7571078a6135f9"
-    },
-    "pdf": {
-      "filename": "nico-comprun_53ed58f19df74031b634024dd44938da-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf",
-      "size_bytes": 275873,
-      "page_count": 39,
-      "sha256": "dd17e7dadd1ba4e8c2bb577fe511f2ce31130d9da15ae4a6d31fb681f45ce5d5",
-      "signature_verified": true
-    },
-    "canonical_json_file": {
-      "filename": "pass-2-comprehensive.json",
-      "size_bytes": 10322168,
-      "sha256": "74b01d522e8d432fa090d0e4fe6a6cf865fbbe2c5f5775f6fb96c77cc6a33419"
-    }
+  "next_work_package_scope": {
+    "consume_existing_exception_queue": true,
+    "consume_existing_canonical_candidate_register": true,
+    "expand_deterministic_cluster_summaries": true,
+    "expand_every_underlying_candidate": true,
+    "expose_complete_retained_candidate_evidence": true,
+    "accessible_keyboard_operable_expansion": true,
+    "candidate_cluster_identity_and_workload_parity_fail_closed": true,
+    "read_only": true,
+    "candidate_or_group_disposition_controls": false,
+    "quality_control_sampling": false,
+    "reviewer_time_measurement": false,
+    "reviewer_identity_or_authorization_decision": false,
+    "risk_acceptance": false,
+    "approval": false,
+    "client_delivery_authorization": false
   }
 }
