@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -15,12 +16,25 @@ def source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_authoritative_state_declares_exact_first_phase2_package() -> None:
+def test_authoritative_state_closes_wp1_and_declares_exact_next_phase2_package() -> None:
     status = source(STATUS)
-    state = source(STATE)
-    assert "exception_first_reviewer_interface" in status
-    assert '"next_work_package": "exception_first_reviewer_interface"' in state
-    assert '"next_work_package_state": "declared_not_started"' in state
+    state = json.loads(source(STATE))
+
+    assert state["program_phase"] == 2
+    assert state["work_package"] == "exception_first_reviewer_interface"
+    assert state["dependency_state"] == "completed"
+    assert state["state"] == "post_merge_verified"
+    assert state["verified_release_sha"] == state["implementation"]["merge_sha"]
+    assert state["current_main_sha"] == state["verified_release_sha"]
+    assert state["phase2_work_package_1_definition_of_done"]["work_package"] == "complete"
+    assert state["phase2_work_package_1_definition_of_done"]["required_exact_head_and_production_checks_passed"] is True
+    assert state["next_work_package"] == "expandable_deterministic_clusters"
+    assert state["next_work_package_state"] == "declared_not_started"
+    assert state["next_work_package_scope"]["read_only"] is True
+    assert state["next_work_package_scope"]["candidate_or_group_disposition_controls"] is False
+    assert "PHASE 2 WORK PACKAGE 1: COMPLETE" in status
+    assert "`expandable_deterministic_clusters`" in status
+    assert "`declared_not_started`" in status
 
 
 def test_queue_consumes_protected_canonical_phase1_projection() -> None:
