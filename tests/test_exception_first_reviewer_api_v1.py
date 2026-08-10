@@ -57,6 +57,7 @@ def _record(
     status: str = "review_required",
     identity_mismatch: bool = False,
     count_mismatch: bool = False,
+    empty: bool = False,
 ) -> dict:
     identity = {
         "run_id": "comprun_exception_queue_001",
@@ -66,7 +67,7 @@ def _record(
         "customer_id": "customer_001",
         "project_id": "project_001",
     }
-    findings = [
+    findings = [] if empty else [
         _candidate(
             "NICO-SCAN-INDIVIDUAL",
             cluster_id="NICO-CLUSTER-INDIVIDUAL",
@@ -89,6 +90,10 @@ def _record(
             representative="NICO-SCAN-GROUP-A",
         ),
     ]
+    individual_count = 0 if empty else 1
+    grouped_count = 0 if empty else 2
+    cluster_count = 0 if empty else 1
+    work_units = 0 if empty else 2
     register = {
         "artifact_schema": "nico.canonical_scanner_finding_register.v1",
         "candidate_record_count": len(findings) + (1 if count_mismatch else 0),
@@ -96,10 +101,10 @@ def _record(
         "findings": findings,
         "technical_triage": {
             "total_candidates": len(findings),
-            "candidates_requiring_individual_human_attention": 1,
-            "candidates_eligible_for_grouped_review": 2,
-            "cluster_count": 1,
-            "human_review_work_units": 2,
+            "candidates_requiring_individual_human_attention": individual_count,
+            "candidates_eligible_for_grouped_review": grouped_count,
+            "cluster_count": cluster_count,
+            "human_review_work_units": work_units,
             "human_disposition_created": False,
             "client_delivery_allowed": False,
         },
@@ -174,6 +179,21 @@ def test_review_queue_requires_operator_auth_and_returns_only_canonical_queue(mo
     assert "reports" not in body
     assert "pdf_base64" not in body
     assert "review_decision" not in body
+
+
+def test_review_queue_preserves_valid_zero_candidate_workload(monkeypatch) -> None:
+    client = _client(monkeypatch, _record(empty=True))
+    response = client.get(
+        "/assessment/comprehensive-run/comprun_exception_queue_001/review-queue",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidate_count"] == 0
+    assert body["human_review_work_units"] == 0
+    assert body["candidate_register"]["findings"] == []
+    assert body["human_review_required"] is True
+    assert body["client_delivery_allowed"] is False
 
 
 def test_review_queue_fails_closed_before_terminal_human_review(monkeypatch) -> None:
