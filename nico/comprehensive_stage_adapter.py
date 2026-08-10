@@ -7,7 +7,9 @@ from typing import Any, Callable, Mapping
 from nico.comprehensive_capability_registry import execution_plan, validate_capability_registry
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES, build_comprehensive_contract
 
-VERSION = "nico.comprehensive_stage_adapter.v2"
+VERSION = "nico.comprehensive_stage_adapter.v3"
+FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
+FINAL_REPORT_CAPABILITY = "final_report_generation"
 TERMINAL_FAILURE_STATES = {"blocked", "failed", "error", "timed_out", "unavailable"}
 StageExecutor = Callable[[dict[str, Any]], dict[str, Any]]
 CapabilityExecutor = Callable[[dict[str, Any]], dict[str, Any]]
@@ -34,6 +36,27 @@ def _required_text(value: Any, field: str) -> str:
     if not normalized:
         raise ValueError(f"{field}_required")
     return normalized
+
+
+def _capability_payload(
+    context: Mapping[str, Any],
+    capability: str,
+) -> dict[str, Any]:
+    """Copy stage context without cloning the final report's retained evidence tree.
+
+    Final report generation receives every completed stage, including scanner
+    candidates and report artifacts. The run service intentionally passes that
+    retained tree by reference because final rendering is copy-on-write. Cloning
+    it again in this adapter can exhaust the production worker before the
+    renderer starts. Other capabilities retain the original deep-copy boundary.
+    """
+
+    if capability != FINAL_REPORT_CAPABILITY:
+        return deepcopy(dict(context))
+    return {
+        key: value if key == "prior_stage_results" else deepcopy(value)
+        for key, value in context.items()
+    }
 
 
 def build_comprehensive_run_state(
@@ -94,8 +117,13 @@ def bind_capability_executors(
         if executor is None:
             continue
 
-        def stage_executor(context: dict[str, Any], *, _executor: CapabilityExecutor = executor, _capability: str = capability) -> dict[str, Any]:
-            payload = deepcopy(context)
+        def stage_executor(
+            context: dict[str, Any],
+            *,
+            _executor: CapabilityExecutor = executor,
+            _capability: str = capability,
+        ) -> dict[str, Any]:
+            payload = _capability_payload(context, _capability)
             payload["capability"] = _capability
             result = _executor(payload)
             if not isinstance(result, dict):
@@ -170,11 +198,16 @@ def run_comprehensive_stages(
 
         updated["status"] = "running"
         updated["current_stage"] = stage_id
+        prior_stage_results = (
+            dict(stage_results)
+            if stage_id == FINAL_REPORT_STAGE_ID
+            else deepcopy(stage_results)
+        )
         context = {
             "service_id": "comprehensive",
             "stage_id": stage_id,
             **identity,
-            "prior_stage_results": deepcopy(stage_results),
+            "prior_stage_results": prior_stage_results,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -208,6 +241,8 @@ def run_comprehensive_stages(
 __all__ = [
     "CapabilityExecutor",
     "ComprehensiveIdentity",
+    "FINAL_REPORT_CAPABILITY",
+    "FINAL_REPORT_STAGE_ID",
     "StageExecutor",
     "TERMINAL_FAILURE_STATES",
     "VERSION",
