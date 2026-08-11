@@ -20,6 +20,8 @@ export type AssessmentRunIssue = {
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
 const READINESS_PATH = "/diagnostics/comprehensive-runtime";
+const INTAKE_PATH = "/assessment/comprehensive-intake";
+const EXACT_SHA_RE = /^[0-9a-fA-F]{40}$/;
 const READINESS_CLIENT_TIMEOUT_MS = 48_000;
 const RUN_STATUS_CLIENT_TIMEOUT_MS = 20_000;
 const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 90_000;
@@ -54,6 +56,66 @@ function browserHeaders(init?: HeadersInit): Headers {
   }
   headers.set(BROWSER_PROJECTION_HEADER, BROWSER_PROJECTION_VALUE);
   return headers;
+}
+
+function bindExpectedCommitSha(path: string, init: RequestInit): RequestInit {
+  const method = String(init.method || "GET").toUpperCase();
+  if (path !== INTAKE_PATH || method !== "POST") {
+    return init;
+  }
+
+  const raw = new URL(window.location.href).searchParams.get("expected_commit_sha");
+  if (raw == null || !raw.trim()) {
+    return init;
+  }
+  const expectedCommitSha = raw.trim().toLowerCase();
+  if (!EXACT_SHA_RE.test(expectedCommitSha)) {
+    throw new AssessmentApiError("The requested immutable commit SHA is invalid.", {
+      status: 422,
+      code: "invalid_explicit_commit_sha",
+      retryable: false,
+    });
+  }
+  if (typeof init.body !== "string") {
+    throw new AssessmentApiError("The assessment intake body is unavailable for exact-commit binding.", {
+      status: 422,
+      code: "assessment_intake_body_unavailable",
+      retryable: false,
+    });
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(init.body);
+  } catch {
+    throw new AssessmentApiError("The assessment intake body is not valid JSON.", {
+      status: 422,
+      code: "assessment_intake_body_invalid_json",
+      retryable: false,
+    });
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AssessmentApiError("The assessment intake body must be an object.", {
+      status: 422,
+      code: "assessment_intake_body_invalid",
+      retryable: false,
+    });
+  }
+
+  const body = payload as Record<string, unknown>;
+  const existing = String(body.expected_commit_sha || "").trim().toLowerCase();
+  if (existing && existing !== expectedCommitSha) {
+    throw new AssessmentApiError("The intake commit binding conflicts with the exact release request.", {
+      status: 409,
+      code: "assessment_expected_commit_sha_conflict",
+      retryable: false,
+    });
+  }
+
+  return {
+    ...init,
+    body: JSON.stringify({...body, expected_commit_sha: expectedCommitSha}),
+  };
 }
 
 function statusPathForContinuation(path: string): string {
@@ -140,7 +202,8 @@ export async function requestWithRetry(
   init: RequestInit,
   copy: ReturnType<typeof copyFor>,
 ): Promise<Result> {
-  const method = String(init.method || "GET").toUpperCase();
+  const boundInit = bindExpectedCommitSha(path, init);
+  const method = String(boundInit.method || "GET").toUpperCase();
   const readinessPreflight = path === READINESS_PATH;
   const runStatusRequest = method === "GET" && RUN_STATUS_PATH.test(path);
   const runContinueRequest = method === "POST" && RUN_CONTINUE_PATH.test(path);
@@ -171,10 +234,10 @@ export async function requestWithRetry(
     try {
       const requestPromise = (async (): Promise<AttemptResult> => {
         const response = await fetch(apiUrl(path), {
-          ...init,
-          headers: browserHeaders(init.headers),
+          ...boundInit,
+          headers: browserHeaders(boundInit.headers),
           cache: "no-store",
-          signal: controller?.signal || init.signal,
+          signal: controller?.signal || boundInit.signal,
         });
         if (
           TRANSIENT_STATUS.has(response.status) &&
