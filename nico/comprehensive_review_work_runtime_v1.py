@@ -9,6 +9,9 @@ from fastapi import Header, Request
 
 import nico.comprehensive_api_routes as routes_module
 import nico.comprehensive_run_service as service_module
+from nico.comprehensive_approved_delivery_v2 import (
+    attach_approved_delivery_package as attach_approved_delivery_package_v2,
+)
 from nico.comprehensive_review_report_truth_v1 import synchronize_review_truth
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
 from nico.comprehensive_review_work_v2 import (
@@ -84,6 +87,7 @@ def _canonical_scanner_register_present(record: Mapping[str, Any]) -> bool:
 
 
 def _install_service_methods() -> None:
+    service_module.attach_approved_delivery_package = attach_approved_delivery_package_v2
     service_class = service_module.ComprehensiveRunService
     if not getattr(service_class, _SERVICE_MARKER, False):
         def review_work(self: Any, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +223,7 @@ def install_comprehensive_review_work_runtime_v1() -> dict[str, Any]:
         "configurable_quality_control_sampling": True,
         "exception_queue_projection": True,
         "report_truth_synchronized_before_approval": True,
+        "approved_delivery_has_one_client_report": True,
         "four_hour_target_is_safety_gate": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
