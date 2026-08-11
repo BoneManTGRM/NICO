@@ -20,6 +20,7 @@ from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore, ConnectionFactory
 from nico.comprehensive_stage_adapter import CapabilityExecutor
 from nico.comprehensive_stage_background_v2 import ComprehensiveStagePublicationCoordinator
+from nico.postgres_timeout_patch import postgres_connect_kwargs
 
 VERSION = "nico.comprehensive_runtime.v3"
 
@@ -40,7 +41,7 @@ def _postgres_connection_factory(database_url: str) -> ConnectionFactory:
     except ImportError as exc:  # pragma: no cover - dependency is present in production package
         raise RuntimeError("psycopg_required_for_comprehensive_runtime") from exc
 
-    return lambda: psycopg.connect(normalized)
+    return lambda: psycopg.connect(normalized, **postgres_connect_kwargs())
 
 
 class _DetachedProductionComprehensiveRunService(ComprehensiveRunService):
