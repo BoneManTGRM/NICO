@@ -1,0 +1,100 @@
+.panel {
+  max-width: 1180px;
+  margin: 2rem auto 4rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.header h2 { margin: 0.25rem 0 0; }
+.eyebrow { margin: 0; font-size: 0.75rem; letter-spacing: 0.11em; opacity: 0.72; }
+.language { white-space: nowrap; }
+.boundary { font-weight: 700; }
+.security { opacity: 0.75; font-size: 0.92rem; }
+
+.identityGrid,
+.form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.identityGrid label,
+.form label {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 650;
+}
+
+.identityGrid input,
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.48);
+  color: inherit;
+  padding: 0.72rem 0.8rem;
+}
+
+.form textarea { min-height: 96px; resize: vertical; }
+.full { grid-column: 1 / -1; }
+.actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+.actions button { min-height: 44px; }
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.summary article {
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+}
+
+.summary b,
+.summary span { display: block; }
+.summary b { font-size: 1.08rem; }
+.summary span { margin-top: 0.3rem; opacity: 0.75; font-size: 0.85rem; }
+.summary .wide { grid-column: 1 / -1; }
+
+.empirical {
+  margin-top: 1.4rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding-top: 1rem;
+}
+
+.empirical dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.empirical dl div { padding: 0.75rem; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 10px; }
+.empirical dt { opacity: 0.7; font-size: 0.8rem; }
+.empirical dd { margin: 0.3rem 0 0; font-weight: 650; }
+.error { margin-top: 1rem; font-weight: 700; }
+
+@media (max-width: 760px) {
+  .panel { margin: 1rem 0 3rem; padding: 1rem; border-radius: 14px; }
+  .header { align-items: stretch; flex-direction: column; }
+  .identityGrid,
+  .form,
+  .summary,
+  .empirical dl { grid-template-columns: 1fr; }
+  .summary .wide,
+  .full { grid-column: 1; }
+}
