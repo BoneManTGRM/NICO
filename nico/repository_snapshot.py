@@ -69,15 +69,20 @@ def _retry_commit_lookup(
     *,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[dict[str, Any] | None, str | None, int]:
+    # An exact immutable SHA can fall back to credential-free Git proof, so do not
+    # spend the full branch-resolution retry budget repeating the same API timeout.
+    # Default-branch resolution has no equivalent exact-SHA fallback and keeps the
+    # established three-attempt resilience budget.
+    attempt_budget = 1 if _EXACT_SHA_RE.fullmatch(ref) else _API_COMMIT_ATTEMPTS
     last_error: str | None = None
-    for attempt in range(1, _API_COMMIT_ATTEMPTS + 1):
+    for attempt in range(1, attempt_budget + 1):
         commit, error = _get_commit(client, repository, ref)
         if commit and not error:
             return commit, None, attempt
         last_error = error or "GitHub commit lookup returned no commit."
-        if attempt <= len(_API_RETRY_DELAYS_SECONDS):
+        if attempt < attempt_budget and attempt <= len(_API_RETRY_DELAYS_SECONDS):
             sleep(_API_RETRY_DELAYS_SECONDS[attempt - 1])
-    return None, last_error, _API_COMMIT_ATTEMPTS
+    return None, last_error, attempt_budget
 
 
 def _git_environment(workspace: Path) -> dict[str, str]:
