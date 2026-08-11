@@ -13,6 +13,10 @@ from nico.comprehensive_final_report_semantics_v47 import (
     finalize_comprehensive_report_result,
     rewrite_comprehensive_pdf_semantics,
 )
+from nico.phase17_canonical_artifact_rebuild_v1 import (
+    _phase2_review_truth_node,
+    _rewrite_phase2_review_truth_pdf,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +53,7 @@ def test_phase2_report_truth_rewrites_stale_triage_language_in_pdf() -> None:
     assert contract["status"] == "passed"
 
 
-def test_phase2_report_truth_is_rewritten_across_canonical_output_formats() -> None:
+def test_phase2_report_truth_is_rewritten_across_legacy_canonical_output_formats() -> None:
     canonical_title = "NICO Comprehensive Technical Assessment"
     final_boundary = "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
     source_pdf = _pdf_with_text(f"{canonical_title} {final_boundary} {STALE_TRIAGE}")
@@ -84,6 +88,32 @@ def test_phase2_report_truth_is_rewritten_across_canonical_output_formats() -> N
         assert CORRECT_TRIAGE in text
     assert finalized["status"] == "complete"
     assert package["report_quality_contract"]["stale_draft_language_absent"] is True
+
+
+def test_phase2_current_v2_artifact_boundary_synchronizes_truth_before_hashing() -> None:
+    package = {
+        "json": {"assessment": {"sections": [{"evidence": [STALE_TRIAGE]}]}},
+        "markdown": STALE_TRIAGE,
+        "html": f"<p>{STALE_TRIAGE}</p>",
+        "findings_csv": f"field,value\nscore_effect,{STALE_TRIAGE}\n",
+        "evidence_csv": f"field,value\nscore_effect,{STALE_TRIAGE}\n",
+    }
+    synchronized = _phase2_review_truth_node(package)
+
+    for text in (
+        synchronized["json"]["assessment"]["sections"][0]["evidence"][0],
+        synchronized["markdown"],
+        synchronized["html"],
+        synchronized["findings_csv"],
+        synchronized["evidence_csv"],
+    ):
+        assert STALE_TRIAGE not in text
+        assert CORRECT_TRIAGE in text
+
+    pdf = _rewrite_phase2_review_truth_pdf(_pdf_with_text(STALE_TRIAGE))
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    assert STALE_TRIAGE not in extracted
+    assert CORRECT_TRIAGE in extracted
 
 
 def test_public_proxy_exposes_only_comprehensive_assessment_product() -> None:
