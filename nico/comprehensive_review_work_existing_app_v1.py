@@ -12,7 +12,7 @@ from nico.comprehensive_review_work_runtime_v1 import (
 )
 from nico.comprehensive_review_work_safe_v1 import review_work_projection
 
-VERSION = "nico.comprehensive_review_work_existing_app.v1"
+VERSION = "nico.comprehensive_review_work_existing_app.v2"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -123,7 +123,11 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
         "configurable_quality_control_sampling": runtime.get("configurable_quality_control_sampling") is True,
         "bulk_review_fails_closed_for_individual_attention": runtime.get("bulk_review_fails_closed_for_individual_attention") is True,
         "report_truth_synchronized_before_approval": runtime.get("report_truth_synchronized_before_approval") is True,
+        "final_human_decision_bound_into_accepted_report": runtime.get("final_human_decision_bound_into_accepted_report") is True,
         "approved_delivery_has_one_client_report": runtime.get("approved_delivery_has_one_client_report") is True,
+        "approved_client_pdf_has_authorization_certificate": runtime.get("approved_client_pdf_has_authorization_certificate") is True,
+        "delivery_validates_exact_review_ledger": runtime.get("delivery_validates_exact_review_ledger") is True,
+        "four_hour_target_is_safety_gate": runtime.get("four_hour_target_is_safety_gate") is True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
