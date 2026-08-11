@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from reportlab.pdfgen import canvas
 
 from nico.comprehensive_final_report_semantics_v47 import (
     _clean_string,
+    finalize_comprehensive_report_result,
     rewrite_comprehensive_pdf_semantics,
 )
 
@@ -17,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_PROXY = ROOT / "apps" / "web" / "app" / "api" / "nico" / "[...path]" / "route.ts"
 RUN_REQUESTS = ROOT / "apps" / "web" / "app" / "assessment" / "assessmentRunRequests.ts"
 OPERATOR_GUIDE = ROOT / "docs" / "OPERATOR_GUIDE.md"
+STALE_TRIAGE = "Score effect: assurance-only until triaged."
+CORRECT_TRIAGE = "authorized human disposition remains pending"
 
 
 def _pdf_with_text(value: str) -> bytes:
@@ -28,23 +32,58 @@ def _pdf_with_text(value: str) -> bytes:
 
 
 def test_phase2_report_truth_rewrites_stale_triage_language_in_structured_text() -> None:
-    stale = "Score effect: assurance-only until triaged."
-    rewritten = _clean_string(stale)
+    rewritten = _clean_string(STALE_TRIAGE)
 
-    assert stale not in rewritten
-    assert "authorized human disposition remains pending" in rewritten
+    assert STALE_TRIAGE not in rewritten
+    assert CORRECT_TRIAGE in rewritten
     assert "technical-triage status is reported separately" in rewritten
 
 
 def test_phase2_report_truth_rewrites_stale_triage_language_in_pdf() -> None:
-    stale = "Score effect: assurance-only until triaged."
-    rewritten_pdf, contract = rewrite_comprehensive_pdf_semantics(_pdf_with_text(stale))
+    rewritten_pdf, contract = rewrite_comprehensive_pdf_semantics(_pdf_with_text(STALE_TRIAGE))
     extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(rewritten_pdf)).pages)
 
-    assert stale not in extracted
-    assert "authorized human disposition remains pending" in extracted
+    assert STALE_TRIAGE not in extracted
+    assert CORRECT_TRIAGE in extracted
     assert contract["stale_draft_language_absent"] is True
     assert contract["status"] == "passed"
+
+
+def test_phase2_report_truth_is_rewritten_across_canonical_output_formats() -> None:
+    canonical_title = "NICO Comprehensive Technical Assessment"
+    final_boundary = "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
+    source_pdf = _pdf_with_text(f"{canonical_title} {final_boundary} {STALE_TRIAGE}")
+    result = {
+        "status": "complete",
+        "report_package": {
+            "markdown": f"# {canonical_title}\n\n{final_boundary}\n\n{STALE_TRIAGE}\n",
+            "html": f"<html><body><h1>{canonical_title}</h1><p>{final_boundary}</p><p>{STALE_TRIAGE}</p></body></html>",
+            "json": {"section": {"score_effect": STALE_TRIAGE}},
+            "findings_csv": f"field,value\nscore_effect,{STALE_TRIAGE}\n",
+            "evidence_csv": f"field,value\nscore_effect,{STALE_TRIAGE}\n",
+            "pdf_base64": base64.b64encode(source_pdf).decode("ascii"),
+        },
+    }
+
+    finalized = finalize_comprehensive_report_result(result)
+    package = finalized["report_package"]
+    extracted_pdf = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"]))).pages
+    )
+
+    for text in (
+        package["markdown"],
+        package["html"],
+        package["json"]["section"]["score_effect"],
+        package["findings_csv"],
+        package["evidence_csv"],
+        extracted_pdf,
+    ):
+        assert STALE_TRIAGE not in text
+        assert CORRECT_TRIAGE in text
+    assert finalized["status"] == "complete"
+    assert package["report_quality_contract"]["stale_draft_language_absent"] is True
 
 
 def test_public_proxy_exposes_only_comprehensive_assessment_product() -> None:
