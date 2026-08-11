@@ -14,7 +14,7 @@ from nico.comprehensive_approved_delivery_v2 import (
 )
 from nico.comprehensive_review_report_truth_v1 import synchronize_review_truth
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
-from nico.comprehensive_review_work_v2 import (
+from nico.comprehensive_review_work_safe_v1 import (
     apply_review_work_action,
     assert_ready_for_approval,
     review_work_projection,
@@ -222,6 +222,7 @@ def install_comprehensive_review_work_runtime_v1() -> dict[str, Any]:
         "approval_requires_completed_candidate_review": True,
         "configurable_quality_control_sampling": True,
         "exception_queue_projection": True,
+        "bulk_review_fails_closed_for_individual_attention": True,
         "report_truth_synchronized_before_approval": True,
         "approved_delivery_has_one_client_report": True,
         "four_hour_target_is_safety_gate": False,
