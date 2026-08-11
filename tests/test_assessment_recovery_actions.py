@@ -71,10 +71,10 @@ def test_recovery_page_accepts_exact_run_and_scanner_query_targets() -> None:
     assert "Resume same scan ID" in scanner
 
 
-def test_same_origin_proxy_allows_only_native_runtime_diagnostics() -> None:
+def test_same_origin_proxy_allows_only_comprehensive_runtime_diagnostics() -> None:
     source = PROXY.read_text(encoding="utf-8")
 
-    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/(?:express-runtime|comprehensive-runtime)$/' in source
+    assert 'ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/comprehensive-runtime$/' in source
     assert "diagnosticAllowed" in source
     assert 'request.method === "GET"' in source
     assert "const SHORT_READ_TIMEOUT_MS = 20_000" in source
@@ -82,3 +82,7 @@ def test_same_origin_proxy_allows_only_native_runtime_diagnostics() -> None:
     assert 'readClass: shortRead ? "short-status" : "bounded-write"' in source
     assert 'signal: AbortSignal.timeout(policy.timeoutMs)' in source
     assert "mid-runtime" not in source
+    assert "express-runtime" not in source
+    assert "EXPRESS_START" not in source
+    assert "EXPRESS_STATUS" not in source
+    assert "Only NICO Comprehensive lifecycle routes" in source

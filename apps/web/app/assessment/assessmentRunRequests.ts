@@ -19,6 +19,7 @@ export type AssessmentRunIssue = {
 
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLIENT_RETRY_DELAYS_MS = [0, 2_000, 5_000];
+const READINESS_RETRY_DELAYS_MS = [0, 2_500, 5_000];
 const READINESS_PATH = "/diagnostics/comprehensive-runtime";
 const INTAKE_PATH = "/assessment/comprehensive-intake";
 const EXACT_SHA_RE = /^[0-9a-fA-F]{40}$/;
@@ -43,6 +44,9 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
   "assessment_readiness_timeout",
   "assessment_run_status_timeout",
   "assessment_run_continue_timeout",
+]);
+const RECOVERABLE_READINESS_REASONS = new Set([
+  "comprehensive_database_unavailable",
 ]);
 
 type AttemptResult =
@@ -120,6 +124,16 @@ function bindExpectedCommitSha(path: string, init: RequestInit): RequestInit {
 
 function statusPathForContinuation(path: string): string {
   return path.replace(/\/continue$/, "");
+}
+
+function readinessReason(result: Result): string {
+  return String(result.reason || "").trim().toLowerCase();
+}
+
+function readinessCanRecoverOnSameStore(result: Result): boolean {
+  return RECOVERABLE_READINESS_REASONS.has(readinessReason(result))
+    && result.runtime_recovery_supported === true
+    && result.automatic_cross_store_fallback === false;
 }
 
 function timeoutErrorFor(
@@ -207,9 +221,10 @@ export async function requestWithRetry(
   const readinessPreflight = path === READINESS_PATH;
   const runStatusRequest = method === "GET" && RUN_STATUS_PATH.test(path);
   const runContinueRequest = method === "POST" && RUN_CONTINUE_PATH.test(path);
-  // Readiness, exact-run status, and continuation are each bounded to one browser
-  // attempt. Continuation is not safely replayable. Only the dedicated helper above
-  // retries idempotent exact-run status confirmation after a terminal continuation.
+  // Continuation is not safely replayable. Exact-run status remains one browser
+  // request here and is retried only through the dedicated idempotent status helper.
+  // Readiness is an idempotent GET and may re-probe the same canonical durable store
+  // only when parsed diagnostics explicitly prove the bounded same-store recovery state.
   const boundedRequest =
     readinessPreflight || runStatusRequest || runContinueRequest;
   const requestTimeoutMs = readinessPreflight
@@ -219,7 +234,11 @@ export async function requestWithRetry(
       : runContinueRequest
         ? RUN_CONTINUE_CLIENT_TIMEOUT_MS
         : 0;
-  const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS;
+  const retryDelays = readinessPreflight
+    ? READINESS_RETRY_DELAYS_MS
+    : boundedRequest
+      ? [0]
+      : CLIENT_RETRY_DELAYS_MS;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
@@ -240,6 +259,7 @@ export async function requestWithRetry(
           signal: controller?.signal || boundInit.signal,
         });
         if (
+          !readinessPreflight &&
           TRANSIENT_STATUS.has(response.status) &&
           attempt < retryDelays.length - 1
         ) {
@@ -275,6 +295,13 @@ export async function requestWithRetry(
         continue;
       }
       const result = attemptResult.result;
+      if (
+        readinessPreflight
+        && readinessCanRecoverOnSameStore(result)
+        && attempt < retryDelays.length - 1
+      ) {
+        continue;
+      }
       if (runContinueRequest && result.terminal === true) {
         // A continuation response can race durable publication. Confirm every terminal
         // projection through idempotent exact-run status authority before React sees it.
@@ -292,7 +319,11 @@ export async function requestWithRetry(
       lastError = error;
       const retryable =
         error instanceof AssessmentApiError ? error.retryable : true;
-      if (!retryable || attempt >= retryDelays.length - 1) {
+      if (
+        readinessPreflight ||
+        !retryable ||
+        attempt >= retryDelays.length - 1
+      ) {
         break;
       }
     } finally {

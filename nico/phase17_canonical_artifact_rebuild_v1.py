@@ -127,6 +127,94 @@ _HUMAN_REVIEW_WORKSHEET_TITLE_CONTRACT = (
     install_human_review_worksheet_title_contract_v1()
 )
 
+_PHASE2_REVIEW_TRUTH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        "Score effect: assurance-only until triaged.",
+        "Score effect: assurance-only while authorized human disposition remains pending; NICO technical-triage status is reported separately.",
+    ),
+    (
+        "Assurance-only until triaged",
+        "Human disposition pending; NICO technical-triage status is reported separately",
+    ),
+    (
+        "Efecto en puntuación: solo aseguramiento hasta completar la revisión.",
+        "Efecto en puntuación: solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triage técnico de NICO se informa por separado.",
+    ),
+)
+
+
+def _phase2_review_truth_text(value: str) -> str:
+    output = str(value or "")
+    for previous, replacement in _PHASE2_REVIEW_TRUTH_REPLACEMENTS:
+        output = output.replace(previous, replacement)
+    return output
+
+
+def _phase2_review_truth_node(value: Any) -> Any:
+    """Synchronize Phase 2 triage/disposition terminology without changing evidence."""
+
+    if isinstance(value, str):
+        return _phase2_review_truth_text(value)
+    if isinstance(value, list):
+        return [_phase2_review_truth_node(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_phase2_review_truth_node(item) for item in value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _phase2_review_truth_node(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _rewrite_phase2_review_truth_pdf(pdf: bytes) -> bytes:
+    """Repair only stale Phase 2 review wording in the already-rendered PDF."""
+
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
+
+    reader = PdfReader(io.BytesIO(pdf))
+    writer = PdfWriter()
+    for source_page in reader.pages:
+        writer.add_page(source_page)
+        page = writer.pages[-1]
+        stream = ContentStream(page.get_contents(), writer)
+        changed = False
+        for operands, operator in stream.operations:
+            if operator in {b"Tj", b"'", b'"'}:
+                targets = operands
+            elif operator == b"TJ" and operands:
+                targets = operands[0]
+            else:
+                continue
+            for index, operand in enumerate(targets):
+                if isinstance(operand, TextStringObject):
+                    original = str(operand)
+                    updated = _phase2_review_truth_text(original)
+                    if updated != original:
+                        targets[index] = TextStringObject(updated)
+                        changed = True
+                elif isinstance(operand, ByteStringObject):
+                    original = bytes(operand)
+                    updated = original
+                    for previous, replacement in _PHASE2_REVIEW_TRUTH_REPLACEMENTS:
+                        for encoding in ("utf-8", "latin-1"):
+                            try:
+                                updated = updated.replace(
+                                    previous.encode(encoding),
+                                    replacement.encode(encoding),
+                                )
+                            except UnicodeEncodeError:
+                                continue
+                    if updated != original:
+                        targets[index] = ByteStringObject(updated)
+                        changed = True
+        if changed:
+            page.replace_contents(stream)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
 
 def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
     """Keep numeric score bands and assurance state separate after each truth pass."""
@@ -135,12 +223,19 @@ def _reconcile(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
-    result = deepcopy(dict(package))
+    # This is the last mutable cross-format boundary before exact artifact hashes are
+    # bound. Repair the narrow Phase 2 wording here so JSON/CSV/text/PDF cannot diverge.
+    result = deepcopy(dict(_phase2_review_truth_node(package)))
     pdf = sanitize_client_pdf_status(
         base64.b64decode(str(result.get("pdf_base64") or ""))
     )
-    markdown = sanitize_client_text_status(str(result.get("markdown") or ""))
-    rendered_html = sanitize_client_text_status(str(result.get("html") or ""))
+    pdf = _rewrite_phase2_review_truth_pdf(pdf)
+    markdown = _phase2_review_truth_text(
+        sanitize_client_text_status(str(result.get("markdown") or ""))
+    )
+    rendered_html = _phase2_review_truth_text(
+        sanitize_client_text_status(str(result.get("html") or ""))
+    )
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
     result.update(
         {
@@ -165,6 +260,8 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             "parser_placeholders_absent": True,
             "candidate_section_summaries_deduplicated": True,
             "review_candidate_status_requires_human_review": True,
+            "phase2_review_truth_language_synchronized": True,
+            "technical_triage_separate_from_human_disposition": True,
             "exact_source_complexity_truth_reconciled": bool(
                 completion.get("exact_source_complexity_truth_reconciled")
             ),
@@ -189,9 +286,9 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
 
     from nico import client_report_completion_v2 as completion
 
-    reconciled = _reconcile(package)
+    reconciled = _phase2_review_truth_node(_reconcile(package))
     prepared = repair_canonical_truth(reconciled)
-    prepared = _reconcile(prepared)
+    prepared = _phase2_review_truth_node(_reconcile(prepared))
     # The final truth prepare wrapper is itself a stage-evidence normalization
     # boundary. Install the structured-value cleaner before preparation so no
     # retained mapping can be irreversibly converted to Python object text.
@@ -204,14 +301,14 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # the client-surface and worksheet-title contracts at the exact render boundary.
     install_client_surface_structure_cleanup_v1()
     install_human_review_worksheet_title_contract_v1()
-    prepared = project_client_stage_summaries(prepared)
+    prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
 
     # The first pass derives the complete canonical stage population. Normalize
     # only the derived client-facing stage fields, then render the final package
     # from that cleaned population. Complete roadmap, trend, scanner, finding,
     # and remediation source objects remain retained in canonical JSON.
     derived = rebuild_single_pass_premium_artifacts(prepared)
-    final_input = project_client_stage_summaries(derived)
+    final_input = _phase2_review_truth_node(project_client_stage_summaries(derived))
     # The first render may pass through extensions that rebind the stage builder.
     # Reassert the exact worksheet title contract before the final artifact render.
     install_human_review_worksheet_title_contract_v1()
@@ -227,7 +324,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # mutable rendered surface before the exact-artifact finalizer computes the
     # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
     # renderer or sanitizer may change retained bytes after that binding point.
-    repaired = _reconcile(repaired)
+    repaired = _phase2_review_truth_node(_reconcile(repaired))
     sanitized = _sanitize_published_artifacts(repaired)
     return completion.finalize_client_report_package(sanitized)
 
@@ -257,5 +354,8 @@ __all__ = [
     "_HUMAN_REVIEW_PACKAGE_CLEANUP_COMPAT",
     "_HUMAN_REVIEW_WORKSHEET_TITLE_CONTRACT",
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
+    "_phase2_review_truth_node",
+    "_phase2_review_truth_text",
+    "_rewrite_phase2_review_truth_pdf",
     "rebuild_client_artifacts",
 ]

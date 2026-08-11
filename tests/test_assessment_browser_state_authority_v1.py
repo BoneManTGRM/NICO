@@ -13,11 +13,14 @@ RUN_CONTROLLER = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
 def test_exact_run_status_retries_without_replaying_continuation() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
-    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS;" in source
+    assert "const retryDelays = readinessPreflight" in source
+    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
     assert "async function requestExactRunStatusWithRetry" in source
     assert "attempt < CLIENT_RETRY_DELAYS_MS.length" in source
     assert 'return await requestWithRetry(path, {method: "GET"}, copy);' in source
+    assert "Each exact-run status read remains independently bounded and idempotent" in source
     assert "can never replay continuation" in source
+    assert "Continuation is not safely replayable" in source
 
 
 def test_terminal_continuation_is_confirmed_by_exact_run_status() -> None:
