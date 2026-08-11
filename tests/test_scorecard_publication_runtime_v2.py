@@ -66,7 +66,7 @@ def test_production_api_bootstrap_installs_scorecard_validator_last() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v21"' in source
+    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v22"' in source
     assert "install_scorecard_extraction_validation" in source
     assert "SCORECARD_EXTRACTION_VALIDATION = install_scorecard_extraction_validation()" in source
     assert source.index("SCORECARD_EXTRACTION_VALIDATION =") > source.index("EXPRESS_FAILURE_STAGE_TRUTH =")
