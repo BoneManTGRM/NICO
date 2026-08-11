@@ -7,16 +7,26 @@ REQUESTS = Path("apps/web/app/assessment/assessmentRunRequests.ts")
 HOOK = Path("apps/web/app/assessment/useAssessmentRun.ts")
 
 
-def test_readiness_preflight_uses_one_browser_attempt_with_absolute_timeout() -> None:
+def test_readiness_preflight_uses_bounded_same_store_recovery_probes_with_absolute_timeout() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
     assert 'const READINESS_PATH = "/diagnostics/comprehensive-runtime"' in source
     assert "const READINESS_CLIENT_TIMEOUT_MS = 48_000" in source
+    assert "const READINESS_RETRY_DELAYS_MS = [0, 2_500, 5_000]" in source
+    assert 'const RECOVERABLE_READINESS_REASONS = new Set([' in source
+    assert '"comprehensive_database_unavailable"' in source
+    assert "function readinessCanRecoverOnSameStore(result: Result): boolean" in source
+    assert "result.runtime_recovery_supported === true" in source
+    assert "result.automatic_cross_store_fallback === false" in source
     assert "const readinessPreflight = path === READINESS_PATH" in source
     assert (
         "readinessPreflight || runStatusRequest || runContinueRequest" in source
     )
-    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS" in source
+    assert "const retryDelays = readinessPreflight" in source
+    assert "? READINESS_RETRY_DELAYS_MS" in source
+    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
+    assert "readinessCanRecoverOnSameStore(result)" in source
+    assert "attempt < retryDelays.length - 1" in source
     assert "new AbortController()" in source
     assert "new Promise<never>" in source
     assert "Promise.race([requestPromise, timeoutPromise])" in source
@@ -53,7 +63,9 @@ def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> 
     assert "readinessPreflight || runStatusRequest || runContinueRequest" in source
     assert "runContinueRequest\n        ? RUN_CONTINUE_CLIENT_TIMEOUT_MS" in source
     assert '"assessment_run_continue_timeout"' in source
-    assert "const retryDelays = boundedRequest ? [0] : CLIENT_RETRY_DELAYS_MS" in source
+    assert "const retryDelays = readinessPreflight" in source
+    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
+    assert "Continuation is not safely replayable" in source
 
 
 def test_normal_assessment_requests_retain_existing_retry_policy() -> None:
