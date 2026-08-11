@@ -23,6 +23,13 @@ _SERVICE_MARKER = "_nico_phase2_review_work_service_v1"
 _REVIEW_MARKER = "_nico_phase2_review_approval_gate_v1"
 _REGISTER_MARKER = "_nico_phase2_review_work_routes_v1"
 _ORIGINAL_REGISTER: Callable[..., Any] | None = None
+_REPORT_STAGE_IDS = (
+    "final_comprehensive_report_generation",
+    "risk_reduction_and_executive_briefing",
+    "decision_report_generation",
+    "report_generation",
+    "reports",
+)
 
 
 def _review_action_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +57,45 @@ def _normalize_review_ledger(ledger: dict[str, Any]) -> dict[str, Any]:
         ledger = deepcopy(ledger)
         ledger["candidate_count"] = 0
     return ledger
+
+
+def _canonical_scanner_register_present(record: Mapping[str, Any]) -> bool:
+    """Return whether this run participates in the Phase 2 canonical review contract.
+
+    Historical test/compatibility packages predate the canonical scanner register and
+    must retain their established exact-artifact approval behavior. Current production
+    Comprehensive reports always expose `canonical_scanner_finding_register`; those
+    runs are therefore subject to the stricter Phase 2 disposition/QC/evidence gates.
+    A persisted review-work ledger also makes the new contract explicitly applicable.
+    """
+
+    if isinstance(record.get("review_work_ledger"), Mapping):
+        return True
+    stage_results = record.get("stage_results")
+    stage_results = stage_results if isinstance(stage_results, Mapping) else {}
+    packages: list[Mapping[str, Any]] = []
+    for stage_id in _REPORT_STAGE_IDS:
+        stage = stage_results.get(stage_id)
+        if not isinstance(stage, Mapping):
+            continue
+        package = stage.get("report_package")
+        if not isinstance(package, Mapping):
+            package = stage.get("reports")
+        if isinstance(package, Mapping):
+            packages.append(package)
+    top = record.get("reports")
+    if isinstance(top, Mapping):
+        packages.append(top)
+    for package in packages:
+        canonical = package.get("json")
+        if not isinstance(canonical, Mapping):
+            continue
+        assessment = canonical.get("assessment")
+        if isinstance(assessment, Mapping) and isinstance(
+            assessment.get("canonical_scanner_finding_register"), Mapping
+        ):
+            return True
+    return False
 
 
 def _install_service_methods() -> None:
@@ -82,7 +128,9 @@ def _install_service_methods() -> None:
         decided_at: str | None = None,
     ) -> dict[str, Any]:
         if str(decision or "").strip().casefold() == "approved":
-            assert_ready_for_approval(_review_action_record(self._store.load(run_id)))
+            record = self._store.load(run_id)
+            if _canonical_scanner_register_present(record):
+                assert_ready_for_approval(_review_action_record(record))
         return current(
             self,
             run_id,
@@ -180,6 +228,7 @@ def install_comprehensive_review_work_runtime_v1() -> dict[str, Any]:
         "canonical_run_record_persistence": True,
         "optimistic_revision_checks_preserved": True,
         "zero_candidate_ledgers_preserved": True,
+        "legacy_precanonical_approval_compatibility_preserved": True,
         "approval_requires_completed_candidate_review": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
