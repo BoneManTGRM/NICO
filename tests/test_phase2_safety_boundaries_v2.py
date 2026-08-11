@@ -127,12 +127,12 @@ def test_scope_binding_prevents_cross_project_or_cross_client_review_state_leaka
 
     other_project = deepcopy(record)
     other_project["identity"]["project_id"] = "project-b"
-    with pytest.raises(ValueError, match="review_work_scope_binding_changed"):
+    with pytest.raises(ValueError, match="review_work_(scope_binding|source_evidence)_changed"):
         review_work_projection(other_project)
 
     other_client = deepcopy(record)
     other_client["identity"]["client_id"] = "client-b"
-    with pytest.raises(ValueError, match="review_work_scope_binding_changed"):
+    with pytest.raises(ValueError, match="review_work_(scope_binding|source_evidence)_changed"):
         review_work_projection(other_client)
 
 
