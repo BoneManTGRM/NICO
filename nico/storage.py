@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from nico.postgres_timeout_patch import postgres_connect_kwargs
+
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS customers (
   customer_id TEXT PRIMARY KEY,
@@ -236,7 +238,11 @@ class PostgresAdapter:
         self._init_schema()
 
     def _connect(self):
-        return self._psycopg.connect(self.database_url, row_factory=self._dict_row)
+        return self._psycopg.connect(
+            self.database_url,
+            row_factory=self._dict_row,
+            **postgres_connect_kwargs(),
+        )
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
