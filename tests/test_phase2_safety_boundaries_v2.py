@@ -121,9 +121,14 @@ def test_group_disposition_fails_closed_for_individual_attention_conditions(cand
         apply_review_work_action(_record(candidate), _group_payload())
 
 
-def test_scope_binding_prevents_cross_project_or_cross_client_review_state_leakage() -> None:
+def test_scope_binding_prevents_cross_run_project_or_client_review_state_leakage() -> None:
     record = _record(_candidate("stable"))
     record["review_work_ledger"] = ledger_for_record(record)
+
+    other_run = deepcopy(record)
+    other_run["identity"]["run_id"] = "comprun_other"
+    with pytest.raises(ValueError, match="review_work_(identity|scope_binding|source_evidence)_"):
+        review_work_projection(other_run)
 
     other_project = deepcopy(record)
     other_project["identity"]["project_id"] = "project-b"
