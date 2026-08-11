@@ -93,3 +93,5 @@ jobs:
           path: audit-results/comprehensive-backend-direct-diagnostic.json
           if-no-files-found: error
           retention-days: 30
+
+# Retarget trigger: exact-main 7b63198 post-intake-threadpool verification.
