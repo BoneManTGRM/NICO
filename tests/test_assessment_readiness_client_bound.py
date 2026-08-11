@@ -37,6 +37,35 @@ def test_readiness_preflight_uses_bounded_same_store_recovery_probes_with_absolu
     assert "retryable: true" in source
 
 
+def test_readiness_retries_only_after_parsed_same_store_recovery_proof() -> None:
+    source = REQUESTS.read_text(encoding="utf-8")
+
+    # Generic transport-status retrying must never authorize a readiness re-probe.
+    assert (
+        "!readinessPreflight &&\n          TRANSIENT_STATUS.has(response.status)" in source
+    )
+
+    # The sole readiness retry authorization is the parsed semantic contract.
+    retry_guard = (
+        "readinessPreflight\n"
+        "        && readinessCanRecoverOnSameStore(result)\n"
+        "        && attempt < retryDelays.length - 1"
+    )
+    assert retry_guard in source
+
+    # Exceptions/timeouts/network failures during readiness fail closed rather than
+    # silently consuming the remaining recovery probes.
+    assert (
+        "readinessPreflight ||\n        !retryable ||\n"
+        "        attempt >= retryDelays.length - 1"
+    ) in source
+
+    # Preserve the exact three semantic gates required by the recovery contract.
+    assert '"comprehensive_database_unavailable"' in source
+    assert "result.runtime_recovery_supported === true" in source
+    assert "result.automatic_cross_store_fallback === false" in source
+
+
 def test_persisted_run_status_recovery_has_its_own_absolute_timeout() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
