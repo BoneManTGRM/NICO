@@ -114,7 +114,7 @@ def _attempt_transient_database_recovery(
         setattr(target.state, _RUNTIME_RECOVERY_LAST_ATTEMPT_STATE, now)
 
         try:
-            executors = build_production_capability_executors(target)
+            executors = _build_runtime_recovery_executors(target)
             controller = install_comprehensive_production_bootstrap(
                 target,
                 capability_executors=executors,
@@ -179,6 +179,8 @@ def _refresh_runtime_diagnostics(target: FastAPI) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    status["human_review_required"] = True
+    status["client_delivery_allowed"] = False
 
     # A successful recovery replaces only the stale startup availability projection.
     # Keep the static report/scoring/security bindings from the original installation.
@@ -416,6 +418,12 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     status["diagnostics_route_count"] = _route_count(target, "GET", COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE)
     target.state.nico_comprehensive_production_runtime = status
     return status
+
+
+def _build_runtime_recovery_executors(target: FastAPI) -> dict[str, Any]:
+    """Reuse the installed production provider registry for same-store recovery only."""
+
+    return build_production_capability_executors(target)
 
 
 app = production_app
