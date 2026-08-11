@@ -4,8 +4,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const EXPRESS_START = "/assessment/express-run";
-const EXPRESS_STATUS = /^\/assessment\/express-run\/[^/?#]+\/status$/;
 const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake";
 const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
@@ -14,7 +12,7 @@ const COMPREHENSIVE_REVIEW_WORK = /^\/assessment\/comprehensive-run\/[^/?#]+\/re
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
-const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/(?:express-runtime|comprehensive-runtime)$/;
+const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/comprehensive-runtime$/;
 const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";
 const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -76,7 +74,6 @@ function configuredBackend(): BackendResolution {
 }
 
 function assessmentRouteAllowed(method: string, path: string): boolean {
-  if (method === "POST" && (path === EXPRESS_START || EXPRESS_STATUS.test(path))) return true;
   if (method === "POST" && path === COMPREHENSIVE_INTAKE) return true;
   if (method === "GET" && COMPREHENSIVE_STATUS.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
@@ -137,7 +134,7 @@ async function proxyNico(
   const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized NICO Comprehensive review and delivery are limited to their exact protected routes.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only NICO Comprehensive lifecycle routes, exact-run report artifacts, protected review and delivery routes, and bounded Comprehensive runtime diagnostics are available through this proxy.");
   }
 
   const resolution = configuredBackend();
