@@ -129,9 +129,11 @@ def _install_service_methods() -> None:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
         normalized_decision = str(decision or "").strip().casefold()
-        canonical_phase2 = _canonical_scanner_register_present(record)
-        if normalized_decision == "approved" and canonical_phase2:
-            assert_ready_for_approval(_review_action_record(record))
+        canonical_phase2 = False
+        if _canonical_scanner_register_present(record):
+            canonical_phase2 = True
+            if normalized_decision == "approved":
+                assert_ready_for_approval(_review_action_record(record))
 
         timestamp = _decision_timestamp(decided_at)
         decision_record = record
