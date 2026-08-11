@@ -5,8 +5,9 @@ import re
 from functools import wraps
 from typing import Any, Callable, Mapping
 
-VERSION = "nico.runtime_deployment_commit_resolution.v2"
+VERSION = "nico.runtime_deployment_commit_resolution.v3"
 _MARKER = "_nico_runtime_deployment_commit_resolution_v1"
+_INTAKE_CAPTURE_MARKER = "_nico_runtime_deployment_intake_capture_v1"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _EXPECTED_MARKER_RE = re.compile(
@@ -131,6 +132,54 @@ def runtime_deployment_resolution(
     return None
 
 
+def _install_comprehensive_intake_capture() -> dict[str, Any]:
+    """Bind provider proof at the exact Comprehensive intake call site.
+
+    `comprehensive_api_routes` imports `capture_repository_snapshot` by value before
+    package installers finish. Rebinding only `repository_snapshot.resolve_repository_commit`
+    therefore leaves room for later import/rebind order to send live intake back through
+    external GitHub resolution. This wrapper attaches the already-running provider's
+    exact repository/SHA proof directly to the intake snapshot context. It activates
+    only when provider-owned Git variables match both repository and explicit SHA.
+    Every other repository or SHA continues through the existing API/Git fail-closed path.
+    """
+
+    from nico import comprehensive_api_routes
+
+    current = comprehensive_api_routes.capture_repository_snapshot
+    if getattr(current, _INTAKE_CAPTURE_MARKER, False):
+        return {
+            "status": "already_installed",
+            "bound": True,
+            "provider_exact_sha_preverified": True,
+        }
+
+    @wraps(current)
+    def capture(
+        context: dict[str, Any],
+        *,
+        client: Any | None = None,
+        store: Any | None = None,
+    ) -> dict[str, Any]:
+        runtime = runtime_deployment_resolution(context)
+        if runtime is None:
+            return current(context, client=client, store=store)
+        enriched = dict(context)
+        enriched["exact_commit_resolution"] = runtime
+        return current(enriched, client=client, store=store)
+
+    setattr(capture, _INTAKE_CAPTURE_MARKER, True)
+    setattr(capture, "_nico_previous", current)
+    comprehensive_api_routes.capture_repository_snapshot = capture
+    return {
+        "status": "installed",
+        "bound": comprehensive_api_routes.capture_repository_snapshot is capture,
+        "provider_exact_sha_preverified": True,
+        "external_repository_fallback_preserved": True,
+        "private_repository_policy_preserved": True,
+    }
+
+
 def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
     from nico import exact_commit_binding, repository_snapshot
     from nico.comprehensive_cross_format_finality_v49 import (
@@ -138,6 +187,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
     )
 
     cross_format_finality = install_comprehensive_cross_format_finality_v49()
+    intake_capture = _install_comprehensive_intake_capture()
     current: Callable[..., dict[str, Any]] = repository_snapshot.resolve_repository_commit
     if getattr(current, _MARKER, False):
         exact_commit_binding.resolve_repository_commit = current
@@ -147,6 +197,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
             "repository_snapshot_bound": True,
             "exact_commit_binding_bound": True,
             "authorization_marker_supported": True,
+            "comprehensive_intake_capture": intake_capture,
             "comprehensive_cross_format_finality": cross_format_finality,
         }
 
@@ -171,6 +222,7 @@ def install_runtime_deployment_commit_resolution() -> dict[str, Any]:
         "exact_sha_match_required": True,
         "authorization_marker_supported": True,
         "api_and_public_git_fallback_preserved": True,
+        "comprehensive_intake_capture": intake_capture,
         "comprehensive_cross_format_finality": cross_format_finality,
         "human_review_required": True,
         "client_delivery_allowed": False,
