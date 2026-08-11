@@ -1,0 +1,60 @@
+name: Live Comprehensive Start Readiness Diagnostic
+
+on:
+  push:
+    branches:
+      - repair/live-comprehensive-start-readiness
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe production Comprehensive readiness
+        env:
+          ORIGIN: https://app.nicoaudit.com
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          url = os.environ["ORIGIN"].rstrip("/") + "/api/nico/diagnostics/comprehensive-runtime"
+          request = urllib.request.Request(
+              url,
+              headers={"Accept": "application/json", "Cache-Control": "no-store", "User-Agent": "nico-live-start-readiness-diagnostic"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  status = response.status
+                  raw = response.read().decode("utf-8")
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+              raw = exc.read().decode("utf-8", errors="replace")
+          payload = json.loads(raw)
+          detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+          persistence = payload.get("persistence") if isinstance(payload.get("persistence"), dict) else {}
+          bounded = {
+              "http_status": status,
+              "status": payload.get("status"),
+              "reason": payload.get("reason") or detail.get("reason") or detail.get("code"),
+              "persistence_adapter": payload.get("persistence_adapter") or persistence.get("adapter"),
+              "storage_source": payload.get("storage_source") or persistence.get("storage_source"),
+              "database_url_source": payload.get("database_url_source"),
+              "durability_verified": payload.get("durability_verified"),
+              "survives_container_replacement_verified": payload.get("survives_container_replacement_verified") or persistence.get("survives_container_replacement_verified"),
+              "configured": payload.get("configured"),
+              "missing_capabilities": payload.get("missing_capabilities"),
+              "route_counts": payload.get("route_counts"),
+              "human_review_required": payload.get("human_review_required", detail.get("human_review_required")),
+              "client_delivery_allowed": payload.get("client_delivery_allowed", detail.get("client_delivery_allowed")),
+          }
+          print(json.dumps(bounded, sort_keys=True))
+          if status < 200 or status >= 300:
+              raise SystemExit(f"readiness endpoint HTTP {status}")
+          PY
