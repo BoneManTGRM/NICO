@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from nico import snapshot_scanner_worker
+from nico.comprehensive_storage_availability_patch_v1 import (
+    install_comprehensive_storage_availability_patch_v1,
+)
+
+# Storage availability must be guarded before the production Comprehensive app is
+# imported. A crashed or temporarily unreachable production database must leave the
+# service fail-closed and diagnosable instead of aborting module import.
+COMPREHENSIVE_STORAGE_AVAILABILITY = install_comprehensive_storage_availability_patch_v1()
+
 from nico.api.comprehensive_production_bootstrap import app
 from nico.ci_history_classification_v1 import install_ci_history_classification_v1
 from nico.exact_commit_binding import install_exact_commit_binding
@@ -23,7 +32,7 @@ from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_ev
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v21"
+VERSION = "nico.api.terminal_authority_bootstrap.v22"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
@@ -58,6 +67,7 @@ SCANNER_DETERMINISM = {
 }
 
 _INSTALLATIONS = {
+    "nico_comprehensive_storage_availability": COMPREHENSIVE_STORAGE_AVAILABILITY,
     "nico_scanner_evidence_pipeline": SCANNER_EVIDENCE_PIPELINE,
     "nico_v2_snapshot_scanner_authority": V2_SNAPSHOT_SCANNER_AUTHORITY,
     "nico_v2_scanner_evidence_completion": V2_SCANNER_EVIDENCE_COMPLETION,
@@ -82,6 +92,12 @@ for state_name, installation in _INSTALLATIONS.items():
         raise RuntimeError(f"Terminal authority component did not install: {state_name}={installation}")
     setattr(app.state, state_name, installation)
 
+if COMPREHENSIVE_STORAGE_AVAILABILITY.get("startup_database_failure_becomes_blocked_runtime") is not True:
+    raise RuntimeError("Comprehensive storage availability does not fail closed at production bootstrap")
+if COMPREHENSIVE_STORAGE_AVAILABILITY.get("runtime_database_failure_returns_503") is not True:
+    raise RuntimeError("Comprehensive storage availability does not expose bounded runtime failure")
+if COMPREHENSIVE_STORAGE_AVAILABILITY.get("automatic_cross_store_fallback") is not False:
+    raise RuntimeError("Comprehensive storage availability unexpectedly permits cross-store fallback")
 if SCANNER_EVIDENCE_PIPELINE.get("full_output_capture") is not True:
     raise RuntimeError("Scanner evidence pipeline does not retain complete file-backed output")
 if SCANNER_EVIDENCE_PIPELINE.get("durable_redacted_raw_artifacts") is not True:
@@ -166,6 +182,7 @@ for component, values in _REQUIRED_TRUTH_FLAGS.items():
 
 __all__ = [
     "app",
+    "COMPREHENSIVE_STORAGE_AVAILABILITY",
     "SCANNER_EVIDENCE_PIPELINE",
     "V2_SNAPSHOT_SCANNER_AUTHORITY",
     "V2_SCANNER_EVIDENCE_COMPLETION",
