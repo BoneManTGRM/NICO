@@ -103,7 +103,7 @@ def test_terminal_failure_bridge_surfaces_comprehensive_200_payload_details() ->
     assert 'X-NICO-Terminal-Failure' in source
 
 
-def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnostics() -> None:
+def test_server_proxy_allows_only_comprehensive_lifecycle_artifacts_and_bounded_diagnostics() -> None:
     source = ROUTE.read_text(encoding="utf-8")
 
     assert 'process.env.NICO_API_URL' in source
@@ -111,17 +111,18 @@ def test_server_proxy_allows_only_native_lifecycle_artifacts_and_bounded_diagnos
     assert 'process.env.NEXT_PUBLIC_NICO_API_URL' in source
     assert 'assessmentRouteAllowed(request.method, apiPath)' in source
     assert 'ALLOWED_DIAGNOSTIC_PATH.test(apiPath)' in source
-    assert 'const EXPRESS_START = "/assessment/express-run"' in source
-    assert 'const EXPRESS_STATUS = /^\\/assessment\\/express-run\\/[^/?#]+\\/status$/' in source
+    assert 'EXPRESS_START' not in source
+    assert 'EXPRESS_STATUS' not in source
+    assert 'express-runtime' not in source
     assert 'const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake"' in source
     assert 'const COMPREHENSIVE_STATUS = /^\\/assessment\\/comprehensive-run\\/[^/?#]+$/' in source
     assert 'const COMPREHENSIVE_CONTINUE = /^\\/assessment\\/comprehensive-run\\/[^/?#]+\\/continue$/' in source
     assert 'const COMPREHENSIVE_REPORT_ARTIFACT' in source
     assert '(?:markdown|html|json|pdf)' in source
     assert 'COMPREHENSIVE_REPORT_ARTIFACT.test(path)' in source
-    assert '(?:express-runtime|comprehensive-runtime)' in source
+    assert 'const ALLOWED_DIAGNOSTIC_PATH = /^\\/diagnostics\\/comprehensive-runtime$/;' in source
     assert '/assessment/github' not in source
-    assert 'Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy.' in source
+    assert 'Only NICO Comprehensive lifecycle routes, exact-run report artifacts, protected review and delivery routes, and bounded Comprehensive runtime diagnostics are available through this proxy.' in source
     assert 'nico_proxy_route_not_allowed' in source
     assert 'assessment_backend_not_configured' in source
     assert 'assessment_backend_unreachable' in source
