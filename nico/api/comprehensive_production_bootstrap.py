@@ -115,10 +115,10 @@ def _attempt_transient_database_recovery(
 
         try:
             executors = _build_runtime_recovery_executors(target)
-            controller = install_comprehensive_production_bootstrap(
+            controller = (install_comprehensive_production_bootstrap(
                 target,
                 capability_executors=executors,
-            )
+            ))
         except Exception:
             controller = None
         runtime = dict(getattr(target.state, "comprehensive_runtime", {}) or {})
