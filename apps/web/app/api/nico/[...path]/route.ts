@@ -137,7 +137,7 @@ async function proxyNico(
   const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only native assessment lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized NICO Comprehensive review and delivery are limited to their exact protected routes.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized NICO Comprehensive review and delivery are limited to their exact protected routes.");
   }
 
   const resolution = configuredBackend();
