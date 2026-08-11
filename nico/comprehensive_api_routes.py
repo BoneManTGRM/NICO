@@ -16,7 +16,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v12"
+VERSION = "nico.comprehensive_api_routes.v13"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -535,7 +535,7 @@ def register_comprehensive_api_routes(
     async def start_comprehensive_intake(request: Request) -> dict[str, Any]:
         try:
             payload = await request.json()
-            return _intake(request, payload)
+            return await run_in_threadpool(_intake, request, payload)
         except HTTPException:
             raise
         except Exception as exc:
