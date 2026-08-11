@@ -9,19 +9,20 @@ from fastapi import Header, Request
 
 import nico.comprehensive_api_routes as routes_module
 import nico.comprehensive_run_service as service_module
+from nico.comprehensive_review_report_truth_v1 import synchronize_review_truth
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
-from nico.comprehensive_review_work_v1 import (
+from nico.comprehensive_review_work_v2 import (
     apply_review_work_action,
     assert_ready_for_approval,
     review_work_projection,
 )
 
-VERSION = "nico.comprehensive_review_work_runtime.v1"
+VERSION = "nico.comprehensive_review_work_runtime.v2"
 GET_ROUTE = "/assessment/comprehensive-run/{run_id}/review-work"
 POST_ROUTE = "/assessment/comprehensive-run/{run_id}/review-work"
-_SERVICE_MARKER = "_nico_phase2_review_work_service_v1"
-_REVIEW_MARKER = "_nico_phase2_review_approval_gate_v1"
-_REGISTER_MARKER = "_nico_phase2_review_work_routes_v1"
+_SERVICE_MARKER = "_nico_phase2_review_work_service_v2"
+_REVIEW_MARKER = "_nico_phase2_review_approval_gate_v2"
+_REGISTER_MARKER = "_nico_phase2_review_work_routes_v2"
 _ORIGINAL_REGISTER: Callable[..., Any] | None = None
 _REPORT_STAGE_IDS = (
     "final_comprehensive_report_generation",
@@ -33,14 +34,7 @@ _REPORT_STAGE_IDS = (
 
 
 def _review_action_record(record: dict[str, Any]) -> dict[str, Any]:
-    """Preserve a legitimate persisted zero-candidate ledger during validation.
-
-    The core ledger validator interprets a falsy numeric zero as a missing count. The
-    runtime keeps the canonical persisted value numeric, but supplies the validator a
-    truthy string representation for this one equivalent value. This is intentionally
-    narrow: nonzero counts and every other ledger field are unchanged and all identity,
-    candidate, QC, escalation, and approval checks still run normally.
-    """
+    """Preserve a legitimate persisted zero-candidate ledger during validation."""
 
     existing = record.get("review_work_ledger")
     if not isinstance(existing, Mapping) or existing.get("candidate_count") != 0:
@@ -60,15 +54,6 @@ def _normalize_review_ledger(ledger: dict[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_scanner_register_present(record: Mapping[str, Any]) -> bool:
-    """Return whether this run participates in the Phase 2 canonical review contract.
-
-    Historical test/compatibility packages predate the canonical scanner register and
-    must retain their established exact-artifact approval behavior. Current production
-    Comprehensive reports always expose `canonical_scanner_finding_register`; those
-    runs are therefore subject to the stricter Phase 2 disposition/QC/evidence gates.
-    A persisted review-work ledger also makes the new contract explicitly applicable.
-    """
-
     if isinstance(record.get("review_work_ledger"), Mapping):
         return True
     stage_results = record.get("stage_results")
@@ -107,6 +92,7 @@ def _install_service_methods() -> None:
             ledger = apply_review_work_action(_review_action_record(record), payload)
             ledger = _normalize_review_ledger(ledger)
             updated = apply_review_work_ledger(record, ledger=ledger)
+            updated = synchronize_review_truth(updated)
             return self._store.save(updated, expected_revision=previous_revision)
 
         setattr(service_class, "review_work", review_work)
@@ -230,6 +216,10 @@ def install_comprehensive_review_work_runtime_v1() -> dict[str, Any]:
         "zero_candidate_ledgers_preserved": True,
         "legacy_precanonical_approval_compatibility_preserved": True,
         "approval_requires_completed_candidate_review": True,
+        "configurable_quality_control_sampling": True,
+        "exception_queue_projection": True,
+        "report_truth_synchronized_before_approval": True,
+        "four_hour_target_is_safety_gate": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
