@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from copy import deepcopy
 from typing import Any, Mapping
 
 from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 
-VERSION = "nico.comprehensive_review_decision.v1"
+VERSION = "nico.comprehensive_review_decision.v2"
 _REPORT_STAGE_IDS = (
     "final_comprehensive_report_generation",
     "risk_reduction_and_executive_briefing",
     "decision_report_generation",
 )
+
+
+def _canonical_hash(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def report_package_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -89,6 +103,51 @@ def _evidence_bundle_hash(record: Mapping[str, Any], package: Mapping[str, Any])
     return ""
 
 
+def _review_ledger_binding(record: Mapping[str, Any]) -> dict[str, str]:
+    try:
+        from nico.comprehensive_review_work_v2 import ledger_for_record
+
+        ledger = ledger_for_record(record)
+    except Exception:
+        existing = record.get("review_work_ledger")
+        if not isinstance(existing, Mapping):
+            return {}
+        ledger = deepcopy(dict(existing))
+    if not ledger:
+        return {}
+    return {
+        "review_work_ledger_sha256": _canonical_hash(ledger),
+        "review_work_source_sha256": str(ledger.get("review_source_sha256") or "").strip(),
+    }
+
+
+def _bind_review_ledger_to_manifest(
+    manifest: Mapping[str, Any],
+    binding: Mapping[str, str],
+) -> dict[str, Any]:
+    output = deepcopy(dict(manifest))
+    ledger_hash = str(binding.get("review_work_ledger_sha256") or "").strip()
+    if not ledger_hash:
+        return output
+    output["review_work_ledger_sha256"] = ledger_hash
+    source_hash = str(binding.get("review_work_source_sha256") or "").strip()
+    if source_hash:
+        output["review_work_source_sha256"] = source_hash
+
+    review = output.get("review") if isinstance(output.get("review"), Mapping) else {}
+    review = deepcopy(dict(review))
+    review["review_work_ledger_sha256"] = ledger_hash
+    if source_hash:
+        review["review_work_source_sha256"] = source_hash
+    review.pop("approval_certificate_sha256", None)
+    review["approval_certificate_sha256"] = _canonical_hash(review)
+    output["review"] = review
+
+    output.pop("accepted_edition_manifest_sha256", None)
+    output["accepted_edition_manifest_sha256"] = _canonical_hash(output)
+    return output
+
+
 def build_reviewed_edition(
     record: Mapping[str, Any],
     *,
@@ -98,10 +157,12 @@ def build_reviewed_edition(
     decision_reason: str,
     decided_at: str | None = None,
 ) -> dict[str, Any]:
-    """Bind a human decision to the exact already-generated report artifacts.
+    """Bind a human decision to the exact report artifacts and review ledger.
 
-    This function never regenerates or edits the report. Missing identity, scanner,
-    evidence, or artifact data remains a validation error in the returned manifest.
+    The report itself is never regenerated during approval. For Phase 2 runs the
+    accepted-edition certificate also binds the exact human-review ledger and its
+    canonical evidence fingerprint, so disposition/QC state cannot be swapped after
+    approval without invalidating the certificate chain.
     """
 
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
@@ -110,7 +171,7 @@ def build_reviewed_edition(
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
     except Exception:
         pdf = b""
-    return build_accepted_report_edition(
+    manifest = build_accepted_report_edition(
         repository=str(identity.get("repository") or ""),
         commit_sha=str(identity.get("commit_sha") or ""),
         tree_sha=_tree_sha(record),
@@ -131,6 +192,7 @@ def build_reviewed_edition(
         decision_reason=decision_reason,
         decided_at=decided_at,
     )
+    return _bind_review_ledger_to_manifest(manifest, _review_ledger_binding(record))
 
 
 __all__ = ["VERSION", "build_reviewed_edition", "report_package_from_record"]
