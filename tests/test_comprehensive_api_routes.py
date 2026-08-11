@@ -80,27 +80,19 @@ def test_routes_start_status_and_continue_one_canonical_run(tmp_path: Path) -> N
     assert continued.json()["client_delivery_allowed"] is False
 
 
-def test_intake_preserves_explicit_exact_commit_as_first_class_snapshot_input(
+def test_intake_preserves_explicit_exact_commit_as_first_class_durable_input(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     expected = "a" * 40
-    captured: dict = {}
+    snapshot_called = False
 
-    def fake_snapshot(context: dict) -> dict:
-        captured.update(context)
-        return {
-            "status": "attached",
-            "snapshot_id": "snapshot_exact",
-            "run_id": context["run_id"],
-            "repository": context["repository"],
-            "commit_sha": expected,
-            "expected_commit_sha": expected,
-            "exact_commit_verified": True,
-            "human_review_required": True,
-        }
+    def forbidden_intake_snapshot(context: dict) -> dict:
+        nonlocal snapshot_called
+        snapshot_called = True
+        raise AssertionError("explicit exact-SHA intake must persist the run before snapshot I/O")
 
-    monkeypatch.setattr(routes, "capture_repository_snapshot", fake_snapshot)
+    monkeypatch.setattr(routes, "capture_repository_snapshot", forbidden_intake_snapshot)
     app = FastAPI()
     app.state.comprehensive_runtime = {
         "configured": True,
@@ -128,9 +120,11 @@ def test_intake_preserves_explicit_exact_commit_as_first_class_snapshot_input(
 
     assert response.status_code == 200
     body = response.json()
-    assert captured["expected_commit_sha"] == expected
-    assert body["repository_snapshot"]["commit_sha"] == expected
+    assert snapshot_called is False
     assert body["commit_sha"] == expected
+    assert body["explicit_commit_sha_bound"] == expected
+    assert body["repository_snapshot_verification"] == "required_next_stage"
+    assert body["repository_processing_begun"] is False
     assert body["persistence"] == {
         "recorded": True,
         "durable": True,
