@@ -224,7 +224,7 @@ export async function requestWithRetry(
   // Continuation is not safely replayable. Exact-run status remains one browser
   // request here and is retried only through the dedicated idempotent status helper.
   // Readiness is an idempotent GET and may re-probe the same canonical durable store
-  // when diagnostics explicitly reports the bounded transient database-recovery state.
+  // only when parsed diagnostics explicitly prove the bounded same-store recovery state.
   const boundedRequest =
     readinessPreflight || runStatusRequest || runContinueRequest;
   const requestTimeoutMs = readinessPreflight
@@ -259,6 +259,7 @@ export async function requestWithRetry(
           signal: controller?.signal || boundInit.signal,
         });
         if (
+          !readinessPreflight &&
           TRANSIENT_STATUS.has(response.status) &&
           attempt < retryDelays.length - 1
         ) {
@@ -318,7 +319,11 @@ export async function requestWithRetry(
       lastError = error;
       const retryable =
         error instanceof AssessmentApiError ? error.retryable : true;
-      if (!retryable || attempt >= retryDelays.length - 1) {
+      if (
+        readinessPreflight ||
+        !retryable ||
+        attempt >= retryDelays.length - 1
+      ) {
         break;
       }
     } finally {
