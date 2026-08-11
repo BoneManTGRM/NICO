@@ -29,6 +29,10 @@ def test_phase2_terminal_production_boundary_is_fail_closed() -> None:
     assert status["configurable_quality_control_sampling"] is True
     assert status["bulk_review_fails_closed_for_individual_attention"] is True
     assert status["report_truth_synchronized_before_approval"] is True
+    assert status["final_human_decision_bound_into_accepted_report"] is True
     assert status["approved_delivery_has_one_client_report"] is True
+    assert status["approved_client_pdf_has_authorization_certificate"] is True
+    assert status["delivery_validates_exact_review_ledger"] is True
+    assert status["four_hour_target_is_safety_gate"] is False
     assert status["human_review_required"] is True
     assert status["client_delivery_allowed"] is False
