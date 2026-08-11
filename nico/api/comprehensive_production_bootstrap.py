@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from threading import Lock
+from time import monotonic
 from typing import Any
 
 from fastapi import FastAPI
@@ -31,6 +34,11 @@ from nico.v2_production_authority import install_v2_production_authority
 
 VERSION = "nico.api.comprehensive_production_bootstrap.v19"
 COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE = "/diagnostics/comprehensive-runtime"
+_RUNTIME_RECOVERY_SCHEMA = "nico.comprehensive_runtime_recovery.v1"
+_TRANSIENT_DATABASE_REASON = "comprehensive_database_unavailable"
+_RUNTIME_RECOVERY_MIN_INTERVAL_SECONDS = 5.0
+_RUNTIME_RECOVERY_LOCK_STATE = "_nico_comprehensive_runtime_recovery_lock_v1"
+_RUNTIME_RECOVERY_LAST_ATTEMPT_STATE = "_nico_comprehensive_runtime_recovery_last_attempt_v1"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -43,17 +51,152 @@ def _route_count(target: FastAPI, method: str, path: str) -> int:
     )
 
 
+def _runtime_recovery_lock(target: FastAPI) -> Any:
+    lock = getattr(target.state, _RUNTIME_RECOVERY_LOCK_STATE, None)
+    if lock is None:
+        lock = Lock()
+        setattr(target.state, _RUNTIME_RECOVERY_LOCK_STATE, lock)
+    return lock
+
+
+def _safe_live_persistence_probe(target: FastAPI) -> dict[str, Any] | None:
+    controller = getattr(target.state, "comprehensive_api_controller", None)
+    service = getattr(controller, "_service", None)
+    store = getattr(service, "_store", None)
+    probe = getattr(store, "live_persistence_probe", None)
+    if not callable(probe):
+        return None
+    try:
+        raw = probe()
+    except Exception:
+        raw = None
+    result = raw if isinstance(raw, Mapping) else {}
+    available = result.get("available") is True
+    return {
+        "artifact_schema": _RUNTIME_RECOVERY_SCHEMA,
+        "status": "ready" if available else "unavailable",
+        "available": available,
+        "adapter": str(result.get("adapter") or "unknown"),
+        "error_detail_exposed": False,
+        "same_canonical_store": True,
+        "automatic_cross_store_fallback": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
+def _attempt_transient_database_recovery(
+    target: FastAPI,
+    base_status: Mapping[str, Any],
+) -> tuple[dict[str, Any], bool, bool]:
+    runtime = dict(getattr(target.state, "comprehensive_runtime", {}) or {})
+    if base_status.get("non_storage_readiness_verified") is not True:
+        return runtime, False, False
+    if runtime.get("configured") is True and runtime.get("status") == "ready":
+        return runtime, False, False
+    if str(runtime.get("reason") or "") != _TRANSIENT_DATABASE_REASON:
+        return runtime, False, False
+
+    lock = _runtime_recovery_lock(target)
+    with lock:
+        runtime = dict(getattr(target.state, "comprehensive_runtime", {}) or {})
+        if runtime.get("configured") is True and runtime.get("status") == "ready":
+            return runtime, False, True
+        if str(runtime.get("reason") or "") != _TRANSIENT_DATABASE_REASON:
+            return runtime, False, False
+
+        now = monotonic()
+        last_attempt = float(
+            getattr(target.state, _RUNTIME_RECOVERY_LAST_ATTEMPT_STATE, 0.0) or 0.0
+        )
+        if now - last_attempt < _RUNTIME_RECOVERY_MIN_INTERVAL_SECONDS:
+            return runtime, False, False
+        setattr(target.state, _RUNTIME_RECOVERY_LAST_ATTEMPT_STATE, now)
+
+        try:
+            executors = _build_runtime_recovery_executors(target)
+            controller = (install_comprehensive_production_bootstrap(
+                target,
+                capability_executors=executors,
+            ))
+        except Exception:
+            controller = None
+        runtime = dict(getattr(target.state, "comprehensive_runtime", {}) or {})
+        recovered = (
+            controller is not None
+            and runtime.get("configured") is True
+            and runtime.get("status") == "ready"
+            and runtime.get("survives_container_replacement_verified") is True
+        )
+        return runtime, True, recovered
+
+
+def _refresh_runtime_diagnostics(target: FastAPI) -> dict[str, Any]:
+    base = dict(getattr(target.state, "nico_comprehensive_production_runtime", {}) or {})
+    runtime, attempted, recovered = _attempt_transient_database_recovery(target, base)
+    non_storage_ready = base.get("non_storage_readiness_verified") is True
+    replacement_safe = runtime.get("survives_container_replacement_verified") is True
+    runtime_ready = (
+        runtime.get("configured") is True
+        and runtime.get("status") == "ready"
+        and runtime.get("client_delivery_allowed") is False
+        and runtime.get("human_review_required") is True
+        and replacement_safe
+    )
+
+    live_probe = _safe_live_persistence_probe(target) if runtime_ready else None
+    live_database_available = live_probe is None or live_probe.get("available") is True
+    ready = non_storage_ready and runtime_ready and live_database_available
+    reason = str(runtime.get("reason") or base.get("reason") or "")
+    if runtime_ready and not live_database_available:
+        reason = _TRANSIENT_DATABASE_REASON
+    elif ready:
+        reason = ""
+    elif not reason and not replacement_safe:
+        reason = "comprehensive_storage_not_container_replacement_safe"
+
+    status = {
+        **base,
+        "artifact_schema": str(base.get("artifact_schema") or VERSION),
+        "service_id": "comprehensive",
+        "status": "ready" if ready else "blocked",
+        "configured": bool(runtime.get("configured")),
+        "reason": reason,
+        "persistence_adapter": str(runtime.get("persistence_adapter") or "unavailable"),
+        "storage_source": str(runtime.get("storage_source") or "unavailable"),
+        "database_url_source": str(runtime.get("database_url_source") or ""),
+        "durability_verified": runtime.get("durability_verified") is True,
+        "survives_container_replacement_verified": replacement_safe,
+        "run_store_shared_across_workers": replacement_safe,
+        "runtime_recovery_schema": _RUNTIME_RECOVERY_SCHEMA,
+        "runtime_recovery_supported": True,
+        "runtime_recovery_attempted": attempted,
+        "runtime_recovered": recovered,
+        "live_persistence_probe": live_probe,
+        "same_canonical_store_recovery_only": True,
+        "automatic_cross_store_fallback": False,
+        "error_detail_exposed": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+    status["human_review_required"] = True
+    status["client_delivery_allowed"] = False
+
+    # A successful recovery replaces only the stale startup availability projection.
+    # Keep the static report/scoring/security bindings from the original installation.
+    # Transient live-probe failures are intentionally not persisted so the next
+    # diagnostics request can observe the same store returning to service.
+    if ready and base.get("status") != "ready":
+        target.state.nico_comprehensive_production_runtime = dict(status)
+    return status
+
+
 def _register_runtime_diagnostics(target: FastAPI) -> None:
     if _route_count(target, "GET", COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE):
         return
 
     def runtime_diagnostics() -> dict[str, Any]:
-        status = dict(getattr(target.state, "nico_comprehensive_production_runtime", {}) or {})
-        status.setdefault("artifact_schema", VERSION)
-        status.setdefault("service_id", "comprehensive")
-        status["human_review_required"] = True
-        status["client_delivery_allowed"] = False
-        return status
+        return _refresh_runtime_diagnostics(target)
 
     target.add_api_route(
         COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE,
@@ -132,14 +275,8 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and native_status.get("candidate_lineage_migration_bound") is True
         and native_status.get("human_approval_may_carry_forward") is False
     )
-    ready = (
-        controller is not None
-        and runtime.get("configured") is True
-        and runtime.get("status") == "ready"
-        and runtime.get("client_delivery_allowed") is False
-        and runtime.get("human_review_required") is True
-        and replacement_safe
-        and legacy_report_binding.get("bound") is True
+    non_storage_readiness_verified = (
+        legacy_report_binding.get("bound") is True
         and report_binding.get("bound") is True
         and report_binding.get("canonical_scoring_bound") is True
         and report_binding.get("secret_category_isolated") is True
@@ -163,6 +300,15 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         and len(native_providers) > 0
         and not missing_capabilities
         and all(count == 1 for count in route_counts.values())
+    )
+    ready = (
+        controller is not None
+        and runtime.get("configured") is True
+        and runtime.get("status") == "ready"
+        and runtime.get("client_delivery_allowed") is False
+        and runtime.get("human_review_required") is True
+        and replacement_safe
+        and non_storage_readiness_verified
     )
     reason = str(runtime.get("reason") or "")
     if not reason and not replacement_safe:
@@ -206,6 +352,11 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
         "durability_verified": runtime.get("durability_verified") is True,
         "survives_container_replacement_verified": replacement_safe,
         "run_store_shared_across_workers": replacement_safe,
+        "non_storage_readiness_verified": non_storage_readiness_verified,
+        "runtime_recovery_schema": _RUNTIME_RECOVERY_SCHEMA,
+        "runtime_recovery_supported": True,
+        "same_canonical_store_recovery_only": True,
+        "automatic_cross_store_fallback": False,
         "route_counts": route_counts,
         "legacy_report_binding": legacy_report_binding,
         "report_binding": report_binding,
@@ -267,6 +418,12 @@ def install_comprehensive_on_production_app(target: FastAPI) -> dict[str, Any]:
     status["diagnostics_route_count"] = _route_count(target, "GET", COMPREHENSIVE_RUNTIME_DIAGNOSTICS_ROUTE)
     target.state.nico_comprehensive_production_runtime = status
     return status
+
+
+def _build_runtime_recovery_executors(target: FastAPI) -> dict[str, Any]:
+    """Reuse the installed production provider registry for same-store recovery only."""
+
+    return build_production_capability_executors(target)
 
 
 app = production_app
