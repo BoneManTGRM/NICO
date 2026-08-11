@@ -14,7 +14,8 @@ _PATCH_MARKER = "_nico_comprehensive_final_report_semantics_v47"
 _CANONICAL_TITLE = "NICO Comprehensive Technical Assessment"
 _FINAL_STATUS = "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 _STALE_RE = re.compile(
-    r"\bDRAFT\b|DRAFT ONLY|COMPLETE ONLY AS A DRAFT|NOT APPROVED FOR CLIENT DELIVERY",
+    r"\bDRAFT\b|DRAFT ONLY|COMPLETE ONLY AS A DRAFT|NOT APPROVED FOR CLIENT DELIVERY|"
+    r"ASSURANCE-ONLY UNTIL TRIAGED|SOLO ASEGURAMIENTO HASTA COMPLETAR LA REVISI[ÓO]N",
     re.IGNORECASE,
 )
 _EXTENDED_DRAFT_SENTENCE_RE = re.compile(
@@ -35,6 +36,18 @@ _VALUE_REPLACEMENTS = (
     ("Not approved for client delivery", "Delivery blocked pending human approval"),
     ("not approved for client delivery", "delivery blocked pending human approval"),
     ("CLIENT DELIVERY NOT AUTHORIZED", "CLIENT DELIVERY BLOCKED PENDING HUMAN APPROVAL"),
+    (
+        "Score effect: assurance-only until triaged.",
+        "Score effect: assurance-only while authorized human disposition remains pending; technical-triage status is reported separately.",
+    ),
+    (
+        "Assurance-only until triaged",
+        "Human disposition pending; NICO technical-triage status is reported separately",
+    ),
+    (
+        "Efecto en puntuación: solo aseguramiento hasta completar la revisión.",
+        "Efecto en puntuación: solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triage técnico se informa por separado.",
+    ),
     ("Client delivery", "Client delivery"),
 )
 
@@ -45,6 +58,18 @@ _PDF_REPLACEMENTS = (
     ("Not approved for client delivery", "Delivery blocked pending approval"),
     ("not approved for client delivery", "delivery blocked pending approval"),
     ("The automated assessment is complete only as a draft.", "The final report is complete pending human approval."),
+    (
+        "Score effect: assurance-only until triaged.",
+        "Score effect: assurance-only while authorized human disposition remains pending; technical-triage status is reported separately.",
+    ),
+    (
+        "Assurance-only until triaged",
+        "Human disposition pending; NICO technical-triage status is reported separately",
+    ),
+    (
+        "Efecto en puntuación: solo aseguramiento hasta completar la revisión.",
+        "Efecto en puntuación: solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triage técnico se informa por separado.",
+    ),
 )
 
 
