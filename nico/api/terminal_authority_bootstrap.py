@@ -12,6 +12,9 @@ COMPREHENSIVE_STORAGE_AVAILABILITY = install_comprehensive_storage_availability_
 
 from nico.api.comprehensive_production_bootstrap import app
 from nico.ci_history_classification_v1 import install_ci_history_classification_v1
+from nico.comprehensive_review_work_existing_app_v1 import (
+    install_comprehensive_review_work_existing_app_v1,
+)
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import install_exact_scanner_checkout_reconciliation_v1
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
@@ -32,7 +35,7 @@ from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_ev
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v22"
+VERSION = "nico.api.terminal_authority_bootstrap.v23"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
@@ -65,6 +68,11 @@ SCANNER_DETERMINISM = {
     ),
     "terminal_binding_order": "after_all_scanner_and_report_compatibility_installers",
 }
+# Bind Phase 2 after the production Comprehensive routes and late compatibility
+# installers are present. This is the terminal reviewer/approval/delivery boundary:
+# exact protected review-work routes are added once, approval readiness is fail-closed,
+# and approved delivery is normalized to one NICO Comprehensive client report.
+PHASE2_REVIEW_WORK = install_comprehensive_review_work_existing_app_v1(app)
 
 _INSTALLATIONS = {
     "nico_comprehensive_storage_availability": COMPREHENSIVE_STORAGE_AVAILABILITY,
@@ -85,6 +93,7 @@ _INSTALLATIONS = {
     "nico_express_failure_stage_truth": EXPRESS_FAILURE_STAGE_TRUTH,
     "nico_scorecard_extraction_validation": SCORECARD_EXTRACTION_VALIDATION,
     "nico_scanner_determinism": SCANNER_DETERMINISM,
+    "nico_phase2_review_work": PHASE2_REVIEW_WORK,
 }
 
 for state_name, installation in _INSTALLATIONS.items():
@@ -148,6 +157,22 @@ if SCORECARD_EXTRACTION_VALIDATION.get("all_canonical_rows_and_scores_required")
     raise RuntimeError("Production scorecard validation does not fail closed on missing canonical rows")
 if SCORECARD_EXTRACTION_VALIDATION.get("spanish_and_english_supported") is not True:
     raise RuntimeError("Production scorecard validation is not bound for both report languages")
+if PHASE2_REVIEW_WORK.get("review_work_get_route_count") != 1:
+    raise RuntimeError("Phase 2 review-work GET route is not bound exactly once")
+if PHASE2_REVIEW_WORK.get("review_work_post_route_count") != 1:
+    raise RuntimeError("Phase 2 review-work POST route is not bound exactly once")
+if PHASE2_REVIEW_WORK.get("protected_admin_authorization") is not True:
+    raise RuntimeError("Phase 2 review-work routes are not protected by admin authorization")
+if PHASE2_REVIEW_WORK.get("bulk_review_fails_closed_for_individual_attention") is not True:
+    raise RuntimeError("Phase 2 grouped human disposition does not fail closed")
+if PHASE2_REVIEW_WORK.get("report_truth_synchronized_before_approval") is not True:
+    raise RuntimeError("Phase 2 report truth is not synchronized before final approval")
+if PHASE2_REVIEW_WORK.get("approved_delivery_has_one_client_report") is not True:
+    raise RuntimeError("Phase 2 approved delivery is not bound to one Comprehensive client report")
+if PHASE2_REVIEW_WORK.get("human_review_required") is not True:
+    raise RuntimeError("Phase 2 must preserve human review")
+if PHASE2_REVIEW_WORK.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Phase 2 must block client delivery before authorized approval")
 
 _REQUIRED_TRUTH_FLAGS = {
     "PHASE6_FINAL_REMEDIATION": (
@@ -200,5 +225,6 @@ __all__ = [
     "EXPRESS_FAILURE_STAGE_TRUTH",
     "SCORECARD_EXTRACTION_VALIDATION",
     "SCANNER_DETERMINISM",
+    "PHASE2_REVIEW_WORK",
     "VERSION",
 ]

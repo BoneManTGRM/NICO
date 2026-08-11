@@ -7,9 +7,18 @@ VERSION = "nico.spanish-cross-format-score-parity.v1"
 _MARKER = "__nico_spanish_cross_format_score_parity_v1__"
 
 
+def _install_phase2_review_work() -> dict[str, Any]:
+    from nico.comprehensive_review_work_runtime_v1 import (
+        install_comprehensive_review_work_runtime_v1,
+    )
+
+    return install_comprehensive_review_work_runtime_v1()
+
+
 def install_spanish_cross_format_score_parity() -> dict[str, Any]:
     from nico import comprehensive_cross_format_finality_v49 as cross
 
+    phase2_review_work = _install_phase2_review_work()
     current = cross._package_score_truth
     if getattr(current, _MARKER, False):
         return {
@@ -17,6 +26,7 @@ def install_spanish_cross_format_score_parity() -> dict[str, Any]:
             "version": VERSION,
             "bound": True,
             "spanish_score_labels_supported": True,
+            "phase2_review_work": phase2_review_work,
         }
 
     @wraps(current)
@@ -73,6 +83,7 @@ def install_spanish_cross_format_score_parity() -> dict[str, Any]:
         "bound": cross._package_score_truth is localized,
         "spanish_score_labels_supported": True,
         "markdown_html_pdf_supported": True,
+        "phase2_review_work": phase2_review_work,
     }
 
 

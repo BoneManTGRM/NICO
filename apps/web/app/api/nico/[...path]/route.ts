@@ -10,6 +10,7 @@ const COMPREHENSIVE_INTAKE = "/assessment/comprehensive-intake";
 const COMPREHENSIVE_STATUS = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
 const COMPREHENSIVE_REVIEW_QUEUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-queue$/;
+const COMPREHENSIVE_REVIEW_WORK = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-work$/;
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
@@ -80,6 +81,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "GET" && COMPREHENSIVE_STATUS.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_CONTINUE.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path)) return true;
+  if ((method === "GET" || method === "POST") && COMPREHENSIVE_REVIEW_WORK.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
@@ -88,6 +90,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
 
 function protectedReviewRoute(method: string, path: string): boolean {
   return (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path))
+    || ((method === "GET" || method === "POST") && COMPREHENSIVE_REVIEW_WORK.test(path))
     || (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
     || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path));
 }
@@ -134,7 +137,7 @@ async function proxyNico(
   const assessmentAllowed = assessmentRouteAllowed(request.method, apiPath);
   const diagnosticAllowed = request.method === "GET" && ALLOWED_DIAGNOSTIC_PATH.test(apiPath);
   if (!assessmentAllowed && !diagnosticAllowed) {
-    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized Strategic review and delivery are limited to their exact protected routes.");
+    return jsonError(404, "nico_proxy_route_not_allowed", "Only native Express and Comprehensive lifecycle routes, exact-run report artifacts, and bounded runtime diagnostics are available through this proxy. Authorized NICO Comprehensive review and delivery are limited to their exact protected routes.");
   }
 
   const resolution = configuredBackend();

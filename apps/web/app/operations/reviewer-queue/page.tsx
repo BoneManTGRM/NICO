@@ -1,10 +1,16 @@
 import ReviewerQueue from "./ReviewerQueue";
+import ReviewQueueBrowser from "./ReviewQueueBrowser";
+import ReviewWorkPanel from "./ReviewWorkPanel";
 
 export const metadata = {
-  title: "Exception-first reviewer queue | NICO",
-  description: "Read-only exception-first routing for the exact NICO Comprehensive candidate register.",
+  title: "Human review workspace | NICO",
+  description: "Exception-first canonical candidate review, complete filtering and search, controlled bulk disposition, configurable quality control, evidence requests, assignments, audit trail, and empirical reviewer-time measurement.",
 };
 
 export default function ReviewerQueuePage() {
-  return <ReviewerQueue />;
+  return <>
+    <ReviewerQueue />
+    <ReviewQueueBrowser />
+    <ReviewWorkPanel />
+  </>;
 }
