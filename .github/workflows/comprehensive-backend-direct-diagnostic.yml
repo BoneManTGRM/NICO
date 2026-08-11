@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 10
     env:
       NICO_PRODUCTION_BACKEND_URL: https://nico-production-690a.up.railway.app
-      TARGET_RELEASE_SHA: 7b63198bfb34158f6f3087276080a4a5bfceb7f0
+      TARGET_RELEASE_SHA: efb12988d7dc1ab27e9522ac6e10614b33ce88fc
     steps:
       - name: Capture bounded direct-backend evidence
         run: |
@@ -94,4 +94,4 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-# Retarget trigger: exact-main 7b63198 post-intake-threadpool verification.
+# Retarget trigger: exact-main efb12988 after merged exact-SHA latency repair.
