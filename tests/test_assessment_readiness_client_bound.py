@@ -6,6 +6,9 @@ from pathlib import Path
 REQUESTS = Path("apps/web/app/assessment/assessmentRunRequests.ts")
 HOOK = Path("apps/web/app/assessment/useAssessmentRun.ts")
 
+# Readiness recovery retries are semantic-only: transport failure alone never
+# authorizes an additional probe of the canonical durable store.
+
 
 def test_readiness_preflight_uses_bounded_same_store_recovery_probes_with_absolute_timeout() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
