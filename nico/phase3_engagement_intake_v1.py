@@ -5,12 +5,13 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any
 
-from nico import comprehensive_api_routes as api_routes
-from nico import comprehensive_run_service as run_service_module
-from nico.comprehensive_run_service import ComprehensiveRunService
+from fastapi import FastAPI
 
-VERSION = "nico.phase3_engagement_intake.v2"
-PATCH = "_nico_phase3_engagement_intake_v1"
+from nico import comprehensive_api_routes as api_routes
+
+VERSION = "nico.phase3_engagement_intake.v3"
+INTAKE_PATCH = "_nico_phase3_engagement_intake_v1"
+REVIEW_PATCH = "_nico_phase3_review_identity_v1"
 ENGAGEMENT_MODULE = "stakeholder_context"
 ENGAGEMENT_FIELDS = ("access_method", "primary_technical_contact", "authorized_scope")
 PLACEHOLDER_CUSTOMERS = {"", "default_customer", "internal", "internal_customer"}
@@ -131,50 +132,56 @@ def client_delivery_identity_valid(record: Mapping[str, Any]) -> bool:
     return engagement_truth(record)["client_delivery_identity_valid"] is True
 
 
-def install_phase3_engagement_intake_v1() -> dict[str, Any]:
-    if not getattr(api_routes._intake, PATCH, False):
+def _install_service_review_guard(app: FastAPI) -> bool:
+    controller = getattr(app.state, "comprehensive_api_controller", None)
+    service = getattr(controller, "_service", None)
+    if service is None:
+        return False
+    if getattr(service, REVIEW_PATCH, False):
+        return True
+    current_review = service.review
+
+    @wraps(current_review)
+    def guarded_review(
+        run_id: str,
+        *,
+        reviewer: str,
+        reviewer_role: str,
+        decision: str,
+        decision_reason: str,
+        decided_at: str | None = None,
+    ) -> dict[str, Any]:
+        if (
+            str(decision or "").casefold() == "approved"
+            and not client_delivery_identity_valid(service.load(run_id))
+        ):
+            raise ValueError("client_delivery_identity_required_for_final_approval")
+        return current_review(
+            run_id,
+            reviewer=reviewer,
+            reviewer_role=reviewer_role,
+            decision=decision,
+            decision_reason=decision_reason,
+            decided_at=decided_at,
+        )
+
+    service.review = guarded_review
+    setattr(service, REVIEW_PATCH, True)
+    return True
+
+
+def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str, Any]:
+    if not getattr(api_routes._intake, INTAKE_PATCH, False):
         current = api_routes._intake
 
         @wraps(current)
         def guarded_intake(request: Any, payload: dict[str, Any]) -> dict[str, Any]:
             return current(request, validate_and_enrich_intake(payload))
 
-        setattr(guarded_intake, PATCH, True)
+        setattr(guarded_intake, INTAKE_PATCH, True)
         api_routes._intake = guarded_intake
 
-    if not getattr(ComprehensiveRunService.review, PATCH, False):
-        current_review = ComprehensiveRunService.review
-
-        @wraps(current_review)
-        def guarded_review(
-            self: ComprehensiveRunService,
-            run_id: str,
-            *,
-            reviewer: str,
-            reviewer_role: str,
-            decision: str,
-            decision_reason: str,
-            decided_at: str | None = None,
-        ) -> dict[str, Any]:
-            if (
-                str(decision or "").casefold() == "approved"
-                and not client_delivery_identity_valid(self._store.load(run_id))
-            ):
-                raise ValueError("client_delivery_identity_required_for_final_approval")
-            return current_review(
-                self,
-                run_id,
-                reviewer=reviewer,
-                reviewer_role=reviewer_role,
-                decision=decision,
-                decision_reason=decision_reason,
-                decided_at=decided_at,
-            )
-
-        setattr(guarded_review, PATCH, True)
-        ComprehensiveRunService.review = guarded_review
-        run_service_module.ComprehensiveRunService.review = guarded_review
-
+    review_guard_installed = _install_service_review_guard(app) if app is not None else False
     return {
         "artifact_schema": VERSION,
         "status": "installed",
@@ -184,6 +191,8 @@ def install_phase3_engagement_intake_v1() -> dict[str, Any]:
         "internal_placeholder_client_delivery_blocked": True,
         "existing_human_evidence_modules_reused": True,
         "historical_module_definition_contract_mutated": False,
+        "approval_identity_guard_scoped_to_installed_service": True,
+        "approval_identity_guard_installed": review_guard_installed,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
