@@ -1,0 +1,96 @@
+{
+  "artifact_schema": "nico.phase2-completion-observation.v1",
+  "phase": 2,
+  "name": "human_review_by_exception_reviewer_efficiency_and_comprehensive_report_truth",
+  "software_status": "complete",
+  "empirical_efficiency_status": "not_yet_measured",
+  "product_boundary": {
+    "one_public_product": "NICO Comprehensive",
+    "one_client_report": true,
+    "alternate_assessment_created": false,
+    "alternate_client_report_created": false
+  },
+  "implementation": {
+    "primary_pull_request": {
+      "number": 1166,
+      "branch": "phase2/full-coverage",
+      "head_sha": "69669dfbccd87449930f12ceb4d276c9c3dd3d3b",
+      "merge_sha": "5ee3f2b1eb2faf46a7b7cc68940be89df683105f"
+    },
+    "closure_pull_request": {
+      "number": 1170,
+      "branch": "phase2/closure-truth-single-product-ios-readiness",
+      "head_sha": "1a4ce6ec84682ec3f7e32976822592fc8023fc4c",
+      "merge_sha": "1520e0f32b36b09fbb3eab2a2232b8a6407229eb"
+    },
+    "runtime_hardening_verified_through_sha": "23f5d1e96683f40a83b282b348231cd677872e3f",
+    "historical_unmerged_predecessor_pr": 1159
+  },
+  "reviewer_workflow": {
+    "six_logical_queues": true,
+    "filtering": true,
+    "search": true,
+    "risk_and_confidence_sorting": true,
+    "expandable_candidate_and_cluster_evidence": true,
+    "controlled_bulk_human_disposition": true,
+    "exact_candidate_id_binding": true,
+    "authorized_reviewer_required": true,
+    "reviewer_identity_role_timestamp_and_rationale_retained": true,
+    "changed_evidence_invalidates_stale_review": true,
+    "quality_control_sampling": true,
+    "sampling_can_disposition_candidates": false,
+    "unsampled_candidates_implicitly_approved": false
+  },
+  "truth_and_approval": {
+    "raw_scanner_observation_separate": true,
+    "automated_technical_triage_separate": true,
+    "authorized_human_disposition_separate": true,
+    "confirmed_material_finding_separate": true,
+    "final_human_approval_separate": true,
+    "client_delivery_authorization_separate": true,
+    "one_hundred_percent_triage_authorizes_delivery": false,
+    "approval_hash_bound_and_immutable": true,
+    "automation_can_create_human_disposition": false,
+    "automation_can_create_reviewer_identity": false,
+    "automation_can_accept_residual_risk": false,
+    "automation_can_approve_final": false,
+    "automation_can_authorize_client_delivery": false
+  },
+  "isolation_and_security": {
+    "cross_run_reviewer_state_isolation_tested": true,
+    "cross_project_reviewer_state_isolation_tested": true,
+    "cross_client_reviewer_state_isolation_tested": true,
+    "privileged_token_exposure_allowed": false,
+    "assessed_repository_read_only": true
+  },
+  "report_truth": {
+    "canonical_json": true,
+    "candidate_register": true,
+    "findings_and_evidence_csv": true,
+    "markdown": true,
+    "html": true,
+    "pdf": true,
+    "technical_triage_coverage_separate_metric": true,
+    "candidate_workload_changes_numeric_score": false,
+    "approved_delivery_client_pdf_count": 1
+  },
+  "human_labor_target": {
+    "target_combined_specialist_hours_lte": 4,
+    "safety_or_approval_gate": false,
+    "empirical_result": "not_yet_measured",
+    "tracking_issue": 1169,
+    "synthetic_or_ci_measurement_accepted": false
+  },
+  "remaining_human_responsibilities": [
+    "review genuine exceptions and material or ambiguous evidence",
+    "explicitly disposition candidates or eligible homogeneous groups",
+    "perform required independent quality-control sampling",
+    "resolve proof gaps and high-impact escalations",
+    "record residual risk and ownership where applicable",
+    "separately approve or reject the exact immutable report package",
+    "separately authorize client delivery after all protected gates pass",
+    "complete the real two-specialist timing study tracked by issue 1169"
+  ],
+  "phase3_start_authorized_by_this_observation": false,
+  "truth_note": "Phase 2 software requirements are implemented. Phase 2's approximately four combined cybersecurity-specialist-hour target remains an empirical engineering-efficiency measurement and must not be represented as proven until real authorized specialist sessions are retained."
+}
