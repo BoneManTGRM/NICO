@@ -158,7 +158,7 @@ jobs:
               stream.write(f"artifact_digest={artifact.get('digest') or ''}\n")
           PY
 
-      - name: Bind Phase 1 completion evidence into the existing Comprehensive report
+      - name: Bind Phase 1 and Phase 2 completion truth into the existing Comprehensive report
         run: |
           set -euo pipefail
           python scripts/phase1_completion_report_binder_v1.py \
@@ -178,7 +178,7 @@ jobs:
             --output-pdf bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf \
             --output-manifest bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.manifest.json
 
-      - name: Verify one-report product and all nine completion items
+      - name: Verify one-report product, Phase 1 closure, and Phase 2 software closure
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -193,7 +193,9 @@ jobs:
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           pdf_bytes = pdf_path.read_bytes()
           pdf = PdfReader(str(pdf_path))
-          text = "\n".join(page.extract_text() or "" for page in pdf.pages[-2:])
+          appended_page_count = len(pdf.pages) - manifest["source_report_page_count"]
+          assert appended_page_count >= 3
+          text = "\n".join(page.extract_text() or "" for page in pdf.pages[-appended_page_count:])
 
           assert manifest["artifact_schema"] == "nico.phase1-completion-bound-report.v1"
           assert manifest["status"] == "passed"
@@ -204,6 +206,15 @@ jobs:
           assert len(manifest["phase1_definition_of_done"]) == 9
           assert all(item["status"] == "passed" for item in manifest["phase1_definition_of_done"])
           assert manifest["phase1_definition_of_done"][8]["status"] == "passed"
+          phase2 = manifest["phase2_completion"]
+          assert phase2["software_status"] == "complete"
+          assert phase2["empirical_specialist_effort_status"] == "not_yet_measured"
+          assert phase2["empirical_specialist_effort_tracking_issue"] == 1169
+          assert [item["pull_request"] for item in phase2["implementation_pull_requests"]] == [1166, 1170]
+          assert all(phase2["software_definition_of_done"].values())
+          assert phase2["automation_can_create_human_disposition"] is False
+          assert phase2["automation_can_create_final_approval"] is False
+          assert phase2["automation_can_authorize_client_delivery"] is False
           assert manifest["human_review_required"] is True
           assert manifest["human_approval_status"] == "pending"
           assert manifest["client_delivery_allowed"] is False
@@ -213,6 +224,11 @@ jobs:
           assert "Phase 1 Definition-of-Done Closure" in text
           assert "9. Required current-head checks pass" in text
           assert "PHASE 1 COMPLETE" in text
+          assert "Phase 2 Human Review by Exception Closure" in text
+          assert "#1166" in text and "#1170" in text
+          assert "Issue #1169" in text
+          assert "not_yet_measured" in text
+          assert "PHASE 2 SOFTWARE COMPLETE" in text
           assert "HUMAN APPROVAL PENDING" in text
           assert "CLIENT DELIVERY BLOCKED" in text
           PY
@@ -225,6 +241,7 @@ jobs:
             bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf
             bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.manifest.json
             bound-report/current-head-status.json
+            docs/phase2-completion-observation.json
             source-acceptance/frontend-production-release-identity.json
             source-acceptance/two-service-live-acceptance.json
             source-acceptance/phase1-structured-artifact-audit.json
@@ -241,7 +258,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "One NICO Comprehensive report now contains all nine Phase 1 completion items",
+              "description": "One NICO Comprehensive report preserves Phase 1 closure and Phase 2 software-completion truth",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -262,7 +279,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Phase 1 acceptance evidence could not be bound into the Comprehensive report",
+              "description": "Comprehensive completion evidence could not be bound without weakening report truth",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
