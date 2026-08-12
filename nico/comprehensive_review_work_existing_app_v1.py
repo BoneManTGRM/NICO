@@ -11,8 +11,9 @@ from nico.comprehensive_review_work_runtime_v1 import (
     install_comprehensive_review_work_runtime_v1,
 )
 from nico.comprehensive_review_work_safe_v1 import review_work_projection
+from nico.phase3_professional_assessment_v1 import install_phase3_professional_assessment_v1
 
-VERSION = "nico.comprehensive_review_work_existing_app.v2"
+VERSION = "nico.comprehensive_review_work_existing_app.v3"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -38,7 +39,7 @@ def _review_action_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[str, Any]:
-    """Install the protected Phase 2 routes on an already-mounted Comprehensive app."""
+    """Install protected review controls, then the terminal Phase 3 provider upgrade."""
 
     runtime = install_comprehensive_review_work_runtime_v1()
     get_count = _route_count(target, "GET", GET_ROUTE)
@@ -111,6 +112,21 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
             "Phase 2 review-work routes must exist exactly once: "
             f"GET={get_count} POST={post_count}"
         )
+
+    # This function is invoked from terminal_authority_bootstrap after all production
+    # Comprehensive/report compatibility installers are already present. Phase 3 therefore
+    # updates only the existing provider registry and intake/review guardrails here; it does
+    # not create another assessment controller, stage sequence, scoring path, or report.
+    phase3 = install_phase3_professional_assessment_v1(target)
+    if phase3.get("one_client_report") is not True:
+        raise RuntimeError("Phase 3 violated the one Comprehensive client report boundary")
+    if phase3.get("parallel_assessment_pipeline_created") is not False:
+        raise RuntimeError("Phase 3 unexpectedly created a parallel assessment pipeline")
+    if phase3.get("canonical_scoring_replaced") is not False:
+        raise RuntimeError("Phase 3 unexpectedly replaced canonical scoring")
+    if phase3.get("report_pipeline_replaced") is not False:
+        raise RuntimeError("Phase 3 unexpectedly replaced the Comprehensive report pipeline")
+
     status = {
         "artifact_schema": VERSION,
         "status": "installed",
@@ -128,10 +144,12 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
         "approved_client_pdf_has_authorization_certificate": runtime.get("approved_client_pdf_has_authorization_certificate") is True,
         "delivery_validates_exact_review_ledger": runtime.get("delivery_validates_exact_review_ledger") is True,
         "four_hour_target_is_safety_gate": runtime.get("four_hour_target_is_safety_gate") is True,
+        "phase3_professional_assessment": phase3,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
     target.state.nico_phase2_review_work = status
+    target.state.nico_phase3_professional_assessment = phase3
     return status
 
 
