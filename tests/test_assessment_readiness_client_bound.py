@@ -83,7 +83,7 @@ def test_persisted_run_status_recovery_has_its_own_absolute_timeout() -> None:
 def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
-    assert "const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 90_000" in source
+    assert "const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 260_000" in source
     assert (
         "const RUN_CONTINUE_PATH = "
         "/^\\/assessment\\/comprehensive-run\\/[^/]+\\/continue$/" in source
@@ -98,6 +98,7 @@ def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> 
     assert "const retryDelays = readinessPreflight" in source
     assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
     assert "Continuation is not safely replayable" in source
+    assert "server proxy gives a single non-replayable continuation up to 240s" in source
 
 
 def test_normal_assessment_requests_retain_existing_retry_policy() -> None:
