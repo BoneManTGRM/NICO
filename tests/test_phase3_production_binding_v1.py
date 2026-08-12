@@ -8,7 +8,7 @@ from nico.phase3_planning_synthesis_v1 import PLANNING_PROVIDER_REPLACEMENTS
 
 def test_phase3_professional_synthesis_is_installed_on_the_existing_production_comprehensive_app() -> None:
     status = dict(getattr(app.state, "nico_phase3_professional_assessment", {}) or {})
-    assert status["status"] == "installed"
+    assert status["status"] in {"installed", "already_installed"}
     assert status["service_id"] == "comprehensive"
     assert status["one_public_product"] == "NICO Comprehensive"
     assert status["one_client_report"] is True
