@@ -2,7 +2,7 @@
 
 ## Authoritative state
 
-This document records the current dependency-ordered completion boundary without deleting verified Phase 1 history.
+This document records the current dependency-ordered completion boundary without deleting verified Phase 1 or Phase 2 work-package history.
 
 Machine-readable completion authority is split intentionally:
 
@@ -19,6 +19,22 @@ Phase 1 remains complete. Its nine Definition-of-Done requirements remain preser
 Phase 1 completion does not create human approval. The Comprehensive package remains an automated draft until an authorized reviewer approves the exact immutable package, and client delivery remains blocked until its separate delivery gates pass.
 
 **PHASE 1: COMPLETE**
+
+## Preserved Phase 2 Work Package 1 history
+
+The earlier machine-readable observation remains an immutable historical snapshot of the program boundary immediately after the first Phase 2 package. At that historical boundary:
+
+**PHASE 2 WORK PACKAGE 1: COMPLETE**
+
+The next declared package was:
+
+`expandable_deterministic_clusters`
+
+Declaration state:
+
+`declared_not_started`
+
+That declaration is retained for auditability only. It is **not the current program state**. The package was subsequently implemented as part of the merged Phase 2 work, so the current authority is `docs/phase2-completion-observation.json` and the software-closure record below.
 
 ## Phase 2 software closure
 
