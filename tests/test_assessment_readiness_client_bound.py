@@ -5,6 +5,7 @@ from pathlib import Path
 
 REQUESTS = Path("apps/web/app/assessment/assessmentRunRequests.ts")
 HOOK = Path("apps/web/app/assessment/useAssessmentRun.ts")
+PROXY = Path("apps/web/app/api/nico/[...path]/route.ts")
 
 # Readiness recovery retries are semantic-only: transport failure alone never
 # authorizes an additional probe of the canonical durable store.
@@ -27,7 +28,6 @@ def test_readiness_preflight_uses_bounded_same_store_recovery_probes_with_absolu
     )
     assert "const retryDelays = readinessPreflight" in source
     assert "? READINESS_RETRY_DELAYS_MS" in source
-    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
     assert "readinessCanRecoverOnSameStore(result)" in source
     assert "attempt < retryDelays.length - 1" in source
     assert "new AbortController()" in source
@@ -69,15 +69,29 @@ def test_readiness_retries_only_after_parsed_same_store_recovery_proof() -> None
     assert "result.automatic_cross_store_fallback === false" in source
 
 
-def test_persisted_run_status_recovery_has_its_own_absolute_timeout() -> None:
+def test_persisted_run_status_recovery_has_bounded_retry_and_larger_absolute_timeout() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
-    assert "const RUN_STATUS_CLIENT_TIMEOUT_MS = 20_000" in source
+    assert "const RUN_STATUS_CLIENT_TIMEOUT_MS = 75_000" in source
     assert "const RUN_STATUS_PATH = /^\\/assessment\\/comprehensive-run\\/[^/]+$/" in source
     assert 'const runStatusRequest = method === "GET" && RUN_STATUS_PATH.test(path)' in source
     assert "runStatusRequest\n      ? RUN_STATUS_CLIENT_TIMEOUT_MS" in source
+    assert "runStatusRequest\n      ? CLIENT_RETRY_DELAYS_MS" in source
     assert '"assessment_run_status_timeout"' in source
     assert '"assessment_run_status_timeout",' in source
+    assert "Exact-run status is idempotent durable" in source
+
+
+def test_exact_run_status_proxy_has_one_long_attempt_per_browser_retry() -> None:
+    source = PROXY.read_text(encoding="utf-8")
+
+    assert "const EXACT_RUN_STATUS_TIMEOUT_MS = 60_000" in source
+    assert 'const exactRunStatus = method === "GET" && COMPREHENSIVE_STATUS.test(path)' in source
+    assert "if (exactRunStatus)" in source
+    assert "timeoutMs: EXACT_RUN_STATUS_TIMEOUT_MS" in source
+    assert "retryDelaysMs: SINGLE_ATTEMPT_DELAYS_MS" in source
+    assert 'readClass: "exact-run-status"' in source
+    assert "browser owns bounded retries" in source
 
 
 def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> None:
@@ -96,7 +110,7 @@ def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> 
     assert "runContinueRequest\n        ? RUN_CONTINUE_CLIENT_TIMEOUT_MS" in source
     assert '"assessment_run_continue_timeout"' in source
     assert "const retryDelays = readinessPreflight" in source
-    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
+    assert ': boundedRequest\n        ? [0]\n        : CLIENT_RETRY_DELAYS_MS' in source
     assert "Continuation is not safely replayable" in source
     assert "server proxy gives a single non-replayable continuation up to 240s" in source
 
