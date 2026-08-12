@@ -130,13 +130,13 @@ export default function StrategicEvidenceForm({
     onChange(updated);
   }
 
-  function setEvidenceField(moduleId: string, field: string, raw: string): void {
+  function setEvidenceField(moduleId: string, field: string, items: string[]): void {
     const module = value[moduleId] || emptyStrategicEvidenceModule();
     setModule(moduleId, {
       ...module,
       evidence: {
         ...module.evidence,
-        [field]: evidenceLines(raw),
+        [field]: items,
       },
     });
   }
@@ -177,7 +177,7 @@ export default function StrategicEvidenceForm({
               rows={3}
               value={(engagement.evidence[field] || []).join("\n")}
               disabled={disabled}
-              onChange={(event) => setEvidenceField("stakeholder_context", field, event.target.value)}
+              onChange={(event) => setEvidenceField("stakeholder_context", field, evidenceLines(event.target.value))}
             />
           </label>)}
         </div>
@@ -335,7 +335,7 @@ export default function StrategicEvidenceForm({
                 rows={4}
                 value={(activeModule.evidence[field] || []).join("\n")}
                 disabled={disabled}
-                onChange={(event) => setEvidenceField(activeDefinition.moduleId, field, event.target.value)}
+                onChange={(event) => setEvidenceField(activeDefinition.moduleId, field, evidenceLines(event.target.value))}
               />
             </label>)}
           </div>}
