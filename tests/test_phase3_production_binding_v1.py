@@ -18,8 +18,13 @@ def test_phase3_professional_synthesis_is_installed_on_the_existing_production_c
     assert status["technical_score_inputs_changed"] is False
     assert status["human_review_required"] is True
     assert status["client_delivery_allowed"] is False
-    assert status["engagement_intake"]["approval_identity_guard_installed"] is True
-    assert status["engagement_intake"]["historical_module_definition_contract_mutated"] is False
+    engagement = status["engagement_intake"]
+    assert engagement["runtime_recovery_guard_installed"] is True
+    assert engagement["runtime_recovery_reapplies_approval_identity_guard"] is True
+    assert engagement["historical_module_definition_contract_mutated"] is False
+    controller = getattr(app.state, "comprehensive_api_controller", None)
+    if controller is not None:
+        assert engagement["approval_identity_guard_installed"] is True
 
 
 def test_phase3_reuses_the_terminal_provider_registry_instead_of_creating_a_parallel_pipeline() -> None:
