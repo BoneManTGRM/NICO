@@ -22,3 +22,10 @@ def test_phase3_frontend_keeps_existing_functional_qa_and_platform_parity_sectio
     assert 'moduleId: "platform_parity"' in source
     assert 'requiredFields: ["matrix"]' in source
     assert "evidenceFields(activeDefinition).map" in form
+
+
+def test_phase3_mobile_intake_keeps_mandatory_client_context_available_without_full_editor() -> None:
+    form = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
+    assert 'data-mobile-client-engagement-context="true"' in form
+    assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in form
+    assert 'setEvidenceField("stakeholder_context", field' in form
