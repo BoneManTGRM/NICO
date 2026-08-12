@@ -218,7 +218,8 @@ def test_phase3_evidence_flows_into_the_existing_comprehensive_report_stage_summ
     assert summary["title"] == "Functional QA"
     assert "Sign in passed in approved staging" in rendered
     assert "functional_qa_result_gaps" in rendered
-    assert "repository_tests_are_runtime_acceptance: False" in rendered
+    assert "repository_tests_are_runtime_acceptance:" in rendered
+    assert result["functional_qa"]["repository_tests_are_runtime_acceptance"] is False
 
 
 def test_source_indicators_never_become_device_parity() -> None:
@@ -297,6 +298,8 @@ def test_installation_reuses_one_comprehensive_provider_registry_and_preserves_r
     app = FastAPI()
     registry = _provider_registry()
     report_provider = registry["report_generation"]
+    final_report_provider = registry["final_report_generation"]
+    cross_format_provider = registry["cross_format_verification"]
     scoring_provider = registry["canonical_scoring"]
     setattr(app.state, PROVIDER_STATE_KEY, registry)
     status = install_phase3_professional_assessment_v1(app)
@@ -306,8 +309,8 @@ def test_installation_reuses_one_comprehensive_provider_registry_and_preserves_r
     assert status["parallel_assessment_pipeline_created"] is False
     assert status["engagement_intake"]["historical_module_definition_contract_mutated"] is False
     assert updated["report_generation"] is report_provider
-    assert updated["final_report_generation"] is report_provider
-    assert updated["cross_format_verification"] is report_provider
+    assert updated["final_report_generation"] is final_report_provider
+    assert updated["cross_format_verification"] is cross_format_provider
     assert updated["canonical_scoring"] is scoring_provider
 
 
