@@ -50,12 +50,12 @@ export const STRATEGIC_EVIDENCE_DEFINITIONS: StrategicEvidenceDefinition[] = [
   },
   {
     moduleId: "stakeholder_context",
-    label: {en: "Stakeholder objectives and constraints", "es-MX": "Objetivos y restricciones de las partes interesadas"},
+    label: {en: "Stakeholder, engagement, and authorization context", "es-MX": "Contexto de interesados, encargo y autorización"},
     description: {
-      en: "Named objectives, pain points, operating constraints, desired state, and decision priorities.",
-      "es-MX": "Objetivos, problemas, restricciones operativas, estado deseado y prioridades de decisión.",
+      en: "Stakeholder objectives and constraints plus the access method, primary technical contact, and authorized scope required for actual client work. Leave client/project blank for a clearly internal assessment.",
+      "es-MX": "Objetivos y restricciones de interesados, además del método de acceso, contacto técnico principal y alcance autorizado requeridos para trabajo real de cliente. Deje cliente/proyecto vacíos para una evaluación interna claramente marcada.",
     },
-    requiredFields: ["objectives", "constraints"],
+    requiredFields: ["objectives", "constraints", "access_method", "primary_technical_contact", "authorized_scope"],
   },
   {
     moduleId: "incident_history",
@@ -86,12 +86,12 @@ export const STRATEGIC_EVIDENCE_DEFINITIONS: StrategicEvidenceDefinition[] = [
   },
   {
     moduleId: "compliance_requirements",
-    label: {en: "Regulatory and contractual requirements", "es-MX": "Requisitos normativos y contractuales"},
+    label: {en: "Requirements, specifications, ADRs, and acceptance criteria", "es-MX": "Requisitos, especificaciones, ADR y criterios de aceptación"},
     description: {
-      en: "Explicit obligations supplied by authorized stakeholders; this is readiness evidence, not certification.",
-      "es-MX": "Obligaciones explícitas proporcionadas por partes autorizadas; es evidencia de preparación, no certificación.",
+      en: "Requirements or commitments supplied by an authorized source. State whether the supplied source is authoritative, approved, contractual, draft, or otherwise unverified. NICO maps evidence but never invents obligations.",
+      "es-MX": "Requisitos o compromisos proporcionados por una fuente autorizada. Indique si la fuente es autoritativa, aprobada, contractual, borrador o no verificada. NICO relaciona evidencia pero nunca inventa obligaciones.",
     },
-    requiredFields: ["requirements"],
+    requiredFields: ["requirements", "authority_status"],
   },
   {
     moduleId: "budget_staffing",
