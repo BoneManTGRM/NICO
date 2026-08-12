@@ -6,6 +6,7 @@ import type {Locale} from "./assessmentTypes";
 import {
   STRATEGIC_EVIDENCE_DEFINITIONS,
   emptyStrategicEvidenceModule,
+  evidenceFields,
   evidenceLines,
   moduleCompleteness,
   type StrategicHumanEvidenceInput,
@@ -82,9 +83,6 @@ function statusClass(status: ReturnType<typeof moduleCompleteness>): string {
 }
 
 function useRichEvidenceEditor(): boolean {
-  // Fail closed during SSR and the first client paint. This prevents Safari from
-  // allocating the editor before the device class is known. Only a wide,
-  // fine-pointer desktop may mount the interactive evidence workspace.
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
@@ -291,7 +289,7 @@ export default function StrategicEvidenceForm({
               )}
             />
           </label> : <div className={styles.requiredEvidence}>
-            {activeDefinition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+            {evidenceFields(activeDefinition).map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
               <span>{copy.field(field)}</span>
               <small>{copy.onePerLine}</small>
               <textarea
@@ -323,7 +321,7 @@ export default function StrategicEvidenceForm({
             </button>
             <button
               type="button"
-              className={styles.removeAction}
+              className={styles.ghostAction}
               disabled={disabled}
               onClick={() => setModule(activeDefinition.moduleId, null)}
             >
