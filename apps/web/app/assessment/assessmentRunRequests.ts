@@ -25,7 +25,10 @@ const INTAKE_PATH = "/assessment/comprehensive-intake";
 const EXACT_SHA_RE = /^[0-9a-fA-F]{40}$/;
 const READINESS_CLIENT_TIMEOUT_MS = 48_000;
 const RUN_STATUS_CLIENT_TIMEOUT_MS = 20_000;
-const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 90_000;
+// The server proxy gives a single non-replayable continuation up to 240s. Keep the
+// browser envelope slightly larger so the proxy remains the authoritative timeout
+// boundary and can return a recoverable exact-run status instruction.
+const RUN_CONTINUE_CLIENT_TIMEOUT_MS = 260_000;
 const RUN_STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/]+$/;
 const RUN_CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/]+\/continue$/;
 const BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection";
