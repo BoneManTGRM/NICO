@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
+from nico.comprehensive_report_package import _stage_summary
 from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.phase3_engagement_intake_v1 import client_delivery_identity_valid, validate_and_enrich_intake
 from nico.phase3_evidence_core_v1 import functional_qa_provider, platform_parity_provider, requirements_traceability_provider, stakeholder_alignment_provider
@@ -179,6 +180,25 @@ def test_missing_runtime_qa_stays_visibly_missing() -> None:
     assert result["functional_qa"]["runtime_evidence_state"] == "not_assessed"
     assert result["missing_evidence"][0]["evidence_type"] == "runtime_functional_qa"
     assert result["unavailable_data_notes"]
+
+
+def test_phase3_evidence_flows_into_the_existing_comprehensive_report_stage_summary() -> None:
+    result = functional_qa_provider(
+        _context(
+            modules={
+                "functional_qa": _module(
+                    test_cases=["Sign in and open dashboard", "Export report"],
+                    observed_results=["Sign in passed in approved staging"],
+                )
+            }
+        )
+    )
+    summary = _stage_summary("functional_qa", result)
+    rendered = "\n".join(summary["evidence"] + summary["unavailable"])
+    assert summary["title"] == "Functional QA"
+    assert "Sign in passed in approved staging" in rendered
+    assert "functional_qa_result_gaps" in rendered
+    assert "repository_tests_are_runtime_acceptance: False" in rendered
 
 
 def test_source_indicators_never_become_device_parity() -> None:
