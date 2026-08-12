@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi import FastAPI
 
@@ -79,6 +81,24 @@ def _context(*, modules: dict | None = None) -> dict:
             },
             "evidence_reconciliation_and_scoring": scoring,
         },
+    }
+
+
+def _provider_registry() -> dict:
+    return {
+        "canonical_scoring": object(),
+        "report_generation": object(),
+        "final_report_generation": object(),
+        "cross_format_verification": object(),
+        "technical_analysis": object(),
+        "functional_qa": object(),
+        "platform_parity": object(),
+        "stakeholder_alignment": object(),
+        "requirements_traceability": object(),
+        "historical_trends": object(),
+        "roadmap": object(),
+        "resourcing": object(),
+        "executive_briefing": object(),
     }
 
 
@@ -275,29 +295,16 @@ def test_roadmap_remains_nico_proposal_and_staffing_never_invents_commercial_dat
 
 def test_installation_reuses_one_comprehensive_provider_registry_and_preserves_report_providers() -> None:
     app = FastAPI()
-    report_provider = object()
-    scoring_provider = object()
-    registry = {
-        "report_generation": report_provider,
-        "final_report_generation": report_provider,
-        "cross_format_verification": report_provider,
-        "canonical_scoring": scoring_provider,
-        "technical_analysis": object(),
-        "functional_qa": object(),
-        "platform_parity": object(),
-        "stakeholder_alignment": object(),
-        "requirements_traceability": object(),
-        "historical_trends": object(),
-        "roadmap": object(),
-        "resourcing": object(),
-        "executive_briefing": object(),
-    }
+    registry = _provider_registry()
+    report_provider = registry["report_generation"]
+    scoring_provider = registry["canonical_scoring"]
     setattr(app.state, PROVIDER_STATE_KEY, registry)
     status = install_phase3_professional_assessment_v1(app)
     updated = getattr(app.state, PROVIDER_STATE_KEY)
     assert status["one_public_product"] == "NICO Comprehensive"
     assert status["one_client_report"] is True
     assert status["parallel_assessment_pipeline_created"] is False
+    assert status["engagement_intake"]["historical_module_definition_contract_mutated"] is False
     assert updated["report_generation"] is report_provider
     assert updated["final_report_generation"] is report_provider
     assert updated["cross_format_verification"] is report_provider
@@ -305,25 +312,27 @@ def test_installation_reuses_one_comprehensive_provider_registry_and_preserves_r
 
 
 def test_installed_review_guard_fails_closed_for_internal_final_approval() -> None:
-    app = FastAPI()
-    setattr(app.state, PROVIDER_STATE_KEY, {
-        "canonical_scoring": object(),
-        "report_generation": object(),
-        "final_report_generation": object(),
-        "cross_format_verification": object(),
-    })
-    install_phase3_professional_assessment_v1(app)
-
     class Store:
         def load(self, run_id: str) -> dict:
             assert run_id == "internal-run"
             return {
                 "identity": {"customer_id": "default_customer", "project_id": "default_project"},
-                "human_evidence": {"modules": {"stakeholder_context": {"evidence": {"engagement_mode": ["internal"]}}}},
+                "human_evidence": {
+                    "modules": {
+                        "stakeholder_context": {
+                            "evidence": {"engagement_mode": ["internal"]}
+                        }
+                    }
+                },
             }
 
     service = ComprehensiveRunService.__new__(ComprehensiveRunService)
     service._store = Store()
+    app = FastAPI()
+    setattr(app.state, PROVIDER_STATE_KEY, _provider_registry())
+    app.state.comprehensive_api_controller = SimpleNamespace(_service=service)
+    status = install_phase3_professional_assessment_v1(app)
+    assert status["engagement_intake"]["approval_identity_guard_installed"] is True
     with pytest.raises(ValueError, match="client_delivery_identity_required_for_final_approval"):
         service.review(
             "internal-run",
