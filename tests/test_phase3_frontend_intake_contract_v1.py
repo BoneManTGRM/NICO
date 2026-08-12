@@ -5,7 +5,7 @@ from pathlib import Path
 
 def test_phase3_frontend_reuses_existing_comprehensive_evidence_modules() -> None:
     source = Path("apps/web/app/assessment/strategicEvidence.ts").read_text(encoding="utf-8")
-    assert source.count("moduleId:") == 10
+    assert source.count('moduleId: "') == 10
     assert 'moduleId: "stakeholder_context"' in source
     assert '"access_method"' in source
     assert '"primary_technical_contact"' in source
