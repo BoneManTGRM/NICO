@@ -283,8 +283,11 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         workspace = page.locator(WORKSPACE_SELECTOR).first
         workspace.wait_for(state="visible", timeout=args.navigation_timeout_ms)
         page.get_by_label("Repository owner/name or GitHub URL").fill(args.repository)
-        page.get_by_label("Client name, optional").fill("Mobile Restart Production Proof")
-        page.get_by_label("Project name, optional").fill(f"Exact SHA {args.expected_sha[:12]}")
+        # This production smoke is an internal assessment. Non-empty client/project
+        # values invoke Phase 3 client-engagement validation and must never be
+        # synthetic labels used only to identify an automated proof run.
+        page.get_by_label("Client name, optional").fill("")
+        page.get_by_label("Project name, optional").fill("")
         page.locator(AUTHORIZATION_SELECTOR).check()
         page.locator(ACTION_SELECTOR).click()
 
