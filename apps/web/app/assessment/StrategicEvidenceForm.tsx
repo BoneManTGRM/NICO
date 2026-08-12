@@ -6,10 +6,13 @@ import type {Locale} from "./assessmentTypes";
 import {
   STRATEGIC_EVIDENCE_DEFINITIONS,
   emptyStrategicEvidenceModule,
+  evidenceFields,
   evidenceLines,
   moduleCompleteness,
   type StrategicHumanEvidenceInput,
 } from "./strategicEvidence";
+
+const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;
 
 const TEXT = {
   en: {
@@ -35,7 +38,9 @@ const TEXT = {
     removeModule: "Remove from intake",
     emptyTitle: "No evidence added for this module",
     emptyBody: "Add human-observed information when it is available, or exclude the module only when an explicit rationale exists.",
-    mobileStable: "The optional evidence editor is not loaded on phones or touch-first devices. The repository assessment can continue without it. Use the desktop workspace only when human evidence must be attached.",
+    mobileStable: "The full optional evidence editor is not loaded on phones or touch-first devices. Internal repository assessment can continue without it. When client/project identity is supplied, complete the lightweight client engagement context below.",
+    mobileClientTitle: "Client engagement context",
+    mobileClientBody: "Required only for actual client work. These fields bind access, the primary technical contact, and authorized scope without loading the full optional evidence workspace.",
     field: (name: string) => name.replaceAll("_", " "),
   },
   "es-MX": {
@@ -61,7 +66,9 @@ const TEXT = {
     removeModule: "Quitar de la captura",
     emptyTitle: "No se agregó evidencia para este módulo",
     emptyBody: "Agrega información observada por una persona cuando esté disponible, o excluye el módulo únicamente con una justificación explícita.",
-    mobileStable: "El editor de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. La evaluación del repositorio puede continuar sin él. Usa la vista de escritorio únicamente cuando sea necesario adjuntar evidencia humana.",
+    mobileStable: "El editor completo de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. La evaluación interna del repositorio puede continuar sin él. Cuando se proporciona identidad de cliente/proyecto, complete el contexto ligero del encargo a continuación.",
+    mobileClientTitle: "Contexto del encargo del cliente",
+    mobileClientBody: "Requerido únicamente para trabajo real de cliente. Estos campos vinculan acceso, contacto técnico principal y alcance autorizado sin cargar el espacio completo de evidencia opcional.",
     field: (name: string) => name.replaceAll("_", " "),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
@@ -82,9 +89,6 @@ function statusClass(status: ReturnType<typeof moduleCompleteness>): string {
 }
 
 function useRichEvidenceEditor(): boolean {
-  // Fail closed during SSR and the first client paint. This prevents Safari from
-  // allocating the editor before the device class is known. Only a wide,
-  // fine-pointer desktop may mount the interactive evidence workspace.
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
@@ -116,12 +120,35 @@ export default function StrategicEvidenceForm({
   );
   const addedCount = Object.keys(value).length;
 
+  function setModule(
+    moduleId: string,
+    next: StrategicHumanEvidenceInput[string] | null,
+  ): void {
+    const updated = {...value};
+    if (next) updated[moduleId] = next;
+    else delete updated[moduleId];
+    onChange(updated);
+  }
+
+  function setEvidenceField(moduleId: string, field: string, items: string[]): void {
+    const module = value[moduleId] || emptyStrategicEvidenceModule();
+    setModule(moduleId, {
+      ...module,
+      evidence: {
+        ...module.evidence,
+        [field]: items,
+      },
+    });
+  }
+
   if (!richEditorEnabled) {
+    const engagement = value.stakeholder_context || emptyStrategicEvidenceModule();
     return <section
       className={styles.strategicEvidence}
       aria-labelledby="strategic-evidence-title"
       data-mobile-evidence-boundary="true"
       data-evidence-editor-mounted="false"
+      data-mobile-client-engagement-context="true"
     >
       <div className={styles.strategicEvidenceHead}>
         <div className={styles.headingCopy}>
@@ -135,6 +162,26 @@ export default function StrategicEvidenceForm({
         </div>
       </div>
       <p className="muted" data-mobile-evidence-note="true">{copy.mobileStable}</p>
+      <div className={styles.moduleEditor}>
+        <header className={styles.moduleEditorHead}>
+          <div>
+            <span className={styles.selectedLabel}>{copy.mobileClientTitle}</span>
+            <p>{copy.mobileClientBody}</p>
+          </div>
+        </header>
+        <div className={styles.requiredEvidence}>
+          {CLIENT_ENGAGEMENT_FIELDS.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+            <span>{copy.field(field)}</span>
+            <small>{copy.onePerLine}</small>
+            <textarea
+              rows={3}
+              value={(engagement.evidence[field] || []).join("\n")}
+              disabled={disabled}
+              onChange={(event) => setEvidenceField("stakeholder_context", field, evidenceLines(event.target.value))}
+            />
+          </label>)}
+        </div>
+      </div>
     </section>;
   }
 
@@ -145,16 +192,6 @@ export default function StrategicEvidenceForm({
   const activeStatus = activeDefinition
     ? moduleCompleteness(activeDefinition, activeModule)
     : "not_assessed";
-
-  function setModule(
-    moduleId: string,
-    next: StrategicHumanEvidenceInput[string] | null,
-  ): void {
-    const updated = {...value};
-    if (next) updated[moduleId] = next;
-    else delete updated[moduleId];
-    onChange(updated);
-  }
 
   function addModule(excluded = false): void {
     if (!activeDefinition) return;
@@ -291,20 +328,14 @@ export default function StrategicEvidenceForm({
               )}
             />
           </label> : <div className={styles.requiredEvidence}>
-            {activeDefinition.requiredFields.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+            {evidenceFields(activeDefinition).map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
               <span>{copy.field(field)}</span>
               <small>{copy.onePerLine}</small>
               <textarea
                 rows={4}
                 value={(activeModule.evidence[field] || []).join("\n")}
                 disabled={disabled}
-                onChange={(event) => setModule(activeDefinition.moduleId, {
-                  ...activeModule,
-                  evidence: {
-                    ...activeModule.evidence,
-                    [field]: evidenceLines(event.target.value),
-                  },
-                })}
+                onChange={(event) => setEvidenceField(activeDefinition.moduleId, field, evidenceLines(event.target.value))}
               />
             </label>)}
           </div>}
@@ -323,7 +354,7 @@ export default function StrategicEvidenceForm({
             </button>
             <button
               type="button"
-              className={styles.removeAction}
+              className={styles.ghostAction}
               disabled={disabled}
               onClick={() => setModule(activeDefinition.moduleId, null)}
             >
