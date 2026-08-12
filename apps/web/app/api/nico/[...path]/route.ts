@@ -20,7 +20,11 @@ const RETRY_DELAYS_MS = [0, 1_500, 4_000];
 const SINGLE_ATTEMPT_DELAYS_MS = [0];
 const ARTIFACT_RETRY_DELAYS_MS = [0];
 const SHORT_READ_TIMEOUT_MS = 20_000;
-const CONTINUATION_WRITE_TIMEOUT_MS = 80_000;
+// Comprehensive stage advancement is intentionally single-attempt because replaying a
+// continuation is unsafe. Production evidence shows report-stage work can legitimately
+// exceed the previous 80s transport ceiling, so keep the request open beneath the
+// 300s Next.js function limit and let the browser retain a slightly larger envelope.
+const CONTINUATION_WRITE_TIMEOUT_MS = 240_000;
 const ARTIFACT_READ_TIMEOUT_MS = 240_000;
 const WRITE_TIMEOUT_MS = 240_000;
 
