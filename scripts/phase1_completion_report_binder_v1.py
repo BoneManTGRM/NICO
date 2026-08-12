@@ -24,8 +24,8 @@ def _load_support_module(name: str, path: Path) -> ModuleType:
 
 
 # The application package performs runtime installer work in nico/__init__.py.
-# This post-acceptance binder needs only two deterministic report modules and
-# must not initialize the hosted application or inherit its dependency graph.
+# This post-acceptance binder needs only deterministic report modules and must
+# not initialize the hosted application or inherit its dependency graph.
 _nico_package = types.ModuleType("nico")
 _nico_package.__path__ = [str(_NICO_ROOT)]
 _nico_package.__package__ = "nico"
@@ -51,8 +51,44 @@ build_appendix = _pdf.build_appendix
 merge_pdf = _pdf.merge_pdf
 
 
+PHASE2_IMPLEMENTATION = {
+    "software_status": "complete",
+    "empirical_specialist_effort_status": "not_yet_measured",
+    "empirical_specialist_effort_tracking_issue": 1169,
+    "implementation_pull_requests": [
+        {
+            "pull_request": 1166,
+            "branch": "phase2/full-coverage",
+            "head_sha": "69669dfbccd87449930f12ceb4d276c9c3dd3d3b",
+            "merge_sha": "5ee3f2b1eb2faf46a7b7cc68940be89df683105f",
+        },
+        {
+            "pull_request": 1170,
+            "branch": "phase2/closure-truth-single-product-ios-readiness",
+            "head_sha": "1a4ce6ec84682ec3f7e32976822592fc8023fc4c",
+            "merge_sha": "1520e0f32b36b09fbb3eab2a2232b8a6407229eb",
+        },
+    ],
+    "software_definition_of_done": {
+        "exception_queues": True,
+        "filter_search_sort_and_expandable_evidence": True,
+        "controlled_bulk_human_disposition": True,
+        "quality_control_sampling": True,
+        "stale_review_invalidation": True,
+        "cross_run_project_client_isolation": True,
+        "triage_disposition_approval_delivery_separation": True,
+        "cross_format_report_truth": True,
+        "one_comprehensive_client_report": True,
+        "current_head_verification_required": True,
+    },
+    "automation_can_create_human_disposition": False,
+    "automation_can_create_final_approval": False,
+    "automation_can_authorize_client_delivery": False,
+}
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Bind successful Phase 1 acceptance evidence into one NICO Comprehensive report.")
+    parser = argparse.ArgumentParser(description="Bind successful production acceptance and Phase 2 software-completion evidence into one NICO Comprehensive report.")
     for name in ("source-pdf", "acceptance-json", "audit-json", "release-json", "status-json", "expected-sha", "output-pdf", "output-manifest"):
         parser.add_argument(f"--{name}", required=True)
     for name in ("workflow-run-id", "mobile-run-id", "ios-run-id", "artifact-id", "artifact-name", "artifact-digest", "acceptance-completed-at"):
@@ -91,6 +127,25 @@ def main() -> int:
     final_pages = merge_pdf(source, appendix, output)
     appendix.unlink(missing_ok=True)
 
+    phase2_completion = {
+        **PHASE2_IMPLEMENTATION,
+        "source_report_workload": {
+            "technical_triage_completed": report["coverage_done"],
+            "technical_triage_total": report["coverage_total"],
+            "not_actionable": report["not_actionable"],
+            "needs_review": report["needs_review"],
+            "confirmed": report["confirmed"],
+            "individual_attention_count": report["individual"],
+            "grouped_review_eligible_count": report["grouped"],
+            "grouped_review_cluster_count": report["clusters"],
+            "quality_control_pool": report["qc_pool"],
+            "human_review_work_units": report["work_units"],
+        },
+        "human_review_required": True,
+        "human_approval_status": "pending",
+        "client_delivery_allowed": False,
+    }
+
     manifest = {
         "artifact_schema": SCHEMA,
         "status": "passed",
@@ -108,6 +163,7 @@ def main() -> int:
             {"item": index, "status": "passed", "evidence": evidence}
             for index, (_, _, evidence) in enumerate(dod_rows(report), start=1)
         ],
+        "phase2_completion": phase2_completion,
         "human_review_required": True,
         "human_approval_status": "pending",
         "client_delivery_allowed": False,
@@ -132,7 +188,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"status": "passed", "output_pdf": str(output), "manifest": str(manifest_path), "sha256": manifest["final_report_sha256"], "pages": final_pages}, sort_keys=True))
+    print(json.dumps({"status": "passed", "output_pdf": str(output), "manifest": str(manifest_path), "sha256": manifest["final_report_sha256"], "pages": final_pages, "phase2_software_status": phase2_completion["software_status"], "phase2_empirical_status": phase2_completion["empirical_specialist_effort_status"]}, sort_keys=True))
     return 0
 
 
