@@ -14,12 +14,18 @@ def test_exact_run_status_retries_without_replaying_continuation() -> None:
     source = REQUESTS.read_text(encoding="utf-8")
 
     assert "const retryDelays = readinessPreflight" in source
-    assert ': boundedRequest\n      ? [0]\n      : CLIENT_RETRY_DELAYS_MS' in source
+    assert (
+        ": runStatusRequest\n"
+        "      ? CLIENT_RETRY_DELAYS_MS\n"
+        "      : boundedRequest\n"
+        "        ? [0]\n"
+        "        : CLIENT_RETRY_DELAYS_MS"
+    ) in source
     assert "async function requestExactRunStatusWithRetry" in source
-    assert "attempt < CLIENT_RETRY_DELAYS_MS.length" in source
-    assert 'return await requestWithRetry(path, {method: "GET"}, copy);' in source
-    assert "Each exact-run status read remains independently bounded and idempotent" in source
-    assert "can never replay continuation" in source
+    assert 'return requestWithRetry(path, {method: "GET"}, copy);' in source
+    assert "Exact-run GET retrying is centralized in requestWithRetry" in source
+    assert "including Safari resume and Check again" in source
+    assert "Exact-run status is idempotent durable" in source
     assert "Continuation is not safely replayable" in source
 
 

@@ -20,6 +20,11 @@ const RETRY_DELAYS_MS = [0, 1_500, 4_000];
 const SINGLE_ATTEMPT_DELAYS_MS = [0];
 const ARTIFACT_RETRY_DELAYS_MS = [0];
 const SHORT_READ_TIMEOUT_MS = 20_000;
+// Exact-run status is an idempotent recovery read and can legitimately be slower late
+// in a Comprehensive run after the canonical Postgres payload has accumulated scanner
+// and report evidence. Give one proxy attempt enough time to return durable truth; the
+// browser owns bounded retries so the proxy never multiplies hidden attempts.
+const EXACT_RUN_STATUS_TIMEOUT_MS = 60_000;
 // Comprehensive stage advancement is intentionally single-attempt because replaying a
 // continuation is unsafe. Production evidence shows report-stage work can legitimately
 // exceed the previous 80s transport ceiling, so keep the request open beneath the
@@ -107,6 +112,14 @@ function upstreamReadPolicy(method: string, path: string): {timeoutMs: number; r
       timeoutMs: ARTIFACT_READ_TIMEOUT_MS,
       retryDelaysMs: ARTIFACT_RETRY_DELAYS_MS,
       readClass: "exact-run-artifact",
+    };
+  }
+  const exactRunStatus = method === "GET" && COMPREHENSIVE_STATUS.test(path);
+  if (exactRunStatus) {
+    return {
+      timeoutMs: EXACT_RUN_STATUS_TIMEOUT_MS,
+      retryDelaysMs: SINGLE_ATTEMPT_DELAYS_MS,
+      readClass: "exact-run-status",
     };
   }
   const continuationWrite = method === "POST" && COMPREHENSIVE_CONTINUE.test(path);
