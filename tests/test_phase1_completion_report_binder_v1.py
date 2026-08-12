@@ -14,6 +14,7 @@ from nico.phase1_completion_report_contract_v1 import dod_rows, extract_report, 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "phase1-completion-bound-report.yml"
 BINDER = ROOT / "scripts" / "phase1_completion_report_binder_v1.py"
+PHASE2_OBSERVATION = ROOT / "docs" / "phase2-completion-observation.json"
 
 
 def report_text(sha: str) -> str:
@@ -118,16 +119,38 @@ def test_external_evidence_closes_item_nine_fail_closed() -> None:
         raise AssertionError("A pending exact-current-head context must fail closed")
 
 
-def test_workflow_creates_one_post_acceptance_comprehensive_report() -> None:
+def test_workflow_creates_one_post_acceptance_comprehensive_report_with_phase2_truth() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     assert 'workflows: ["Unified Production Acceptance"]' in source
     assert "github.event.workflow_run.conclusion == 'success'" in source
     assert "scripts/phase1_completion_report_binder_v1.py" in source
     assert "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf" in source
     assert 'manifest["phase1_definition_of_done"][8]["status"] == "passed"' in source
+    assert 'phase2 = manifest["phase2_completion"]' in source
+    assert 'phase2["software_status"] == "complete"' in source
+    assert 'phase2["empirical_specialist_effort_status"] == "not_yet_measured"' in source
+    assert 'phase2["empirical_specialist_effort_tracking_issue"] == 1169' in source
     assert 'manifest["additional_report_product_created"] is False' in source
     assert 'manifest["human_approval_status"] == "pending"' in source
     assert 'manifest["client_delivery_allowed"] is False' in source
+    assert "docs/phase2-completion-observation.json" in source
+
+
+def test_phase2_completion_observation_is_truthful_and_does_not_fake_human_time() -> None:
+    observation = json.loads(PHASE2_OBSERVATION.read_text(encoding="utf-8"))
+    assert observation["artifact_schema"] == "nico.phase2-completion-observation.v1"
+    assert observation["software_status"] == "complete"
+    assert observation["empirical_efficiency_status"] == "not_yet_measured"
+    assert observation["product_boundary"]["one_public_product"] == "NICO Comprehensive"
+    assert observation["product_boundary"]["one_client_report"] is True
+    assert observation["implementation"]["primary_pull_request"]["number"] == 1166
+    assert observation["implementation"]["closure_pull_request"]["number"] == 1170
+    assert observation["human_labor_target"]["tracking_issue"] == 1169
+    assert observation["human_labor_target"]["synthetic_or_ci_measurement_accepted"] is False
+    assert observation["truth_and_approval"]["automation_can_create_human_disposition"] is False
+    assert observation["truth_and_approval"]["automation_can_approve_final"] is False
+    assert observation["truth_and_approval"]["automation_can_authorize_client_delivery"] is False
+    assert observation["phase3_start_authorized_by_this_observation"] is False
 
 
 def _isolated_env(tmp_path: Path) -> dict[str, str]:
@@ -156,11 +179,11 @@ def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: 
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "Bind successful Phase 1 acceptance evidence" in completed.stdout
+    assert "Phase 2 software-completion evidence" in completed.stdout
     assert "application requests dependency imported" not in completed.stderr
 
 
-def test_binder_end_to_end_produces_item_nine_report_without_application_startup(tmp_path: Path) -> None:
+def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_application_startup(tmp_path: Path) -> None:
     sha = "3" * 40
     source_pdf = tmp_path / "source.pdf"
     output_pdf = tmp_path / "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf"
@@ -210,14 +233,28 @@ def test_binder_end_to_end_produces_item_nine_report_without_application_startup
     assert manifest["commit_sha"] == sha
     assert len(manifest["phase1_definition_of_done"]) == 9
     assert manifest["phase1_definition_of_done"][8]["status"] == "passed"
+    phase2 = manifest["phase2_completion"]
+    assert phase2["software_status"] == "complete"
+    assert phase2["empirical_specialist_effort_status"] == "not_yet_measured"
+    assert phase2["empirical_specialist_effort_tracking_issue"] == 1169
+    assert [item["pull_request"] for item in phase2["implementation_pull_requests"]] == [1166, 1170]
+    assert phase2["source_report_workload"]["human_review_work_units"] == 50
     assert manifest["human_approval_status"] == "pending"
     assert manifest["client_delivery_allowed"] is False
 
     reader = PdfReader(str(output_pdf))
-    assert len(reader.pages) == 3
-    closure_text = "\n".join(page.extract_text() or "" for page in reader.pages[-2:])
+    assert len(reader.pages) >= 4
+    appended = len(reader.pages) - manifest["source_report_page_count"]
+    assert appended >= 3
+    closure_text = "\n".join(page.extract_text() or "" for page in reader.pages[-appended:])
     assert "9. Required current-head checks pass" in closure_text
     assert "PHASE 1 COMPLETE" in closure_text
+    assert "Phase 2 Human Review by Exception Closure" in closure_text
+    assert "#1166" in closure_text
+    assert "#1170" in closure_text
+    assert "Issue #1169" in closure_text
+    assert "not_yet_measured" in closure_text
+    assert "PHASE 2 SOFTWARE COMPLETE" in closure_text
     assert "HUMAN APPROVAL PENDING" in closure_text
     assert "CLIENT DELIVERY BLOCKED" in closure_text
     assert "application requests dependency imported" not in completed.stderr
