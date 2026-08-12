@@ -9,9 +9,10 @@ from fastapi import FastAPI
 
 from nico import comprehensive_api_routes as api_routes
 
-VERSION = "nico.phase3_engagement_intake.v3"
+VERSION = "nico.phase3_engagement_intake.v4"
 INTAKE_PATCH = "_nico_phase3_engagement_intake_v1"
 REVIEW_PATCH = "_nico_phase3_review_identity_v1"
+RECOVERY_PATCH = "_nico_phase3_recovery_identity_v1"
 ENGAGEMENT_MODULE = "stakeholder_context"
 ENGAGEMENT_FIELDS = ("access_method", "primary_technical_contact", "authorized_scope")
 PLACEHOLDER_CUSTOMERS = {"", "default_customer", "internal", "internal_customer"}
@@ -132,14 +133,17 @@ def client_delivery_identity_valid(record: Mapping[str, Any]) -> bool:
     return engagement_truth(record)["client_delivery_identity_valid"] is True
 
 
-def _install_service_review_guard(app: FastAPI) -> bool:
-    controller = getattr(app.state, "comprehensive_api_controller", None)
-    service = getattr(controller, "_service", None)
+def _guard_service(service: Any) -> bool:
+    """Guard one concrete Comprehensive service without global class monkeypatching."""
+
     if service is None:
         return False
     if getattr(service, REVIEW_PATCH, False):
         return True
-    current_review = service.review
+    current_review = getattr(service, "review", None)
+    load = getattr(service, "load", None)
+    if not callable(current_review) or not callable(load):
+        return False
 
     @wraps(current_review)
     def guarded_review(
@@ -151,10 +155,7 @@ def _install_service_review_guard(app: FastAPI) -> bool:
         decision_reason: str,
         decided_at: str | None = None,
     ) -> dict[str, Any]:
-        if (
-            str(decision or "").casefold() == "approved"
-            and not client_delivery_identity_valid(service.load(run_id))
-        ):
+        if str(decision or "").casefold() == "approved" and not client_delivery_identity_valid(load(run_id)):
             raise ValueError("client_delivery_identity_required_for_final_approval")
         return current_review(
             run_id,
@@ -170,6 +171,35 @@ def _install_service_review_guard(app: FastAPI) -> bool:
     return True
 
 
+def _install_current_service_guard(app: FastAPI) -> bool:
+    controller = getattr(app.state, "comprehensive_api_controller", None)
+    return _guard_service(getattr(controller, "_service", None))
+
+
+def _install_recovery_guard() -> bool:
+    """Ensure a controller created after transient database recovery gets the same guard."""
+
+    try:
+        from nico.api import comprehensive_production_bootstrap as api_bootstrap
+    except Exception:
+        return False
+    current = getattr(api_bootstrap, "install_comprehensive_production_bootstrap", None)
+    if not callable(current):
+        return False
+    if getattr(current, RECOVERY_PATCH, False):
+        return True
+
+    @wraps(current)
+    def guarded_bootstrap(*args: Any, **kwargs: Any) -> Any:
+        controller = current(*args, **kwargs)
+        _guard_service(getattr(controller, "_service", None))
+        return controller
+
+    setattr(guarded_bootstrap, RECOVERY_PATCH, True)
+    api_bootstrap.install_comprehensive_production_bootstrap = guarded_bootstrap
+    return True
+
+
 def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str, Any]:
     if not getattr(api_routes._intake, INTAKE_PATCH, False):
         current = api_routes._intake
@@ -181,7 +211,8 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
         setattr(guarded_intake, INTAKE_PATCH, True)
         api_routes._intake = guarded_intake
 
-    review_guard_installed = _install_service_review_guard(app) if app is not None else False
+    review_guard_installed = _install_current_service_guard(app) if app is not None else False
+    recovery_guard_installed = _install_recovery_guard()
     return {
         "artifact_schema": VERSION,
         "status": "installed",
@@ -193,6 +224,8 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
         "historical_module_definition_contract_mutated": False,
         "approval_identity_guard_scoped_to_installed_service": True,
         "approval_identity_guard_installed": review_guard_installed,
+        "runtime_recovery_guard_installed": recovery_guard_installed,
+        "runtime_recovery_reapplies_approval_identity_guard": recovery_guard_installed,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -200,6 +233,7 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
 
 __all__ = [
     "VERSION",
+    "_guard_service",
     "client_delivery_identity_valid",
     "engagement_truth",
     "install_phase3_engagement_intake_v1",
