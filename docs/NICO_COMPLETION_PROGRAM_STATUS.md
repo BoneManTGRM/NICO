@@ -2,157 +2,135 @@
 
 ## Authoritative state
 
-The machine-readable source of truth is:
+This document records the current dependency-ordered completion boundary without deleting verified Phase 1 history.
 
-`docs/client-ready-report-accuracy-observation.json`
+Machine-readable completion authority is split intentionally:
 
-Repository history, merged pull-request records, exact-head checks, exact-production deployment identities, and retained immutable workflow artifacts remain part of the evidence chain. This document records the latest dependency-ordered completion boundary without deleting the verified Phase 1 history.
+- `docs/client-ready-report-accuracy-observation.json` is the retained historical Phase 2 Work Package 1 observation.
+- `docs/phase2-completion-observation.json` is the current Phase 2 software-completion authority.
+- Exact current-head deployment and production-acceptance evidence is generated dynamically by the completion-bound Comprehensive report workflow and must not be replaced by stale static SHA claims.
 
-## Current verified release
-
-The current verified default-branch release is:
-
-`535dbef1b49e86940bb1d5664eac159c90b341de`
-
-It is the merge commit for pull request #1146, **Phase 2 WP1: add exception-first reviewer interface**.
-
-Current repository and release state:
-
-- Open pull requests at verification: 0
-- Unresolved review threads for #1146: 0
-- Exact PR head: `176256dc668f9ad79448c765800e8bb69269fc22`
-- Merge commit: `535dbef1b49e86940bb1d5664eac159c90b341de`
-- Exact-head CI and security workflows: passed
-- Vercel exact production deployment: passed
-- Railway exact production deployment: passed
-- Mobile Restart Production Proof: passed
-- iOS WebKit Paint Proof: passed
-- Two-Service Production Acceptance: passed
-- Phase 1 Complete Comprehensive Report binding: passed
+The current product boundary remains one public assessment and one client report: **NICO Comprehensive**.
 
 ## Preserved Phase 1 closure
 
-Phase 1 remains complete. Its nine Definition-of-Done requirements remain explicitly preserved, including item #9. The current verified release again passed exact deployment identity, Mobile Restart, iOS WebKit, Two-Service Production Acceptance, structured candidate-artifact verification, and completion-bound report verification.
+Phase 1 remains complete. Its nine Definition-of-Done requirements remain preserved in repository history and in the completion-bound NICO Comprehensive report.
 
-**PHASE 1 DEFINITION OF DONE ITEM #9: PASS**
+Phase 1 completion does not create human approval. The Comprehensive package remains an automated draft until an authorized reviewer approves the exact immutable package, and client delivery remains blocked until its separate delivery gates pass.
 
 **PHASE 1: COMPLETE**
 
-Phase 1 completion is not human approval. The Comprehensive package remains an automated draft pending authorized human review, and client delivery remains blocked before approval.
+## Phase 2 software closure
 
-## Phase 2 Work Package 1 closure
+Phase 2 scope:
 
-Work package:
+`human_review_by_exception_reviewer_efficiency_and_comprehensive_report_truth`
 
-`exception_first_reviewer_interface`
+Primary implementation:
 
-Implementation:
+- Pull request: #1166
+- Branch: `phase2/full-coverage`
+- Exact head: `69669dfbccd87449930f12ceb4d276c9c3dd3d3b`
+- Merge commit: `5ee3f2b1eb2faf46a7b7cc68940be89df683105f`
 
-- Pull request: #1146
-- Branch: `phase2/exception-first-reviewer-interface`
-- Exact head: `176256dc668f9ad79448c765800e8bb69269fc22`
-- Merge commit: `535dbef1b49e86940bb1d5664eac159c90b341de`
-- Internal reviewer route: `/operations/reviewer-queue`
-- Protected API route: `GET /assessment/comprehensive-run/{run_id}/review-queue`
+Closure and public-boundary repair:
 
-Verified result:
+- Pull request: #1170
+- Branch: `phase2/closure-truth-single-product-ios-readiness`
+- Exact head: `1a4ce6ec84682ec3f7e32976822592fc8023fc4c`
+- Merge commit: `1520e0f32b36b09fbb3eab2a2232b8a6407229eb`
 
-- The queue reads the existing terminal NICO Comprehensive canonical JSON and canonical scanner candidate register.
-- It does not create a second assessment, report, score model, candidate store, or analysis path.
-- Operator admin authentication is required.
-- The queue opens only for the exact terminal `review_required` run and rejects cross-run identity drift.
-- Individual-attention work units appear before deterministic grouped work units.
-- Every canonical candidate identity is represented exactly once.
-- Candidate totals and human-review work units reconcile with the canonical register.
-- The interface is read-only and creates no candidate disposition, reviewer identity, risk acceptance, approval, or client-delivery authorization.
-- The operator token is cleared from component state and is not stored in URLs, cookies, local storage, session storage, reports, or build output.
+Subsequent production transport/recovery hardening is preserved through commit `23f5d1e96683f40a83b282b348231cd677872e3f`. Exact current-head proof must always come from the current completion workflow rather than this historical reference.
 
-Exact-production evidence for the merge commit:
+### Reviewer workflow now implemented
 
-### iOS WebKit Paint Proof
+The canonical protected Comprehensive reviewer workflow now provides:
 
-- Workflow run: `31401959926`
-- Artifact: `9068963504`
-- Artifact digest: `sha256:b8dd49d481248b146cbce1bf7800bea45505fd04a50bdcbb3806f19dcb379c33`
-- Status: passed
+- all six logical review queues: Critical / Material, Human Technical Review, New Automated Triage Complete, Stable Carry-Forward, Quality-Control Sample, and Human Disposition Completed;
+- filtering by severity, technical verdict, confidence, lineage/evidence-change state, scanner, category, human-disposition state, and individual/group attention eligibility;
+- sorting by risk and confidence;
+- search by candidate/finding identity, path, package, advisory, rule, scanner, category, manifest, and cluster;
+- expandable candidate and cluster evidence without hiding underlying canonical records;
+- explicit authorized candidate disposition;
+- controlled homogeneous group disposition that records exact underlying candidate IDs and fails closed when individual review is required;
+- configurable deterministic or deterministic risk-weighted quality-control sampling;
+- separate NICO recommendation and human disposition state;
+- stale-review invalidation when canonical evidence or protected scope changes;
+- cross-run, cross-project, and cross-client reviewer-state isolation;
+- server-measured specialist review sessions without converting timing into an approval gate.
 
-### Mobile Restart Production Proof
+### Report and approval truth now implemented
 
-- Workflow run: `31401960542`
-- Artifact: `9069817522`
-- Artifact digest: `sha256:f943724fee47b11b0d9c8850c6fd10bbe7e99998674330877e4e7e782de96a6c`
-- Status: passed
+The existing NICO Comprehensive report and canonical supporting artifacts distinguish:
 
-### Two-Service Production Acceptance
+1. raw scanner observation;
+2. NICO automated technical triage;
+3. authorized human disposition;
+4. confirmed material finding;
+5. final human approval; and
+6. client-delivery authorization.
 
-- Workflow run: `31401960034`
-- Artifact: `9071251525`
-- Artifact digest: `sha256:85ef59cc4574a775d1103e16050ab5782c83c46c4547b9b39d1a8d7677c7512e`
-- Two consecutive Comprehensive passes: passed
-- Structured candidate-artifact audit: passed
-- Current candidate population: 629
-- Deterministic clusters: 49
-- Grouped candidates: 591
-- Individual-attention candidates: 38
-- Human-review work units: 49
-- Candidate-register hash parity: passed
-- Score effect: none
-- Human review required: true
-- Client delivery allowed: false
+Technical-triage coverage is reported separately from human assurance. Candidate volume and reviewer workload remain operational review metrics and do not change technical or Evidence-Adjusted scores merely to improve appearance.
 
-### Completion-bound Comprehensive report
+Final approval remains a protected explicit human action. Accepted-edition evidence remains bound to the exact review ledger and source evidence. Approved client delivery contains one NICO Comprehensive client PDF.
 
-- Workflow run: `31410255643`
-- Artifact: `9071265661`
-- Artifact digest: `sha256:136af04f158161e4dddd94e79578deebeac7409890117a0f584bea31b5e2d97b`
-- Report product: NICO Comprehensive
-- Additional report product created: false
-- Source report preserved: true
-- Final report pages: 41
-- Final report SHA-256: `4066d86da795df768b6f2500710d205733869958ca6c9d5e6a46d58b039ed704`
-- All nine Phase 1 completion items present: yes
-- Human approval status: pending
-- Client delivery allowed: false
+### Phase 2 regression evidence
 
-**PHASE 2 WORK PACKAGE 1: COMPLETE**
+Current Phase 2 regression coverage includes tests for:
 
-## Preserved report, security, and commercial boundaries
+- six queue projection and workload metrics;
+- deterministic/risk-weighted QC sampling;
+- sampling not creating dispositions or implicit approval;
+- technical triage remaining separate from human disposition;
+- human disposition remaining separate from final approval;
+- final approval remaining separate from client-delivery authorization;
+- changed canonical evidence invalidating stale review state;
+- cross-run/project/client state isolation;
+- report-count and JSON/Markdown/HTML/PDF/CSV truth parity;
+- immutable review-ledger binding for final approval;
+- one approved client PDF;
+- 100% automated triage not becoming human assurance or delivery authorization.
 
-- NICO exposes one public assessment product: NICO Comprehensive.
-- NICO retains one client report.
-- The exception queue is an authenticated internal review surface, not another product.
-- Scanner candidates remain separate from confirmed material findings.
-- Technical triage remains a NICO proposal and never becomes a human disposition automatically.
-- Candidate count, cluster membership, workload routing, technical scores, Evidence-Adjusted scores, report layout, and report section order were not changed to satisfy the work-package gate.
-- Automation cannot create reviewer identity, risk acceptance, approval, `APPROVED FINAL`, or `CLIENT DELIVERY AUTHORIZED`.
-- Human approval remains mandatory for the exact immutable package.
-- Client delivery remains blocked before authorized approval.
-- The assessed repository remains read-only.
+Required current-head Vercel, Railway, Mobile Restart, iOS WebKit, and Two-Service production checks remain fail-closed inputs to the completion-bound report and are evaluated against the exact accepted main SHA at workflow execution time.
 
-## Remaining reviewer-time limitation
+## Reviewer workflow before vs after
 
-Phase 2 Work Package 1 establishes the exception-first entry point. It does not empirically prove the target of four combined cybersecurity-specialist hours. Timed specialist-review evidence and quality-control calibration remain later dependency-ordered work.
+Before Phase 2, the reviewer entry point could expose a large canonical scanner-candidate population without the complete execution, filtering, controlled disposition, QC, and completion evidence required by the Phase 2 contract.
 
-## Next dependency-ordered package
+After Phase 2, NICO performs the repeatable technical analysis first and presents specialists with exception queues, grouped homogeneous work, complete drill-down evidence, explicit human-action controls, QC sampling, and approval blockers. The exact current run's individual-attention count, grouped-review eligible count, clusters, QC pool, and work units remain dynamic evidence derived from that run rather than static values in this document.
 
-Phase 2 Work Package 2 is declared as:
+## Remaining empirical reviewer-time requirement
 
-`expandable_deterministic_clusters`
+The approximately **<=4 combined cybersecurity-specialist-hour** target is an engineering-efficiency target, not a safety or approval threshold.
 
-Declaration state:
+The software now measures authorized specialist sessions, but the real two-specialist result remains:
 
-`declared_not_started`
+`not_yet_measured`
 
-The package may begin only after this declaration is merged under the same exact-head workflow, zero-unresolved-review-thread, report-preservation, security, commercial-readiness, exact deployment-identity, Mobile Restart, iOS WebKit, Two-Service Production Acceptance, and completion-bound report gates.
+Tracking issue: #1169, **Phase 2: measure two-specialist review effort on a representative Comprehensive run**.
 
-The package is intentionally narrow. It may extend the existing exception-first reviewer queue so that deterministic groups and their underlying candidates can be expanded without leaving the exact canonical run. It must:
+CI, synthetic identities, fixture timing, inferred duration, or automated dispositions must not be used to claim this empirical target was achieved. If real review requires more than four combined specialist hours, NICO must retain that result rather than truncate review.
 
-- preserve every candidate ID and deterministic cluster membership;
-- expose the complete retained evidence and technical-triage context for every underlying candidate;
-- keep cluster summaries subordinate to candidate-level canonical evidence;
-- provide accessible keyboard-operable expansion and clear collapsed/expanded state;
-- fail closed on candidate, cluster, identity, or workload parity errors;
-- remain authenticated and read-only;
-- preserve the existing Comprehensive report and all score and finding semantics.
+## Remaining manual reviewer responsibilities
 
-It must not add candidate or group dispositions, quality-control sampling, reviewer-time measurement, reviewer identity or authorization decisions, residual-risk acceptance, approval, or client-delivery authorization. Those remain later work packages.
+Authorized specialists still must:
+
+- review genuine exceptions, ambiguous/material risks, conflicting or materially changed evidence, and genuinely human-only evidence;
+- explicitly disposition candidates or eligible homogeneous groups;
+- perform required independent QC and expand groups when evidence is not homogeneous;
+- resolve proof gaps and high-impact escalations;
+- record residual risk and ownership where applicable;
+- separately approve or reject the exact immutable report package; and
+- authorize client delivery only after all protected delivery gates pass.
+
+## Current completion boundary
+
+**PHASE 2 SOFTWARE REQUIREMENTS: COMPLETE**
+
+**PHASE 2 EMPIRICAL REVIEWER-TIME MEASUREMENT: PENDING ISSUE #1169**
+
+**HUMAN APPROVAL: STILL REQUIRED**
+
+**CLIENT DELIVERY: STILL SEPARATELY GATED**
+
+This status does not authorize Phase 3 by itself. Phase 3 should begin only under its own declared scope and dependency checks. The unresolved Phase 2 timing observation must remain visible and must not be silently converted into a pass.
