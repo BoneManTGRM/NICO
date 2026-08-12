@@ -10,7 +10,7 @@ from nico.phase3_engagement_intake_v1 import install_phase3_engagement_intake_v1
 from nico.phase3_evidence_core_v1 import CORE_PROVIDER_REPLACEMENTS
 from nico.phase3_planning_synthesis_v1 import PLANNING_PROVIDER_REPLACEMENTS
 
-VERSION = "nico.phase3_professional_assessment.v1"
+VERSION = "nico.phase3_professional_assessment.v2"
 
 
 def install_phase3_professional_assessment_v1(app: FastAPI) -> dict[str, Any]:
@@ -18,11 +18,19 @@ def install_phase3_professional_assessment_v1(app: FastAPI) -> dict[str, Any]:
     if isinstance(existing, Mapping) and existing.get("status") in {"installed", "already_installed"}:
         return {**dict(existing), "status": "already_installed"}
 
-    engagement = install_phase3_engagement_intake_v1()
+    engagement = install_phase3_engagement_intake_v1(app)
     registry = getattr(app.state, PROVIDER_STATE_KEY, None)
     if not isinstance(registry, dict):
         raise RuntimeError("phase3_requires_existing_comprehensive_provider_registry")
-    preserved = {key: registry.get(key) for key in ("canonical_scoring", "report_generation", "final_report_generation", "cross_format_verification")}
+    preserved = {
+        key: registry.get(key)
+        for key in (
+            "canonical_scoring",
+            "report_generation",
+            "final_report_generation",
+            "cross_format_verification",
+        )
+    }
     replacements = {**CORE_PROVIDER_REPLACEMENTS, **PLANNING_PROVIDER_REPLACEMENTS}
     registry.update(replacements)
     setattr(app.state, PROVIDER_STATE_KEY, registry)
