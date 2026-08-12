@@ -68,6 +68,7 @@ def validate_and_enrich_intake(payload: Mapping[str, Any]) -> dict[str, Any]:
     engagement.setdefault("source_reference", "")
     human[ENGAGEMENT_MODULE] = engagement
     body["human_evidence"] = human
+    body["phase3_engagement_mode"] = "client" if client_mode else "internal"
     return body
 
 
