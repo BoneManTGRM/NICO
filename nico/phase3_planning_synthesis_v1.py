@@ -5,7 +5,7 @@ from typing import Any
 
 from nico.phase3_evidence_core_v1 import _field, _missing, _prior, _repo, _result, _state, _text
 
-VERSION = "nico.phase3_planning_synthesis.v1"
+VERSION = "nico.phase3_planning_synthesis.v1.1"
 
 def historical_trends_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context); activity = repo.get("activity_evidence") if isinstance(repo.get("activity_evidence"), Mapping) else {}; workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), Mapping) else {}; incidents = _field(context, "incident_history", "incidents")
@@ -40,7 +40,7 @@ def resourcing_provider(context: dict[str, Any]) -> dict[str, Any]:
 
 def executive_briefing_provider(context: dict[str, Any]) -> dict[str, Any]:
     scoring = _prior(context, "evidence_reconciliation_and_scoring"); assessment = scoring.get("assessment") if isinstance(scoring.get("assessment"), Mapping) else {}; maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}; sections = [x for x in assessment.get("sections") or [] if isinstance(x, Mapping) and isinstance(x.get("presented_score"), (int, float))]
-    priorities = [{"control": _text(x.get("label") or x.get("id"), 120), "technical_score": int(x.get("presented_score") or 0), "reason": _text(x.get("summary"), 500), "evidence_state": "retained_verified"} for x in sorted(sections, key=lambda x: (int(x.get("presented_score") or 0), _text(x.get("id"))))[:5]]
+    priorities = [{"control": _text(x.get("label") or x.get("id"), 120), "section_score": int(x.get("presented_score") or 0), "score_scope": "canonical_section", "reason": _text(x.get("summary"), 500), "evidence_state": "retained_verified"} for x in sorted(sections, key=lambda x: (int(x.get("presented_score") or 0), _text(x.get("id"))))[:5]]
     roadmap = _prior(context, "six_month_roadmap").get("roadmap") or []; staffing = _prior(context, "staffing_sequencing_and_cost").get("staffing_plan") or []; missing = []
     for stage_id in ("functional_qa", "platform_parity", "requirements_traceability", "stakeholder_and_business_alignment", "historical_trends_and_change_failure"):
         missing.extend([dict(x) for x in _prior(context, stage_id).get("missing_evidence") or [] if isinstance(x, Mapping)])
