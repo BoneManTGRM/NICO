@@ -7,10 +7,11 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v3"
+VERSION = "nico.comprehensive_blocked_run_recovery.v4"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
 _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
+_MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_STAGE = 1
 _RECOVERABLE_REASONS_BY_STAGE = {
     _FINAL_REPORT_STAGE: {
         "final_report_execution_timeout",
@@ -71,6 +72,24 @@ def _failed_stage_result(record: Mapping[str, Any]) -> Mapping[str, Any]:
     return result if isinstance(result, Mapping) else {}
 
 
+def _automatic_recovery_attempt_count(
+    record: Mapping[str, Any],
+    *,
+    source_failed_stage: str,
+    recovery_stage: str,
+) -> int:
+    history = record.get("recovery_history")
+    if not isinstance(history, list):
+        return 0
+    return sum(
+        1
+        for item in history
+        if isinstance(item, Mapping)
+        and _stage_id(item.get("source_failed_stage")) == source_failed_stage
+        and _stage_id(item.get("rerun_from_stage")) == recovery_stage
+    )
+
+
 def blocked_run_recovery_reason(record: Mapping[str, Any]) -> str:
     result = _failed_stage_result(record)
     reason = _text(result.get("reason"))
@@ -126,12 +145,15 @@ def rewind_blocked_run_for_final_artifact_recovery(
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Rewind only as far as the authoritative source of the failed report result.
+    """Rewind once to the authoritative source of a failed report result.
 
     Repository capture, exact run identity, raw scanner output, authorization, and the
     evidence ledger remain unchanged. A final-report timeout reruns only final report
     generation. Scanner-register truth failures rerun evidence reconciliation and all
-    downstream stages from the same exact-commit evidence. Human approval and client
+    downstream stages from the same exact-commit evidence. A matching source-stage and
+    recovery-stage pair is retried automatically at most once; if it blocks again, the
+    exact terminal record is preserved so the real failure remains visible instead of
+    entering an unbounded 83/87 percent recovery loop. Human approval and client
     delivery remain blocked.
     """
 
@@ -143,6 +165,16 @@ def rewind_blocked_run_for_final_artifact_recovery(
 
     source_failed_stage = _current_failed_stage(record)
     recovery_stage = final_artifact_recovery_stage(record)
+    if (
+        _automatic_recovery_attempt_count(
+            record,
+            source_failed_stage=source_failed_stage,
+            recovery_stage=recovery_stage,
+        )
+        >= _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_STAGE
+    ):
+        return record
+
     failed_checks = sorted(final_artifact_failed_checks(record))
     updated = deepcopy(record)
     target_index = COMPREHENSIVE_STAGES.index(recovery_stage)
