@@ -7,9 +7,10 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v5"
+VERSION = "nico.comprehensive_blocked_run_recovery.v6"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
+_EXECUTIVE_BRIEFING_RECOVERY_STAGE = "risk_reduction_and_executive_briefing"
 _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
 _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_SOURCE_STAGE = 1
 _RECOVERABLE_REASONS_BY_STAGE = {
@@ -26,6 +27,9 @@ _RECOVERABLE_REASONS_BY_STAGE = {
 _SCANNER_REGISTER_SOURCE_CHECKS = {
     "canonical_scanner_payload_retention_truthful",
     "canonical_scanner_totals_recompute",
+}
+_EXECUTIVE_BRIEFING_SOURCE_CHECKS = {
+    "stage_score_evidence_matches_canonical",
 }
 _STAGE_ALIASES = {
     "final comprehensive report generation": _FINAL_REPORT_STAGE,
@@ -77,12 +81,12 @@ def _automatic_recovery_attempt_count(
     *,
     source_failed_stage: str,
 ) -> int:
-    """Count all automatic final-artifact rewinds from one failed source stage.
+    """Count bounded-recovery attempts made under the source-stage budget.
 
-    A later failure can expose a different failed-check set and therefore select a
-    different recovery target. That target change must not grant a fresh retry budget
-    to the same source stage, otherwise one exact run can regress between the terminal
-    83% and 87% boundaries instead of preserving the repeated failure.
+    Recovery history created by v4 was budgeted by source+target. That policy is the
+    defect being replaced and must not permanently prevent one v6 semantic repair of
+    an already-persisted production run. Once v6 records a source-stage-scoped attempt,
+    any later target change for the same failed source stage receives no fresh budget.
     """
 
     history = record.get("recovery_history")
@@ -93,6 +97,7 @@ def _automatic_recovery_attempt_count(
         for item in history
         if isinstance(item, Mapping)
         and _stage_id(item.get("source_failed_stage")) == source_failed_stage
+        and _text(item.get("recovery_budget_scope")) == "source_failed_stage"
     )
 
 
@@ -124,8 +129,10 @@ def final_artifact_recovery_stage(record: Mapping[str, Any]) -> str:
     A final-report execution or publication timeout resumes only final report generation
     using the already-persisted exact-run evidence. Cross-format scanner-register total
     or payload-retention failures originate in evidence reconciliation and therefore
-    rewind to that boundary. Other recognized final-artifact failures regenerate only
-    the final report package.
+    rewind to that boundary. A stage-score evidence mismatch caused by the Phase 3
+    executive briefing is repaired by regenerating that briefing and downstream report
+    artifacts from the preserved canonical scoring result. Other recognized final-
+    artifact failures regenerate only the final report package.
     """
 
     if _current_failed_stage(record) == _FINAL_REPORT_STAGE:
@@ -133,6 +140,8 @@ def final_artifact_recovery_stage(record: Mapping[str, Any]) -> str:
     failed_checks = final_artifact_failed_checks(record)
     if failed_checks.intersection(_SCANNER_REGISTER_SOURCE_CHECKS):
         return _SCANNER_REGISTER_RECOVERY_STAGE
+    if failed_checks.intersection(_EXECUTIVE_BRIEFING_SOURCE_CHECKS):
+        return _EXECUTIVE_BRIEFING_RECOVERY_STAGE
     return _FINAL_REPORT_STAGE
 
 
@@ -156,12 +165,12 @@ def rewind_blocked_run_for_final_artifact_recovery(
     Repository capture, exact run identity, raw scanner output, authorization, and the
     evidence ledger remain unchanged. A final-report timeout reruns only final report
     generation. Scanner-register truth failures rerun evidence reconciliation and all
-    downstream stages from the same exact-commit evidence. Each failed source stage is
-    retried automatically at most once for an exact run, even if the failed-check set
-    later selects a different recovery target. If it blocks again, the exact terminal
-    record is preserved so the real failure remains visible instead of regressing
-    between the 83/87 percent boundaries. Human approval and client delivery remain
-    blocked.
+    downstream stages from the same exact-commit evidence. Phase 3 stage-score evidence
+    mismatches regenerate the executive briefing and downstream artifacts from preserved
+    canonical scoring. Each failed source stage receives one v6 automatic repair budget;
+    if it blocks again, the exact terminal record is preserved so the real failure stays
+    visible instead of regressing between the 83/87 percent boundaries. Human approval
+    and client delivery remain blocked.
     """
 
     validation = validate_comprehensive_run_record(record)
@@ -211,11 +220,12 @@ def rewind_blocked_run_for_final_artifact_recovery(
         if isinstance(item, dict)
     ]
     scanner_register_rebuild = recovery_stage == _SCANNER_REGISTER_RECOVERY_STAGE
-    recovery_scope = (
-        "evidence_reconciliation_and_downstream"
-        if scanner_register_rebuild
-        else "final_report_only"
-    )
+    if scanner_register_rebuild:
+        recovery_scope = "evidence_reconciliation_and_downstream"
+    elif recovery_stage == _EXECUTIVE_BRIEFING_RECOVERY_STAGE:
+        recovery_scope = "executive_briefing_and_downstream"
+    else:
+        recovery_scope = "final_report_only"
     history.append(
         {
             "artifact_schema": VERSION,
