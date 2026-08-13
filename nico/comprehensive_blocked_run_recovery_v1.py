@@ -7,11 +7,11 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v4"
+VERSION = "nico.comprehensive_blocked_run_recovery.v5"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
 _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
-_MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_STAGE = 1
+_MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_SOURCE_STAGE = 1
 _RECOVERABLE_REASONS_BY_STAGE = {
     _FINAL_REPORT_STAGE: {
         "final_report_execution_timeout",
@@ -76,8 +76,15 @@ def _automatic_recovery_attempt_count(
     record: Mapping[str, Any],
     *,
     source_failed_stage: str,
-    recovery_stage: str,
 ) -> int:
+    """Count all automatic final-artifact rewinds from one failed source stage.
+
+    A later failure can expose a different failed-check set and therefore select a
+    different recovery target. That target change must not grant a fresh retry budget
+    to the same source stage, otherwise one exact run can regress between the terminal
+    83% and 87% boundaries instead of preserving the repeated failure.
+    """
+
     history = record.get("recovery_history")
     if not isinstance(history, list):
         return 0
@@ -86,7 +93,6 @@ def _automatic_recovery_attempt_count(
         for item in history
         if isinstance(item, Mapping)
         and _stage_id(item.get("source_failed_stage")) == source_failed_stage
-        and _stage_id(item.get("rerun_from_stage")) == recovery_stage
     )
 
 
@@ -150,11 +156,12 @@ def rewind_blocked_run_for_final_artifact_recovery(
     Repository capture, exact run identity, raw scanner output, authorization, and the
     evidence ledger remain unchanged. A final-report timeout reruns only final report
     generation. Scanner-register truth failures rerun evidence reconciliation and all
-    downstream stages from the same exact-commit evidence. A matching source-stage and
-    recovery-stage pair is retried automatically at most once; if it blocks again, the
-    exact terminal record is preserved so the real failure remains visible instead of
-    entering an unbounded 83/87 percent recovery loop. Human approval and client
-    delivery remain blocked.
+    downstream stages from the same exact-commit evidence. Each failed source stage is
+    retried automatically at most once for an exact run, even if the failed-check set
+    later selects a different recovery target. If it blocks again, the exact terminal
+    record is preserved so the real failure remains visible instead of regressing
+    between the 83/87 percent boundaries. Human approval and client delivery remain
+    blocked.
     """
 
     validation = validate_comprehensive_run_record(record)
@@ -169,9 +176,8 @@ def rewind_blocked_run_for_final_artifact_recovery(
         _automatic_recovery_attempt_count(
             record,
             source_failed_stage=source_failed_stage,
-            recovery_stage=recovery_stage,
         )
-        >= _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_STAGE
+        >= _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_SOURCE_STAGE
     ):
         return record
 
@@ -218,6 +224,7 @@ def rewind_blocked_run_for_final_artifact_recovery(
             "source_failed_checks": failed_checks,
             "rerun_from_stage": recovery_stage,
             "recovery_scope": recovery_scope,
+            "recovery_budget_scope": "source_failed_stage",
             "preserved_stage_count": len(retained_stages),
             "exact_run_identity_preserved": True,
             "immutable_repository_snapshot_preserved": True,
