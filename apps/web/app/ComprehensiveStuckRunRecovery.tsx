@@ -124,6 +124,10 @@ function combinedRequest(
   const boundedInit: RequestInit = {...init, signal: controller.signal, cache: "no-store"};
   let requestPromise: Promise<Response>;
   if (input instanceof Request) {
+    // The proxy bridge already constructed the exact request body. Passing the same
+    // init object to fetch a second time is tolerated by Chromium but can consume or
+    // reject the body in WebKit before the intake response is returned. Construct one
+    // bounded Request and dispatch it without a second init/body application.
     const boundedRequest = new Request(input, boundedInit);
     requestPromise = originalFetch(boundedRequest);
   } else {
@@ -220,6 +224,9 @@ export default function ComprehensiveStuckRunRecovery() {
       const path = String(detail.path || "");
       const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path);
 
+      // Browser age is not evidence that a durable run is invalid or unrecoverable.
+      // Recovery controls appear only after a bounded lifecycle request actually
+      // times out, and the canonical controller then reads the exact backend run.
       if (!timeoutRunId) {
         timedOutRunId.current = "";
         setRecoveryRunId("");
