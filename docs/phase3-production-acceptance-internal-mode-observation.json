@@ -1,0 +1,17 @@
+{
+  "artifact_schema": "nico.phase3-production-acceptance-internal-mode-observation.v1",
+  "phase": 3,
+  "status": "repair_pending_verification",
+  "base_main_sha": "5a647e0619c6729b456db510d39868f48046e235",
+  "failed_workflow": "Unified Production Acceptance",
+  "failed_workflow_run_id": 31766978739,
+  "failed_step": "Require passing live evidence contract",
+  "observed_intake_http_status": 422,
+  "root_cause": "The unified production proof populated synthetic client/project labels. Phase 3 correctly interpreted non-empty client/project identity as a real client engagement and failed closed because required client engagement context was not supplied.",
+  "repair": "Keep the automated unified production proof in explicit internal-assessment mode by leaving optional client and project fields blank. Do not fabricate access method, technical contact, authorized scope, reviewer identity, human disposition, approval, or client-delivery authorization.",
+  "client_engagement_validation_weakened": false,
+  "one_public_product": "NICO Comprehensive",
+  "one_client_report": true,
+  "human_review_required": true,
+  "client_delivery_allowed": false
+}
