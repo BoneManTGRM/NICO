@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = (ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+STRATEGIC_FORM = (ROOT / "apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
 MODE_HOOK = (ROOT / "apps/web/app/assessment/useAssessmentClientMode.ts").read_text(encoding="utf-8")
 COMPACT_CSS = (ROOT / "apps/web/app/assessment/compactMobileAssessment.module.css").read_text(encoding="utf-8")
 PROOF = (ROOT / "scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
@@ -32,11 +33,13 @@ def test_mobile_branch_does_not_mount_desktop_report_details() -> None:
     assert "data-assessment-report-actions" not in compact_branch or "{reportActions}" in compact_branch
 
 
-def test_mobile_intake_does_not_mount_strategic_editor() -> None:
-    assert 'data-mobile-evidence-boundary="true"' in WORKSPACE
-    assert 'data-evidence-editor-mounted="false"' in WORKSPACE
-    assert 'compactMobile ? <section' in WORKSPACE
-    assert ': <StrategicEvidenceForm' in WORKSPACE
+def test_mobile_intake_mounts_lightweight_phase3_client_context_without_rich_editor() -> None:
+    assert WORKSPACE.count("<StrategicEvidenceForm") == 1
+    assert 'if (!richEditorEnabled)' in STRATEGIC_FORM
+    assert 'data-mobile-evidence-boundary="true"' in STRATEGIC_FORM
+    assert 'data-evidence-editor-mounted="false"' in STRATEGIC_FORM
+    assert 'data-mobile-client-engagement-context="true"' in STRATEGIC_FORM
+    assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in STRATEGIC_FORM
 
 
 def test_compact_terminal_uses_containment_and_no_scroll_anchor() -> None:
