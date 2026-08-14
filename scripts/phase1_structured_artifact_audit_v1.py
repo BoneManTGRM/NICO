@@ -169,11 +169,16 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
             for field in ("dependency_package", "dependency_version", "dependency_ecosystem", "manifest_path"):
                 _require(bool(_text(record.get(field))), f"candidate.{candidate_id}.{field}_missing", errors)
             if _text(record.get("reachability_assessment")) in EXPLICIT_UNKNOWN:
-                _require(
-                    "first_party_reachability" in (record.get("proof_gaps") or []),
-                    f"candidate.{candidate_id}.reachability_gap_not_explicit",
-                    errors,
+                rationale_code = _text(
+                    record.get("technical_triage_rationale_code")
+                    or record.get("rationale_code")
                 )
+                if rationale_code != "dependency_resolution_not_affected":
+                    _require(
+                        "first_party_reachability" in (record.get("proof_gaps") or []),
+                        f"candidate.{candidate_id}.reachability_gap_not_explicit",
+                        errors,
+                    )
         elif category == "secret":
             evidence = _text(record.get("evidence"))
             _require(
@@ -209,22 +214,23 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
 
         lineage_status = _text(record.get("lineage_status"))
         source = _text(record.get("technical_triage_source"))
-        if lineage_status in {"newly_observed", "evidence_changed"}:
+        if lineage_status in {"newly_observed", "carried_forward_evidence_changed"}:
             _require(source.startswith("fresh_"), f"candidate.{candidate_id}.fresh_triage_source_required", errors)
-        if lineage_status == "exact_carry_forward":
+        if lineage_status in {"carried_forward_exact", "carried_forward_location_changed", "carried_forward_evidence_changed"}:
             _require(
                 bool(_text(record.get("previous_candidate_identity"))),
                 f"candidate.{candidate_id}.previous_identity_missing",
                 errors,
             )
+        if lineage_status == "carried_forward_evidence_changed":
             _require(
-                "retained" in source or "carry" in source,
-                f"candidate.{candidate_id}.carry_forward_source_invalid",
+                record.get("evidence_changed") is True,
+                f"candidate.{candidate_id}.evidence_changed_flag_missing",
                 errors,
             )
         if record.get("evidence_changed") is True:
             _require(
-                lineage_status == "evidence_changed",
+                lineage_status == "carried_forward_evidence_changed",
                 f"candidate.{candidate_id}.evidence_changed_lineage_mismatch",
                 errors,
             )
@@ -269,6 +275,20 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
             f"triage.{field}_mismatch",
             errors,
         )
+
+    revalidation = (
+        register.get("candidate_retained_triage_revalidation")
+        if isinstance(register.get("candidate_retained_triage_revalidation"), dict)
+        else {}
+    )
+    _require(revalidation.get("status") == "complete", "triage.retained_revalidation_missing", errors)
+    _require(revalidation.get("candidate_counts_changed") is False, "triage.retained_revalidation_changed_counts", errors)
+    _require(revalidation.get("scanner_evidence_changed") is False, "triage.retained_revalidation_changed_scanner_evidence", errors)
+    _require(revalidation.get("canonical_dispositions_changed") is False, "triage.retained_revalidation_changed_dispositions", errors)
+    _require(revalidation.get("human_disposition_created") is False, "triage.retained_revalidation_created_human_disposition", errors)
+    _require(revalidation.get("human_approval_created") is False, "triage.retained_revalidation_created_approval", errors)
+    _require(revalidation.get("client_delivery_allowed") is False, "triage.retained_revalidation_allowed_delivery", errors)
+    _require(revalidation.get("score_effect") == "none", "triage.retained_revalidation_score_effect", errors)
 
     individual_ids = {
         item["candidate_id"]
@@ -371,6 +391,7 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
         "individual_attention_count": len(individual_ids),
         "human_review_work_units": expected_work_units,
         "quality_control_sample_pool": int(triage.get("quality_control_sample_pool") or 0),
+        "retained_prior_revalidation_count": int(revalidation.get("revalidated_candidate_count") or 0),
         "human_review_required": payload.get("human_review_required") is True,
         "client_delivery_allowed": payload.get("client_delivery_allowed") is True,
         "score_effect": refinement.get("score_effect"),
