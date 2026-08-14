@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
-      - name: Compile and verify WebKit unmount and terminal layout proof
+      - name: Compile and verify WebKit lightweight intake and terminal layout proof
         run: |
           set -euo pipefail
           python -m py_compile \
@@ -55,8 +55,8 @@ jobs:
           assert 'raw_error_prominent' in failure
           assert 'recovery_visible' in failure
           assert 'data-mobile-evidence-boundary="true"' in proof
-          assert 'interactive_control_count' in proof
-          assert 'rich_editor_node_count' in proof
+          assert 'client_context_control_count' in proof
+          assert 'rich_editor_control_count' in proof
           assert 'optional_evidence_editor_unmounted' in proof
           assert 'single_native_dom_click' in dispatch
           assert 'page.expect_download(timeout=240_000)' in download
@@ -65,6 +65,8 @@ jobs:
           assert 'useRichEvidenceEditor' in component
           assert 'data-evidence-editor-mounted="false"' in component
           assert 'data-mobile-evidence-note="true"' in component
+          assert 'data-mobile-client-engagement-context="true"' in component
+          assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in component
           assert ':not([data-mobile-evidence-boundary="true"])' in css
           PY
 
@@ -223,10 +225,22 @@ jobs:
           assert payload["webkit_intake_paint_stability_verified"] is True
           intake = payload["webkit_intake_paint"]
           assert intake["optional_evidence_editor_unmounted"] is True
-          assert intake["optional_evidence_controls_allocated"] == 0
-          assert intake["paint_boundary"]["editor_mounted"] == "false"
-          assert intake["paint_boundary"]["interactive_control_count"] == 0
-          assert intake["paint_boundary"]["rich_editor_node_count"] == 0
+          assert intake["optional_evidence_controls_allocated"] == 3
+          assert intake["rich_optional_evidence_controls_allocated"] == 0
+          assert intake["lightweight_client_context_controls_allocated"] == 3
+          paint_boundary = intake["paint_boundary"]
+          assert paint_boundary["editor_mounted"] == "false"
+          assert paint_boundary["client_context_present"] is True
+          assert paint_boundary["interactive_control_count"] == 3
+          assert paint_boundary["client_context_control_count"] == 3
+          assert paint_boundary["client_context_textarea_count"] == 3
+          assert paint_boundary["rich_editor_control_count"] == 0
+          assert paint_boundary["rich_editor_node_count"] == 0
+          assert set(paint_boundary["client_context_labels"]) == {
+              "access method",
+              "primary technical contact",
+              "authorized scope",
+          }
           assert intake["authorization_reachable"] is True
           assert intake["assessment_action_reachable"] is True
           assert intake["ancestor_clipping_absent"] is True
