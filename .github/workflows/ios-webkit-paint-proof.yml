@@ -48,6 +48,7 @@ jobs:
           component = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
           css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
           workflow = Path(".github/workflows/ios-webkit-paint-proof.yml").read_text(encoding="utf-8")
+          workflow_header = workflow.split("\njobs:", 1)[0]
           assert 'nico.mobile_restart_live_acceptance.webkit.v4' in proof
           assert 'failure_layout.prove_failure_layouts(browser, args)' in proof
           assert 'terminal_failure_layout_viewports_verified' in proof
@@ -69,8 +70,8 @@ jobs:
           assert 'data-mobile-client-engagement-context="true"' in component
           assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in component
           assert ':not([data-mobile-evidence-boundary="true"])' in css
-          assert 'group: nico-production-ios-webkit-proof-' in workflow
-          assert 'group: nico-production-assessment-proof-' not in workflow
+          assert 'group: nico-production-ios-webkit-proof-' in workflow_header
+          assert 'group: nico-production-assessment-proof-' not in workflow_header
           assert 'Wait for exact-SHA Mobile production proof' in workflow
           assert 'NICO Mobile Restart Production Proof' in workflow
           PY
