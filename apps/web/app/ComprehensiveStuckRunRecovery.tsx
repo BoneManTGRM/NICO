@@ -15,6 +15,10 @@ const RUN_STATUS_PATH = /^\/api\/nico\/assessment\/comprehensive-run\/[^/?#]+$/;
 const RUN_PATH = /\/assessment\/comprehensive-run\/([^/?#]+)/;
 const CANONICAL_RUN_ISSUE_SELECTOR =
   '[data-assessment-run-state="true"] [role="alert"]';
+const RECOVERY_CLEARANCE_ATTRIBUTE =
+  "data-comprehensive-stuck-run-recovery-visible";
+const RECOVERY_CLEARANCE_PROPERTY =
+  "--nico-stuck-run-recovery-clearance";
 
 const activeControllers = new Set<AbortController>();
 
@@ -22,6 +26,56 @@ type TimeoutDetail = {
   path?: string;
   method?: string;
 };
+
+type RecoveryReason = "continue" | "status";
+
+type Copy = {
+  ariaLabel: string;
+  title: string;
+  run: string;
+  retry: string;
+  clear: string;
+  wait: string;
+  continueReason: string;
+  statusReason: string;
+  confirmClear: string;
+};
+
+const COPY: Record<"en" | "es", Copy> = {
+  en: {
+    ariaLabel: "Assessment recovery controls",
+    title: "Assessment recovery available",
+    run: "Run",
+    retry: "Retry exact run",
+    clear: "Clear stuck run and start new",
+    wait: "Keep waiting",
+    continueReason:
+      "The current assessment stage exceeded the bounded response time. The exact run was retained and can be retried.",
+    statusReason:
+      "The exact saved run did not respond before the bounded status timeout. Its identity was retained for recovery.",
+    confirmClear:
+      "Clear the preserved run and start a new assessment? This abandons the browser recovery link for the exact run.",
+  },
+  es: {
+    ariaLabel: "Controles de recuperación de la evaluación",
+    title: "Recuperación de evaluación disponible",
+    run: "Ejecución",
+    retry: "Reintentar la ejecución exacta",
+    clear: "Borrar la ejecución atascada e iniciar una nueva",
+    wait: "Seguir esperando",
+    continueReason:
+      "La etapa actual de la evaluación superó el tiempo de respuesta limitado. Se conservó la ejecución exacta y puede reintentarse.",
+    statusReason:
+      "La ejecución exacta guardada no respondió antes del límite de espera del estado. Su identidad se conservó para la recuperación.",
+    confirmClear:
+      "¿Borrar la ejecución conservada e iniciar una evaluación nueva? Esto elimina del navegador el vínculo de recuperación de la ejecución exacta.",
+  },
+};
+
+function isSpanishRoute(): boolean {
+  const path = window.location.pathname.toLowerCase();
+  return path === "/es" || path.startsWith("/es/") || path === "/es-mx" || path.startsWith("/es-mx/");
+}
 
 function requestPath(input: RequestInfo | URL): string {
   if (typeof input === "string") return new URL(input, window.location.origin).pathname;
@@ -156,17 +210,28 @@ function clearRunIdentity(): void {
   const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
+  url.searchParams.set("new_assessment", String(Date.now()));
   url.hash = "assessment";
   window.location.replace(`${url.pathname}${url.search}${url.hash}`);
 }
 
+function clearReservedViewportSpace(): void {
+  const root = document.documentElement;
+  root.removeAttribute(RECOVERY_CLEARANCE_ATTRIBUTE);
+  root.style.removeProperty(RECOVERY_CLEARANCE_PROPERTY);
+}
+
 export default function ComprehensiveStuckRunRecovery() {
   const [visible, setVisible] = useState(false);
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState<RecoveryReason>("status");
   const [recoveryRunId, setRecoveryRunId] = useState("");
+  const [spanish, setSpanish] = useState(false);
   const timedOutRunId = useRef("");
+  const panelRef = useRef<HTMLElement | null>(null);
+  const copy = COPY[spanish ? "es" : "en"];
 
   useEffect(() => {
+    setSpanish(isSpanishRoute());
     const originalFetch = window.fetch.bind(window);
     const boundedFetch: typeof window.fetch = (input, init) => combinedRequest(originalFetch, input, init);
     window.fetch = boundedFetch;
@@ -174,8 +239,9 @@ export default function ComprehensiveStuckRunRecovery() {
     const hideFallback = () => {
       timedOutRunId.current = "";
       setRecoveryRunId("");
-      setReason("");
+      setReason("status");
       setVisible(false);
+      clearReservedViewportSpace();
     };
     const suppressWhenCanonicalIssueVisible = () => {
       if (canonicalRunIssueVisible()) hideFallback();
@@ -205,11 +271,8 @@ export default function ComprehensiveStuckRunRecovery() {
       retainExactRunIdentity(timeoutRunId);
       timedOutRunId.current = timeoutRunId;
       setRecoveryRunId(timeoutRunId);
-      setReason(
-        path.endsWith("/continue")
-          ? "The current assessment stage exceeded the bounded response time. The exact run was retained and can be retried."
-          : "The exact saved run did not respond before the bounded status timeout. Its identity was retained for recovery.",
-      );
+      setReason(path.endsWith("/continue") ? "continue" : "status");
+      setSpanish(isSpanishRoute());
       setVisible(true);
     };
 
@@ -221,8 +284,39 @@ export default function ComprehensiveStuckRunRecovery() {
       if (window.fetch === boundedFetch) window.fetch = originalFetch;
       activeControllers.forEach((controller) => controller.abort());
       activeControllers.clear();
+      clearReservedViewportSpace();
     };
   }, []);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!visible || !panel) {
+      clearReservedViewportSpace();
+      return;
+    }
+
+    const reserveViewportSpace = () => {
+      const height = Math.ceil(panel.getBoundingClientRect().height);
+      if (height <= 0) return;
+      const root = document.documentElement;
+      root.setAttribute(RECOVERY_CLEARANCE_ATTRIBUTE, "true");
+      root.style.setProperty(RECOVERY_CLEARANCE_PROPERTY, `${height}px`);
+    };
+
+    reserveViewportSpace();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(reserveViewportSpace);
+    resizeObserver?.observe(panel);
+    window.addEventListener("resize", reserveViewportSpace);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", reserveViewportSpace);
+      clearReservedViewportSpace();
+    };
+  }, [recoveryRunId, spanish, visible]);
 
   if (!visible || canonicalRunIssueVisible()) return null;
 
@@ -240,10 +334,16 @@ export default function ComprehensiveStuckRunRecovery() {
     url.hash = "assessment";
     window.location.replace(`${url.pathname}${url.search}${url.hash}`);
   };
+  const confirmAndClear = () => {
+    if (window.confirm(copy.confirmClear)) clearRunIdentity();
+  };
+  const localizedReason = reason === "continue" ? copy.continueReason : copy.statusReason;
 
   return <aside
+    ref={panelRef}
     role="alert"
     aria-live="assertive"
+    aria-label={copy.ariaLabel}
     data-comprehensive-stuck-run-recovery="true"
     style={{
       position: "fixed",
@@ -258,16 +358,20 @@ export default function ComprehensiveStuckRunRecovery() {
       boxShadow: "0 18px 60px rgba(0,0,0,.55)",
       padding: 16,
       maxWidth: 760,
+      maxHeight: "min(60dvh, 440px)",
+      overflowY: "auto",
+      overscrollBehavior: "contain",
+      touchAction: "pan-y",
       marginInline: "auto",
     }}
   >
-    <strong style={{display: "block", fontSize: 18}}>Assessment recovery available</strong>
-    <p style={{margin: "8px 0 12px", color: "#b9c9dc"}}>{reason}</p>
-    {runId ? <code style={{display: "block", marginBottom: 12, overflowWrap: "anywhere"}}>Run: {runId}</code> : null}
+    <strong style={{display: "block", fontSize: 18}}>{copy.title}</strong>
+    <p style={{margin: "8px 0 12px", color: "#b9c9dc"}}>{localizedReason}</p>
+    {runId ? <code style={{display: "block", marginBottom: 12, overflowWrap: "anywhere"}}>{copy.run}: {runId}</code> : null}
     <div style={{display: "flex", gap: 10, flexWrap: "wrap"}}>
-      <button type="button" onClick={retryExactRun} disabled={!runId}>Retry exact run</button>
-      <button type="button" onClick={clearRunIdentity} data-clear-stuck-comprehensive-run="true">Clear stuck run and start new</button>
-      <button type="button" onClick={keepWaiting}>Keep waiting</button>
+      <button type="button" onClick={retryExactRun} disabled={!runId}>{copy.retry}</button>
+      <button type="button" onClick={confirmAndClear} data-clear-stuck-comprehensive-run="true">{copy.clear}</button>
+      <button type="button" onClick={keepWaiting}>{copy.wait}</button>
     </div>
   </aside>;
 }

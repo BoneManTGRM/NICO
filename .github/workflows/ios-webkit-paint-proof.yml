@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: nico-production-assessment-proof-${{ github.ref }}
+  group: nico-production-ios-webkit-proof-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -47,6 +47,8 @@ jobs:
           wrapper = Path("scripts/mobile_restart_live_acceptance_v6.py").read_text(encoding="utf-8")
           component = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
           css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
+          workflow = Path(".github/workflows/ios-webkit-paint-proof.yml").read_text(encoding="utf-8")
+          workflow_header = workflow.split("\njobs:", 1)[0]
           assert 'nico.mobile_restart_live_acceptance.webkit.v4' in proof
           assert 'failure_layout.prove_failure_layouts(browser, args)' in proof
           assert 'terminal_failure_layout_viewports_verified' in proof
@@ -68,6 +70,10 @@ jobs:
           assert 'data-mobile-client-engagement-context="true"' in component
           assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in component
           assert ':not([data-mobile-evidence-boundary="true"])' in css
+          assert 'group: nico-production-ios-webkit-proof-' in workflow_header
+          assert 'group: nico-production-assessment-proof-' not in workflow_header
+          assert 'Wait for exact-SHA Mobile production proof' in workflow
+          assert 'NICO Mobile Restart Production Proof' in workflow
           PY
 
   live-production:
@@ -145,6 +151,52 @@ jobs:
               time.sleep(20)
           else:
               raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Wait for exact-SHA Mobile production proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required_context = "NICO Mobile Restart Production Proof"
+          deadline = time.time() + 170 * 60
+          last_state = "missing"
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-ios-wait-for-mobile-proof",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last_state = "missing"
+              for item in payload.get("statuses") or []:
+                  if str(item.get("context") or "") == required_context:
+                      last_state = str(item.get("state") or "unknown")
+                      break
+              print(f"Mobile prerequisite status: {last_state}", flush=True)
+              if last_state == "success":
+                  break
+              if last_state in {"error", "failure"}:
+                  raise SystemExit(
+                      f"The exact-SHA Mobile production proof failed before WebKit proof: {last_state}"
+                  )
+              time.sleep(20)
+          else:
+              raise SystemExit(
+                  f"Timed out waiting for exact-SHA Mobile production proof: {last_state}"
+              )
           PY
 
       - name: Verify exact frontend release identity

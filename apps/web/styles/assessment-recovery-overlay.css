@@ -1,0 +1,35 @@
+/* Exact-run recovery overlays must never cover the assessment status or terminal actions. */
+@media (max-width: 760px), (pointer: coarse) {
+  html[data-comprehensive-stuck-run-recovery-visible="true"] body.nico-app {
+    padding-bottom: calc(
+      var(--nico-stuck-run-recovery-clearance, 240px) +
+      max(28px, env(safe-area-inset-bottom))
+    ) !important;
+    scroll-padding-bottom: calc(
+      var(--nico-stuck-run-recovery-clearance, 240px) +
+      max(28px, env(safe-area-inset-bottom))
+    ) !important;
+  }
+
+  body.nico-app [data-comprehensive-stuck-run-recovery="true"] {
+    overflow-anchor: none !important;
+    max-height: min(60dvh, 440px) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html[data-comprehensive-stuck-run-recovery-visible="true"]
+    body.nico-app
+    [data-assessment-active-run-reset="true"] {
+    display: none !important;
+  }
+
+  main[data-workspace="assessment"] [data-assessment-run-state="true"],
+  main[data-workspace="assessment"] [data-assessment-terminal-actions="true"],
+  main[data-workspace="assessment"] details[class*="compactIdentity"] {
+    scroll-margin-bottom: calc(
+      var(--nico-stuck-run-recovery-clearance, 240px) + 32px
+    ) !important;
+  }
+}

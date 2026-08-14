@@ -42,11 +42,12 @@ def test_exact_run_get_uses_its_own_outer_fallback_instead_of_generic_get_timeou
 
 
 def test_canonical_run_issue_suppresses_duplicate_fixed_recovery_panel() -> None:
-    assert 'const CANONICAL_RUN_ISSUE_SELECTOR =' in RECOVERY
+    assert "const CANONICAL_RUN_ISSUE_SELECTOR =" in RECOVERY
     assert '[data-assessment-run-state="true"] [role="alert"]' in RECOVERY
     assert "new MutationObserver(suppressWhenCanonicalIssueVisible)" in RECOVERY
     assert "if (canonicalRunIssueVisible()) hideFallback();" in RECOVERY
     assert "if (!visible || canonicalRunIssueVisible()) return null;" in RECOVERY
+    assert "issueObserver.disconnect();" in RECOVERY
 
 
 def test_exact_run_identity_and_fail_closed_approval_boundaries_are_unchanged() -> None:

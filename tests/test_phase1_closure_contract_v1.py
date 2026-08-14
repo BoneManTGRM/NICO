@@ -10,8 +10,9 @@ MOBILE_PROOF = ROOT / "scripts/mobile_restart_live_acceptance_v1.py"
 TWO_SERVICE_WORKFLOW = ROOT / ".github/workflows/two-service-production-acceptance.yml"
 IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 MOBILE_WORKFLOW = ROOT / ".github/workflows/mobile-restart-production-proof.yml"
-MOBILE_IOS_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
-TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-${{ github.ref }}"
+MOBILE_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
+IOS_CONCURRENCY = "group: nico-production-ios-webkit-proof-${{ github.ref }}"
+TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-v2-${{ github.ref }}"
 
 
 def _load_audit_module() -> Any:
@@ -145,12 +146,24 @@ def test_production_assessment_proofs_serialize_without_pending_cancellation() -
     ios = IOS_WORKFLOW.read_text(encoding="utf-8")
     mobile = MOBILE_WORKFLOW.read_text(encoding="utf-8")
     two_service = TWO_SERVICE_WORKFLOW.read_text(encoding="utf-8")
+    ios_header = ios.split("\njobs:", 1)[0]
+    mobile_header = mobile.split("\njobs:", 1)[0]
 
-    assert MOBILE_IOS_CONCURRENCY in ios
-    assert MOBILE_IOS_CONCURRENCY in mobile
-    assert MOBILE_IOS_CONCURRENCY not in two_service
+    assert IOS_CONCURRENCY in ios_header
+    assert MOBILE_CONCURRENCY not in ios_header
+    assert MOBILE_CONCURRENCY in mobile_header
+    assert IOS_CONCURRENCY not in mobile_header
+    assert MOBILE_CONCURRENCY not in two_service
+    assert IOS_CONCURRENCY not in two_service
     assert TWO_SERVICE_CONCURRENCY in two_service
     assert all("cancel-in-progress: false" in source for source in (ios, mobile, two_service))
+
+    assert "Wait for exact-SHA Mobile production proof" in ios
+    assert "NICO Mobile Restart Production Proof" in ios
+    assert "The exact-SHA Mobile production proof failed before WebKit proof" in ios
+    assert ios.index("Wait for exact-SHA Mobile production proof") < ios.index(
+        "Prove WebKit intake, bilingual failure layout, recovery, and review PDF download"
+    )
 
     assert "Wait for serialized Mobile and iOS production proofs" in two_service
     assert "NICO Mobile Restart Production Proof" in two_service
