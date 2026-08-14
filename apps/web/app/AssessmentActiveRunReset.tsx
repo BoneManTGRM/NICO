@@ -8,6 +8,46 @@ const MOBILE_ACTIVE_RUN_QUERY = "(max-width: 760px), (pointer: coarse)";
 const ACTIVE_RUN_CLEARANCE_ATTRIBUTE =
   "data-assessment-active-run-reset-visible";
 const ACTIVE_RUN_CLEARANCE_PROPERTY = "--nico-active-run-reset-clearance";
+const STUCK_RECOVERY_ATTRIBUTE =
+  "data-comprehensive-stuck-run-recovery-visible";
+
+type Copy = {
+  ariaLabel: string;
+  title: string;
+  show: string;
+  hide: string;
+  run: string;
+  clear: string;
+  confirmClear: string;
+};
+
+const COPY: Record<"en" | "es", Copy> = {
+  en: {
+    ariaLabel: "Current assessment controls",
+    title: "Current assessment",
+    show: "Show",
+    hide: "Hide",
+    run: "Run",
+    clear: "Clear current run and start new assessment",
+    confirmClear:
+      "Clear the current run and start a new assessment? The preserved run will no longer be the active browser run.",
+  },
+  es: {
+    ariaLabel: "Controles de la evaluación actual",
+    title: "Evaluación actual",
+    show: "Mostrar",
+    hide: "Ocultar",
+    run: "Ejecución",
+    clear: "Borrar la ejecución actual e iniciar una evaluación nueva",
+    confirmClear:
+      "¿Borrar la ejecución actual e iniciar una evaluación nueva? La ejecución conservada dejará de ser la ejecución activa del navegador.",
+  },
+};
+
+function isSpanishRoute(): boolean {
+  const path = window.location.pathname.toLowerCase();
+  return path === "/es" || path.startsWith("/es/") || path === "/es-mx" || path.startsWith("/es-mx/");
+}
 
 function savedRunId(): string {
   try {
@@ -20,7 +60,15 @@ function savedRunId(): string {
   }
 }
 
+function stuckRecoveryVisible(): boolean {
+  return (
+    document.documentElement.getAttribute(STUCK_RECOVERY_ATTRIBUTE) === "true" ||
+    Boolean(document.querySelector('[data-comprehensive-stuck-run-recovery="true"]'))
+  );
+}
+
 function activeAssessmentVisible(): boolean {
+  if (stuckRecoveryVisible()) return false;
   const panel = document.querySelector('[data-assessment-run-state="true"]');
   if (!panel) return false;
   const terminalAction = panel.querySelector(
@@ -58,26 +106,33 @@ export default function AssessmentActiveRunReset() {
   const [visible, setVisible] = useState(false);
   const [runId, setRunId] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const [spanish, setSpanish] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
+  const copy = COPY[spanish ? "es" : "en"];
 
   useEffect(() => {
     const inspect = () => {
       setVisible(activeAssessmentVisible());
       setRunId(savedRunId());
+      setSpanish(isSpanishRoute());
     };
     const observer = new MutationObserver(inspect);
-    observer.observe(document.body, {
+    observer.observe(document.documentElement, {
       subtree: true,
       childList: true,
       characterData: true,
+      attributes: true,
+      attributeFilter: [STUCK_RECOVERY_ATTRIBUTE],
     });
     const interval = window.setInterval(inspect, 1000);
     window.addEventListener("storage", inspect);
+    window.addEventListener("popstate", inspect);
     inspect();
     return () => {
       observer.disconnect();
       window.clearInterval(interval);
       window.removeEventListener("storage", inspect);
+      window.removeEventListener("popstate", inspect);
     };
   }, []);
 
@@ -119,12 +174,16 @@ export default function AssessmentActiveRunReset() {
 
   if (!visible) return null;
 
+  const confirmAndClear = () => {
+    if (window.confirm(copy.confirmClear)) clearCurrentRun();
+  };
+
   return (
     <aside
       ref={panelRef}
       data-assessment-active-run-reset="true"
       data-assessment-active-run-reset-collapsed={collapsed ? "true" : "false"}
-      aria-label="Current assessment controls"
+      aria-label={copy.ariaLabel}
       style={{
         position: "fixed",
         left: "max(12px, env(safe-area-inset-left))",
@@ -153,9 +212,7 @@ export default function AssessmentActiveRunReset() {
           gap: 12,
         }}
       >
-        <strong style={{display: "block", minWidth: 0}}>
-          Current assessment
-        </strong>
+        <strong style={{display: "block", minWidth: 0}}>{copy.title}</strong>
         <button
           type="button"
           data-assessment-active-run-toggle="true"
@@ -174,7 +231,7 @@ export default function AssessmentActiveRunReset() {
             fontWeight: 800,
           }}
         >
-          {collapsed ? "Show" : "Hide"}
+          {collapsed ? copy.show : copy.hide}
         </button>
       </div>
 
@@ -189,16 +246,16 @@ export default function AssessmentActiveRunReset() {
                 overflowWrap: "anywhere",
               }}
             >
-              Run: {runId}
+              {copy.run}: {runId}
             </code>
           ) : null}
           <button
             type="button"
-            onClick={clearCurrentRun}
+            onClick={confirmAndClear}
             data-assessment-clear-current-run="true"
             style={{width: "100%", minHeight: 42}}
           >
-            Clear current run and start new assessment
+            {copy.clear}
           </button>
         </div>
       ) : null}
