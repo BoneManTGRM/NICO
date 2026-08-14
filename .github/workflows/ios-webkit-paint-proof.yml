@@ -69,7 +69,8 @@ jobs:
           assert 'data-mobile-client-engagement-context="true"' in component
           assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in component
           assert ':not([data-mobile-evidence-boundary="true"])' in css
-          assert 'group: nico-production-ios-webkit-proof-${{ github.ref }}' in workflow
+          assert 'group: nico-production-ios-webkit-proof-' in workflow
+          assert 'group: nico-production-assessment-proof-' not in workflow
           assert 'Wait for exact-SHA Mobile production proof' in workflow
           assert 'NICO Mobile Restart Production Proof' in workflow
           PY
