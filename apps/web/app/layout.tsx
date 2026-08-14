@@ -9,6 +9,7 @@ import "../styles/site-polish-v2.css";
 import "../styles/workflow-simplification.css";
 import "../styles/assessment-terminal-mobile.css";
 import "../styles/assessment-mobile-stability.css";
+import "../styles/assessment-recovery-overlay.css";
 import "../styles/assessment-failure-terminal.css";
 import AssessmentActiveRunReset from "./AssessmentActiveRunReset";
 import AssessmentApiTransportBridge from "./AssessmentApiTransportBridge";
