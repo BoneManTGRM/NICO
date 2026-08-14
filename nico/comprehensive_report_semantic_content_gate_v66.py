@@ -14,26 +14,29 @@ _FINDING_REGISTER_MARKERS = (
     "hallazgos canonicos detallados",
 )
 _CURRENT_REVIEW_SCORE_EFFECT_MARKERS = (
-    (
-        "score effect: assurance-only while authorized human disposition remains pending; "
-        "nico automated technical triage is complete"
-    ),
-    (
-        "score effect: assurance-only while human disposition remains pending; "
-        "nico technical triage is complete"
-    ),
-    (
-        "efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; "
-        "el triage técnico de nico está completo"
-    ),
-    (
-        "efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; "
-        "el triage técnico de nico está completo"
-    ),
+    "score effect: assurance-only while authorized human disposition remains pending; nico automated technical triage is complete",
+    "score effect: assurance-only while human disposition remains pending; nico technical triage is complete",
+    "efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de nico está completo",
+    "efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de nico está completo",
 )
 _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS = (
     "score effect: assurance-only until triaged",
     "efecto en la puntuación: solo aseguramiento hasta su clasificación",
+)
+_EN_REVIEW_MARKERS = (
+    "review-required candidates: {review_total}",
+    "confirmed material findings: {material_total}",
+    "review-required candidate register",
+)
+_ES_REVIEW_MARKERS = (
+    "candidatos que requieren revisión: {review_total}",
+    "hallazgos materiales confirmados: {material_total}",
+    "registro de candidatos que requieren revisión",
+)
+_CI_OPERATIONAL_MARKERS = (
+    "ci/cd operational readiness and historical health",
+    "preparación operativa y salud histórica de ci/cd",
+    "preparacion operativa y salud historica de ci/cd",
 )
 
 
@@ -59,25 +62,25 @@ def _review_score_effect_marker(lowered: str) -> str:
     )
 
 
+def _report_language(package: Mapping[str, Any], canonical: Mapping[str, Any]) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    value = _text(
+        package.get("report_language")
+        or canonical.get("report_language")
+        or identity.get("report_language")
+        or assessment.get("report_language")
+    ).casefold()
+    return "es-MX" if value.startswith("es") else "en"
+
+
 def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, Any]:
     """Fail publication when retained decision content disappears from client formats."""
 
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
-    assessment = (
-        canonical.get("assessment")
-        if isinstance(canonical.get("assessment"), Mapping)
-        else {}
-    )
-    findings = [
-        item
-        for item in canonical.get("canonical_findings") or []
-        if isinstance(item, Mapping)
-    ]
-    hotspots = [
-        item
-        for item in canonical.get("architecture_hotspots") or []
-        if isinstance(item, Mapping)
-    ]
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
+    hotspots = [item for item in canonical.get("architecture_hotspots") or [] if isinstance(item, Mapping)]
     review_summary = (
         canonical.get("review_candidate_summary")
         if isinstance(canonical.get("review_candidate_summary"), Mapping)
@@ -92,12 +95,8 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
         if isinstance(assessment.get("ci_operational_context"), Mapping)
         else {}
     )
-    combined = "\n".join(
-        (
-            str(package.get("markdown") or ""),
-            str(package.get("html") or ""),
-        )
-    )
+    language = _report_language(package, canonical)
+    combined = "\n".join((str(package.get("markdown") or ""), str(package.get("html") or "")))
     lowered = combined.casefold()
 
     finding_count = len(findings)
@@ -146,10 +145,10 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
     score_effect_marker = ""
     superseded_score_effect_marker = ""
     if review_total:
-        required_markers = (
-            f"review-required candidates: {review_total}",
-            f"confirmed material findings: {material_total}",
-            "review-required candidate register",
+        templates = _ES_REVIEW_MARKERS if language == "es-MX" else _EN_REVIEW_MARKERS
+        required_markers = tuple(
+            marker.format(review_total=review_total, material_total=material_total)
+            for marker in templates
         )
         missing = [marker for marker in required_markers if marker.casefold() not in lowered]
         if missing:
@@ -158,11 +157,7 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
             )
 
         superseded_score_effect_marker = next(
-            (
-                marker
-                for marker in _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS
-                if marker in lowered
-            ),
+            (marker for marker in _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS if marker in lowered),
             "",
         )
         if superseded_score_effect_marker:
@@ -179,23 +174,29 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
                 "triage is complete"
             )
 
-    if ci_context and "ci/cd operational readiness and historical health" not in lowered:
-        raise ValueError(
-            "client report omitted CI/CD operational health that must remain separate from configuration maturity"
+    ci_operational_marker = ""
+    if ci_context:
+        ci_operational_marker = next(
+            (marker for marker in _CI_OPERATIONAL_MARKERS if marker in lowered),
+            "",
         )
+        if not ci_operational_marker:
+            raise ValueError(
+                "client report omitted CI/CD operational health that must remain separate from configuration maturity"
+            )
 
     return {
         "version": VERSION,
+        "report_language": language,
         "canonical_finding_count_rendered": finding_count,
         "architecture_hotspot_count_checked": len(hotspots),
         "review_required_candidate_count_rendered": review_total,
         "confirmed_material_candidate_count_rendered": material_total,
         "review_candidate_score_effect_marker": score_effect_marker,
         "review_candidate_score_effect_truth_present": not review_total or bool(score_effect_marker),
-        "superseded_review_candidate_score_effect_absent": not bool(
-            superseded_score_effect_marker
-        ),
-        "ci_operational_context_rendered": bool(ci_context),
+        "superseded_review_candidate_score_effect_absent": not bool(superseded_score_effect_marker),
+        "ci_operational_context_rendered": not bool(ci_context) or bool(ci_operational_marker),
+        "ci_operational_context_marker": ci_operational_marker,
         "finding_register_marker": finding_register_marker,
         "authoritative_finding_register_present": not finding_count or bool(finding_register_marker),
         "false_zero_finding_claim_absent": True,
@@ -244,9 +245,11 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "false_zero_finding_publication_blocked": True,
         "authoritative_finding_register_omission_blocked": True,
         "review_candidate_omission_blocked": True,
+        "spanish_review_candidate_truth_supported": True,
         "superseded_review_candidate_score_effect_blocked": True,
         "current_phase1_review_candidate_score_effect_required": True,
         "ci_operational_context_omission_blocked": True,
+        "spanish_ci_operational_truth_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
