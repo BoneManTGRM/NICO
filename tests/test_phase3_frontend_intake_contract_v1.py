@@ -29,3 +29,11 @@ def test_phase3_mobile_intake_keeps_mandatory_client_context_available_without_f
     assert 'data-mobile-client-engagement-context="true"' in form
     assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in form
     assert 'setEvidenceField("stakeholder_context", field' in form
+
+
+def test_phase3_workspace_mounts_mobile_client_context_instead_of_hiding_it() -> None:
+    workspace = Path("apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+    assert workspace.count("<StrategicEvidenceForm") == 1
+    assert "{compactMobile ? <section" not in workspace
+    assert "Optional human evidence is added from the desktop workspace" not in workspace
+    assert "La evidencia humana opcional se agrega desde la vista de escritorio" not in workspace
