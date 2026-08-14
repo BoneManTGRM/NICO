@@ -68,6 +68,25 @@ def test_page_resume_cannot_cancel_the_existing_exact_run_loop() -> None:
     assert 'activeContinuationRunId.current = ""' in continuation
 
 
+def test_terminal_url_run_is_not_reactivated_by_pageshow_in_same_document() -> None:
+    read = PERSISTENCE.split("export function readPersistedRun", 1)[1].split(
+        "export function clearPersistedRun", 1
+    )[0]
+    clear = PERSISTENCE.split("export function clearPersistedRun", 1)[1].split(
+        "export function writePersistedRun", 1
+    )[0]
+    write = PERSISTENCE.split("export function writePersistedRun", 1)[1]
+
+    marker = "TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT"
+    assert f"const {marker} = new Set<string>()" in PERSISTENCE
+    assert f"{marker}.has(urlRunId)" in read
+    assert read.index(f"{marker}.has(urlRunId)") < read.index("readExactStoredRun(urlRunId)")
+    assert f"{marker}.add(urlRunId)" in clear
+    assert f"{marker}.delete(urlRunId)" in clear
+    assert f"{marker}.delete(value.runId)" in write
+    assert "pageshow/online events must not synthesize" in PERSISTENCE
+
+
 def test_exact_url_run_uses_per_run_storage_without_cross_run_metadata() -> None:
     assert 'EXACT_RUN_STORAGE_PREFIX = "nico.comprehensive.exact-run.v1."' in PERSISTENCE
     assert "readExactStoredRun(urlRunId)" in PERSISTENCE

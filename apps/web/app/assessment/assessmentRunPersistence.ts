@@ -15,6 +15,7 @@ export type PersistedRun = {
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const EXACT_RUN_STORAGE_PREFIX = "nico.comprehensive.exact-run.v1.";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
+const TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT = new Set<string>();
 
 function normalizePersistedRun(value: unknown): PersistedRun | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -81,6 +82,13 @@ export function readPersistedRun(): PersistedRun | null {
     return readStoredRun();
   }
 
+  // A terminal exact run keeps its URL so a real reload can restore it. Within
+  // the current document, however, pageshow/online events must not synthesize
+  // that URL back into an active run and temporarily demote the terminal UI.
+  if (TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.has(urlRunId)) {
+    return null;
+  }
+
   const exact = readExactStoredRun(urlRunId);
   if (exact) {
     return exact;
@@ -119,7 +127,13 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
     // URL cleanup remains the authoritative escape from a stale active job.
   }
   if (preserveExplicitUrl) {
+    if (urlRunId) {
+      TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.add(urlRunId);
+    }
     return;
+  }
+  if (urlRunId) {
+    TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.delete(urlRunId);
   }
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
@@ -134,6 +148,7 @@ export function writePersistedRun(value: PersistedRun): void {
   if (typeof window === "undefined") {
     return;
   }
+  TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.delete(value.runId);
   try {
     const encoded = JSON.stringify(value);
     window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, encoded);
