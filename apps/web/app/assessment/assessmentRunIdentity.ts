@@ -1,4 +1,10 @@
-import type {Result, RunRecord, Stage} from "./assessmentTypes";
+import type {
+  Assessment,
+  Report,
+  Result,
+  RunRecord,
+  Stage,
+} from "./assessmentTypes";
 
 export type RunIdentityFallback = {
   runId: string;
@@ -8,6 +14,9 @@ export type RunIdentityFallback = {
   commitSha?: string;
   evidenceLedgerId?: string;
 };
+
+const RUN_SNAPSHOT_CACHE_LIMIT = 4;
+const runSnapshots = new Map<string, Result>();
 
 function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -56,6 +65,72 @@ function currentStageFor(value: Result | null): string {
   );
 }
 
+function reportContinuity(value: Report | undefined): Report | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const continuity: Report = {};
+  for (const key of [
+    "pdf_filename",
+    "pdf_error",
+    "report_id",
+    "pdf_sha256",
+    "canonical_truth_sha256",
+    "assessment_state",
+    "markdown_available",
+    "html_available",
+    "json_available",
+    "pdf_available",
+    "artifact_delivery",
+    "response_bounded",
+  ] as const) {
+    if (value[key] !== undefined) {
+      continuity[key] = value[key] as never;
+    }
+  }
+  return Object.keys(continuity).length ? continuity : undefined;
+}
+
+function assessmentContinuity(
+  value: Assessment | undefined,
+): Assessment | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  const continuity: Assessment = {};
+  for (const key of [
+    "technical_score",
+    "canonical_evidence_adjusted_score",
+    "evidence_adjusted_score",
+    "maturity_signal",
+    "evidence_coverage",
+    "evidence_completion_contract",
+  ]) {
+    if (source[key] !== undefined) {
+      continuity[key] = source[key];
+    }
+  }
+  return Object.keys(continuity).length ? continuity : undefined;
+}
+
+function stageContinuity(value: Stage): Stage {
+  return {
+    ...(value.status !== undefined ? {status: value.status} : {}),
+    ...(value.message !== undefined ? {message: value.message} : {}),
+    ...(value.summary !== undefined ? {summary: value.summary} : {}),
+    ...(assessmentContinuity(value.assessment)
+      ? {assessment: assessmentContinuity(value.assessment)}
+      : {}),
+    ...(reportContinuity(value.report_package)
+      ? {report_package: reportContinuity(value.report_package)}
+      : {}),
+    ...(reportContinuity(value.reports)
+      ? {reports: reportContinuity(value.reports)}
+      : {}),
+  };
+}
+
 function mergeStageResults(
   previous: Record<string, Stage> | undefined,
   incoming: Record<string, Stage> | undefined,
@@ -70,7 +145,7 @@ function mergeStageResults(
   return merged;
 }
 
-export function preserveRunIdentity(
+function normalizeRunIdentity(
   value: Result,
   fallback: RunIdentityFallback,
 ): Result {
@@ -131,18 +206,10 @@ export function preserveRunIdentity(
   };
 }
 
-/**
- * Reconcile a bounded status/continuation projection with the last richer
- * projection for the same exact run. This is presentation continuity only:
- * human completion, approval, review decisions, accepted editions, and client
- * delivery authorization are never carried forward from an older projection.
- */
-export function preserveRunSnapshot(
-  value: Result,
+function reconcileSameRunSnapshot(
+  incoming: Result,
   previous: Result | null,
-  fallback: RunIdentityFallback,
 ): Result {
-  const incoming = preserveRunIdentity(value, fallback);
   if (!previous || !sameRunIdentity(incoming, previous)) {
     return incoming;
   }
@@ -191,21 +258,122 @@ export function preserveRunSnapshot(
     human_review_required: previousRecord.human_review_required,
   };
 
-  return preserveRunIdentity(
-    {
-      ...safePrevious,
-      ...incoming,
+  return {
+    ...safePrevious,
+    ...incoming,
+    ...(currentStage ? {current_stage: currentStage} : {}),
+    ...(progressPercent != null ? {progress_percent: progressPercent} : {}),
+    record: {
+      ...safePreviousRecord,
+      ...incomingRecord,
       ...(currentStage ? {current_stage: currentStage} : {}),
       ...(progressPercent != null ? {progress_percent: progressPercent} : {}),
-      record: {
-        ...safePreviousRecord,
-        ...incomingRecord,
-        ...(currentStage ? {current_stage: currentStage} : {}),
-        ...(progressPercent != null ? {progress_percent: progressPercent} : {}),
-        ...(Object.keys(stageResults).length ? {stage_results: stageResults} : {}),
-        identity: incomingRecord.identity,
-      },
+      ...(Object.keys(stageResults).length ? {stage_results: stageResults} : {}),
+      identity: incomingRecord.identity,
     },
+  };
+}
+
+function continuitySnapshot(value: Result): Result {
+  const record = value.record || {};
+  const stageResults = Object.fromEntries(
+    Object.entries(record.stage_results || {}).map(([stageId, stage]) => [
+      stageId,
+      stageContinuity(stage),
+    ]),
+  );
+  const activeExecution = objectRecord(value.active_stage_execution);
+
+  return {
+    run_id: value.run_id,
+    repository: value.repository,
+    commit_sha: value.commit_sha,
+    evidence_ledger_id: value.evidence_ledger_id,
+    customer_id: value.customer_id,
+    project_id: value.project_id,
+    assessment_state: value.assessment_state,
+    canonical_truth_sha256: value.canonical_truth_sha256,
+    service_id: value.service_id,
+    status: value.status,
+    current_stage: value.current_stage,
+    progress_percent: value.progress_percent,
+    progress: value.progress?.map((item) => ({
+      step: item.step,
+      status: item.status,
+      message: item.message,
+    })),
+    assessment: assessmentContinuity(value.assessment),
+    reports: reportContinuity(value.reports),
+    repository_snapshot: value.repository_snapshot,
+    scanner: value.scanner,
+    scanner_evidence: value.scanner_evidence,
+    persistence: value.persistence,
+    survives_container_replacement_verified:
+      value.survives_container_replacement_verified,
+    human_review_required: value.human_review_required,
+    ...(Object.keys(activeExecution).length
+      ? {active_stage_execution: {...activeExecution}}
+      : {}),
+    record: {
+      assessment_state: record.assessment_state,
+      canonical_truth_sha256: record.canonical_truth_sha256,
+      assessment_package_complete: record.assessment_package_complete,
+      status: record.status,
+      current_stage: record.current_stage,
+      progress_percent: record.progress_percent,
+      ...(Object.keys(stageResults).length ? {stage_results: stageResults} : {}),
+      identity: record.identity,
+      human_review_required: record.human_review_required,
+    },
+  };
+}
+
+function cacheRunSnapshot(value: Result): void {
+  const runId = runIdFor(value);
+  if (!runId) {
+    return;
+  }
+  runSnapshots.delete(runId);
+  runSnapshots.set(runId, continuitySnapshot(value));
+  while (runSnapshots.size > RUN_SNAPSHOT_CACHE_LIMIT) {
+    const oldest = runSnapshots.keys().next().value;
+    if (!oldest) {
+      break;
+    }
+    runSnapshots.delete(oldest);
+  }
+}
+
+/**
+ * Preserve exact identity and monotonic presentation state for bounded responses
+ * belonging to the same run. The cache retains only small status/report metadata;
+ * scanner evidence, report bodies, PDF bytes, human decisions, approval state,
+ * and client-delivery authorization are never cached or carried forward.
+ */
+export function preserveRunIdentity(
+  value: Result,
+  fallback: RunIdentityFallback,
+): Result {
+  const incoming = normalizeRunIdentity(value, fallback);
+  const previous = runSnapshots.get(runIdFor(incoming)) || null;
+  const reconciled = normalizeRunIdentity(
+    reconcileSameRunSnapshot(incoming, previous),
     fallback,
   );
+  cacheRunSnapshot(reconciled);
+  return reconciled;
+}
+
+export function preserveRunSnapshot(
+  value: Result,
+  previous: Result | null,
+  fallback: RunIdentityFallback,
+): Result {
+  const incoming = normalizeRunIdentity(value, fallback);
+  const reconciled = normalizeRunIdentity(
+    reconcileSameRunSnapshot(incoming, previous),
+    fallback,
+  );
+  cacheRunSnapshot(reconciled);
+  return reconciled;
 }
