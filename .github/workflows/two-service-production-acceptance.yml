@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: unified-production-acceptance-${{ github.ref }}
+  group: unified-production-acceptance-v2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
