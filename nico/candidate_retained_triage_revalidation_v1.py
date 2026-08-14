@@ -33,6 +33,13 @@ def _norm(value: Any) -> str:
     return _text(value).casefold().replace("-", "_").replace(" ", "_")
 
 
+def _count(record: Mapping[str, Any]) -> int:
+    try:
+        return max(1, int(record.get("occurrence_count") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _proof_gaps(record: Mapping[str, Any]) -> set[str]:
     raw = record.get("technical_triage_proof_gaps") or record.get("proof_gaps") or []
     if isinstance(raw, str):
@@ -103,7 +110,7 @@ def revalidate_retained_candidate_triage(register: Mapping[str, Any]) -> dict[st
         record["retained_triage_revalidated_against_current_contract"] = True
         record["retained_triage_previous_source"] = previous_source
         record["retained_triage_previous_rationale_code"] = previous_rationale
-        revalidated += max(1, int(record.get("occurrence_count") or 1))
+        revalidated += _count(record)
         candidate_id = _text(record.get("candidate_id") or record.get("finding_id"))
         if candidate_id:
             revalidated_ids.append(candidate_id)
@@ -114,16 +121,40 @@ def revalidate_retained_candidate_triage(register: Mapping[str, Any]) -> dict[st
         else {}
     )
     verdict_counts: Counter[str] = Counter()
+    completed = 0
     for record in findings:
         verdict = _norm(record.get("technical_triage_verdict"))
         if verdict in {"not_actionable", "needs_review", "confirmed"}:
-            verdict_counts[verdict] += max(1, int(record.get("occurrence_count") or 1))
+            count = _count(record)
+            verdict_counts[verdict] += count
+            completed += count
 
+    total = sum(_count(record) for record in findings)
+    canonical_counts = {
+        "confirmed_count": verdict_counts["confirmed"],
+        "needs_review_count": verdict_counts["needs_review"],
+        "not_actionable_count": verdict_counts["not_actionable"],
+        "technical_triage_completed": completed,
+        "technical_triage_pending": max(0, total - completed),
+        "technical_triage_coverage_pct": round(completed * 100 / total, 2) if total else 100.0,
+    }
+    technical.update(canonical_counts)
+    existing_metrics = (
+        deepcopy(dict(technical.get("workload_metrics")))
+        if isinstance(technical.get("workload_metrics"), Mapping)
+        else {}
+    )
+    existing_metrics.update(canonical_counts)
+    technical["workload_metrics"] = existing_metrics
     technical["verdict_counts"] = {
         "confirmed": verdict_counts["confirmed"],
         "needs_review": verdict_counts["needs_review"],
         "not_actionable": verdict_counts["not_actionable"],
     }
+    technical["imported_candidate_count"] = max(
+        0,
+        int(technical.get("imported_candidate_count") or 0) - revalidated,
+    )
     technical["retained_prior_revalidation"] = {
         "artifact_schema": VERSION,
         "status": "complete",
