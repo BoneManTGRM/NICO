@@ -12,7 +12,7 @@ IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 MOBILE_WORKFLOW = ROOT / ".github/workflows/mobile-restart-production-proof.yml"
 MOBILE_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
 IOS_CONCURRENCY = "group: nico-production-ios-webkit-proof-${{ github.ref }}"
-TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-${{ github.ref }}"
+TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-v2-${{ github.ref }}"
 
 
 def _load_audit_module() -> Any:
