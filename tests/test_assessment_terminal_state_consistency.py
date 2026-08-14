@@ -57,7 +57,10 @@ def test_unified_workspace_consumes_structured_terminal_state_instead_of_stale_r
     assert 'const continued = await requestWithRetry(' in controller
     assert 'current = preserveRunIdentity(continued' in controller
     assert 'const stable = terminal(service, current)' in controller
-    assert 'setResult(current)' in controller
+    assert 'publishResult(current);' in controller
+    assert 'const incomingTerminal = terminal(service, incoming)' in controller
+    assert 'if (incomingTerminal)' in controller
+    assert 'setResult(visible);' in controller
     assert '["failed", "blocked", "error", "rejected", "interrupted"].includes(value)' in evidence
     assert 'return jsonResponse(output);' in guard
     assert 'output.run_id = runId' in guard
