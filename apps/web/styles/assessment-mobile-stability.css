@@ -141,3 +141,29 @@
   }
 
 }
+
+/* The active-run recovery panel is fixed to the viewport. Reserve measured
+   document space behind it so the last terminal control, including Technical
+   identity, can always scroll completely above the panel on a phone. */
+@media (max-width: 760px) {
+  html[data-assessment-active-run-reset-visible="true"] body.nico-app {
+    padding-bottom: calc(
+      var(--nico-active-run-reset-clearance, 68px) +
+      max(24px, env(safe-area-inset-bottom))
+    ) !important;
+    scroll-padding-bottom: calc(
+      var(--nico-active-run-reset-clearance, 68px) +
+      max(24px, env(safe-area-inset-bottom))
+    );
+  }
+
+  body.nico-app [data-assessment-active-run-reset="true"] {
+    overflow-anchor: none;
+  }
+
+  main[data-workspace="assessment"] details[class*="compactIdentity"] {
+    scroll-margin-bottom: calc(
+      var(--nico-active-run-reset-clearance, 68px) + 24px
+    );
+  }
+}
