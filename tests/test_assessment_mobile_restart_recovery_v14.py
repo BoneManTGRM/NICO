@@ -19,9 +19,10 @@ def test_exact_run_is_persisted_in_url_and_browser_storage() -> None:
     persistence = PERSISTENCE.read_text(encoding="utf-8")
 
     assert 'ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"' in persistence
+    assert 'EXACT_RUN_STORAGE_PREFIX = "nico.comprehensive.exact-run.v1."' in persistence
     assert 'ACTIVE_RUN_QUERY_KEY = "run_id"' in persistence
-    assert "window.localStorage.setItem(" in persistence
-    assert "ACTIVE_RUN_STORAGE_KEY" in persistence
+    assert "window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, encoded)" in persistence
+    assert "window.localStorage.setItem(exactRunStorageKey(value.runId), encoded)" in persistence
     assert "url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId)" in persistence
     assert "persistExactRun(data, scope, startedAt)" in hook
     assert "persistExactRun(current, scope, startedAt)" in hook
@@ -33,9 +34,13 @@ def test_mobile_page_resume_recovers_and_continues_the_same_run() -> None:
     assert "resumePersistedRun(persisted)" in source
     assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
     assert 'window.addEventListener("online", restoreAfterPageResume)' in source
+    assert "const persisted = readPersistedRun();" in source
+    assert "activeContinuationRunId.current === persisted.runId" in source
+    assert "visibleRunId && visibleRunId !== persisted.runId" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in source
+    assert "publishResult(recovered);" in source
     assert "await continueRun(recovered, scope, token, persisted.startedAt)" in source
-    assert 'setResult({\n      run_id: persisted.runId' in source
+    assert 'setResult({\n      run_id: persisted.runId' not in source
     assert '"/assessment/comprehensive-intake"' in source
 
 
