@@ -14,6 +14,11 @@ VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"
 OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
+CLIENT_CONTEXT_FIELDS = {
+    "access method",
+    "primary technical contact",
+    "authorized scope",
+}
 
 
 class _IPhoneBrowser:
@@ -100,12 +105,30 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
             """section => {
               const style = getComputedStyle(section);
               const controls = section.querySelectorAll('input, textarea, select, button');
+              const clientContext = section.matches('[data-mobile-client-engagement-context="true"]')
+                ? section
+                : section.querySelector('[data-mobile-client-engagement-context="true"]');
+              const clientControls = clientContext
+                ? clientContext.querySelectorAll('input, textarea, select, button')
+                : [];
+              const clientTextareas = clientContext ? clientContext.querySelectorAll('textarea') : [];
+              const clientLabels = clientContext
+                ? Array.from(clientContext.querySelectorAll('label span')).map(
+                    node => String(node.textContent || '').trim().toLowerCase()
+                  ).filter(Boolean)
+                : [];
               const richNodes = section.querySelectorAll(
-                '[class*="evidenceWorkspace"], [class*="moduleList"], [class*="moduleEditor"], [class*="mobileChooser"]'
+                '[class*="evidenceWorkspace"], [class*="moduleList"], [class*="mobileChooser"]'
               );
+              const richControlCount = controls.length - clientControls.length;
               return {
                 editor_mounted: section.getAttribute('data-evidence-editor-mounted') || '',
                 interactive_control_count: controls.length,
+                client_context_present: Boolean(clientContext),
+                client_context_control_count: clientControls.length,
+                client_context_textarea_count: clientTextareas.length,
+                client_context_labels: clientLabels,
+                rich_editor_control_count: richControlCount,
                 rich_editor_node_count: richNodes.length,
                 mobile_note_present: Boolean(section.querySelector('[data-mobile-evidence-note="true"]')),
                 section_height: section.getBoundingClientRect().height,
@@ -114,29 +137,41 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
             }"""
         )
         assert paint_boundary.get("editor_mounted") == "false", paint_boundary
-        assert int(paint_boundary.get("interactive_control_count") or 0) == 0, paint_boundary
+        assert paint_boundary.get("client_context_present") is True, paint_boundary
+        assert int(paint_boundary.get("interactive_control_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("client_context_control_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("client_context_textarea_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("rich_editor_control_count") or 0) == 0, paint_boundary
         assert int(paint_boundary.get("rich_editor_node_count") or 0) == 0, paint_boundary
+        assert set(paint_boundary.get("client_context_labels") or []) == CLIENT_CONTEXT_FIELDS, paint_boundary
         assert paint_boundary.get("mobile_note_present") is True, paint_boundary
-        assert float(paint_boundary.get("section_height") or 0) < 520, paint_boundary
+        assert float(paint_boundary.get("section_height") or 0) < 1_200, paint_boundary
 
         document_metrics = page.evaluate(
-            """() => ({
-              scroll_height: document.documentElement.scrollHeight,
-              body_height: document.body.getBoundingClientRect().height,
-              viewport_height: window.innerHeight,
-              viewport_width: window.innerWidth,
-              node_count: document.getElementsByTagName('*').length,
-              evidence_control_count: document.querySelectorAll(
-                'section[aria-labelledby="strategic-evidence-title"] input, '
-                + 'section[aria-labelledby="strategic-evidence-title"] textarea, '
-                + 'section[aria-labelledby="strategic-evidence-title"] select, '
-                + 'section[aria-labelledby="strategic-evidence-title"] button'
-              ).length,
-            })"""
+            """() => {
+              const evidence = document.querySelector('section[data-mobile-evidence-boundary="true"]');
+              const clientContext = evidence && evidence.matches('[data-mobile-client-engagement-context="true"]')
+                ? evidence
+                : evidence?.querySelector('[data-mobile-client-engagement-context="true"]');
+              const evidenceControls = evidence?.querySelectorAll('input, textarea, select, button') || [];
+              const clientControls = clientContext?.querySelectorAll('input, textarea, select, button') || [];
+              return {
+                scroll_height: document.documentElement.scrollHeight,
+                body_height: document.body.getBoundingClientRect().height,
+                viewport_height: window.innerHeight,
+                viewport_width: window.innerWidth,
+                node_count: document.getElementsByTagName('*').length,
+                evidence_control_count: evidenceControls.length,
+                client_context_control_count: clientControls.length,
+                evidence_rich_control_count: evidenceControls.length - clientControls.length,
+              };
+            }"""
         )
         assert int(document_metrics.get("scroll_height") or 0) < 6_000, document_metrics
         assert int(document_metrics.get("node_count") or 0) < 2_000, document_metrics
-        assert int(document_metrics.get("evidence_control_count") or 0) == 0, document_metrics
+        assert int(document_metrics.get("evidence_control_count") or 0) == 3, document_metrics
+        assert int(document_metrics.get("client_context_control_count") or 0) == 3, document_metrics
+        assert int(document_metrics.get("evidence_rich_control_count") or 0) == 0, document_metrics
 
         page.screenshot(path=str(top_path), full_page=False, timeout=15_000, animations="disabled")
 
@@ -159,7 +194,9 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
             "browser_engine": "webkit",
             "mobile_emulation": "iPhone 390x844 @3x touch",
             "optional_evidence_editor_unmounted": True,
-            "optional_evidence_controls_allocated": 0,
+            "optional_evidence_controls_allocated": 3,
+            "rich_optional_evidence_controls_allocated": 0,
+            "lightweight_client_context_controls_allocated": 3,
             "authorization_reachable": True,
             "assessment_action_reachable": True,
             "ancestor_clipping_absent": True,
