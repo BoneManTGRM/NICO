@@ -4,10 +4,17 @@ import {useEffect, useRef, useState} from "react";
 
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
-const SHORT_REQUEST_TIMEOUT_MS = 45_000;
+// The assessment workspace owns 48s readiness, 75s exact-run status, and 260s
+// continuation envelopes. This global fallback must remain outside those bounds so
+// it cannot abort the authoritative request first and manufacture a second recovery UI.
+const DIAGNOSTIC_REQUEST_TIMEOUT_MS = 60_000;
+const RUN_STATUS_REQUEST_TIMEOUT_MS = 90_000;
 const LONG_REQUEST_TIMEOUT_MS = 300_000;
 const LIFECYCLE_PATH = /^\/api\/nico\/(?:diagnostics\/comprehensive-runtime|assessment\/comprehensive-(?:intake|run\/[^/?#]+(?:\/continue)?))(?:[?#]|$)/;
+const RUN_STATUS_PATH = /^\/api\/nico\/assessment\/comprehensive-run\/[^/?#]+$/;
 const RUN_PATH = /\/assessment\/comprehensive-run\/([^/?#]+)/;
+const CANONICAL_RUN_ISSUE_SELECTOR =
+  '[data-assessment-run-state="true"] [role="alert"]';
 const RECOVERY_CLEARANCE_ATTRIBUTE =
   "data-comprehensive-stuck-run-recovery-visible";
 const RECOVERY_CLEARANCE_PROPERTY =
@@ -77,8 +84,18 @@ function requestPath(input: RequestInfo | URL): string {
 }
 
 function requestTimeout(path: string, method: string): number {
-  if (method === "GET" || path.includes("/diagnostics/comprehensive-runtime")) return SHORT_REQUEST_TIMEOUT_MS;
+  if (path.includes("/diagnostics/comprehensive-runtime")) {
+    return DIAGNOSTIC_REQUEST_TIMEOUT_MS;
+  }
+  if (method === "GET" && RUN_STATUS_PATH.test(path)) {
+    return RUN_STATUS_REQUEST_TIMEOUT_MS;
+  }
   return LONG_REQUEST_TIMEOUT_MS;
+}
+
+function canonicalRunIssueVisible(): boolean {
+  return typeof document !== "undefined"
+    && Boolean(document.querySelector(CANONICAL_RUN_ISSUE_SELECTOR));
 }
 
 function runIdFromLifecyclePath(path: string): string {
@@ -219,7 +236,26 @@ export default function ComprehensiveStuckRunRecovery() {
     const boundedFetch: typeof window.fetch = (input, init) => combinedRequest(originalFetch, input, init);
     window.fetch = boundedFetch;
 
+    const hideFallback = () => {
+      timedOutRunId.current = "";
+      setRecoveryRunId("");
+      setReason("status");
+      setVisible(false);
+      clearReservedViewportSpace();
+    };
+    const suppressWhenCanonicalIssueVisible = () => {
+      if (canonicalRunIssueVisible()) hideFallback();
+    };
+    const issueObserver = new MutationObserver(suppressWhenCanonicalIssueVisible);
+    issueObserver.observe(document.body, {subtree: true, childList: true});
+    suppressWhenCanonicalIssueVisible();
+
     const timeoutListener = (event: Event) => {
+      if (canonicalRunIssueVisible()) {
+        hideFallback();
+        return;
+      }
+
       const detail = (event as CustomEvent<TimeoutDetail>).detail || {};
       const path = String(detail.path || "");
       const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path);
@@ -228,9 +264,7 @@ export default function ComprehensiveStuckRunRecovery() {
       // Recovery controls appear only after a bounded lifecycle request actually
       // times out, and the canonical controller then reads the exact backend run.
       if (!timeoutRunId) {
-        timedOutRunId.current = "";
-        setRecoveryRunId("");
-        setVisible(false);
+        hideFallback();
         return;
       }
 
@@ -245,6 +279,7 @@ export default function ComprehensiveStuckRunRecovery() {
     window.addEventListener("nico:comprehensive-request-timeout", timeoutListener);
 
     return () => {
+      issueObserver.disconnect();
       window.removeEventListener("nico:comprehensive-request-timeout", timeoutListener);
       if (window.fetch === boundedFetch) window.fetch = originalFetch;
       activeControllers.forEach((controller) => controller.abort());
@@ -283,7 +318,7 @@ export default function ComprehensiveStuckRunRecovery() {
     };
   }, [recoveryRunId, spanish, visible]);
 
-  if (!visible) return null;
+  if (!visible || canonicalRunIssueVisible()) return null;
 
   const runId = recoveryRunId || currentRunId();
   const keepWaiting = () => {

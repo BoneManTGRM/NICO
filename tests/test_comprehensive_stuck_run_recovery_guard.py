@@ -9,8 +9,11 @@ LAYOUT = ROOT / "apps/web/app/layout.tsx"
 
 def test_guard_bounds_comprehensive_lifecycle_requests() -> None:
     source = GUARD.read_text(encoding="utf-8")
-    assert "const SHORT_REQUEST_TIMEOUT_MS = 45_000" in source
+    assert "const DIAGNOSTIC_REQUEST_TIMEOUT_MS = 60_000" in source
+    assert "const RUN_STATUS_REQUEST_TIMEOUT_MS = 90_000" in source
     assert "const LONG_REQUEST_TIMEOUT_MS = 300_000" in source
+    assert "const RUN_STATUS_PATH =" in source
+    assert 'if (method === "GET" && RUN_STATUS_PATH.test(path))' in source
     assert "const controller = new AbortController()" in source
     assert "controller.abort" in source
     assert "nico:comprehensive-request-timeout" in source
