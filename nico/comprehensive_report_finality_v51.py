@@ -17,6 +17,9 @@ from nico.comprehensive_report_scanner_detection_v51 import (
 )
 from nico.comprehensive_report_scanner_scoring_v51 import _normalize_assessment
 from nico.comprehensive_report_spanish_artifacts_v51 import _localize_package
+from nico.comprehensive_spanish_authoritative_publication_v68 import (
+    finalize_spanish_authoritative_package,
+)
 
 VERSION = "nico.comprehensive_report_finality.v51"
 _PATCH_MARKER = "_nico_comprehensive_report_finality_v51"
@@ -106,7 +109,9 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
                 return result
             result["report_language"] = language
             if language == "es-MX":
-                result = _localize_package(result)
+                result = finalize_spanish_authoritative_package(
+                    _localize_package(result)
+                )
 
             package = result.get("report_package") if isinstance(result.get("report_package"), dict) else {}
             canonical = package.get("json") if isinstance(package.get("json"), dict) else {}
@@ -215,6 +220,7 @@ def install_comprehensive_report_finality_v51() -> dict[str, Any]:
         "legacy_v2_report_package_isolated": True,
         "spanish_client_artifacts": True,
         "spanish_cross_format_finality": True,
+        "spanish_authoritative_register_complete": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
