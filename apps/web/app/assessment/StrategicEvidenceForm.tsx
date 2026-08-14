@@ -41,7 +41,13 @@ const TEXT = {
     mobileStable: "The full optional evidence editor is not loaded on phones or touch-first devices. Internal repository assessment can continue without it. When client/project identity is supplied, complete the lightweight client engagement context below.",
     mobileClientTitle: "Client engagement context",
     mobileClientBody: "Required only for actual client work. These fields bind access, the primary technical contact, and authorized scope without loading the full optional evidence workspace.",
-    field: (name: string) => name.replaceAll("_", " "),
+    field: (name: string) => name === "access_method"
+      ? "Access Method"
+      : name === "primary_technical_contact"
+        ? "Primary Technical Contact"
+        : name === "authorized_scope"
+          ? "Authorized Scope"
+          : name.replaceAll("_", " "),
   },
   "es-MX": {
     eyebrow: "EVIDENCIA HUMANA OPCIONAL",
@@ -69,7 +75,13 @@ const TEXT = {
     mobileStable: "El editor completo de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. La evaluación interna del repositorio puede continuar sin él. Cuando se proporciona identidad de cliente/proyecto, complete el contexto ligero del encargo a continuación.",
     mobileClientTitle: "Contexto del encargo del cliente",
     mobileClientBody: "Requerido únicamente para trabajo real de cliente. Estos campos vinculan acceso, contacto técnico principal y alcance autorizado sin cargar el espacio completo de evidencia opcional.",
-    field: (name: string) => name.replaceAll("_", " "),
+    field: (name: string) => name === "access_method"
+      ? "Método de acceso"
+      : name === "primary_technical_contact"
+        ? "Contacto técnico principal"
+        : name === "authorized_scope"
+          ? "Alcance autorizado"
+          : name.replaceAll("_", " "),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
 
