@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-VERSION = "nico.phase1-structured-artifact-audit.v2"
+VERSION = "nico.phase1-structured-artifact-audit.v1"
 EXPLICIT_UNKNOWN = {
     "unknown",
     "not_assessed",
