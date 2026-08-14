@@ -108,7 +108,10 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
   const url = new URL(window.location.href);
   const urlRunId = url.searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
   try {
-    window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    const active = readStoredRun();
+    if (!urlRunId || !active || active.runId === urlRunId) {
+      window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    }
     if (urlRunId) {
       window.localStorage.removeItem(exactRunStorageKey(urlRunId));
     }
