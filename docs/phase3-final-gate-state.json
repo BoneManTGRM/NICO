@@ -1,0 +1,15 @@
+{
+  "artifact_schema": "nico.phase3-final-gate-state.v1",
+  "phase": 3,
+  "state": "repair_in_progress",
+  "one_public_product": "NICO Comprehensive",
+  "one_client_report": true,
+  "required_before_complete": [
+    "exact_head_required_checks_green",
+    "merged_to_main",
+    "exact_main_unified_production_acceptance_green",
+    "fresh_comprehensive_report_bound_to_exact_main"
+  ],
+  "human_review_required": true,
+  "client_delivery_allowed_before_approval": false
+}
