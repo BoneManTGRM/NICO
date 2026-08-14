@@ -21,14 +21,20 @@ from nico.candidate_phase1_workload_refinement_v1 import (
     refine_candidate_review_workload,
     scan_assessment_subject,
 )
+from nico.candidate_retained_triage_revalidation_v1 import (
+    VERSION as RETAINED_TRIAGE_REVALIDATION_VERSION,
+)
+from nico.candidate_retained_triage_revalidation_v1 import (
+    revalidate_retained_candidate_triage,
+)
 from nico.candidate_technical_triage_v1 import VERSION as TECHNICAL_TRIAGE_VERSION
 from nico.candidate_technical_triage_v1 import apply_candidate_technical_triage
 from nico.osv_scanner_context_patch_v1 import install_osv_scanner_context_patch
 
-VERSION = "nico.candidate-lineage-runtime-patch.v4"
-_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v4"
-_INSTALL_MARKER = "_nico_candidate_lineage_install_v4"
-_STAGE_MARKER = "_nico_candidate_lineage_stage_v4"
+VERSION = "nico.candidate-lineage-runtime-patch.v5"
+_PROVIDER_MARKER = "_nico_candidate_lineage_provider_v5"
+_INSTALL_MARKER = "_nico_candidate_lineage_install_v5"
+_STAGE_MARKER = "_nico_candidate_lineage_stage_v5"
 _HEAVY = {
     "pdf_base64",
     "html",
@@ -208,6 +214,14 @@ def _patch_candidate_stage() -> bool:
                     ),
                 ]
             )
+            revalidation_count = int(
+                technical.get("retained_prior_revalidation_count") or 0
+            )
+            if revalidation_count:
+                evidence.append(
+                    "Retained prior dependency recommendations revalidated against the current "
+                    f"proof-gap contract: {revalidation_count}."
+                )
             output["technical_triage"] = deepcopy(dict(technical))
             output["review_workload_clusters"] = deepcopy(
                 technical.get("review_workload_clusters") or []
@@ -262,6 +276,7 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
             register = enrich_canonical_candidate_evidence(register, scan)
             register = apply_candidate_lineage(register)
             register = apply_candidate_technical_triage(register)
+            register = revalidate_retained_candidate_triage(register)
             return refine_candidate_review_workload(register)
 
         setattr(build_with_lineage, _PROVIDER_MARKER, True)
@@ -286,11 +301,14 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
                     "candidate_evidence_context_schema": EVIDENCE_CONTEXT_VERSION,
                     "candidate_technical_triage_bound": True,
                     "candidate_technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
+                    "retained_triage_revalidation_bound": True,
+                    "retained_triage_revalidation_schema": RETAINED_TRIAGE_REVALIDATION_VERSION,
                     "candidate_review_workload_refinement_bound": True,
                     "candidate_review_workload_refinement_schema": WORKLOAD_REFINEMENT_VERSION,
                     "phase1_report_workload_bound": True,
                     "phase1_report_workload_schema": REPORT_WORKLOAD_VERSION,
                     "fresh_technical_triage_new_or_changed": True,
+                    "invalid_retained_dependency_triage_revalidated": True,
                     "review_by_exception_routing_bound": True,
                     "default_optional_identity_placeholders_are_non_partitioning": True,
                     "real_project_workspace_target_identity_remains_fail_closed": True,
@@ -328,9 +346,11 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
         "lineage_schema": LINEAGE_VERSION,
         "evidence_context_schema": EVIDENCE_CONTEXT_VERSION,
         "technical_triage_schema": TECHNICAL_TRIAGE_VERSION,
+        "retained_triage_revalidation_schema": RETAINED_TRIAGE_REVALIDATION_VERSION,
         "workload_refinement_schema": WORKLOAD_REFINEMENT_VERSION,
         "report_workload_schema": REPORT_WORKLOAD_VERSION,
         "technical_triage_bound": True,
+        "retained_triage_revalidation_bound": True,
         "review_workload_refinement_bound": True,
         "report_workload": report_workload,
         "osv_scanner_context": osv_context,
