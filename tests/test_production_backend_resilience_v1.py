@@ -53,7 +53,9 @@ def test_frontend_retries_and_recovers_existing_run_state() -> None:
     assert "export function preserveRunIdentity" in identity
     assert "async function resumePersistedRun" in hook
     assert "const recovered = preserveRunIdentity(recoveredResponse" in hook
-    assert "setResult(recovered)" in hook
+    assert "publishResult(recovered);" in hook
+    assert "preferMonotonicVisibleResult" in hook
+    assert "incomingProgress < previousProgress" in hook
     assert "await continueRun(recovered, scope, token, persisted.startedAt)" in hook
     assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in hook
     assert 'window.addEventListener("online", restoreAfterPageResume)' in hook
