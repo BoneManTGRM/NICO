@@ -21,7 +21,11 @@ def test_mobile_active_run_controls_are_collapsible_and_accessible() -> None:
     assert 'aria-controls="nico-current-assessment-controls"' in COMPONENT
     assert "aria-expanded={!collapsed}" in COMPONENT
     assert "setCollapsed((value) => !value)" in COMPONENT
-    assert '{collapsed ? "Show" : "Hide"}' in COMPONENT
+    assert "{collapsed ? copy.show : copy.hide}" in COMPONENT
+    assert 'show: "Show"' in COMPONENT
+    assert 'hide: "Hide"' in COMPONENT
+    assert 'show: "Mostrar"' in COMPONENT
+    assert 'hide: "Ocultar"' in COMPONENT
 
 
 def test_clear_current_run_action_remains_available_when_expanded() -> None:
