@@ -240,11 +240,13 @@ def _current_run_service(browser: Any, config: Any, pass_number: int, service: s
         button = page.get_by_role("button", name=label, exact=True)
         if button.get_attribute("aria-pressed") != "true":
             button.click()
-        client = f"Production Acceptance Pass {pass_number}"
-        project = f"NICO {service.title()} Acceptance {pass_number}"
         page.get_by_label("Repository owner/name or GitHub URL").fill(config.repository)
-        page.get_by_label("Client name, optional").fill(client)
-        page.get_by_label("Project name, optional").fill(project)
+        # Unified production acceptance is an internal deployment/assessment proof,
+        # not a client engagement. Phase 3 client mode requires real client/project
+        # identity plus retained access method, technical contact, and authorized scope.
+        # Keep optional identities explicitly blank rather than fabricating client data.
+        page.get_by_label("Client name, optional").fill("")
+        page.get_by_label("Project name, optional").fill("")
         page.get_by_role(
             "checkbox",
             name="I confirm I own this target or have explicit permission to assess it.",
