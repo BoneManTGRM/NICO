@@ -98,7 +98,9 @@ def test_comprehensive_continues_the_exact_same_run_automatically() -> None:
     continuation = source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
     assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in continuation
-    assert 'const runId = String(current.run_id || "")' in continuation
+    assert "const continuationRunId = exactRunId(current)" in continuation
+    assert "const runId = exactRunId(current)" in continuation
+    assert "activeContinuationRunId.current === continuationRunId" in continuation
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue" in continuation
     assert 'JSON.stringify({max_stages: 1})' in continuation
     assert '"/assessment/comprehensive-intake"' not in continuation
