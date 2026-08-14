@@ -141,6 +141,11 @@ export default function StrategicEvidenceForm({
     });
   }
 
+  // Mobile/touch intake must leave the DOM once an assessment is active. Keeping
+  // even the lightweight textareas mounted during polling has caused iOS paint
+  // instability; the submitted evidence already lives in controller state.
+  if (!richEditorEnabled && disabled) return null;
+
   if (!richEditorEnabled) {
     const engagement = value.stakeholder_context || emptyStrategicEvidenceModule();
     return <section
