@@ -315,17 +315,14 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       ? locale === "es-MX" ? "Preparando el archivo…" : "Preparing file…"
       : "";
     const terminalView = ["review_required", "complete", "failed", "timed_out"].includes(phase);
-    const mobileEvidenceNote = locale === "es-MX"
-      ? "La evidencia humana opcional se agrega desde la vista de escritorio. La evaluación del repositorio puede continuar sin ella."
-      : "Optional human evidence is added from the desktop workspace. The repository assessment can continue without it.";
-    return {stageHistoryLabel, artifactStatus, terminalView, mobileEvidenceNote};
+    return {stageHistoryLabel, artifactStatus, terminalView};
   }
 
   const {stageId, percent, evidenceCompletion, coverageLabel} = deriveProgressView();
   const {technicalValue, adjustedValue, technicalLabel, adjustedLabel, maturityStatus} = deriveScoreView();
   const {immutableCommit, scannerStatus, markdownAvailable, pdfAvailable, reportReady, reportStatus} = deriveArtifactView();
   const {internalReview, reviewStatus, clientReadyStatus, internalReviewHref, preflightIssue, runIssue, showStatePanel} = deriveReviewView();
-  const {stageHistoryLabel, artifactStatus, terminalView, mobileEvidenceNote} = deriveCopyView();
+  const {stageHistoryLabel, artifactStatus, terminalView} = deriveCopyView();
 
   async function copyMarkdown(): Promise<void> {
     if (!markdownAvailable || artifactAction) return;
@@ -465,20 +462,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <label className={workspaceStyles.secondaryField}>{copy.project}<input value={project} onChange={(event) => setProject(event.target.value)} disabled={running} /></label>
         </div>
 
-        {compactMobile ? <section
-          className={mobileStyles.mobileEvidenceBoundary}
-          aria-label={locale === "es-MX" ? "Evidencia humana opcional" : "Optional human evidence"}
-          data-mobile-evidence-boundary="true"
-          data-evidence-editor-mounted="false"
-        >
-          <strong>{locale === "es-MX" ? "Evidencia humana opcional" : "Optional human evidence"}</strong>
-          <p data-mobile-evidence-note="true">{mobileEvidenceNote}</p>
-        </section> : <StrategicEvidenceForm
+        <StrategicEvidenceForm
           locale={locale}
           value={humanEvidence}
           onChange={setHumanEvidence}
           disabled={running}
-        />}
+        />
 
         <label className={workspaceStyles.authorizationPanel}>
           <input
