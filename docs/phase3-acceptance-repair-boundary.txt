@@ -1,0 +1,1 @@
+Internal production proof only. Real client mode remains fail closed and requires genuine client/project identity plus required client-engagement context. No automated human approval or client delivery authorization.
