@@ -42,7 +42,57 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v13"
+VERSION = "nico.comprehensive_run_service.v14"
+
+_EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
+_EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
+    "evidence_reconciliation_and_scoring",
+    "functional_qa",
+    "platform_parity",
+    "requirements_traceability",
+    "stakeholder_and_business_alignment",
+    "historical_trends_and_change_failure",
+    "six_month_roadmap",
+    "staffing_sequencing_and_cost",
+)
+
+
+def _prior_stage_results_for_stage(
+    stage_id: str,
+    retained_stage_results: dict[str, Any],
+    completed: list[str],
+) -> dict[str, Any]:
+    """Build the smallest safe prior-stage context for one stage.
+
+    The executive briefing consumes a fixed, bounded set of synthesized/scoring
+    predecessors. Copying the full retained stage tree here would clone repository and
+    scanner payloads before the hard stage-timeout subprocess is even started. On large
+    production runs that can exhaust the request window at the 83% boundary while the
+    canonical run itself remains valid. Keep mutation isolation by deep-copying only the
+    exact predecessors the briefing provider reads.
+
+    Final report generation keeps its existing copy-on-write reference behavior because
+    it intentionally consumes the complete canonical evidence tree. Other stages retain
+    the historical full deep-copy contract.
+    """
+
+    if stage_id == FINAL_REPORT_STAGE_ID:
+        if FINAL_REPORT_STAGE_ID not in retained_stage_results:
+            return retained_stage_results
+        return {
+            completed_stage: retained_stage_results[completed_stage]
+            for completed_stage in completed
+            if completed_stage in retained_stage_results
+        }
+
+    if stage_id == _EXECUTIVE_BRIEFING_STAGE_ID:
+        return {
+            prior_stage_id: deepcopy(retained_stage_results[prior_stage_id])
+            for prior_stage_id in _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS
+            if prior_stage_id in retained_stage_results
+        }
+
+    return deepcopy(retained_stage_results)
 
 
 class ComprehensiveRunService:
@@ -201,17 +251,11 @@ class ComprehensiveRunService:
                 if isinstance(record.get("stage_results"), dict)
                 else {}
             )
-            if stage_id == FINAL_REPORT_STAGE_ID:
-                if FINAL_REPORT_STAGE_ID not in retained_stage_results:
-                    prior_stage_results = retained_stage_results
-                else:
-                    prior_stage_results = {
-                        completed_stage: retained_stage_results[completed_stage]
-                        for completed_stage in completed
-                        if completed_stage in retained_stage_results
-                    }
-            else:
-                prior_stage_results = deepcopy(retained_stage_results)
+            prior_stage_results = _prior_stage_results_for_stage(
+                stage_id,
+                retained_stage_results,
+                completed,
+            )
             context = {
                 "artifact_schema": VERSION,
                 "service_id": "comprehensive",
