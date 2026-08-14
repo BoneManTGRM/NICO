@@ -13,6 +13,7 @@ export type PersistedRun = {
 };
 
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
+const EXACT_RUN_STORAGE_PREFIX = "nico.comprehensive.exact-run.v1.";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
 
 function normalizePersistedRun(value: unknown): PersistedRun | null {
@@ -39,43 +40,64 @@ function normalizePersistedRun(value: unknown): PersistedRun | null {
   };
 }
 
-export function readStoredRun(): PersistedRun | null {
+function exactRunStorageKey(runId: string): string {
+  return `${EXACT_RUN_STORAGE_PREFIX}${encodeURIComponent(runId)}`;
+}
+
+function readStorageValue(key: string): PersistedRun | null {
   if (typeof window === "undefined") {
     return null;
   }
   try {
-    const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     return raw ? normalizePersistedRun(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
 }
 
+export function readStoredRun(): PersistedRun | null {
+  return readStorageValue(ACTIVE_RUN_STORAGE_KEY);
+}
+
+function readExactStoredRun(runId: string): PersistedRun | null {
+  const exact = readStorageValue(exactRunStorageKey(runId));
+  if (exact?.runId === runId) {
+    return exact;
+  }
+  const active = readStoredRun();
+  return active?.runId === runId ? active : null;
+}
+
 export function readPersistedRun(): PersistedRun | null {
   if (typeof window === "undefined") {
     return null;
   }
-  const stored = readStoredRun();
   const urlRunId =
     new URL(window.location.href).searchParams
       .get(ACTIVE_RUN_QUERY_KEY)
       ?.trim() || "";
   if (!urlRunId) {
-    return stored;
+    return readStoredRun();
   }
-  if (stored?.runId === urlRunId) {
-    return stored;
+
+  const exact = readExactStoredRun(urlRunId);
+  if (exact) {
+    return exact;
   }
+
+  // The URL is the exact-run authority. Never borrow repository, client,
+  // project, or scope metadata from a different active run in another tab.
   return {
     version: 1,
     runId: urlRunId,
-    repository: stored?.repository || "",
-    client: stored?.client || "",
-    project: stored?.project || "",
-    customerId: stored?.customerId || "default_customer",
-    projectId: stored?.projectId || "default_project",
-    startedAt: stored?.startedAt || Date.now(),
-    locale: stored?.locale || "en",
+    repository: "",
+    client: "",
+    project: "",
+    customerId: "default_customer",
+    projectId: "default_project",
+    startedAt: Date.now(),
+    locale: "en",
   };
 }
 
@@ -83,15 +105,22 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
   if (typeof window === "undefined") {
     return;
   }
+  const url = new URL(window.location.href);
+  const urlRunId = url.searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
   try {
-    window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    const active = readStoredRun();
+    if (!urlRunId || !active || active.runId === urlRunId) {
+      window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    }
+    if (urlRunId) {
+      window.localStorage.removeItem(exactRunStorageKey(urlRunId));
+    }
   } catch {
     // URL cleanup remains the authoritative escape from a stale active job.
   }
   if (preserveExplicitUrl) {
     return;
   }
-  const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
   window.history.replaceState(
@@ -106,10 +135,9 @@ export function writePersistedRun(value: PersistedRun): void {
     return;
   }
   try {
-    window.localStorage.setItem(
-      ACTIVE_RUN_STORAGE_KEY,
-      JSON.stringify(value),
-    );
+    const encoded = JSON.stringify(value);
+    window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, encoded);
+    window.localStorage.setItem(exactRunStorageKey(value.runId), encoded);
   } catch {
     // The URL remains the recovery source when browser storage is unavailable.
   }

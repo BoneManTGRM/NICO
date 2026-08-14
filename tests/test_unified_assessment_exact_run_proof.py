@@ -38,7 +38,8 @@ def test_comprehensive_continues_the_exact_run_without_restarting() -> None:
 
 def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> None:
     body = continuation_body()
-    assert 'const runId = String(current.run_id || "")' in body
+    assert "const continuationRunId = exactRunId(current)" in body
+    assert "const runId = exactRunId(current)" in body
     assert "if (!runId) {" in body
     assert "throw new AssessmentApiError(copy.runIdMissing, {" in body
     assert 'code: "assessment_run_id_missing"' in body
@@ -46,14 +47,16 @@ def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> 
     assert "current = preserveRunIdentity(continued" in body
     assert "sequence.current" in body
     assert "if (token !== sequence.current)" in body
-    assert "return;" in body
+    assert "activeContinuationRunId.current = continuationRunId" in body
+    assert 'activeContinuationRunId.current = ""' in body
 
 
 def test_timeout_preserves_identity_instead_of_starting_a_replacement_run() -> None:
     body = continuation_body()
     assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in body
+    assert "persistExactRun(current, scope, startedAt)" in body
+    assert "publishResult(current);" in body
     assert 'setPhase("timed_out")' in body
-    assert 'setResult(current)' in body
     assert '"/assessment/comprehensive-intake"' not in body
 
 

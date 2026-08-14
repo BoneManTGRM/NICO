@@ -11,16 +11,25 @@ PROOF = (ROOT / "scripts/mobile_restart_live_acceptance_v1.py").read_text(encodi
 
 def test_terminal_runs_stop_being_active_jobs() -> None:
     assert "export function readStoredRun" in PERSISTENCE
+    assert "export function readPersistedRun" in PERSISTENCE
     assert HOOK.count("clearPersistedRun(true);") == 2
-    assert "const persisted = readStoredRun();" in HOOK
-    assert "Safari resume events must not restart completed reports" in HOOK
+    assert "const persisted = readPersistedRun();" in HOOK
+    assert "activeContinuationRunId.current === persisted.runId" in HOOK
+    assert "const stable = terminal(service, recovered)" in HOOK
+    assert 'setResult({\n      run_id: persisted.runId' not in HOOK
 
 
 def test_new_assessment_clears_stale_identity() -> None:
     assert "function startNew(): void" in HOOK
     assert "url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);" in PERSISTENCE
     assert 'async function run(): Promise<void> {\n    clearPersistedRun(false);' in HOOK
-    assert "setResult(null);" in HOOK
+    start_new = HOOK.split("function startNew(): void", 1)[1].split(
+        "async function retry()", 1
+    )[0]
+    assert 'activeContinuationRunId.current = ""' in start_new
+    assert "publishResult(null);" in start_new
+    assert "latestResult.current = visible;" in HOOK
+    assert "setResult(visible);" in HOOK
 
 
 def test_terminal_actions_preserve_scroll() -> None:

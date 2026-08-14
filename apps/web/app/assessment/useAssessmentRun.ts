@@ -7,7 +7,6 @@ import {preserveRunIdentity, type RunIdentityFallback} from "./assessmentRunIden
 import {
   clearPersistedRun,
   readPersistedRun,
-  readStoredRun,
   writePersistedRun,
   type PersistedRun,
 } from "./assessmentRunPersistence";
@@ -58,6 +57,70 @@ export type AssessmentRunController = {
   startNew: () => void;
 };
 
+function exactRunId(value: Result | null | undefined): string {
+  return String(
+    value?.run_id || value?.record?.identity?.run_id || "",
+  ).trim();
+}
+
+function canonicalProgress(value: Result | null | undefined): number | null {
+  const raw = value?.progress_percent ?? value?.record?.progress_percent;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric)
+    ? Math.max(0, Math.min(100, numeric))
+    : null;
+}
+
+function canonicalStage(value: Result | null | undefined): string {
+  return String(
+    value?.current_stage || value?.record?.current_stage || "",
+  ).trim();
+}
+
+function preferMonotonicVisibleResult(
+  previous: Result | null,
+  incoming: Result,
+  service: Service,
+): Result {
+  if (!previous) {
+    return incoming;
+  }
+  const previousRunId = exactRunId(previous);
+  const incomingRunId = exactRunId(incoming);
+  if (!previousRunId || !incomingRunId || previousRunId !== incomingRunId) {
+    return incoming;
+  }
+
+  const previousTerminal = terminal(service, previous);
+  const incomingTerminal = terminal(service, incoming);
+  if (incomingTerminal) {
+    return incoming;
+  }
+  if (previousTerminal) {
+    return previous;
+  }
+
+  const previousProgress = canonicalProgress(previous);
+  const incomingProgress = canonicalProgress(incoming);
+  if (
+    previousProgress != null &&
+    (incomingProgress == null || incomingProgress < previousProgress)
+  ) {
+    return previous;
+  }
+
+  const previousStage = canonicalStage(previous);
+  const incomingStage = canonicalStage(incoming);
+  if (
+    previousStage &&
+    !incomingStage &&
+    (incomingProgress == null || incomingProgress === previousProgress)
+  ) {
+    return previous;
+  }
+  return incoming;
+}
+
 export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const copy = copyFor(locale);
   const service: Service = "comprehensive";
@@ -78,6 +141,17 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const sequence = useRef(0);
   const bootstrapped = useRef(false);
   const recoveryInFlight = useRef(false);
+  const activeContinuationRunId = useRef("");
+  const latestResult = useRef<Result | null>(null);
+
+  function publishResult(next: Result | null): Result | null {
+    const visible = next
+      ? preferMonotonicVisibleResult(latestResult.current, next, service)
+      : null;
+    latestResult.current = visible;
+    setResult(visible);
+    return visible;
+  }
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -104,10 +178,18 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
 
     const restoreAfterPageResume = () => {
-      // Only unfinished work remains active. Explicit terminal URLs can still be
-      // reloaded, but Safari resume events must not restart completed reports.
-      const persisted = readStoredRun();
-      if (!persisted || recoveryInFlight.current) {
+      // The exact URL-bound run is authoritative. A different tab may update the
+      // shared active-run pointer, but it must never replace this page's run.
+      const persisted = readPersistedRun();
+      const visibleRunId = exactRunId(latestResult.current);
+      if (
+        !persisted ||
+        recoveryInFlight.current ||
+        activeContinuationRunId.current === persisted.runId
+      ) {
+        return;
+      }
+      if (visibleRunId && visibleRunId !== persisted.runId) {
         return;
       }
       void resumePersistedRun(persisted);
@@ -154,7 +236,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     scope: Scope,
     startedAt: number,
   ): void {
-    const runId = String(runResult.run_id || "").trim();
+    const runId = exactRunId(runResult);
     if (!runId) {
       return;
     }
@@ -237,88 +319,107 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       commitSha: initial.commit_sha || initial.repository_snapshot?.commit_sha,
       evidenceLedgerId: initial.evidence_ledger_id,
     });
-    for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
-      if (token !== sequence.current) {
-        return;
+    const continuationRunId = exactRunId(current);
+    if (!continuationRunId) {
+      throw new AssessmentApiError(copy.runIdMissing, {
+        status: 500,
+        code: "assessment_run_id_missing",
+        retryable: false,
+      });
+    }
+    if (activeContinuationRunId.current === continuationRunId) {
+      return;
+    }
+    activeContinuationRunId.current = continuationRunId;
+
+    try {
+      for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
+        if (token !== sequence.current) {
+          return;
+        }
+        persistExactRun(current, scope, startedAt);
+        publishResult(current);
+        const stable = terminal(service, current);
+        if (stable) {
+          clearPersistedRun(true);
+          setPhase(stable);
+          setAttempt(count);
+          setStarted(null);
+          setMessage(
+            stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
+          );
+          return;
+        }
+
+        setPhase("running");
+        setAttempt(count);
+        setError("");
+        setIssue(null);
+        const currentStageId = String(
+          current.current_stage || current.record?.current_stage || "",
+        );
+        setMessage(
+          `${copy.service.label}: ${
+            copy.stageLabels[currentStageId] ||
+            currentStageId.replaceAll("_", " ") ||
+            copy.phases.running
+          }.`,
+        );
+        const runId = exactRunId(current);
+        if (!runId) {
+          throw new AssessmentApiError(copy.runIdMissing, {
+            status: 500,
+            code: "assessment_run_id_missing",
+            retryable: false,
+          });
+        }
+
+        try {
+          const continued = await requestWithRetry(
+            `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`,
+            {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({max_stages: 1}),
+            },
+            copy,
+          );
+          current = preserveRunIdentity(continued, {
+            runId,
+            repository: current.repository,
+            customerId: current.customer_id || scope.customerId,
+            projectId: current.project_id || scope.projectId,
+            commitSha:
+              current.commit_sha || current.repository_snapshot?.commit_sha,
+            evidenceLedgerId: current.evidence_ledger_id,
+          });
+        } catch (requestError) {
+          const recovered = await recoverRun(runId, {
+            repository: current.repository,
+            customerId: current.customer_id || scope.customerId,
+            projectId: current.project_id || scope.projectId,
+            commitSha:
+              current.commit_sha || current.repository_snapshot?.commit_sha,
+            evidenceLedgerId: current.evidence_ledger_id,
+          });
+          if (!recovered) {
+            throw requestError;
+          }
+          current = recovered;
+          setMessage(`${copy.service.label}: ${copy.recoveredRunState}`);
+        }
+        await wait(POLL_INTERVAL_MS);
       }
       persistExactRun(current, scope, startedAt);
-      setResult(current);
-      const stable = terminal(service, current);
-      if (stable) {
-        clearPersistedRun(true);
-        setPhase(stable);
-        setAttempt(count);
-        setStarted(null);
-        setMessage(
-          stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
-        );
-        return;
+      publishResult(current);
+      setPhase("timed_out");
+      setStarted(null);
+      setMessage(copy.phases.timed_out);
+    } finally {
+      if (activeContinuationRunId.current === continuationRunId) {
+        activeContinuationRunId.current = "";
       }
-
-      setPhase("running");
-      setAttempt(count);
-      setError("");
-      setIssue(null);
-      const currentStageId = String(
-        current.current_stage || current.record?.current_stage || "",
-      );
-      setMessage(
-        `${copy.service.label}: ${
-          copy.stageLabels[currentStageId] ||
-          currentStageId.replaceAll("_", " ") ||
-          copy.phases.running
-        }.`,
-      );
-      const runId = String(current.run_id || "");
-      if (!runId) {
-        throw new AssessmentApiError(copy.runIdMissing, {
-          status: 500,
-          code: "assessment_run_id_missing",
-          retryable: false,
-        });
-      }
-
-      try {
-        const continued = await requestWithRetry(
-          `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`,
-          {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({max_stages: 1}),
-          },
-          copy,
-        );
-        current = preserveRunIdentity(continued, {
-          runId,
-          repository: current.repository,
-          customerId: current.customer_id || scope.customerId,
-          projectId: current.project_id || scope.projectId,
-          commitSha:
-            current.commit_sha || current.repository_snapshot?.commit_sha,
-          evidenceLedgerId: current.evidence_ledger_id,
-        });
-      } catch (requestError) {
-        const recovered = await recoverRun(runId, {
-          repository: current.repository,
-          customerId: current.customer_id || scope.customerId,
-          projectId: current.project_id || scope.projectId,
-          commitSha:
-            current.commit_sha || current.repository_snapshot?.commit_sha,
-          evidenceLedgerId: current.evidence_ledger_id,
-        });
-        if (!recovered) {
-          throw requestError;
-        }
-        current = recovered;
-        setMessage(`${copy.service.label}: ${copy.recoveredRunState}`);
-      }
-      await wait(POLL_INTERVAL_MS);
     }
-    persistExactRun(current, scope, startedAt);
-    setResult(current);
-    setPhase("timed_out");
-    setStarted(null);
-    setMessage(copy.phases.timed_out);
   }
 
   function applyIssue(caught: unknown, runCreated: boolean): void {
@@ -331,6 +432,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
+    const visibleRunId = exactRunId(latestResult.current);
+    if (activeContinuationRunId.current === persisted.runId) {
+      return;
+    }
+    if (visibleRunId && visibleRunId !== persisted.runId) {
+      return;
+    }
     if (recoveryInFlight.current) {
       return;
     }
@@ -343,13 +451,6 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setError("");
     setMessage(copy.readinessCheckingMessage);
     setStarted(persisted.startedAt);
-    setResult({
-      run_id: persisted.runId,
-      repository: persisted.repository,
-      customer_id: persisted.customerId,
-      project_id: persisted.projectId,
-      status: "running",
-    });
     try {
       const recoveredResponse = await requestWithRetry(
         `/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`,
@@ -366,7 +467,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         return;
       }
       persistExactRun(recovered, scope, persisted.startedAt);
-      setResult(recovered);
+      publishResult(recovered);
       const stable = terminal(service, recovered);
       if (stable) {
         clearPersistedRun(true);
@@ -399,7 +500,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     sequence.current = token;
     const scope = currentScope();
     setPhase("checking");
-    setResult(null);
+    publishResult(null);
     setError("");
     setIssue(null);
     setMessage(copy.readinessCheckingMessage);
@@ -447,7 +548,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         return;
       }
       persistExactRun(data, scope, startedAt);
-      setResult(data);
+      publishResult(data);
       await continueRun(data, scope, token, startedAt);
     } catch (caught) {
       if (token !== sequence.current) {
@@ -457,7 +558,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       applyIssue(caught, runCreated);
       if (acceptedRun) {
         persistExactRun(acceptedRun, scope, startedAt);
-        setResult(acceptedRun);
+        publishResult(acceptedRun);
       }
     }
   }
@@ -465,6 +566,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   function startNew(): void {
     sequence.current += 1;
     recoveryInFlight.current = false;
+    activeContinuationRunId.current = "";
     clearPersistedRun(false);
     setRepository("");
     setClient("");
@@ -472,7 +574,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setAuthorized(false);
     setHumanEvidence({});
     setPhase("idle");
-    setResult(null);
+    publishResult(null);
     setMessage("");
     setError("");
     setIssue(null);
