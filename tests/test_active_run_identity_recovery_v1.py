@@ -58,6 +58,8 @@ def test_page_resume_cannot_cancel_the_existing_exact_run_loop() -> None:
     resume = HOOK.split("async function resumePersistedRun", 1)[1].split("async function run()", 1)[0]
     continuation = HOOK.split("async function continueRun", 1)[1].split("function applyIssue", 1)[0]
 
+    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in HOOK
+    assert 'window.addEventListener("online", restoreAfterPageResume)' in HOOK
     assert "const persisted = readPersistedRun();" in restore
     assert "activeContinuationRunId.current === persisted.runId" in restore
     assert "visibleRunId && visibleRunId !== persisted.runId" in restore
