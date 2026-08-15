@@ -38,6 +38,17 @@ def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def _chain_has_marker(current: Callable[..., Any], marker: str) -> bool:
+    seen: set[int] = set()
+    candidate: Any = current
+    while callable(candidate) and id(candidate) not in seen:
+        seen.add(id(candidate))
+        if getattr(candidate, marker, False):
+            return True
+        candidate = getattr(candidate, "_nico_previous", None)
+    return False
+
+
 def _integer(value: Any) -> int:
     if isinstance(value, bool):
         return 0
@@ -217,7 +228,7 @@ def install_spanish_review_candidate_truth_v70() -> dict[str, Any]:
     from nico import comprehensive_client_ready_projection_v1 as projection
 
     current: Callable[..., str] = completion.compact_client_markdown
-    if getattr(current, _MARKER, False):
+    if _chain_has_marker(current, _MARKER):
         projection.compact_client_markdown = current
         return {
             "status": "already_installed",
