@@ -1,31 +1,11 @@
 from __future__ import annotations
 
-import base64
-import io
-
 import pytest
-from pypdf import PdfWriter
 
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
 from nico import comprehensive_client_truth_final_v1 as final_truth
 from nico import comprehensive_rendered_ci_boundary_truth_v78 as truth_v78
 from nico import comprehensive_report_language_truth_v77 as language_v77
-
-_TIMESTAMP = "2026-08-15T18:30:00Z"
-_SPANISH_SUMMARY = (
-    "Se recomienda conservar la evidencia exacta y formalizar la gobernanza de CI/CD."
-)
-_ENGLISH_SUMMARY = (
-    "Preserve exact evidence and formalize CI/CD governance before client delivery."
-)
-
-
-def _blank_pdf_base64() -> str:
-    output = io.BytesIO()
-    writer = PdfWriter()
-    writer.add_blank_page(width=612, height=792)
-    writer.write(output)
-    return base64.b64encode(output.getvalue()).decode("ascii")
 
 
 def _boundary(*, spanish: bool) -> str:
@@ -42,29 +22,17 @@ def _package(
     boundary: str,
     *,
     canonical_language: str,
-    summary: str,
     request_language: str | None = None,
 ) -> dict[str, object]:
     canonical: dict[str, object] = {
         "report_language": canonical_language,
-        "identity": {"generated_at": _TIMESTAMP},
-        "assessment": {
-            "executive_summary": summary,
-            "sections": [],
-        },
     }
     if request_language:
         canonical["request_metadata"] = {"report_language": request_language}
-    markdown = f"{_TIMESTAMP}\n\n{summary}\n\n{boundary}\n"
-    rendered_html = (
-        f"<article><time>{_TIMESTAMP}</time><p>{summary}</p>"
-        f"<pre>{boundary}</pre></article>"
-    )
     return {
         "json": canonical,
-        "markdown": markdown,
-        "html": rendered_html,
-        "pdf_base64": _blank_pdf_base64(),
+        "markdown": boundary,
+        "html": "",
     }
 
 
@@ -82,11 +50,11 @@ def test_exact_production_failure_stale_english_with_spanish_boundary_passes() -
     result = _package(
         _boundary(spanish=True),
         canonical_language="en",
-        summary=_SPANISH_SUMMARY,
     )
 
-    final_truth._validate_surfaces(result)
+    truth = truth_v78.reconcile_rendered_ci_boundary_language(result)
 
+    assert truth["language"] == "es-MX"
     canonical = result["json"]
     assert isinstance(canonical, dict)
     assert canonical["report_language"] == "es-MX"
@@ -100,11 +68,11 @@ def test_complete_english_boundary_still_passes() -> None:
     result = _package(
         _boundary(spanish=False),
         canonical_language="en",
-        summary=_ENGLISH_SUMMARY,
     )
 
-    final_truth._validate_surfaces(result)
+    truth = truth_v78.reconcile_rendered_ci_boundary_language(result)
 
+    assert truth["language"] == "en"
     canonical = result["json"]
     assert isinstance(canonical, dict)
     assert canonical["report_language"] == "en"
@@ -128,14 +96,13 @@ def test_complete_bilingual_boundaries_fail_closed() -> None:
     result = _package(
         _boundary(spanish=True) + "\n" + _boundary(spanish=False),
         canonical_language="en",
-        summary=_SPANISH_SUMMARY,
     )
 
     with pytest.raises(
         ValueError,
         match="complete English and Spanish CI/CD boundaries",
     ):
-        final_truth._validate_surfaces(result)
+        truth_v78.reconcile_rendered_ci_boundary_language(result)
 
 
 def test_incomplete_spanish_boundary_fails_with_spanish_missing_marker() -> None:
@@ -143,11 +110,21 @@ def test_incomplete_spanish_boundary_fails_with_spanish_missing_marker() -> None
     result = _package(
         incomplete,
         canonical_language="en",
-        summary=_SPANISH_SUMMARY,
     )
 
     with pytest.raises(
         ValueError,
         match="D. Resultados históricos de los flujos de trabajo",
     ):
-        final_truth._validate_surfaces(result)
+        truth_v78.reconcile_rendered_ci_boundary_language(result)
+
+
+def test_v78_wraps_the_final_publication_validator() -> None:
+    installation = truth_v78.install_comprehensive_rendered_ci_boundary_truth_v78()
+
+    assert installation["validator_bound"] is True
+    assert getattr(
+        final_truth._validate_surfaces,
+        "_nico_rendered_ci_boundary_validator_v78",
+        False,
+    ) is True
