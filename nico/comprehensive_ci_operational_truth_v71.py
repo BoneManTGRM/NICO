@@ -66,6 +66,17 @@ def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def _chain_has_marker(current: Callable[..., Any], marker: str) -> bool:
+    seen: set[int] = set()
+    candidate: Any = current
+    while callable(candidate) and id(candidate) not in seen:
+        seen.add(id(candidate))
+        if getattr(candidate, marker, False):
+            return True
+        candidate = getattr(candidate, "_nico_previous", None)
+    return False
+
+
 def _is_spanish(canonical: Mapping[str, Any], spanish: bool) -> bool:
     if spanish:
         return True
@@ -95,6 +106,8 @@ def _flatten_scalars(
     depth: int = 0,
     limit: int = 32,
 ) -> list[tuple[str, Any]]:
+    if limit <= 0:
+        return []
     output: list[tuple[str, Any]] = []
     for raw_key, raw_value in value.items():
         key = f"{prefix}.{raw_key}" if prefix else str(raw_key)
@@ -124,7 +137,9 @@ def _flatten_scalars(
 
 def _format_value(key: str, value: Any, *, spanish: bool) -> str:
     if isinstance(value, bool):
-        return "Sí" if spanish and value else "No" if spanish else "Yes" if value else "No"
+        if spanish:
+            return "Sí" if value else "No"
+        return "Yes" if value else "No"
     if value is None:
         return "No suministrado" if spanish else "Not supplied"
     if isinstance(value, float) and "rate" in key.casefold() and 0 <= value <= 1:
@@ -234,7 +249,7 @@ def install_ci_operational_truth_v71() -> dict[str, Any]:
     from nico import comprehensive_client_ready_projection_v1 as projection
 
     current: Callable[..., str] = completion.compact_client_markdown
-    if getattr(current, _MARKER, False):
+    if _chain_has_marker(current, _MARKER):
         projection.compact_client_markdown = current
         return {
             "status": "already_installed",
