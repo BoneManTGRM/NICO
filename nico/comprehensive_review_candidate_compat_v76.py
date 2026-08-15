@@ -125,11 +125,21 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
     publication_result = (
         publication.install_comprehensive_review_candidate_publication_v75()
     )
+
+    # Install the final shared language resolver only after every v76 alias and
+    # publication bridge is rebound. This keeps all producers and truth gates on
+    # the same authoritative English-or-Spanish decision.
+    from nico.comprehensive_report_language_truth_v77 import (
+        install_comprehensive_report_language_truth_v77,
+    )
+
+    language_truth_result = install_comprehensive_report_language_truth_v77()
     return {
         "status": "installed",
         "version": VERSION,
         "legacy_installer": legacy_result,
         "publication_installer": publication_result,
+        "report_language_truth_installer": language_truth_result,
         "legacy_spanish_alias_bound": (
             legacy.repair_spanish_review_candidate_markdown
             is repair_spanish_review_candidate_markdown
