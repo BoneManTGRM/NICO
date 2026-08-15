@@ -3,12 +3,15 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Mapping
 
+from nico.comprehensive_ci_operational_truth_v71 import (
+    install_ci_operational_truth_v71,
+)
 from nico.comprehensive_spanish_review_candidate_truth_v70 import (
     install_spanish_review_candidate_truth_v70,
 )
 
-VERSION = "nico.comprehensive-report-semantic-content-gate.v70"
-_MARKER = "_nico_comprehensive_semantic_content_gate_v70"
+VERSION = "nico.comprehensive-report-semantic-content-gate.v71"
+_MARKER = "_nico_comprehensive_semantic_content_gate_v71"
 _FINDING_REGISTER_MARKERS = (
     "finding and remediation register",
     "registro de hallazgos y remediación",
@@ -45,6 +48,11 @@ _CI_OPERATIONAL_MARKERS = (
     "ci/cd operational readiness and historical health",
     "preparación operativa y salud histórica de ci/cd",
     "preparacion operativa y salud historica de ci/cd",
+)
+_CI_SEPARATION_MARKERS = (
+    "remains separate from configuration maturity",
+    "permanece separada de la madurez de configuración",
+    "permanece separada de la madurez de configuracion",
 )
 
 
@@ -183,6 +191,7 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
             )
 
     ci_operational_marker = ""
+    ci_separation_marker = ""
     if ci_context:
         ci_operational_marker = next(
             (marker for marker in _CI_OPERATIONAL_MARKERS if marker in lowered),
@@ -191,6 +200,14 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
         if not ci_operational_marker:
             raise ValueError(
                 "client report omitted CI/CD operational health that must remain separate from configuration maturity"
+            )
+        ci_separation_marker = next(
+            (marker for marker in _CI_SEPARATION_MARKERS if marker in lowered),
+            "",
+        )
+        if not ci_separation_marker:
+            raise ValueError(
+                "client report did not state that mutable CI/CD operational health remains separate from immutable configuration maturity"
             )
 
     return {
@@ -205,6 +222,8 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
         "superseded_review_candidate_score_effect_absent": not bool(superseded_score_effect_marker),
         "ci_operational_context_rendered": not bool(ci_context) or bool(ci_operational_marker),
         "ci_operational_context_marker": ci_operational_marker,
+        "ci_configuration_separation_rendered": not bool(ci_context) or bool(ci_separation_marker),
+        "ci_configuration_separation_marker": ci_separation_marker,
         "finding_register_marker": finding_register_marker,
         "authoritative_finding_register_present": not finding_count or bool(finding_register_marker),
         "false_zero_finding_claim_absent": True,
@@ -219,6 +238,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
     from nico import comprehensive_client_report_render_v60 as client_render
 
     spanish_review_candidate_truth = install_spanish_review_candidate_truth_v70()
+    ci_operational_truth = install_ci_operational_truth_v71()
     current = client_render.validate_existing_report_accuracy
     if getattr(current, _MARKER, False):
         return {
@@ -226,6 +246,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
             "version": VERSION,
             "bound": True,
             "spanish_review_candidate_truth": spanish_review_candidate_truth,
+            "ci_operational_truth": ci_operational_truth,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -253,9 +274,11 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "version": VERSION,
         "bound": client_render.validate_existing_report_accuracy is validate,
         "spanish_review_candidate_truth": spanish_review_candidate_truth,
+        "ci_operational_truth": ci_operational_truth,
         "spanish_review_candidate_truth_producer_repaired": (
             spanish_review_candidate_truth.get("bound") is True
         ),
+        "ci_operational_truth_producer_repaired": ci_operational_truth.get("bound") is True,
         "false_zero_finding_publication_blocked": True,
         "authoritative_finding_register_omission_blocked": True,
         "authoritative_compact_spanish_register_supported": True,
@@ -264,7 +287,8 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "superseded_review_candidate_score_effect_blocked": True,
         "current_phase1_review_candidate_score_effect_required": True,
         "ci_operational_context_omission_blocked": True,
-        "spanish_ci_operational_truth_supported": True,
+        "ci_configuration_and_operational_health_separation_required": True,
+        "english_and_spanish_ci_operational_truth_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
