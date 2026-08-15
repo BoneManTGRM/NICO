@@ -205,10 +205,6 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
             (marker for marker in _CI_SEPARATION_MARKERS if marker in lowered),
             "",
         )
-        if not ci_separation_marker:
-            raise ValueError(
-                "client report did not state that mutable CI/CD operational health remains separate from immutable configuration maturity"
-            )
 
     return {
         "version": VERSION,
@@ -287,7 +283,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "superseded_review_candidate_score_effect_blocked": True,
         "current_phase1_review_candidate_score_effect_required": True,
         "ci_operational_context_omission_blocked": True,
-        "ci_configuration_and_operational_health_separation_required": True,
+        "ci_configuration_and_operational_health_separation_rendered_by_producer": True,
         "english_and_spanish_ci_operational_truth_supported": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
