@@ -103,6 +103,9 @@ from nico.spanish_cross_format_score_parity_v1 import install_spanish_cross_form
 from nico.comprehensive_ci_boundary_compat_v74 import (
     install_comprehensive_ci_boundary_compat_v74,
 )
+from nico.comprehensive_review_candidate_publication_v75 import (
+    install_comprehensive_review_candidate_publication_v75,
+)
 
 install_comprehensive_mobile_recovery_v1()
 install_runtime_deployment_commit_resolution()
@@ -224,5 +227,8 @@ install_comprehensive_mobile_score_projection_v2()
 # Rebind bilingual CI/CD producer, stage, review, and final-surface truth after
 # every late Comprehensive renderer and validator has been installed.
 install_comprehensive_ci_boundary_compat_v74()
+# Rebind bilingual review-candidate truth after the same late Comprehensive
+# renderers, then verify the final Markdown and HTML independently.
+install_comprehensive_review_candidate_publication_v75()
 
 __version__ = "0.1.1"
