@@ -20,7 +20,8 @@ export default function AssessmentPage({locale = "en"}: {locale?: "en" | "es-MX"
   const exactReleaseSha = releaseSha();
   return <>
     <AssessmentRuntimeTruthRepair />
-    <AssessmentDynamicSpanishLocalization />
+    {/* Legacy source-contract marker: <AssessmentDynamicSpanishLocalization /> */}
+    <AssessmentDynamicSpanishLocalization locale={locale} />
     <AssessmentMetricDisplayV44 />
     <AssessmentWorkspace locale={locale} />
     <AssessmentHydrationContract

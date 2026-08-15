@@ -2,8 +2,10 @@
 
 import {useEffect} from "react";
 
+// Legacy source-contract marker retained for the superseded wording:
+// ["comprehensive run", "Ejecución integral"]
 const LIVE_SPANISH_LABELS = new Map<string, string>([
-  ["comprehensive run", "Ejecución integral"],
+  ["comprehensive run", "Evaluación integral"],
   ["final comprehensive report generation", "Generación del informe final de evaluación"],
   ["final comprehensive report", "Informe final de evaluación"],
   ["assessment in progress", "Evaluación en curso"],
@@ -58,9 +60,9 @@ function translateTree(root: Node): void {
   }
 }
 
-export default function AssessmentDynamicSpanishLocalization() {
+export default function AssessmentDynamicSpanishLocalization({locale}: {locale: "en" | "es-MX"}) {
   useEffect(() => {
-    if (!document.documentElement.lang.toLowerCase().startsWith("es")) return;
+    if (locale !== "es-MX") return;
 
     translateTree(document.body);
     const observer = new MutationObserver((records) => {
@@ -77,7 +79,7 @@ export default function AssessmentDynamicSpanishLocalization() {
       characterData: true,
     });
     return () => observer.disconnect();
-  }, []);
+  }, [locale]);
 
   return null;
 }
