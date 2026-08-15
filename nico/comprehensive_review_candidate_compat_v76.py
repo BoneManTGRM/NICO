@@ -154,6 +154,17 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
     rendered_boundary_producer_result = (
         install_comprehensive_rendered_ci_boundary_producer_v79()
     )
+
+    # Compact client-report composition runs after the premium renderer and can
+    # replace every rendered surface. Repair at the outermost final validator so
+    # static imports and late compact composition cannot bypass CI/CD truth.
+    from nico.comprehensive_final_ci_boundary_repair_v80 import (
+        install_comprehensive_final_ci_boundary_repair_v80,
+    )
+
+    final_ci_boundary_repair_result = (
+        install_comprehensive_final_ci_boundary_repair_v80()
+    )
     return {
         "status": "installed",
         "version": VERSION,
@@ -164,6 +175,7 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         "rendered_ci_boundary_producer_installer": (
             rendered_boundary_producer_result
         ),
+        "final_ci_boundary_repair_installer": final_ci_boundary_repair_result,
         "legacy_spanish_alias_bound": (
             legacy.repair_spanish_review_candidate_markdown
             is repair_spanish_review_candidate_markdown
@@ -174,6 +186,9 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         ),
         "rendered_ci_boundary_producer_bound": (
             rendered_boundary_producer_result.get("bound") is True
+        ),
+        "final_ci_boundary_repair_bound": (
+            final_ci_boundary_repair_result.get("validator_bound") is True
         ),
         "exact_h2_matching_required": True,
         "evidence_summary_preserved": True,
