@@ -3,12 +3,14 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-semantic-content-gate.v68"
-_MARKER = "_nico_comprehensive_semantic_content_gate_v68"
+VERSION = "nico.comprehensive-report-semantic-content-gate.v69"
+_MARKER = "_nico_comprehensive_semantic_content_gate_v69"
 _FINDING_REGISTER_MARKERS = (
     "finding and remediation register",
     "registro de hallazgos y remediación",
     "registro de hallazgos y remediacion",
+    "registro compacto de hallazgos y remediación",
+    "registro compacto de hallazgos y remediacion",
     "detailed canonical findings",
     "hallazgos canónicos detallados",
     "hallazgos canonicos detallados",
@@ -244,6 +246,7 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "bound": client_render.validate_existing_report_accuracy is validate,
         "false_zero_finding_publication_blocked": True,
         "authoritative_finding_register_omission_blocked": True,
+        "authoritative_compact_spanish_register_supported": True,
         "review_candidate_omission_blocked": True,
         "spanish_review_candidate_truth_supported": True,
         "superseded_review_candidate_score_effect_blocked": True,
