@@ -143,6 +143,17 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
     rendered_boundary_truth_result = (
         install_comprehensive_rendered_ci_boundary_truth_v78()
     )
+
+    # The final truth gate cannot repair a boundary that the direct v2 renderer
+    # never produced. Bind the producer after v78 has established request-scoped
+    # language authority, and rebind the evidence appendix's static renderer alias.
+    from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
+        install_comprehensive_rendered_ci_boundary_producer_v79,
+    )
+
+    rendered_boundary_producer_result = (
+        install_comprehensive_rendered_ci_boundary_producer_v79()
+    )
     return {
         "status": "installed",
         "version": VERSION,
@@ -150,6 +161,9 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         "publication_installer": publication_result,
         "report_language_truth_installer": language_truth_result,
         "rendered_ci_boundary_truth_installer": rendered_boundary_truth_result,
+        "rendered_ci_boundary_producer_installer": (
+            rendered_boundary_producer_result
+        ),
         "legacy_spanish_alias_bound": (
             legacy.repair_spanish_review_candidate_markdown
             is repair_spanish_review_candidate_markdown
@@ -157,6 +171,9 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         "legacy_english_alias_bound": (
             legacy.repair_english_review_candidate_markdown
             is repair_english_review_candidate_markdown
+        ),
+        "rendered_ci_boundary_producer_bound": (
+            rendered_boundary_producer_result.get("bound") is True
         ),
         "exact_h2_matching_required": True,
         "evidence_summary_preserved": True,
