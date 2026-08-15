@@ -3,8 +3,12 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-semantic-content-gate.v69"
-_MARKER = "_nico_comprehensive_semantic_content_gate_v69"
+from nico.comprehensive_spanish_review_candidate_truth_v70 import (
+    install_spanish_review_candidate_truth_v70,
+)
+
+VERSION = "nico.comprehensive-report-semantic-content-gate.v70"
+_MARKER = "_nico_comprehensive_semantic_content_gate_v70"
 _FINDING_REGISTER_MARKERS = (
     "finding and remediation register",
     "registro de hallazgos y remediación",
@@ -24,6 +28,8 @@ _CURRENT_REVIEW_SCORE_EFFECT_MARKERS = (
 _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS = (
     "score effect: assurance-only until triaged",
     "efecto en la puntuación: solo aseguramiento hasta su clasificación",
+    "efecto en puntuación: solo aseguramiento hasta completar la revisión",
+    "efecto en la puntuación: solo aseguramiento hasta completar la revisión",
 )
 _EN_REVIEW_MARKERS = (
     "review-required candidates: {review_total}",
@@ -212,12 +218,14 @@ def validate_retained_decision_content(package: Mapping[str, Any]) -> dict[str, 
 def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
     from nico import comprehensive_client_report_render_v60 as client_render
 
+    spanish_review_candidate_truth = install_spanish_review_candidate_truth_v70()
     current = client_render.validate_existing_report_accuracy
     if getattr(current, _MARKER, False):
         return {
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
+            "spanish_review_candidate_truth": spanish_review_candidate_truth,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -244,6 +252,10 @@ def install_comprehensive_report_semantic_content_gate_v66() -> dict[str, Any]:
         "status": "installed",
         "version": VERSION,
         "bound": client_render.validate_existing_report_accuracy is validate,
+        "spanish_review_candidate_truth": spanish_review_candidate_truth,
+        "spanish_review_candidate_truth_producer_repaired": (
+            spanish_review_candidate_truth.get("bound") is True
+        ),
         "false_zero_finding_publication_blocked": True,
         "authoritative_finding_register_omission_blocked": True,
         "authoritative_compact_spanish_register_supported": True,
