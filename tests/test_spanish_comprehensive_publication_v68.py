@@ -207,6 +207,53 @@ def test_spanish_authoritative_register_is_complete_in_all_client_formats() -> N
     ] is True
 
 
+def test_semantic_gate_accepts_current_compact_spanish_register_heading() -> None:
+    canonical = _canonical()
+    markdown = "\n".join(
+        [
+            "# Evaluación Técnica Integral NICO",
+            "## Registro compacto de hallazgos y remediación",
+            "RISK-P1-ES-001 · src/client.py:17",
+            "## Registro de candidatos que requieren revisión",
+            "Candidatos que requieren revisión: 3",
+            "Hallazgos materiales confirmados: 1",
+            "Efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de NICO está completo.",
+            "## Preparación operativa y salud histórica de CI/CD",
+        ]
+    )
+    package = {
+        "report_language": "es-MX",
+        "json": canonical,
+        "markdown": markdown,
+        "html": f"<html lang='es-MX'><body>{markdown}</body></html>",
+    }
+
+    validation = validate_retained_decision_content(package)
+
+    assert validation["authoritative_finding_register_present"] is True
+    assert validation["finding_register_marker"] == "registro compacto de hallazgos y remediación"
+    assert validation["review_candidate_truth_present"] is True
+    assert validation["ci_operational_context_rendered"] is True
+
+
+def test_dynamic_spanish_localization_is_mounted_and_keeps_technical_code_untouched() -> None:
+    page = (ROOT / "apps/web/app/assessment/AssessmentPage.tsx").read_text()
+    localization = (
+        ROOT / "apps/web/app/assessment/AssessmentDynamicSpanishLocalization.tsx"
+    ).read_text()
+
+    assert 'import AssessmentDynamicSpanishLocalization from "./AssessmentDynamicSpanishLocalization";' in page
+    assert "<AssessmentDynamicSpanishLocalization />" in page
+    assert '["comprehensive run", "Ejecución integral"]' in localization
+    assert '["final comprehensive report generation", "Generación del informe final de evaluación"]' in localization
+    assert '["blocked", "Bloqueado"]' in localization
+    assert "new MutationObserver" in localization
+    assert "characterData: true" in localization
+    assert "childList: true" in localization
+    assert "subtree: true" in localization
+    assert "script, style, code, pre, textarea, [data-no-localize='true']" in localization
+
+
 def test_mobile_fixed_panels_are_localized_non_destructive_and_non_overlapping() -> None:
     current_panel = (ROOT / "apps/web/app/AssessmentActiveRunReset.tsx").read_text()
     recovery_panel = (ROOT / "apps/web/app/ComprehensiveStuckRunRecovery.tsx").read_text()
