@@ -156,6 +156,28 @@ body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] [data-
   padding: 14px;
 }
 
+.nico-failure-evidence__stages .result-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.nico-failure-evidence__stages .result-head > b {
+  min-width: 0;
+}
+
+.nico-failure-evidence__stages .result-head > .status {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  padding: 6px 10px;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
 .nico-failure-evidence__boundary {
   display: flex;
   align-items: center;
@@ -229,6 +251,17 @@ body[data-nico-terminal-failure="true"] main[data-workspace="assessment"] [data-
   .nico-failure-evidence__details dl > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 5px;
+  }
+
+  .nico-failure-evidence__stages .result-head {
+    gap: 9px;
+  }
+
+  .nico-failure-evidence__stages .result-head > .status {
+    padding: 5px 8px;
+    font-size: 10px;
+    line-height: 1;
+    border-radius: 999px;
   }
 
   .nico-failure-evidence__boundary {
