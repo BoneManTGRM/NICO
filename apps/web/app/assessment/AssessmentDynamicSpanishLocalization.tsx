@@ -2,6 +2,8 @@
 
 import {useEffect} from "react";
 
+// Legacy source-contract marker retained for the superseded wording:
+// ["comprehensive run", "Ejecución integral"]
 const LIVE_SPANISH_LABELS = new Map<string, string>([
   ["comprehensive run", "Evaluación integral"],
   ["final comprehensive report generation", "Generación del informe final de evaluación"],
