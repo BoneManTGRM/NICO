@@ -455,6 +455,34 @@ def replace_cover_text(pdf: bytes) -> bytes:
     return output.getvalue()
 
 
+def _report_language(canonical: Mapping[str, Any]) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    value = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or identity.get("report_language")
+        or assessment.get("report_language")
+    ).casefold()
+    return "es-MX" if value.startswith("es") else "en"
+
+
+def _ci_boundary_markers(canonical: Mapping[str, Any]) -> tuple[str, ...]:
+    if _report_language(canonical) == "es-MX":
+        return (
+            "A. Madurez de configuración de CI/CD:",
+            "B. Preparación operativa actual:",
+            "C. Estado de las verificaciones requeridas:",
+            "D. Resultados históricos de los flujos de trabajo",
+        )
+    return (
+        "A. CI/CD configuration maturity:",
+        "B. Current operational readiness:",
+        "C. Required-check health:",
+        "D. Historical workflow outcomes",
+    )
+
+
 def _validate_surfaces(result: Mapping[str, Any]) -> None:
     canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
@@ -492,12 +520,7 @@ def _validate_surfaces(result: Mapping[str, Any]) -> None:
     summary = _text(assessment.get("executive_summary"), 5000)
     if summary not in combined:
         raise ValueError("canonical executive summary is not rendered consistently")
-    for marker in (
-        "A. CI/CD configuration maturity:",
-        "B. Current operational readiness:",
-        "C. Required-check health:",
-        "D. Historical workflow outcomes",
-    ):
+    for marker in _ci_boundary_markers(canonical):
         if marker not in combined:
             raise ValueError(f"client report omitted CI/CD boundary: {marker}")
 
@@ -601,6 +624,7 @@ def install_comprehensive_client_truth_final_v1() -> dict[str, Any]:
         "platform_parity_language_bounded": True,
         "scanner_execution_and_triage_separated": True,
         "ci_cd_four_part_presentation": True,
+        "ci_cd_boundary_validation_language_aware": True,
         "decision_grade_claim_removed": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
