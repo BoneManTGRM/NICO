@@ -222,6 +222,13 @@ def install_post_readiness_report_contract_truth() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
+            "post_readiness_boundary": True,
+            "superseded_diagnostics_only": True,
+            "structured_aliases_removed": True,
+            "explicit_text_aliases_removed": True,
+            "strict_semantic_validation_preserved": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
         }
 
     @wraps(current)

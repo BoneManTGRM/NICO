@@ -27,7 +27,7 @@ def repair_review_candidate_publication(
     for heading in publication._CANDIDATE_HEADINGS:
         while _has_exact_h2(output, heading):
             repaired = publication._remove_h2_section(output, heading)
-            if repaired == output:  # defensive guard against malformed Markdown
+            if repaired == output:
                 break
             output = repaired
 
@@ -97,73 +97,52 @@ def english_review_candidate_truth_markdown(
 def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
     """Rebind current and historical APIs after every late report installer."""
 
-    publication.repair_review_candidate_publication = (
-        repair_review_candidate_publication
-    )
+    publication.repair_review_candidate_publication = repair_review_candidate_publication
 
-    # Keep the general evidence summary separate from the dedicated candidate
-    # register and preserve every public compatibility entry point.
     legacy._ES_SECTION_HEADINGS = {publication._ES_HEADING}
     legacy._EN_SECTION_HEADINGS = {publication._EN_HEADING}
-    legacy.spanish_review_candidate_truth_markdown = (
-        spanish_review_candidate_truth_markdown
-    )
-    legacy.english_review_candidate_truth_markdown = (
-        english_review_candidate_truth_markdown
-    )
-    legacy.repair_spanish_review_candidate_markdown = (
-        repair_spanish_review_candidate_markdown
-    )
-    legacy.repair_english_review_candidate_markdown = (
-        repair_english_review_candidate_markdown
-    )
-    legacy.repair_review_candidate_markdown = (
-        repair_review_candidate_publication
-    )
+    legacy.spanish_review_candidate_truth_markdown = spanish_review_candidate_truth_markdown
+    legacy.english_review_candidate_truth_markdown = english_review_candidate_truth_markdown
+    legacy.repair_spanish_review_candidate_markdown = repair_spanish_review_candidate_markdown
+    legacy.repair_english_review_candidate_markdown = repair_english_review_candidate_markdown
+    legacy.repair_review_candidate_markdown = repair_review_candidate_publication
 
     legacy_result = legacy.install_spanish_review_candidate_truth_v70()
-    publication_result = (
-        publication.install_comprehensive_review_candidate_publication_v75()
-    )
+    publication_result = publication.install_comprehensive_review_candidate_publication_v75()
 
-    # Install the shared language resolver after every v76 publication alias.
     from nico.comprehensive_report_language_truth_v77 import (
         install_comprehensive_report_language_truth_v77,
     )
 
     language_truth_result = install_comprehensive_report_language_truth_v77()
 
-    # Final publication truth must be based on the actual rendered artifact, not
-    # a canonical language value that an upstream normalizer may have defaulted
-    # to English. Install this after v77 so it sees and wraps the final validator.
     from nico.comprehensive_rendered_ci_boundary_truth_v78 import (
         install_comprehensive_rendered_ci_boundary_truth_v78,
     )
 
-    rendered_boundary_truth_result = (
-        install_comprehensive_rendered_ci_boundary_truth_v78()
-    )
+    rendered_boundary_truth_result = install_comprehensive_rendered_ci_boundary_truth_v78()
 
-    # The final truth gate cannot repair a boundary that the direct v2 renderer
-    # never produced. Bind the producer after v78 has established request-scoped
-    # language authority, and rebind the evidence appendix's static renderer alias.
     from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
         install_comprehensive_rendered_ci_boundary_producer_v79,
     )
 
-    rendered_boundary_producer_result = (
-        install_comprehensive_rendered_ci_boundary_producer_v79()
-    )
+    rendered_boundary_producer_result = install_comprehensive_rendered_ci_boundary_producer_v79()
 
-    # Compact client-report composition runs after the premium renderer and can
-    # replace every rendered surface. Repair at the outermost final validator so
-    # static imports and late compact composition cannot bypass CI/CD truth.
     from nico.comprehensive_final_ci_boundary_repair_v80 import (
         install_comprehensive_final_ci_boundary_repair_v80,
     )
 
-    final_ci_boundary_repair_result = (
-        install_comprehensive_final_ci_boundary_repair_v80()
+    final_ci_boundary_repair_result = install_comprehensive_final_ci_boundary_repair_v80()
+
+    # Bind immutable run-language authority after every historical renderer and
+    # final-validator compatibility layer. This is deliberately last so no later
+    # installer can restore rendered-output authority or a synthesized English default.
+    from nico.comprehensive_report_language_publication_contract_v82 import (
+        install_comprehensive_report_language_publication_contract_v82,
+    )
+
+    report_language_publication_contract_result = (
+        install_comprehensive_report_language_publication_contract_v82()
     )
     return {
         "status": "installed",
@@ -172,10 +151,11 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         "publication_installer": publication_result,
         "report_language_truth_installer": language_truth_result,
         "rendered_ci_boundary_truth_installer": rendered_boundary_truth_result,
-        "rendered_ci_boundary_producer_installer": (
-            rendered_boundary_producer_result
-        ),
+        "rendered_ci_boundary_producer_installer": rendered_boundary_producer_result,
         "final_ci_boundary_repair_installer": final_ci_boundary_repair_result,
+        "report_language_publication_contract_installer": (
+            report_language_publication_contract_result
+        ),
         "legacy_spanish_alias_bound": (
             legacy.repair_spanish_review_candidate_markdown
             is repair_spanish_review_candidate_markdown
@@ -189,6 +169,12 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         ),
         "final_ci_boundary_repair_bound": (
             final_ci_boundary_repair_result.get("validator_bound") is True
+        ),
+        "report_language_publication_contract_bound": (
+            report_language_publication_contract_result.get(
+                "persisted_run_identity_is_authority"
+            )
+            is True
         ),
         "exact_h2_matching_required": True,
         "evidence_summary_preserved": True,
