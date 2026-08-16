@@ -40,7 +40,7 @@ from nico.comprehensive_client_review_companion_v2 import (
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 
-VERSION = "nico.client-report-completion.v10"
+VERSION = "nico.client-report-completion.v11"
 
 _REVIEW_SECTION_TITLES = (
     "Functional QA",
@@ -110,6 +110,8 @@ def _install_contract(canonical: dict[str, Any]) -> dict[str, Any]:
             "decision_useful_comprehensive_sections_restored": True,
             "raw_stage_dump_excluded_from_client_pdf": True,
             "automated_draft_until_human_approval": True,
+            "four_part_ci_cd_boundary_in_compact_markdown_html_pdf": True,
+            "ci_cd_boundary_page_reserved_during_pdf_budgeting": True,
         }
     )
     canonical["v2_pipeline_contract"] = contract
@@ -221,6 +223,23 @@ def _validate_final_surfaces(
             + ", ".join(missing_review_sections)
         )
 
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_cd_boundary_markers
+
+    boundary_markers = ci_cd_boundary_markers(canonical, spanish=spanish)
+    for surface_name, surface_text in (
+        ("markdown", markdown),
+        ("html", rendered_html),
+        ("pdf", extracted),
+    ):
+        missing_boundary = [
+            marker for marker in boundary_markers if marker not in surface_text
+        ]
+        if missing_boundary:
+            raise ValueError(
+                f"final compact {surface_name} omitted CI/CD boundary: "
+                + ", ".join(missing_boundary)
+            )
+
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
         location = _text(item.get("location"))
@@ -245,6 +264,9 @@ def _validate_final_surfaces(
         "raw_stage_dump_excluded_from_client_pdf": True,
         "decision_useful_comprehensive_sections_restored": True,
         "automated_draft_language_verified": True,
+        "four_part_ci_cd_boundary_in_markdown": True,
+        "four_part_ci_cd_boundary_in_html": True,
+        "four_part_ci_cd_boundary_in_pdf": True,
         "client_pdf_page_boundary": MAX_CLIENT_PDF_PAGES,
         "client_pdf_page_count": page_count,
         "requested_client_review_page_range": [
@@ -288,6 +310,19 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             spanish=spanish,
         )
     )
+
+    # The review companion is the last Markdown reconstruction step. Bind the
+    # authoritative four-part CI/CD section here so no compact renderer or static
+    # alias can erase it before HTML and PDF are produced.
+    from nico.comprehensive_ci_boundary_compat_v74 import (
+        repair_ci_operational_markdown,
+    )
+
+    markdown = repair_ci_operational_markdown(
+        markdown,
+        canonical,
+        spanish=spanish,
+    )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     title = (
         "Evaluación Técnica Integral NICO"
@@ -303,12 +338,21 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     )
     register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
     gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
+
+    # Reserve the CI/CD boundary page inside the compact page budget instead of
+    # appending it after composition, where it could be truncated by a full body.
+    from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
+        _boundary_pdf_page,
+    )
+
+    ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
     pdf = sanitize_client_pdf_status(
         compose_compact_client_pdf(
             base_pdf,
             register_pdf,
             gate_pdf,
             review_pdf=review_pdf,
+            ci_boundary_pdf=ci_boundary_pdf,
         )
     )
     validation = _validate_final_surfaces(
@@ -338,6 +382,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             "comprehensive_review_companion_in_html": True,
             "comprehensive_review_companion_in_pdf": True,
             "comprehensive_review_companion_page_count": review_page_count,
+            "ci_cd_boundary_bound_after_review_companion": True,
+            "ci_cd_boundary_reserved_in_pdf_budget": True,
             "premium_cover_preserved": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
