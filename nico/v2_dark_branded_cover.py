@@ -12,7 +12,7 @@ from nico.comprehensive_client_ready_projection_v1 import (
     clean_finding_title,
 )
 
-VERSION = "nico.v2.dark-branded-cover.v3.2"
+VERSION = "nico.v2.dark-branded-cover.v3.3"
 
 
 def _text(value: Any) -> str:
@@ -28,16 +28,24 @@ def _score_pair(assessment: Mapping[str, Any]) -> tuple[str, str]:
     return technical_label, adjusted_label
 
 
-def _priority_titles(canonical: Mapping[str, Any]) -> list[str]:
+def _priority_titles(canonical: Mapping[str, Any], *, spanish: bool = False) -> list[str]:
     findings = [item for item in canonical.get("canonical_findings") or [] if isinstance(item, Mapping)]
     titles: list[str] = []
     for item in findings:
         title = clean_finding_title(item.get("decision_title") or item.get("title"))
+        if spanish and title.startswith("Reduce complexity in "):
+            title = "Reducir la complejidad en " + title[len("Reduce complexity in "):]
         if title and title.casefold() not in {value.casefold() for value in titles}:
             titles.append(title)
         if len(titles) == 3:
             break
-    return titles or ["No unresolved priority finding retained"]
+    if titles:
+        return titles
+    return [
+        "No se conservaron hallazgos prioritarios sin resolver"
+        if spanish
+        else "No unresolved priority finding retained"
+    ]
 
 
 def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: str, *, spanish: bool) -> str:
@@ -45,9 +53,9 @@ def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: s
     repository = _text(identity.get("repository"))
     if spanish:
         return (
-            f"NICO generó un borrador automatizado de evaluación técnica integral para {repository}. "
+            f"NICO generó un borrador automatizado de Evaluación Técnica Integral para {repository}. "
             f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
-            "El paquete conserva salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
+            "El paquete basado en evidencia conserva la salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
             "un marco de hoja de ruta y exportaciones estructuradas para revisión humana; no constituye aprobación ni autorización de entrega."
         )
     return (
@@ -67,7 +75,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     technical, adjusted = _score_pair(assessment)
-    priorities = _priority_titles(canonical)
+    priorities = _priority_titles(canonical, spanish=spanish)
     width, height = letter
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
@@ -94,7 +102,13 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     left = 42
     pdf.setFillColor(cyan)
     pdf.setFont("Helvetica-Bold", 7.5)
-    pdf.drawString(left, height - 42, "NICO / EVIDENCE-BOUND ENGINEERING INTELLIGENCE")
+    pdf.drawString(
+        left,
+        height - 42,
+        "NICO / INTELIGENCIA DE INGENIERÍA BASADA EN EVIDENCIA"
+        if spanish
+        else "NICO / EVIDENCE-BOUND ENGINEERING INTELLIGENCE",
+    )
     pdf.setFillColor(white)
     pdf.setFont("Helvetica-Bold", 25)
     pdf.drawString(left, height - 88, "NICO COMPREHENSIVE")
@@ -103,9 +117,9 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.drawString(
         left,
         height - 108,
-        "Evidence-Bound Technical Review Package"
-        if not spanish
-        else "Paquete técnico basado en evidencia para revisión",
+        "Paquete de revisión técnica basado en evidencia"
+        if spanish
+        else "Evidence-Bound Technical Review Package",
     )
 
     labels = [
@@ -146,7 +160,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
 
     pdf.setFillColor(white)
     pdf.setFont("Helvetica-Bold", 15)
-    pdf.drawString(left, height - 285, "Executive posture" if not spanish else "Postura ejecutiva")
+    pdf.drawString(left, height - 285, "Postura ejecutiva" if spanish else "Executive posture")
     posture = _executive_posture(canonical, technical, adjusted, spanish=spanish)
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 7.1)
@@ -172,7 +186,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.roundRect(left, box_y, width - 84, 132, 10, fill=1, stroke=1)
     pdf.setFillColor(cyan)
     pdf.setFont("Helvetica-Bold", 6.5)
-    pdf.drawString(left + 14, box_y + 111, "PRIORITY REVIEW ITEMS" if not spanish else "ELEMENTOS PRIORITARIOS PARA REVISIÓN")
+    pdf.drawString(left + 14, box_y + 111, "ELEMENTOS PRIORITARIOS PARA REVISIÓN" if spanish else "PRIORITY REVIEW ITEMS")
     for index, title in enumerate(priorities[:3], start=1):
         cy = box_y + 82 - (index - 1) * 28
         pdf.setFillColor(teal)
@@ -190,15 +204,31 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.drawString(left, 75, boundary[:115])
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 6.2)
-    pdf.drawString(left, 60, "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED")
+    pdf.drawString(
+        left,
+        60,
+        "SOLO LECTURA · INSTANTÁNEA INMUTABLE · REVISIÓN HUMANA REQUERIDA"
+        if spanish
+        else "READ-ONLY · IMMUTABLE SNAPSHOT · HUMAN REVIEW REQUIRED",
+    )
     pdf.setFillColor(cyan)
     pdf.setFont("Helvetica-Bold", 6.2)
-    pdf.drawRightString(width - left, 60, "POWERED BY REPARODYNAMICS")
+    pdf.drawRightString(
+        width - left,
+        60,
+        "IMPULSADO POR REPARODYNAMICS" if spanish else "POWERED BY REPARODYNAMICS",
+    )
     pdf.setFillColor(colors.HexColor("#f0a23a"))
     pdf.setFont("Helvetica", 6.2)
-    pdf.drawString(left, 45, "Client delivery remains blocked until explicit authorized human approval")
+    pdf.drawString(
+        left,
+        45,
+        "La entrega al cliente permanece bloqueada hasta la aprobación humana autorizada explícita"
+        if spanish
+        else "Client delivery remains blocked until explicit authorized human approval",
+    )
     pdf.setFillColor(muted)
-    pdf.drawRightString(width - left, 45, "Page 1")
+    pdf.drawRightString(width - left, 45, "Página 1" if spanish else "Page 1")
 
     pdf.showPage()
     pdf.save()
@@ -212,8 +242,10 @@ def _existing_cover_page(text: str) -> bool:
     explicit = (
         "decision-grade technical assessment",
         "evidence-bound technical review package",
+        "paquete de revisión técnica basado en evidencia",
         "canonical score summary",
         "resumen canónico de puntuación",
+        "evaluación técnica integral",
         "completed an authorized comprehensive technical assessment",
         "completó una evaluación técnica integral autorizada",
     )
@@ -221,8 +253,8 @@ def _existing_cover_page(text: str) -> bool:
         return True
     return (
         "nico comprehensive" in normalized
-        and "executive posture" in normalized
-        and "client delivery" in normalized
+        and ("executive posture" in normalized or "postura ejecutiva" in normalized)
+        and ("client delivery" in normalized or "entrega al cliente" in normalized)
     )
 
 
@@ -231,12 +263,19 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
 
     result = deepcopy(dict(package))
     canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
-    language = _text(canonical.get("report_language") or canonical.get("locale")).casefold()
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = _text(
+        canonical.get("report_language")
+        or canonical.get("locale")
+        or identity.get("report_language")
+        or identity.get("locale")
+    ).casefold()
+    spanish = language.startswith("es")
     original = base64.b64decode(str(result.get("pdf_base64") or ""))
     if not original.startswith(b"%PDF"):
         raise ValueError("dark branded cover requires a valid PDF")
     old_reader = PdfReader(io.BytesIO(original))
-    cover_reader = PdfReader(io.BytesIO(_cover(canonical, spanish=language.startswith("es"))))
+    cover_reader = PdfReader(io.BytesIO(_cover(canonical, spanish=spanish)))
     writer = PdfWriter()
     writer.add_page(cover_reader.pages[0])
     removed_cover_pages = 0
@@ -258,6 +297,8 @@ def apply_dark_branded_cover(package: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_score_sheet_removed": True,
         "duplicate_cover_pages_removed": removed_cover_pages,
         "single_cover_enforced": True,
+        "localized_cover_language": "es-MX" if spanish else "en",
+        "cross_language_cover_layout_parity": True,
         "automated_draft_boundary_visible": True,
         "authorized_automation_claims_absent": True,
         "decision_grade_claim_absent": True,
