@@ -58,6 +58,21 @@ _FINAL_STAGE_ID = "final_comprehensive_report_generation"
 _SERVICE_ID = "comprehensive"
 
 
+def _report_language(context: Mapping[str, Any]) -> str:
+    identity = context.get("identity") if isinstance(context.get("identity"), Mapping) else {}
+    for candidate in (
+        identity.get("report_language"),
+        context.get("report_language"),
+        context.get("locale"),
+    ):
+        normalized = _text(candidate, 32).casefold().replace("_", "-")
+        if normalized.startswith("es"):
+            return "es-MX"
+        if normalized.startswith("en"):
+            return "en"
+    return "en"
+
+
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build the exact canonical report model without rendering legacy artifacts.
 
@@ -88,8 +103,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     review-candidate count, or CI operational boundary disappears from client formats.
 
     The report package and its canonical JSON carry the same explicit Comprehensive
-    service identity so every renderer and release verifier reads one unambiguous
-    artifact contract.
+    service and report-language identity so every renderer and release verifier reads
+    one unambiguous artifact contract. Report language is part of immutable run truth,
+    not a mutable renderer default.
 
     A real final-stage invocation always contains retained prior-stage evidence. Empty
     stage mappings are compatibility or synthetic calls and must fall back to the
@@ -110,6 +126,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
             "client_delivery_allowed": False,
         }
 
+    report_language = _report_language(context)
+    identity["report_language"] = report_language
+
     # The final stage must preserve the timestamp established by the run. Only
     # compatibility calls that do not supply one may create a new timestamp.
     generated_at = _text(context.get("generated_at"), 80) or _now()
@@ -122,6 +141,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
             "status": "blocked",
             "reason": "canonical_report_stage_results_unavailable",
             **identity,
+            "report_language": report_language,
+            "locale": report_language,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -137,12 +158,16 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     assessment["repository"] = identity["repository"]
     assessment["commit_sha"] = identity["commit_sha"]
     assessment["run_id"] = identity["run_id"]
+    assessment["report_language"] = report_language
+    assessment["locale"] = report_language
     assessment["executive_summary"] = _decision_summary(identity, assessment, ordered)
     assessment["maturity_label_truth"] = deepcopy(maturity_truth)
 
     canonical = {
         "service_id": _SERVICE_ID,
         "identity": identity,
+        "report_language": report_language,
+        "locale": report_language,
         "generated_at": generated_at,
         "generation_timestamp": generated_at,
         "assessment": assessment,
@@ -172,6 +197,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     package = {
         "service_id": _SERVICE_ID,
         "report_id": report_id,
+        "report_language": report_language,
+        "locale": report_language,
         "generated_at": generated_at,
         "generation_timestamp": generated_at,
         "json": canonical,
@@ -204,6 +231,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "artifact_schema": VERSION,
         "service_id": _SERVICE_ID,
         "report_id": report_id,
+        "report_language": report_language,
+        "locale": report_language,
         "generated_at": generated_at,
         "generation_timestamp": generated_at,
         "report_package": package,
