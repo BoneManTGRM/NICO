@@ -17,7 +17,12 @@ _ES_EXTRA_EXACT = {
     "Human Review Required": "Revisión humana requerida",
     "High-complexity code hotspot": "Punto crítico de código de alta complejidad",
     "Pending": "Pendiente",
+    "pending": "pendiente",
     "Blocked": "Bloqueada",
+    "blocked": "bloqueada",
+    "COMPLETED": "COMPLETADO",
+    "completed": "completado",
+    "Code audit": "Auditoría de código",
     "Yes": "Sí",
     "No": "No",
     "Not available": "No disponible",
@@ -183,7 +188,6 @@ _DISPLAY_FIELDS = {
 
 def _localized_register(register: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(register))
-
     def transform(value: Any, key: str = "") -> Any:
         if isinstance(value, Mapping):
             return {k: transform(v, str(k)) for k, v in value.items()}
@@ -194,7 +198,6 @@ def _localized_register(register: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(value, str) and key in _DISPLAY_FIELDS:
             return _safe_es(value)
         return value
-
     return transform(result)
 
 
