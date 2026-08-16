@@ -40,7 +40,7 @@ def _canonical(*, spanish: bool = True, drop_stage: str | None = None) -> dict:
     return {
         # Intentionally stale root English on the Spanish fixture. Persisted run
         # identity must remain authoritative at terminal publication.
-        "report_language": "en" if spanish else "en",
+        "report_language": "en",
         "identity": {
             "run_id": "comprun_spanish_full_data_production_shape",
             "report_language": identity_language,
@@ -143,20 +143,41 @@ def test_spanish_full_data_validates_actual_localized_sections_and_persisted_lan
     state, legacy_calls = _install(monkeypatch)
     markdown, rendered_html, pdf = _spanish_surfaces()
 
-    proof = finish.assert_full_data_parity(
-        _canonical(), markdown, rendered_html, pdf
-    )
+    proof = finish.assert_full_data_parity(_canonical(), markdown, rendered_html, pdf)
 
     assert state["localized_spanish_full_data_sections_required"] is True
     assert state["exact_source_identifiers_required"] is True
     assert state["persisted_report_language_authority"] is True
+    assert state["established_stage_aliases_supported"] is True
     assert state["missing_worksheets_not_synthesized"] is True
     assert proof["proof_kind"] == "full_comprehensive"
     assert proof["localized_spanish_full_data_validation"] is True
-    assert proof["worksheet_identity_source"] == "stable_stage_id"
+    assert proof["worksheet_identity_source"] == "stable_stage_id_or_established_alias"
     assert proof["candidate_count"] == 1
     assert proof["exact_source_finding_count"] == 1
     assert legacy_calls == []
+
+
+def test_established_review_companion_stage_aliases_are_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install(monkeypatch)
+    canonical = _canonical()
+    aliases = {
+        "historical_trends_and_change_failure": "historical_trends",
+        "stakeholder_and_business_alignment": "stakeholder_alignment",
+        "staffing_sequencing_and_cost": "resourcing",
+    }
+    for container in (canonical["stage_summaries"], canonical["assessment"]["stage_summaries"]):
+        for stage in container:
+            if stage.get("stage_id") in aliases:
+                stage["stage_id"] = aliases[stage["stage_id"]]
+    markdown, rendered_html, pdf = _spanish_surfaces()
+
+    proof = finish.assert_full_data_parity(canonical, markdown, rendered_html, pdf)
+
+    assert proof["proof_kind"] == "full_comprehensive"
+    assert proof["worksheet_count"] == 8
 
 
 def test_missing_canonical_worksheet_stage_still_fails_closed(
@@ -210,10 +231,7 @@ def test_missing_spanish_review_gate_still_fails_closed(
     _install(monkeypatch)
     markdown, rendered_html, pdf = _spanish_surfaces(include_gate=False)
 
-    with pytest.raises(
-        ValueError,
-        match="Puerta de revisión humana y aceptación",
-    ):
+    with pytest.raises(ValueError, match="Puerta de revisión humana y aceptación"):
         finish.assert_full_data_parity(_canonical(), markdown, rendered_html, pdf)
 
 
@@ -240,12 +258,7 @@ def test_english_full_data_path_is_unchanged(
     captured: dict[str, object] = {}
 
     def legacy_validator(canonical_arg, markdown_arg, html_arg, pdf_arg):
-        captured.update(
-            canonical=canonical_arg,
-            markdown=markdown_arg,
-            html=html_arg,
-            pdf=pdf_arg,
-        )
+        captured.update(canonical=canonical_arg, markdown=markdown_arg, html=html_arg, pdf=pdf_arg)
         return {"proof_kind": "full_comprehensive"}
 
     monkeypatch.setattr(finish, "assert_full_data_parity", legacy_validator)
