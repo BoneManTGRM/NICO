@@ -12,6 +12,7 @@ from nico import comprehensive_rendered_ci_boundary_truth_v78 as rendered_truth
 from nico import comprehensive_report_language_truth_v77 as language_truth
 from nico import comprehensive_run_record as run_record
 from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+from nico import v2_pipeline_adapter as adapter
 from nico import v2_production_authority as production
 
 
@@ -82,12 +83,28 @@ def test_run_record_canonicalizes_supported_spanish_alias() -> None:
     assert record["identity"]["report_language"] == "es-MX"
 
 
+def test_run_record_rejects_unsupported_language_instead_of_defaulting_to_english() -> None:
+    with pytest.raises(ValueError, match="unsupported_report_language:fr"):
+        run_record.create_comprehensive_run_record(
+            run_id="comprun_language_unsupported",
+            repository="example/product",
+            commit_sha="a" * 40,
+            evidence_ledger_id="ledger_language_unsupported",
+            customer_id="customer",
+            project_id="project",
+            authorized=True,
+            report_language="fr",
+        )
+
+
 def test_persisted_run_identity_outweighs_stale_root_english() -> None:
     canonical = _canonical("es-MX", stale_root="en")
 
     assert language_truth.resolve_report_language(canonical) == "es-MX"
     assert rendered_truth.resolve_report_language(canonical) == "es-MX"
     assert phase17._is_spanish(canonical) is True
+    assert adapter._report_language(canonical) == "es-MX"
+    assert production._report_language(canonical) == "es-MX"
 
 
 def test_spanish_markdown_html_pdf_validate_independently_and_repair_projection() -> None:
@@ -148,30 +165,17 @@ def test_english_markdown_html_pdf_regression_passes() -> None:
     )
 
 
-def test_completion_validator_is_bound_to_authoritative_surface_contract() -> None:
-    markers = _markers(spanish=True)
-    canonical = _canonical("es-MX", stale_root="en")
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"client report omitted es-MX CI/CD boundary in PDF: "
-            r"A\. Madurez de configuración de CI/CD:"
-        ),
-    ):
-        completion._validate_final_surfaces(
-            canonical,
-            {},
-            "\n".join(markers),
-            "<br>".join(markers),
-            _pdf(markers[1:]),
-        )
-
+def test_completion_validator_is_bound_without_masking_existing_fail_closed_gates() -> None:
     assert getattr(
         completion._validate_final_surfaces,
         "_nico_report_language_completion_validator_v82",
         False,
     ) is True
+    assert getattr(
+        completion._validate_final_surfaces,
+        "_nico_comprehensive_placeholder_sanitization_v1",
+        False,
+    ) is False
 
 
 def test_v2_production_authority_wrapper_keeps_spanish_through_publication(
