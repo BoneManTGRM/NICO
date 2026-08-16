@@ -8,35 +8,36 @@ from typing import Any, Callable
 
 from nico import comprehensive_report_language_truth_v77 as language_v77
 
-VERSION = "nico.comprehensive-report-language-publication-contract.v82"
+VERSION = "nico.comprehensive-report-language-publication-contract.v82.1"
 _RUN_RECORD_MARKER = "_nico_report_language_run_record_v82"
 _SOURCE_MARKER = "_nico_report_language_canonical_source_v82"
 _COMPLETION_VALIDATOR_MARKER = "_nico_report_language_completion_validator_v82"
 
 
-def _canonical_language(value: Any, *, default: str = "") -> str:
+def _canonical_language(value: Any) -> str:
     resolved = language_v77._language_from_value(value)
     if resolved:
         return resolved
-    if default:
-        return default
     raise ValueError(f"unsupported_report_language:{value}")
 
 
 def _context_language(context: Mapping[str, Any]) -> str:
     identity = context.get("identity") if isinstance(context.get("identity"), Mapping) else {}
+    assessment = context.get("assessment") if isinstance(context.get("assessment"), Mapping) else {}
     for value in (
         identity.get("report_language"),
         identity.get("locale"),
         context.get("requested_report_language"),
         context.get("report_language"),
         context.get("locale"),
+        assessment.get("report_language"),
+        assessment.get("locale"),
     ):
         resolved = language_v77._language_from_value(value)
         if resolved:
             return resolved
-    # Compatibility callers that never had a language contract historically render
-    # English. Production Comprehensive stage contexts always carry report_language.
+    # Compatibility callers that predate the language contract historically render
+    # English. Production Comprehensive stage contexts carry report_language.
     return "en"
 
 
@@ -84,12 +85,11 @@ def _patch_run_record_language() -> bool:
         run_service.create_comprehensive_run_record = current
         return True
 
-    @wraps(current)
+    @wraps(current, updated=())
     def create_comprehensive_run_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
         normalized = dict(kwargs)
         normalized["report_language"] = _canonical_language(
-            normalized.get("report_language", "en"),
-            default="en",
+            normalized.get("report_language", "en")
         )
         return current(*args, **normalized)
 
@@ -113,7 +113,7 @@ def _patch_canonical_source_language() -> bool:
         production.build_canonical_report_source = current
         return True
 
-    @wraps(current)
+    @wraps(current, updated=())
     def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         language = _context_language(context)
         return _bind_language_to_source(current(context), language=language)
@@ -121,7 +121,7 @@ def _patch_canonical_source_language() -> bool:
     setattr(build_canonical_report_source, _SOURCE_MARKER, True)
     setattr(build_canonical_report_source, "_nico_previous", current)
     source.build_canonical_report_source = build_canonical_report_source
-    # v2_production_authority also captured the builder through a static import.
+    # v2_production_authority captured the builder through a static import.
     production.build_canonical_report_source = build_canonical_report_source
     return (
         source.build_canonical_report_source is build_canonical_report_source
@@ -130,13 +130,18 @@ def _patch_canonical_source_language() -> bool:
 
 
 def _patch_production_language_resolver() -> bool:
+    from nico import v2_pipeline_adapter as adapter
     from nico import v2_production_authority as production
 
     def _report_language(context: Mapping[str, Any]) -> str:
         return _context_language(context)
 
     production._report_language = _report_language
-    return production._report_language is _report_language
+    adapter._report_language = _report_language
+    return (
+        production._report_language is _report_language
+        and adapter._report_language is _report_language
+    )
 
 
 def _patch_static_renderer_language_aliases() -> bool:
@@ -160,7 +165,10 @@ def _patch_completion_surface_validator() -> bool:
     if getattr(current, _COMPLETION_VALIDATOR_MARKER, False):
         return True
 
-    @wraps(current)
+    # Do not copy arbitrary marker attributes from the wrapped validator. Many NICO
+    # compatibility installers use function attributes for idempotency; copying them
+    # would make a later installer incorrectly believe its own gate is still outermost.
+    @wraps(current, updated=())
     def _validate_final_surfaces(
         canonical: Mapping[str, Any],
         register: Mapping[str, Any],
@@ -168,6 +176,10 @@ def _patch_completion_surface_validator() -> bool:
         rendered_html: str,
         pdf: bytes,
     ) -> dict[str, Any]:
+        # Preserve all pre-existing fail-closed gates and their specific diagnostics.
+        # The authoritative CI/CD contract then adds independent per-surface language
+        # validation without replacing placeholder, integrity, or reconciliation gates.
+        result = current(canonical, register, markdown, rendered_html, pdf)
         language = language_v77.resolve_report_language(canonical)
         rendered_truth._validate_authoritative_surfaces(
             {
@@ -178,7 +190,6 @@ def _patch_completion_surface_validator() -> bool:
             },
             language=language,
         )
-        result = current(canonical, register, markdown, rendered_html, pdf)
         return {
             **result,
             "authoritative_report_language": language,
@@ -206,6 +217,7 @@ def install_comprehensive_report_language_publication_contract_v82() -> dict[str
         "run_record_language_canonicalized": run_record_bound,
         "canonical_source_language_bound": canonical_source_bound,
         "production_language_resolver_bound": production_resolver_bound,
+        "v2_pipeline_language_resolver_bound": production_resolver_bound,
         "static_renderer_language_aliases_bound": static_renderer_aliases_bound,
         "completion_surface_validator_bound": completion_validator_bound,
         "authoritative_languages": ["en", "es-MX"],
