@@ -14,7 +14,7 @@ from pypdf import PdfReader
 from nico import comprehensive_client_truth_final_v1 as final_truth
 from nico import comprehensive_report_language_truth_v77 as language_v77
 
-VERSION = "nico.comprehensive-rendered-ci-boundary-truth.v78"
+VERSION = "nico.comprehensive-rendered-ci-boundary-truth.v78.1"
 _INSTALL_MARKER = "_nico_comprehensive_rendered_ci_boundary_truth_v78"
 _VALIDATOR_MARKER = "_nico_rendered_ci_boundary_validator_v78"
 
@@ -31,9 +31,9 @@ _EN_BOUNDARY_MARKERS = (
     "D. Historical workflow outcomes",
 )
 
-# Request-scoped values outrank canonical defaults. Root report_language and
-# locale remain supported by the v77 resolver, but they are intentionally not
-# included here because upstream normalization can synthesize a default "en".
+# The persisted Comprehensive run identity is the authoritative language source.
+# Root/package language fields are projections and may be rebuilt by compatibility
+# layers, so they must never outrank identity.report_language at publication time.
 _ROOT_REQUEST_LANGUAGE_KEYS = (
     "requested_report_language",
     "requested_language",
@@ -77,12 +77,17 @@ def _mapping(value: Any) -> Mapping[str, Any]:
 
 
 def _request_scoped_language(canonical: Mapping[str, Any]) -> tuple[str, str]:
+    identity = _mapping(canonical.get("identity"))
+    for key in ("report_language", "locale", "requested_report_language"):
+        resolved = language_v77._language_from_value(identity.get(key))
+        if resolved:
+            return resolved, f"run_identity:{key}"
+
     for key in _ROOT_REQUEST_LANGUAGE_KEYS:
         resolved = language_v77._language_from_value(canonical.get(key))
         if resolved:
             return resolved, f"request:root.{key}"
 
-    identity = _mapping(canonical.get("identity"))
     assessment = _mapping(canonical.get("assessment"))
     containers: list[tuple[str, Mapping[str, Any]]] = [
         (name, _mapping(canonical.get(name))) for name in _REQUEST_CONTAINERS
@@ -107,7 +112,7 @@ def _resolve_report_language(canonical: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def resolve_report_language(canonical: Mapping[str, Any]) -> str:
-    """Resolve request truth before any synthesized canonical language default."""
+    """Resolve immutable run/request truth before synthesized canonical defaults."""
 
     return _resolve_report_language(canonical)[0]
 
@@ -136,6 +141,14 @@ def _extract_pdf_text(result: Mapping[str, Any]) -> str:
         return ""
 
 
+def _surface_texts(result: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "Markdown": _normalize_text(result.get("markdown")),
+        "HTML": _html_text(result.get("html")),
+        "PDF": _extract_pdf_text(result),
+    }
+
+
 def _coverage(text: str, markers: tuple[str, ...]) -> dict[str, Any]:
     normalized = _normalize_text(text)
     present = [marker for marker in markers if _normalize_text(marker) in normalized]
@@ -150,100 +163,120 @@ def _coverage(text: str, markers: tuple[str, ...]) -> dict[str, Any]:
 
 
 def rendered_ci_boundary_truth(result: Mapping[str, Any]) -> dict[str, Any]:
-    """Classify the actual final Markdown, HTML, and PDF CI/CD boundary."""
+    """Describe rendered CI/CD structure without treating it as language authority."""
 
-    surfaces = {
-        "markdown": _normalize_text(result.get("markdown")),
-        "html": _html_text(result.get("html")),
-        "pdf": _extract_pdf_text(result),
-    }
+    surfaces = _surface_texts(result)
     combined = _normalize_text("\n".join(surfaces.values()))
     english = _coverage(combined, _EN_BOUNDARY_MARKERS)
     spanish = _coverage(combined, _ES_BOUNDARY_MARKERS)
 
     if english["complete"] and spanish["complete"]:
-        language = "conflict"
+        detected_language = "conflict"
     elif spanish["complete"]:
-        language = "es-MX"
+        detected_language = "es-MX"
     elif english["complete"]:
-        language = "en"
+        detected_language = "en"
     else:
-        language = ""
+        detected_language = ""
 
     per_surface: dict[str, Any] = {}
     for name, text in surfaces.items():
-        per_surface[name] = {
+        per_surface[name.casefold()] = {
             "english": _coverage(text, _EN_BOUNDARY_MARKERS),
             "spanish": _coverage(text, _ES_BOUNDARY_MARKERS),
         }
 
     return {
         "version": VERSION,
-        "language": language,
+        "language": detected_language,
         "english": english,
         "spanish": spanish,
         "per_surface": per_surface,
-        "complete": language in {"en", "es-MX"},
-        "conflict": language == "conflict",
+        "complete": detected_language in {"en", "es-MX"},
+        "conflict": detected_language == "conflict",
+        "rendered_artifact_is_language_authority": False,
     }
 
 
-def _expected_language_for_incomplete_boundary(
+def _validate_authoritative_surfaces(
     result: Mapping[str, Any],
-    truth: Mapping[str, Any],
-) -> str:
-    spanish = _mapping(truth.get("spanish"))
-    english = _mapping(truth.get("english"))
-    spanish_count = int(spanish.get("present_count") or 0)
-    english_count = int(english.get("present_count") or 0)
-    if spanish_count > english_count:
-        return "es-MX"
-    if english_count > spanish_count:
-        return "en"
-    canonical = _mapping(result.get("json"))
-    return resolve_report_language(canonical)
+    *,
+    language: str,
+) -> dict[str, Any]:
+    expected = _ES_BOUNDARY_MARKERS if language == "es-MX" else _EN_BOUNDARY_MARKERS
+    opposite_language = "en" if language == "es-MX" else "es-MX"
+    opposite = _EN_BOUNDARY_MARKERS if language == "es-MX" else _ES_BOUNDARY_MARKERS
+    surfaces = _surface_texts(result)
+    coverage: dict[str, Any] = {}
+
+    for surface_name, text in surfaces.items():
+        surface_coverage = _coverage(text, expected)
+        coverage[surface_name.casefold()] = surface_coverage
+        if not surface_coverage["complete"]:
+            marker = list(surface_coverage["missing"])[0]
+            raise ValueError(
+                f"client report omitted {language} CI/CD boundary in {surface_name}: {marker}"
+            )
+        normalized = _normalize_text(text)
+        for marker in opposite:
+            if _normalize_text(marker) in normalized:
+                raise ValueError(
+                    f"client report contains {opposite_language} CI/CD boundary in "
+                    f"{surface_name} for authoritative {language} report: {marker}"
+                )
+    return coverage
 
 
 def reconcile_rendered_ci_boundary_language(
     result: MutableMapping[str, Any],
 ) -> dict[str, Any]:
-    """Make the complete rendered boundary authoritative for publication."""
-
-    truth = rendered_ci_boundary_truth(result)
-    language = str(truth.get("language") or "")
-    if language == "conflict":
-        raise ValueError(
-            "client report contains complete English and Spanish CI/CD boundaries"
-        )
-    if not language:
-        expected = _expected_language_for_incomplete_boundary(result, truth)
-        coverage = _mapping(
-            truth.get("spanish") if expected == "es-MX" else truth.get("english")
-        )
-        missing = list(coverage.get("missing") or [])
-        marker = missing[0] if missing else (
-            _ES_BOUNDARY_MARKERS[0] if expected == "es-MX" else _EN_BOUNDARY_MARKERS[0]
-        )
-        raise ValueError(f"client report omitted CI/CD boundary: {marker}")
+    """Validate rendered surfaces against immutable run/request language truth."""
 
     canonical = deepcopy(dict(_mapping(result.get("json"))))
-    prior_language = language_v77.resolve_report_language(canonical)
+    language, source = _resolve_report_language(canonical)
+    if language not in {"en", "es-MX"}:
+        raise ValueError("authoritative report language is unavailable")
+
+    surface_coverage = _validate_authoritative_surfaces(result, language=language)
+    truth = rendered_ci_boundary_truth(result)
+
+    identity = deepcopy(dict(_mapping(canonical.get("identity"))))
+    identity["report_language"] = language
+    canonical["identity"] = identity
+    assessment = deepcopy(dict(_mapping(canonical.get("assessment"))))
+    assessment["report_language"] = language
+    assessment["locale"] = language
+    canonical["assessment"] = assessment
     canonical["report_language"] = language
+    canonical["locale"] = language
+
     contract = deepcopy(dict(_mapping(canonical.get("v2_prepublication_contract"))))
     contract.update(
         {
             "rendered_ci_boundary_truth_version": VERSION,
+            "authoritative_report_language": language,
+            "report_language_authority_source": source,
             "rendered_ci_boundary_language": language,
             "rendered_ci_boundary_complete": True,
-            "rendered_ci_boundary_overrode_canonical_language": (
-                prior_language != language
-            ),
+            "rendered_ci_boundary_overrode_canonical_language": False,
+            "rendered_artifact_is_language_authority": False,
+            "ci_cd_surfaces_validated_independently": True,
+            "mixed_language_structural_markers_rejected": True,
+            "ci_cd_surface_coverage": surface_coverage,
         }
     )
     canonical["v2_prepublication_contract"] = contract
     result["json"] = canonical
-    result["rendered_ci_boundary_truth"] = truth
-    return truth
+    result["report_language"] = language
+    result["locale"] = language
+    result["rendered_ci_boundary_truth"] = {
+        **truth,
+        "language": language,
+        "authoritative_language": language,
+        "authority_source": source,
+        "surface_coverage": surface_coverage,
+    }
+    return result["rendered_ci_boundary_truth"]
 
 
 def _patch_final_validator() -> bool:
@@ -268,13 +301,12 @@ def _patch_final_validator() -> bool:
 
 
 def install_comprehensive_rendered_ci_boundary_truth_v78() -> dict[str, Any]:
-    """Bind request precedence and rendered final-artifact CI/CD truth last."""
+    """Bind persisted run-language authority and final per-surface validation."""
 
     already_installed = getattr(final_truth, _INSTALL_MARKER, False)
 
-    # All v77-bound renderer functions perform global lookup in the v77 module,
-    # so rebinding both resolver entry points updates every previously bound
-    # producer without another chain of renderer wrappers.
+    # Previously bound renderers perform global lookup in v77. Rebinding both
+    # entry points keeps one runtime resolver decision across every producer.
     language_v77._resolve_report_language = _resolve_report_language
     language_v77.resolve_report_language = resolve_report_language
 
@@ -283,11 +315,13 @@ def install_comprehensive_rendered_ci_boundary_truth_v78() -> dict[str, Any]:
     return {
         "status": "rebound" if already_installed else "installed",
         "version": VERSION,
+        "run_identity_language_precedes_synthesized_default": True,
         "request_language_precedes_synthesized_default": True,
-        "rendered_ci_boundary_is_final_authority": True,
-        "stale_canonical_language_is_reconciled": True,
-        "complete_bilingual_conflict_fails_closed": True,
-        "incomplete_boundary_fails_closed": True,
+        "rendered_ci_boundary_is_final_authority": False,
+        "rendered_ci_boundary_validated_against_authority": True,
+        "stale_projected_language_is_reconciled": True,
+        "mixed_language_structural_markers_fail_closed": True,
+        "surface_validation_independent": True,
         "validator_bound": validator_bound,
         "human_review_required": True,
         "client_delivery_allowed": False,
