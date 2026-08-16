@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.4"
+VERSION = "nico.client-pdf-compose.v3.5"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -69,29 +69,41 @@ def _finding_detail(value: str) -> bool:
     return "nico-code-" in text and "action:" in text and "cyclomatic_complexity" in text
 
 
+def _optional_pdf_reader(pdf: bytes | None, *, label: str) -> PdfReader | None:
+    if pdf is None:
+        return None
+    if not pdf.startswith(b"%PDF"):
+        raise ValueError(f"compact client composition requires a valid {label} PDF")
+    return PdfReader(io.BytesIO(pdf))
+
+
 def compose_compact_client_pdf(
     base_pdf: bytes,
     register_pdf: bytes,
     gate_pdf: bytes,
     *,
     review_pdf: bytes | None = None,
+    ci_boundary_pdf: bytes | None = None,
 ) -> bytes:
-    """Retain one cover, the decision body, and every client-review page.
+    """Retain one cover, the decision body, and every required client page.
 
     The legacy premium body can contain its own title page after the branded cover
     is applied. That second cover is not evidence and can introduce a second
-    generated timestamp, so it is removed here. Review pages are compacted at the
-    authoritative renderer and are never silently truncated.
+    generated timestamp, so it is removed here. Review and CI/CD boundary pages
+    are reserved before the body budget is calculated and are never silently
+    truncated.
     """
 
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("compact client composition requires a valid base PDF")
+    if not register_pdf.startswith(b"%PDF"):
+        raise ValueError("compact client composition requires a valid register PDF")
+    if not gate_pdf.startswith(b"%PDF"):
+        raise ValueError("compact client composition requires a valid gate PDF")
+
     base = PdfReader(io.BytesIO(base_pdf))
-    review = (
-        PdfReader(io.BytesIO(review_pdf))
-        if review_pdf is not None and review_pdf.startswith(b"%PDF")
-        else None
-    )
+    review = _optional_pdf_reader(review_pdf, label="review companion")
+    ci_boundary = _optional_pdf_reader(ci_boundary_pdf, label="CI/CD boundary")
     register = PdfReader(io.BytesIO(register_pdf))
     gate = PdfReader(io.BytesIO(gate_pdf))
 
@@ -139,18 +151,33 @@ def compose_compact_client_pdf(
 
     register_and_gate_count = len(register.pages) + len(gate.pages)
     review_count = len(review.pages) if review is not None else 0
+    ci_boundary_count = len(ci_boundary.pages) if ci_boundary is not None else 0
     required_review_count = review_count
-
-    if review is not None:
-        max_retained = max(
-            0,
-            MAX_CLIENT_PDF_PAGES - register_and_gate_count - required_review_count,
+    required_ci_boundary_count = ci_boundary_count
+    reserved_count = (
+        register_and_gate_count
+        + required_review_count
+        + required_ci_boundary_count
+    )
+    if reserved_count > MAX_CLIENT_PDF_PAGES:
+        raise ValueError(
+            "client-ready PDF required pages exceed the "
+            f"{MAX_CLIENT_PDF_PAGES}-page boundary"
         )
-        retained = retained[:max_retained]
+
+    max_retained = max(0, MAX_CLIENT_PDF_PAGES - reserved_count)
+    retained = retained[:max_retained]
+    if not retained:
+        raise ValueError(
+            "client-ready PDF cannot preserve a primary report page with all required pages"
+        )
 
     available_review_pages = max(
         0,
-        MAX_CLIENT_PDF_PAGES - len(retained) - register_and_gate_count,
+        MAX_CLIENT_PDF_PAGES
+        - len(retained)
+        - register_and_gate_count
+        - required_ci_boundary_count,
     )
     selected_review_pages = (
         list(review.pages[: min(review_count, available_review_pages)])
@@ -163,8 +190,19 @@ def compose_compact_client_pdf(
             f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
         )
 
+    selected_ci_boundary_pages = (
+        list(ci_boundary.pages) if ci_boundary is not None else []
+    )
+    if len(selected_ci_boundary_pages) != required_ci_boundary_count:
+        raise ValueError(
+            "client-ready PDF cannot preserve the complete CI/CD boundary "
+            f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
+        )
+
     writer = PdfWriter()
     for page in retained:
+        writer.add_page(page)
+    for page in selected_ci_boundary_pages:
         writer.add_page(page)
     for page in selected_review_pages:
         writer.add_page(page)
