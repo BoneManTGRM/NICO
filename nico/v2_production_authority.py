@@ -15,8 +15,8 @@ from nico.comprehensive_retained_scanner_evidence_v1 import retained_scanner_pay
 from nico.comprehensive_scanner_stage_retention_v1 import install_scanner_stage_retention
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
 
-VERSION = "nico.v2.production-authority.v6"
-_MARKER = "__nico_v2_production_authority_v6__"
+VERSION = "nico.v2.production-authority.v7"
+_MARKER = "__nico_v2_production_authority_v7__"
 _REQUIRED_TERMINAL_LANGUAGE_FLAGS = (
     "persisted_run_identity_outranks_root_projection",
     "final_truth_language_bound",
@@ -42,16 +42,16 @@ def _normalized_report_language(value: Any) -> str:
     return ""
 
 
-def _report_language(
+def _authoritative_report_language(
     context: Mapping[str, Any],
     canonical: Mapping[str, Any] | None = None,
 ) -> str:
-    """Resolve report language from persisted run truth before mutable context.
+    """Resolve immutable publication language from canonical run truth first.
 
-    The canonical report identity is created from the durable Comprehensive run. Once
-    that source exists, a later renderer/default/context value may not replace it.
-    Context remains a compatibility fallback for legacy packages that do not yet carry
-    their own language identity.
+    This callable is intentionally separate from ``_report_language``. Historical
+    compatibility installers patch the one-argument ``_report_language`` hook at
+    runtime. The final publication path must not depend on that mutable hook when a
+    canonical run identity is already available.
     """
 
     canonical = canonical if isinstance(canonical, Mapping) else {}
@@ -83,6 +83,12 @@ def _report_language(
         if resolved:
             return resolved
     return "en"
+
+
+def _report_language(context: Mapping[str, Any]) -> str:
+    """Compatibility hook retained with its historical one-argument contract."""
+
+    return _authoritative_report_language(context)
 
 
 def _reassert_terminal_report_language_authority() -> dict[str, Any]:
@@ -164,7 +170,8 @@ def _inject_live_runtime_truth(
 
     Report language is selected from the already-persisted canonical run identity first.
     A missing or stale runtime projection may not overwrite an existing canonical
-    language after the assessment has started.
+    language after the assessment has started. The immutable resolver is used directly
+    so late compatibility patches to ``_report_language`` cannot alter this decision.
     """
 
     output = dict(source)
@@ -175,7 +182,7 @@ def _inject_live_runtime_truth(
     if not canonical:
         return output
 
-    language = _report_language(context, canonical)
+    language = _authoritative_report_language(context, canonical)
     if language == "es-MX":
         _install_spanish_vocabulary()
     raw_identity = canonical.get("identity")
@@ -268,6 +275,7 @@ def _inject_live_runtime_truth(
     output["report_language_authority"] = {
         "selected": language,
         "canonical_identity_precedes_runtime_context": True,
+        "compatibility_hook_bypassed_for_canonical_publication": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -346,6 +354,8 @@ def wrap_final_report_publication(
                         "terminal_report_language_reasserted_per_publication": bool(
                             terminal_language_authority
                         ),
+                        "compat_report_language_one_arg_api_preserved": True,
+                        "authoritative_language_uses_private_immutable_resolver": True,
                         "final_stage_scanner_store_read": False,
                         "final_stage_scanner_execution": False,
                         "human_review_required": True,
@@ -382,6 +392,8 @@ def wrap_final_report_publication(
             "raw_scanner_outputs_embedded": False,
             "report_language_bound_before_rendering": True,
             "canonical_report_language_outranks_runtime_projection": True,
+            "compat_report_language_one_arg_api_preserved": True,
+            "authoritative_language_uses_private_immutable_resolver": True,
             "terminal_report_language_reasserted_per_publication": True,
             "terminal_report_language_authority_version": terminal_language_authority.get(
                 "version"
@@ -426,9 +438,14 @@ def wrap_final_report_publication(
                 "assessment_state": "review_required",
                 "report_language": (
                     published.get("report_language")
-                    or _report_language(report_context, published_canonical)
+                    or _authoritative_report_language(
+                        report_context,
+                        published_canonical,
+                    )
                 ),
                 "canonical_report_language_outranks_runtime_projection": True,
+                "compat_report_language_one_arg_api_preserved": True,
+                "authoritative_language_uses_private_immutable_resolver": True,
                 "terminal_report_language_reasserted_per_publication": True,
                 "final_artifact_generation_complete": True,
                 "retained_exact_run_scanner_truth_used": True,
@@ -510,6 +527,8 @@ def install_v2_production_authority(app: FastAPI) -> dict[str, Any]:
         "raw_scanner_outputs_embedded": False,
         "report_language_bound_before_rendering": True,
         "canonical_report_language_outranks_runtime_projection": True,
+        "compat_report_language_one_arg_api_preserved": True,
+        "authoritative_language_uses_private_immutable_resolver": True,
         "terminal_report_language_reasserted_per_publication": True,
         "localized_filename_bound_before_rendering": True,
         "spanish_vocabulary_bound_before_rendering": True,
