@@ -15,6 +15,9 @@ from nico.ci_history_classification_v1 import install_ci_history_classification_
 from nico.comprehensive_review_work_existing_app_v1 import (
     install_comprehensive_review_work_existing_app_v1,
 )
+from nico.comprehensive_spanish_client_surface_localization_v85 import (
+    install_comprehensive_spanish_client_surface_localization_v85,
+)
 from nico.comprehensive_terminal_report_language_authority_v83 import (
     install_comprehensive_terminal_report_language_authority_v83,
 )
@@ -38,7 +41,7 @@ from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_ev
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v24"
+VERSION = "nico.api.terminal_authority_bootstrap.v25"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
@@ -82,6 +85,12 @@ PHASE2_REVIEW_WORK = install_comprehensive_review_work_existing_app_v1(app)
 TERMINAL_REPORT_LANGUAGE_AUTHORITY = (
     install_comprehensive_terminal_report_language_authority_v83()
 )
+# Localize final es-MX client presentation only after every late report/language
+# compatibility installer is bound. This keeps the persisted language contract
+# authoritative while preserving code, exact-source evidence, and fail-closed review.
+SPANISH_CLIENT_SURFACE_LOCALIZATION = (
+    install_comprehensive_spanish_client_surface_localization_v85()
+)
 
 _INSTALLATIONS = {
     "nico_comprehensive_storage_availability": COMPREHENSIVE_STORAGE_AVAILABILITY,
@@ -104,6 +113,7 @@ _INSTALLATIONS = {
     "nico_scanner_determinism": SCANNER_DETERMINISM,
     "nico_phase2_review_work": PHASE2_REVIEW_WORK,
     "nico_terminal_report_language_authority": TERMINAL_REPORT_LANGUAGE_AUTHORITY,
+    "nico_spanish_client_surface_localization": SPANISH_CLIENT_SURFACE_LOCALIZATION,
 }
 
 for state_name, installation in _INSTALLATIONS.items():
@@ -195,6 +205,16 @@ if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("human_review_required") is not True:
     raise RuntimeError("Terminal report language authority must preserve human review")
 if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("client_delivery_allowed") is not False:
     raise RuntimeError("Terminal report language authority must block unapproved client delivery")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("canonical_language_resolver_reused") is not True:
+    raise RuntimeError("Spanish presentation localization created a competing language authority")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("code_and_exact_source_literals_preserved") is not True:
+    raise RuntimeError("Spanish presentation localization does not preserve technical literals")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("spanish_full_data_truth_gate_updated") is not True:
+    raise RuntimeError("Spanish presentation localization is not covered by full-data truth")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("human_review_required") is not True:
+    raise RuntimeError("Spanish presentation localization must preserve human review")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Spanish presentation localization must block unapproved client delivery")
 
 _REQUIRED_TRUTH_FLAGS = {
     "PHASE6_FINAL_REMEDIATION": (
@@ -249,5 +269,6 @@ __all__ = [
     "SCANNER_DETERMINISM",
     "PHASE2_REVIEW_WORK",
     "TERMINAL_REPORT_LANGUAGE_AUTHORITY",
+    "SPANISH_CLIENT_SURFACE_LOCALIZATION",
     "VERSION",
 ]
