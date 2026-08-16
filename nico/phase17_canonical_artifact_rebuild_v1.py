@@ -274,6 +274,35 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _reassert_terminal_report_language_authority() -> dict[str, Any]:
+    """Rebind language truth after every mutable render/compatibility extension."""
+
+    from nico.comprehensive_terminal_report_language_authority_v83 import (
+        install_comprehensive_terminal_report_language_authority_v83,
+    )
+
+    state = install_comprehensive_terminal_report_language_authority_v83()
+    required = (
+        "persisted_run_identity_outranks_root_projection",
+        "final_truth_language_bound",
+        "final_truth_ci_markers_bound",
+        "final_truth_ci_lines_bound",
+        "final_surface_validator_bound",
+        "independent_markdown_html_pdf_validation",
+        "mixed_language_structural_markers_fail_closed",
+        "human_review_required",
+    )
+    missing = [flag for flag in required if state.get(flag) is not True]
+    if state.get("client_delivery_allowed") is not False:
+        missing.append("client_delivery_allowed_false")
+    if missing:
+        raise RuntimeError(
+            "phase17_terminal_report_language_authority_incomplete:"
+            + ",".join(missing)
+        )
+    return state
+
+
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one bounded client package from canonical finding and scanner truth.
 
@@ -326,6 +355,10 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # renderer or sanitizer may change retained bytes after that binding point.
     repaired = _phase2_review_truth_node(_reconcile(repaired))
     sanitized = _sanitize_published_artifacts(repaired)
+    # Some compatibility extensions legitimately rebind global report helpers during
+    # preparation/rendering. Reassert the terminal language producer and validator at
+    # the exact last mutable boundary, immediately before client-report finalization.
+    _reassert_terminal_report_language_authority()
     return completion.finalize_client_report_package(sanitized)
 
 
