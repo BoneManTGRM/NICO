@@ -140,7 +140,14 @@ def _assert_language(result: dict[str, Any], language: str) -> None:
     assert result["client_delivery_allowed"] is False
     authority = result["v2_production_authority"]
     assert authority["canonical_report_language_outranks_runtime_projection"] is True
+    assert authority["compat_report_language_one_arg_api_preserved"] is True
+    assert authority["authoritative_language_uses_private_immutable_resolver"] is True
     assert authority["terminal_report_language_reasserted_per_publication"] is True
+
+
+def test_legacy_report_language_hook_keeps_one_argument_contract() -> None:
+    assert production._report_language(_report_context(language="en")) == "en"
+    assert production._report_language(_report_context(language="es-MX")) == "es-MX"
 
 
 def test_persisted_spanish_run_identity_outranks_stale_runtime_english(
@@ -242,7 +249,7 @@ def test_late_global_language_binding_drift_is_repaired_before_next_publication(
     second = wrapped({})
 
     _assert_language(second, "es-MX")
-    assert production._report_language(
+    assert production._authoritative_report_language(
         _report_context(language="en"),
         second["report_package"]["json"],
     ) == "es-MX"
