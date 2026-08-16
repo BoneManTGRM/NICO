@@ -45,7 +45,7 @@ ZERO_FINDING_FINALITY_TRUTH = (
     install_comprehensive_zero_finding_finality_truth_v1()
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v7"
+VERSION = "nico.comprehensive_canonical_report_source.v6"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
