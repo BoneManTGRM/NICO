@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-full-data-worksheet-localization.v2"
+VERSION = "nico.comprehensive-full-data-worksheet-localization.v2.1"
 _MARKER = "__nico_comprehensive_full_data_worksheet_localization_v1__"
 
 SPANISH_CANDIDATE_REGISTER = "Registro de candidatos que requieren revisión"
@@ -42,6 +42,31 @@ WORKSHEET_TITLES_BY_STAGE_ID: dict[str, tuple[str, str]] = {
     ),
 }
 
+# These aliases are the same stable semantic IDs accepted by the current review
+# companion. Supporting them prevents a valid retained worksheet from being lost
+# merely because an older canonical stage uses its established short ID.
+WORKSHEET_STAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "functional_qa": ("functional_qa",),
+    "platform_parity": ("platform_parity",),
+    "historical_trends_and_change_failure": (
+        "historical_trends_and_change_failure",
+        "historical_trends",
+    ),
+    "requirements_traceability": ("requirements_traceability",),
+    "stakeholder_and_business_alignment": (
+        "stakeholder_and_business_alignment",
+        "stakeholder_alignment",
+    ),
+    "risk_reduction_and_executive_briefing": (
+        "risk_reduction_and_executive_briefing",
+    ),
+    "six_month_roadmap": ("six_month_roadmap",),
+    "staffing_sequencing_and_cost": (
+        "staffing_sequencing_and_cost",
+        "resourcing",
+    ),
+}
+
 
 def _text(value: Any, limit: int = 12000) -> str:
     normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
@@ -50,6 +75,14 @@ def _text(value: Any, limit: int = 12000) -> str:
 
 def _stage_id(value: Any) -> str:
     return "_".join(_text(value, 180).casefold().replace("-", "_").split())
+
+
+def _worksheet_key(value: Any) -> str | None:
+    normalized = _stage_id(value)
+    for canonical_id, aliases in WORKSHEET_STAGE_ALIASES.items():
+        if normalized in aliases:
+            return canonical_id
+    return None
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
@@ -93,12 +126,16 @@ def _pdf_text(pdf: bytes) -> str:
 
 
 def _normalize_required_stage_titles(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize only existing required stages by stable ID; never synthesize one."""
+    """Normalize only existing required stages by stable semantic ID; never synthesize one."""
 
     result = deepcopy(dict(canonical))
     source = _stages(result)
-    by_id = {_stage_id(stage.get("stage_id")): stage for stage in source}
-    missing_ids = [stage_id for stage_id in WORKSHEET_TITLES_BY_STAGE_ID if stage_id not in by_id]
+    present = {
+        key
+        for stage in source
+        if (key := _worksheet_key(stage.get("stage_id"))) is not None
+    }
+    missing_ids = [stage_id for stage_id in WORKSHEET_TITLES_BY_STAGE_ID if stage_id not in present]
     if missing_ids:
         missing_titles = [WORKSHEET_TITLES_BY_STAGE_ID[stage_id][0] for stage_id in missing_ids]
         raise ValueError(
@@ -108,9 +145,9 @@ def _normalize_required_stage_titles(canonical: Mapping[str, Any]) -> dict[str, 
     normalized: list[dict[str, Any]] = []
     for raw in source:
         stage = deepcopy(dict(raw))
-        titles = WORKSHEET_TITLES_BY_STAGE_ID.get(_stage_id(stage.get("stage_id")))
-        if titles:
-            stage["title"] = titles[0]
+        key = _worksheet_key(stage.get("stage_id"))
+        if key:
+            stage["title"] = WORKSHEET_TITLES_BY_STAGE_ID[key][0]
         normalized.append(stage)
 
     result["stage_summaries"] = normalized
@@ -194,7 +231,7 @@ def _assert_spanish_full_data_parity(
     if candidates and not finish._candidate_register(canonical):
         raise ValueError("full-data proof has candidates but no canonical candidate register")
     if candidates and SPANISH_CANDIDATE_REGISTER not in combined:
-        raise ValueError("full-data PDF is missing the localized candidate register section")
+        raise ValueError("full-data proof is missing the localized candidate register section")
 
     findings = finish._findings(canonical)
     _assert_spanish_exact_source_index(findings, extracted)
@@ -230,7 +267,7 @@ def _assert_spanish_full_data_parity(
         "worksheet_count": len(WORKSHEET_TITLES_BY_STAGE_ID),
         "generation_timestamp": timestamp,
         "localized_spanish_full_data_validation": True,
-        "worksheet_identity_source": "stable_stage_id",
+        "worksheet_identity_source": "stable_stage_id_or_established_alias",
         "persisted_report_language_authority": True,
     }
 
@@ -246,6 +283,7 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
             "status": "already_installed",
             "version": VERSION,
             "stable_stage_ids_required": True,
+            "established_stage_aliases_supported": True,
             "localized_spanish_full_data_sections_required": True,
             "missing_worksheets_not_synthesized": True,
             "exact_source_identifiers_required": True,
@@ -275,6 +313,7 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
         "status": "installed",
         "version": VERSION,
         "stable_stage_ids_required": True,
+        "established_stage_aliases_supported": True,
         "localized_spanish_full_data_sections_required": True,
         "missing_worksheets_not_synthesized": True,
         "exact_source_identifiers_required": True,
@@ -290,6 +329,7 @@ __all__ = [
     "SPANISH_CANDIDATE_REGISTER",
     "SPANISH_REVIEW_GATE",
     "SPANISH_EXACT_SOURCE_INDEX",
+    "WORKSHEET_STAGE_ALIASES",
     "WORKSHEET_TITLES_BY_STAGE_ID",
     "install_comprehensive_full_data_worksheet_localization_v1",
 ]
