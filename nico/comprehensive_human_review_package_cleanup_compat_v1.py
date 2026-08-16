@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.9"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.10"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -81,6 +81,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_review_companion_v7_mobile_contract import (
         install_comprehensive_review_companion_v7_mobile_contract,
     )
+    from nico.comprehensive_spanish_presentation_parity_v1 import (
+        install_comprehensive_spanish_presentation_parity_v1,
+    )
 
     raw_mapping_recovery = install_raw_mapping_string_recovery_v1()
     surface_cleanup = install_client_surface_structure_cleanup_v1()
@@ -98,6 +101,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         full_data_worksheet_localization = (
             install_comprehensive_full_data_worksheet_localization_v1()
         )
+        spanish_presentation_parity = (
+            install_comprehensive_spanish_presentation_parity_v1()
+        )
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -113,6 +119,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "review_companion_v7_mobile_contract": mobile_contract,
             "client_identity_publication_guard_v2": identity_publication_guard,
             "full_data_worksheet_localization": full_data_worksheet_localization,
+            "spanish_presentation_parity": spanish_presentation_parity,
         }
 
     @wraps(current)
@@ -143,6 +150,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     full_data_worksheet_localization = (
         install_comprehensive_full_data_worksheet_localization_v1()
     )
+    spanish_presentation_parity = (
+        install_comprehensive_spanish_presentation_parity_v1()
+    )
     return {
         "status": "installed",
         "version": VERSION,
@@ -160,6 +170,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "review_companion_v7_mobile_contract": mobile_contract,
         "client_identity_publication_guard_v2": identity_publication_guard,
         "full_data_worksheet_localization": full_data_worksheet_localization,
+        "spanish_presentation_parity": spanish_presentation_parity,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
