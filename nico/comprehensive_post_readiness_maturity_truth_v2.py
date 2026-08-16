@@ -226,6 +226,12 @@ def install_post_readiness_maturity_truth() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
+            "post_readiness_boundary": True,
+            "explicit_maturity_aliases_only": True,
+            "stale_client_text_retained_in_manifest": False,
+            "strict_semantic_validation_preserved": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
         }
 
     @wraps(current)
