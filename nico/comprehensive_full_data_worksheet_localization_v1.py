@@ -9,8 +9,12 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive-full-data-worksheet-localization.v1"
+VERSION = "nico.comprehensive-full-data-worksheet-localization.v2"
 _MARKER = "__nico_comprehensive_full_data_worksheet_localization_v1__"
+
+SPANISH_CANDIDATE_REGISTER = "Registro de candidatos que requieren revisión"
+SPANISH_REVIEW_GATE = "Puerta de revisión humana y aceptación"
+SPANISH_EXACT_SOURCE_INDEX = "Índice completo de ubicaciones"
 
 WORKSHEET_TITLES_BY_STAGE_ID: dict[str, tuple[str, str]] = {
     "functional_qa": ("Functional QA", "QA funcional"),
@@ -49,34 +53,31 @@ def _stage_id(value: Any) -> str:
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
-    assessment = (
-        canonical.get("assessment")
-        if isinstance(canonical.get("assessment"), Mapping)
-        else {}
-    )
-    identity = (
-        canonical.get("identity")
-        if isinstance(canonical.get("identity"), Mapping)
-        else {}
-    )
-    language = _text(
-        canonical.get("report_language")
-        or canonical.get("locale")
-        or assessment.get("report_language")
-        or assessment.get("locale")
-        or identity.get("report_language")
-        or "en",
-        40,
-    ).casefold()
-    return language.startswith("es")
+    # Persisted run identity is the terminal language authority. Check it first so
+    # a stale root projection cannot turn an es-MX run back into English.
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    for key in ("report_language", "requested_report_language", "requested_locale", "locale"):
+        value = _text(identity.get(key), 40).casefold()
+        if value:
+            return value.startswith("es")
+    try:
+        from nico.comprehensive_report_language_truth_v77 import resolve_report_language
+
+        return resolve_report_language(canonical) == "es-MX"
+    except (ImportError, AttributeError):
+        assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+        value = _text(
+            canonical.get("report_language")
+            or canonical.get("locale")
+            or assessment.get("report_language")
+            or assessment.get("locale"),
+            40,
+        ).casefold()
+        return value.startswith("es")
 
 
 def _stages(canonical: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    assessment = (
-        canonical.get("assessment")
-        if isinstance(canonical.get("assessment"), Mapping)
-        else {}
-    )
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     values = canonical.get("stage_summaries")
     if not isinstance(values, list):
         values = assessment.get("stage_summaries")
@@ -88,13 +89,11 @@ def _visible_html(value: str) -> str:
 
 
 def _pdf_text(pdf: bytes) -> str:
-    return "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
+    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
 
 
 def _normalize_required_stage_titles(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize titles by stable stage ID without creating a missing worksheet."""
+    """Normalize only existing required stages by stable ID; never synthesize one."""
 
     result = deepcopy(dict(canonical))
     source = _stages(result)
@@ -103,8 +102,7 @@ def _normalize_required_stage_titles(canonical: Mapping[str, Any]) -> dict[str, 
     if missing_ids:
         missing_titles = [WORKSHEET_TITLES_BY_STAGE_ID[stage_id][0] for stage_id in missing_ids]
         raise ValueError(
-            "full-data proof is missing human-review worksheets: "
-            + ", ".join(missing_titles)
+            "full-data proof is missing human-review worksheets: " + ", ".join(missing_titles)
         )
 
     normalized: list[dict[str, Any]] = []
@@ -116,22 +114,14 @@ def _normalize_required_stage_titles(canonical: Mapping[str, Any]) -> dict[str, 
         normalized.append(stage)
 
     result["stage_summaries"] = normalized
-    assessment = (
-        deepcopy(dict(result.get("assessment") or {}))
-        if isinstance(result.get("assessment"), Mapping)
-        else {}
-    )
+    assessment = deepcopy(dict(result.get("assessment") or {})) if isinstance(result.get("assessment"), Mapping) else {}
     assessment["stage_summaries"] = deepcopy(normalized)
     result["assessment"] = assessment
     return result
 
 
-def _assert_localized_worksheet_surfaces(
-    markdown: str,
-    rendered_html: str,
-    pdf: bytes,
-) -> None:
-    combined = "\n".join((markdown, _visible_html(rendered_html), _pdf_text(pdf)))
+def _assert_localized_worksheet_surfaces(markdown: str, rendered_html: str, extracted: str) -> None:
+    combined = "\n".join((markdown, _visible_html(rendered_html), extracted))
     missing = [
         spanish_title
         for _english_title, spanish_title in WORKSHEET_TITLES_BY_STAGE_ID.values()
@@ -144,15 +134,109 @@ def _assert_localized_worksheet_surfaces(
         )
 
 
-def _english_alias_block() -> str:
-    return "\n".join(
-        english_title
-        for english_title, _spanish_title in WORKSHEET_TITLES_BY_STAGE_ID.values()
-    )
+def _assert_spanish_exact_source_index(
+    findings: list[Mapping[str, Any]], extracted: str
+) -> None:
+    from nico.comprehensive_exact_source_index_validation_v1 import compact_pdf_identifier
+
+    if SPANISH_EXACT_SOURCE_INDEX not in extracted:
+        raise ValueError(
+            f"full-data PDF is missing required section: {SPANISH_EXACT_SOURCE_INDEX}"
+        )
+    index_text = extracted.split(SPANISH_EXACT_SOURCE_INDEX, 1)[1]
+    compact_index = compact_pdf_identifier(index_text)
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for item in findings:
+        identifier = _text(item.get("finding_id") or item.get("id"), 300)
+        if not identifier:
+            raise ValueError("canonical exact-source finding is missing a stable finding identifier")
+        compact = compact_pdf_identifier(identifier)
+        if compact in seen:
+            raise ValueError(f"canonical exact-source finding identifier is duplicated: {identifier}")
+        seen.add(compact)
+        identifiers.append(identifier)
+    omitted = [identifier for identifier in identifiers if compact_pdf_identifier(identifier) not in compact_index]
+    if omitted:
+        raise ValueError(
+            f"full-data PDF index omitted {len(omitted)} canonical exact-source finding(s)"
+        )
+
+
+def _assert_spanish_full_data_parity(
+    finish: Any,
+    canonical: Mapping[str, Any],
+    markdown: str,
+    rendered_html: str,
+    pdf: bytes,
+) -> dict[str, Any]:
+    """Run the strict full-data proof against the actual Spanish presentation."""
+
+    validation_canonical = _normalize_required_stage_titles(canonical)
+    if finish.classify_report_proof(validation_canonical) != "full_comprehensive":
+        raise ValueError("sparse fixture cannot satisfy full-data Comprehensive parity validation")
+
+    extracted = _pdf_text(pdf)
+    combined = "\n".join((markdown or "", _visible_html(rendered_html), extracted))
+    sections = finish._sections(canonical)
+    if not sections:
+        raise ValueError("full-data proof is missing the canonical scorecard")
+
+    _assert_localized_worksheet_surfaces(markdown, rendered_html, extracted)
+
+    scanners = finish._scanners(canonical)
+    assessment = finish._assessment(canonical)
+    requested = assessment.get("requested_scanner_records") or canonical.get("requested_scanner_records")
+    if requested and not scanners:
+        raise ValueError("full-data proof is missing applicable scanner execution evidence")
+
+    candidates = finish._candidate_total(canonical)
+    if candidates and not finish._candidate_register(canonical):
+        raise ValueError("full-data proof has candidates but no canonical candidate register")
+    if candidates and SPANISH_CANDIDATE_REGISTER not in combined:
+        raise ValueError("full-data PDF is missing the localized candidate register section")
+
+    findings = finish._findings(canonical)
+    _assert_spanish_exact_source_index(findings, extracted)
+
+    # The detached manifest/approval supplement is intentionally technical and
+    # remains English today; the two client-report sections are localized.
+    for title in (
+        "Client Artifact Manifest",
+        "Human Review and Exact-Artifact Approval Record",
+        SPANISH_REVIEW_GATE,
+        SPANISH_EXACT_SOURCE_INDEX,
+    ):
+        if title not in extracted:
+            raise ValueError(f"full-data PDF is missing required section: {title}")
+
+    timestamp = finish.canonical_generation_timestamp(canonical)
+    if not timestamp:
+        raise ValueError("full-data manifest is missing a canonical generation timestamp")
+    if (
+        "Generated\nNot available" in extracted
+        or "Generated: Not available" in extracted
+        or "Generado\nNo disponible" in extracted
+        or "Generado: No disponible" in extracted
+    ):
+        raise ValueError("full-data manifest silently degraded the generation timestamp")
+
+    return {
+        "proof_kind": "full_comprehensive",
+        "scored_control_count": len(sections),
+        "scanner_execution_count": len(scanners),
+        "candidate_count": candidates,
+        "exact_source_finding_count": len(findings),
+        "worksheet_count": len(WORKSHEET_TITLES_BY_STAGE_ID),
+        "generation_timestamp": timestamp,
+        "localized_spanish_full_data_validation": True,
+        "worksheet_identity_source": "stable_stage_id",
+        "persisted_report_language_authority": True,
+    }
 
 
 def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any]:
-    """Keep the strict full-data gate while validating Spanish worksheet presentation."""
+    """Make the legacy full-data proof bilingual without weakening any truth gate."""
 
     from nico import comprehensive_full_report_finish_v1 as finish
 
@@ -162,9 +246,11 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
             "status": "already_installed",
             "version": VERSION,
             "stable_stage_ids_required": True,
-            "localized_spanish_worksheet_titles_required": True,
+            "localized_spanish_full_data_sections_required": True,
             "missing_worksheets_not_synthesized": True,
-            "all_non_worksheet_full_data_checks_preserved": True,
+            "exact_source_identifiers_required": True,
+            "persisted_report_language_authority": True,
+            "english_path_unchanged": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -178,33 +264,9 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
     ) -> dict[str, Any]:
         if not _is_spanish(canonical):
             return current(canonical, markdown, rendered_html, pdf)
-
-        # The compact Spanish review companion deliberately renders localized
-        # headings. The legacy full-data gate still compares those surfaces with
-        # English presentation titles. Prove the actual Spanish headings first,
-        # require every canonical worksheet by stable machine stage ID, then give
-        # only the legacy title comparison English aliases. Every subsequent gate
-        # still runs against the original PDF and canonical evidence population.
-        _assert_localized_worksheet_surfaces(markdown, rendered_html, pdf)
-        validation_canonical = _normalize_required_stage_titles(canonical)
-        validation_markdown = (
-            str(markdown or "").rstrip()
-            + "\n\n<!-- validation aliases for localized worksheet headings -->\n"
-            + _english_alias_block()
-            + "\n"
+        return _assert_spanish_full_data_parity(
+            finish, canonical, markdown, rendered_html, pdf
         )
-        result = current(
-            validation_canonical,
-            validation_markdown,
-            rendered_html,
-            pdf,
-        )
-        if isinstance(result, Mapping):
-            output = dict(result)
-            output["localized_spanish_worksheet_validation"] = True
-            output["worksheet_identity_source"] = "stable_stage_id"
-            return output
-        return result
 
     setattr(assert_full_data_parity, _MARKER, True)
     setattr(assert_full_data_parity, "_nico_previous", current)
@@ -213,9 +275,11 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
         "status": "installed",
         "version": VERSION,
         "stable_stage_ids_required": True,
-        "localized_spanish_worksheet_titles_required": True,
+        "localized_spanish_full_data_sections_required": True,
         "missing_worksheets_not_synthesized": True,
-        "all_non_worksheet_full_data_checks_preserved": True,
+        "exact_source_identifiers_required": True,
+        "persisted_report_language_authority": True,
+        "english_path_unchanged": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -223,6 +287,9 @@ def install_comprehensive_full_data_worksheet_localization_v1() -> dict[str, Any
 
 __all__ = [
     "VERSION",
+    "SPANISH_CANDIDATE_REGISTER",
+    "SPANISH_REVIEW_GATE",
+    "SPANISH_EXACT_SOURCE_INDEX",
     "WORKSHEET_TITLES_BY_STAGE_ID",
     "install_comprehensive_full_data_worksheet_localization_v1",
 ]
