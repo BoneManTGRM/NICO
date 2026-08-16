@@ -15,6 +15,9 @@ from nico.ci_history_classification_v1 import install_ci_history_classification_
 from nico.comprehensive_review_work_existing_app_v1 import (
     install_comprehensive_review_work_existing_app_v1,
 )
+from nico.comprehensive_terminal_report_language_authority_v83 import (
+    install_comprehensive_terminal_report_language_authority_v83,
+)
 from nico.exact_commit_binding import install_exact_commit_binding
 from nico.exact_scanner_checkout_reconciliation_v1 import install_exact_scanner_checkout_reconciliation_v1
 from nico.express_failure_stage_truth_v3 import install_express_failure_stage_truth_v3
@@ -35,7 +38,7 @@ from nico.v2_scanner_evidence_context_normalization import install_v2_scanner_ev
 from nico.v2_snapshot_scanner_authority import install_v2_snapshot_scanner_authority
 from nico.workflow_supply_chain_policy_v1 import install_workflow_supply_chain_policy_v1
 
-VERSION = "nico.api.terminal_authority_bootstrap.v23"
+VERSION = "nico.api.terminal_authority_bootstrap.v24"
 
 SCANNER_EVIDENCE_PIPELINE = install_scanner_evidence_pipeline_v1()
 V2_SNAPSHOT_SCANNER_AUTHORITY = install_v2_snapshot_scanner_authority()
@@ -73,6 +76,12 @@ SCANNER_DETERMINISM = {
 # exact protected review-work routes are added once, approval readiness is fail-closed,
 # and approved delivery is normalized to one NICO Comprehensive client report.
 PHASE2_REVIEW_WORK = install_comprehensive_review_work_existing_app_v1(app)
+# Rebind the shared Comprehensive report-language resolver and the exact final client
+# producers/validators after every late production bootstrap installer. This prevents
+# a stale root/package English projection from outranking persisted es-MX run identity.
+TERMINAL_REPORT_LANGUAGE_AUTHORITY = (
+    install_comprehensive_terminal_report_language_authority_v83()
+)
 
 _INSTALLATIONS = {
     "nico_comprehensive_storage_availability": COMPREHENSIVE_STORAGE_AVAILABILITY,
@@ -94,6 +103,7 @@ _INSTALLATIONS = {
     "nico_scorecard_extraction_validation": SCORECARD_EXTRACTION_VALIDATION,
     "nico_scanner_determinism": SCANNER_DETERMINISM,
     "nico_phase2_review_work": PHASE2_REVIEW_WORK,
+    "nico_terminal_report_language_authority": TERMINAL_REPORT_LANGUAGE_AUTHORITY,
 }
 
 for state_name, installation in _INSTALLATIONS.items():
@@ -173,6 +183,18 @@ if PHASE2_REVIEW_WORK.get("human_review_required") is not True:
     raise RuntimeError("Phase 2 must preserve human review")
 if PHASE2_REVIEW_WORK.get("client_delivery_allowed") is not False:
     raise RuntimeError("Phase 2 must block client delivery before authorized approval")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("persisted_run_identity_outranks_root_projection") is not True:
+    raise RuntimeError("Terminal report language does not preserve persisted run identity")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("stale_root_english_probe_resolves_es_MX") is not True:
+    raise RuntimeError("Terminal report language allows stale English projection to outrank es-MX")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("independent_markdown_html_pdf_validation") is not True:
+    raise RuntimeError("Terminal report language does not validate every final client surface")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("mixed_language_structural_markers_fail_closed") is not True:
+    raise RuntimeError("Terminal report language does not reject mixed CI/CD structure")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("human_review_required") is not True:
+    raise RuntimeError("Terminal report language authority must preserve human review")
+if TERMINAL_REPORT_LANGUAGE_AUTHORITY.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Terminal report language authority must block unapproved client delivery")
 
 _REQUIRED_TRUTH_FLAGS = {
     "PHASE6_FINAL_REMEDIATION": (
@@ -226,5 +248,6 @@ __all__ = [
     "SCORECARD_EXTRACTION_VALIDATION",
     "SCANNER_DETERMINISM",
     "PHASE2_REVIEW_WORK",
+    "TERMINAL_REPORT_LANGUAGE_AUTHORITY",
     "VERSION",
 ]
