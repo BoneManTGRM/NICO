@@ -9,6 +9,9 @@ from typing import Any, Mapping
 
 VERSION = "nico.comprehensive-exact-artifact-hash-binding.v1"
 _MARKDOWN_MARKER = "__nico_exact_artifact_markdown_guide_v1__"
+_DIGEST_INDEPENDENT_MANIFEST_MARKER = (
+    "__nico_digest_independent_artifact_manifest_guide_v1__"
+)
 _ENTRIES_MARKER = "__nico_exact_artifact_entries_v1__"
 _ATTACH_MARKER = "__nico_exact_artifact_attach_v1__"
 
@@ -27,6 +30,28 @@ def _manifest_guide(identity: Mapping[str, str]) -> str:
 
     run = manifest._safe_filename(identity.get("run_id"), "run")
     detached_filename = f"nico-{run}-evidence-manifest.json"
+    language = _text(identity.get("report_language"), 40).casefold()
+    if language.startswith("es"):
+        return (
+            "## Manifiesto de artefactos del cliente\n\n"
+            "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA\n\n"
+            f"- Repositorio: {identity.get('repository') or 'No disponible'}\n"
+            f"- Commit exacto: {identity.get('commit_sha') or 'No disponible'}\n"
+            f"- ID de ejecución: {identity.get('run_id') or 'No disponible'}\n"
+            f"- ID del registro de evidencia: {identity.get('evidence_ledger_id') or 'No disponible'}\n"
+            f"- Manifiesto separado: {detached_filename}\n"
+            "- Valores SHA-256 finales y tamaños en bytes: preservados en el manifiesto separado y en la identidad exacta del borrador después del renderizado\n\n"
+            "## Registro de revisión humana y aprobación de artefactos exactos\n\n"
+            "- Paquete de revisión listo: Sí\n"
+            "- Aprobación humana: Pendiente\n"
+            "- Entrega al cliente: Bloqueada\n"
+            "- Identidad del revisor: Pendiente\n"
+            "- Rol del revisor: Pendiente\n"
+            "- Autorización del revisor: Pendiente\n"
+            "- Decisión: Pendiente\n\n"
+            "Instrucciones de verificación: vuelva a calcular el SHA-256 del PDF, JSON canónico, Markdown, HTML, CSV, registro de candidatos, trabajo pendiente de remediación y manifiesto separado; compare cada resultado con el manifiesto separado y la identidad del borrador exacto; confirme que coincidan el repositorio, commit exacto, ID de ejecución, registro de evidencia y fecha y hora de generación.\n\n"
+            "Solo un revisor humano autorizado puede aprobar los hashes del PDF inmutable exacto, JSON canónico y manifiesto separado. Cualquier artefacto regenerado o sustituido crea un nuevo borrador automatizado e invalida la aprobación anterior.\n"
+        )
     return (
         "## Client Artifact Manifest\n\n"
         "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED\n\n"
@@ -158,6 +183,11 @@ def install_comprehensive_exact_artifact_hash_binding_v1() -> dict[str, Any]:
             return _manifest_guide(identity)
 
         setattr(_markdown_manifest, _MARKDOWN_MARKER, True)
+        setattr(
+            _markdown_manifest,
+            _DIGEST_INDEPENDENT_MANIFEST_MARKER,
+            True,
+        )
         setattr(_markdown_manifest, "_nico_previous", current_markdown)
         manifest._markdown_manifest = _markdown_manifest
 
