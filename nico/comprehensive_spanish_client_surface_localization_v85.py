@@ -14,6 +14,9 @@ from nico.comprehensive_report_language_truth_v77 import resolve_report_language
 
 VERSION = "nico.comprehensive-spanish-client-surface-localization.v85"
 _MARKER = "__nico_comprehensive_spanish_client_surface_localization_v85__"
+_DIGEST_INDEPENDENT_MANIFEST_MARKER = (
+    "__nico_digest_independent_artifact_manifest_guide_v1__"
+)
 
 ES_BOUNDARY = (
     "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · "
@@ -724,6 +727,7 @@ def _state(status: str) -> dict[str, Any]:
         "version": VERSION,
         "canonical_language_resolver_reused": True,
         "spanish_manifest_and_approval_localized": True,
+        "digest_independent_exact_manifest_guide_preserved": True,
         "spanish_review_companion_localized": True,
         "spanish_register_and_review_gate_localized": True,
         "code_and_exact_source_literals_preserved": True,
@@ -900,6 +904,18 @@ def install_comprehensive_spanish_client_surface_localization_v85() -> dict[str,
     ) -> str:
         language = _text(identity.get("report_language"), 40)
         if not language.casefold().startswith("es"):
+            return current_manifest_markdown(
+                identity,
+                entries,
+                pdf_sha256=pdf_sha256,
+                canonical_json_sha256=canonical_json_sha256,
+                manifest_sha256=manifest_sha256,
+            )
+        if getattr(current_manifest_markdown, _DIGEST_INDEPENDENT_MANIFEST_MARKER, False):
+            # The exact-artifact binder deliberately emits a guide without an
+            # artifact hash table. A Markdown artifact cannot contain its own final
+            # digest without changing those bytes. Preserve that locale-aware guide
+            # instead of replacing it with the older self-referential table.
             return current_manifest_markdown(
                 identity,
                 entries,

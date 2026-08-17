@@ -215,6 +215,8 @@ if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("specific_scanner_label_precedence") 
     raise RuntimeError("Spanish presentation localization does not prioritize structural scanner labels")
 if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("wrapped_pdf_heading_validation") is not True:
     raise RuntimeError("Spanish presentation localization cannot validate wrapped PDF headings")
+if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("digest_independent_exact_manifest_guide_preserved") is not True:
+    raise RuntimeError("Spanish presentation localization reintroduced self-referential artifact hashes")
 if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("human_review_required") is not True:
     raise RuntimeError("Spanish presentation localization must preserve human review")
 if SPANISH_CLIENT_SURFACE_LOCALIZATION.get("client_delivery_allowed") is not False:
