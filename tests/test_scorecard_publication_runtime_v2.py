@@ -66,16 +66,22 @@ def test_production_api_bootstrap_keeps_scorecard_validator_after_report_compati
     source = BOOTSTRAP.read_text(encoding="utf-8")
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v24"' in source
+    assert 'VERSION = "nico.api.terminal_authority_bootstrap.v26"' in source
     assert "install_scorecard_extraction_validation" in source
     assert "SCORECARD_EXTRACTION_VALIDATION = install_scorecard_extraction_validation()" in source
     assert source.index("SCORECARD_EXTRACTION_VALIDATION =") > source.index("EXPRESS_FAILURE_STAGE_TRUTH =")
     assert source.index("TERMINAL_REPORT_LANGUAGE_AUTHORITY =") > source.index(
         "SCORECARD_EXTRACTION_VALIDATION ="
     )
+    assert "install_comprehensive_spanish_client_surface_localization_v86" in source
+    assert source.index("SPANISH_CLIENT_SURFACE_LOCALIZATION =") > source.index(
+        "TERMINAL_REPORT_LANGUAGE_AUTHORITY ="
+    )
     assert '"column_extraction_order_independent"' in source
     assert '"multi_page_scorecard_supported"' in source
     assert '"all_canonical_rows_and_scores_required"' in source
     assert '"spanish_and_english_supported"' in source
     assert '"persisted_run_identity_outranks_root_projection"' in source
+    assert '"specific_scanner_label_precedence"' in source
+    assert '"wrapped_pdf_heading_validation"' in source
     assert "uvicorn nico.api.terminal_authority_bootstrap:app" in dockerfile
