@@ -29,6 +29,12 @@ def _safe_replace(text: str, source: str, target: str) -> str:
     return text.replace(source, target)
 
 
+# v1 helpers resolve _safe_replace through their module global at call time. Bind the
+# corrected implementation on import so focused callers and production installation
+# use the same boundary semantics.
+v1._safe_replace = _safe_replace
+
+
 def _install_pdf_text_normalization() -> bool:
     """Make final-section validation insensitive to harmless PDF line wrapping."""
 
