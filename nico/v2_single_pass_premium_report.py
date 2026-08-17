@@ -25,7 +25,7 @@ from nico.v2_dark_branded_cover import apply_dark_branded_cover
 from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 from nico.v2_premium_evidence_appendix import rebuild_premium_client_artifacts_with_appendix
 
-VERSION = "nico.v2.single-pass-premium-report.v2"
+VERSION = "nico.v2.single-pass-premium-report.v2.1"
 
 
 def _text(value: Any) -> str:
@@ -157,12 +157,14 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
     result["json"] = canonical
 
     spanish = _is_spanish(canonical)
-    if not spanish:
-        result = deepcopy(apply_dark_branded_cover(result))
-        canonical = _project(
-            result.get("json") if isinstance(result.get("json"), Mapping) else canonical
-        )
-        result["json"] = canonical
+    # English and Spanish now share the same premium presentation shell.
+    # The cover renderer localizes visible copy while preserving the exact
+    # canonical run/commit identity and all review/delivery boundaries.
+    result = deepcopy(apply_dark_branded_cover(result))
+    canonical = _project(
+        result.get("json") if isinstance(result.get("json"), Mapping) else canonical
+    )
+    result["json"] = canonical
 
     markdown = ensure_authoritative_review_gate(
         str(result.get("markdown") or ""), canonical, spanish=spanish
@@ -186,8 +188,10 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "single_pass_renderer": True,
             "premium_layout_is_intermediate_review_pdf": True,
             "canonical_system_is_sole_truth": True,
-            "approved_cover_assembled_inside_compiler": not spanish,
-            "spanish_cover_preserved": spanish,
+            "approved_cover_assembled_inside_compiler": True,
+            "localized_premium_cover_assembled": spanish,
+            "spanish_cover_preserved": False,
+            "cross_language_presentation_shell_parity": True,
             "post_render_pdf_replacement_disabled": True,
             "review_pdf_control_glyph_validation": True,
             "review_pdf_identity_validation": True,

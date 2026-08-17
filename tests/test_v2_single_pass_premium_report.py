@@ -15,7 +15,7 @@ def test_phase17_uses_only_single_pass_premium_compiler() -> None:
 
 
 def test_single_pass_contract_version_is_explicit() -> None:
-    assert VERSION == "nico.v2.single-pass-premium-report.v2"
+    assert VERSION == "nico.v2.single-pass-premium-report.v2.1"
 
 
 def test_review_pdf_validation_rejects_non_pdf_bytes() -> None:
