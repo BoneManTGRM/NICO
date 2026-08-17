@@ -7,7 +7,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate
 
 from nico import comprehensive_artifact_manifest_approval_v1 as manifest
-from nico.comprehensive_spanish_client_surface_localization_v85 import (
+from nico.comprehensive_spanish_client_surface_localization_v86 import (
     EN_BOUNDARY,
     ES_BOUNDARY,
     SPANISH_APPROVAL_TITLE,
@@ -25,6 +25,10 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
     )
+
+
+def _normalized_pdf_text(pdf: bytes) -> str:
+    return " ".join(_pdf_text(pdf).split())
 
 
 def _canonical() -> dict:
@@ -96,9 +100,10 @@ Keep `Client Artifact Manifest` and `src/report.py:42` literal.
 def test_spanish_manifest_pdf_is_fully_localized_and_keeps_exact_artifacts() -> None:
     pdf = _render_spanish_manifest(manifest, _canonical(), _entries())
     extracted = _pdf_text(pdf)
+    normalized = _normalized_pdf_text(pdf)
 
-    assert SPANISH_MANIFEST_TITLE in extracted
-    assert SPANISH_APPROVAL_TITLE in extracted
+    assert SPANISH_MANIFEST_TITLE in normalized
+    assert SPANISH_APPROVAL_TITLE in normalized
     assert "Artefactos estructurados preservados" in extracted
     assert "Repositorio" in extracted
     assert "Commit exacto" in extracted
@@ -180,6 +185,7 @@ def test_known_review_evidence_labels_are_localized() -> None:
     assert "Hallazgos de decisión: 7" in localized
     assert "Hallazgos con ubicación exacta: 5" in localized
     assert "Hallazgos materiales confirmados por analizadores: 3" in localized
+    assert "scanner findings" not in localized
     assert "Candidatos de analizadores que requieren revisión: 2" in localized
     assert "Ejecuciones observadas de flujos de trabajo: 14" in localized
     assert "Taxonomía de resultados:" in localized
