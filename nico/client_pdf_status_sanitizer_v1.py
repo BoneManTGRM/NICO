@@ -54,11 +54,15 @@ _PRESERVED_CLIENT_MARKERS = (
     "human review and acceptance gate",
     "registro compacto de hallazgos y remediacion",
     "indice completo de ubicaciones",
+    "indice completo de fuentes exactas",
     "resumen de evidencia para revision",
+    "resumen de evidencia del cliente",
     "puerta de revision humana y aceptacion",
+    "puerta de revision y aceptacion humana",
 )
 _RAW_INTERNAL_MARKERS = (
     "retained evidence",
+    "evidencia conservada",
     "stage_execution.",
     "artifact_schema",
     "human_evidence_",
@@ -87,6 +91,11 @@ def _drop_internal_page(text: str) -> bool:
     normalized = _normalized(text)
     if any(marker in normalized for marker in _PRESERVED_CLIENT_MARKERS):
         return False
+    if (
+        "instantanea inmutable del repositorio" in normalized
+        and "evidencia conservada" in normalized
+    ):
+        return True
     if "evidence appendix" in normalized or "apendice de evidencia" in normalized:
         return True
     if "report_contract_reason" in normalized or "comprehensive_final_report_semantic_contract_failed" in normalized:

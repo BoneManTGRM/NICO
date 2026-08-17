@@ -27,6 +27,8 @@ _CURRENT_REVIEW_SCORE_EFFECT_MARKERS = (
     "score effect: assurance-only while human disposition remains pending; nico technical triage is complete",
     "efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de nico está completo",
     "efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de nico está completo",
+    "efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triaje técnico de nico está completo",
+    "efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triaje técnico de nico está completo",
 )
 _SUPERSEDED_REVIEW_SCORE_EFFECT_MARKERS = (
     "score effect: assurance-only until triaged",

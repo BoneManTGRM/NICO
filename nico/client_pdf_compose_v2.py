@@ -127,6 +127,7 @@ def compose_compact_client_pdf(
                 "procedencia y aplicabilidad de analizadores",
                 "human review and acceptance gate",
                 "puerta de revision humana y aceptacion",
+                "puerta de revision y aceptacion humana",
                 *_REVIEW_SECTION_HEADINGS,
             ),
         ):

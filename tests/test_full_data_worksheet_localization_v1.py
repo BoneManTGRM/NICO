@@ -110,7 +110,7 @@ def _spanish_surfaces(
 
     pdf_lines = [
         "Manifiesto de artefactos del cliente",
-        "Registro de revisión humana y aprobación del artefacto exacto",
+        "Registro de revisión humana y aprobación de artefactos exactos",
         "Generado: 2026-08-16T17:00:00Z",
     ]
     if include_gate:

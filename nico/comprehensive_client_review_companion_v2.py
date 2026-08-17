@@ -305,7 +305,7 @@ def merge_review_companion_markdown(
             output = _remove_heading_section(output, heading)
 
     lines = [
-        "## Paquete de revisión integral" if spanish else "## Comprehensive Client Review",
+        "## Revisión integral del cliente" if spanish else "## Comprehensive Client Review",
         "",
         (
             "Estas secciones conservan evidencia útil para decisiones sin reintroducir el volcado interno completo. Los datos faltantes permanecen identificados y toda conclusión sigue pendiente de revisión humana."

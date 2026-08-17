@@ -47,7 +47,7 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             "",
             f"- Cobertura: {_integer(metrics.get('technical_triage_completed'))}/{_integer(metrics.get('total_candidates'))} ({metrics.get('technical_triage_coverage_pct', 0)}%).",
             f"- Análisis estable conservado: {_integer(metrics.get('stable_carry_forward_count'))}.",
-            f"- Triage técnico nuevo: {_integer(triage.get('fresh_technical_triage_completed'))}.",
+            f"- Nuevo triaje técnico: {_integer(triage.get('fresh_technical_triage_completed'))}.",
             f"- Atención humana individual: {_integer(metrics.get('candidates_requiring_individual_human_attention'))}.",
             f"- Grupos de revisión humana: {_integer(metrics.get('grouped_review_cluster_count'))}, cubriendo {_integer(metrics.get('grouped_human_review_candidate_count'))} candidatos.",
             f"- Unidades de trabajo humano: {_integer(metrics.get('human_review_work_units'))}.",
@@ -73,7 +73,7 @@ def rewrite_compact_markdown(markdown: str, canonical: Mapping[str, Any], *, spa
         "Assurance-only until triaged": "Human disposition pending; NICO technical triage complete",
         "Score effect: assurance-only until triaged.": "Score effect: assurance-only while human disposition remains pending; NICO technical triage is complete.",
         "Triage review-required candidates using retained scanner artifacts.": "Review routed exceptions and eligible grouped-review clusters using retained scanner artifacts; preserve explicit dispositions for all underlying candidate IDs.",
-        "Efecto en puntuación: solo aseguramiento hasta completar la revisión.": "Efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de NICO está completo.",
+        "Efecto en puntuación: solo aseguramiento hasta completar la revisión.": "Efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triaje técnico de NICO está completo.",
         "Revisar candidatos pendientes usando los artefactos conservados.": "Revisar excepciones enrutadas y grupos elegibles usando los artefactos conservados; conservar disposiciones explícitas para todos los candidatos subyacentes.",
     }
     for old, new in replacements.items():

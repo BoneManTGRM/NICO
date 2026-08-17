@@ -65,10 +65,8 @@ def canonical_incomplete_analyzer_count(canonical: Mapping[str, Any]) -> int:
 
 def canonical_summary_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     count = canonical_incomplete_analyzer_count(canonical)
-    canonical_line = f"{_CANONICAL_LABEL}: {count}"
-    if not spanish:
-        return canonical_line
-    return f"{_SPANISH_LABEL}: {count} · {canonical_line}"
+    label = _SPANISH_LABEL if spanish else _CANONICAL_LABEL
+    return f"{label}: {count}"
 
 
 def _ensure_markdown_summary(
@@ -78,11 +76,11 @@ def _ensure_markdown_summary(
     spanish: bool,
 ) -> str:
     output = str(markdown or "")
-    canonical_line = f"{_CANONICAL_LABEL}: {canonical_incomplete_analyzer_count(canonical)}"
-    if canonical_line.casefold() in output.casefold():
+    summary_line = canonical_summary_line(canonical, spanish=spanish)
+    if summary_line.casefold() in output.casefold():
         return output
 
-    line = f"- {canonical_summary_line(canonical, spanish=spanish)}"
+    line = f"- {summary_line}"
     for marker in (
         "- Score effect: assurance-only until triaged.",
         "- Efecto en puntuación: solo aseguramiento hasta completar la revisión.",
@@ -116,25 +114,17 @@ def _overlay_pdf_summary(
         raise ValueError("incomplete-analyzer summary requires at least one PDF page")
 
     existing = "\n".join(page.extract_text() or "" for page in reader.pages)
-    canonical_line = f"{_CANONICAL_LABEL}: {canonical_incomplete_analyzer_count(canonical)}"
-    if canonical_line.casefold() in existing.casefold():
+    summary_line = canonical_summary_line(canonical, spanish=spanish)
+    if summary_line.casefold() in existing.casefold():
         return pdf
 
     overlay_buffer = io.BytesIO()
     overlay = canvas.Canvas(overlay_buffer, pagesize=letter, invariant=1)
     overlay.setFillColor(colors.white)
-    overlay.rect(38, 18, 536, 27 if spanish else 18, stroke=0, fill=1)
+    overlay.rect(38, 18, 536, 18, stroke=0, fill=1)
     overlay.setFillColor(colors.HexColor("#475569"))
     overlay.setFont("Helvetica", 6.6)
-    if spanish:
-        overlay.drawString(
-            42,
-            32,
-            f"{_SPANISH_LABEL}: {canonical_incomplete_analyzer_count(canonical)}",
-        )
-        overlay.drawString(42, 22, canonical_line)
-    else:
-        overlay.drawString(42, 25, canonical_line)
+    overlay.drawString(42, 25, summary_line)
     overlay.save()
 
     overlay_page = PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0]
@@ -148,7 +138,7 @@ def _overlay_pdf_summary(
     output = io.BytesIO()
     writer.write(output)
     rendered = output.getvalue()
-    if canonical_line.casefold() not in "\n".join(
+    if summary_line.casefold() not in "\n".join(
         page.extract_text() or ""
         for page in PdfReader(io.BytesIO(rendered)).pages
     ).casefold():

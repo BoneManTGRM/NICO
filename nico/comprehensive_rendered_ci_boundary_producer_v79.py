@@ -133,9 +133,14 @@ def _render_html(
 ) -> str:
     identity = _mapping(canonical.get("identity"))
     if spanish:
-        from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            render_spanish_html,
+        )
 
-        return _spanish_html(markdown, "Evaluación Técnica Integral NICO")
+        return render_spanish_html(
+            markdown,
+            "Evaluación Técnica Integral NICO",
+        )
 
     from nico.comprehensive_report_package import _semantic_html
 

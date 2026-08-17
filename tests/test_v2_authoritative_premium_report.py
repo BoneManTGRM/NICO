@@ -216,11 +216,12 @@ def test_authoritative_renderer_restores_old_layout_over_new_truth():
 def test_spanish_authoritative_renderer_preserves_pending_approval_boundary():
     result = rebuild_authoritative_premium_artifacts({"json": _canonical("es-MX")})
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
+    assert "<html lang='es-MX'>" in result["html"]
     markdown = result["markdown"].upper()
     assert "GENERADO:" in markdown
     assert GENERATED_AT in result["markdown"]
     assert "APROBACIÓN" in markdown
-    assert "PENDIENTE DE REVISIÓN HUMANA" in markdown
+    assert "APROBACIÓN HUMANA PENDIENTE" in markdown
     assert "ENTREGA AL CLIENTE" in markdown
     assert "BLOQUEADA" in markdown
     assert result["approval_status"] == "pending_human_approval"

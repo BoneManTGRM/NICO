@@ -137,9 +137,14 @@ def rebuild_premium_client_artifacts_with_appendix(package: Mapping[str, Any]) -
     markdown = str(result.get("markdown") or "").rstrip() + "\n\n" + appendix
 
     if spanish:
-        from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            render_spanish_html,
+        )
 
-        rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
+        rendered_html = render_spanish_html(
+            markdown,
+            "Evaluación Técnica Integral NICO",
+        )
     else:
         from nico.comprehensive_report_package import _semantic_html
 

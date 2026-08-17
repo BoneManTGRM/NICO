@@ -145,4 +145,5 @@ def test_spanish_client_artifacts_are_generated_from_the_same_truth() -> None:
     assert package["pdf_filename"].endswith("-es-MX-BORRADOR.pdf")
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     assert package["report_quality_contract"]["spanish_markdown_complete"] is True
+    assert package["report_quality_contract"]["spanish_html_complete"] is True
     assert package["report_quality_contract"]["structured_scanner_completion_records_present"] is True

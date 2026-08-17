@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -106,7 +107,32 @@ def _canonical() -> dict:
             "technical_score": 93,
             "canonical_evidence_adjusted_score": 93,
             "executive_summary": "La evaluación técnica terminó con revisión humana pendiente.",
-            "sections": [],
+            "sections": [
+                {
+                    "id": "code_audit",
+                    "label": "Code Audit",
+                    "score": 93,
+                    "presented_score": 93,
+                    "status": "green",
+                    "presented_status": "green",
+                    "summary": "Exact-commit sampled code signals and repository structure were reviewed.",
+                    "evidence": ["Risk pattern hits: 0."],
+                    "findings": [],
+                    "unavailable": [],
+                },
+                {
+                    "id": "architecture_debt",
+                    "label": "Architecture & Technical Debt",
+                    "score": 72,
+                    "presented_score": 72,
+                    "status": "yellow",
+                    "presented_status": "yellow",
+                    "summary": "Snapshot-bound source footprint and measured complexity evidence were evaluated.",
+                    "evidence": ["Complexity risk: observed."],
+                    "findings": [],
+                    "unavailable": [],
+                },
+            ],
             "scanner_execution_records": [
                 {
                     "scanner_name": "Bandit",
@@ -188,10 +214,31 @@ def test_spanish_authoritative_register_is_complete_in_all_client_formats() -> N
     assert "Bandit" in markdown
     assert "B501" in markdown
     assert "Registro de hallazgos y remediación" in rendered_html
-    assert "lang='es-MX'" in rendered_html
+    assert '<html lang="es-MX">' in rendered_html
     assert "Registro de hallazgos y remediación" in pdf_text
     assert "RISK-P1-ES-001" in pdf_text
     assert "B501" in pdf_text
+    for visible in (markdown, rendered_html, pdf_text):
+        for forbidden in (
+            "Run Bandit against",
+            "Run Bandit contra",
+            "B501 is absent",
+            "It is intentionally separate",
+            "Exact-source code findings",
+            "Problematic code or signature",
+            "Specific correction",
+            "Owner / effort",
+        ):
+            assert forbidden not in visible
+    assert "Ejecutar Bandit contra la misma revisión inmutable." in markdown
+    assert "B501 no aparece en la salida del analizador para el SHA exacto." in markdown
+    assert " · DRAFT" not in pdf_text
+    assert re.search(r"\bPage\s+\d+\b", pdf_text) is None
+    for visible in (markdown, rendered_html, pdf_text):
+        assert "GREEN" not in visible
+        assert "YELLOW" not in visible
+        assert "VERDE" in visible
+        assert "AMARILLO" in visible
     assert package["markdown_filename"].endswith("-es-MX-BORRADOR.md")
     assert package["html_filename"].endswith("-es-MX-BORRADOR.html")
     assert package["pdf_filename"].endswith("-es-MX-BORRADOR.pdf")
@@ -217,7 +264,7 @@ def test_semantic_gate_accepts_current_compact_spanish_register_heading() -> Non
             "## Registro de candidatos que requieren revisión",
             "Candidatos que requieren revisión: 3",
             "Hallazgos materiales confirmados: 1",
-            "Efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de NICO está completo.",
+            "Efecto en puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triaje técnico de NICO está completo.",
             "## Preparación operativa y salud histórica de CI/CD",
         ]
     )

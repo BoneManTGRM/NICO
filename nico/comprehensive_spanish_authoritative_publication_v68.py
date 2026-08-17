@@ -18,11 +18,11 @@ from nico.client_finding_remediation_register_v5 import (
     render_finding_register_pdf,
     synchronize_canonical_finding_surfaces,
 )
-from nico.comprehensive_report_spanish_artifacts_v51 import (
-    _spanish_html,
-    _spanish_pdf,
+from nico.comprehensive_spanish_canonical_report_v87 import (
+    render_spanish_html as _spanish_html,
+    render_spanish_markdown as _spanish_markdown,
+    render_spanish_pdf as _spanish_pdf,
 )
-from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
 
 VERSION = "nico.comprehensive-spanish-authoritative-publication.v68"
 LANGUAGE = "es-MX"
@@ -159,7 +159,7 @@ def _publication_truth_markdown(
                 "",
                 f"- Candidatos que requieren revisión: {review_total}",
                 f"- Hallazgos materiales confirmados: {material_total}",
-                "- Efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triage técnico de NICO está completo.",
+                "- Efecto en la puntuación: solo aseguramiento mientras la disposición humana siga pendiente; el triaje técnico de NICO está completo.",
             ]
         )
     if ci_context:

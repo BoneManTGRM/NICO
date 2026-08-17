@@ -35,6 +35,7 @@ def _spanish_status(value: Any) -> str:
         "complete": "Completa",
         "completed": "Completa",
         "review limited": "Revisión limitada",
+        "evidence evaluated": "Evidencia evaluada",
         "verified": "Verificada",
     }
     return translated.get(raw.casefold(), raw.title() or "Pendiente")
@@ -49,6 +50,7 @@ def _spanish_assurance(section: Mapping[str, Any]) -> str:
     translated = {
         "verified with completed scanners": "Verificada con analizadores completos",
         "review limited": "Revisión limitada",
+        "evidence bound": "Basada en evidencia",
         "verified": "Verificada",
         "complete": "Completa",
     }
@@ -61,6 +63,7 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+    from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
 
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     sections = [
@@ -126,7 +129,7 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         )
         rows.append(
             [
-                paragraph(section.get("label") or section.get("id")),
+                paragraph(_safe_es(section.get("label") or section.get("id"))),
                 paragraph(score_label),
                 paragraph(execution),
                 paragraph(_spanish_assurance(section)),
@@ -223,6 +226,7 @@ def _validate_spanish_scorecard(
     sections: list[Mapping[str, Any]],
 ) -> None:
     from pypdf import PdfReader
+    from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
 
     if not sections:
         return
@@ -238,7 +242,7 @@ def _validate_spanish_scorecard(
 
     scorecard_text = scorecard_pages[0]
     for section in sections:
-        label = _text(section.get("label") or section.get("id"))
+        label = _safe_es(section.get("label") or section.get("id"))
         score = section.get(
             "score_value",
             section.get("presented_score", section.get("score")),

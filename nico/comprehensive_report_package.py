@@ -8,7 +8,7 @@ import json
 import re
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 VERSION = "nico.comprehensive_report_package.v2"
 
@@ -310,34 +310,39 @@ def _markdown(
     assessment: dict[str, Any],
     stages: list[dict[str, Any]],
     generated_at: str,
+    *,
+    localize_presentation: Callable[[str], str] | None = None,
 ) -> str:
+    def localized(value: str) -> str:
+        return localize_presentation(value) if localize_presentation else value
+
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
-    score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
+    score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else localized("NOT SCORED")
     constraints = _constraints(assessment, stages)
     lines = [
-        f"# NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}",
+        f"# {localized('NICO Comprehensive Technical Assessment')} — {_text(identity.get('repository'))}",
         "",
-        f"Generated: {generated_at}",
-        "Service ID: comprehensive",
-        f"Run ID: {_text(identity.get('run_id'))}",
-        f"Immutable commit SHA: {_text(identity.get('commit_sha'))}",
-        f"Evidence ledger ID: {_text(identity.get('evidence_ledger_id'))}",
-        f"Customer scope: {_text(identity.get('customer_id'))}",
-        f"Project scope: {_text(identity.get('project_id'))}",
+        f"{localized('Generated')}: {generated_at}",
+        f"{localized('Service ID')}: comprehensive",
+        f"{localized('Run ID')}: {_text(identity.get('run_id'))}",
+        f"{localized('Immutable commit SHA')}: {_text(identity.get('commit_sha'))}",
+        f"{localized('Evidence ledger ID')}: {_text(identity.get('evidence_ledger_id'))}",
+        f"{localized('Customer scope')}: {_text(identity.get('customer_id'))}",
+        f"{localized('Project scope')}: {_text(identity.get('project_id'))}",
         "",
-        "## Executive Decision Brief",
-        _decision_summary(identity, assessment, stages),
+        f"## {localized('Executive Decision Brief')}",
+        localized(_decision_summary(identity, assessment, stages)),
         "",
-        "## Decision Boundary",
-        "Human review is required. Client delivery is blocked. Missing evidence is disclosed and is never converted into a passing claim.",
+        f"## {localized('Decision Boundary')}",
+        localized("Human review is required. Client delivery is blocked. Missing evidence is disclosed and is never converted into a passing claim."),
         "",
-        "## Canonical Maturity Signal",
-        f"- Level: {_text(maturity.get('level') or 'Pending')}",
-        f"- Presented score: {score_text}",
-        f"- Evidence readiness: {_text(maturity.get('evidence_readiness_score') or 'Pending')}",
+        f"## {localized('Canonical Maturity Signal')}",
+        f"- {localized('Level')}: {localized(_text(maturity.get('level') or 'Pending'))}",
+        f"- {localized('Presented score')}: {score_text}",
+        f"- {localized('Evidence readiness')}: {localized(_text(maturity.get('evidence_readiness_score') or 'Pending'))}",
         "",
-        "## Technical Scorecard",
+        f"## {localized('Technical Scorecard')}",
     ]
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     if sections:
@@ -348,42 +353,42 @@ def _markdown(
             score_label = (
                 f"{int(section_score)}/100"
                 if isinstance(section_score, (int, float))
-                else "NOT SCORED"
+                else localized("NOT SCORED")
             )
             status = _text(item.get("presented_status") or item.get("status") or "unknown").upper()
             lines.append(
-                f"- **{_text(item.get('label') or item.get('id'))}** — {status} — {score_label}"
+                f"- **{_text(item.get('label') or item.get('id'))}** — {localized(status)} — {score_label}"
             )
     else:
-        lines.append("- Canonical scorecard unavailable; see the evidence limitations below.")
+        lines.append(f"- {localized('Canonical scorecard unavailable; see the evidence limitations below.')}")
 
-    lines += ["", "## Priority Constraints and Risks"]
-    lines.extend(f"- {item}" for item in constraints)
+    lines += ["", f"## {localized('Priority Constraints and Risks')}"]
+    lines.extend(f"- {localized(item)}" for item in constraints)
     if not constraints:
-        lines.append("- No retained material constraint was available beyond the human-review boundary.")
+        lines.append(f"- {localized('No retained material constraint was available beyond the human-review boundary.')}")
 
     for chapter, stage_ids in _CHAPTERS:
         selected = _chapter_stages(stages, stage_ids)
         if not selected:
             continue
-        lines += ["", f"## {chapter}"]
+        lines += ["", f"## {localized(chapter)}"]
         for stage in selected:
             lines += [
                 "",
-                f"### {stage['title']} — {stage['status'].upper()}",
+                f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
                 "",
-                "Evidence:",
+                f"{localized('Evidence')}:",
             ]
             lines.extend(
                 (f"- {item}" for item in stage["evidence"]),
             )
             if not stage["evidence"]:
-                lines.append("- No structured evidence line was retained for this stage.")
+                lines.append(f"- {localized('No structured evidence line was retained for this stage.')}")
             if stage["findings"]:
-                lines += ["", "Findings:"] + [f"- {item}" for item in stage["findings"]]
+                lines += ["", f"{localized('Findings')}:"] + [f"- {item}" for item in stage["findings"]]
             if stage["unavailable"]:
-                lines += ["", "Unavailable or limited evidence:"] + [
+                lines += ["", f"{localized('Unavailable or limited evidence')}:"] + [
                     f"- {item}" for item in stage["unavailable"]
                 ]
 
@@ -393,11 +398,11 @@ def _markdown(
         if not any(stage["stage_id"] in stage_ids for _, stage_ids in _CHAPTERS)
     ]
     if unmatched:
-        lines += ["", "## Additional Recorded Stages"]
+        lines += ["", f"## {localized('Additional Recorded Stages')}"]
         for stage in unmatched:
             lines += [
                 "",
-                f"### {stage['title']} — {stage['status'].upper()}",
+                f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
             ]
             lines.extend(f"- {item}" for item in stage["evidence"])
@@ -405,21 +410,21 @@ def _markdown(
     unavailable = _dedupe(assessment.get("unavailable_data_notes") or [], 50)
     lines += [
         "",
-        "## Assessment-Wide Limitations",
+        f"## {localized('Assessment-Wide Limitations')}",
         *(
             [f"- {item}" for item in unavailable]
-            or ["- No assessment-wide limitation was recorded beyond stage-level disclosures."]
+            or [f"- {localized('No assessment-wide limitation was recorded beyond stage-level disclosures.')}"]
         ),
         "",
-        "## Human Review Checklist",
-        "- [ ] Verify repository, run, commit, ledger, customer, and project identities.",
-        "- [ ] Review every failed, timed-out, unavailable, and triage-required analyzer result.",
-        "- [ ] Confirm the scorecard matches the evidence and all report formats.",
-        "- [ ] Validate business context, requirements, roadmap, staffing, and cost assumptions.",
-        "- [ ] Approve or reject the exact immutable report package before any client delivery.",
+        f"## {localized('Human Review Checklist')}",
+        f"- [ ] {localized('Verify repository, run, commit, ledger, customer, and project identities.')}",
+        f"- [ ] {localized('Review every failed, timed-out, unavailable, and triage-required analyzer result.')}",
+        f"- [ ] {localized('Confirm the scorecard matches the evidence and all report formats.')}",
+        f"- [ ] {localized('Validate business context, requirements, roadmap, staffing, and cost assumptions.')}",
+        f"- [ ] {localized('Approve or reject the exact immutable report package before any client delivery.')}",
         "",
-        "## Delivery Status",
-        "**DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED**",
+        f"## {localized('Delivery Status')}",
+        f"**{localized('DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED')}**",
         "",
     ]
     return "\n".join(lines).strip() + "\n"
@@ -473,6 +478,8 @@ def _pdf(
     assessment: dict[str, Any],
     stages: list[dict[str, Any]],
     generated_at: str,
+    *,
+    localize_presentation: Callable[[str], str] | None = None,
 ) -> tuple[str | None, str | None, int]:
     try:
         from reportlab.lib import colors
@@ -575,9 +582,12 @@ def _pdf(
     def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
         return Paragraph(html.escape(_text(value, 6000)), style)
 
+    def localized(value: str) -> str:
+        return localize_presentation(value) if localize_presentation else value
+
     def bullets(values: Iterable[str], *, limit: int = 60) -> list[Paragraph]:
         items = [_text(item, 1000) for item in values if _text(item)][:limit]
-        return [p(f"• {item}", small) for item in items] or [p("No structured item was retained.", small)]
+        return [p(f"• {item}", small) for item in items] or [p(localized("No structured item was retained."), small)]
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
@@ -586,9 +596,9 @@ def _pdf(
         canvas.drawString(
             0.55 * inch,
             0.38 * inch,
-            f"NICO Comprehensive · {_text(identity.get('run_id'), 60)} · DRAFT",
+            f"NICO Comprehensive · {_text(identity.get('run_id'), 60)} · {localized('DRAFT')}",
         )
-        canvas.drawRightString(7.95 * inch, 0.38 * inch, f"Page {doc.page}")
+        canvas.drawRightString(7.95 * inch, 0.38 * inch, f"{localized('Page')} {doc.page}")
         canvas.restoreState()
 
     doc = SimpleDocTemplate(
@@ -615,20 +625,22 @@ def _pdf(
                 textColor=colors.HexColor("#0284c7"),
             ),
         ),
-        p("Comprehensive Technical Assessment", title_style),
+        p(localized("Comprehensive Technical Assessment"), title_style),
         p(_text(identity.get("repository")), subtitle),
         Spacer(1, 0.3 * inch),
-        p(f"Immutable commit: {_text(identity.get('commit_sha'))}", subtitle),
-        p(f"Run ID: {_text(identity.get('run_id'))}", subtitle),
-        p(f"Generated: {generated_at}", subtitle),
+        p(f"{localized('Immutable commit')}: {_text(identity.get('commit_sha'))}", subtitle),
+        p(f"{localized('Run ID')}: {_text(identity.get('run_id'))}", subtitle),
+        p(f"{localized('Generated')}: {generated_at}", subtitle),
         Spacer(1, 0.45 * inch),
-        p("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED", warning),
+        p(localized("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED"), warning),
         PageBreak(),
-        p("Executive Decision Brief", h1),
-        p(_decision_summary(identity, assessment, stages), body),
-        p("Decision Boundary", h2),
+        p(localized("Executive Decision Brief"), h1),
+        p(localized(_decision_summary(identity, assessment, stages)), body),
+        p(localized("Decision Boundary"), h2),
         p(
-            "The report is an evidence-bound draft. NICO has not approved findings, accepted business assumptions, or authorized delivery. Missing evidence remains visible and constrains conclusions.",
+            localized(
+                "The report is an evidence-bound draft. NICO has not approved findings, accepted business assumptions, or authorized delivery. Missing evidence remains visible and constrains conclusions."
+            ),
             body,
         ),
     ]
@@ -637,10 +649,10 @@ def _pdf(
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
     identity_rows = [
-        ["Service", "Comprehensive", "Run ID", _text(identity.get("run_id"), 80)],
-        ["Repository", _text(identity.get("repository"), 80), "Commit", _text(identity.get("commit_sha"), 80)],
-        ["Customer", _text(identity.get("customer_id"), 80), "Project", _text(identity.get("project_id"), 80)],
-        ["Maturity", _text(maturity.get("level") or "Pending", 80), "Score", score_text],
+        [localized("Service"), "Comprehensive", localized("Run ID"), _text(identity.get("run_id"), 80)],
+        [localized("Repository"), _text(identity.get("repository"), 80), localized("Commit"), _text(identity.get("commit_sha"), 80)],
+        [localized("Customer"), _text(identity.get("customer_id"), 80), localized("Project"), _text(identity.get("project_id"), 80)],
+        [localized("Maturity"), localized(_text(maturity.get("level") or "Pending", 80)), localized("Score"), localized(score_text)],
     ]
     identity_table = Table(
         identity_rows,
@@ -666,11 +678,11 @@ def _pdf(
     story += [Spacer(1, 0.15 * inch), identity_table]
 
     constraints = _constraints(assessment, stages)
-    story += [PageBreak(), p("Priority Constraints and Decision Risks", h1), *bullets(constraints, limit=24)]
+    story += [PageBreak(), p(localized("Priority Constraints and Decision Risks"), h1), *bullets((localized(item) for item in constraints), limit=24)]
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
-    story += [PageBreak(), p("Canonical Technical Scorecard", h1)]
-    score_rows = [["Control", "Status", "Score", "Summary"]]
+    story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
+    score_rows = [[localized("Control"), localized("Status"), localized("Score"), localized("Summary")]]
     for item in sections:
         if not isinstance(item, dict):
             continue
@@ -683,14 +695,14 @@ def _pdf(
         score_rows.append(
             [
                 _text(item.get("label") or item.get("id"), 90),
-                _text(item.get("presented_status") or item.get("status") or "unknown", 30).upper(),
-                section_label,
+                localized(_text(item.get("presented_status") or item.get("status") or "unknown", 30).upper()),
+                localized(section_label),
                 _text(item.get("summary"), 240),
             ]
         )
     if len(score_rows) == 1:
         score_rows.append(
-            ["Canonical scoring", "PENDING", "NOT SCORED", "No canonical section scorecard was available."]
+            [localized("Canonical scoring"), localized("PENDING"), localized("NOT SCORED"), localized("No canonical section scorecard was available.")]
         )
     score_table = Table(
         score_rows,
@@ -730,66 +742,66 @@ def _pdf(
             PageBreak(),
             p(_text(item.get("label") or item.get("id")), h1),
             p(
-                f"{_text(item.get('presented_status') or item.get('status') or 'unknown').upper()} · {section_label}",
+                f"{localized(_text(item.get('presented_status') or item.get('status') or 'unknown').upper())} · {localized(section_label)}",
                 warning if section_score is None else h2,
             ),
-            p(item.get("summary") or "No section summary was retained.", body),
-            p("Evidence", h2),
+            p(item.get("summary") or localized("No section summary was retained."), body),
+            p(localized("Evidence"), h2),
             *bullets(item.get("evidence") or [], limit=30),
         ]
         if item.get("findings"):
-            story += [p("Findings", h2), *bullets(item.get("findings") or [], limit=24)]
+            story += [p(localized("Findings"), h2), *bullets(item.get("findings") or [], limit=24)]
         if item.get("unavailable"):
-            story += [p("Unavailable or Limited Evidence", h2), *bullets(item.get("unavailable") or [], limit=24)]
+            story += [p(localized("Unavailable or Limited Evidence"), h2), *bullets(item.get("unavailable") or [], limit=24)]
 
     for chapter, stage_ids in _CHAPTERS:
         selected = _chapter_stages(stages, stage_ids)
         if not selected:
             continue
-        story += [PageBreak(), p(chapter, h1)]
+        story += [PageBreak(), p(localized(chapter), h1)]
         for stage in selected:
             block: list[Any] = [
-                p(f"{stage['title']} · {stage['status'].upper()}", h2),
+                p(f"{stage['title']} · {localized(stage['status'].upper())}", h2),
                 p(stage["summary"], body),
             ]
             preview = stage["evidence"][:10]
             block.extend(bullets(preview, limit=10))
             if stage["findings"]:
-                block.extend([p("Findings", h3), *bullets(stage["findings"], limit=12)])
+                block.extend([p(localized("Findings"), h3), *bullets(stage["findings"], limit=12)])
             if stage["unavailable"]:
-                block.extend([p("Evidence Limitations", h3), *bullets(stage["unavailable"], limit=12)])
+                block.extend([p(localized("Evidence Limitations"), h3), *bullets(stage["unavailable"], limit=12)])
             story.append(KeepTogether(block))
             story.append(Spacer(1, 0.12 * inch))
 
-    story += [PageBreak(), p("Evidence Appendix", h1), p("The appendix preserves full bounded stage evidence for the immutable run. It is intentionally separate from the decision-oriented body.", body)]
+    story += [PageBreak(), p(localized("Evidence Appendix"), h1), p(localized("The appendix preserves full bounded stage evidence for the immutable run. It is intentionally separate from the decision-oriented body."), body)]
     for stage in stages:
         story += [
             PageBreak(),
             p(stage["title"], h1),
-            p(f"Stage ID: {stage['stage_id']} · Status: {stage['status'].upper()}", small),
+            p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
-            p("Retained Evidence", h2),
+            p(localized("Retained Evidence"), h2),
             *bullets(stage["evidence"], limit=100),
         ]
         if stage["findings"]:
-            story += [p("Findings", h2), *bullets(stage["findings"], limit=50)]
+            story += [p(localized("Findings"), h2), *bullets(stage["findings"], limit=50)]
         if stage["unavailable"]:
-            story += [p("Unavailable or Limited Evidence", h2), *bullets(stage["unavailable"], limit=50)]
+            story += [p(localized("Unavailable or Limited Evidence"), h2), *bullets(stage["unavailable"], limit=50)]
 
     story += [
         PageBreak(),
-        p("Human Review and Acceptance Gate", h1),
-        p("The automated assessment is complete only as a draft. The following decisions remain human responsibilities:", body),
+        p(localized("Human Review and Acceptance Gate"), h1),
+        p(localized("The automated assessment is complete only as a draft. The following decisions remain human responsibilities:"), body),
         *bullets(
             [
-                "Verify the exact repository, run, commit, evidence ledger, customer, and project identities.",
-                "Triage every failed, timed-out, unavailable, and review-required scanner result.",
-                "Validate business context, requirements, roadmap, staffing, sequencing, and cost assumptions.",
-                "Confirm Markdown, HTML, JSON, and PDF show the same status and score truth.",
-                "Approve or reject the immutable report package before creating any delivery access.",
+                localized("Verify the exact repository, run, commit, evidence ledger, customer, and project identities."),
+                localized("Triage every failed, timed-out, unavailable, and review-required scanner result."),
+                localized("Validate business context, requirements, roadmap, staffing, sequencing, and cost assumptions."),
+                localized("Confirm Markdown, HTML, JSON, and PDF show the same status and score truth."),
+                localized("Approve or reject the immutable report package before creating any delivery access."),
             ]
         ),
-        p("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED", warning),
+        p(localized("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED"), warning),
     ]
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)

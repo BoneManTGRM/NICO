@@ -244,10 +244,15 @@ def _clean_markdown(markdown: str, canonical: Mapping[str, Any], *, spanish: boo
         "FINAL REPORT PENDING HUMAN APPROVAL": "AUTOMATED DRAFT PENDING HUMAN APPROVAL",
         "INFORME FINAL PENDIENTE DE APROBACIÓN": "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN",
         "DRAFT": "AUTOMATED DRAFT",
-        "BORRADOR": "BORRADOR AUTOMATIZADO",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    if spanish:
+        text = re.sub(
+            r"\bBORRADOR\b(?![ \t]+AUTOMATIZADO)",
+            "BORRADOR AUTOMATIZADO",
+            text,
+        )
     if technical is not None:
         text = re.sub(r"(?i)(Presented score:\s*)\d+/100", rf"\g<1>{technical}/100", text)
         text = re.sub(r"(?i)(Technical maturity:\s*)\d+/100", rf"\g<1>{technical}/100", text)
@@ -298,7 +303,7 @@ def _html_from_markdown(markdown: str, title: str, *, spanish: bool) -> str:
         else:
             flush(); blocks.append(f"<p>{html.escape(line)}</p>")
     flush()
-    language = "es" if spanish else "en"
+    language = "es-MX" if spanish else "en"
     badge = "BORRADOR AUTOMATIZADO · APROBACIÓN PENDIENTE" if spanish else "AUTOMATED DRAFT · APPROVAL PENDING"
     return f"""<!doctype html><html lang='{language}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>:root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;background:#050b18;color:#dce8fa;font:15px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1120px;margin:auto;padding:34px 20px 80px}}header{{position:relative;overflow:hidden;padding:42px;border:1px solid #18304f;border-radius:26px;background:linear-gradient(145deg,#071224,#0b1f39)}}header:after{{content:'';position:absolute;width:440px;height:440px;border-radius:50%;right:-180px;top:-260px;background:#0c4a6e55}}header h1{{position:relative;margin:0;color:white;font-size:clamp(30px,5vw,50px);line-height:1.06}}.badge{{position:relative;display:inline-block;margin-top:18px;padding:8px 13px;border:1px solid #f59e0b;border-radius:999px;background:#3b2108;color:#fde68a;font-weight:800}}article{{margin-top:24px;padding:30px;border:1px solid #18304f;border-radius:24px;background:#081426}}h1{{color:white}}h2{{margin-top:40px;padding-top:25px;border-top:1px solid #18304f;color:#55d7f4}}h3{{margin-top:26px;color:#dff8ff}}p,li{{color:#bdcbe0}}ul{{padding-left:24px}}li{{margin:7px 0}}.check{{list-style:none;margin-left:-20px}}.warning{{padding:15px;border:1px solid #f59e0b;border-radius:14px;background:#3b2108;color:#fde68a;font-weight:800}}</style></head><body><main><header><h1>{html.escape(title)}</h1><span class='badge'>{badge}</span></header><article>{''.join(blocks)}</article></main></body></html>"""
 

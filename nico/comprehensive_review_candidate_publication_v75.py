@@ -21,7 +21,7 @@ _EN_SCORE_EFFECT = (
 )
 _ES_SCORE_EFFECT = (
     "Efecto en puntuación: solo aseguramiento mientras la disposición humana "
-    "siga pendiente; el triage técnico de NICO está completo."
+    "siga pendiente; el triaje técnico de NICO está completo."
 )
 
 _EVIDENCE_SUMMARY_HEADINGS = {
@@ -134,7 +134,7 @@ def review_candidate_truth_markdown(
                 _ES_HEADING,
                 "",
                 (
-                    "La finalización técnica, el triage automatizado y la disposición humana "
+                    "La finalización técnica, el triaje automatizado y la disposición humana "
                     "se mantienen como estados distintos. La evidencia completa permanece "
                     "en los artefactos JSON y CSV de la ejecución exacta."
                 ),

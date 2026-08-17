@@ -130,7 +130,7 @@ def test_spanish_premium_renderer_keeps_localized_layout_and_truth():
     assert "Apéndice de evidencia" not in result["markdown"]
     assert "Resumen del paquete de evidencia" in result["markdown"]
     assert "Registro compacto de hallazgos y remediación" in result["markdown"]
-    assert "Índice completo de ubicaciones" in result["markdown"]
+    assert "Índice completo de fuentes exactas" in result["markdown"]
     assert result["json"]["scanner_execution_records"][0]["scanner_name"] == "bandit"
     assert "CLIENT DELIVERY NOT AUTHORIZED" in result["markdown"]
     assert result["report_finality"] == "automated_draft"

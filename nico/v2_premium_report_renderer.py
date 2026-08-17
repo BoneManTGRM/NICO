@@ -15,8 +15,11 @@ from nico.comprehensive_client_ready_projection_v1 import (
     REPORT_FINALITY,
 )
 from nico.comprehensive_report_package import _markdown, _pdf, _semantic_html
-from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_html, _spanish_pdf
-from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown
+from nico.comprehensive_spanish_canonical_report_v87 import (
+    render_spanish_html as _spanish_html,
+    render_spanish_markdown as _spanish_markdown,
+    render_spanish_pdf as _spanish_pdf,
+)
 
 VERSION = "nico.v2.premium-report-renderer.v6.1"
 _TIMESTAMP = re.compile(r"^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
@@ -382,10 +385,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     score_summary = _score_summary_markdown(assessment, spanish=spanish)
 
     if spanish:
-        markdown = _spanish_markdown(canonical).replace(
-            "La evaluación automatizada terminó como borrador.",
-            "La evaluación automatizada terminó como borrador automatizado pendiente de aprobación humana.",
-        ).replace("BORRADOR", "BORRADOR AUTOMATIZADO PENDIENTE DE APROBACIÓN")
+        markdown = _spanish_markdown(canonical)
         marker = "## Resumen ejecutivo"
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
@@ -473,6 +473,11 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
             "canonical_scanner_truth_only": True,
             "canonical_generated_at_only": True,
             "bilingual_premium_output": True,
+            **(
+                {"spanish_uses_english_canonical_section_contract": True}
+                if spanish
+                else {}
+            ),
             "page_count": page_count,
         },
     })

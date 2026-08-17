@@ -14,7 +14,7 @@ _MARKER = "__nico_comprehensive_full_data_worksheet_localization_v1__"
 
 SPANISH_CANDIDATE_REGISTER = "Registro de candidatos que requieren revisión"
 SPANISH_REVIEW_GATE = "Puerta de revisión humana y aceptación"
-SPANISH_EXACT_SOURCE_INDEX = "Índice completo de ubicaciones"
+SPANISH_EXACT_SOURCE_INDEX = "Índice completo de fuentes exactas"
 
 WORKSHEET_TITLES_BY_STAGE_ID: dict[str, tuple[str, str]] = {
     "functional_qa": ("Functional QA", "QA funcional"),

@@ -84,15 +84,21 @@ _ES_PHRASES = {
 _TITLE_MAP = {
     "Comprehensive Technical Assessment": "Evaluación Técnica Integral",
     "Executive Decision Brief": "Resumen ejecutivo para decisiones",
+    "Decision Boundary": "Límite de decisión",
     "Priority Constraints and Decision Risks": "Restricciones prioritarias y riesgos de decisión",
     "Canonical Technical Scorecard": "Cuadro de puntuación técnica",
-    "Dependency / Library Ecosystem": "Ecosistema de dependencias / bibliotecas",
+    "Evidence Foundation": "Fundamento de evidencia",
+    "Deep Technical Diligence": "Diligencia técnica profunda",
+    "Business and Delivery Context": "Contexto comercial y de entrega",
+    "Roadmap, Resourcing, and Decision": "Hoja de ruta, recursos y decisión",
+    "Integrity and Acceptance": "Integridad y aceptación",
+    "Dependency / Library Ecosystem": "Ecosistema de dependencias y bibliotecas",
     "Secrets Exposure Review": "Revisión de exposición de secretos",
     "Static Analysis": "Análisis estático",
     "CI/CD Analysis": "Análisis de CI/CD",
     "Architecture & Technical Debt": "Arquitectura y deuda técnica",
-    "Velocity / Complexity": "Velocidad / complejidad",
-    "Repository and Delivery Evidence": "Evidencia del repositorio y entrega",
+    "Velocity / Complexity": "Velocidad y complejidad",
+    "Repository and Delivery Evidence": "Evidencia del repositorio y de entrega",
     "Evidence Reconciliation and Scoring": "Conciliación y puntuación de evidencia",
     "Functional QA": "QA funcional",
     "Requirements Traceability": "Trazabilidad de requisitos",
@@ -105,11 +111,11 @@ _TITLE_MAP = {
     "CI/CD Operational Readiness and Historical Health": "Preparación operativa y salud histórica de CI/CD",
     "Compact Finding and Remediation Register": "Registro compacto de hallazgos y remediación",
     "Compact Finding and Remediation Register · continuation": "Registro compacto de hallazgos y remediación · continuación",
-    "Complete Exact-Source Index": "Índice completo de ubicaciones exactas",
-    "Client Evidence Summary": "Resumen de evidencia para revisión",
+    "Complete Exact-Source Index": "Índice completo de fuentes exactas",
+    "Client Evidence Summary": "Resumen de evidencia del cliente",
     "Human Review and Acceptance Gate": "Puerta de revisión humana y aceptación",
     "Client Artifact Manifest": "Manifiesto de artefactos del cliente",
-    "Human Review and Exact-Artifact Approval Record": "Registro de revisión humana y aprobación del artefacto exacto",
+    "Human Review and Exact-Artifact Approval Record": "Registro de revisión humana y aprobación de artefactos exactos",
 }
 
 
@@ -278,7 +284,7 @@ def _render_manifest_spanish(canonical: Mapping[str, Any], entries: list[dict[st
         Spacer(1, .08 * inch),
         p("Los hashes finales de bytes del PDF y del JSON canónico se registran en el manifiesto de evidencia separado después del renderizado. Un documento no puede incorporar verazmente su propio hash final sin cambiarlo. El manifiesto separado vincula esos hashes finales con la misma ejecución, commit e ID de manifiesto.", body),
         PageBreak(),
-        p("Registro de revisión humana y aprobación del artefacto exacto", title),
+        p("Registro de revisión humana y aprobación de artefactos exactos", title),
         p("PAQUETE DE REVISIÓN LISTO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA", warning),
         p("Ciclo de vida", heading),
         p(f"Paquete de revisión listo: {'Sí' if lifecycle.get('review_package_ready') else 'No'}", body),
@@ -344,7 +350,7 @@ def _markdown_manifest_spanish(
         f"| comprehensive_pdf | nico-{run}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf | {pdf_sha256} |",
         f"| canonical_json | nico-{run}-canonical.json | {canonical_json_sha256} |",
         f"| evidence_manifest_json | nico-{run}-evidence-manifest.json | {manifest_sha256} |", "",
-        "## Registro de revisión humana y aprobación del artefacto exacto", "",
+        "## Registro de revisión humana y aprobación de artefactos exactos", "",
         "- Paquete de revisión listo: Sí",
         "- Aprobación humana: Pendiente",
         "- Entrega al cliente: Bloqueada",
@@ -415,12 +421,51 @@ def _page_overlay_spanish(page_number: int, total_pages: int) -> bytes:
     return buffer.getvalue()
 
 
+def _spanish_outline_title(nav: Any, text: str) -> str:
+    """Resolve translated pages against the canonical English navigation keys."""
+
+    from nico.comprehensive_human_review_package_cleanup_v1 import _TOC_TITLES
+
+    lines = [_text(line, 180) for line in str(text or "").splitlines() if _text(line)]
+    for canonical_title in _TOC_TITLES:
+        localized_title = _localized_title(canonical_title)
+        for line in lines[:32]:
+            if (
+                line == localized_title
+                or line.startswith(localized_title + " ·")
+                or line.startswith(localized_title + " —")
+                or line == canonical_title
+                or line.startswith(canonical_title + " ·")
+                or line.startswith(canonical_title + " —")
+            ):
+                return canonical_title
+        # ReportLab can wrap a long heading across adjacent extracted lines.
+        # Rejoin only neighboring complete lines so narrative references and
+        # numbered worksheet items cannot be mistaken for page titles.
+        for width in (2, 3):
+            for start in range(max(0, min(len(lines), 32) - width + 1)):
+                candidate = " ".join(lines[start : start + width])
+                if candidate in {localized_title, canonical_title}:
+                    return canonical_title
+    joined = "\n".join(lines[:32])
+    if (
+        "NICO · registro compacto de hallazgos" in joined
+        or "Prioridad / ID" in joined
+        or "Pri. ID de hallazgo" in joined
+    ):
+        return "Compact Finding and Remediation Register · continuation"
+    return nav._outline_title(text)
+
+
 def _renumber_spanish(nav: Any, pdf: bytes) -> bytes:
     from pypdf import PdfReader, PdfWriter
     reader = PdfReader(io.BytesIO(pdf))
     if not reader.pages:
         raise ValueError("el PDF Integral final no contiene páginas")
-    original_titles = [nav._outline_title(page.extract_text() or "") for page in reader.pages]
+    original_titles = [
+        _spanish_outline_title(nav, page.extract_text() or "")
+        for page in reader.pages
+    ]
     used: set[str] = set()
     toc_entries: list[tuple[str, int]] = []
     for original_index, title in enumerate(original_titles[1:], start=1):
@@ -523,7 +568,7 @@ def _assert_spanish_full_data_parity(
     localization._assert_spanish_exact_source_index(findings, extracted)
     required = (
         "Manifiesto de artefactos del cliente",
-        "Registro de revisión humana y aprobación del artefacto exacto",
+        "Registro de revisión humana y aprobación de artefactos exactos",
         localization.SPANISH_REVIEW_GATE,
         localization.SPANISH_EXACT_SOURCE_INDEX,
     )
