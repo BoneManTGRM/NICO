@@ -65,7 +65,7 @@ def test_real_compact_spanish_producer_emits_required_candidate_truth() -> None:
     assert "Hallazgos materiales confirmados: 0" in markdown
     assert (
         "Efecto en puntuación: solo aseguramiento mientras la disposición humana "
-        "siga pendiente; el triage técnico de NICO está completo."
+        "siga pendiente; el triaje técnico de NICO está completo."
     ) in markdown
     assert "Candidatos pendientes de revisión" not in markdown
     assert "solo aseguramiento hasta completar la revisión" not in markdown

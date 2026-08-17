@@ -11,6 +11,11 @@ from typing import Any
 
 from nico.comprehensive_report_scanner_detection_v51 import _text
 from nico.comprehensive_report_spanish_text_v51 import _es, _spanish_markdown
+from nico.comprehensive_spanish_canonical_report_v87 import (
+    render_spanish_html as _canonical_spanish_html,
+    render_spanish_markdown as _canonical_spanish_markdown,
+    render_spanish_pdf as _canonical_spanish_pdf,
+)
 
 VERSION = "nico.comprehensive_report_spanish_artifacts.v51"
 
@@ -233,9 +238,12 @@ def _localize_package(result: dict[str, Any]) -> dict[str, Any]:
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), dict) else {}
     assessment["report_language"] = "es-MX"
     canonical["assessment"] = assessment
-    markdown = _spanish_markdown(canonical)
-    rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
-    pdf, page_count = _spanish_pdf(canonical)
+    markdown = _canonical_spanish_markdown(canonical)
+    rendered_html = _canonical_spanish_html(
+        markdown,
+        "Evaluación Técnica Integral NICO",
+    )
+    pdf, page_count = _canonical_spanish_pdf(canonical)
     truth_sha = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
     safe_repo = re.sub(r"[^A-Za-z0-9_.-]+", "-", _text((canonical.get("identity") or {}).get("repository"))).strip("-") or "repositorio"
     run_id = _text((canonical.get("identity") or {}).get("run_id")) or "run"
@@ -244,7 +252,10 @@ def _localize_package(result: dict[str, Any]) -> dict[str, Any]:
         {
             "report_language": "es-MX",
             "spanish_markdown_complete": True,
-            "spanish_html_complete": "<html lang='es-MX'>" in rendered_html,
+            "spanish_html_complete": (
+                '<html lang="es-MX">' in rendered_html
+                or "<html lang='es-MX'>" in rendered_html
+            ),
             "spanish_pdf_complete": pdf.startswith(b"%PDF"),
             "localized_client_artifacts_share_canonical_truth": True,
             "assessment_completion_separated_from_evidence_assurance": True,

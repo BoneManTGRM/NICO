@@ -25,6 +25,7 @@ def _compact_pdf_call(
     assessment: dict[str, Any],
     stages: list[dict[str, Any]],
     generated_at: str,
+    **render_options: Any,
 ) -> tuple[str | None, str | None, int]:
     """Render only the decision-oriented base PDF for the final package.
 
@@ -40,8 +41,20 @@ def _compact_pdf_call(
     """
 
     if not _COMPACT_FINAL_PDF.get():
-        return original(identity, assessment, stages, generated_at)
-    return original(identity, assessment, [], generated_at)
+        return original(
+            identity,
+            assessment,
+            stages,
+            generated_at,
+            **render_options,
+        )
+    return original(
+        identity,
+        assessment,
+        [],
+        generated_at,
+        **render_options,
+    )
 
 
 def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
@@ -58,6 +71,7 @@ def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
             assessment: dict[str, Any],
             stages: list[dict[str, Any]],
             generated_at: str,
+            **render_options: Any,
         ) -> tuple[str | None, str | None, int]:
             return _compact_pdf_call(
                 pdf_current,
@@ -65,6 +79,7 @@ def install_comprehensive_final_report_compact_base_v1() -> dict[str, Any]:
                 assessment,
                 stages,
                 generated_at,
+                **render_options,
             )
 
         setattr(_pdf, _PDF_MARKER, True)

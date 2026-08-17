@@ -427,3 +427,61 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     assert "until triaged" not in text.lower()
     assert "APPROVED FINAL" in text
     assert "CLIENT DELIVERY AUTHORIZED" in text
+
+
+def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:
+    canonical = {
+        "identity": {
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": "a" * 40,
+            "run_id": "comprun_test",
+        },
+        "assessment": {
+            "technical_score": 93,
+            "evidence_adjusted_score": 89,
+        },
+        "scanner_execution_records": [],
+        "review_candidate_summary": {
+            "review_required_total": 1,
+            "verified_material_total": 0,
+            "by_category": {
+                "dependency": {"raw": 1, "material": 0, "review_required": 1}
+            },
+        },
+        "technical_triage": {
+            "status": "complete",
+            "workload_metrics": {
+                "total_candidates": 0,
+                "technical_triage_completed": 0,
+                "technical_triage_coverage_pct": 0,
+            },
+        },
+    }
+    pdf = render_phase1_evidence_review_gate_pdf(
+        canonical,
+        {"summary": {"exact_source_code_finding_count": 0}},
+        spanish=True,
+    )
+    text = " ".join(
+        " ".join((page.extract_text() or "").split())
+        for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+
+    for expected in (
+        "Campo",
+        "Valor",
+        "El triaje técnico y la disposición humana están separados",
+        "Métrica de carga del revisor",
+        "Límite del paquete del cliente",
+        "permanecen en JSON y CSV canónicos",
+        "Dependencias",
+    ):
+        assert expected in text
+    for forbidden in (
+        "Field",
+        "Reviewer workload metric",
+        "Client package boundary",
+        "Full candidate evidence",
+        "Dependency",
+    ):
+        assert forbidden not in text

@@ -140,7 +140,7 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
     heading = "## Registro compacto de hallazgos y remediación" if spanish else "## Compact Finding and Remediation Register"
     detail_heading = "### Detalle ejecutivo priorizado" if spanish else "### Prioritized executive detail"
-    index_heading = "### Índice completo de ubicaciones" if spanish else "### Complete exact-source index"
+    index_heading = "### Índice completo de fuentes exactas" if spanish else "### Complete exact-source index"
     boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
     lines = [
         heading,
@@ -272,7 +272,7 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
         ]))
         story.extend([table, Spacer(1, .1 * inch)])
 
-    story.extend([PageBreak(), p("Índice completo de ubicaciones" if spanish else "Complete Exact-Source Index", h1)])
+    story.extend([PageBreak(), p("Índice completo de fuentes exactas" if spanish else "Complete Exact-Source Index", h1)])
     header = ["Pri.", "Finding ID", "Exact source", "Finding / disposition"]
     rows: list[list[Any]] = [[p(value, small) for value in header]]
     for item in records:
@@ -351,7 +351,7 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
         return Paragraph(html.escape(_text(value, limit)), style)
 
     boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
-    story: list[Any] = [p("Resumen de evidencia para revisión" if spanish else "Client Evidence Summary", h1), p(boundary, warning)]
+    story: list[Any] = [p("Resumen de evidencia del cliente" if spanish else "Client Evidence Summary", h1), p(boundary, warning)]
     identity_rows = [
         ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
         ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],

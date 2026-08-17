@@ -8,7 +8,12 @@ from functools import wraps
 from typing import Any, Callable, Mapping
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
+from pypdf.generic import (
+    ByteStringObject,
+    ContentStream,
+    TextStringObject,
+    encode_pdfdocencoding,
+)
 
 from nico.comprehensive_report_language_truth_v77 import resolve_report_language
 
@@ -146,6 +151,14 @@ def _localize_presentation_text(value: str) -> str:
     )
     output = re.sub(r"\bRegister (\d+)\b", r"Registro \1", output)
     output = re.sub(r"\bIntegrity (\d+)\b", r"Integridad \1", output)
+    # Review, register, gate, and workload pages are appended after the canonical
+    # report renderer. Reuse its presentation vocabulary so late Spanish-only
+    # surfaces cannot drift back to partial English copy.
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation,
+    )
+
+    output = _translate_presentation(output)
     return output
 
 
@@ -160,6 +173,9 @@ def localize_spanish_markdown(markdown: str) -> str:
             localized.append(part)
             continue
 
+        # This is renderer-owned placeholder copy, not a client code literal.
+        part = part.replace("`the identified unit`", "`la unidad identificada`")
+
         placeholders: dict[str, str] = {}
 
         def protect(match: re.Match[str]) -> str:
@@ -172,7 +188,13 @@ def localize_spanish_markdown(markdown: str) -> str:
         for token, literal in placeholders.items():
             protected = protected.replace(token, literal)
         localized.append(protected)
-    return "".join(localized)
+    output = "".join(localized)
+    return re.sub(
+        r"(?m)(^## Estado de entrega[ \t]*\n\*\*.*ENTREGA AL CLIENTE BLOQUEADA)(\*\*)$",
+        r"\1 — ENTREGA AL CLIENTE NO AUTORIZADA\2",
+        output,
+        count=1,
+    )
 
 
 def _localize_review_sections(value: Any) -> Any:
@@ -229,10 +251,13 @@ def _translate_pdf_operand(value: Any, translator: Callable[[str], str]) -> tupl
             translated = translator(decoded)
             if translated == decoded:
                 return value, False
+            # A changed byte operand may now contain Spanish characters. Encode
+            # them with PDFDocEncoding; UTF-8 bytes render as mojibake in the
+            # source Type-1 font, while UTF-16 text strings introduce NUL glyphs.
             try:
-                return ByteStringObject(translated.encode(encoding)), True
+                return ByteStringObject(encode_pdfdocencoding(translated)), True
             except UnicodeEncodeError:
-                return ByteStringObject(translated.encode("utf-8")), True
+                return ByteStringObject(translated.encode("cp1252", errors="replace")), True
     return value, False
 
 
@@ -307,7 +332,7 @@ def _artifact_label(value: Any) -> str:
         "findings_csv": "Hallazgos (CSV)",
         "evidence_csv": "Evidencia (CSV)",
         "candidate_register_json": "Registro de candidatos (JSON)",
-        "remediation_backlog_json": "Backlog de remediación (JSON)",
+        "remediation_backlog_json": "Trabajo pendiente de remediación (JSON)",
         "comprehensive_pdf": "Informe integral (PDF)",
         "canonical_json": "JSON canónico",
         "evidence_manifest_json": "Manifiesto de evidencia (JSON)",

@@ -591,6 +591,13 @@ def _bullet_values(values: Any) -> list[str]:
 
 
 def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation,
+    )
+
+    def localized(value: Any) -> str:
+        return _translate_presentation(value) if spanish else _text(value)
+
     code_findings = [item for item in register.get("code_findings") or [] if isinstance(item, Mapping)]
     operational = [item for item in register.get("operational_findings") or [] if isinstance(item, Mapping)]
     heading = "## Registro de hallazgos y remediación" if spanish else "## Finding and Remediation Register"
@@ -603,59 +610,69 @@ def finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> 
             else "This register uses evidence bound to the exact assessed commit. Unverified candidates remain labeled for review and are not converted into confirmed defects."
         ),
         "",
-        f"- Exact commit: `{_text(register.get('exact_commit_sha'))}`",
-        f"- Exact-source code findings: {len(code_findings)}",
-        f"- Operational/context findings: {len(operational)}",
-        "- Secret values retained: no",
+        f"- {'Commit exacto' if spanish else 'Exact commit'}: `{_text(register.get('exact_commit_sha'))}`",
+        f"- {'Hallazgos de código con fuente exacta' if spanish else 'Exact-source code findings'}: {len(code_findings)}",
+        f"- {'Hallazgos operativos o de contexto' if spanish else 'Operational/context findings'}: {len(operational)}",
+        "- Valores secretos conservados: no" if spanish else "- Secret values retained: no",
         "",
     ]
     for item in code_findings:
         lines.extend(
             [
-                f"### {_text(item.get('priority'))} · {_text(item.get('title'))} · {_text(item.get('finding_id'))}",
+                f"### {_text(item.get('priority'))} · {localized(item.get('title'))} · {_text(item.get('finding_id'))}",
                 "",
-                f"- Exact source: `{_text(item.get('location'))}`",
-                f"- Function / component: `{_text(item.get('symbol')) or 'not retained'}`",
-                f"- Analyzer / rule: `{_text(item.get('evidence_source'))}` · `{_text(item.get('rule_id')) or 'not retained'}`",
-                f"- Evidence quality: {_text(item.get('evidence_quality'))}; exact commit match={bool(item.get('exact_commit_match'))}",
-                f"- Problematic code or signature: {_text(item.get('problematic_code')) or 'Open the exact source anchor for review.'}",
+                f"- {'Fuente exacta' if spanish else 'Exact source'}: `{_text(item.get('location'))}`",
+                f"- {'Función / componente' if spanish else 'Function / component'}: `{_text(item.get('symbol')) or ('no conservado' if spanish else 'not retained')}`",
+                f"- {'Analizador / regla' if spanish else 'Analyzer / rule'}: `{_text(item.get('evidence_source'))}` · `{_text(item.get('rule_id')) or ('no conservada' if spanish else 'not retained')}`",
+                f"- {'Calidad de la evidencia' if spanish else 'Evidence quality'}: {localized(item.get('evidence_quality'))}; "
+                f"{'coincidencia con el commit exacto' if spanish else 'exact commit match'}={'sí' if spanish and bool(item.get('exact_commit_match')) else 'no' if spanish else bool(item.get('exact_commit_match'))}",
+                f"- {'Código o firma problemáticos' if spanish else 'Problematic code or signature'}: "
+                f"{_text(item.get('problematic_code')) or ('Abrir la fuente exacta para revisión.' if spanish else 'Open the exact source anchor for review.')}",
             ]
         )
         if _text(item.get("source_excerpt")):
-            lines.append(f"- Bounded source excerpt: `{_redact(item.get('source_excerpt'), 1400)}`")
+            lines.append(f"- {'Extracto acotado del código fuente' if spanish else 'Bounded source excerpt'}: `{_redact(item.get('source_excerpt'), 1400)}`")
         else:
-            lines.append("- Bounded source excerpt: not retained; open the exact immutable source location before editing.")
+            lines.append(
+                "- Extracto acotado del código fuente: no conservado; abrir la ubicación inmutable exacta antes de editar."
+                if spanish
+                else "- Bounded source excerpt: not retained; open the exact immutable source location before editing."
+            )
         lines.extend(
             [
-                f"- Observed evidence: {_text(item.get('observed_evidence'))}",
-                f"- Interpretation: {_text(item.get('interpretation'))}",
-                f"- Business consequence: {_text(item.get('business_impact'))}",
-                f"- Specific correction: {_text(item.get('recommended_correction'))}",
-                f"- Owner / effort: {_text(item.get('owner_role'))} · {_text(item.get('effort'))}",
-                "- Verification:",
+                f"- {'Evidencia observada' if spanish else 'Observed evidence'}: {localized(item.get('observed_evidence'))}",
+                f"- {'Interpretación' if spanish else 'Interpretation'}: {localized(item.get('interpretation'))}",
+                f"- {'Consecuencia comercial' if spanish else 'Business consequence'}: {localized(item.get('business_impact'))}",
+                f"- {'Corrección específica' if spanish else 'Specific correction'}: {localized(item.get('recommended_correction'))}",
+                f"- {'Responsable / esfuerzo' if spanish else 'Owner / effort'}: {localized(item.get('owner_role'))} · {localized(item.get('effort'))}",
+                "- Verificación:" if spanish else "- Verification:",
             ]
         )
-        lines.extend(f"  - {value}" for value in _bullet_values(item.get("verification")))
+        lines.extend(f"  - {localized(value)}" for value in _bullet_values(item.get("verification")))
         lines.extend(
             [
-                f"- Rollback: {_text(item.get('rollback'))}",
-                "- Exit criteria:",
+                f"- {'Reversión' if spanish else 'Rollback'}: {localized(item.get('rollback'))}",
+                "- Criterios de salida:" if spanish else "- Exit criteria:",
             ]
         )
-        lines.extend(f"  - {value}" for value in _bullet_values(item.get("exit_criteria")))
+        lines.extend(f"  - {localized(value)}" for value in _bullet_values(item.get("exit_criteria")))
         lines.append("")
 
     if operational:
-        lines.extend(["## Operational and Context Findings", ""])
+        lines.extend(["## Hallazgos operativos y de contexto" if spanish else "## Operational and Context Findings", ""])
         for item in operational:
             lines.extend(
                 [
-                    f"### {_text(item.get('priority'))} · {_text(item.get('title'))} · {_text(item.get('finding_id'))}",
+                    f"### {_text(item.get('priority'))} · {localized(item.get('title'))} · {_text(item.get('finding_id'))}",
                     "",
-                    "- Source classification: operational, dependency, or context evidence; no single code line is claimed.",
-                    f"- Evidence: {_text(item.get('observed_evidence'))}",
-                    f"- Business consequence: {_text(item.get('business_impact'))}",
-                    f"- Recommended action: {_text(item.get('recommended_correction'))}",
+                    (
+                        "- Clasificación de la fuente: evidencia operativa, de dependencias o de contexto; no se atribuye a una única línea de código."
+                        if spanish
+                        else "- Source classification: operational, dependency, or context evidence; no single code line is claimed."
+                    ),
+                    f"- {'Evidencia' if spanish else 'Evidence'}: {localized(item.get('observed_evidence'))}",
+                    f"- {'Consecuencia comercial' if spanish else 'Business consequence'}: {localized(item.get('business_impact'))}",
+                    f"- {'Acción recomendada' if spanish else 'Recommended action'}: {localized(item.get('recommended_correction'))}",
                     "",
                 ]
             )
@@ -668,6 +685,12 @@ def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation,
+    )
+
+    def localized(value: Any) -> str:
+        return _translate_presentation(value) if spanish else _text(value)
 
     code_findings = [item for item in register.get("code_findings") or [] if isinstance(item, Mapping)]
     operational = [item for item in register.get("operational_findings") or [] if isinstance(item, Mapping)]
@@ -681,7 +704,8 @@ def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -
     warning = ParagraphStyle("RegisterWarning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.8, borderPadding=7, spaceAfter=10)
 
     def paragraph(value: Any, style: ParagraphStyle = body) -> Paragraph:
-        return Paragraph(html.escape(_redact(value, 5000)).replace("\n", "<br/>") or "Not retained", style)
+        fallback = "No conservado" if spanish else "Not retained"
+        return Paragraph(html.escape(_redact(value, 5000)).replace("\n", "<br/>") or fallback, style)
 
     story: list[Any] = [
         Spacer(1, .18 * inch),
@@ -692,35 +716,49 @@ def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -
             else "Each record separates observed evidence, interpretation, and proposed correction. Unverified candidates require human review and are not presented as confirmed defects.",
             body,
         ),
-        paragraph(f"Exact commit: {_text(register.get('exact_commit_sha'))}", label),
-        paragraph(f"Exact-source findings: {len(code_findings)} · Operational/context findings: {len(operational)}", body),
+        paragraph(f"{'Commit exacto' if spanish else 'Exact commit'}: {_text(register.get('exact_commit_sha'))}", label),
+        paragraph(
+            f"{'Hallazgos con fuente exacta' if spanish else 'Exact-source findings'}: {len(code_findings)} · "
+            f"{'Hallazgos operativos o de contexto' if spanish else 'Operational/context findings'}: {len(operational)}",
+            body,
+        ),
     ]
     if len(code_findings) > len(rendered):
-        story.append(paragraph(f"The PDF renders {len(rendered)} highest-priority exact-source findings; {len(code_findings) - len(rendered)} additional structured records remain in JSON.", warning))
+        story.append(
+            paragraph(
+                (
+                    f"El PDF presenta {len(rendered)} hallazgos de mayor prioridad con fuente exacta; "
+                    f"{len(code_findings) - len(rendered)} registros estructurados adicionales permanecen en JSON."
+                    if spanish
+                    else f"The PDF renders {len(rendered)} highest-priority exact-source findings; {len(code_findings) - len(rendered)} additional structured records remain in JSON."
+                ),
+                warning,
+            )
+        )
     story.append(PageBreak())
 
     for index, item in enumerate(rendered, 1):
-        title = f"{_text(item.get('priority'))} · {_text(item.get('title'))} · {_text(item.get('finding_id'))}"
+        title = f"{_text(item.get('priority'))} · {localized(item.get('title'))} · {_text(item.get('finding_id'))}"
         story.append(paragraph(title, subheading))
-        verification = "<br/>".join(f"• {html.escape(value)}" for value in _bullet_values(item.get("verification"))) or "Requires exact-SHA rerun"
-        exit_criteria = "<br/>".join(f"• {html.escape(value)}" for value in _bullet_values(item.get("exit_criteria"))) or "Requires human disposition"
-        excerpt = _text(item.get("source_excerpt")) or "Not retained; open the exact immutable source location before editing."
+        verification = "<br/>".join(f"• {html.escape(localized(value))}" for value in _bullet_values(item.get("verification"))) or ("Requiere una nueva ejecución sobre el SHA exacto" if spanish else "Requires exact-SHA rerun")
+        exit_criteria = "<br/>".join(f"• {html.escape(localized(value))}" for value in _bullet_values(item.get("exit_criteria"))) or ("Requiere disposición humana" if spanish else "Requires human disposition")
+        excerpt = _text(item.get("source_excerpt")) or ("No conservado; abrir la ubicación inmutable exacta antes de editar." if spanish else "Not retained; open the exact immutable source location before editing.")
         rows = [
-            [paragraph("Exact source", label), paragraph(item.get("location"))],
-            [paragraph("Function / component", label), paragraph(item.get("symbol") or "Not retained")],
-            [paragraph("Analyzer / rule", label), paragraph(f"{_text(item.get('evidence_source'))} · {_text(item.get('rule_id')) or 'not retained'}")],
-            [paragraph("Evidence quality", label), paragraph(f"{_text(item.get('evidence_quality'))}; exact commit match={bool(item.get('exact_commit_match'))}")],
-            [paragraph("Problematic code", label), paragraph(item.get("problematic_code"))],
-            [paragraph("Bounded source excerpt", label), paragraph(excerpt)],
-            [paragraph("Observed evidence", label), paragraph(item.get("observed_evidence"))],
-            [paragraph("Technical consequence", label), paragraph(item.get("interpretation"))],
-            [paragraph("Business consequence", label), paragraph(item.get("business_impact"))],
-            [paragraph("Specific correction", label), paragraph(item.get("recommended_correction"))],
-            [paragraph("Verification", label), Paragraph(verification, body)],
-            [paragraph("Rollback", label), paragraph(item.get("rollback"))],
-            [paragraph("Exit criteria", label), Paragraph(exit_criteria, body)],
-            [paragraph("Owner / effort", label), paragraph(f"{_text(item.get('owner_role'))} · {_text(item.get('effort'))}")],
-            [paragraph("Disposition", label), paragraph("PROPOSED · EXACT SOURCE REVIEW AND HUMAN APPROVAL REQUIRED")],
+            [paragraph("Fuente exacta" if spanish else "Exact source", label), paragraph(item.get("location"))],
+            [paragraph("Función / componente" if spanish else "Function / component", label), paragraph(item.get("symbol") or ("No conservado" if spanish else "Not retained"))],
+            [paragraph("Analizador / regla" if spanish else "Analyzer / rule", label), paragraph(f"{_text(item.get('evidence_source'))} · {_text(item.get('rule_id')) or ('no conservada' if spanish else 'not retained')}")],
+            [paragraph("Calidad de la evidencia" if spanish else "Evidence quality", label), paragraph(f"{localized(item.get('evidence_quality'))}; {'coincidencia con el commit exacto' if spanish else 'exact commit match'}={'sí' if spanish and bool(item.get('exact_commit_match')) else 'no' if spanish else bool(item.get('exact_commit_match'))}")],
+            [paragraph("Código problemático" if spanish else "Problematic code", label), paragraph(item.get("problematic_code"))],
+            [paragraph("Extracto acotado del código fuente" if spanish else "Bounded source excerpt", label), paragraph(excerpt)],
+            [paragraph("Evidencia observada" if spanish else "Observed evidence", label), paragraph(localized(item.get("observed_evidence")))],
+            [paragraph("Consecuencia técnica" if spanish else "Technical consequence", label), paragraph(localized(item.get("interpretation")))],
+            [paragraph("Consecuencia comercial" if spanish else "Business consequence", label), paragraph(localized(item.get("business_impact")))],
+            [paragraph("Corrección específica" if spanish else "Specific correction", label), paragraph(localized(item.get("recommended_correction")))],
+            [paragraph("Verificación" if spanish else "Verification", label), Paragraph(verification, body)],
+            [paragraph("Reversión" if spanish else "Rollback", label), paragraph(localized(item.get("rollback")))],
+            [paragraph("Criterios de salida" if spanish else "Exit criteria", label), Paragraph(exit_criteria, body)],
+            [paragraph("Responsable / esfuerzo" if spanish else "Owner / effort", label), paragraph(f"{localized(item.get('owner_role'))} · {localized(item.get('effort'))}")],
+            [paragraph("Disposición" if spanish else "Disposition", label), paragraph("PROPUESTA · REVISIÓN DE FUENTE EXACTA Y APROBACIÓN HUMANA REQUERIDAS" if spanish else "PROPOSED · EXACT SOURCE REVIEW AND HUMAN APPROVAL REQUIRED")],
         ]
         table = Table(rows, colWidths=[1.45 * inch, 5.35 * inch], repeatRows=0)
         table.setStyle(TableStyle([
@@ -734,28 +772,38 @@ def render_finding_register_pdf(register: Mapping[str, Any], *, spanish: bool) -
         ]))
         story.append(table)
         story.append(Spacer(1, .12 * inch))
-        story.append(paragraph("Implementation sequence", subheading))
+        story.append(paragraph("Secuencia de implementación" if spanish else "Implementation sequence", subheading))
         anchor = _text(item.get("location"))
-        sequence = [
-            f"1. Open {anchor} at commit {_text(register.get('exact_commit_sha'))} and retain the reviewed source context.",
-            "2. Add or confirm characterization tests before editing.",
-            "3. Apply the smallest bounded correction without broadening scope.",
-            "4. Run targeted tests, applicable analyzers, and the full required-check suite.",
-            "5. Rerun NICO on the remediation commit and confirm the finding is resolved or explicitly dispositioned.",
-        ]
+        sequence = (
+            [
+                f"1. Abrir {anchor} en el commit {_text(register.get('exact_commit_sha'))} y conservar el contexto del código fuente revisado.",
+                "2. Agregar o confirmar pruebas de caracterización antes de editar.",
+                "3. Aplicar la corrección acotada más pequeña sin ampliar el alcance.",
+                "4. Ejecutar las pruebas dirigidas, los analizadores aplicables y el conjunto completo de verificaciones requeridas.",
+                "5. Volver a ejecutar NICO en el commit de remediación y confirmar que el hallazgo esté resuelto o tenga una disposición explícita.",
+            ]
+            if spanish
+            else [
+                f"1. Open {anchor} at commit {_text(register.get('exact_commit_sha'))} and retain the reviewed source context.",
+                "2. Add or confirm characterization tests before editing.",
+                "3. Apply the smallest bounded correction without broadening scope.",
+                "4. Run targeted tests, applicable analyzers, and the full required-check suite.",
+                "5. Rerun NICO on the remediation commit and confirm the finding is resolved or explicitly dispositioned.",
+            ]
+        )
         story.extend(paragraph(value, body) for value in sequence)
         if index < len(rendered) or operational:
             story.append(PageBreak())
 
     if operational:
-        story.append(paragraph("Operational and Context Findings", heading))
-        story.append(paragraph("These records do not claim a single source-code location. They remain decision-relevant and require the stated operational or dependency disposition.", body))
+        story.append(paragraph("Hallazgos operativos y de contexto" if spanish else "Operational and Context Findings", heading))
+        story.append(paragraph("Estos registros no atribuyen el hallazgo a una única ubicación de código fuente. Siguen siendo relevantes para decisiones y requieren la disposición operativa o de dependencias indicada." if spanish else "These records do not claim a single source-code location. They remain decision-relevant and require the stated operational or dependency disposition.", body))
         for item in operational[:25]:
-            story.append(paragraph(f"{_text(item.get('priority'))} · {_text(item.get('title'))} · {_text(item.get('finding_id'))}", subheading))
-            story.append(paragraph(f"Evidence: {_text(item.get('observed_evidence'))}", body))
-            story.append(paragraph(f"Action: {_text(item.get('recommended_correction'))}", body))
+            story.append(paragraph(f"{_text(item.get('priority'))} · {localized(item.get('title'))} · {_text(item.get('finding_id'))}", subheading))
+            story.append(paragraph(f"{'Evidencia' if spanish else 'Evidence'}: {localized(item.get('observed_evidence'))}", body))
+            story.append(paragraph(f"{'Acción' if spanish else 'Action'}: {localized(item.get('recommended_correction'))}", body))
 
-    document = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=.55 * inch, rightMargin=.55 * inch, topMargin=.55 * inch, bottomMargin=.6 * inch, invariant=1, title="NICO Finding and Remediation Register", author="NICO")
+    document = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=.55 * inch, rightMargin=.55 * inch, topMargin=.55 * inch, bottomMargin=.6 * inch, invariant=1, title="Registro de hallazgos y remediación NICO" if spanish else "NICO Finding and Remediation Register", author="NICO")
     document.build(story)
     return buffer.getvalue()
 

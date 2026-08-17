@@ -106,7 +106,7 @@ def test_zero_incomplete_count_is_retained_in_markdown_html_and_pdf() -> None:
     assert canonical_incomplete_analyzer_count(canonical) == 0
 
 
-def test_spanish_summary_is_localized_and_keeps_canonical_metric_label() -> None:
+def test_spanish_summary_is_localized_once_without_english_presentation_copy() -> None:
     install_comprehensive_incomplete_analyzer_summary()
     canonical = _canonical(0)
     markdown = completion.compact_client_markdown(
@@ -122,10 +122,10 @@ def test_spanish_summary_is_localized_and_keeps_canonical_metric_label() -> None
     )
     extracted = _extracted(pdf)
 
-    assert "Analizadores aplicables incompletos: 0" in markdown
-    assert "Incomplete applicable analyzers: 0" in markdown
-    assert "Analizadores aplicables incompletos: 0" in extracted
-    assert "Incomplete applicable analyzers: 0" in extracted
+    assert markdown.count("Analizadores aplicables incompletos: 0") == 1
+    assert "Incomplete applicable analyzers: 0" not in markdown
+    assert extracted.count("Analizadores aplicables incompletos: 0") == 1
+    assert "Incomplete applicable analyzers: 0" not in extracted
 
 
 def test_nonzero_incomplete_count_is_not_silently_rewritten_to_zero() -> None:

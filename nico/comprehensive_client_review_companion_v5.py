@@ -19,6 +19,77 @@ COMPANION_PAGE_COUNT = 16
 SECTION_COUNT = 8
 _MARKER = "__nico_comprehensive_review_companion_v5__"
 
+# These sentences are renderer-owned presentation copy.  Spanish is derived
+# from the English section contract so both locales always retain the same
+# fields, list cardinality, and decision boundary.  Missing translations fail
+# closed instead of silently publishing English or a shortened Spanish shape.
+_SPANISH_REVIEW_DETAIL_TEXT = {
+    "Not assessed — runtime evidence required": "No evaluado — se requiere evidencia de ejecución",
+    "Repository tests and static evidence were retained, but critical user journeys were not executed in an approved client runtime environment.": "Se conservaron las pruebas del repositorio y la evidencia estática, pero los recorridos críticos de usuario no se ejecutaron en un entorno de ejecución aprobado por el cliente.",
+    "Repository-level test assets and technical controls can be reviewed.": "Pueden revisarse los activos de prueba y los controles técnicos del repositorio.",
+    "No terminal scanner execution failure is being treated as functional acceptance.": "Ningún fallo terminal de ejecución de analizadores se trata como aceptación funcional.",
+    "Production user journeys, browser and device behavior, integration behavior, and stakeholder acceptance are not proven.": "No se han demostrado los recorridos de usuario en producción, el comportamiento de navegadores y dispositivos, el comportamiento de las integraciones ni la aceptación de las partes interesadas.",
+    "Approved critical journeys, runtime environment, browser and device scope, integration endpoints, and acceptance criteria.": "Recorridos críticos aprobados, entorno de ejecución, alcance de navegadores y dispositivos, endpoints de integración y criterios de aceptación.",
+    "Keep functional acceptance open. Execute the approved journey matrix and retain results before authorizing client delivery.": "Mantener abierta la aceptación funcional. Ejecutar la matriz de recorridos aprobada y conservar los resultados antes de autorizar la entrega al cliente.",
+    "Repository indicators assessed — runtime parity not assessed": "Indicadores del repositorio evaluados — paridad de ejecución no evaluada",
+    "Repository configuration and implementation indicators were reviewed. Actual feature, runtime, device, permission, and localization parity were not demonstrated.": "Se revisaron los indicadores de configuración e implementación del repositorio. No se demostró la paridad real de funciones, ejecución, dispositivos, permisos y localización.",
+    "Repository-level platform indicators can identify likely shared and platform-specific implementation areas.": "Los indicadores de plataforma del repositorio pueden identificar áreas de implementación probablemente compartidas y específicas de cada plataforma.",
+    "Runtime platform parity, device parity, permission parity, and content or localization parity are not established.": "No se ha establecido la paridad de plataformas en ejecución, dispositivos, permisos, contenido o localización.",
+    "Platforms in scope, runnable builds, device matrix, feature matrix, permission matrix, and approved parity acceptance criteria.": "Plataformas incluidas en el alcance, compilaciones ejecutables, matriz de dispositivos, matriz de funciones, matriz de permisos y criterios de aceptación de paridad aprobados.",
+    "Record repository indicators as assessed and leave runtime platform parity not assessed until device evidence is supplied.": "Registrar los indicadores del repositorio como evaluados y mantener la paridad de plataformas en ejecución como no evaluada hasta que se aporte evidencia de dispositivos.",
+    "Limited — workflow history is operational context only": "Limitado — el historial de flujos de trabajo es solo contexto operativo",
+    "Historical workflow outcomes were retained separately from immutable technical scoring. Incident, rollback, deployment, and recovery-time evidence remain incomplete unless supplied directly.": "Los resultados históricos de los flujos de trabajo se conservaron separados de la puntuación técnica inmutable. La evidencia de incidentes, reversiones, despliegues y tiempos de recuperación permanece incompleta salvo que se aporte directamente.",
+    "Observed workflow outcome counts can be described as mutable operational context.": "Los conteos observados de resultados de flujos de trabajo pueden describirse como contexto operativo mutable.",
+    "Immutable CI configuration maturity remains separate from historical outcomes.": "La madurez de la configuración inmutable de CI permanece separada de los resultados históricos.",
+    "Change-failure rate, incident severity, rollback effectiveness, and recovery time cannot be confirmed from workflow counts alone.": "La tasa de fallos de cambio, la severidad de los incidentes, la eficacia de las reversiones y el tiempo de recuperación no pueden confirmarse solo con los conteos de flujos de trabajo.",
+    "Incident records, deployment records, cancellation reasons, rollback records, and measured recovery times.": "Registros de incidentes, registros de despliegues, motivos de cancelación, registros de reversiones y tiempos de recuperación medidos.",
+    "Do not score historical activity as immutable maturity. Review the complete outcome taxonomy and request incident evidence for operational conclusions.": "No puntuar la actividad histórica como madurez inmutable. Revisar la taxonomía completa de resultados y solicitar evidencia de incidentes para formular conclusiones operativas.",
+    "Not assessed — authoritative requirements not supplied": "No evaluado — no se aportaron requisitos autoritativos",
+    "No approved specification, ADR set, contractual acceptance matrix, or authoritative roadmap commitment was retained as client evidence.": "No se conservó como evidencia del cliente ninguna especificación aprobada, conjunto de ADR, matriz de aceptación contractual ni compromiso autoritativo de hoja de ruta.",
+    "Findings can be tied to exact source locations and technical verification criteria.": "Los hallazgos pueden vincularse con ubicaciones exactas del código fuente y criterios técnicos de verificación.",
+    "Findings cannot be claimed as contractual requirement failures or roadmap breaches without an authoritative requirements source.": "Los hallazgos no pueden declararse incumplimientos de requisitos contractuales ni de la hoja de ruta sin una fuente autoritativa de requisitos.",
+    "Approved specifications, ADRs, acceptance criteria, contractual requirements, and requirement owners.": "Especificaciones aprobadas, ADR, criterios de aceptación, requisitos contractuales y responsables de los requisitos.",
+    "Treat current findings as technical observations. Build a requirement-to-finding matrix after the client supplies the authoritative requirements source.": "Tratar los hallazgos actuales como observaciones técnicas. Crear una matriz de requisitos a hallazgos cuando el cliente aporte la fuente autoritativa de requisitos.",
+    "Not assessed — stakeholder authority and objectives not supplied": "No evaluado — no se aportaron la autoridad ni los objetivos de las partes interesadas",
+    "Business priorities, deadline authority, budget authority, success measures, and residual-risk ownership were not retained in the repository evidence package.": "Las prioridades comerciales, la autoridad sobre plazos y presupuesto, las medidas de éxito y la responsabilidad del riesgo residual no se conservaron en el paquete de evidencia del repositorio.",
+    "Technical evidence can support a stakeholder decision once the business context is supplied.": "La evidencia técnica puede respaldar una decisión de las partes interesadas cuando se aporte el contexto comercial.",
+    "The system cannot approve priorities, budget, delivery dates, or residual risk on behalf of the client.": "El sistema no puede aprobar prioridades, presupuesto, fechas de entrega ni riesgo residual en nombre del cliente.",
+    "Decision owner, technical acceptance owner, budget owner, deadlines, constraints, success measures, and residual-risk authority.": "Responsable de la decisión, responsable de la aceptación técnica, responsable del presupuesto, plazos, restricciones, medidas de éxito y autoridad sobre el riesgo residual.",
+    "Keep recommendations advisory until authorized stakeholders confirm objectives, constraints, and acceptance authority.": "Mantener las recomendaciones como asesoría hasta que las partes interesadas autorizadas confirmen los objetivos, las restricciones y la autoridad de aceptación.",
+    "Complete automated briefing — human disposition pending": "Resumen automatizado completo — disposición humana pendiente",
+    "The exact-source finding register and bounded executive priorities are retained for human review. Automated prioritization is not client acceptance.": "El registro de hallazgos con ubicaciones exactas del código fuente y las prioridades ejecutivas acotadas se conservan para revisión humana. La priorización automatizada no constituye aceptación del cliente.",
+    "Exact-source technical findings and verification criteria are available for review.": "Los hallazgos técnicos con ubicaciones exactas del código fuente y los criterios de verificación están disponibles para revisión.",
+    "The executive brief can prioritize review work without authorizing remediation or delivery.": "El resumen ejecutivo puede priorizar el trabajo de revisión sin autorizar la remediación ni la entrega.",
+    "Residual risk, finding acceptance, remediation ownership, and delivery authorization remain human decisions.": "El riesgo residual, la aceptación de hallazgos, la responsabilidad de la remediación y la autorización de entrega siguen siendo decisiones humanas.",
+    "Finding disposition, residual-risk owner, remediation owner, target window, and acceptance evidence for each accepted priority.": "Disposición del hallazgo, responsable del riesgo residual, responsable de la remediación, ventana objetivo y evidencia de aceptación para cada prioridad aceptada.",
+    "Disposition each executive finding and retain the reviewer, rationale, owner, and verification artifact before approval.": "Determinar la disposición de cada hallazgo ejecutivo y conservar el revisor, el fundamento, el responsable y el artefacto de verificación antes de la aprobación.",
+    "Framework only — pending stakeholder validation": "Solo marco — pendiente de validación de las partes interesadas",
+    "A six-month sequencing framework may be derived from technical evidence, but dates, owners, dependencies, commitments, and budget are not approved automatically.": "Puede derivarse de la evidencia técnica un marco de secuenciación de seis meses, pero las fechas, los responsables, las dependencias, los compromisos y el presupuesto no se aprueban automáticamente.",
+    "Technical work can be grouped into 0–30, 31–90, and 91–180 day planning windows.": "El trabajo técnico puede agruparse en ventanas de planificación de 0–30, 31–90 y 91–180 días.",
+    "Calendar dates, named owners, contractual commitments, labor rates, and budget cannot be finalized without stakeholder approval.": "Las fechas de calendario, los responsables designados, los compromisos contractuales, las tarifas laborales y el presupuesto no pueden finalizarse sin la aprobación de las partes interesadas.",
+    "Approved priorities, dependencies, owner roles, acceptance criteria, target dates, capacity, and budget authority.": "Prioridades aprobadas, dependencias, roles responsables, criterios de aceptación, fechas objetivo, capacidad y autoridad presupuestaria.",
+    "Label the output a six-month roadmap framework until an authorized stakeholder approves sequencing, dates, owners, and acceptance criteria.": "Etiquetar el resultado como marco de hoja de ruta de seis meses hasta que una parte interesada autorizada apruebe la secuenciación, las fechas, los responsables y los criterios de aceptación.",
+    "Framework only — scope and commercial inputs required": "Solo marco — se requieren el alcance y los insumos comerciales",
+    "Role sequencing can be suggested from the technical work, but named people, capacity, contract structure, geographic mix, rates, and budget ceilings were not supplied.": "La secuenciación de roles puede sugerirse a partir del trabajo técnico, pero no se aportaron personas designadas, capacidad, estructura contractual, distribución geográfica, tarifas ni límites presupuestarios.",
+    "Required role types and technical sequencing can be proposed as planning inputs.": "Los tipos de roles requeridos y la secuenciación técnica pueden proponerse como insumos de planificación.",
+    "Headcount, vendor selection, labor rates, total cost, and budget approval cannot be inferred from repository evidence.": "La dotación, la selección de proveedores, las tarifas laborales, el costo total y la aprobación del presupuesto no pueden inferirse de la evidencia del repositorio.",
+    "Approved scope, capacity, delivery model, geographic constraints, rates, budget ceiling, and procurement authority.": "Alcance aprobado, capacidad, modelo de entrega, restricciones geográficas, tarifas, límite presupuestario y autoridad de adquisiciones.",
+    "Keep staffing and cost values uncommitted until the client supplies commercial inputs and approves the roadmap scope.": "Mantener sin compromiso los valores de personal y costo hasta que el cliente aporte los insumos comerciales y apruebe el alcance de la hoja de ruta.",
+}
+
+
+def _spanish_review_detail(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _spanish_review_detail(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_spanish_review_detail(item) for item in value]
+    if isinstance(value, str):
+        try:
+            return _SPANISH_REVIEW_DETAIL_TEXT[value]
+        except KeyError as exc:
+            raise ValueError(f"missing Spanish review-detail translation: {value}") from exc
+    return deepcopy(value)
+
 
 def _text(value: Any, limit: int = 1400) -> str:
     normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
@@ -47,6 +118,146 @@ def _values(value: Any, *, limit: int = 8, item_limit: int = 850) -> list[str]:
             continue
         seen.add(key)
         output.append(item)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def _spanish_planning_values(
+    value: Any,
+    *,
+    kind: str,
+    limit: int = 6,
+    item_limit: int = 850,
+) -> list[str]:
+    """Render retained planning mappings as client prose, never Python reprs."""
+
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation,
+    )
+
+    if isinstance(value, Mapping):
+        records = [value]
+    elif isinstance(value, (list, tuple)):
+        records = list(value)
+    else:
+        records = [value] if value not in (None, "") else []
+
+    output: list[str] = []
+    for raw in records:
+        if not isinstance(raw, Mapping):
+            text = _text(_translate_presentation(raw), item_limit)
+            if text:
+                output.append(text)
+            continue
+
+        if kind == "roadmap":
+            parts: list[str] = []
+            window = _text(raw.get("window") or raw.get("title"), 160)
+            objective = _text(raw.get("objective") or raw.get("summary"), 360)
+            if window:
+                parts.append(f"Ventana: {_translate_presentation(window)}")
+            if objective:
+                parts.append(f"Objetivo: {_translate_presentation(objective)}")
+            packages: list[str] = []
+            for work in raw.get("work_packages") or []:
+                if not isinstance(work, Mapping):
+                    translated = _text(_translate_presentation(work), 320)
+                    if translated:
+                        packages.append(translated)
+                    continue
+                work_id = _text(
+                    work.get("work_package_id")
+                    or work.get("id")
+                    or work.get("finding_id"),
+                    120,
+                )
+                aliases = [
+                    _text(item, 120)
+                    for item in work.get("finding_aliases") or []
+                    if _text(item, 120)
+                ]
+                title = _text(work.get("title") or work.get("objective"), 300)
+                location = _text(
+                    work.get("exact_source")
+                    or work.get("location")
+                    or work.get("path"),
+                    240,
+                )
+                status = {
+                    "open": "abierto",
+                    "blocked": "bloqueado",
+                    "closed": "cerrado",
+                    "review_required": "requiere revisión",
+                }.get(_text(work.get("status"), 80).casefold(), _translate_presentation(work.get("status")))
+                category = {
+                    "architecture": "arquitectura",
+                    "code": "código",
+                    "dependency": "dependencias",
+                    "security": "seguridad",
+                    "secrets": "secretos",
+                    "static_analysis": "análisis estático",
+                    "velocity": "velocidad",
+                }.get(
+                    _text(work.get("category"), 80).casefold(),
+                    _translate_presentation(work.get("category")),
+                )
+                fields = [
+                    f"ID: {work_id}" if work_id else "",
+                    f"Alias: {', '.join(aliases)}" if aliases else "",
+                    f"Prioridad: {_text(work.get('priority'), 40)}" if work.get("priority") else "",
+                    f"Categoría: {category}" if category else "",
+                    f"Estado: {status}" if status else "",
+                    f"Título: {_translate_presentation(title)}" if title else "",
+                    f"Fuente exacta: {location}" if location else "",
+                    f"Ruta: {_text(work.get('path'), 240)}" if work.get("path") else "",
+                    f"Línea: {work.get('line')}" if work.get("line") not in (None, "") else "",
+                    f"ID de regla: {_text(work.get('rule_id'), 120)}" if work.get("rule_id") else "",
+                    f"Familia: {_text(work.get('finding_family'), 120)}" if work.get("finding_family") else "",
+                    f"Hecho: {_translate_presentation(work.get('fact'))}" if work.get("fact") else "",
+                    f"Interpretación: {_translate_presentation(work.get('interpretation'))}" if work.get("interpretation") else "",
+                    f"Impacto: {_translate_presentation(work.get('business_impact'))}" if work.get("business_impact") else "",
+                    f"Recomendación: {_translate_presentation(work.get('recommendation'))}" if work.get("recommendation") else "",
+                ]
+                descriptor = " · ".join(item for item in fields if item)
+                if descriptor:
+                    packages.append(descriptor)
+            if packages:
+                parts.append(
+                    ("Paquete de trabajo: " if len(packages) == 1 else "Paquetes de trabajo: ")
+                    + "; ".join(packages)
+                )
+            rendered = " · ".join(parts)
+        else:
+            role = _text(raw.get("role") or raw.get("owner_role"), 200)
+            focus = _text(
+                raw.get("focus")
+                or raw.get("responsibility")
+                or raw.get("objective"),
+                420,
+            )
+            sequence = raw.get("sequence")
+            parts = []
+            if role:
+                parts.append(f"Rol: {_translate_presentation(role)}")
+            if sequence not in (None, ""):
+                parts.append(f"Secuencia: {sequence}")
+            if focus:
+                parts.append(f"Enfoque: {_translate_presentation(focus)}")
+            rendered = " · ".join(parts)
+
+        if len(rendered) > item_limit:
+            rendered = rendered[: item_limit - 3].rstrip()
+            clause_boundary = max(rendered.rfind("; "), rendered.rfind(". "))
+            if clause_boundary >= item_limit // 2:
+                rendered = rendered[:clause_boundary].rstrip(" ·;,:-")
+            elif " " in rendered:
+                rendered = rendered.rsplit(" ", 1)[0].rstrip(" ·;,:-")
+            rendered += "..."
+        else:
+            rendered = rendered.strip()
+        if rendered:
+            output.append(rendered)
         if len(output) >= limit:
             break
     return output
@@ -227,75 +438,7 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
     }
     if not spanish:
         return deepcopy(en[section_id])
-
-    # Spanish keeps the same evidence boundary without inventing translated facts.
-    es: dict[str, dict[str, Any]] = {
-        "functional_qa": {
-            "status": "No evaluado — se requiere evidencia de ejecución",
-            "summary": "Se conservaron pruebas del repositorio y evidencia estática, pero no se ejecutaron recorridos críticos en un entorno aprobado por el cliente.",
-            "can_conclude": ["Pueden revisarse los controles técnicos y las pruebas del repositorio."],
-            "cannot_conclude": ["No se ha demostrado la aceptación funcional, de navegador, dispositivo o integración."],
-            "required_input": ["Recorridos críticos, entorno, matriz de navegador y dispositivo, integraciones y criterios de aceptación aprobados."],
-            "recommended_decision": "Mantener abierta la aceptación funcional hasta ejecutar y conservar la matriz aprobada.",
-        },
-        "platform_parity": {
-            "status": "Indicadores del repositorio evaluados — paridad de ejecución no evaluada",
-            "summary": "Se revisaron indicadores de configuración e implementación. No se demostró la paridad real de funciones, ejecución, dispositivos, permisos o localización.",
-            "can_conclude": ["Los indicadores del repositorio pueden señalar áreas compartidas y específicas de plataforma."],
-            "cannot_conclude": ["No se ha establecido la paridad de ejecución, dispositivo, permisos o contenido."],
-            "required_input": ["Plataformas, compilaciones, matriz de dispositivos, funciones, permisos y criterios de paridad aprobados."],
-            "recommended_decision": "Registrar los indicadores del repositorio como evaluados y mantener la paridad de ejecución como no evaluada.",
-        },
-        "historical_trends_and_change_failure": {
-            "status": "Limitado — el historial es contexto operativo",
-            "summary": "Los resultados históricos se conservan separados de la puntuación técnica inmutable. Faltan incidentes, reversión y tiempos de recuperación medidos.",
-            "can_conclude": ["Los resultados observados pueden describirse como contexto operativo mutable."],
-            "cannot_conclude": ["No pueden confirmarse la tasa de fallos de cambio, la severidad de incidentes ni el tiempo de recuperación."],
-            "required_input": ["Incidentes, despliegues, cancelaciones, reversiones y tiempos de recuperación."],
-            "recommended_decision": "No puntuar la actividad histórica como madurez inmutable y solicitar evidencia de incidentes.",
-        },
-        "requirements_traceability": {
-            "status": "No evaluado — no se aportaron requisitos autoritativos",
-            "summary": "No se conservó una especificación, ADR o matriz contractual aprobada.",
-            "can_conclude": ["Los hallazgos pueden vincularse con ubicaciones exactas y criterios técnicos."],
-            "cannot_conclude": ["No pueden declararse incumplimientos contractuales sin una fuente autoritativa de requisitos."],
-            "required_input": ["Especificaciones, ADR, criterios, requisitos contractuales y responsables aprobados."],
-            "recommended_decision": "Tratar los hallazgos como observaciones técnicas hasta recibir los requisitos autoritativos.",
-        },
-        "stakeholder_and_business_alignment": {
-            "status": "No evaluado — faltan autoridad y objetivos",
-            "summary": "No se aportaron prioridades, autoridad presupuestaria, plazos, medidas de éxito ni responsable del riesgo residual.",
-            "can_conclude": ["La evidencia técnica puede apoyar una decisión cuando se aporte el contexto comercial."],
-            "cannot_conclude": ["El sistema no puede aprobar prioridades, presupuesto, fechas o riesgo residual por el cliente."],
-            "required_input": ["Responsables de decisión, aceptación, presupuesto, plazos, restricciones y medidas de éxito."],
-            "recommended_decision": "Mantener las recomendaciones como asesoría hasta confirmar autoridad y objetivos.",
-        },
-        "risk_reduction_and_executive_briefing": {
-            "status": "Resumen automatizado completo — disposición humana pendiente",
-            "summary": "El registro con ubicación exacta y las prioridades ejecutivas están disponibles para revisión humana.",
-            "can_conclude": ["Los hallazgos y criterios de verificación están disponibles para revisión."],
-            "cannot_conclude": ["La aceptación del riesgo, responsables y autorización de entrega siguen siendo decisiones humanas."],
-            "required_input": ["Disposición, responsable, ventana objetivo y evidencia de aceptación para cada prioridad."],
-            "recommended_decision": "Registrar disposición, fundamento, responsable y evidencia antes de aprobar.",
-        },
-        "six_month_roadmap": {
-            "status": "Solo marco — pendiente de validación",
-            "summary": "Puede derivarse un marco de seis meses, pero fechas, responsables, dependencias, compromisos y presupuesto no se aprueban automáticamente.",
-            "can_conclude": ["El trabajo puede agruparse en ventanas de 0–30, 31–90 y 91–180 días."],
-            "cannot_conclude": ["No pueden finalizarse fechas, responsables, compromisos, tarifas ni presupuesto sin aprobación."],
-            "required_input": ["Prioridades, dependencias, roles, criterios, fechas, capacidad y presupuesto aprobados."],
-            "recommended_decision": "Etiquetar el resultado como marco hasta que un responsable autorizado lo apruebe.",
-        },
-        "staffing_sequencing_and_cost": {
-            "status": "Solo marco — se requieren alcance e insumos comerciales",
-            "summary": "Puede proponerse la secuencia de roles, pero no se aportaron personas, capacidad, contrato, ubicación, tarifas ni límites presupuestarios.",
-            "can_conclude": ["Pueden proponerse tipos de roles y secuencia técnica."],
-            "cannot_conclude": ["No pueden inferirse plantilla, proveedor, tarifas, costo total ni presupuesto."],
-            "required_input": ["Alcance, capacidad, modelo de entrega, restricciones, tarifas, presupuesto y autoridad de compra."],
-            "recommended_decision": "Mantener personal y costos sin compromiso hasta recibir y aprobar los insumos comerciales.",
-        },
-    }
-    return deepcopy(es[section_id])
+    return _spanish_review_detail(en[section_id])
 
 
 def substantive_review_sections(
@@ -341,10 +484,18 @@ def substantive_review_sections(
                 )
         elif section["id"] == "six_month_roadmap":
             roadmap = canonical.get("roadmap") or _assessment(canonical).get("roadmap") or []
-            evidence = _values(roadmap, limit=6) or evidence
+            evidence = (
+                _spanish_planning_values(roadmap, kind="roadmap", limit=6)
+                if spanish
+                else _values(roadmap, limit=6)
+            ) or evidence
         elif section["id"] == "staffing_sequencing_and_cost":
             staffing = canonical.get("staffing_plan") or _assessment(canonical).get("staffing_plan") or []
-            evidence = _values(staffing, limit=6) or evidence
+            evidence = (
+                _spanish_planning_values(staffing, kind="staffing", limit=6)
+                if spanish
+                else _values(staffing, limit=6)
+            ) or evidence
 
         if not evidence:
             evidence = [
@@ -403,7 +554,7 @@ def merge_substantive_review_markdown(
             output = _remove_heading_section(output, heading)
 
     lines = [
-        "## Paquete de revisión integral" if spanish else "## Comprehensive Client Review",
+        "## Revisión integral del cliente" if spanish else "## Comprehensive Client Review",
         "",
         (
             "Cada sección separa evidencia retenida, conclusiones permitidas, límites, insumos requeridos y la decisión humana pendiente."
@@ -418,7 +569,7 @@ def merge_substantive_review_markdown(
         "evidence": "Evidencia retenida" if spanish else "Retained evidence",
         "can": "Puede concluirse" if spanish else "What can be concluded",
         "cannot": "No puede concluirse" if spanish else "What cannot be concluded",
-        "input": "Insumos requeridos" if spanish else "Required client input",
+        "input": "Insumos requeridos del cliente" if spanish else "Required client input",
         "decision": "Decisión recomendada" if spanish else "Recommended decision",
         "review": "Disposición del revisor" if spanish else "Reviewer disposition",
     }
@@ -541,7 +692,18 @@ def render_substantive_review_pdf(
     )
 
     def p(value: Any, style: ParagraphStyle = body, limit: int = 1000) -> Paragraph:
-        return Paragraph(html.escape(_text(value, limit)), style)
+        if not spanish:
+            return Paragraph(html.escape(_text(value, limit)), style)
+        rendered = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
+        if len(rendered) > limit:
+            rendered = rendered[: limit - 3].rstrip()
+            clause_boundary = max(rendered.rfind("; "), rendered.rfind(". "))
+            if clause_boundary >= limit // 2:
+                rendered = rendered[:clause_boundary].rstrip(" ·;,:-")
+            elif " " in rendered:
+                rendered = rendered.rsplit(" ", 1)[0].rstrip(" ·;,:-")
+            rendered += "..."
+        return Paragraph(html.escape(rendered), style)
 
     page_labels: dict[int, tuple[int, int]] = {}
     for section in sections:
@@ -562,12 +724,20 @@ def render_substantive_review_pdf(
         canvas.drawString(
             .55 * inch,
             .35 * inch,
-            "NICO | Comprehensive client review | automated draft",
+            (
+                "NICO | revisión integral del cliente | borrador automatizado"
+                if spanish
+                else "NICO | Comprehensive client review | automated draft"
+            ),
         )
         canvas.drawRightString(
             7.95 * inch,
             .35 * inch,
-            f"Section {section_number} of {SECTION_COUNT} | Page {section_page} of 2",
+            (
+                f"Sección {section_number} de {SECTION_COUNT} | Página {section_page} de 2"
+                if spanish
+                else f"Section {section_number} of {SECTION_COUNT} | Page {section_page} of 2"
+            ),
         )
         canvas.restoreState()
 
@@ -610,7 +780,7 @@ def render_substantive_review_pdf(
         )
         story.extend([status_table, p("Evidencia retenida" if spanish else "Retained evidence", heading)])
         for item in section["evidence"][:6]:
-            story.append(p(f"- {item}", body, 650))
+            story.append(p(f"- {item}", body, 900 if spanish else 650))
         if section["findings"]:
             story.append(p("Observaciones prioritarias" if spanish else "Priority observations", heading))
             for item in section["findings"][:4]:
@@ -655,7 +825,7 @@ def render_substantive_review_pdf(
             story.append(p("Limitaciones retenidas" if spanish else "Retained limitations", heading))
             for item in section["limitations"][:5]:
                 story.append(p(f"- {item}", body, 650))
-        story.append(p("Insumos requeridos" if spanish else "Required client input", heading))
+        story.append(p("Insumos requeridos del cliente" if spanish else "Required client input", heading))
         for item in section["required_input"]:
             story.append(p(f"- {item}", body, 650))
         story.extend(

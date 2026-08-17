@@ -221,9 +221,17 @@ def _delivery_boundary_present(markdown: str) -> bool:
             "CLIENT DELIVERY BLOCKED",
             "CLIENT DELIVERY IS BLOCKED",
             "CLIENT DELIVERY NOT AUTHORIZED",
+            "ENTREGA AL CLIENTE BLOQUEADA",
+            "ENTREGA AL CLIENTE NO AUTORIZADA",
         )
     )
-    pending_approval = "PENDING HUMAN APPROVAL" in upper
+    pending_approval = any(
+        phrase in upper
+        for phrase in (
+            "PENDING HUMAN APPROVAL",
+            "APROBACIÓN HUMANA PENDIENTE",
+        )
+    )
     return blocked and pending_approval
 
 

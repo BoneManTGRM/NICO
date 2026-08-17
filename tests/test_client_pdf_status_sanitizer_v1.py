@@ -6,7 +6,10 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
+from nico.client_pdf_status_sanitizer_v1 import (
+    _drop_internal_page,
+    sanitize_client_pdf_status,
+)
 
 
 def _pdf(*pages: list[str]) -> bytes:
@@ -82,3 +85,14 @@ def test_status_sanitizer_rewrites_stale_authorized_cover_and_empty_copy() -> No
     assert "a roadmap framework" in extracted
     assert "No structured item was retained." not in extracted
     assert "No additional structured finding detail was retained" in extracted
+
+
+def test_current_spanish_client_headings_prevent_internal_page_drop() -> None:
+    for heading in (
+        "Indice completo de fuentes exactas",
+        "Resumen de evidencia del cliente",
+        "Puerta de revision y aceptacion humana",
+    ):
+        assert _drop_internal_page(
+            f"{heading}\nartifact_schema\nsnapshot."
+        ) is False

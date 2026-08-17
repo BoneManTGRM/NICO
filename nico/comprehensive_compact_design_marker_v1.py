@@ -29,7 +29,7 @@ _DESIGN_MARKER_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "Evidence Package Summary",
             "Client Evidence Summary",
             "Resumen del paquete de evidencia",
-            "Resumen de evidencia para revisión",
+            "Resumen de evidencia del cliente",
             "Resumen de evidencia para revision",
         ),
     ),

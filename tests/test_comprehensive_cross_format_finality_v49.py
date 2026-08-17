@@ -12,6 +12,7 @@ from nico.comprehensive_automated_draft_cross_format_v1 import (
 )
 from nico.comprehensive_cross_format_finality_v49 import (
     VERSION,
+    _delivery_boundary_present,
     install_comprehensive_cross_format_finality_v49,
     synchronize_comprehensive_score_truth,
 )
@@ -173,6 +174,13 @@ def test_current_automated_draft_boundary_and_score_truth_pass() -> None:
     assert "CLIENT DELIVERY NOT AUTHORIZED" not in _package()["markdown"]
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
+
+
+def test_spanish_delivery_boundary_is_equivalent_to_english_boundary() -> None:
+    assert _delivery_boundary_present(
+        "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · "
+        "ENTREGA AL CLIENTE BLOQUEADA"
+    ) is True
 
 
 def test_execution_wrapper_envelope_does_not_hide_the_generated_report_package() -> None:

@@ -245,7 +245,6 @@ def _existing_cover_page(text: str) -> bool:
         "paquete de revisión técnica basado en evidencia",
         "canonical score summary",
         "resumen canónico de puntuación",
-        "evaluación técnica integral",
         "completed an authorized comprehensive technical assessment",
         "completó una evaluación técnica integral autorizada",
     )

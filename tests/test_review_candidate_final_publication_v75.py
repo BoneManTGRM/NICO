@@ -155,7 +155,7 @@ def test_spanish_repair_preserves_evidence_summary_and_adds_dedicated_truth() ->
     assert "Hallazgos materiales confirmados: 0" in repaired
     assert (
         "Efecto en puntuación: solo aseguramiento mientras la disposición humana "
-        "siga pendiente; el triage técnico de NICO está completo."
+        "siga pendiente; el triaje técnico de NICO está completo."
     ) in repaired
     assert "Candidatos pendientes de revisión" not in repaired
     assert "solo aseguramiento hasta completar la revisión" not in repaired

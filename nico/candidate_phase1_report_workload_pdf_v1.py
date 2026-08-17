@@ -105,24 +105,77 @@ def render_phase1_evidence_review_gate_pdf(
         return value
 
     boundary = projection.ES_BOUNDARY if spanish else projection.EN_BOUNDARY
+    labels = (
+        {
+            "field": "Campo",
+            "value": "Valor",
+            "repository": "Repositorio",
+            "exact_commit": "Commit exacto",
+            "run_id": "ID de ejecución",
+            "technical_maturity": "Madurez técnica",
+            "evidence_adjusted": "Ajuste por evidencia",
+            "reviewer_workload": "Métrica de carga del revisor",
+            "stable": "Arrastre estable",
+            "fresh": "Nuevo triaje técnico",
+            "individual": "Candidatos que requieren atención individual",
+            "grouped_candidates": "Candidatos cubiertos por revisión agrupada",
+            "grouped_clusters": "Grupos para revisión humana conjunta",
+            "work_units": "Unidades de trabajo de revisión humana",
+            "qc_pool": "Conjunto de muestra para control de calidad",
+            "category": "Categoría",
+            "raw": "Bruto",
+            "confirmed": "Confirmado",
+            "review_required": "Requiere revisión",
+            "state": "Estado",
+            "candidate_state": "Estado canónico de candidatos",
+            "client_boundary": "Límite del paquete del cliente",
+            "exact_findings": "Hallazgos con fuente exacta en el índice",
+        }
+        if spanish
+        else {
+            "field": "Field",
+            "value": "Value",
+            "repository": "Repository",
+            "exact_commit": "Exact commit",
+            "run_id": "Run ID",
+            "technical_maturity": "Technical maturity",
+            "evidence_adjusted": "Evidence-Adjusted",
+            "reviewer_workload": "Reviewer workload metric",
+            "stable": "Stable carry-forward",
+            "fresh": "Fresh technical triage",
+            "individual": "Candidates requiring individual attention",
+            "grouped_candidates": "Candidates covered by grouped review",
+            "grouped_clusters": "Grouped human-review clusters",
+            "work_units": "Human review work units",
+            "qc_pool": "Quality-control sample pool",
+            "category": "Category",
+            "raw": "Raw",
+            "confirmed": "Confirmed",
+            "review_required": "Review required",
+            "state": "State",
+            "candidate_state": "Canonical candidate state",
+            "client_boundary": "Client package boundary",
+            "exact_findings": "Exact-source findings in index",
+        }
+    )
     story: list[Any] = [
-        p("Resumen de evidencia para revisión" if spanish else "Client Evidence Summary", h1),
+        p("Resumen de evidencia del cliente" if spanish else "Client Evidence Summary", h1),
         p(boundary, warning),
         table(
             [
-                ["Field", "Value"],
-                ["Repository", _text(identity.get("repository"))],
-                ["Exact commit", _text(identity.get("commit_sha"))],
-                ["Run ID", _text(identity.get("run_id"))],
-                ["Technical maturity", f"{int(technical_score)}/100" if isinstance(technical_score, (int, float)) else "NOT SCORED"],
-                ["Evidence-Adjusted", f"{int(adjusted_score)}/100" if isinstance(adjusted_score, (int, float)) else "NOT SCORED"],
+                [labels["field"], labels["value"]],
+                [labels["repository"], _text(identity.get("repository"))],
+                [labels["exact_commit"], _text(identity.get("commit_sha"))],
+                [labels["run_id"], _text(identity.get("run_id"))],
+                [labels["technical_maturity"], f"{int(technical_score)}/100" if isinstance(technical_score, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
+                [labels["evidence_adjusted"], f"{int(adjusted_score)}/100" if isinstance(adjusted_score, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
             ],
             [1.55 * inch, 5.85 * inch],
         ),
-        p("Triage técnico y disposición humana" if spanish else "Technical triage and human disposition are separate", h2),
+        p("El triaje técnico y la disposición humana están separados" if spanish else "Technical triage and human disposition are separate", h2),
         p(
             (
-                f"Se completaron {completed_scanners} de {len(scanners)} analizadores. NICO completó triage técnico para {completed} de {total} candidatos ({coverage}%). Las disposiciones humanas siguen pendientes; completar el triage técnico no equivale a aprobación humana."
+                f"{'Se completó' if len(scanners) == 1 else 'Se completaron'} {completed_scanners} de {len(scanners)} {'analizador' if len(scanners) == 1 else 'analizadores'}. NICO completó el triaje técnico para {completed} de {total} {'candidato' if total == 1 else 'candidatos'} ({coverage}%). Las disposiciones humanas siguen pendientes; completar el triaje técnico no equivale a aprobación humana."
                 if spanish
                 else f"{completed_scanners} of {len(scanners)} applicable scanner executions completed. NICO completed automated technical triage for {completed} of {total} candidates ({coverage}%). Human dispositions remain pending; technical triage completion does not equal human approval."
             )
@@ -130,33 +183,49 @@ def render_phase1_evidence_review_gate_pdf(
         p("Carga de revisión por excepción" if spanish else "Review-by-exception workload", h2),
         table(
             [
-                ["Reviewer workload metric", "Value"],
-                ["Stable carry-forward", stable],
-                ["Fresh technical triage", fresh],
-                ["Candidates requiring individual attention", individual],
-                ["Candidates covered by grouped review", grouped_candidates],
-                ["Grouped human-review clusters", grouped_clusters],
-                ["Human review work units", work_units],
-                ["Quality-control sample pool", qc_pool],
+                [labels["reviewer_workload"], labels["value"]],
+                [labels["stable"], stable],
+                [labels["fresh"], fresh],
+                [labels["individual"], individual],
+                [labels["grouped_candidates"], grouped_candidates],
+                [labels["grouped_clusters"], grouped_clusters],
+                [labels["work_units"], work_units],
+                [labels["qc_pool"], qc_pool],
             ],
             [5.75 * inch, 1.65 * inch],
         ),
     ]
     if categories:
-        rows = [["Category", "Raw", "Confirmed", "Review required", "State"]]
+        rows = [[labels["category"], labels["raw"], labels["confirmed"], labels["review_required"], labels["state"]]]
+        spanish_categories = {
+            "dependency": "Dependencias",
+            "secret": "Secretos",
+            "static": "Análisis estático",
+            "code": "Código",
+            "operational": "Operativa",
+            "test": "Pruebas",
+        }
         for category, counts in categories.items():
             rows.append([
-                str(category).title(),
+                spanish_categories.get(str(category).casefold(), str(category))
+                if spanish
+                else str(category).title(),
                 _integer(counts.get("raw")),
                 _integer(counts.get("material")),
                 _integer(counts.get("review_required")),
-                "Human disposition pending; NICO technical triage complete",
+                "Disposición humana pendiente; triaje técnico de NICO completo"
+                if spanish
+                else "Human disposition pending; NICO technical triage complete",
             ])
-        story.extend([p("Canonical candidate state", h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
+        story.extend([p(labels["candidate_state"], h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
     story.extend([
-        p("Client package boundary", h2),
-        p("Full candidate evidence, deterministic cluster membership, scanner hashes, and export-ready remediation data remain in canonical JSON and CSV. Group summaries never replace underlying candidate IDs or evidence."),
-        p(f"Exact-source findings in index: {exact_findings}", small),
+        p(labels["client_boundary"], h2),
+        p(
+            "La evidencia completa de candidatos, la pertenencia determinista a grupos, los hashes de analizadores y los datos de remediación listos para exportar permanecen en JSON y CSV canónicos. Los resúmenes de grupo nunca sustituyen los ID ni la evidencia de los candidatos subyacentes."
+            if spanish
+            else "Full candidate evidence, deterministic cluster membership, scanner hashes, and export-ready remediation data remain in canonical JSON and CSV. Group summaries never replace underlying candidate IDs or evidence."
+        ),
+        p(f"{labels['exact_findings']}: {exact_findings}", small),
         PageBreak(),
         p("Puerta de revisión humana y aceptación" if spanish else "Human Review and Acceptance Gate", h1),
         p(boundary, warning),

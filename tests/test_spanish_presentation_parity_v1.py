@@ -77,7 +77,7 @@ def test_spanish_manifest_and_approval_supplement_has_no_english_section_titles(
     extracted = _pdf_text(pdf)
     normalized = _normalized_pdf_text(pdf)
     assert "Manifiesto de artefactos del cliente" in normalized
-    assert "Registro de revisión humana y aprobación del artefacto exacto" in normalized
+    assert "Registro de revisión humana y aprobación de artefactos exactos" in normalized
     assert "Client Artifact Manifest" not in extracted
     assert "Human Review and Exact-Artifact Approval Record" not in extracted
 

@@ -20,11 +20,16 @@ def _text(value: Any, limit: int = 1000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
-def _unique(values: Iterable[Any], *, limit: int) -> list[str]:
+def _unique(
+    values: Iterable[Any],
+    *,
+    limit: int,
+    item_limit: int = 430,
+) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
     for raw in values:
-        value = _text(raw, 430)
+        value = _text(raw, item_limit)
         key = value.casefold()
         if not value or key in seen:
             continue
@@ -152,7 +157,18 @@ def render_compact_substantive_review_pdf(
     )
 
     def p(value: Any, style: ParagraphStyle = body, limit: int = 700) -> Paragraph:
-        return Paragraph(html.escape(_text(value, limit)), style)
+        if not spanish:
+            return Paragraph(html.escape(_text(value, limit)), style)
+        rendered = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
+        if len(rendered) > limit:
+            rendered = rendered[: limit - 3].rstrip()
+            clause_boundary = max(rendered.rfind("; "), rendered.rfind(". "))
+            if clause_boundary >= limit // 2:
+                rendered = rendered[:clause_boundary].rstrip(" ·;,:-")
+            elif " " in rendered:
+                rendered = rendered.rsplit(" ", 1)[0].rstrip(" ·;,:-")
+            rendered += "..."
+        return Paragraph(html.escape(rendered), style)
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
@@ -172,7 +188,11 @@ def render_compact_substantive_review_pdf(
 
     story: list[Any] = []
     for index, section in enumerate(sections, start=1):
-        evidence = _unique(section.get("evidence") or [], limit=4)
+        evidence = _unique(
+            section.get("evidence") or [],
+            limit=4,
+            item_limit=900 if spanish else 430,
+        )
         findings = _unique(section.get("findings") or [], limit=3)
         can_conclude = _unique(section.get("can_conclude") or [], limit=3)
         cannot_conclude = _unique(
@@ -222,7 +242,7 @@ def render_compact_substantive_review_pdf(
             ]
         )
         if evidence:
-            content.extend(p(f"- {item}", small, 430) for item in evidence)
+            content.extend(p(f"- {item}", small, 900 if spanish else 430) for item in evidence)
         else:
             content.append(
                 p(
@@ -248,7 +268,7 @@ def render_compact_substantive_review_pdf(
         left.extend(p(f"- {item}", small, 430) for item in cannot_conclude)
 
         right: list[Any] = [
-            p("Insumos requeridos" if spanish else "Required client input", heading)
+            p("Insumos requeridos del cliente" if spanish else "Required client input", heading)
         ]
         right.extend(p(f"- {item}", small, 430) for item in required_input)
         right.extend(

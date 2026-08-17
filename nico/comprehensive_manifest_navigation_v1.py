@@ -18,7 +18,7 @@ _MARKER = "__nico_comprehensive_manifest_navigation_v1__"
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
 )
-_PAGE = re.compile(r"^Page\s+\d+$", re.IGNORECASE)
+_PAGE = re.compile(r"^(?:Page|Página)\s+\d+$", re.IGNORECASE)
 _SECTION_PAGE = re.compile(
     r"^(Section\s+\d+\s+of\s+\d+\s*\|\s*)Page(\s+\d+\s+of\s+\d+)$",
     re.IGNORECASE,
