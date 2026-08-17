@@ -15,6 +15,9 @@ from nico.comprehensive_full_data_worksheet_localization_v1 import (
     WORKSHEET_TITLES_BY_STAGE_ID,
     install_comprehensive_full_data_worksheet_localization_v1,
 )
+from nico.comprehensive_spanish_presentation_parity_v2 import (
+    install_comprehensive_spanish_presentation_parity_v2,
+)
 
 FINDING_ID = "NICO-CODE-SPANISH-FULL-DATA-0001"
 
@@ -106,9 +109,9 @@ def _spanish_surfaces(
     ) + (f"<h2>{SPANISH_CANDIDATE_REGISTER}</h2>" if include_candidate else "") + "</body></html>"
 
     pdf_lines = [
-        "Client Artifact Manifest",
-        "Human Review and Exact-Artifact Approval Record",
-        "Generated: 2026-08-16T17:00:00Z",
+        "Manifiesto de artefactos del cliente",
+        "Registro de revisión humana y aprobación del artefacto exacto",
+        "Generado: 2026-08-16T17:00:00Z",
     ]
     if include_gate:
         pdf_lines.append(SPANISH_REVIEW_GATE)
@@ -134,6 +137,7 @@ def _install(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(finish, "assert_full_data_parity", legacy_validator)
     state = install_comprehensive_full_data_worksheet_localization_v1()
+    install_comprehensive_spanish_presentation_parity_v2()
     return state, legacy_calls
 
 
@@ -220,7 +224,7 @@ def test_missing_spanish_candidate_register_still_fails_closed(
 
     with pytest.raises(
         ValueError,
-        match="missing the localized candidate register section",
+        match="no contiene el registro localizado de candidatos",
     ):
         finish.assert_full_data_parity(_canonical(), markdown, rendered_html, pdf)
 
