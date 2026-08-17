@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.10"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.11"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -81,8 +81,8 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_review_companion_v7_mobile_contract import (
         install_comprehensive_review_companion_v7_mobile_contract,
     )
-    from nico.comprehensive_spanish_presentation_parity_v1 import (
-        install_comprehensive_spanish_presentation_parity_v1,
+    from nico.comprehensive_spanish_presentation_parity_v2 import (
+        install_comprehensive_spanish_presentation_parity_v2,
     )
 
     raw_mapping_recovery = install_raw_mapping_string_recovery_v1()
@@ -102,7 +102,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             install_comprehensive_full_data_worksheet_localization_v1()
         )
         spanish_presentation_parity = (
-            install_comprehensive_spanish_presentation_parity_v1()
+            install_comprehensive_spanish_presentation_parity_v2()
         )
         return {
             "status": "already_installed",
@@ -151,7 +151,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         install_comprehensive_full_data_worksheet_localization_v1()
     )
     spanish_presentation_parity = (
-        install_comprehensive_spanish_presentation_parity_v1()
+        install_comprehensive_spanish_presentation_parity_v2()
     )
     return {
         "status": "installed",
