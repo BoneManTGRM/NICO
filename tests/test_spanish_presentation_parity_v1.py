@@ -5,7 +5,7 @@ import io
 from pypdf import PdfReader
 
 from nico import comprehensive_manifest_navigation_v1 as nav
-from nico.comprehensive_spanish_presentation_parity_v1 import (
+from nico.comprehensive_spanish_presentation_parity_v2 import (
     _localized_register,
     _render_manifest_spanish,
     _safe_es,
@@ -16,6 +16,10 @@ from nico.v2_dark_branded_cover import _cover
 
 def _pdf_text(pdf: bytes) -> str:
     return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+
+
+def _normalized_pdf_text(pdf: bytes) -> str:
+    return " ".join(_pdf_text(pdf).split())
 
 
 def test_boundary_safe_spanish_translation_does_not_corrupt_source_tokens() -> None:
@@ -71,8 +75,9 @@ def test_spanish_manifest_and_approval_supplement_has_no_english_section_titles(
         [{"artifact_type": "findings_csv", "filename": "findings.csv", "sha256": "deadbeef"}],
     )
     extracted = _pdf_text(pdf)
-    assert "Manifiesto de artefactos del cliente" in extracted
-    assert "Registro de revisión humana y aprobación del artefacto exacto" in extracted
+    normalized = _normalized_pdf_text(pdf)
+    assert "Manifiesto de artefactos del cliente" in normalized
+    assert "Registro de revisión humana y aprobación del artefacto exacto" in normalized
     assert "Client Artifact Manifest" not in extracted
     assert "Human Review and Exact-Artifact Approval Record" not in extracted
 
