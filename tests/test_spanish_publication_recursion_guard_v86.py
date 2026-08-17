@@ -22,14 +22,19 @@ from nico import comprehensive_client_review_companion_v5 as review_v5
 from nico import comprehensive_client_review_companion_v7 as review_v7
 
 
-def provider_compact_client_markdown(canonical, *args, **kwargs):
-    return "# Executive Summary\n\nDRAFT · HUMAN REVIEW REQUIRED\n"
+def provider_compact_client_markdown(markdown, canonical, register, *, spanish):
+    return markdown
 
 
-def prior_completion_wrapper(canonical, *args, **kwargs):
+def prior_completion_wrapper(markdown, canonical, register, *, spanish):
     # This models the stacked compatibility wrappers in production: the older
     # completion layer dynamically delegates to the provider module at call time.
-    return projection.compact_client_markdown(canonical, *args, **kwargs)
+    return projection.compact_client_markdown(
+        markdown,
+        canonical,
+        register,
+        spanish=spanish,
+    )
 
 
 projection.compact_client_markdown = provider_compact_client_markdown
@@ -58,7 +63,12 @@ assert projection.render_evidence_review_gate_pdf is provider_bindings["gate_pdf
 assert review_v7.render_paired_substantive_review_pdf is provider_bindings["review_pdf"]
 assert sanitizer.sanitize_client_pdf_status is provider_bindings["status_sanitizer"]
 
-localized = completion.compact_client_markdown({"report_language": "es-MX"})
+localized = completion.compact_client_markdown(
+    "# Executive Summary\n\nDRAFT · HUMAN REVIEW REQUIRED\n",
+    {"report_language": "es-MX"},
+    {},
+    spanish=True,
+)
 assert "BORRADOR AUTOMATIZADO" in localized
 assert "HUMAN REVIEW REQUIRED" not in localized
 '''
