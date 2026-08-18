@@ -74,6 +74,10 @@ jobs:
           assert 'group: nico-production-assessment-proof-' not in workflow_header
           assert 'Wait for exact-SHA Mobile production proof' in workflow
           assert 'NICO Mobile Restart Production Proof' in workflow
+          assert 'archive.ubuntu.com/ubuntu/' in workflow
+          assert 'Acquire::https::Timeout "20";' in workflow
+          assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit' in workflow
+          assert 'if: failure() || cancelled()' in workflow
           PY
 
   live-production:
@@ -216,10 +220,26 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install pinned WebKit proof dependency
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
-          python -m playwright install --with-deps webkit
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "${apt_source}" ] || continue
+            sudo sed -i \
+              -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              -e 's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              "${apt_source}"
+          done
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "20";' \
+            'Acquire::https::Timeout "20";' \
+            | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
+          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit
 
       - name: Prove WebKit intake, bilingual failure layout, recovery, and review PDF download
         id: ios_proof
@@ -333,7 +353,7 @@ jobs:
             --data-binary @/tmp/ios-status.json
 
       - name: Publish failed iOS proof status
-        if: failure()
+        if: failure() || cancelled()
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/ios-status.json
