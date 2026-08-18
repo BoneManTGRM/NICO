@@ -28,6 +28,79 @@ _CANONICAL_PARITY_EXACT = {
     "Functional QA": "QA funcional",
     "Platform Parity": "Paridad de plataformas",
     "Stakeholder and Business Alignment": "Alineación comercial y de partes interesadas",
+    "Workflow outcome classes:": (
+        "Clases de resultados de los flujos de trabajo: no se conservaron "
+        "resultados clasificados."
+    ),
+    "JavaScript and TypeScript complexity uses a bounded lexical heuristic because a full parser artifact was not attached; those module-level values are lower-confidence than Python AST metrics.": (
+        "La complejidad de JavaScript y TypeScript utiliza una heurística léxica "
+        "acotada porque no se adjuntó un artefacto de analizador completo; esos "
+        "valores a nivel de módulo tienen menor confianza que las métricas del AST "
+        "de Python."
+    ),
+    "JavaScript and TypeScript complexity uses bounded function-level lexical extraction rather than a full language parser; dynamic syntax and parser-level semantics remain lower-confidence than Python AST metrics.": (
+        "La complejidad de JavaScript y TypeScript utiliza extracción léxica acotada "
+        "a nivel de función en lugar de un analizador completo del lenguaje; la "
+        "sintaxis dinámica y la semántica a nivel de analizador siguen teniendo menor "
+        "confianza que las métricas del AST de Python."
+    ),
+    "Scanner evidence is not client-ready until every required scanner completes and every redacted raw artifact is retained.": (
+        "La evidencia de analizadores no está lista para el cliente hasta que se "
+        "completen todos los analizadores requeridos y se conserve cada artefacto "
+        "sin procesar redactado."
+    ),
+    "No workflow files were present in the captured repository snapshot.": (
+        "No había archivos de flujos de trabajo en la instantánea capturada del "
+        "repositorio."
+    ),
+    "Captured-commit collection reached its bounded runtime; remaining files are unavailable for this run.": (
+        "La recopilación del commit capturado alcanzó su tiempo de ejecución "
+        "acotado; los archivos restantes no están disponibles para esta ejecución."
+    ),
+    "No eligible source files were present in the authorized GitHub text-file sample.": (
+        "No había archivos de código fuente elegibles en la muestra autorizada de "
+        "archivos de texto de GitHub."
+    ),
+    "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.": (
+        "Se omitió la consulta a OSV porque no había versiones exactas de "
+        "dependencias disponibles en los manifiestos inspeccionados."
+    ),
+    "OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.": (
+        "Se omitió la consulta a OSV porque no había versiones exactas normalizadas "
+        "de dependencias disponibles en los manifiestos inspeccionados."
+    ),
+    "OSV lookup did not complete within the bounded dependency-review window.": (
+        "La consulta a OSV no se completó dentro de la ventana acotada de revisión "
+        "de dependencias."
+    ),
+    "OSV lookup returned a non-JSON response.": (
+        "La consulta a OSV devolvió una respuesta que no era JSON."
+    ),
+    "GitHub deployment evidence was returned without a deployment list.": (
+        "La evidencia de despliegues de GitHub se devolvió sin una lista de "
+        "despliegues."
+    ),
+    "Snapshot-bound repository evidence requires an attached snapshot with matching run and repository identity.": (
+        "La evidencia del repositorio vinculada a la instantánea requiere una "
+        "instantánea adjunta cuya identidad de ejecución y repositorio coincida."
+    ),
+    "TypeScript compiler AST evidence was unavailable for this run; JavaScript and TypeScript values use bounded lexical fallback and remain review-limited.": (
+        "La evidencia del AST del compilador de TypeScript no estaba disponible para "
+        "esta ejecución; los valores de JavaScript y TypeScript utilizan una "
+        "alternativa léxica acotada y siguen limitados por revisión."
+    ),
+    "No eligible first-party source files were present in the exact-SHA source profile.": (
+        "No había archivos de código fuente propios elegibles en el perfil de código "
+        "fuente del SHA exacto."
+    ),
+    "Exact-SHA source archive was unavailable because the snapshot commit was missing.": (
+        "El archivo de código fuente del SHA exacto no estaba disponible porque "
+        "faltaba el commit de la instantánea."
+    ),
+    "All observed required scanners in this control completed with retained exact-SHA artifacts.": (
+        "Todos los analizadores requeridos observados en este control se completaron "
+        "con artefactos conservados para el SHA exacto."
+    ),
 }
 
 _STAGE_PHRASE_ES = {
@@ -1050,6 +1123,218 @@ _PRESENTATION_REPLACEMENTS += (
         "La puntuación canónica se completó a partir de evidencia técnica con SHA exacto y un registro de hallazgos de analizadores conciliado por conteo. El volumen de candidatos sin resolver modifica la preparación ajustada por evidencia sin presentarse incorrectamente como gravedad de defectos confirmados.",
     ),
     (
+        "Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect.",
+        "El volumen de candidatos y la carga de trabajo de revisión son métricas operativas de revisión y no tienen efecto numérico en la madurez técnica ni en la puntuación ajustada por evidencia.",
+    ),
+    (
+        "This analyzer candidate requires validation before it can be treated as a confirmed technical defect.",
+        "Este candidato de analizador requiere validación antes de poder tratarse como un defecto técnico confirmado.",
+    ),
+    (
+        "Validate the rule against the exact file and revision, group equivalent instances, then remediate or approve a bounded exception.",
+        "Validar la regla contra el archivo y la revisión exactos, agrupar las instancias equivalentes y después remediar o aprobar una excepción acotada.",
+    ),
+    (
+        "The originating analyzer completes on the exact SHA and the grouped candidate is resolved or approved with traceable rationale.",
+        "El analizador de origen se completa en el SHA exacto y el candidato agrupado se resuelve o aprueba con una justificación trazable.",
+    ),
+    (
+        "Static Analysis is not scored because required current-run analyzer evidence is incomplete. Candidate findings remain visible for human disposition without being treated as proven critical code quality.",
+        "El análisis estático no recibe puntuación porque la evidencia requerida de los analizadores de la ejecución actual está incompleta. Los hallazgos candidatos siguen visibles para la disposición humana sin tratarse como problemas críticos demostrados de calidad del código.",
+    ),
+    (
+        "Concentrated frontend complexity",
+        "Complejidad concentrada en el frontend",
+    ),
+    (
+        "Large, highly branched modules increase regression risk, review cost, and the difficulty of safe change.",
+        "Los módulos grandes y con muchas ramificaciones aumentan el riesgo de regresión, el costo de revisión y la dificultad de realizar cambios seguros.",
+    ),
+    (
+        "Static-analysis evidence incomplete",
+        "Evidencia de análisis estático incompleta",
+    ),
+    (
+        "Incomplete analyzer execution prevents a defensible technical conclusion for the affected control.",
+        "La ejecución incompleta de analizadores impide una conclusión técnica defendible para el control afectado.",
+    ),
+    (
+        "Repair the failed analyzer boundary and retain two consecutive exact-SHA successful runs before assigning a technical score.",
+        "Reparar el límite del analizador fallido y conservar dos ejecuciones exitosas consecutivas para el SHA exacto antes de asignar una puntuación técnica.",
+    ),
+    (
+        "Unverified medium-severity candidates may represent real hardening opportunities, but they are not yet confirmed defects.",
+        "Los candidatos no verificados de gravedad media pueden representar oportunidades reales de refuerzo, pero todavía no son defectos confirmados.",
+    ),
+    (
+        "Group equivalent rules, validate representative instances, and remediate confirmed issues by theme rather than repeating identical work items.",
+        "Agrupar las reglas equivalentes, validar instancias representativas y remediar los problemas confirmados por tema, en lugar de repetir elementos de trabajo idénticos.",
+    ),
+    (
+        "Dependency findings require disposition",
+        "Los hallazgos de dependencias requieren disposición",
+    ),
+    (
+        "Confirmed vulnerable or unsupported dependencies can create security, stability, and maintenance exposure.",
+        "Las dependencias vulnerables o sin soporte confirmadas pueden generar exposición de seguridad, estabilidad y mantenimiento.",
+    ),
+    (
+        "Triage the retained dependency findings, upgrade or constrain affected packages, regenerate lockfiles, and rerun all dependency analyzers.",
+        "Clasificar los hallazgos de dependencias conservados, actualizar o restringir los paquetes afectados, regenerar los archivos de bloqueo y volver a ejecutar todos los analizadores de dependencias.",
+    ),
+    (
+        "Secret-history assurance remains review-limited",
+        "El aseguramiento del historial de secretos sigue limitado por revisión",
+    ),
+    (
+        "Incomplete or unverified history coverage prevents a clean credential-exposure conclusion.",
+        "La cobertura incompleta o no verificada del historial impide una conclusión limpia sobre la exposición de credenciales.",
+    ),
+    (
+        "Complete history scanning, validate retained candidates without exposing raw values, and rotate any confirmed live credential.",
+        "Completar el análisis del historial, validar los candidatos conservados sin exponer valores sin procesar y rotar cualquier credencial activa confirmada.",
+    ),
+    (
+        "Historical CI failures need cause classification",
+        "Los fallos históricos de CI necesitan clasificación de causas",
+    ),
+    (
+        "Unclassified non-success runs obscure release reliability and can conceal recurring operational defects.",
+        "Las ejecuciones no exitosas sin clasificar dificultan evaluar la fiabilidad de las publicaciones y pueden ocultar defectos operativos recurrentes.",
+    ),
+    (
+        "Separate cancellations from failures, classify recurring causes, assign owners, and publish a rolling reliability trend.",
+        "Separar las cancelaciones de los fallos, clasificar las causas recurrentes, asignar responsables y publicar una tendencia móvil de fiabilidad.",
+    ),
+    (
+        "Bounded code-risk patterns require exact-location review",
+        "Los patrones acotados de riesgo de código requieren revisión de la ubicación exacta",
+    ),
+    (
+        "Pattern matches may indicate unsafe APIs or may be benign framework behavior; confirmation is required before escalation.",
+        "Las coincidencias de patrones pueden indicar API inseguras o comportamientos benignos del framework; se requiere confirmación antes de escalar.",
+    ),
+    (
+        "Review the retained locations as one remediation theme, disposition each match, and rerun against the same immutable revision.",
+        "Revisar las ubicaciones conservadas como un solo tema de remediación, decidir la disposición de cada coincidencia y volver a ejecutar contra la misma revisión inmutable.",
+    ),
+    (
+        "Static-analysis assurance remains review-limited",
+        "El aseguramiento del análisis estático sigue limitado por revisión",
+    ),
+    (
+        "Accepted Semgrep, TypeScript, and bounded triage evidence supports a conservative technical signal, but incomplete live analyzer acceptance prevents verified assurance.",
+        "La evidencia aceptada de Semgrep, TypeScript y triaje acotado respalda una señal técnica conservadora, pero la aceptación incompleta de analizadores en ejecución impide un aseguramiento verificado.",
+    ),
+    (
+        "Repair the failed analyzer boundary, complete rule-level candidate triage, and retain two consecutive exact-SHA successful runs before promoting the control to verified assurance.",
+        "Reparar el límite del analizador fallido, completar el triaje de candidatos a nivel de regla y conservar dos ejecuciones exitosas consecutivas para el SHA exacto antes de promover el control a aseguramiento verificado.",
+    ),
+    (
+        "Cancellations are excluded from the genuine-failure rate.",
+        "Las cancelaciones se excluyen de la tasa de fallos reales.",
+    ),
+    (
+        "Bounded historical reliability is reported separately and does not change assessed-commit health.",
+        "La fiabilidad histórica acotada se informa por separado y no modifica el estado del commit evaluado.",
+    ),
+    (
+        "Unique measured regions classified by source role; only active production functions/components and report-generation functions at cyclomatic complexity >=30 are actionable.",
+        "Regiones medidas únicas clasificadas por función del código fuente; solo son accionables las funciones o componentes activos de producción y las funciones de generación de informes con complejidad ciclomática >=30.",
+    ),
+    (
+        "No exact-commit required-check record was retained; historical or default-branch state is not substituted.",
+        "No se conservó ningún registro de verificaciones requeridas para el commit exacto; no se sustituye por el estado histórico ni por el de la rama predeterminada.",
+    ),
+    (
+        "Only exact-SHA retained evidence changes report outcomes; unchanged risks remain visible.",
+        "Solo la evidencia conservada para el SHA exacto modifica los resultados del informe; los riesgos sin cambios siguen visibles.",
+    ),
+    (
+        "Assurance is constrained; no client defect is inferred.",
+        "El aseguramiento está limitado; no se infiere ningún defecto del cliente.",
+    ),
+    (
+        "Close evidence-integrity and release-reliability gaps before expanding client use.",
+        "Cerrar las brechas de integridad de la evidencia y fiabilidad de las publicaciones antes de ampliar el uso por parte del cliente.",
+    ),
+    (
+        "Eliminate worker resource failures, complete required analyzers, and retain exact finding locations without secret leakage.",
+        "Eliminar los fallos de recursos de los procesos de trabajo, completar los analizadores requeridos y conservar las ubicaciones exactas de los hallazgos sin filtrar secretos.",
+    ),
+    (
+        "Bandit, Semgrep, Gitleaks, and TruffleHog complete twice against one exact SHA",
+        "Bandit, Semgrep, Gitleaks y TruffleHog se completan dos veces contra un mismo SHA exacto",
+    ),
+    (
+        "Every candidate has category, tool, severity, and safe location",
+        "Cada candidato tiene categoría, herramienta, gravedad y ubicación segura",
+    ),
+    (
+        "Classify and reduce CI/CD non-success history",
+        "Clasificar y reducir el historial de ejecuciones no exitosas de CI/CD",
+    ),
+    (
+        "All retained non-success runs are cause-classified",
+        "Todas las ejecuciones no exitosas conservadas tienen su causa clasificada",
+    ),
+    (
+        "Recurring failure classes have owners and fixes",
+        "Las clases de fallos recurrentes tienen responsables y correcciones",
+    ),
+    (
+        "Two consecutive acceptance windows meet the approved success threshold",
+        "Dos ventanas de aceptación consecutivas cumplen el umbral de éxito aprobado",
+    ),
+    (
+        "Reduce concentrated technical debt and make requirements traceable to acceptance evidence.",
+        "Reducir la deuda técnica concentrada y hacer que los requisitos sean trazables hasta la evidencia de aceptación.",
+    ),
+    (
+        "Decompose the highest-complexity hotspots",
+        "Descomponer los puntos críticos de mayor complejidad",
+    ),
+    (
+        "Reduce concentrated complexity and duplicate logic while preserving behavior through characterization tests.",
+        "Reducir la complejidad concentrada y la lógica duplicada mientras se preserva el comportamiento mediante pruebas de caracterización.",
+    ),
+    (
+        "Top hotspots are split into bounded modules",
+        "Los principales puntos críticos se dividen en módulos acotados",
+    ),
+    (
+        "Target complexity and nesting thresholds pass",
+        "Se cumplen los umbrales objetivo de complejidad y anidamiento",
+    ),
+    (
+        "Every committed requirement has an owner and acceptance test",
+        "Cada requisito comprometido tiene un responsable y una prueba de aceptación",
+    ),
+    (
+        "Prove the complete operating model through telemetry, recovery evidence, and authorized external pilots.",
+        "Demostrar el modelo operativo completo mediante telemetría, evidencia de recuperación y pilotos externos autorizados.",
+    ),
+    (
+        "Validate user journeys, incident recovery, performance, and report usefulness on an authorized external repository.",
+        "Validar los recorridos de usuario, la recuperación ante incidentes, el rendimiento y la utilidad del informe en un repositorio externo autorizado.",
+    ),
+    (
+        "Express and Comprehensive complete on the pilot repository",
+        "Express y Comprehensive se completan en el repositorio piloto",
+    ),
+    (
+        "Backup/restore and restart recovery evidence is retained",
+        "Se conserva evidencia de copia de seguridad, restauración y recuperación tras reinicio",
+    ),
+    (
+        "Reviewer approves or rejects the immutable package",
+        "La persona revisora aprueba o rechaza el paquete inmutable",
+    ),
+    (
+        "No client-specific labor rates, revenue, incident cost, or contract-penalty inputs were supplied.",
+        "No se suministraron tarifas laborales, ingresos, costos de incidentes ni penalizaciones contractuales específicas del cliente.",
+    ),
+    (
         "Scanner candidate retained without a human-readable message.",
         "Candidato de analizador conservado sin un mensaje legible para personas.",
     ),
@@ -1302,11 +1587,703 @@ def _maturity_level_es(value: str) -> str:
     }.get(raw.casefold(), raw)
 
 
+_SCANNER_STATUS_ES = {
+    "blocked": "bloqueada",
+    "complete": "completada",
+    "completed": "completada",
+    "completed_clean": "completada sin hallazgos",
+    "completed_with_findings": "completada con hallazgos",
+    "error": "con error",
+    "failed": "fallida",
+    "missing": "faltante",
+    "not_applicable": "no aplicable",
+    "partial": "parcial",
+    "passed": "aprobada",
+    "pending": "pendiente",
+    "skipped": "omitida",
+    "timed_out": "con tiempo agotado",
+    "timeout": "con tiempo agotado",
+    "unavailable": "no disponible",
+    "unknown": "desconocida",
+}
+
+_SCANNER_VERIFICATION_DEFICIT_ES = {
+    "completion requirements were not met": (
+        "no se cumplieron los requisitos de finalización"
+    ),
+    "current_run_not_proven": (
+        "no se demostró que perteneciera a la ejecución actual"
+    ),
+    "execution_not_observed_for_this_report": (
+        "no se observó la ejecución para este informe"
+    ),
+    "exact_commit_match_not_proven": (
+        "no se demostró la coincidencia con el commit exacto"
+    ),
+    "scanner_verification_not_proven": (
+        "no se demostró la verificación del analizador"
+    ),
+    "complete_artifact_capture_not_proven": (
+        "no se demostró la captura completa del artefacto"
+    ),
+    "artifact_hash_missing": "falta el hash del artefacto",
+    "full_git_history_not_verified": "no se verificó el historial Git completo",
+    "No exact-SHA current-run scanner record was retained.": (
+        "No se conservó ningún registro del analizador de la ejecución actual "
+        "para el SHA exacto."
+    ),
+}
+
+_CI_OUTCOME_CLASS_ES = {
+    "active_not_historical": "activas no históricas",
+    "cancelled": "canceladas",
+    "expected_or_unclassified_cancellation": (
+        "cancelaciones esperadas o sin clasificar"
+    ),
+    "genuine_failure": "fallos reales",
+    "infrastructure_fault": "fallos de infraestructura",
+    "manual_cancellation": "cancelaciones manuales",
+    "neutral_or_skipped": "neutrales u omitidas",
+    "success": "exitosas",
+    "superseded_cancellation": "cancelaciones sustituidas",
+    "unknown_review_required": "desconocidas que requieren revisión",
+}
+
+_REQUIRED_CHECK_HEALTH_ES = {
+    "green": "en verde",
+    "not_green": "no verde",
+    "not_observed": "no observado",
+    "unknown": "desconocido",
+    "unavailable": "no disponible",
+}
+
+
+def _ci_outcome_classes_es(match: re.Match[str]) -> str:
+    raw_classes = match.group("classes").strip()
+    if raw_classes == "No classified workflow outcomes retained":
+        return (
+            "Clases de resultados de los flujos de trabajo: no se conservaron "
+            "resultados clasificados"
+        )
+    translated: list[str] = []
+    for raw_item in raw_classes.split(";"):
+        key, separator, value = raw_item.strip().partition("=")
+        if (
+            not separator
+            or key not in _CI_OUTCOME_CLASS_ES
+            or not value.strip().isdigit()
+        ):
+            raise ValueError(
+                f"missing Spanish CI outcome translation: {raw_item.strip()[:180]}"
+            )
+        translated.append(f"{_CI_OUTCOME_CLASS_ES[key]}={value.strip()}")
+    return "Clases de resultados de los flujos de trabajo: " + "; ".join(translated)
+
+
+def _required_check_health_es(match: re.Match[str]) -> str:
+    status = match.group("status").strip()
+    translated = _REQUIRED_CHECK_HEALTH_ES.get(status.casefold())
+    if translated is None:
+        raise ValueError(
+            f"missing Spanish required-check health translation: {status[:120]}"
+        )
+    return (
+        "Estado de las verificaciones requeridas del commit evaluado: "
+        f"{translated} (commit {match.group('commit')})."
+    )
+
+
+def _historical_failure_rate_es(match: re.Match[str]) -> str:
+    rate = match.group("rate").strip()
+    rendered = (
+        "no disponible"
+        if rate.casefold() in {"none", "null", "unavailable", "not available"}
+        else rate
+    )
+    return f"Tasa histórica de fallos reales: {rendered}"
+
+
+def _scanner_execution_line_es(match: re.Match[str]) -> str:
+    status = match.group("status")
+    translated_status = _SCANNER_STATUS_ES.get(status.casefold())
+    if translated_status is None:
+        raise ValueError(
+            f"missing Spanish scanner status translation: {status[:120]}"
+        )
+    artifact_hash = match.group("artifact_hash")
+    rendered_hash = (
+        "no disponible"
+        if artifact_hash.casefold() == "unavailable"
+        else artifact_hash
+    )
+    current_run = match.group("current_run")
+    current_run_line = (
+        "ejecución_actual=" + ("sí" if current_run == "True" else "no") + "; "
+        if current_run is not None
+        else ""
+    )
+    return (
+        f"{match.group('scanner')}: estado={translated_status}; "
+        f"{current_run_line}"
+        "coincidencia_commit_exacto="
+        f"{'sí' if match.group('exact') == 'True' else 'no'}; "
+        "verificación_completa="
+        f"{'sí' if match.group('verified') == 'True' else 'no'}; "
+        f"hallazgos={match.group('findings')}; hash_artefacto={rendered_hash}"
+    )
+
+
+def _scanner_limitation_es(match: re.Match[str]) -> str:
+    scanner = match.group("scanner")
+    status = match.group("status").strip()
+    reason = match.group("reason").strip()
+    translated_status = _SCANNER_STATUS_ES.get(status.casefold())
+    if translated_status is None:
+        raise ValueError(
+            f"missing Spanish scanner status translation: {status[:120]}"
+        )
+    translated_reasons: list[str] = []
+    for raw_clause in reason.split(";"):
+        clause = raw_clause.strip()
+        status_clause = re.fullmatch(
+            r"status=(?P<status>[A-Za-z0-9_.+-]+)",
+            clause,
+        )
+        if status_clause is not None:
+            raw_status = status_clause.group("status")
+            clause_status = _SCANNER_STATUS_ES.get(raw_status.casefold())
+            if clause_status is not None:
+                translated_reasons.append(
+                    "estado=" + clause_status
+                )
+                continue
+        missing_binary = re.fullmatch(
+            r"(?P<binary>[A-Za-z0-9_.+-]+)(?: binary)? is not installed in "
+            r"(?:the|this) worker image\.?",
+            clause,
+        )
+        if missing_binary is not None:
+            translated_reasons.append(
+                f"{missing_binary.group('binary')} no está instalado en la imagen "
+                "del entorno de ejecución"
+            )
+            continue
+        translated_clause = _SCANNER_VERIFICATION_DEFICIT_ES.get(clause)
+        if translated_clause is None:
+            translated_reasons.append(f"detalle técnico original: {clause}")
+        else:
+            translated_reasons.append(translated_clause)
+    return (
+        f"La evidencia de {scanner} para el SHA exacto permanece "
+        f"{translated_status}: "
+        + "; ".join(translated_reasons)
+    )
+
+
+def _repository_unavailable_note_es(match: re.Match[str]) -> str:
+    label = match.group("label")
+    exact_labels = {
+        "Captured-commit recursive file tree": (
+            "El árbol recursivo de archivos del commit capturado"
+        ),
+        "Captured-commit root listing": "El listado raíz del commit capturado",
+        "Commit history": "El historial de commits",
+        "Complexity source evidence": "La evidencia de código fuente para complejidad",
+        "GitHub deployment evidence": "La evidencia de despliegues de GitHub",
+        "Pull-request history": "El historial de solicitudes de incorporación",
+        "Repository file-profile evidence": (
+            "La evidencia del perfil de archivos del repositorio"
+        ),
+        "Repository metadata": "La evidencia de metadatos del repositorio",
+        "Workflow file evidence": "La evidencia de archivos de flujos de trabajo",
+        "Workflow-run history": "El historial de ejecuciones de flujos de trabajo",
+    }
+    translated_label = exact_labels.get(label)
+    if translated_label is None and label.startswith("Captured-commit file "):
+        translated_label = (
+            "El archivo del commit capturado "
+            + label.removeprefix("Captured-commit file ")
+        )
+    if translated_label is None and label.startswith("Captured-commit workflow "):
+        translated_label = (
+            "El flujo de trabajo del commit capturado "
+            + label.removeprefix("Captured-commit workflow ")
+        )
+    if translated_label is None and label.startswith("Workflow jobs for run "):
+        translated_label = (
+            "La evidencia de trabajos del flujo de trabajo de la ejecución "
+            + label.removeprefix("Workflow jobs for run ")
+        )
+    if translated_label is None and label.startswith("Deployment status for "):
+        translated_label = (
+            "El estado del despliegue "
+            + label.removeprefix("Deployment status for ")
+        )
+    if translated_label is None:
+        raise ValueError(
+            f"missing Spanish repository evidence label translation: {label[:180]}"
+        )
+
+    reason = match.group("reason")
+    translated_reason = {
+        "because the GitHub credential or installation lacks required read access": (
+            "porque la credencial o instalación de GitHub carece del acceso de "
+            "lectura requerido"
+        ),
+        "through the authorized GitHub API scope": (
+            "mediante el alcance autorizado de la API de GitHub"
+        ),
+        "through the authorized GitHub API scope; verify repository access": (
+            "mediante el alcance autorizado de la API de GitHub; verifique el "
+            "acceso al repositorio"
+        ),
+        "because the GitHub API rate limit was reached": (
+            "porque se alcanzó el límite de solicitudes de la API de GitHub"
+        ),
+        "through the GitHub API": "mediante la API de GitHub",
+    }.get(reason)
+    if translated_reason is None:
+        raise ValueError(
+            f"missing Spanish repository evidence reason translation: {reason[:180]}"
+        )
+    return f"{translated_label} no estaba disponible {translated_reason}."
+
+
+def _structured_presentation_es(value: str) -> str | None:
+    match = re.fullmatch(
+        r"Actionable hotspot (?P<path>[^\r\n]+?):(?P<line>\d+) · "
+        r"(?P<name>[^\r\n]+?) · complexity (?P<complexity>\d+)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            f"Punto crítico accionable {match.group('path')}:"
+            f"{match.group('line')} · {match.group('name')} · "
+            f"complejidad {match.group('complexity')}."
+        )
+
+    match = re.fullmatch(
+        r"Decompose the highest-complexity modules first, beginning with "
+        r"(?P<modules>.+?), and add characterization tests plus CI complexity "
+        r"thresholds\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "Descomponer primero los módulos de mayor complejidad, comenzando por "
+            f"{match.group('modules')}, y agregar pruebas de caracterización y "
+            "umbrales de complejidad en CI."
+        )
+
+    match = re.fullmatch(
+        r"(?P<scanner>[A-Za-z0-9_.+-]+): status=(?P<status>[A-Za-z0-9_-]+); "
+        r"(?:current_run=(?P<current_run>True|False); )?"
+        r"exact_commit_match=(?P<exact>True|False); "
+        r"verified_complete=(?P<verified>True|False); "
+        r"findings=(?P<findings>\d+); artifact_hash=(?P<artifact_hash>[^\s;]+)",
+        value,
+    )
+    if match is not None:
+        return _scanner_execution_line_es(match)
+
+    match = re.fullmatch(
+        r"scanner_execution_records\[(?P<index>\d+)\]\.failure_reason: "
+        r"(?P<tool>[A-Za-z0-9_.+-]+)(?: binary)? is not installed in "
+        r"(?:the|this) worker image\.?",
+        value,
+    )
+    if match is not None:
+        return (
+            "scanner_execution_records"
+            f"[{match.group('index')}].failure_reason: {match.group('tool')} no está "
+            "instalado en la imagen del entorno de ejecución."
+        )
+
+    match = re.fullmatch(
+        r"(?P<scanner>[A-Za-z0-9_.+-]+) exact-SHA evidence remains "
+        r"(?P<status>[A-Za-z0-9_-]+): (?P<reason>[^\r\n]+)",
+        value,
+    )
+    if match is not None:
+        return _scanner_limitation_es(match)
+
+    match = re.fullmatch(
+        r"Workflow outcome classes: (?P<classes>"
+        r"No classified workflow outcomes retained|"
+        r"[a-z_]+=\d+(?:; [a-z_]+=\d+)*)(?:\.)?",
+        value,
+    )
+    if match is not None:
+        return _ci_outcome_classes_es(match) + "."
+
+    match = re.fullmatch(
+        r"Historical genuine-failure rate: "
+        r"(?P<rate>None|null|unavailable|not available|\d+(?:\.\d+)?)(?:\.)?",
+        value,
+    )
+    if match is not None:
+        return _historical_failure_rate_es(match)
+
+    match = re.fullmatch(
+        r"Classified CI history retains genuine_failures=(?P<genuine>\d+), "
+        r"infrastructure_faults=(?P<infra>\d+), and "
+        r"unknown_review_required=(?P<unknown>\d+)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "El historial clasificado de CI conserva "
+            f"fallos reales={match.group('genuine')}, fallos de infraestructura="
+            f"{match.group('infra')} y resultados desconocidos que requieren revisión="
+            f"{match.group('unknown')}."
+        )
+
+    match = re.fullmatch(
+        r"Assessed-commit required-check health: (?P<status>[A-Za-z0-9_-]+) "
+        r"\(commit (?P<commit>[^)]+)\)\.",
+        value,
+    )
+    if match is not None:
+        return _required_check_health_es(match)
+
+    match = re.fullmatch(
+        r"Current default-branch required-check health: "
+        r"(?P<health>True|False|not observed)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "Estado de las verificaciones requeridas de la rama predeterminada actual: "
+            + {
+                "True": "en verde",
+                "False": "no verde",
+                "not observed": "no observado",
+            }[match.group("health")]
+            + "."
+        )
+
+    match = re.fullmatch(
+        r"Source-reviewed analyzer dispositions: (?P<count>\d+) bounded "
+        r"nonblocking record\(s\); full rationale retained in canonical JSON\.",
+        value,
+    )
+    if match is not None:
+        record = (
+            "registro acotado no bloqueante"
+            if int(match.group("count")) == 1
+            else "registros acotados no bloqueantes"
+        )
+        return (
+            "Disposiciones de analizadores revisadas en el código fuente: "
+            f"{match.group('count')} {record}; la "
+            "justificación completa se conserva en el JSON canónico."
+        )
+
+    match = re.fullmatch(r"Unique classified hotspots: (?P<count>\d+)\.", value)
+    if match is not None:
+        return f"Puntos críticos únicos clasificados: {match.group('count')}."
+
+    match = re.fullmatch(
+        r"Actionable production/report hotspots at complexity >=30: "
+        r"(?P<count>\d+)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "Puntos críticos accionables de producción o generación de informes "
+            f"con complejidad >=30: {match.group('count')}."
+        )
+
+    match = re.fullmatch(
+        r"Classification counts: (?P<counts>\{[^\r\n]*\})\.",
+        value,
+    )
+    if match is not None:
+        return f"Conteos por clasificación: {match.group('counts')}."
+
+    match = re.fullmatch(
+        r"Raw high-complexity region count retained for audit: (?P<count>\d+)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "Conteo sin procesar de regiones de alta complejidad conservado para "
+            f"auditoría: {match.group('count')}."
+        )
+
+    match = re.fullmatch(
+        r"Technical maturity remains based on exact-commit technical controls\. "
+        r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
+        r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
+        r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
+        r"confirmed material findings as explicit review context\. Candidate volume, "
+        r"clustering and reviewer workload do not change numeric security or "
+        r"readiness scores\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
+            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
+            f"conserva {match.group('review')} candidatos que requieren revisión y "
+            f"{match.group('material')} hallazgos materiales confirmados como contexto "
+            "explícito de revisión. El volumen de candidatos, la agrupación y la carga "
+            "de trabajo de revisión no modifican las puntuaciones numéricas de "
+            "seguridad ni de preparación."
+        )
+
+    match = re.fullmatch(
+        r"(?P<count>\d+) grouped static-analysis candidates require validation",
+        value,
+    )
+    if match is not None:
+        return (
+            f"{match.group('count')} "
+            + (
+                "candidato agrupado de análisis estático requiere validación"
+                if int(match.group("count")) == 1
+                else "candidatos agrupados de análisis estático requieren validación"
+            )
+        )
+
+    match = re.fullmatch(
+        r"(?P<count>\d+) (?P<profile>captured-commit|repository) profile item\(s\) "
+        r"were unavailable; "
+        r"complexity coverage is limited to readable sampled files\.",
+        value,
+    )
+    if match is not None:
+        singular = int(match.group("count")) == 1
+        item = "elemento" if singular else "elementos"
+        availability = "no estaba disponible" if singular else "no estaban disponibles"
+        profile = (
+            "del commit capturado"
+            if match.group("profile") == "captured-commit"
+            else "del repositorio"
+        )
+        return (
+            f"{match.group('count')} {item} del perfil {profile} "
+            f"{availability}; la cobertura de complejidad se limita a archivos "
+            "muestreados legibles."
+        )
+
+    match = re.fullmatch(
+        r"(?P<count>\d+) Python source file\(s\) could not be parsed and were "
+        r"excluded from complexity metrics\.",
+        value,
+    )
+    if match is not None:
+        singular = int(match.group("count")) == 1
+        source_file = (
+            "archivo de código fuente Python"
+            if singular
+            else "archivos de código fuente Python"
+        )
+        return (
+            f"No se {'pudo' if singular else 'pudieron'} analizar "
+            f"{match.group('count')} {source_file} y se "
+            f"{'excluyó' if singular else 'excluyeron'} de las métricas de complejidad."
+        )
+
+    match = re.fullmatch(
+        r"(?P<count>\d+) source parser limitation\(s\) were retained in the "
+        r"architecture evidence\.",
+        value,
+    )
+    if match is not None:
+        singular = int(match.group("count")) == 1
+        limitation = "limitación" if singular else "limitaciones"
+        return (
+            f"Se {'conservó' if singular else 'conservaron'} {match.group('count')} "
+            f"{limitation} del analizador de "
+            "código fuente en la evidencia de arquitectura."
+        )
+
+    match = re.fullmatch(
+        r"(?P<label>Captured-commit recursive file tree|Captured-commit root "
+        r"listing|Captured-commit file [^\r\n]+|Captured-commit workflow [^\r\n]+|"
+        r"Commit history|Complexity source evidence|Deployment status for [^\r\n]+|"
+        r"GitHub deployment evidence|Pull-request history|Repository file-profile "
+        r"evidence|Repository metadata|Workflow file evidence|Workflow jobs for run "
+        r"[^\r\n]+|Workflow-run history) (?:was|were) unavailable "
+        r"(?P<reason>because the GitHub credential or installation lacks required "
+        r"read access|through the authorized GitHub API scope(?:; verify repository "
+        r"access)?|because the GitHub API rate limit was reached|through the GitHub "
+        r"API)\.",
+        value,
+    )
+    if match is not None:
+        return _repository_unavailable_note_es(match)
+
+    match = re.fullmatch(
+        r"Workflow jobs for run (?P<run_id>[^\r\n]+) were returned without a "
+        r"jobs list\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "La evidencia de trabajos del flujo de trabajo de la ejecución "
+            f"{match.group('run_id')} se devolvió sin una lista de trabajos."
+        )
+
+    match = re.fullmatch(
+        r"GitHub deployment evidence: observed=(?P<observed>\d+), "
+        r"success=(?P<success>\d+), non-success=(?P<non_success>\d+)\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "Evidencia de despliegues de GitHub: "
+            f"observados={match.group('observed')}, exitosos={match.group('success')}, "
+            f"no exitosos={match.group('non_success')}."
+        )
+
+    match = re.fullmatch(
+        r"OSV lookup returned HTTP (?P<status>\d{3}); dependency vulnerability "
+        r"status is incomplete\.",
+        value,
+    )
+    if match is not None:
+        return (
+            f"La consulta a OSV devolvió HTTP {match.group('status')}; el estado de "
+            "vulnerabilidades de dependencias está incompleto."
+        )
+
+    match = re.fullmatch(
+        r"OSV lookup unavailable: (?P<detail>[^\r\n]+)",
+        value,
+    )
+    if match is not None:
+        return (
+            "La consulta a OSV no estaba disponible; detalle técnico original: "
+            f"{match.group('detail')}"
+        )
+
+    match = re.fullmatch(
+        r"OSV returned (?P<count>\d+) vulnerability record\(s\) for "
+        r"(?P<ecosystem>[A-Za-z0-9_.-]+):(?P<package>[^\s]+)@"
+        r"(?P<version>[^:\s]+): (?P<ids>[^\r\n]+)\.",
+        value,
+    )
+    if match is not None:
+        record = (
+            "registro de vulnerabilidad"
+            if int(match.group("count")) == 1
+            else "registros de vulnerabilidades"
+        )
+        return (
+            f"OSV devolvió {match.group('count')} {record} para "
+            f"{match.group('ecosystem')}:{match.group('package')}@"
+            f"{match.group('version')}: {match.group('ids')}."
+        )
+
+    match = re.fullmatch(
+        r"OSV returned no vulnerability records for (?P<count>\d+) pinned "
+        r"dependency query/queries\.",
+        value,
+    )
+    if match is not None:
+        query = "consulta" if int(match.group("count")) == 1 else "consultas"
+        return (
+            "OSV no devolvió registros de vulnerabilidades para "
+            f"{match.group('count')} {query} de dependencias con versión fijada."
+        )
+
+    match = re.fullmatch(
+        r"Exact-SHA source archive profiling was unavailable: "
+        r"(?P<exception>[A-Za-z_][A-Za-z0-9_.]*)\. Existing bounded file evidence "
+        r"remains visible\.",
+        value,
+    )
+    if match is not None:
+        return (
+            "El perfilado del archivo de código fuente del SHA exacto no estaba "
+            f"disponible: {match.group('exception')}. La evidencia acotada de "
+            "archivos existente sigue visible."
+        )
+
+    match = re.fullmatch(
+        r"(?P<path>(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]): "
+        r"(?P<note>[^\r\n]+)",
+        value,
+    )
+    if match is not None:
+        translated_note = _translate_presentation_field(
+            match.group("note"),
+            "unavailable",
+        )
+        return (
+            f"{match.group('path')}: {translated_note}"
+        )
+
+    structural_prefixes = (
+        "Actionable hotspot ",
+        "Actionable production/report hotspots",
+        "Assessed-commit required-check health:",
+        "Captured-commit ",
+        "Classification counts:",
+        "Classified CI history retains ",
+        "Commit history",
+        "Complexity source evidence",
+        "Current default-branch required-check health:",
+        "Deployment status for ",
+        "GitHub deployment evidence",
+        "Exact-SHA source archive",
+        "Historical genuine-failure rate:",
+        "JavaScript and TypeScript complexity",
+        "No eligible first-party source files",
+        "No eligible source files",
+        "No workflow files",
+        "Pull-request history",
+        "Raw high-complexity region count retained for audit:",
+        "Repository file-profile evidence",
+        "Repository metadata",
+        "Scanner evidence is not client-ready",
+        "Snapshot-bound repository evidence",
+        "Source-reviewed analyzer dispositions:",
+        "Technical maturity remains based on exact-commit technical controls.",
+        "TypeScript compiler AST evidence",
+        "Unique classified hotspots:",
+        "Workflow file evidence",
+        "Workflow outcome classes:",
+        "Workflow jobs for run ",
+        "Workflow-run history",
+        "OSV lookup ",
+        "OSV returned ",
+    )
+    if value.startswith(structural_prefixes) or re.match(
+        r"^(?:\d+ (?:(?:captured-commit|repository) profile item|grouped static-analysis "
+        r"candidates require validation|Python source file|source parser limitation)|"
+        r"[A-Za-z0-9_.+-]+: status=|"
+        r"(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]|"
+        r"scanner_execution_records\[\d+\]\.failure_reason:|"
+        r"[A-Za-z0-9_.+-]+ exact-SHA evidence remains )",
+        value,
+    ):
+        raise ValueError(
+            f"unrecognized Spanish presentation contract: {value[:180]}"
+        )
+    return None
+
+
 def _translate_presentation_field(value: str, key: str) -> str:
+    stripped = str(value or "").strip()
+    has_exact_translation = _CANONICAL_PARITY_EXACT.get(
+        stripped,
+        _ES_EXTRA_EXACT.get(stripped, ES_EXACT.get(stripped)),
+    ) is not None
+    preserves_validated_opaque_fields = (
+        not has_exact_translation
+        and "\n" not in stripped
+        and "\r" not in stripped
+        and _structured_presentation_es(stripped) is not None
+    )
     translated = _translate_presentation(value)
     if (
         key in _PRESENTATION_PROSE_FIELDS
         and _looks_like_untranslated_english(translated)
+        and not preserves_validated_opaque_fields
     ):
         raise ValueError(
             f"missing Spanish presentation translation for {key}: {str(value or '')[:180]}"
@@ -1331,6 +2308,9 @@ def _translate_presentation(value: Any) -> str:
     )
     if exact is not None:
         return text.replace(stripped, exact, 1)
+    structured = _structured_presentation_es(stripped)
+    if structured is not None:
+        return text.replace(stripped, structured, 1)
     text = re.sub(
         r"Core technical evidence for (.+?) at (.+?) produced an evidence-bound (.+?) maturity signal \((\d+)/100\)\. Comprehensive-only modules continue after this score and remain subject to human review\.",
         lambda match: (

@@ -41,6 +41,12 @@ def _scan() -> dict:
                 "findings": [{"test_id": "B101"}, {"test_id": "B602"}],
                 "artifact_hash": "b" * 64,
                 "raw_artifact_retention_complete": True,
+                "raw_artifact_capture_complete": True,
+                "output_capture_complete": True,
+                "returncode_valid": True,
+                "timed_out": False,
+                "current_run": True,
+                "execution_observed_for_this_report": True,
                 "verified_for_this_report": True,
                 "commit_sha": SHA,
             },
@@ -51,6 +57,12 @@ def _scan() -> dict:
                 "findings": [],
                 "artifact_hash": "e" * 64,
                 "raw_artifact_retention_complete": True,
+                "raw_artifact_capture_complete": True,
+                "output_capture_complete": True,
+                "returncode_valid": True,
+                "timed_out": False,
+                "current_run": True,
+                "execution_observed_for_this_report": True,
                 "verified_for_this_report": True,
                 "commit_sha": SHA,
             },
@@ -79,6 +91,12 @@ def test_compact_records_preserve_hash_status_and_count_without_raw_findings() -
     assert by_name["bandit"]["findings"] == []
     assert by_name["bandit"]["raw_findings_embedded"] is False
     assert by_name["bandit"]["evidence_reference"] == "scanner_runs/scan-retained"
+    assert by_name["bandit"]["output_capture_complete"] is True
+    assert by_name["bandit"]["raw_artifact_capture_complete"] is True
+    assert by_name["bandit"]["returncode_valid"] is True
+    assert by_name["bandit"]["target_commit_sha"] == SHA
+    assert by_name["bandit"]["current_run"] is True
+    assert by_name["bandit"]["execution_observed_for_this_report"] is True
     assert by_name["eslint"]["artifact_hash"] == "e" * 64
     assert by_name["eslint"]["finding_count"] == 0
 
@@ -86,6 +104,59 @@ def test_compact_records_preserve_hash_status_and_count_without_raw_findings() -
     assert normalized["status"] == "completed_with_findings"
     assert normalized["completed"] is True
     assert normalized["verified_complete"] is True
+
+
+def test_compact_records_retain_phase5_completion_proof() -> None:
+    from nico.phase5_report_truth_v2 import (
+        install_phase5_report_truth_v2,
+        reconcile_phase5_report_truth,
+    )
+
+    install_phase5_report_truth_v2()
+    records = compact_scanner_records(_scan(), commit_sha=SHA)
+    assessment = {
+        "maturity_signal": {"score": 85, "presented_score": 85},
+        "canonical_evidence_adjusted_score": 85,
+        "sections": [
+            {
+                "id": section_id,
+                "label": section_id,
+                "score": 85,
+                "evidence": [],
+                "findings": [],
+                "unavailable": [],
+            }
+            for section_id in (
+                "dependency_health",
+                "secrets_review",
+                "static_analysis",
+                "ci_cd",
+                "architecture_debt",
+            )
+        ],
+        "findings_register": [],
+    }
+    result = reconcile_phase5_report_truth(
+        assessment,
+        {
+            "dependency_security_static_analysis": {
+                "commit_sha": SHA,
+                "scanner_execution_records": records,
+            }
+        },
+    )
+
+    health = result["evidence_health_summary"]
+    assert {"bandit", "eslint"}.issubset(health["completed_scanners"])
+    assert health["scanner_records"]["bandit"]["execution_complete"] is True
+    assert health["scanner_records"]["eslint"]["execution_complete"] is True
+    static = next(
+        section for section in result["sections"] if section["id"] == "static_analysis"
+    )
+    assert not any(
+        line.startswith(("bandit exact-SHA", "eslint exact-SHA"))
+        for line in static["unavailable"]
+    )
 
 
 def test_scanner_provider_wrapper_retains_compact_records(monkeypatch) -> None:

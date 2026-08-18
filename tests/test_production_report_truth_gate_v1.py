@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import nico.scanner_tool_runners as scanner_module
+from nico.comprehensive_retained_scanner_evidence_v1 import compact_scanner_records
 from nico.production_report_truth_gate_v1 import reconcile_production_report_truth
 from nico.scanner_command_repair_v1 import install_scanner_command_repair
 
@@ -13,6 +14,11 @@ def _scanner(tool: str, category: str, marker: str, **extra: object) -> dict:
         "execution_observed_for_this_report": True,
         "exact_commit_match": True,
         "verified_for_this_report": True,
+        "output_capture_complete": True,
+        "raw_artifact_capture_complete": True,
+        "returncode_valid": True,
+        "timed_out": False,
+        "output_truncated": False,
         "artifact_hash": marker * 64,
         "raw_artifact_retention_complete": True,
         "category": category,
@@ -159,6 +165,44 @@ def test_completed_scanner_without_current_report_verification_stays_incomplete(
     assert bandit["verified_complete"] is False
     assert "scanner_verification_not_proven" in bandit["verification_deficits"]
     assert result["json"]["client_readiness_contract"]["all_observed_scanners_verified"] is False
+
+
+def test_compact_scanner_proof_passes_public_gate_and_missing_current_run_fails_closed():
+    raw_records = [
+        _scanner("bandit", "static", "b"),
+        _scanner("eslint", "static", "e"),
+        _scanner(
+            "gitleaks",
+            "secret",
+            "g",
+            scans_git_history=True,
+            full_history_verified=True,
+        ),
+    ]
+    records = compact_scanner_records(
+        {"scan_id": "scan", "scanner_results": raw_records},
+        commit_sha="a" * 40,
+    )
+    package = _package()
+    package["json"]["scanner_execution_records"] = records
+
+    result = reconcile_production_report_truth(package)
+    assert all(
+        record["verified_complete"]
+        for record in result["json"]["scanner_execution_records"]
+    )
+
+    records[0]["current_run"] = False
+    package = _package()
+    package["json"]["scanner_execution_records"] = records
+    result = reconcile_production_report_truth(package)
+    bandit = next(
+        record
+        for record in result["json"]["scanner_execution_records"]
+        if record["tool"] == "bandit"
+    )
+    assert bandit["verified_complete"] is False
+    assert "current_run_not_proven" in bandit["verification_deficits"]
 
 
 def test_unrelated_report_contract_block_is_preserved_fail_closed():
