@@ -101,6 +101,11 @@ _CANONICAL_PARITY_EXACT = {
         "Todos los analizadores requeridos observados en este control se completaron "
         "con artefactos conservados para el SHA exacto."
     ),
+    "All repository file evidence and scanner execution for this run must use this exact commit SHA or be marked unavailable.": (
+        "Toda la evidencia de archivos del repositorio y la ejecución de analizadores "
+        "para esta ejecución deben utilizar el SHA exacto de este commit o marcarse "
+        "como no disponibles."
+    ),
 }
 
 _STAGE_PHRASE_ES = {
@@ -2204,7 +2209,8 @@ def _structured_presentation_es(value: str) -> str | None:
         )
 
     match = re.fullmatch(
-        r"(?P<path>(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]): "
+        r"(?P<path>(?:(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]|"
+        r"snapshot\.guardrail)): "
         r"(?P<note>[^\r\n]+)",
         value,
     )
@@ -2256,7 +2262,7 @@ def _structured_presentation_es(value: str) -> str | None:
         r"^(?:\d+ (?:(?:captured-commit|repository) profile item|grouped static-analysis "
         r"candidates require validation|Python source file|source parser limitation)|"
         r"[A-Za-z0-9_.+-]+: status=|"
-        r"(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]|"
+        r"(?:[A-Za-z0-9_-]+\.)+unavailable_data_notes\[\d+\]|snapshot\.guardrail|"
         r"scanner_execution_records\[\d+\]\.failure_reason:|"
         r"[A-Za-z0-9_.+-]+ exact-SHA evidence remains )",
         value,

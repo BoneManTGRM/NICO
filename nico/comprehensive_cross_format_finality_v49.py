@@ -8,9 +8,9 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive_cross_format_finality.v51"
-_PATCH_MARKER = "_nico_comprehensive_cross_format_finality_v51"
-_SCORE_PATCH_MARKER = "_nico_comprehensive_score_truth_v51"
+VERSION = "nico.comprehensive_cross_format_finality.v52"
+_PATCH_MARKER = "_nico_comprehensive_cross_format_finality_v52"
+_SCORE_PATCH_MARKER = "_nico_comprehensive_score_truth_v52"
 _PACKAGE_KEYS = (
     "report_package",
     "reports",
@@ -20,6 +20,12 @@ _PACKAGE_KEYS = (
     "artifacts",
     "output",
     "result",
+)
+_STALE_DRAFT_PHRASES = (
+    "DRAFT ONLY",
+    "DRAFT - HUMAN REVIEW REQUIRED",
+    "DRAFT · HUMAN REVIEW REQUIRED",
+    "COMPLETE ONLY AS A DRAFT",
 )
 
 
@@ -235,6 +241,11 @@ def _delivery_boundary_present(markdown: str) -> bool:
     return blocked and pending_approval
 
 
+def _stale_draft_language_absent(value: str) -> bool:
+    upper = _normalized(value).upper()
+    return all(phrase not in upper for phrase in _STALE_DRAFT_PHRASES)
+
+
 def _identity_present(markdown: str, identity: dict[str, str]) -> bool:
     normalized = _normalized(markdown)
     return all(
@@ -369,6 +380,8 @@ def _required_checks(
 
     markdown = str(package.get("markdown") or "")
     rendered_html = str(package.get("html") or "")
+    html_text = _html_text(rendered_html)
+    pdf_text = _pdf_text(pdf)
     identity = providers._identity(context)
     return {
         "markdown_available": bool(markdown),
@@ -376,6 +389,11 @@ def _required_checks(
         "pdf_available": pdf.startswith(b"%PDF"),
         "identity_present_in_markdown": _identity_present(markdown, identity),
         "final_delivery_boundary_present_in_markdown": _delivery_boundary_present(markdown),
+        "final_delivery_boundary_present_in_html": _delivery_boundary_present(html_text),
+        "final_delivery_boundary_present_in_pdf": _delivery_boundary_present(pdf_text),
+        "stale_draft_language_absent_in_markdown": _stale_draft_language_absent(markdown),
+        "stale_draft_language_absent_in_html": _stale_draft_language_absent(html_text),
+        "stale_draft_language_absent_in_pdf": _stale_draft_language_absent(pdf_text),
         "service_id_is_comprehensive": _semantic_value(package, "service_id") == "comprehensive",
         "report_finality_is_final": _semantic_value(package, "report_finality") == "final",
         "approval_is_pending_human_review": _semantic_value(package, "approval_status") == "pending_human_approval",

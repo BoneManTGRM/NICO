@@ -602,6 +602,10 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
                 "technical_analysis.complexity.unavailable_data_notes[2]: 1 Python "
                 "source file(s) could not be parsed and were excluded from complexity metrics."
             ),
+            (
+                "snapshot.guardrail: All repository file evidence and scanner execution "
+                "for this run must use this exact commit SHA or be marked unavailable."
+            ),
         ],
     }
 
@@ -621,6 +625,8 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
     assert "GHSA-1, CVE-2" in rendered
     assert "repository_evidence.unavailable_data_notes[0]" in rendered
     assert "technical_analysis.complexity.unavailable_data_notes[2]" in rendered
+    assert "snapshot.guardrail" in rendered
+    assert "All repository file evidence and scanner execution" not in rendered
     assert "Se conservó 1 limitación del analizador" in rendered
     assert "1 elemento del perfil del repositorio no estaba disponible" in rendered
 
@@ -672,6 +678,7 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
         "1 Python source file(s) unavailable.",
         "Exact-SHA source archive profiling unavailable.",
         "repository_evidence.unavailable_data_notes[0] unavailable.",
+        "snapshot.guardrail unavailable.",
         "Actionable hotspot src/foo.py:10",
         "Actionable production/report hotspots: 2.",
     ):
@@ -1026,23 +1033,23 @@ install_comprehensive_spanish_client_surface_localization_v86()
 
 SMALL_ENGLISH_GOLDEN = {
     "markdown": ("763071604b1a2ca9fbe0f7394a0cbd58987a9dfd149104c0fb59a0a4ac6a7f71", 17916),
-    "html": ("874596a1e852c3f786c01c880041efa50e9ba2ec7e705b4802a636dcdf473fbb", 21451),
-    "pdf_base64": ("10784b2a3b3ed7a9cda5442aaf552da3f01cdbaeae6b3deeb27ac0ee8a0f5ee6", 169412),
-    "pdf_sha256": "43de89942fc80bb5360e79fe560117383135c4b001eb3d23900ef7da2f7e92dd",
+    "html": ("6c2a75e20a3075076f6e1821e0d1dcd008a85511c6b551716b143bbd6df493a8", 21521),
+    "pdf_base64": ("4af0bddefc2a6db78f396d1e9bbc47e163d15de1c936e09eb9abddf117bcd499", 169412),
+    "pdf_sha256": "45cbde36fbb3cc308ebf4239f4d584e4f21ba77f9247af4de1484561f54264ec",
     "page_count": 22,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("cf32983fea08eb8f0987b8d86a0f30410644e142593b8a64e74b687f3a557a62", 20594),
-    "html": ("f74be5318d9787f60cba203bb83ac186e1b84e9415a1612cb10b85058c6f3082", 24690),
-    "pdf_base64": ("3d24f1b1bc2043a6440686c5c9b36da64a37fd33281251edae60b8b0101e60d0", 254420),
-    "pdf_sha256": "b4c81bf43cbc9ef5f0ee43bfdaf9bbc3af1aae41d8d77920d0850f5dead53eca",
+    "html": ("41aa0dc2381268da90299fcbdff98ed40c43ea58e40b4900ec36ba70b9416e65", 24760),
+    "pdf_base64": ("a2cb496ab1bf1d0c74b56d53a064e5200ee8ebac306de96b436a5d18c57d3767", 254420),
+    "pdf_sha256": "ca45266b011dc2a88c542819236b6f843891049de730a3f3cc61b047fea8779e",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("f455d33de53683b5248d0a250dc7446d4f879a7d944f66ec1f359c0b378da9c2", 18652),
-    "html": ("8f773349d8722e007b2340c64946c1d187cd275b3e3e82a5961ff4b8ffd96dfd", 22511),
-    "pdf_base64": ("fbbbd74488b9f9d20bf5f0b74393a348c7191b24014f21e92b37de6037e75681", 166016),
-    "pdf_sha256": "f51c02f63babb806445d50479604793ab185bc7c739e3cad3e562e932c8ef022",
+    "html": ("857ed713cfcefb0f74570ed76434eafb9124705d4a6d6095fea535283218879c", 22581),
+    "pdf_base64": ("5c3bb09143fab7a20b0f6eebf659035c5fec731105066bec8a2c3f950ecb1705", 166016),
+    "pdf_sha256": "365d8eabe77f1f5cf67a21aeb877d698fac12d570b5b2470a09cbfccb880b204",
     "page_count": 21,
 }
 

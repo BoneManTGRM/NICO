@@ -5,7 +5,11 @@ import io
 
 from pypdf import PdfReader
 
-from nico.comprehensive_report_package import VERSION, build_comprehensive_report_package
+from nico.comprehensive_report_package import (
+    VERSION,
+    _semantic_html,
+    build_comprehensive_report_package,
+)
 
 
 IDENTITY = {
@@ -190,7 +194,26 @@ def test_html_is_semantic_and_not_an_escaped_markdown_dump() -> None:
     assert "<h2>Executive Decision Brief</h2>" in rendered
     assert "<ul>" in rendered
     assert "<pre>" not in rendered
-    assert "DRAFT · HUMAN REVIEW REQUIRED" in rendered
+    assert (
+        '<span class="badge">DRAFT — HUMAN REVIEW REQUIRED — '
+        'CLIENT DELIVERY NOT AUTHORIZED</span>'
+    ) in rendered
+
+
+def test_html_badge_uses_the_exact_current_lifecycle_boundary_from_markdown() -> None:
+    boundaries = (
+        "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
+        "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA",
+    )
+
+    for boundary in boundaries:
+        rendered = _semantic_html(
+            f"# NICO Comprehensive\n\n**{boundary}**\n",
+            "NICO Comprehensive",
+        )
+
+        assert f'<span class="badge">{boundary}</span>' in rendered
+        assert "DRAFT · HUMAN REVIEW REQUIRED" not in rendered
 
 
 def test_pdf_is_valid_substantive_and_deeper_than_the_old_mid_artifact() -> None:
