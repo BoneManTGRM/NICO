@@ -484,9 +484,18 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
     )
     from nico.full_assessment_repository_evidence import _safe_api_note
 
-    js_note = collect_complexity_evidence(
-        {"src/verified.ts": "export function verified() { return true; }"}
-    )["unavailable_data_notes"][0]
+    base_collect_complexity_evidence = getattr(
+        collect_complexity_evidence,
+        "__wrapped__",
+        collect_complexity_evidence,
+    )
+    js_note = next(
+        note
+        for note in base_collect_complexity_evidence(
+            {"src/verified.ts": "export function verified() { return true; }"}
+        )["unavailable_data_notes"]
+        if note.startswith("JavaScript and TypeScript complexity uses")
+    )
     repository_notes = [
         _safe_api_note(label, error)
         for label in (
