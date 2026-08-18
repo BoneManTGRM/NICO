@@ -21,6 +21,26 @@ const LIVE_SPANISH_LABELS = new Map<string, string>([
   ["review required", "Revisión requerida"],
 ]);
 
+const ACTIVE_RUN_LABELS = new Set(["assessment in progress", "evaluación en curso"]);
+const TERMINAL_RUN_STATES = new Set([
+  "blocked",
+  "failed",
+  "cancelled",
+  "canceled",
+  "rejected",
+  "review required",
+  "review_required",
+  "client ready",
+  "client_ready",
+]);
+
+type AssessmentSnapshot = {
+  assessment_state?: unknown;
+  record?: {assessment_state?: unknown};
+};
+
+type AssessmentLocale = "en" | "es-MX";
+
 function normalizedKey(value: string): string {
   return value
     .replace(/[\s_-]+/g, " ")
@@ -60,11 +80,57 @@ function translateTree(root: Node): void {
   }
 }
 
+function activeCanonicalRunIsNonTerminal(): boolean {
+  const snapshot = (window as Window & {__nicoV2AssessmentSnapshot?: AssessmentSnapshot})
+    .__nicoV2AssessmentSnapshot;
+  const state = normalizedKey(String(
+    snapshot?.assessment_state || snapshot?.record?.assessment_state || "",
+  ));
+  return !state || !TERMINAL_RUN_STATES.has(state);
+}
+
+/**
+ * Keep the assessment-package card subordinate to canonical run state.
+ * A package cannot truthfully be "blocked during final report generation" while the
+ * exact Comprehensive run is still active in an earlier automated stage. Real terminal
+ * evidence remains authoritative and is never rewritten here.
+ */
+function repairPrematurePackageBlock(locale: AssessmentLocale): void {
+  const panel = document.querySelector<HTMLElement>('section[data-assessment-run-state="true"]')
+    || document.querySelector<HTMLElement>('section[aria-live="polite"]');
+  if (!panel || !activeCanonicalRunIsNonTerminal()) return;
+
+  const badge = panel.querySelector<HTMLElement>(".section-head > span");
+  if (!badge || !ACTIVE_RUN_LABELS.has(normalizedKey(badge.textContent || ""))) return;
+
+  const cards = Array.from(panel.querySelectorAll<HTMLElement>("article"));
+  const packageCard = cards.find((card) => {
+    const label = normalizedKey(card.querySelector("b")?.textContent || "");
+    return label === "assessment package" || label === "paquete de evaluación";
+  });
+  const value = packageCard?.querySelector<HTMLElement>("span");
+  if (!value) return;
+
+  const status = normalizedKey(value.textContent || "");
+  const prematureFinalReportBlock = (
+    status.includes("blocked") && status.includes("final report")
+  ) || (
+    status.includes("bloqueado") && status.includes("informe final")
+  );
+  if (!prematureFinalReportBlock) return;
+
+  value.textContent = locale === "es-MX"
+    ? "Pendiente · Se generará al completar las etapas automatizadas"
+    : "Pending · Generated after the automated stages complete";
+  value.dataset.nicoActivePackageStatusTruth = "pending";
+}
+
 export default function AssessmentDynamicSpanishLocalization({locale}: {locale: "en" | "es-MX"}) {
   useEffect(() => {
     if (locale !== "es-MX") return;
 
     translateTree(document.body);
+    repairPrematurePackageBlock(locale);
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         if (record.type === "characterData" && record.target instanceof Text) {
@@ -72,6 +138,7 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
         }
         for (const node of record.addedNodes) translateTree(node);
       }
+      repairPrematurePackageBlock(locale);
     });
     observer.observe(document.body, {
       subtree: true,
@@ -84,4 +151,9 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
   return null;
 }
 
-export {LIVE_SPANISH_LABELS, normalizedKey, translateTextNode};
+export {
+  LIVE_SPANISH_LABELS,
+  normalizedKey,
+  repairPrematurePackageBlock,
+  translateTextNode,
+};
