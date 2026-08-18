@@ -215,6 +215,9 @@ def test_html_badge_uses_the_exact_current_lifecycle_boundary_from_markdown() ->
         assert f'<span class="badge">{boundary}</span>' in rendered
         assert "DRAFT · HUMAN REVIEW REQUIRED" not in rendered
 
+    fragment = _semantic_html("# CI/CD evidence fragment\n", "CI/CD evidence")
+    assert 'class="badge"' not in fragment
+
 
 def test_pdf_is_valid_substantive_and_deeper_than_the_old_mid_artifact() -> None:
     report = _package()["report_package"]

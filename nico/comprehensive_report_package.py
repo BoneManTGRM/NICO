@@ -469,14 +469,17 @@ def _semantic_html(markdown: str, title: str) -> str:
             flush_list()
             blocks.append(f"<p>{html.escape(line)}</p>")
     flush_list()
-    if lifecycle_boundary is None:
-        raise ValueError("Comprehensive HTML lifecycle boundary is missing")
     body = "".join(blocks)
+    badge = (
+        f'<span class="badge">{html.escape(lifecycle_boundary)}</span>'
+        if lifecycle_boundary is not None
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
 <style>
 :root{{color-scheme:dark}}body{{margin:0;background:#071124;color:#dbeafe;font:16px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1080px;margin:0 auto;padding:42px 22px 80px}}header{{padding:30px;border:1px solid #274060;border-radius:24px;background:#0d1a31;margin-bottom:24px}}header h1{{margin:0;color:#fff;font-size:clamp(28px,5vw,48px)}}.badge{{display:inline-block;margin-top:14px;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{padding:26px;border:1px solid #274060;border-radius:24px;background:#0b172c}}h1{{color:#fff;line-height:1.08}}h2{{margin-top:34px;padding-top:24px;border-top:1px solid #274060;color:#7dd3fc}}h3{{margin-top:26px;color:#e0f2fe}}p{{color:#cbd5e1}}ul{{padding-left:24px}}li{{margin:7px 0;color:#cbd5e1}}.check{{list-style:none;margin-left:-22px}}.warning{{padding:16px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800;letter-spacing:.02em}}
-</style></head><body><main><header><h1>{html.escape(title)}</h1><span class="badge">{html.escape(lifecycle_boundary)}</span></header><article>{body}</article></main></body></html>"""
+</style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
 
 
 def _pdf(
