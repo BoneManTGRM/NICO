@@ -88,16 +88,80 @@ def _run_to_review(
     *,
     timeout: float = 4.0,
 ) -> dict:
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
+    last_completed_stages: tuple[str, ...] | None = None
     last: dict = {}
-    while time.time() < deadline:
+    while True:
         last = service.run_to_review(run_id)
         if last.get("status") == "review_required":
             return last
         assert last.get("status") == "running"
         assert last.get("client_delivery_allowed") is False
+
+        # The service may advance several deliberately backgrounded stages during
+        # one call. Measure the timeout from the most recent completed-stage advance
+        # instead of charging valid orchestration work against final publication.
+        # Revision-only polling is not progress and must not extend this deadline.
+        completed_stages = tuple(str(item) for item in last.get("completed_stages") or [])
+        if completed_stages != last_completed_stages:
+            last_completed_stages = completed_stages
+            deadline = time.monotonic() + timeout
+        if time.monotonic() >= deadline:
+            break
         time.sleep(0.02)
     raise AssertionError(f"run did not reach human review before timeout: {last}")
+
+
+def test_run_to_review_timeout_tracks_latest_durable_progress() -> None:
+    class ProgressingService:
+        calls = 0
+
+        def run_to_review(self, _run_id: str) -> dict:
+            self.calls += 1
+            if self.calls == 1:
+                time.sleep(0.06)
+                return {
+                    "status": "running",
+                    "revision": 2,
+                    "completed_stages": ["authorization_and_scope"],
+                    "client_delivery_allowed": False,
+                }
+            return {
+                "status": "review_required",
+                "revision": 3,
+                "completed_stages": [
+                    "authorization_and_scope",
+                    "final_comprehensive_report_generation",
+                ],
+            }
+
+    service = ProgressingService()
+
+    final = _run_to_review(service, timeout=0.04)  # type: ignore[arg-type]
+
+    assert final["status"] == "review_required"
+    assert service.calls == 2
+
+
+def test_run_to_review_revision_churn_does_not_mask_a_stalled_stage() -> None:
+    class RevisionOnlyService:
+        calls = 0
+
+        def run_to_review(self, _run_id: str) -> dict:
+            self.calls += 1
+            return {
+                "status": "running",
+                "revision": self.calls,
+                "completed_stages": ["authorization_and_scope"],
+                "client_delivery_allowed": False,
+            }
+
+    service = RevisionOnlyService()
+
+    with pytest.raises(AssertionError, match="did not reach human review"):
+        _run_to_review(service, timeout=0.04)  # type: ignore[arg-type]
+
+    assert service.calls <= 4
 
 
 def test_service_persists_each_stage_and_resumes_after_restart(tmp_path: Path) -> None:
