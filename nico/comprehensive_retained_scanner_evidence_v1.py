@@ -204,10 +204,24 @@ def compact_scanner_records(
                     raw.get("verified_for_this_report") is True
                     or normalized.get("verified_complete") is True
                 ),
+                "current_run": raw.get("current_run") is True,
+                "execution_observed_for_this_report": (
+                    raw.get("execution_observed_for_this_report") is True
+                ),
+                "output_capture_complete": raw.get("output_capture_complete") is True,
+                "raw_artifact_capture_complete": (
+                    raw.get("raw_artifact_capture_complete") is True
+                ),
+                "returncode_valid": raw.get("returncode_valid") is True,
+                "timed_out": raw.get("timed_out") is True,
+                "output_truncated": raw.get("output_truncated") is True,
+                "scans_git_history": raw.get("scans_git_history") is True,
+                "full_history_verified": raw.get("full_history_verified") is True,
                 "required": raw.get("required") is not False,
                 "exit_code": normalized.get("exit_code"),
                 "commit_sha": _text(commit_sha, 80).casefold(),
                 "snapshot_commit_sha": _text(commit_sha, 80).casefold(),
+                "target_commit_sha": _text(commit_sha, 80).casefold(),
                 "exact_commit_match": exact,
                 "artifact_hash": artifact_hash,
                 "raw_artifact_retention_complete": (

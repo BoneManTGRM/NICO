@@ -11,7 +11,8 @@ _ORIGINAL_NORMALIZED_SCANNER_RECORD = base._normalized_scanner_record
 _ORIGINAL_RECONCILE = base.reconcile_phase5_report_truth
 _ORIGINAL_CONTEXT_FROM_MAPPING = base._context_from_mapping
 _STATUS_ALIASES = {
-    "complete": "completed", "completed": "completed", "success": "completed", "passed": "completed",
+    "complete": "completed", "completed": "completed", "completed_clean": "completed",
+    "completed_with_findings": "completed", "success": "completed", "passed": "completed",
     "failure": "failed", "error": "failed", "timed-out": "timeout", "timed_out": "timeout", "incomplete": "partial",
 }
 _STALE_STATUS_MARKERS = ("failed", "partial", "unavailable", "incomplete", "did not produce", "not complete", "execution coverage")
