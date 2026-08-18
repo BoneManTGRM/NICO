@@ -39,6 +39,8 @@ type AssessmentSnapshot = {
   record?: {assessment_state?: unknown};
 };
 
+type AssessmentLocale = "en" | "es-MX";
+
 function normalizedKey(value: string): string {
   return value
     .replace(/[\s_-]+/g, " ")
@@ -93,7 +95,7 @@ function activeCanonicalRunIsNonTerminal(): boolean {
  * exact Comprehensive run is still active in an earlier automated stage. Real terminal
  * evidence remains authoritative and is never rewritten here.
  */
-function repairPrematurePackageBlock(): void {
+function repairPrematurePackageBlock(locale: AssessmentLocale): void {
   const panel = document.querySelector<HTMLElement>('section[data-assessment-run-state="true"]')
     || document.querySelector<HTMLElement>('section[aria-live="polite"]');
   if (!panel || !activeCanonicalRunIsNonTerminal()) return;
@@ -117,8 +119,7 @@ function repairPrematurePackageBlock(): void {
   );
   if (!prematureFinalReportBlock) return;
 
-  const spanish = document.documentElement.lang.toLowerCase().startsWith("es");
-  value.textContent = spanish
+  value.textContent = locale === "es-MX"
     ? "Pendiente · Se generará al completar las etapas automatizadas"
     : "Pending · Generated after the automated stages complete";
   value.dataset.nicoActivePackageStatusTruth = "pending";
@@ -129,7 +130,7 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
     if (locale !== "es-MX") return;
 
     translateTree(document.body);
-    repairPrematurePackageBlock();
+    repairPrematurePackageBlock(locale);
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         if (record.type === "characterData" && record.target instanceof Text) {
@@ -137,7 +138,7 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
         }
         for (const node of record.addedNodes) translateTree(node);
       }
-      repairPrematurePackageBlock();
+      repairPrematurePackageBlock(locale);
     });
     observer.observe(document.body, {
       subtree: true,
