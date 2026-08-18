@@ -144,6 +144,16 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
     report_language_publication_contract_result = (
         install_comprehensive_report_language_publication_contract_v82()
     )
+
+    # Bind late free-form remediation criteria after the canonical Spanish renderer
+    # exists so newly observed acceptance-criteria wording cannot strand an es-MX run
+    # at final publication while preserving the fail-closed localization contract.
+    from nico.comprehensive_spanish_exit_criteria_v88 import (
+        install_comprehensive_spanish_exit_criteria_v88,
+    )
+
+    install_comprehensive_spanish_exit_criteria_v88()
+
     return {
         "status": "installed",
         "version": VERSION,
