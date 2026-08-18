@@ -224,3 +224,5 @@ NICO uses a dual-license model:
 - `LICENSE` — source-available non-commercial license;
 - `COMMERCIAL_LICENSE.md` — commercial license template;
 - `docs/commercial-license-order-form.md` — commercial scope and terms template.
+
+<!-- deployment retry: Railway network provisioning failure 2026-08-18 -->
