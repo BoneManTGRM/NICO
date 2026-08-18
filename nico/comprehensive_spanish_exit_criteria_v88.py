@@ -34,6 +34,7 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
 _EXIT_CRITERIA_MARKER = next(iter(_EXIT_CRITERIA_TRANSLATIONS))
 _ORIGINAL_CANONICAL_TRANSLATE_FIELD: Callable[[str, str], str] | None = None
 _ORIGINAL_PRESENTATION_SAFE_ES: Callable[[Any], str] | None = None
+_ORIGINAL_NATIVE_BUILD_REPORT: Callable[[dict[str, Any], bool], dict[str, Any]] | None = None
 
 
 def _translate_known_exit_criteria(value: Any) -> str:
@@ -68,8 +69,8 @@ def _presentation_safe_es_v88(value: Any) -> str:
     return original(value)
 
 
-def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
-    """Bind the production remediation exit-criteria family into Spanish surfaces."""
+def _bind_translation_surfaces() -> tuple[Any, Any]:
+    """Bind the targeted translators to the live modules without touching global loops."""
 
     global _ORIGINAL_CANONICAL_TRANSLATE_FIELD
     global _ORIGINAL_PRESENTATION_SAFE_ES
@@ -77,11 +78,6 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
 
-    # Do not append these phrases to either global replacement registry. Those
-    # registries are sorted and scanned for every presentation value and this
-    # report path is performance-sensitive. Intercept only the observed
-    # exit-criteria family, then hand control back to the existing fail-closed
-    # translators for every remaining localization and validation rule.
     if canonical._translate_presentation_field is not _translate_canonical_field_v88:
         _ORIGINAL_CANONICAL_TRANSLATE_FIELD = canonical._translate_presentation_field
         canonical._translate_presentation_field = _translate_canonical_field_v88
@@ -90,6 +86,58 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         _ORIGINAL_PRESENTATION_SAFE_ES = presentation._safe_es
         presentation._safe_es = _presentation_safe_es_v88
 
+    return canonical, presentation
+
+
+def _spanish_report_requested(context: Any) -> bool:
+    if not isinstance(context, dict):
+        return False
+    value = str(
+        context.get("report_language")
+        or context.get("requested_report_language")
+        or context.get("locale")
+        or ""
+    ).strip().casefold()
+    return value.startswith("es")
+
+
+def _native_build_report_v88(context: dict[str, Any], final: bool) -> dict[str, Any]:
+    """Reassert Spanish translator authority immediately before report rendering.
+
+    Production Comprehensive decision-report execution is detached from the browser
+    request and may begin after late compatibility installers have rebound renderer
+    aliases. The provider function captured by the runtime still resolves its private
+    ``_build_report`` global at call time, so this boundary is the stable place to
+    restore the exact Spanish translation contract before either the decision report
+    or final report is rendered.
+    """
+
+    original = _ORIGINAL_NATIVE_BUILD_REPORT
+    if original is None:
+        raise RuntimeError("Spanish exit-criteria v88 report boundary is not installed")
+    if _spanish_report_requested(context):
+        _bind_translation_surfaces()
+    return original(context, final)
+
+
+def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
+    """Bind the production remediation exit-criteria family into Spanish surfaces."""
+
+    global _ORIGINAL_NATIVE_BUILD_REPORT
+
+    canonical, presentation = _bind_translation_surfaces()
+
+    # Decision-report generation in the hosted Postgres runtime runs behind a detached
+    # stage lease. Keep a call-time guard on the provider's shared report boundary so a
+    # later compatibility installer cannot silently strand an es-MX worker with stale
+    # translator aliases. This does not add translation phrases to the hot global loops
+    # and does not change any English, evidence, scoring, or delivery semantics.
+    from nico import comprehensive_native_providers as providers
+
+    if providers._build_report is not _native_build_report_v88:
+        _ORIGINAL_NATIVE_BUILD_REPORT = providers._build_report
+        providers._build_report = _native_build_report_v88
+
     return {
         "status": "installed",
         "version": VERSION,
@@ -97,6 +145,10 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
             canonical._translate_presentation_field is _translate_canonical_field_v88
             and presentation._safe_es is _presentation_safe_es_v88
         ),
+        "report_runtime_boundary_bound": (
+            providers._build_report is _native_build_report_v88
+        ),
+        "detached_decision_report_reassertion": True,
         "targeted_fast_path": True,
         "global_replacement_registry_unchanged": True,
         "presentation_only": True,
