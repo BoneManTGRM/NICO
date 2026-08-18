@@ -76,6 +76,9 @@ def _assessment(
 def _package(
     *,
     delivery_status: str = "blocked_pending_human_approval",
+    html_boundary: str = (
+        "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
+    ),
     markdown_adjusted: int = EVIDENCE_ADJUSTED_SCORE,
     html_adjusted: int = EVIDENCE_ADJUSTED_SCORE,
     pdf_adjusted: int = EVIDENCE_ADJUSTED_SCORE,
@@ -94,6 +97,7 @@ def _package(
     html = (
         "<html><body>"
         "<h1>NICO Comprehensive Technical Assessment</h1>"
+        f"<span class=\"badge\">{html_boundary}</span>"
         f"<p>Technical maturity {TECHNICAL_SCORE}/100</p>"
         f"<p>Evidence-Adjusted {html_adjusted}/100</p>"
         f"<pre>{markdown}</pre>"
@@ -161,6 +165,9 @@ def test_current_automated_draft_boundary_and_score_truth_pass() -> None:
     assert result["failed_checks"] == []
     assert result["checks"]["report_finality_is_automated_draft"] is True
     assert result["checks"]["final_delivery_boundary_present_in_markdown"] is True
+    assert result["checks"]["final_delivery_boundary_present_in_html"] is True
+    assert result["checks"]["final_delivery_boundary_present_in_pdf"] is True
+    assert result["checks"]["stale_draft_language_absent_in_html"] is True
     assert result["checks"]["evidence_adjusted_aliases_consistent"] is True
     assert result["checks"]["markdown_evidence_adjusted_matches_canonical"] is True
     assert result["checks"]["html_evidence_adjusted_matches_canonical"] is True
@@ -229,6 +236,19 @@ def test_structured_delivery_drift_fails_closed_and_exposes_exact_check() -> Non
     assert result["checks"]["delivery_status_is_blocked"] is False
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
+
+
+def test_stale_html_badge_fails_closed_even_with_a_current_body_boundary() -> None:
+    _install()
+    result = providers.cross_format_verification_provider(
+        _context(
+            package=_package(html_boundary="DRAFT · HUMAN REVIEW REQUIRED")
+        )
+    )
+
+    assert result["status"] == "blocked"
+    assert "stale_draft_language_absent_in_html" in result["failed_checks"]
+    assert result["checks"]["final_delivery_boundary_present_in_html"] is True
 
 
 def test_canonical_score_synchronizer_replaces_legacy_adjusted_score() -> None:
