@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nico import comprehensive_final_artifact_truth_v53 as artifact_truth
 from nico.comprehensive_blocked_run_recovery_v1 import (
+    VERSION,
     final_artifact_recovery_stage,
     rewind_blocked_run_for_final_artifact_recovery,
 )
@@ -160,6 +161,7 @@ def test_legacy_v4_blocked_run_gets_one_semantic_repair_from_executive_briefing(
         "executive_briefing_and_downstream"
     )
     assert recovered["recovery_history"][-1]["recovery_budget_scope"] == (
-        "source_failed_stage"
+        "source_failed_stage_recovery_generation"
     )
+    assert recovered["recovery_history"][-1]["recovery_generation"] == VERSION
     assert validate_comprehensive_run_record(recovered)["status"] == "valid"
