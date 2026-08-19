@@ -5,33 +5,7 @@ from typing import Any, Iterable, Mapping
 VERSION = "nico.comprehensive-spanish-publication-preflight.v93"
 _MAX_FAILURE_DETAILS = 50
 _MAX_VISITED_NODES = 75_000
-_MAX_DEPTH = 16
-
-# These are the report-bound decision/presentation fields whose prose is expected to
-# survive into client-review artifacts. Raw evidence, scanner payloads, and immutable
-# machine identifiers are intentionally excluded; the canonical renderer owns those
-# separately and must preserve them byte-for-byte.
-_REPORT_BOUND_PROSE_FIELDS = {
-    "acceptance_criteria",
-    "business_impact",
-    "decision",
-    "description",
-    "exit_criteria",
-    "impact",
-    "interpretation",
-    "label",
-    "limitations",
-    "objective",
-    "recommendation",
-    "recommended_correction",
-    "rollback",
-    "score_rationale",
-    "summary",
-    "title",
-    "unavailable_data_notes",
-    "verification",
-    "why_it_matters",
-}
+_MAX_DEPTH = 18
 
 
 def _text(value: Any, limit: int = 600) -> str:
@@ -39,20 +13,19 @@ def _text(value: Any, limit: int = 600) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
-def _spanish_requested(context: Mapping[str, Any]) -> bool:
-    identity = context.get("identity") if isinstance(context.get("identity"), Mapping) else {}
-    value = _text(
-        context.get("report_language")
-        or context.get("requested_report_language")
-        or context.get("requested_locale")
-        or context.get("locale")
+def _spanish_requested(value: Mapping[str, Any]) -> bool:
+    identity = value.get("identity") if isinstance(value.get("identity"), Mapping) else {}
+    assessment = value.get("assessment") if isinstance(value.get("assessment"), Mapping) else {}
+    language = _text(
+        value.get("report_language")
+        or value.get("locale")
         or identity.get("report_language")
-        or identity.get("requested_report_language")
-        or identity.get("requested_locale")
-        or identity.get("locale"),
+        or identity.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale"),
         40,
     ).casefold()
-    return value.startswith("es")
+    return language.startswith("es")
 
 
 def _iter_report_bound_strings(
@@ -63,7 +36,7 @@ def _iter_report_bound_strings(
     depth: int = 0,
     budget: list[int] | None = None,
 ) -> Iterable[tuple[str, str, str]]:
-    """Yield bounded report-bound prose without copying retained evidence trees."""
+    """Mirror v87's canonical presentation traversal without copying evidence trees."""
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
@@ -73,6 +46,8 @@ def _iter_report_bound_strings(
     if budget[0] > _MAX_VISITED_NODES or depth > _MAX_DEPTH:
         return
 
+    # Match the authoritative v87 localization boundary exactly. Raw scanner/canonical
+    # evidence and protected identifiers remain immutable and are not Spanish prose.
     if any(segment in canonical._RAW_CANONICAL_SUBTREES for segment in path):
         return
     if key in canonical._PROTECTED_FIELDS:
@@ -105,29 +80,29 @@ def _iter_report_bound_strings(
                 return
         return
 
-    if isinstance(value, str) and key in _REPORT_BOUND_PROSE_FIELDS:
+    if isinstance(value, str) and key in canonical._PRESENTATION_PROSE_FIELDS:
         yield ".".join(path) or key, key, value
 
 
-def inspect_spanish_publication_preflight(
-    context: Mapping[str, Any],
-    prior_stage_results: Mapping[str, Any],
+def inspect_spanish_canonical_publication_preflight(
+    canonical_report: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Validate every bounded report-bound Spanish presentation field in one pass.
+    """Validate the fully restored canonical report before any client artifact renders.
 
-    The final renderer remains the authority and still fails closed. This preflight is
-    deliberately additive: instead of discovering one untranslated generated sentence
-    per production rerun, it exercises all report-bound prose visible in the retained
-    stage state and returns every missing contract found in the same bounded pass.
+    This intentionally runs *after* decision-content restoration and count reconciliation.
+    Dynamic complexity findings do not necessarily exist in retained stage input; they are
+    synthesized while canonical truth is built. Inspecting prior-stage state would therefore
+    miss the exact family that caused the production incident.
     """
 
-    if not _spanish_requested(context):
+    if not _spanish_requested(canonical_report):
         return {
             "status": "not_applicable",
             "version": VERSION,
             "spanish_requested": False,
             "failure_count": 0,
             "failure_details": [],
+            "canonical_restoration_complete": True,
             "visited_nodes_bounded": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -141,8 +116,8 @@ def inspect_spanish_publication_preflight(
     budget = [0]
 
     for path, key, source in _iter_report_bound_strings(
-        prior_stage_results,
-        path=("prior_stage_results",),
+        canonical_report,
+        path=("canonical_report",),
         budget=budget,
     ):
         checked += 1
@@ -172,6 +147,7 @@ def inspect_spanish_publication_preflight(
         "visited_nodes_bounded": budget[0] <= _MAX_VISITED_NODES,
         "maximum_visited_nodes": _MAX_VISITED_NODES,
         "maximum_failure_details": _MAX_FAILURE_DETAILS,
+        "canonical_restoration_complete": True,
         "presentation_only": True,
         "canonical_evidence_unchanged": True,
         "human_review_required": True,
@@ -179,11 +155,10 @@ def inspect_spanish_publication_preflight(
     }
 
 
-def assert_spanish_publication_preflight(
-    context: Mapping[str, Any],
-    prior_stage_results: Mapping[str, Any],
+def assert_spanish_canonical_publication_preflight(
+    canonical_report: Mapping[str, Any],
 ) -> dict[str, Any]:
-    manifest = inspect_spanish_publication_preflight(context, prior_stage_results)
+    manifest = inspect_spanish_canonical_publication_preflight(canonical_report)
     if manifest.get("status") != "blocked":
         return manifest
 
@@ -200,8 +175,29 @@ def assert_spanish_publication_preflight(
     )
 
 
+# Compatibility aliases for callers/tests introduced with the first v93 draft. The
+# second argument is ignored intentionally: publication truth is the restored canonical
+# model, never the raw prior-stage input.
+def inspect_spanish_publication_preflight(
+    context: Mapping[str, Any],
+    canonical_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    _ = context
+    return inspect_spanish_canonical_publication_preflight(canonical_report)
+
+
+def assert_spanish_publication_preflight(
+    context: Mapping[str, Any],
+    canonical_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    _ = context
+    return assert_spanish_canonical_publication_preflight(canonical_report)
+
+
 __all__ = [
     "VERSION",
+    "assert_spanish_canonical_publication_preflight",
     "assert_spanish_publication_preflight",
+    "inspect_spanish_canonical_publication_preflight",
     "inspect_spanish_publication_preflight",
 ]
