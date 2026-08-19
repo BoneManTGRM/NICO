@@ -18,6 +18,9 @@ def test_failure_cta_routes_exact_comprehensive_run_into_recovery_control() -> N
     assert "ComprehensiveRecoveryPanel" in page_source
     assert "comprehensiveTarget ? <ComprehensiveRecoveryPanel" in page_source
     assert "targetRunId={targetRunId}" in page_source
+    assert '(!comprehensiveTarget && !adminToken.trim())' in page_source
+    assert 'disabled={comprehensiveTarget}' in page_source
+    assert "not required for Comprehensive recovery" in page_source
 
 
 def test_comprehensive_recovery_reuses_exact_run_and_bounded_continue() -> None:
@@ -35,3 +38,6 @@ def test_comprehensive_recovery_reuses_exact_run_and_bounded_continue() -> None:
     assert 'target.searchParams.set("tier", "comprehensive")' in source
     assert "recovered.terminal === true" in source
     assert "Preserved evidence was not converted into a passing result" in source
+    assert "X-NICO-Admin-Token" not in source
+    assert "No operator token is required for this bounded Comprehensive recovery" in source
+    assert 'disabled={loading || !recoverable(run)}' in source
