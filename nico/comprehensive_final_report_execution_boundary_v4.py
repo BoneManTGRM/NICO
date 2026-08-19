@@ -12,7 +12,7 @@ from nico.comprehensive_final_report_compact_base_v1 import (
     install_comprehensive_final_report_compact_base_v1,
 )
 
-VERSION = "nico.comprehensive_final_report_execution_boundary.v7"
+VERSION = "nico.comprehensive_final_report_execution_boundary.v8"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 600
 MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS = 30
@@ -40,6 +40,50 @@ def _timeout_seconds(value: int | None) -> int:
         MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS,
         min(MAX_FINAL_REPORT_TIMEOUT_SECONDS, configured),
     )
+
+
+def _install_final_report_runtime_guards() -> dict[str, Any]:
+    """Rebind report aliases inside the final-report worker immediately before use.
+
+    The durable final-report coordinator is a separate execution path from the general
+    detached-stage coordinator. A process can therefore reach final publication after a
+    restart without ever executing the v90 rebind used by the other report worker path.
+    In that state, the compact-final wrapper may still hold a stale pre-v88 report
+    delegate, so newly generated Spanish presentation contracts bypass the current
+    translation guard and fail closed one literal at a time.
+
+    Reinstall the stable v90 report base first, then reapply the compact-final wrapper
+    around that repaired alias. This order preserves the bounded final-PDF projection
+    while making Spanish/report runtime behavior independent of process history,
+    previous stages, or recovery entry point.
+    """
+
+    from nico.comprehensive_report_worker_runtime_v90 import (
+        install_report_worker_runtime_v90,
+    )
+
+    report_runtime = install_report_worker_runtime_v90()
+    if (
+        report_runtime.get("native_report_base_stable") is not True
+        or report_runtime.get("ci_pdf_base_stable") is not True
+        or report_runtime.get("detached_report_alias_recursion_blocked") is not True
+    ):
+        raise RuntimeError("final report worker v90 runtime guard not authoritative")
+
+    compact_runtime = install_comprehensive_final_report_compact_base_v1()
+    if (
+        compact_runtime.get("final_intermediate_pdf_is_decision_oriented") is not True
+        or compact_runtime.get("current_finality_gate_preserved") is not True
+    ):
+        raise RuntimeError("final report compact runtime guard not authoritative")
+
+    return {
+        "report_runtime_v90_rebound": True,
+        "compact_final_report_runtime_rebound": True,
+        "runtime_guard_order": "v90_then_compact",
+        "process_history_independent": True,
+        "recovery_entry_point_independent": True,
+    }
 
 
 def _blocked(
@@ -223,6 +267,8 @@ def execute_final_report_stage(
 ) -> dict[str, Any]:
     """Generate, validate, and return one exact final package for atomic run storage."""
 
+    runtime_guards = _install_final_report_runtime_guards()
+
     if durable_coordinator_owns_lifetime:
         limit: int | None = None
         kind, value, elapsed = _execute_managed(executor, context)
@@ -246,6 +292,7 @@ def execute_final_report_stage(
         "durable_coordinator_owns_lifetime": durable_coordinator_owns_lifetime,
         "full_context_deepcopy_skipped": True,
         "compact_intermediate_pdf_projection_installed": True,
+        **runtime_guards,
     }
     if kind == "timeout":
         assert limit is not None
