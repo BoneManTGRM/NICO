@@ -21,7 +21,6 @@ type ComprehensiveProjection = {
 
 type Props = {
   apiUrl: string;
-  adminToken: string;
   refreshKey: string;
   targetRunId: string;
   returnPath?: string;
@@ -67,7 +66,6 @@ function recoverable(run: ComprehensiveProjection | null): boolean {
 
 export default function ComprehensiveRecoveryPanel({
   apiUrl,
-  adminToken,
   refreshKey,
   targetRunId,
   returnPath = "/assessment",
@@ -79,7 +77,7 @@ export default function ComprehensiveRecoveryPanel({
   const reason = useMemo(() => failureReason(run), [run]);
 
   async function loadExactRun(): Promise<ComprehensiveProjection | null> {
-    if (!apiUrl || !adminToken.trim() || !targetRunId) return null;
+    if (!apiUrl || !targetRunId) return null;
     setLoading(true);
     setError("");
     try {
@@ -90,7 +88,6 @@ export default function ComprehensiveRecoveryPanel({
           headers: {
             "Accept": "application/json",
             "Cache-Control": "no-store",
-            "X-NICO-Admin-Token": adminToken,
           },
         },
       );
@@ -114,7 +111,7 @@ export default function ComprehensiveRecoveryPanel({
   }
 
   async function resumeExactRun() {
-    if (!apiUrl || !adminToken.trim() || !targetRunId || !recoverable(run)) return;
+    if (!apiUrl || !targetRunId || !recoverable(run)) return;
     setLoading(true);
     setError("");
     try {
@@ -127,7 +124,6 @@ export default function ComprehensiveRecoveryPanel({
             "Accept": "application/json",
             "Content-Type": "application/json",
             "Cache-Control": "no-store",
-            "X-NICO-Admin-Token": adminToken,
           },
           body: JSON.stringify({max_stages: 1}),
         },
@@ -163,7 +159,7 @@ export default function ComprehensiveRecoveryPanel({
   }
 
   useEffect(() => {
-    if (refreshKey && adminToken.trim() && targetRunId) void loadExactRun();
+    if (refreshKey && targetRunId) void loadExactRun();
   }, [refreshKey]);
 
   return (
@@ -180,7 +176,7 @@ export default function ComprehensiveRecoveryPanel({
 
       <div className={styles.nextAction}>
         <b>Exact run identity</b>
-        <p>{targetRunId}. This control never creates a replacement run. It re-enters the existing bounded Comprehensive continuation path using the preserved durable record.</p>
+        <p>{targetRunId}. This control never creates a replacement run. It re-enters the same public exact-run continuation boundary used by the assessment workspace and preserves the durable record.</p>
       </div>
 
       <div className={styles.gridFour}>
@@ -198,16 +194,16 @@ export default function ComprehensiveRecoveryPanel({
       {error ? <div className={styles.error}>{error}</div> : null}
 
       <div className={styles.filters}>
-        <button type="button" onClick={() => void loadExactRun()} disabled={loading || !adminToken.trim()}>
+        <button type="button" onClick={() => void loadExactRun()} disabled={loading}>
           {loading ? "Working..." : "Reload exact run state"}
         </button>
         <div />
-        <button type="button" onClick={() => void resumeExactRun()} disabled={loading || !adminToken.trim() || !recoverable(run)}>
+        <button type="button" onClick={() => void resumeExactRun()} disabled={loading || !recoverable(run)}>
           Resume same Comprehensive run ID
         </button>
       </div>
 
-      <p className={styles.helper}>The first recovery continuation is limited to one stage. Once that stage succeeds, NICO returns to the normal exact-run assessment page and continues from the preserved run ID. A repeated terminal failure remains blocked and visible.</p>
+      <p className={styles.helper}>No operator token is required for this bounded Comprehensive recovery because it uses the existing public exact-run status and continuation routes. Human review and client delivery remain fail closed. The first recovery continuation is limited to one stage; a repeated terminal failure remains blocked and visible.</p>
     </section>
   );
 }
