@@ -1,0 +1,346 @@
+name: Verify Comprehensive Recovery af12
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  statuses: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  verify-preserved-run:
+    name: Verify exact Comprehensive run af12
+    if: contains(github.event.head_commit.message, '[verify-comprun-af12]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production-smoke
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
+      NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
+      TARGET_RUN_ID: comprun_af12a68318e64965965a92e8c1aa431c
+      RELEASE_SHA: ${{ github.sha }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PROOF_PR_NUMBER: '1235'
+
+    steps:
+      - name: Check out exact verification release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Wait for exact frontend and backend deployments
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required = {"Vercel", os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]}
+          deadline = time.time() + 30 * 60
+          last = {}
+          while time.time() < deadline:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-exact-comprehensive-verifier",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last = {}
+              for item in payload.get("statuses") or []:
+                  last.setdefault(str(item.get("context") or ""), str(item.get("state") or "unknown"))
+              observed = {context: last.get(context, "missing") for context in required}
+              print(f"Exact-SHA deployment statuses: {observed}", flush=True)
+              if all(observed[context] == "success" for context in required):
+                  break
+              if any(observed[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(f"Exact-SHA deployment failed: {observed}")
+              time.sleep(20)
+          else:
+              raise SystemExit(f"Timed out waiting for exact-SHA deployments: {last}")
+          PY
+
+      - name: Verify or recover exact preserved Comprehensive run with durable proof
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
+          run_id = os.environ["TARGET_RUN_ID"]
+          endpoint = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
+          repository = os.environ["GITHUB_REPOSITORY"]
+          release_sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          proof_pr = int(os.environ["PROOF_PR_NUMBER"])
+          status_context = "NICO Exact Comprehensive af12"
+          blocked_states = {"blocked", "failed", "error", "interrupted", "rejected"}
+
+          github_headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "nico-exact-comprehensive-verifier",
+          }
+
+          def github_post(url: str, payload: dict[str, Any]) -> None:
+              req = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode("utf-8"),
+                  method="POST",
+                  headers={**github_headers, "Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  response.read()
+
+          def post_status(state: str, description: str) -> None:
+              github_post(
+                  f"https://api.github.com/repos/{repository}/statuses/{release_sha}",
+                  {
+                      "state": state,
+                      "context": status_context,
+                      "description": description[:140],
+                      "target_url": f"https://github.com/{repository}/pull/{proof_pr}",
+                  },
+              )
+
+          def post_comment(body: str) -> None:
+              github_post(
+                  f"https://api.github.com/repos/{repository}/issues/{proof_pr}/comments",
+                  {"body": body},
+              )
+
+          def request_json(
+              method: str,
+              url: str,
+              payload: dict[str, Any] | None = None,
+              timeout: int = 270,
+          ) -> dict[str, Any]:
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              headers = {
+                  "Accept": "application/json",
+                  "Cache-Control": "no-store",
+                  "User-Agent": "nico-exact-comprehensive-verifier",
+                  "X-NICO-Browser-Projection": "terminal-manifest-v1",
+              }
+              if data is not None:
+                  headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as response:
+                      raw = response.read()
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"HTTP {exc.code} {method} {url}: {body[:3000]}") from exc
+              value = json.loads(raw.decode("utf-8"))
+              if not isinstance(value, dict):
+                  raise RuntimeError(f"Expected JSON object from {method} {url}")
+              return value
+
+          def first_nonempty(*values: Any) -> str:
+              for value in values:
+                  text = str(value or "").strip()
+                  if text:
+                      return text
+              return ""
+
+          def projection(payload: dict[str, Any]) -> dict[str, Any]:
+              record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+              identity = record.get("identity") if isinstance(record.get("identity"), dict) else {}
+              diagnostic = record.get("diagnostic") if isinstance(record.get("diagnostic"), dict) else {}
+              failure = record.get("failure") if isinstance(record.get("failure"), dict) else {}
+              return {
+                  "run_id": str(payload.get("run_id") or identity.get("run_id") or ""),
+                  "repository": str(payload.get("repository") or identity.get("repository") or ""),
+                  "commit_sha": str(payload.get("commit_sha") or identity.get("commit_sha") or ""),
+                  "status": str(payload.get("status") or record.get("status") or "unknown"),
+                  "terminal": bool(payload.get("terminal") if "terminal" in payload else record.get("terminal")),
+                  "current_stage": str(payload.get("current_stage") or record.get("current_stage") or ""),
+                  "progress_percent": payload.get("progress_percent", record.get("progress_percent")),
+                  "human_review_required": bool(payload.get("human_review_required", record.get("human_review_required", True))),
+                  "client_delivery_allowed": bool(payload.get("client_delivery_allowed", record.get("client_delivery_allowed", False))),
+                  "diagnostic_code": first_nonempty(
+                      payload.get("diagnostic_code"),
+                      record.get("diagnostic_code"),
+                      diagnostic.get("code"),
+                      failure.get("code"),
+                  ),
+                  "technical_reason": first_nonempty(
+                      payload.get("technical_reason"),
+                      payload.get("reason"),
+                      payload.get("error"),
+                      record.get("technical_reason"),
+                      record.get("reason"),
+                      record.get("error"),
+                      diagnostic.get("technical_reason"),
+                      diagnostic.get("reason"),
+                      diagnostic.get("message"),
+                      failure.get("reason"),
+                      failure.get("message"),
+                      failure.get("error"),
+                  )[:4000],
+              }
+
+          def exact(payload: dict[str, Any]) -> dict[str, Any]:
+              view = projection(payload)
+              if view["run_id"] != run_id:
+                  raise RuntimeError(
+                      f"Exact-run identity changed: expected={run_id} observed={view['run_id']}"
+                  )
+              return view
+
+          post_status("pending", "Verifying exact preserved Comprehensive run after deployed fix")
+
+          history: list[dict[str, Any]] = []
+          initial_payload = request_json("GET", endpoint, timeout=90)
+          initial = exact(initial_payload)
+          history.append(initial)
+          print("Initial exact-run state:", json.dumps(initial, sort_keys=True), flush=True)
+
+          # If the first one-shot recovery from #1235 is still active, do not race it.
+          # Observe durable state for up to five minutes before taking any new write.
+          current = initial
+          if not current["terminal"]:
+              settle_deadline = time.time() + 5 * 60
+              while time.time() < settle_deadline and not current["terminal"]:
+                  time.sleep(10)
+                  current = exact(request_json("GET", endpoint, timeout=90))
+                  history.append(current)
+                  print("Observed active exact-run state:", json.dumps(current, sort_keys=True), flush=True)
+
+          final = current
+          if not (final["terminal"] and final["status"].lower() not in blocked_states):
+              # Re-enter only the exact preserved run. Every write remains one bounded
+              # stage and every ambiguous transport result is reconciled by durable GET.
+              for attempt in range(1, 31):
+                  if final["terminal"] and final["status"].lower() in blocked_states:
+                      print(
+                          f"Verification recovery {attempt}: re-entering blocked exact run at {final['current_stage']}",
+                          flush=True,
+                      )
+                  try:
+                      continued_payload = request_json(
+                          "POST",
+                          f"{endpoint}/continue",
+                          {"max_stages": 1},
+                          timeout=270,
+                      )
+                  except Exception as exc:
+                      print(
+                          f"Continuation transport returned {exc}; reconciling exact durable state.",
+                          flush=True,
+                      )
+                      time.sleep(5)
+                      final = exact(request_json("GET", endpoint, timeout=90))
+                      history.append(final)
+                      print("Reconciled exact-run state:", json.dumps(final, sort_keys=True), flush=True)
+                      if final["terminal"]:
+                          break
+                      continue
+
+                  final = exact(continued_payload)
+                  history.append(final)
+                  print(
+                      f"Verification continuation {attempt}: {json.dumps(final, sort_keys=True)}",
+                      flush=True,
+                  )
+                  if final["terminal"]:
+                      break
+                  time.sleep(2)
+              else:
+                  raise RuntimeError(
+                      "Exact run did not reach a terminal boundary within 30 bounded stage continuations"
+                  )
+
+          proof = {
+              "artifact_schema": "nico.exact_comprehensive_recovery_verification.v1",
+              "verification_release_sha": release_sha,
+              "run_id": run_id,
+              "initial": initial,
+              "final": final,
+              "observations": history,
+              "same_run_identity_preserved": all(item["run_id"] == run_id for item in history),
+          }
+          proof_path = Path("audit-results/exact-comprehensive-recovery-af12-verification.json")
+          proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+          status = final["status"].lower()
+          failures: list[str] = []
+          if not final["terminal"]:
+              failures.append("exact run remained nonterminal")
+          if status in blocked_states:
+              failures.append(f"exact run is terminal-{status}")
+          if not final["human_review_required"]:
+              failures.append("human-review gate weakened")
+          if final["client_delivery_allowed"]:
+              failures.append("client delivery became allowed without review")
+          if not proof["same_run_identity_preserved"]:
+              failures.append("exact run identity changed")
+
+          if failures:
+              reason = "; ".join(failures)
+              comment = (
+                  "<!-- nico-af12-production-proof -->\n"
+                  "## Exact Spanish Comprehensive production verification: FAILED\n\n"
+                  f"Verification release: `{release_sha}`\n\n"
+                  f"Exact run: `{run_id}`\n\n"
+                  f"Failure: {reason}\n\n"
+                  "Final durable projection:\n\n"
+                  "```json\n"
+                  + json.dumps(final, indent=2, sort_keys=True)
+                  + "\n```"
+              )
+              try:
+                  post_comment(comment)
+              finally:
+                  post_status("failure", f"Exact run failed verification: {reason}")
+              raise RuntimeError(f"Exact production verification failed: {reason}; final={final}")
+
+          comment = (
+              "<!-- nico-af12-production-proof -->\n"
+              "## Exact Spanish Comprehensive production verification: PASSED\n\n"
+              f"Verification release: `{release_sha}`\n\n"
+              f"Exact run: `{run_id}`\n\n"
+              "The same preserved run reached a nonblocked terminal boundary. Human review remains required and client delivery remains disabled.\n\n"
+              "Final durable projection:\n\n"
+              "```json\n"
+              + json.dumps(final, indent=2, sort_keys=True)
+              + "\n```"
+          )
+          post_comment(comment)
+          post_status("success", "Exact preserved Comprehensive run reached human-review boundary")
+          print("Exact preserved Comprehensive production verification passed.", flush=True)
+          print(json.dumps(final, indent=2, sort_keys=True), flush=True)
+          PY
+
+      - name: Upload exact-run verification proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: exact-comprehensive-recovery-af12-verification-${{ github.sha }}-${{ github.run_id }}
+          path: audit-results/exact-comprehensive-recovery-af12-verification.json
+          if-no-files-found: warn
+          retention-days: 90
