@@ -49,8 +49,22 @@ _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD = {
     for source, target in _TARGETED_PRESENTATION_TRANSLATIONS.items()
 }
 
+# The v85 terminal client-surface localizer calls v87._translate_presentation
+# directly. v87 intentionally splits multiline values before applying full-match
+# structured contracts, so a renderer-inserted soft line wrap can strand an otherwise
+# valid structured sentence. Repair only production-observed structured spans and
+# require v87's authoritative full-match translator to recognize the normalized text.
+_STRUCTURED_SOFT_WRAP_SPANS: tuple[tuple[str, str], ...] = (
+    (
+        "Technical maturity remains based on exact-commit technical controls.",
+        "readiness scores.",
+    ),
+)
+_MAX_STRUCTURED_SOFT_WRAP_CHARS = 2400
+
 _EXIT_CRITERIA_MARKER = next(iter(_EXIT_CRITERIA_TRANSLATIONS))
 _ORIGINAL_CANONICAL_TRANSLATE_FIELD: Callable[[str, str], str] | None = None
+_ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION: Callable[[Any], str] | None = None
 _ORIGINAL_PRESENTATION_SAFE_ES: Callable[[Any], str] | None = None
 _ORIGINAL_NATIVE_BUILD_REPORT: Callable[[dict[str, Any], bool], dict[str, Any]] | None = None
 
@@ -97,6 +111,57 @@ def _normalize_known_structured_presentation(value: Any) -> tuple[str, str] | No
     if translated is None:
         return None
     return normalized, translated
+
+
+def _repair_known_structured_spans(value: Any) -> str:
+    """Repair recognized structured contracts embedded in multiline presentation text.
+
+    The terminal v85 localizer can pass an entire Markdown or review block to v87's
+    direct presentation translator. Normalize only a bounded span whose start and end
+    markers are known, and only when v87 independently recognizes the normalized
+    sentence. If the contract changes, leave it untouched so v87 still fails closed.
+    """
+
+    text = str(value or "")
+    if "\n" not in text and "\r" not in text:
+        return text
+
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical
+
+    for start_marker, end_marker in _STRUCTURED_SOFT_WRAP_SPANS:
+        search_from = 0
+        while True:
+            start = text.find(start_marker, search_from)
+            if start < 0:
+                break
+            end_start = text.find(end_marker, start + len(start_marker))
+            if end_start < 0:
+                break
+            end = end_start + len(end_marker)
+            if end - start > _MAX_STRUCTURED_SOFT_WRAP_CHARS:
+                search_from = start + len(start_marker)
+                continue
+
+            candidate = text[start:end]
+            normalized = " ".join(candidate.split())
+            try:
+                translated = canonical._structured_presentation_es(normalized)
+            except ValueError:
+                translated = None
+            if translated is None:
+                search_from = start + len(start_marker)
+                continue
+
+            text = text[:start] + translated + text[end:]
+            search_from = start + len(translated)
+    return text
+
+
+def _translate_presentation_v88(value: Any) -> str:
+    original = _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION
+    if original is None:
+        raise RuntimeError("Spanish exit-criteria v88 direct translator is not installed")
+    return original(_repair_known_structured_spans(value))
 
 
 def _translate_canonical_field_v88(value: str, key: str) -> str:
@@ -153,10 +218,15 @@ def _bind_translation_surfaces() -> tuple[Any, Any]:
     """Bind the targeted translators to the live modules without touching global loops."""
 
     global _ORIGINAL_CANONICAL_TRANSLATE_FIELD
+    global _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION
     global _ORIGINAL_PRESENTATION_SAFE_ES
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
+
+    if canonical._translate_presentation is not _translate_presentation_v88:
+        _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION = canonical._translate_presentation
+        canonical._translate_presentation = _translate_presentation_v88
 
     if canonical._translate_presentation_field is not _translate_canonical_field_v88:
         _ORIGINAL_CANONICAL_TRANSLATE_FIELD = canonical._translate_presentation_field
@@ -218,13 +288,28 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         _ORIGINAL_NATIVE_BUILD_REPORT = providers._build_report
         providers._build_report = _native_build_report_v88
 
+    # The exact-main production acceptance artifact also exposed U+007F control glyphs
+    # in the generated CI/CD appendix. Install the bounded text-operand repair here so
+    # the same production compatibility chain closes both publication blockers without
+    # altering CI/CD truth, scores, evidence, review, or delivery semantics.
+    from nico.comprehensive_ci_pdf_control_safety_v89 import (
+        install_comprehensive_ci_pdf_control_safety_v89,
+    )
+
+    ci_pdf_control_safety = install_comprehensive_ci_pdf_control_safety_v89()
+
     return {
         "status": "installed",
         "version": VERSION,
         "bound": (
-            canonical._translate_presentation_field is _translate_canonical_field_v88
+            canonical._translate_presentation is _translate_presentation_v88
+            and canonical._translate_presentation_field is _translate_canonical_field_v88
             and presentation._safe_es is _presentation_safe_es_v88
         ),
+        "direct_canonical_presentation_bound": (
+            canonical._translate_presentation is _translate_presentation_v88
+        ),
+        "terminal_client_surface_soft_wrap_repair": True,
         "report_runtime_boundary_bound": (
             providers._build_report is _native_build_report_v88
         ),
@@ -232,6 +317,11 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         "targeted_fast_path": True,
         "targeted_rollback_translation": True,
         "structured_soft_whitespace_repair": True,
+        "ci_pdf_control_safety": ci_pdf_control_safety,
+        "ci_pdf_control_glyph_sanitized": (
+            ci_pdf_control_safety.get("bound") is True
+            and ci_pdf_control_safety.get("del_control_glyph_sanitized") is True
+        ),
         "global_replacement_registry_unchanged": True,
         "presentation_only": True,
         "english_path_unchanged": True,
