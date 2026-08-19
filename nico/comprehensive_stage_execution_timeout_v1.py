@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 
 from nico.comprehensive_stage_watchdog_v1 import STALL_REASON
 
-VERSION = "nico.comprehensive_stage_execution_timeout.v1"
+VERSION = "nico.comprehensive_stage_execution_timeout.v2"
 DEFAULT_STAGE_EXECUTION_TIMEOUT_SECONDS = 240
 
 StageExecutor = Callable[[dict[str, Any]], dict[str, Any]]
@@ -28,6 +28,43 @@ def _timeout_seconds() -> int:
     return max(1, min(900, value))
 
 
+def _report_runtime_metadata(stage_id: str) -> dict[str, Any]:
+    """Install the stable report runtime for every generic report-stage execution.
+
+    Decision-report generation currently executes through this timeout boundary rather
+    than the dedicated final-report coordinator. Rebinding only inside the historical
+    detached-stage coordinator therefore leaves a real production path dependent on
+    process import order. Keep the runtime repair at the universal execution boundary so
+    any caller of a report stage receives the same stable v90/v88 alias chain before the
+    provider thread starts.
+    """
+
+    from nico.comprehensive_report_worker_runtime_v90 import (
+        install_report_worker_runtime_v90,
+        report_stage,
+    )
+
+    if not report_stage(stage_id):
+        return {}
+
+    installation = install_report_worker_runtime_v90()
+    authoritative = (
+        installation.get("native_report_base_stable") is True
+        and installation.get("ci_pdf_base_stable") is True
+        and installation.get("detached_report_alias_recursion_blocked") is True
+        and installation.get("spanish_guard_bound") is True
+    )
+    if not authoritative:
+        raise RuntimeError(
+            f"report stage runtime guard not authoritative:stage={stage_id}"
+        )
+    return {
+        "report_runtime_v90_rebound": True,
+        "report_runtime_boundary": "universal_stage_execution_timeout",
+        "report_runtime_process_history_independent": True,
+    }
+
+
 def execute_stage_with_timeout(
     executor: StageExecutor,
     context: Mapping[str, Any],
@@ -41,8 +78,14 @@ def execute_stage_with_timeout(
     HTTP request forever. A timeout does not invent completion or discard prior
     evidence. It returns a fail-closed stage result that uses the existing stalled-
     stage recovery contract and therefore permits at most one explicit retry.
+
+    Report stages additionally rebind the stable v90 runtime before the provider thread
+    starts. This covers synchronous decision-report execution as well as callers that
+    reach this boundary through detached orchestration, removing process history as a
+    source of Spanish/report publication drift.
     """
 
+    report_runtime = _report_runtime_metadata(stage_id)
     limit = max(1, min(900, int(timeout_seconds or _timeout_seconds())))
     result_queue: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
     started = time.monotonic()
@@ -93,6 +136,7 @@ def execute_stage_with_timeout(
                 "scanner_evidence_preserved": True,
                 "provider_thread_daemonized": True,
                 "stalled": True,
+                **report_runtime,
             },
         }
 
@@ -110,6 +154,7 @@ def execute_stage_with_timeout(
                 "elapsed_seconds": elapsed,
                 "execution_timeout_seconds": limit,
                 "completed_within_boundary": True,
+                **report_runtime,
             }
         )
     return output
