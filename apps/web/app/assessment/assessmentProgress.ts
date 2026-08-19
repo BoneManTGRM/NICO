@@ -57,17 +57,13 @@ function completedStageCount(result: Result | null): number {
     .map((value) => value.length);
 
   const projectedResults = record?.stage_results || {};
-  const contiguousCompleted = COMPREHENSIVE_STAGE_IDS.reduce((count, stageId) => {
-    if (count < 0) return count;
-    const value = projectedResults[stageId];
-    return SUCCESS_STAGE_STATUSES.has(stageStatus(value)) ? count + 1 : -1;
-  }, 0);
+  let contiguousCompleted = 0;
+  for (const stageId of COMPREHENSIVE_STAGE_IDS) {
+    if (!SUCCESS_STAGE_STATUSES.has(stageStatus(projectedResults[stageId]))) break;
+    contiguousCompleted += 1;
+  }
 
-  return Math.max(
-    0,
-    ...explicitCounts,
-    contiguousCompleted < 0 ? 0 : contiguousCompleted,
-  );
+  return Math.max(0, ...explicitCounts, contiguousCompleted);
 }
 
 function currentStageIndex(result: Result | null): number {
