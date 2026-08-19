@@ -114,17 +114,17 @@ def _normalize_known_structured_presentation(value: Any) -> tuple[str, str] | No
 
 
 def _repair_known_structured_spans(value: Any) -> str:
-    """Repair recognized structured contracts embedded in multiline presentation text.
+    """Normalize recognized structured contracts before v87 translates them.
 
     The terminal v85 localizer can pass an entire Markdown or review block to v87's
     direct presentation translator. Normalize only a bounded span whose start and end
     markers are known, and only when v87 independently recognizes the normalized
-    sentence. If the contract changes, leave it untouched so v87 still fails closed.
+    English contract. The normalized English is then delegated to the original v87
+    translator so its authoritative translation and fail-closed checks remain active.
+    If the contract changes, leave it untouched so v87 still fails closed.
     """
 
     text = str(value or "")
-    if "\n" not in text and "\r" not in text:
-        return text
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
@@ -145,15 +145,15 @@ def _repair_known_structured_spans(value: Any) -> str:
             candidate = text[start:end]
             normalized = " ".join(candidate.split())
             try:
-                translated = canonical._structured_presentation_es(normalized)
+                recognized = canonical._structured_presentation_es(normalized)
             except ValueError:
-                translated = None
-            if translated is None:
+                recognized = None
+            if recognized is None:
                 search_from = start + len(start_marker)
                 continue
 
-            text = text[:start] + translated + text[end:]
-            search_from = start + len(translated)
+            text = text[:start] + normalized + text[end:]
+            search_from = start + len(normalized)
     return text
 
 
@@ -252,19 +252,33 @@ def _spanish_report_requested(context: Any) -> bool:
 
 
 def _native_build_report_v88(context: dict[str, Any], final: bool) -> dict[str, Any]:
-    """Reassert Spanish translator authority immediately before report rendering.
+    """Reassert terminal report guards immediately before native report rendering.
 
     Production Comprehensive decision-report execution is detached from the browser
     request and may begin after late compatibility installers have rebound renderer
     aliases. The provider function captured by the runtime still resolves its private
     ``_build_report`` global at call time, so this boundary is the stable place to
     restore the exact Spanish translation contract before either the decision report
-    or final report is rendered.
+    or final report is rendered. The CI/CD PDF control-glyph repair is also installed
+    here, rather than at application import time, so offline English golden renderers
+    remain byte-for-byte unchanged while native production reports are control-safe.
     """
 
     original = _ORIGINAL_NATIVE_BUILD_REPORT
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 report boundary is not installed")
+
+    from nico.comprehensive_ci_pdf_control_safety_v89 import (
+        install_comprehensive_ci_pdf_control_safety_v89,
+    )
+
+    ci_pdf_control_safety = install_comprehensive_ci_pdf_control_safety_v89()
+    if (
+        ci_pdf_control_safety.get("bound") is not True
+        or ci_pdf_control_safety.get("del_control_glyph_sanitized") is not True
+    ):
+        raise RuntimeError("CI/CD PDF control-safety boundary could not be installed")
+
     if _spanish_report_requested(context):
         _bind_translation_surfaces()
     return original(context, final)
@@ -288,16 +302,9 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         _ORIGINAL_NATIVE_BUILD_REPORT = providers._build_report
         providers._build_report = _native_build_report_v88
 
-    # The exact-main production acceptance artifact also exposed U+007F control glyphs
-    # in the generated CI/CD appendix. Install the bounded text-operand repair here so
-    # the same production compatibility chain closes both publication blockers without
-    # altering CI/CD truth, scores, evidence, review, or delivery semantics.
-    from nico.comprehensive_ci_pdf_control_safety_v89 import (
-        install_comprehensive_ci_pdf_control_safety_v89,
-    )
-
-    ci_pdf_control_safety = install_comprehensive_ci_pdf_control_safety_v89()
-
+    # Do not install the PDF producer patch at application/import time. It is deferred
+    # to the native report execution boundary so legacy/offline English golden renderers
+    # remain byte-identical while production Comprehensive reports receive the repair.
     return {
         "status": "installed",
         "version": VERSION,
@@ -317,11 +324,7 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         "targeted_fast_path": True,
         "targeted_rollback_translation": True,
         "structured_soft_whitespace_repair": True,
-        "ci_pdf_control_safety": ci_pdf_control_safety,
-        "ci_pdf_control_glyph_sanitized": (
-            ci_pdf_control_safety.get("bound") is True
-            and ci_pdf_control_safety.get("del_control_glyph_sanitized") is True
-        ),
+        "ci_pdf_control_safety_deferred_to_native_report_boundary": True,
         "global_replacement_registry_unchanged": True,
         "presentation_only": True,
         "english_path_unchanged": True,
