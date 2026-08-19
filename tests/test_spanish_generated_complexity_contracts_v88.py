@@ -25,6 +25,7 @@ def test_production_complexity_acceptance_contract_translates_on_all_runtime_sur
 
     assert result["generated_complexity_contract_translation"] is True
     assert result["parametric_acceptance_criteria_translation"] is True
+    assert result["generated_complexity_fact_evidence_translation"] is True
     assert result["generated_complexity_machine_tokens_preserved"] is True
 
     canonical_value = canonical._translate_presentation_field(
@@ -107,13 +108,18 @@ def test_generated_complexity_finding_family_and_spanish_publisher_stay_synchron
 
     strict_fields = (
         "title",
+        "fact",
+        "evidence",
         "interpretation",
+        "technical_impact",
         "business_impact",
         "recommendation",
         "verification",
         "acceptance_criteria",
         "rollback",
         "exit_criteria",
+        "cost_of_inaction",
+        "residual_risk",
     )
     for source_finding in findings:
         localized = canonical._localize_tree(source_finding)
@@ -126,6 +132,13 @@ def test_generated_complexity_finding_family_and_spanish_publisher_stay_synchron
         assert localized["symbol"] == symbol
         assert localized["finding_id"] == source_finding["finding_id"]
         assert localized["source_commit_sha"] == commit_sha
+
+        assert "cyclomatic_complexity=" in localized["fact"]
+        assert "method=evidencia de complejidad conservada del SHA exacto" in localized["fact"]
+        assert "source=evidencia de arquitectura conservada del SHA exacto" in localized["fact"]
+        assert "cyclomatic_complexity=" in localized["evidence"]
+        assert "method=evidencia de complejidad conservada del SHA exacto" in localized["evidence"]
+        assert "exact_commit_match=True" in localized["evidence"]
 
         criteria = localized["acceptance_criteria"]
         verification = localized["verification"]
@@ -149,6 +162,20 @@ def test_generated_complexity_finding_family_and_spanish_publisher_stay_synchron
                     field,
                     value,
                 )
+
+
+def test_generated_complexity_machine_method_atoms_are_preserved() -> None:
+    v88.install_comprehensive_spanish_exit_criteria_v88()
+    source = (
+        "cyclomatic_complexity=31; method=radon_cc; "
+        "source=retained exact-SHA architecture evidence"
+    )
+    translated = canonical._translate_presentation_field(source, "fact")
+
+    assert translated == (
+        "cyclomatic_complexity=31; method=radon_cc; "
+        "source=evidencia de arquitectura conservada del SHA exacto"
+    )
 
 
 def test_changed_complexity_contract_is_not_silently_accepted(monkeypatch) -> None:
