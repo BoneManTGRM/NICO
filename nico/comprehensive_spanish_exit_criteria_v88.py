@@ -31,10 +31,36 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
     ),
 }
 
+# Some report fields, including rollback guidance, are standalone presentation
+# literals rather than exit-criteria prose. Keep production-observed literals in a
+# separate exact fast path so they do not expand the global replacement registry
+# or weaken the canonical renderer's unknown-English fail-closed behavior.
+_TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    (
+        "Revert the isolated remediation change if targeted or full verification fails; "
+        "retain the failed evidence and keep client delivery blocked."
+    ): (
+        "Revierta el cambio aislado de remediación si falla la verificación dirigida o "
+        "completa; conserve la evidencia del fallo y mantenga bloqueada la entrega al cliente."
+    ),
+}
+_TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD = {
+    source.casefold(): target
+    for source, target in _TARGETED_PRESENTATION_TRANSLATIONS.items()
+}
+
 _EXIT_CRITERIA_MARKER = next(iter(_EXIT_CRITERIA_TRANSLATIONS))
 _ORIGINAL_CANONICAL_TRANSLATE_FIELD: Callable[[str, str], str] | None = None
 _ORIGINAL_PRESENTATION_SAFE_ES: Callable[[Any], str] | None = None
 _ORIGINAL_NATIVE_BUILD_REPORT: Callable[[dict[str, Any], bool], dict[str, Any]] | None = None
+
+
+def _translate_targeted_presentation_literal(value: Any) -> str | None:
+    text = str(value or "").strip()
+    translated = _TARGETED_PRESENTATION_TRANSLATIONS.get(text)
+    if translated is not None:
+        return translated
+    return _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
 
 
 def _translate_known_exit_criteria(value: Any) -> str:
@@ -51,6 +77,12 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
 
+    targeted = _translate_targeted_presentation_literal(value)
+    if str(key) == "rollback" and targeted is not None:
+        # Translate only the exact production-observed rollback contract. The existing
+        # canonical translator still validates the resulting presentation value.
+        return original(targeted, key)
+
     if str(key) == "exit_criteria" and _EXIT_CRITERIA_MARKER in str(value or ""):
         # Delegate the partially localized value to the existing fail-closed gate.
         # Any unknown English tail still fails instead of being silently approved.
@@ -62,6 +94,10 @@ def _presentation_safe_es_v88(value: Any) -> str:
     original = _ORIGINAL_PRESENTATION_SAFE_ES
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 presentation translator is not installed")
+
+    targeted = _translate_targeted_presentation_literal(value)
+    if targeted is not None:
+        return original(targeted)
 
     text = str(value or "")
     if _EXIT_CRITERIA_MARKER in text:
@@ -150,6 +186,7 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         ),
         "detached_decision_report_reassertion": True,
         "targeted_fast_path": True,
+        "targeted_rollback_translation": True,
         "global_replacement_registry_unchanged": True,
         "presentation_only": True,
         "english_path_unchanged": True,
