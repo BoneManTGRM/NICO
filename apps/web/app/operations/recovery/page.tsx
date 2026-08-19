@@ -42,13 +42,13 @@ export default function RecoveryPage() {
     }
   }, []);
 
+  const comprehensiveTarget = targetRunId.startsWith("comprun_");
+
   function load(event: FormEvent) {
     event.preventDefault();
-    if (!adminToken.trim() || !API_URL) return;
+    if (!API_URL || (!comprehensiveTarget && !adminToken.trim())) return;
     setRefreshKey(new Date().toISOString());
   }
-
-  const comprehensiveTarget = targetRunId.startsWith("comprun_");
 
   return (
     <main className={styles.shell}>
@@ -63,27 +63,26 @@ export default function RecoveryPage() {
 
       {targetRunId || targetScanId ? <section className={styles.nextAction} role="status">
         <b>Exact recovery target</b>
-        <p>{targetRunId ? `Run ${targetRunId}` : "Run identity not supplied"}{targetScanId ? ` · Scanner ${targetScanId}` : ""}. Enter the operator token and load recovery. NICO will preserve the retained identity and will not create a replacement run.</p>
+        <p>{targetRunId ? `Run ${targetRunId}` : "Run identity not supplied"}{targetScanId ? ` · Scanner ${targetScanId}` : ""}. {comprehensiveTarget ? "Load the preserved Comprehensive run and explicitly resume the same exact run ID." : "Enter the operator token and load recovery."} NICO will preserve the retained identity and will not create a replacement run.</p>
       </section> : null}
 
       <section className={styles.securityPanel}>
         <div>
-          <h2>Operator authentication</h2>
-          <p>The admin token remains only in this page&apos;s React memory. Recovery never starts automatically.</p>
+          <h2>{comprehensiveTarget ? "Recovery authorization boundary" : "Operator authentication"}</h2>
+          <p>{comprehensiveTarget ? "Comprehensive recovery uses the existing public exact-run status and continuation boundary. It does not create approval or client-delivery authority, and it never starts automatically." : "The admin token remains only in this page&apos;s React memory. Recovery never starts automatically."}</p>
         </div>
         <form className={styles.authForm} onSubmit={load}>
           <label>
-            Admin token
-            <input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Enter NICO_ADMIN_TOKEN" />
+            Admin token {comprehensiveTarget ? "(not required for Comprehensive recovery)" : ""}
+            <input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Enter NICO_ADMIN_TOKEN" disabled={comprehensiveTarget} />
           </label>
-          <button type="submit" disabled={!API_URL || !adminToken.trim()}>Load recovery</button>
+          <button type="submit" disabled={!API_URL || (!comprehensiveTarget && !adminToken.trim())}>Load recovery</button>
         </form>
         {!API_URL ? <div className={styles.error}>NEXT_PUBLIC_NICO_API_URL is not configured for this Vercel deployment.</div> : null}
       </section>
 
       {comprehensiveTarget ? <ComprehensiveRecoveryPanel
         apiUrl={API_URL}
-        adminToken={adminToken}
         refreshKey={refreshKey}
         targetRunId={targetRunId}
         returnPath={returnPath}
