@@ -44,7 +44,7 @@ def test_v88_binds_shared_report_execution_boundary() -> None:
     assert result["detached_decision_report_reassertion"] is True
     assert result["targeted_rollback_translation"] is True
     assert result["structured_soft_whitespace_repair"] is True
-    assert result["ci_pdf_control_glyph_sanitized"] is True
+    assert result["ci_pdf_control_safety_deferred_to_native_report_boundary"] is True
     assert canonical._translate_presentation is v88._translate_presentation_v88
     assert providers._build_report is v88._native_build_report_v88
 
