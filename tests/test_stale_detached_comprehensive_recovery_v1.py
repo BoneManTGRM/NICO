@@ -11,10 +11,14 @@ from nico.comprehensive_blocked_run_recovery_v1 import (
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import (
+    _record_hash,
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
     validate_comprehensive_run_record,
 )
+
+
+RECOVERY_BUDGET_SCOPE = "source_failed_stage_recovery_generation"
 
 
 def _detached_blocked_record(stage_id: str) -> dict:
@@ -55,6 +59,33 @@ def _detached_blocked_record(stage_id: str) -> dict:
         if current == stage_id:
             break
     return record
+
+
+def _attach_recovery_history(
+    blocked: dict,
+    *,
+    artifact_schema: str,
+    budget_scope: str,
+    recovery_generation: str | None = None,
+) -> dict:
+    updated = dict(blocked)
+    event = {
+        "artifact_schema": artifact_schema,
+        "source_failed_stage": str(blocked["current_stage"]),
+        "source_reason": "detached_stage_execution_failed",
+        "rerun_from_stage": str(blocked["current_stage"]),
+        "recovery_scope": "decision_report_and_downstream",
+        "recovery_budget_scope": budget_scope,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+        "recovered_at": "2026-08-19T15:00:00+00:00",
+    }
+    if recovery_generation is not None:
+        event["recovery_generation"] = recovery_generation
+    updated["recovery_history"] = [event]
+    updated["integrity_sha256"] = _record_hash(updated)
+    assert validate_comprehensive_run_record(updated)["status"] == "valid"
+    return updated
 
 
 @pytest.mark.parametrize(
@@ -98,7 +129,8 @@ def test_stale_detached_report_failure_rewinds_same_exact_run_once(
     assert history["source_reason"] == "detached_stage_execution_failed"
     assert history["rerun_from_stage"] == failed_stage
     assert history["recovery_scope"] == expected_scope
-    assert history["recovery_budget_scope"] == "source_failed_stage"
+    assert history["recovery_budget_scope"] == RECOVERY_BUDGET_SCOPE
+    assert history["recovery_generation"] == VERSION
     assert history["exact_run_identity_preserved"] is True
     assert history["raw_scanner_evidence_preserved"] is True
     assert history["human_review_required"] is True
@@ -110,6 +142,43 @@ def test_stale_detached_report_failure_rewinds_same_exact_run_once(
     # The recovered record is active, so merely re-entering the helper cannot spend
     # another recovery attempt or create a second history event.
     assert rewind_blocked_run_for_final_artifact_recovery(recovered) == recovered
+
+
+def test_previous_recovery_generation_does_not_permanently_lock_durable_run() -> None:
+    blocked = _detached_blocked_record("decision_report_generation")
+    blocked_with_v7_attempt = _attach_recovery_history(
+        blocked,
+        artifact_schema="nico.comprehensive_blocked_run_recovery.v7",
+        budget_scope="source_failed_stage",
+    )
+
+    recovered = rewind_blocked_run_for_final_artifact_recovery(blocked_with_v7_attempt)
+
+    assert recovered["status"] == "running"
+    assert recovered["terminal"] is False
+    assert recovered["identity"] == blocked["identity"]
+    assert len(recovered["recovery_history"]) == 2
+    latest = recovered["recovery_history"][-1]
+    assert latest["artifact_schema"] == VERSION
+    assert latest["recovery_generation"] == VERSION
+    assert latest["recovery_budget_scope"] == RECOVERY_BUDGET_SCOPE
+    assert latest["source_failed_stage"] == "decision_report_generation"
+    assert latest["source_reason"] == "detached_stage_execution_failed"
+    assert latest["human_review_required"] is True
+    assert latest["client_delivery_allowed"] is False
+
+
+def test_current_recovery_generation_still_allows_only_one_attempt_per_source_stage() -> None:
+    blocked = _detached_blocked_record("decision_report_generation")
+    already_attempted = _attach_recovery_history(
+        blocked,
+        artifact_schema=VERSION,
+        budget_scope=RECOVERY_BUDGET_SCOPE,
+        recovery_generation=VERSION,
+    )
+
+    assert is_recoverable_final_artifact_failure(already_attempted) is True
+    assert rewind_blocked_run_for_final_artifact_recovery(already_attempted) == already_attempted
 
 
 def test_detached_failure_outside_report_stages_stays_blocked() -> None:

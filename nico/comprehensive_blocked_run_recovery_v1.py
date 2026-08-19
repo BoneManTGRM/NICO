@@ -7,13 +7,14 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v7"
+VERSION = "nico.comprehensive_blocked_run_recovery.v8"
 _DECISION_REPORT_STAGE = "decision_report_generation"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
 _EXECUTIVE_BRIEFING_RECOVERY_STAGE = "risk_reduction_and_executive_briefing"
 _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
 _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_SOURCE_STAGE = 1
+_RECOVERY_BUDGET_SCOPE = "source_failed_stage_recovery_generation"
 _RECOVERABLE_REASONS_BY_STAGE = {
     _DECISION_REPORT_STAGE: {
         "detached_stage_execution_failed",
@@ -87,12 +88,14 @@ def _automatic_recovery_attempt_count(
     *,
     source_failed_stage: str,
 ) -> int:
-    """Count bounded-recovery attempts made under the source-stage budget.
+    """Count bounded attempts for this source stage in the current repair generation.
 
-    Recovery history created by v4 was budgeted by source+target. That policy is the
-    defect being replaced and must not permanently prevent one v6+ semantic repair of
-    an already-persisted production run. Once a source-stage-scoped attempt is recorded,
-    any later target change for the same failed source stage receives no fresh budget.
+    A recovery attempt must remain bounded so a persistent provider defect cannot loop
+    indefinitely. It must also not permanently brick a durable run after the underlying
+    production defect is repaired in a later recovery generation. Older recovery-history
+    entries therefore remain immutable evidence but do not consume the one-attempt budget
+    of this version. The current generation still permits at most one automatic rewind
+    per failed source stage.
     """
 
     history = record.get("recovery_history")
@@ -103,7 +106,8 @@ def _automatic_recovery_attempt_count(
         for item in history
         if isinstance(item, Mapping)
         and _stage_id(item.get("source_failed_stage")) == source_failed_stage
-        and _text(item.get("recovery_budget_scope")) == "source_failed_stage"
+        and _text(item.get("recovery_budget_scope")) == _RECOVERY_BUDGET_SCOPE
+        and _text(item.get("recovery_generation")) == VERSION
     )
 
 
@@ -190,7 +194,7 @@ def rewind_blocked_run_for_final_artifact_recovery(
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Rewind once to the authoritative source of a failed report result.
+    """Rewind once per repair generation to the authoritative failed source stage.
 
     Repository capture, exact run identity, raw scanner output, authorization, and the
     evidence ledger remain unchanged. A stale detached decision-report failure reruns
@@ -199,8 +203,10 @@ def rewind_blocked_run_for_final_artifact_recovery(
     and downstream stages from the same exact-commit evidence. Phase 3 stage-score
     evidence mismatches regenerate the executive briefing and downstream artifacts from
     preserved canonical scoring. Each failed source stage receives one automatic repair
-    budget; if it blocks again, the exact terminal record is preserved so the real
-    failure stays visible. Human approval and client delivery remain blocked.
+    attempt in this recovery generation. Older generations stay in immutable history but
+    cannot permanently prevent a repaired deployment from recovering the same durable
+    run. A repeated failure under this generation stays terminal and visible. Human
+    approval and client delivery remain blocked.
     """
 
     validation = validate_comprehensive_run_record(record)
@@ -266,7 +272,8 @@ def rewind_blocked_run_for_final_artifact_recovery(
             "source_failed_checks": failed_checks,
             "rerun_from_stage": recovery_stage,
             "recovery_scope": recovery_scope,
-            "recovery_budget_scope": "source_failed_stage",
+            "recovery_budget_scope": _RECOVERY_BUDGET_SCOPE,
+            "recovery_generation": VERSION,
             "preserved_stage_count": len(retained_stages),
             "exact_run_identity_preserved": True,
             "immutable_repository_snapshot_preserved": True,
