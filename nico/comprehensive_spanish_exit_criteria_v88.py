@@ -72,6 +72,33 @@ def _translate_known_exit_criteria(value: Any) -> str:
     return text
 
 
+def _normalize_known_structured_presentation(value: Any) -> tuple[str, str] | None:
+    """Recognize known v87 presentation contracts across soft whitespace drift.
+
+    Production report values can acquire line wrapping or repeated whitespace before
+    the Spanish compatibility layer sees them. v87 intentionally uses full-match
+    structured contracts and fails closed for unknown English. Normalize whitespace
+    only when the normalized value is already recognized by that authoritative
+    structured translator. Unknown or changed prose is delegated unchanged so the
+    existing fail-closed guard remains authoritative.
+    """
+
+    text = str(value or "")
+    normalized = " ".join(text.split())
+    if not normalized or normalized == text.strip():
+        return None
+
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical
+
+    try:
+        translated = canonical._structured_presentation_es(normalized)
+    except ValueError:
+        return None
+    if translated is None:
+        return None
+    return normalized, translated
+
+
 def _translate_canonical_field_v88(value: str, key: str) -> str:
     original = _ORIGINAL_CANONICAL_TRANSLATE_FIELD
     if original is None:
@@ -87,6 +114,14 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
         # Delegate the partially localized value to the existing fail-closed gate.
         # Any unknown English tail still fails instead of being silently approved.
         return original(_translate_known_exit_criteria(value), key)
+
+    structured = _normalize_known_structured_presentation(value)
+    if structured is not None:
+        normalized, _ = structured
+        # Feed only the already-recognized normalized contract back through the
+        # authoritative field translator so all existing validation remains active.
+        return original(normalized, key)
+
     return original(value, key)
 
 
@@ -102,6 +137,15 @@ def _presentation_safe_es_v88(value: Any) -> str:
     text = str(value or "")
     if _EXIT_CRITERIA_MARKER in text:
         return original(_translate_known_exit_criteria(text))
+
+    structured = _normalize_known_structured_presentation(value)
+    if structured is not None:
+        _, translated = structured
+        # The canonical v87 structured translator already produced the approved
+        # Spanish presentation value. Pass that through the existing surface guard
+        # rather than reintroducing the soft-wrapped English source.
+        return original(translated)
+
     return original(value)
 
 
@@ -187,6 +231,7 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         "detached_decision_report_reassertion": True,
         "targeted_fast_path": True,
         "targeted_rollback_translation": True,
+        "structured_soft_whitespace_repair": True,
         "global_replacement_registry_unchanged": True,
         "presentation_only": True,
         "english_path_unchanged": True,

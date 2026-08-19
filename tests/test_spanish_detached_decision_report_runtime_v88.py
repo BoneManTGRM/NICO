@@ -16,6 +16,21 @@ _ROLLBACK_ES = (
     "Revierta el cambio aislado de remediación si falla la verificación dirigida o "
     "completa; conserve la evidencia del fallo y mantenga bloqueada la entrega al cliente."
 )
+_SCORE_SUMMARY_EN_SOFT_WRAPPED = (
+    "Technical maturity remains based on exact-commit technical controls.\n"
+    "Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. "
+    "NICO retains 639 review-required candidates and 0 confirmed material\n"
+    "findings as explicit review context. Candidate volume, clustering and reviewer "
+    "workload do not change numeric security or readiness scores."
+)
+_SCORE_SUMMARY_ES = (
+    "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
+    "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica de "
+    "93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos "
+    "materiales confirmados como contexto explícito de revisión. El volumen de "
+    "candidatos, la agrupación y la carga de trabajo de revisión no modifican las "
+    "puntuaciones numéricas de seguridad ni de preparación."
+)
 
 
 def test_v88_binds_shared_report_execution_boundary() -> None:
@@ -25,6 +40,7 @@ def test_v88_binds_shared_report_execution_boundary() -> None:
     assert result["report_runtime_boundary_bound"] is True
     assert result["detached_decision_report_reassertion"] is True
     assert result["targeted_rollback_translation"] is True
+    assert result["structured_soft_whitespace_repair"] is True
     assert providers._build_report is v88._native_build_report_v88
 
 
@@ -54,6 +70,63 @@ def test_exact_production_rollback_literal_translates_on_presentation_surface(mo
 
     assert v88._presentation_safe_es_v88(_ROLLBACK_EN) == _ROLLBACK_ES
     assert observed == [_ROLLBACK_ES]
+
+
+def test_soft_wrapped_production_score_summary_normalizes_before_v87_validation(
+    monkeypatch,
+) -> None:
+    observed: dict[str, str] = {}
+
+    def validated(value: str, key: str) -> str:
+        observed["value"] = value
+        observed["key"] = key
+        return canonical._translate_presentation(value)
+
+    monkeypatch.setattr(v88, "_ORIGINAL_CANONICAL_TRANSLATE_FIELD", validated)
+
+    translated = v88._translate_canonical_field_v88(
+        _SCORE_SUMMARY_EN_SOFT_WRAPPED,
+        "summary",
+    )
+
+    assert translated == _SCORE_SUMMARY_ES
+    assert "\n" not in observed["value"]
+    assert observed["value"].startswith(
+        "Technical maturity remains based on exact-commit technical controls."
+    )
+    assert observed["key"] == "summary"
+
+
+def test_soft_wrapped_production_score_summary_translates_on_presentation_surface(
+    monkeypatch,
+) -> None:
+    observed: list[str] = []
+
+    def validated(value: object) -> str:
+        text = str(value)
+        observed.append(text)
+        return text
+
+    monkeypatch.setattr(v88, "_ORIGINAL_PRESENTATION_SAFE_ES", validated)
+
+    assert v88._presentation_safe_es_v88(_SCORE_SUMMARY_EN_SOFT_WRAPPED) == _SCORE_SUMMARY_ES
+    assert observed == [_SCORE_SUMMARY_ES]
+
+
+def test_unknown_soft_wrapped_structured_contract_still_fails_closed(monkeypatch) -> None:
+    unknown = (
+        "Technical maturity remains based on exact-commit technical controls.\n"
+        "This changed contract has no approved Spanish translation."
+    )
+
+    def fail_closed(value: str, key: str) -> str:
+        del key
+        return canonical._translate_presentation(value)
+
+    monkeypatch.setattr(v88, "_ORIGINAL_CANONICAL_TRANSLATE_FIELD", fail_closed)
+
+    with pytest.raises(ValueError, match="unrecognized Spanish presentation contract"):
+        v88._translate_canonical_field_v88(unknown, "summary")
 
 
 def test_unknown_rollback_literal_still_uses_fail_closed_canonical_validator(monkeypatch) -> None:
