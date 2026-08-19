@@ -1,0 +1,203 @@
+name: Production Proof Reconciliation
+
+on:
+  workflow_run:
+    workflows:
+      - Mobile Restart Production Proof
+      - iOS WebKit Paint Proof
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+  statuses: read
+
+concurrency:
+  group: nico-production-proof-reconciliation-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile recovered exact-SHA proof dependencies
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+
+    steps:
+      - name: Reconcile stale downstream proof failures
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from typing import Any
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"].strip()
+          token = os.environ["GITHUB_TOKEN"]
+          source_workflow = os.environ["SOURCE_WORKFLOW"].strip()
+
+          if not sha:
+              raise SystemExit("workflow_run event did not provide an exact release SHA")
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "nico-production-proof-reconciliation",
+          }
+
+          def request_json(
+              method: str,
+              url: str,
+              payload: dict[str, Any] | None = None,
+          ) -> dict[str, Any]:
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      **headers,
+                      **({"Content-Type": "application/json"} if data is not None else {}),
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  raw = response.read()
+              if not raw:
+                  return {}
+              value = json.loads(raw.decode("utf-8"))
+              if not isinstance(value, dict):
+                  raise RuntimeError(f"Expected a JSON object from {method} {url}")
+              return value
+
+          def latest_commit_statuses() -> dict[str, str]:
+              payload = request_json(
+                  "GET",
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+              )
+              # GitHub returns commit statuses newest-first. setdefault therefore keeps
+              # the latest observation for a context and ignores stale earlier attempts.
+              latest: dict[str, str] = {}
+              for item in payload.get("statuses") or []:
+                  if not isinstance(item, dict):
+                      continue
+                  context = str(item.get("context") or "").strip()
+                  state = str(item.get("state") or "unknown").strip().lower()
+                  if context:
+                      latest.setdefault(context, state)
+              return latest
+
+          def rerun_latest_failed_workflow(
+              workflow_file: str,
+              *,
+              expected_context: str,
+          ) -> bool:
+              encoded = urllib.parse.quote(workflow_file, safe="")
+              query = urllib.parse.urlencode(
+                  {
+                      "head_sha": sha,
+                      "event": "push",
+                      "per_page": 20,
+                  }
+              )
+              payload = request_json(
+                  "GET",
+                  f"https://api.github.com/repos/{repository}/actions/workflows/{encoded}/runs?{query}",
+              )
+              runs = [
+                  item
+                  for item in payload.get("workflow_runs") or []
+                  if isinstance(item, dict)
+                  and str(item.get("head_sha") or "") == sha
+                  and str(item.get("event") or "") == "push"
+              ]
+              if not runs:
+                  print(
+                      f"No push workflow run found for {workflow_file} at exact SHA {sha}; no replay created.",
+                      flush=True,
+                  )
+                  return False
+
+              # The API is newest-first. Never start a second replay while the latest
+              # exact-SHA run is queued or running. Only a completed failed run may be
+              # retried, and GitHub's rerun-failed-jobs endpoint reuses that same run.
+              run = runs[0]
+              run_id = int(run["id"])
+              status = str(run.get("status") or "unknown").lower()
+              conclusion = str(run.get("conclusion") or "").lower()
+              if status != "completed":
+                  print(
+                      f"{expected_context} exact-SHA run {run_id} is {status}; reconciliation is already in progress or not yet terminal.",
+                      flush=True,
+                  )
+                  return False
+              if conclusion not in {"failure", "cancelled", "timed_out", "action_required", "stale"}:
+                  print(
+                      f"{expected_context} exact-SHA run {run_id} concluded {conclusion or 'unknown'}; no failed jobs to replay.",
+                      flush=True,
+                  )
+                  return False
+
+              request_json(
+                  "POST",
+                  f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/rerun-failed-jobs",
+              )
+              print(
+                  f"Re-ran only failed jobs for {expected_context} at exact SHA {sha} (run {run_id}).",
+                  flush=True,
+              )
+              return True
+
+          statuses = latest_commit_statuses()
+          mobile_context = "NICO Mobile Restart Production Proof"
+          ios_context = "NICO iOS WebKit Paint Proof"
+          acceptance_context = "NICO Two-Service Production Acceptance"
+          observed = {
+              mobile_context: statuses.get(mobile_context, "missing"),
+              ios_context: statuses.get(ios_context, "missing"),
+              acceptance_context: statuses.get(acceptance_context, "missing"),
+          }
+          print(
+              "Exact-SHA production proof state after "
+              f"{source_workflow}: {json.dumps(observed, sort_keys=True)}",
+              flush=True,
+          )
+
+          # A failed prerequisite status is not permanent truth when the same exact-SHA
+          # workflow is later rerun successfully. Reconcile the dependency graph from
+          # current status instead of leaving downstream proofs red forever.
+          if observed[mobile_context] == "success" and observed[ios_context] in {"failure", "error"}:
+              rerun_latest_failed_workflow(
+                  "ios-webkit-paint-proof.yml",
+                  expected_context=ios_context,
+              )
+              raise SystemExit(0)
+
+          if (
+              observed[mobile_context] == "success"
+              and observed[ios_context] == "success"
+              and observed[acceptance_context] in {"failure", "error"}
+          ):
+              rerun_latest_failed_workflow(
+                  "two-service-production-acceptance.yml",
+                  expected_context=acceptance_context,
+              )
+              raise SystemExit(0)
+
+          print(
+              "No stale downstream proof failure is eligible for bounded reconciliation.",
+              flush=True,
+          )
+          PY
