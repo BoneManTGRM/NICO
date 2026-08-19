@@ -7,14 +7,19 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v6"
+VERSION = "nico.comprehensive_blocked_run_recovery.v7"
+_DECISION_REPORT_STAGE = "decision_report_generation"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
 _EXECUTIVE_BRIEFING_RECOVERY_STAGE = "risk_reduction_and_executive_briefing"
 _SCANNER_REGISTER_RECOVERY_STAGE = "evidence_reconciliation_and_scoring"
 _MAX_AUTOMATIC_RECOVERY_ATTEMPTS_PER_SOURCE_STAGE = 1
 _RECOVERABLE_REASONS_BY_STAGE = {
+    _DECISION_REPORT_STAGE: {
+        "detached_stage_execution_failed",
+    },
     _FINAL_REPORT_STAGE: {
+        "detached_stage_execution_failed",
         "final_report_execution_timeout",
         "final_report_publication_deadline_exceeded",
     },
@@ -32,6 +37,7 @@ _EXECUTIVE_BRIEFING_SOURCE_CHECKS = {
     "stage_score_evidence_matches_canonical",
 }
 _STAGE_ALIASES = {
+    "decision report generation": _DECISION_REPORT_STAGE,
     "final comprehensive report generation": _FINAL_REPORT_STAGE,
     "cross format truth verification": _CROSS_FORMAT_STAGE,
     "cross-format truth verification": _CROSS_FORMAT_STAGE,
@@ -84,8 +90,8 @@ def _automatic_recovery_attempt_count(
     """Count bounded-recovery attempts made under the source-stage budget.
 
     Recovery history created by v4 was budgeted by source+target. That policy is the
-    defect being replaced and must not permanently prevent one v6 semantic repair of
-    an already-persisted production run. Once v6 records a source-stage-scoped attempt,
+    defect being replaced and must not permanently prevent one v6+ semantic repair of
+    an already-persisted production run. Once a source-stage-scoped attempt is recorded,
     any later target change for the same failed source stage receives no fresh budget.
     """
 
@@ -101,12 +107,33 @@ def _automatic_recovery_attempt_count(
     )
 
 
-def blocked_run_recovery_reason(record: Mapping[str, Any]) -> str:
+def _recovery_reason_candidates(record: Mapping[str, Any]) -> list[str]:
+    """Return bounded persisted failure reasons without hiding technical detail.
+
+    Some historical detached-stage records retained a generic public ``reason`` while
+    keeping the actionable runtime cause in ``technical_reason``. Recovery eligibility
+    must therefore inspect both persisted fields while remaining stage allow-listed.
+    """
+
     result = _failed_stage_result(record)
-    reason = _text(result.get("reason"))
-    if not reason:
-        reason = _text(result.get("technical_reason"))
-    return reason.split(":", 1)[0]
+    candidates: list[str] = []
+    for key in ("reason", "technical_reason"):
+        value = _text(result.get(key)).split(":", 1)[0]
+        if value and value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def blocked_run_recovery_reason(record: Mapping[str, Any]) -> str:
+    candidates = _recovery_reason_candidates(record)
+    recoverable = _RECOVERABLE_REASONS_BY_STAGE.get(
+        _current_failed_stage(record),
+        set(),
+    )
+    for candidate in candidates:
+        if candidate in recoverable:
+            return candidate
+    return candidates[0] if candidates else ""
 
 
 def final_artifact_failed_checks(record: Mapping[str, Any]) -> set[str]:
@@ -126,17 +153,19 @@ def final_artifact_failed_checks(record: Mapping[str, Any]) -> set[str]:
 def final_artifact_recovery_stage(record: Mapping[str, Any]) -> str:
     """Choose the earliest authoritative stage required to apply the repair.
 
-    A final-report execution or publication timeout resumes only final report generation
-    using the already-persisted exact-run evidence. Cross-format scanner-register total
-    or payload-retention failures originate in evidence reconciliation and therefore
-    rewind to that boundary. A stage-score evidence mismatch caused by the Phase 3
-    executive briefing is repaired by regenerating that briefing and downstream report
-    artifacts from the preserved canonical scoring result. Other recognized final-
-    artifact failures regenerate only the final report package.
+    A detached decision-report execution failure reruns the decision-report stage and
+    its downstream Comprehensive stages from the already-persisted exact-run evidence.
+    A final-report execution/publication failure resumes only final report generation.
+    Cross-format scanner-register total or payload-retention failures originate in
+    evidence reconciliation and therefore rewind to that boundary. A stage-score
+    evidence mismatch caused by the Phase 3 executive briefing is repaired by
+    regenerating that briefing and downstream report artifacts from preserved canonical
+    scoring. Other recognized final-artifact failures regenerate only the final package.
     """
 
-    if _current_failed_stage(record) == _FINAL_REPORT_STAGE:
-        return _FINAL_REPORT_STAGE
+    failed_stage = _current_failed_stage(record)
+    if failed_stage in {_DECISION_REPORT_STAGE, _FINAL_REPORT_STAGE}:
+        return failed_stage
     failed_checks = final_artifact_failed_checks(record)
     if failed_checks.intersection(_SCANNER_REGISTER_SOURCE_CHECKS):
         return _SCANNER_REGISTER_RECOVERY_STAGE
@@ -148,10 +177,11 @@ def final_artifact_recovery_stage(record: Mapping[str, Any]) -> str:
 def is_recoverable_final_artifact_failure(record: Mapping[str, Any]) -> bool:
     failed_stage = _current_failed_stage(record)
     recoverable_reasons = _RECOVERABLE_REASONS_BY_STAGE.get(failed_stage, set())
+    reasons = _recovery_reason_candidates(record)
     return bool(
         _text(record.get("status")).casefold() == "blocked"
         and record.get("terminal") is True
-        and blocked_run_recovery_reason(record) in recoverable_reasons
+        and any(reason in recoverable_reasons for reason in reasons)
     )
 
 
@@ -163,14 +193,14 @@ def rewind_blocked_run_for_final_artifact_recovery(
     """Rewind once to the authoritative source of a failed report result.
 
     Repository capture, exact run identity, raw scanner output, authorization, and the
-    evidence ledger remain unchanged. A final-report timeout reruns only final report
-    generation. Scanner-register truth failures rerun evidence reconciliation and all
-    downstream stages from the same exact-commit evidence. Phase 3 stage-score evidence
-    mismatches regenerate the executive briefing and downstream artifacts from preserved
-    canonical scoring. Each failed source stage receives one v6 automatic repair budget;
-    if it blocks again, the exact terminal record is preserved so the real failure stays
-    visible instead of regressing between the 83/87 percent boundaries. Human approval
-    and client delivery remain blocked.
+    evidence ledger remain unchanged. A stale detached decision-report failure reruns
+    the decision report and downstream stages; a final-report failure reruns only final
+    report generation. Scanner-register truth failures rerun evidence reconciliation
+    and downstream stages from the same exact-commit evidence. Phase 3 stage-score
+    evidence mismatches regenerate the executive briefing and downstream artifacts from
+    preserved canonical scoring. Each failed source stage receives one automatic repair
+    budget; if it blocks again, the exact terminal record is preserved so the real
+    failure stays visible. Human approval and client delivery remain blocked.
     """
 
     validation = validate_comprehensive_run_record(record)
@@ -224,6 +254,8 @@ def rewind_blocked_run_for_final_artifact_recovery(
         recovery_scope = "evidence_reconciliation_and_downstream"
     elif recovery_stage == _EXECUTIVE_BRIEFING_RECOVERY_STAGE:
         recovery_scope = "executive_briefing_and_downstream"
+    elif recovery_stage == _DECISION_REPORT_STAGE:
+        recovery_scope = "decision_report_and_downstream"
     else:
         recovery_scope = "final_report_only"
     history.append(
