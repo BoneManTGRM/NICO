@@ -97,7 +97,7 @@ def _boundary_pdf_page_base_v90(
     buffer = io.BytesIO()
     styles = getSampleStyleSheet()
     heading = ParagraphStyle(
-        "RenderedCIBoundaryHeadingV90",
+        "RenderedCIBoundaryHeading",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
         fontSize=19,
@@ -106,7 +106,7 @@ def _boundary_pdf_page_base_v90(
         spaceAfter=12,
     )
     subheading = ParagraphStyle(
-        "RenderedCIBoundarySubheadingV90",
+        "RenderedCIBoundarySubheading",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
         fontSize=12,
@@ -116,7 +116,7 @@ def _boundary_pdf_page_base_v90(
         spaceAfter=6,
     )
     body = ParagraphStyle(
-        "RenderedCIBoundaryBodyV90",
+        "RenderedCIBoundaryBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
         fontSize=8.5,
@@ -125,7 +125,7 @@ def _boundary_pdf_page_base_v90(
         spaceAfter=6,
     )
     bullet = ParagraphStyle(
-        "RenderedCIBoundaryBulletV90",
+        "RenderedCIBoundaryBullet",
         parent=body,
         leftIndent=12,
         firstLineIndent=-8,
@@ -137,6 +137,7 @@ def _boundary_pdf_page_base_v90(
         line = raw.strip()
         if not line:
             continue
+        escaped = html.escape(line)
         if line.startswith("## "):
             story.append(Paragraph(html.escape(line[3:]), heading))
         elif line.startswith("### "):
@@ -144,7 +145,7 @@ def _boundary_pdf_page_base_v90(
         elif line.startswith("- "):
             story.append(Paragraph("• " + html.escape(line[2:]), bullet))
         else:
-            story.append(Paragraph(html.escape(line), body))
+            story.append(Paragraph(escaped, body))
 
     document = SimpleDocTemplate(
         buffer,
