@@ -215,7 +215,15 @@ def _presentation_safe_es_v88(value: Any) -> str:
 
 
 def _bind_translation_surfaces() -> tuple[Any, Any]:
-    """Bind the targeted translators to the live modules without touching global loops."""
+    """Restore v88 surfaces without recapturing late delegating wrappers.
+
+    The first installation captures the authoritative lower-level delegates. Detached
+    report workers can run after later compatibility installers replace public aliases.
+    Reasserting v88 must restore those aliases, but it must never promote a late wrapper
+    to an ``_ORIGINAL_*`` delegate. A late wrapper can resolve the same public alias at
+    call time; recapturing it would turn the repair into a self-recursive cycle during
+    decision-report generation.
+    """
 
     global _ORIGINAL_CANONICAL_TRANSLATE_FIELD
     global _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION
@@ -224,16 +232,28 @@ def _bind_translation_surfaces() -> tuple[Any, Any]:
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
 
+    if _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION is None:
+        candidate = canonical._translate_presentation
+        if candidate is _translate_presentation_v88:
+            raise RuntimeError("Spanish v88 direct translator has no base delegate")
+        _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION = candidate
     if canonical._translate_presentation is not _translate_presentation_v88:
-        _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION = canonical._translate_presentation
         canonical._translate_presentation = _translate_presentation_v88
 
+    if _ORIGINAL_CANONICAL_TRANSLATE_FIELD is None:
+        candidate = canonical._translate_presentation_field
+        if candidate is _translate_canonical_field_v88:
+            raise RuntimeError("Spanish v88 canonical translator has no base delegate")
+        _ORIGINAL_CANONICAL_TRANSLATE_FIELD = candidate
     if canonical._translate_presentation_field is not _translate_canonical_field_v88:
-        _ORIGINAL_CANONICAL_TRANSLATE_FIELD = canonical._translate_presentation_field
         canonical._translate_presentation_field = _translate_canonical_field_v88
 
+    if _ORIGINAL_PRESENTATION_SAFE_ES is None:
+        candidate = presentation._safe_es
+        if candidate is _presentation_safe_es_v88:
+            raise RuntimeError("Spanish v88 presentation guard has no base delegate")
+        _ORIGINAL_PRESENTATION_SAFE_ES = candidate
     if presentation._safe_es is not _presentation_safe_es_v88:
-        _ORIGINAL_PRESENTATION_SAFE_ES = presentation._safe_es
         presentation._safe_es = _presentation_safe_es_v88
 
     return canonical, presentation
@@ -294,12 +314,17 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
     # Decision-report generation in the hosted Postgres runtime runs behind a detached
     # stage lease. Keep a call-time guard on the provider's shared report boundary so a
     # later compatibility installer cannot silently strand an es-MX worker with stale
-    # translator aliases. This does not add translation phrases to the hot global loops
-    # and does not change any English, evidence, scoring, or delivery semantics.
+    # translator aliases. Capture the lower-level provider exactly once: recapturing a
+    # late wrapper that delegates through providers._build_report would make this guard
+    # recurse into itself when the detached stage executes.
     from nico import comprehensive_native_providers as providers
 
+    if _ORIGINAL_NATIVE_BUILD_REPORT is None:
+        candidate = providers._build_report
+        if candidate is _native_build_report_v88:
+            raise RuntimeError("Spanish v88 report boundary has no base delegate")
+        _ORIGINAL_NATIVE_BUILD_REPORT = candidate
     if providers._build_report is not _native_build_report_v88:
-        _ORIGINAL_NATIVE_BUILD_REPORT = providers._build_report
         providers._build_report = _native_build_report_v88
 
     # Do not install the PDF producer patch at application/import time. It is deferred
@@ -321,6 +346,8 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
             providers._build_report is _native_build_report_v88
         ),
         "detached_decision_report_reassertion": True,
+        "base_delegates_immutable": True,
+        "late_wrapper_rebind_cycle_blocked": True,
         "targeted_fast_path": True,
         "targeted_rollback_translation": True,
         "structured_soft_whitespace_repair": True,
