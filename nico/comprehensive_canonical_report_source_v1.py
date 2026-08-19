@@ -33,6 +33,9 @@ from nico.comprehensive_report_package import (
 from nico.comprehensive_report_semantic_content_gate_v66 import (
     install_comprehensive_report_semantic_content_gate_v66,
 )
+from nico.comprehensive_spanish_publication_preflight_v93 import (
+    assert_spanish_canonical_publication_preflight,
+)
 from nico.comprehensive_zero_finding_finality_truth_v1 import (
     install_comprehensive_zero_finding_finality_truth_v1,
 )
@@ -101,6 +104,11 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     cards, and separately labeled CI operational health. Duplicate full-page finding
     copies remain removed. A semantic gate blocks publication if any restored finding,
     review-candidate count, or CI operational boundary disappears from client formats.
+
+    For Spanish runs, the fully restored canonical model is also preflighted through the
+    same strict presentation translator before any client artifact is rendered. This is
+    deliberately after decision-content restoration so dynamically synthesized finding
+    prose is validated in the same pass as retained report content.
 
     The report package and its canonical JSON carry the same explicit Comprehensive
     service and report-language identity so every renderer and release verifier reads
@@ -184,6 +192,12 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     )
     canonical["assessment"] = assessment
     canonical, finding_count_truth = reconcile_finding_count_truth(canonical)
+
+    # This must remain after restoration/reconciliation and before hashing/rendering.
+    # The exact production incident was generated during restoration, so a preflight of
+    # raw prior-stage input is structurally incapable of proving this boundary.
+    assert_spanish_canonical_publication_preflight(canonical)
+
     assessment = dict(canonical.get("assessment") or {})
     ordered = list(canonical.get("stage_summaries") or [])
     report_content_render = install_comprehensive_report_content_render_v66()
