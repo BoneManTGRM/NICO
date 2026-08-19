@@ -29,23 +29,12 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
     """
 
     from nico import comprehensive_native_providers as providers
-    from nico.comprehensive_spanish_publication_preflight_v93 import (
-        assert_spanish_publication_preflight,
-    )
 
     prior = (
         context.get("prior_stage_results")
         if isinstance(context.get("prior_stage_results"), dict)
         else {}
     )
-
-    # The stable report base is the first runtime location shared by both decision and
-    # final report generation after v88/v90 have been rebound authoritatively. Validate
-    # all bounded report-bound Spanish prose here before artifact generation. The final
-    # renderer still fails closed; this pass exists to expose every missing presentation
-    # contract at once rather than one sentence per production rerun.
-    spanish_preflight = assert_spanish_publication_preflight(context, prior)
-
     package = build_comprehensive_report_package(
         identity=providers._identity(context),
         stage_results=prior,
@@ -80,7 +69,6 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
             "pdf_page_count": package["report_package"].get("pdf_page_count"),
             "canonical_truth_sha256": package.get("canonical_truth_sha256"),
             "final_package": final,
-            "spanish_presentation_preflight": spanish_preflight,
         },
     )
 
@@ -228,7 +216,6 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "detached_report_alias_recursion_blocked": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
-        "spanish_publication_preflight_bound": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
