@@ -101,14 +101,25 @@ def _boundary_pdf_page_v89(*args: Any, **kwargs: Any) -> bytes:
 
 
 def install_comprehensive_ci_pdf_control_safety_v89() -> dict[str, Any]:
-    """Bind DEL-glyph sanitation to the exact CI/CD appendix producer."""
+    """Bind DEL-glyph sanitation to the exact CI/CD appendix producer.
+
+    Capture the lower-level producer only on the first installation. Detached report
+    execution can encounter later compatibility wrappers before this guard is
+    reasserted. Promoting one of those wrappers to the base delegate can create a
+    self-recursive cycle when that wrapper resolves ``producer._boundary_pdf_page`` at
+    call time, so subsequent installations restore the v89 surface without recapture.
+    """
 
     global _ORIGINAL_BOUNDARY_PDF_PAGE
 
     from nico import comprehensive_rendered_ci_boundary_producer_v79 as producer
 
+    if _ORIGINAL_BOUNDARY_PDF_PAGE is None:
+        candidate = producer._boundary_pdf_page
+        if candidate is _boundary_pdf_page_v89:
+            raise RuntimeError("CI/CD PDF control-safety boundary has no base delegate")
+        _ORIGINAL_BOUNDARY_PDF_PAGE = candidate
     if producer._boundary_pdf_page is not _boundary_pdf_page_v89:
-        _ORIGINAL_BOUNDARY_PDF_PAGE = producer._boundary_pdf_page
         producer._boundary_pdf_page = _boundary_pdf_page_v89
 
     return {
@@ -118,6 +129,8 @@ def install_comprehensive_ci_pdf_control_safety_v89() -> dict[str, Any]:
         "del_control_glyph_sanitized": True,
         "text_operands_only": True,
         "clean_pdf_bytes_unchanged": True,
+        "base_delegate_immutable": True,
+        "late_wrapper_rebind_cycle_blocked": True,
         "ci_cd_truth_unchanged": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
