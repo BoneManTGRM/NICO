@@ -9,6 +9,7 @@ WORKFLOW = Path(".github/workflows/spanish-comprehensive-production-proof.yml")
 
 def test_spanish_canary_starts_a_real_es_mx_comprehensive_run() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
+    compile(text, str(SCRIPT), "exec")
 
     assert 'SPANISH_ROUTE = "/es/assessment"' in text
     assert 'locale="es-MX"' in text
@@ -56,6 +57,7 @@ def test_spanish_production_workflow_is_a_persistent_main_release_gate() -> None
     assert 'payload["client_delivery_allowed"] is False' in text
     assert "Publish successful Spanish proof status" in text
     assert "Publish failed Spanish proof status" in text
+    assert '-H "Accept: application/vnd.github+json"' in text
 
 
 def test_spanish_canary_does_not_approve_or_deliver_client_artifacts() -> None:
