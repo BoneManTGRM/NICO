@@ -7,12 +7,16 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from nico.comprehensive_report_worker_runtime_v90 import (
+    install_report_worker_runtime_v90,
+    report_stage,
+)
 from nico.comprehensive_run_record import apply_comprehensive_stage_result
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
 from nico.comprehensive_stage_execution_timeout_v1 import execute_stage_with_timeout
 from nico.comprehensive_stage_watchdog_v1 import apply_stage_watchdog
 
-VERSION = "nico.comprehensive_stage_background.v2"
+VERSION = "nico.comprehensive_stage_background.v3"
 DEFAULT_ORPHAN_SECONDS = 270.0
 _RUNNING_REASON = "comprehensive_stage_background_execution_in_progress"
 _LOCAL_TASKS: dict[str, dict[str, Any]] = {}
@@ -119,13 +123,22 @@ def _running_result(
     }
 
 
-def _failure_result(context: Mapping[str, Any], *, stage_id: str, message: str) -> dict[str, Any]:
+def _failure_result(
+    context: Mapping[str, Any],
+    *,
+    stage_id: str,
+    message: str,
+    exception_type: str = "Exception",
+    report_runtime_rebound: bool = False,
+) -> dict[str, Any]:
     return {
         "status": "blocked",
         "reason": "detached_stage_execution_failed",
         "error_code": "detached_stage_execution_failed",
         "error_message": message[:700] or "Detached stage execution failed.",
-        "technical_reason": f"detached_stage_execution_failed:stage={stage_id}",
+        "technical_reason": (
+            f"detached_stage_execution_failed:{exception_type}:stage={stage_id}"
+        ),
         "retryable": True,
         "cancelable": True,
         "artifacts_available": False,
@@ -135,6 +148,17 @@ def _failure_result(context: Mapping[str, Any], *, stage_id: str, message: str) 
         "evidence_ledger_id": _text(context.get("evidence_ledger_id")),
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "stage_execution": {
+            "artifact_schema": VERSION,
+            "mode": "canonical_detached_stage_execution",
+            "stage_id": stage_id,
+            "failed": True,
+            "exception_type": exception_type,
+            "report_runtime_v90_rebound": report_runtime_rebound,
+            "exact_run_recovery_supported": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
     }
 
 
@@ -150,6 +174,11 @@ class ComprehensiveStagePublicationCoordinator:
     a later continuation can replace the stale marker through the normal optimistic
     revision check and safely relaunch the exact stage. No continuation POST is
     automatically replayed by the transport layer.
+
+    Report-production stages additionally rebind their mutable compatibility aliases to
+    stable v90 base delegates inside the detached worker immediately before execution.
+    This removes first-install ordering as a source of report/PDF self-recursion while
+    preserving the exact run, evidence, review, and client-delivery boundaries.
     """
 
     def __init__(self, store: ComprehensiveRunStore) -> None:
@@ -235,7 +264,18 @@ class ComprehensiveStagePublicationCoordinator:
             _LOCAL_TASKS[lease_id] = state
 
         def invoke() -> None:
+            report_runtime_rebound = False
             try:
+                if report_stage(stage_id):
+                    installation = install_report_worker_runtime_v90()
+                    report_runtime_rebound = (
+                        installation.get("native_report_base_stable") is True
+                        and installation.get("ci_pdf_base_stable") is True
+                        and installation.get("detached_report_alias_recursion_blocked") is True
+                    )
+                    if not report_runtime_rebound:
+                        raise RuntimeError("detached report worker v90 runtime guard not authoritative")
+
                 raw = execute_stage_with_timeout(
                     executor,
                     context,
@@ -252,6 +292,8 @@ class ComprehensiveStagePublicationCoordinator:
                     context,
                     stage_id=stage_id,
                     message=f"{type(exc).__name__}: {_text(exc)}",
+                    exception_type=type(exc).__name__,
+                    report_runtime_rebound=report_runtime_rebound,
                 )
             try:
                 self._publish_result(
