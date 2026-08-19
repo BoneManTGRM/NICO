@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 VERSION = "nico.comprehensive-spanish-exit-criteria.v88"
@@ -31,10 +32,10 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
     ),
 }
 
-# Some report fields, including rollback guidance, are standalone presentation
-# literals rather than exit-criteria prose. Keep production-observed literals in a
-# separate exact fast path so they do not expand the global replacement registry
-# or weaken the canonical renderer's unknown-English fail-closed behavior.
+# Standalone report fields and deterministic finding-generator contracts use exact
+# presentation literals rather than one concatenated exit-criteria paragraph. Keep
+# the approved production vocabulary here so all report surfaces share one bounded
+# contract. Unknown prose still delegates to the canonical fail-closed translator.
 _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
     (
         "Revert the isolated remediation change if targeted or full verification fails; "
@@ -43,11 +44,90 @@ _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
         "Revierta el cambio aislado de remediación si falla la verificación dirigida o "
         "completa; conserve la evidencia del fallo y mantenga bloqueada la entrega al cliente."
     ),
+    "Targeted characterization tests pass on the remediation commit.": (
+        "Las pruebas de caracterización dirigidas se superan en el commit de remediación."
+    ),
+    "The repository's complete required-check suite passes on the remediation commit.": (
+        "El conjunto completo de verificaciones requeridas del repositorio se supera "
+        "en el commit de remediación."
+    ),
+    "No new material regression or cross-format report-truth mismatch is introduced.": (
+        "No se introduce ninguna nueva regresión material ni discrepancia de coherencia "
+        "del informe entre formatos."
+    ),
+    "All verification requirements pass on the exact remediation commit.": (
+        "Todos los requisitos de verificación se cumplen en el commit exacto de remediación."
+    ),
+    "The exact-SHA rerun no longer reports the condition as unresolved material risk.": (
+        "La nueva ejecución sobre el SHA exacto ya no informa la condición como un "
+        "riesgo material sin resolver."
+    ),
+    "No new material regression is introduced.": (
+        "No se introduce ninguna nueva regresión material."
+    ),
+    "Higher regression probability, slower review, and growing maintenance cost.": (
+        "Mayor probabilidad de regresión, revisiones más lentas y costos de mantenimiento "
+        "crecientes."
+    ),
+    "Requires exact-source human review after automated remediation proof.": (
+        "Requiere revisión humana de la fuente exacta después de la prueba automatizada "
+        "de remediación."
+    ),
 }
 _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD = {
     source.casefold(): target
     for source, target in _TARGETED_PRESENTATION_TRANSLATIONS.items()
 }
+
+# The restored decision-content generator emits dynamic complexity findings. Their
+# machine anchors (thresholds, paths, lines, symbols, and scanner method tokens) vary
+# per repository, so enumerating complete English strings guarantees another
+# production miss. Translate only anchored, full-match generator contracts and
+# preserve every captured machine token byte-for-byte. Any grammar drift falls through
+# to the existing fail-closed renderer instead of silently publishing mixed-language
+# prose.
+_COMPLEXITY_ACCEPTANCE_RE = re.compile(
+    r"^The exact-SHA rerun no longer reports cyclomatic complexity above "
+    r"(?P<threshold>\d+) at (?P<location>[A-Za-z0-9_.\-/]+:\d+)\.$"
+)
+_COMPLEXITY_TITLE_RE = re.compile(
+    r"^Reduce complexity in (?P<name>[^\r\n]+)$"
+)
+_COMPLEXITY_INTERPRETATION_RE = re.compile(
+    r"^Concentrated branching in `(?P<name>[^`\r\n]+)`\.$"
+)
+_COMPLEXITY_FACT_RE = re.compile(
+    r"^cyclomatic_complexity=(?P<complexity>\d+); method=(?P<method>[^;\r\n]+); "
+    r"source=retained exact-SHA architecture evidence$"
+)
+_COMPLEXITY_EVIDENCE_RE = re.compile(
+    r"^cyclomatic_complexity=(?P<complexity>\d+); method=(?P<method>[^;\r\n]+); "
+    r"exact_commit_match=(?P<exact>True|False)$"
+)
+_COMPLEXITY_REPORT_RECOMMENDATION_RE = re.compile(
+    r"^Separate canonical-data preparation, translation selection, layout construction, "
+    r"and artifact validation in `(?P<name>[^`\r\n]+)`; preserve snapshot report "
+    r"fixtures and cross-format truth tests; target cyclomatic complexity at or below "
+    r"(?P<threshold>\d+)\.$"
+)
+_COMPLEXITY_COLLECTION_RECOMMENDATION_RE = re.compile(
+    r"^Split collection, normalization, classification, and serialization responsibilities "
+    r"in `(?P<name>[^`\r\n]+)` into bounded pure helpers; preserve exact-SHA evidence "
+    r"fixtures and add regression tests for failure and partial-evidence paths\.$"
+)
+_COMPLEXITY_COMMAND_RECOMMENDATION_RE = re.compile(
+    r"^Separate argument parsing, orchestration, evidence assembly, and artifact writing in "
+    r"`(?P<name>[^`\r\n]+)`; add command-level characterization tests and enforce the "
+    r"approved complexity threshold\.$"
+)
+_COMPLEXITY_DEFAULT_RECOMMENDATION_RE = re.compile(
+    r"^Decompose `(?P<name>[^`\r\n]+)` around cohesive branch groups, preserve behavior "
+    r"with characterization tests, and enforce cyclomatic complexity at or below "
+    r"(?P<threshold>\d+) on the exact remediation commit\.$"
+)
+_COMPLEXITY_DEFAULT_METHOD = "retained exact-SHA complexity evidence"
+_COMPLEXITY_DEFAULT_METHOD_ES = "evidencia de complejidad conservada del SHA exacto"
+_COMPLEXITY_MACHINE_METHOD_RE = re.compile(r"^[A-Za-z0-9_.@/+:-]+$")
 
 # The v85 terminal client-surface localizer calls v87._translate_presentation
 # directly. v87 intentionally splits multiline values before applying full-match
@@ -75,6 +155,98 @@ def _translate_targeted_presentation_literal(value: Any) -> str | None:
     if translated is not None:
         return translated
     return _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
+
+
+def _translate_complexity_method(method: str) -> str | None:
+    normalized = str(method or "").strip()
+    if normalized == _COMPLEXITY_DEFAULT_METHOD:
+        return _COMPLEXITY_DEFAULT_METHOD_ES
+    # Scanner identifiers such as radon, lizard_cc, or provider/tool atoms are machine
+    # evidence, not prose. Preserve only a deliberately narrow atom grammar. Verbose
+    # unknown method descriptions still fall through to the canonical fail-closed gate.
+    if _COMPLEXITY_MACHINE_METHOD_RE.fullmatch(normalized):
+        return normalized
+    return None
+
+
+def _translate_generated_complexity_contract(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    match = _COMPLEXITY_ACCEPTANCE_RE.fullmatch(text)
+    if match is not None:
+        return (
+            "La nueva ejecución sobre el SHA exacto ya no informa una complejidad "
+            f"ciclomática superior a {match.group('threshold')} en "
+            f"{match.group('location')}."
+        )
+
+    match = _COMPLEXITY_FACT_RE.fullmatch(text)
+    if match is not None:
+        method = _translate_complexity_method(match.group("method"))
+        if method is None:
+            return None
+        return (
+            f"cyclomatic_complexity={match.group('complexity')}; method={method}; "
+            "source=evidencia de arquitectura conservada del SHA exacto"
+        )
+
+    match = _COMPLEXITY_EVIDENCE_RE.fullmatch(text)
+    if match is not None:
+        method = _translate_complexity_method(match.group("method"))
+        if method is None:
+            return None
+        return (
+            f"cyclomatic_complexity={match.group('complexity')}; method={method}; "
+            f"exact_commit_match={match.group('exact')}"
+        )
+
+    match = _COMPLEXITY_TITLE_RE.fullmatch(text)
+    if match is not None:
+        return f"Reducir la complejidad en {match.group('name')}"
+
+    match = _COMPLEXITY_INTERPRETATION_RE.fullmatch(text)
+    if match is not None:
+        return f"Ramificación concentrada en `{match.group('name')}`."
+
+    match = _COMPLEXITY_REPORT_RECOMMENDATION_RE.fullmatch(text)
+    if match is not None:
+        return (
+            "Separar la preparación de datos canónicos, la selección de traducción, la "
+            "construcción del diseño y la validación de artefactos en "
+            f"`{match.group('name')}`; conservar fixtures de informes de instantáneas y "
+            "pruebas de coherencia entre formatos; fijar como objetivo una complejidad "
+            f"ciclomática igual o inferior a {match.group('threshold')}."
+        )
+
+    match = _COMPLEXITY_COLLECTION_RECOMMENDATION_RE.fullmatch(text)
+    if match is not None:
+        return (
+            "Separar las responsabilidades de recopilación, normalización, clasificación "
+            f"y serialización de `{match.group('name')}` en helpers puros y acotados; "
+            "conservar fixtures de evidencia del SHA exacto y agregar pruebas de regresión "
+            "para rutas de fallo y de evidencia parcial."
+        )
+
+    match = _COMPLEXITY_COMMAND_RECOMMENDATION_RE.fullmatch(text)
+    if match is not None:
+        return (
+            "Separar el análisis de argumentos, la orquestación, el ensamblaje de evidencia "
+            f"y la escritura de artefactos en `{match.group('name')}`; agregar pruebas de "
+            "caracterización a nivel de comando y aplicar el umbral de complejidad aprobado."
+        )
+
+    match = _COMPLEXITY_DEFAULT_RECOMMENDATION_RE.fullmatch(text)
+    if match is not None:
+        return (
+            f"Descomponer `{match.group('name')}` alrededor de grupos cohesivos de ramas, "
+            "preservar el comportamiento con pruebas de caracterización y aplicar una "
+            f"complejidad ciclomática igual o inferior a {match.group('threshold')} en el "
+            "commit exacto de remediación."
+        )
+
+    return None
 
 
 def _translate_known_exit_criteria(value: Any) -> str:
@@ -161,7 +333,15 @@ def _translate_presentation_v88(value: Any) -> str:
     original = _ORIGINAL_CANONICAL_TRANSLATE_PRESENTATION
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 direct translator is not installed")
-    return original(_repair_known_structured_spans(value))
+
+    repaired = _repair_known_structured_spans(value)
+    targeted = _translate_targeted_presentation_literal(repaired)
+    if targeted is not None:
+        return original(targeted)
+    generated = _translate_generated_complexity_contract(repaired)
+    if generated is not None:
+        return original(generated)
+    return original(repaired)
 
 
 def _translate_canonical_field_v88(value: str, key: str) -> str:
@@ -170,10 +350,16 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
 
     targeted = _translate_targeted_presentation_literal(value)
-    if str(key) == "rollback" and targeted is not None:
-        # Translate only the exact production-observed rollback contract. The existing
-        # canonical translator still validates the resulting presentation value.
+    if targeted is not None:
+        # Exact approved presentation literals are safe on every presentation field.
+        # The canonical translator still validates the resulting Spanish value.
         return original(targeted, key)
+
+    generated = _translate_generated_complexity_contract(value)
+    if generated is not None:
+        # Dynamic generator contracts are accepted only after anchored full-match
+        # recognition. Threshold, path, line, symbol, and method tokens are preserved.
+        return original(generated, key)
 
     if str(key) == "exit_criteria" and _EXIT_CRITERIA_MARKER in str(value or ""):
         # Delegate the partially localized value to the existing fail-closed gate.
@@ -198,6 +384,10 @@ def _presentation_safe_es_v88(value: Any) -> str:
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:
         return original(targeted)
+
+    generated = _translate_generated_complexity_contract(value)
+    if generated is not None:
+        return original(generated)
 
     text = str(value or "")
     if _EXIT_CRITERIA_MARKER in text:
@@ -305,7 +495,7 @@ def _native_build_report_v88(context: dict[str, Any], final: bool) -> dict[str, 
 
 
 def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
-    """Bind the production remediation exit-criteria family into Spanish surfaces."""
+    """Bind bounded production presentation contracts into Spanish surfaces."""
 
     global _ORIGINAL_NATIVE_BUILD_REPORT
 
@@ -350,6 +540,10 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         "late_wrapper_rebind_cycle_blocked": True,
         "targeted_fast_path": True,
         "targeted_rollback_translation": True,
+        "generated_complexity_contract_translation": True,
+        "parametric_acceptance_criteria_translation": True,
+        "generated_complexity_fact_evidence_translation": True,
+        "generated_complexity_machine_tokens_preserved": True,
         "structured_soft_whitespace_repair": True,
         "ci_pdf_control_safety_deferred_to_native_report_boundary": True,
         "global_replacement_registry_unchanged": True,
