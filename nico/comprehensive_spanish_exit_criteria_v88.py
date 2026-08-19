@@ -65,13 +65,6 @@ _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
     "No new material regression is introduced.": (
         "No se introduce ninguna nueva regresión material."
     ),
-    "High-complexity code hotspot.": (
-        "Punto crítico de código con alta complejidad."
-    ),
-    "Concentrated branch logic increases regression risk, review cost, and the difficulty of safe change.": (
-        "La lógica de ramificación concentrada aumenta el riesgo de regresión, el costo "
-        "de revisión y la dificultad de realizar cambios seguros."
-    ),
     "Higher regression probability, slower review, and growing maintenance cost.": (
         "Mayor probabilidad de regresión, revisiones más lentas y costos de mantenimiento "
         "crecientes."
@@ -87,11 +80,12 @@ _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD = {
 }
 
 # The restored decision-content generator emits dynamic complexity findings. Their
-# machine anchors (thresholds, paths, lines, and symbols) vary per repository, so
-# enumerating complete English strings guarantees another production miss. Translate
-# only anchored, full-match generator contracts and preserve every captured machine
-# token byte-for-byte. Any grammar drift falls through to the existing fail-closed
-# renderer instead of silently publishing mixed-language prose.
+# machine anchors (thresholds, paths, lines, symbols, and scanner method tokens) vary
+# per repository, so enumerating complete English strings guarantees another
+# production miss. Translate only anchored, full-match generator contracts and
+# preserve every captured machine token byte-for-byte. Any grammar drift falls through
+# to the existing fail-closed renderer instead of silently publishing mixed-language
+# prose.
 _COMPLEXITY_ACCEPTANCE_RE = re.compile(
     r"^The exact-SHA rerun no longer reports cyclomatic complexity above "
     r"(?P<threshold>\d+) at (?P<location>[A-Za-z0-9_.\-/]+:\d+)\.$"
@@ -101,6 +95,14 @@ _COMPLEXITY_TITLE_RE = re.compile(
 )
 _COMPLEXITY_INTERPRETATION_RE = re.compile(
     r"^Concentrated branching in `(?P<name>[^`\r\n]+)`\.$"
+)
+_COMPLEXITY_FACT_RE = re.compile(
+    r"^cyclomatic_complexity=(?P<complexity>\d+); method=(?P<method>[^;\r\n]+); "
+    r"source=retained exact-SHA architecture evidence$"
+)
+_COMPLEXITY_EVIDENCE_RE = re.compile(
+    r"^cyclomatic_complexity=(?P<complexity>\d+); method=(?P<method>[^;\r\n]+); "
+    r"exact_commit_match=(?P<exact>True|False)$"
 )
 _COMPLEXITY_REPORT_RECOMMENDATION_RE = re.compile(
     r"^Separate canonical-data preparation, translation selection, layout construction, "
@@ -123,6 +125,9 @@ _COMPLEXITY_DEFAULT_RECOMMENDATION_RE = re.compile(
     r"with characterization tests, and enforce cyclomatic complexity at or below "
     r"(?P<threshold>\d+) on the exact remediation commit\.$"
 )
+_COMPLEXITY_DEFAULT_METHOD = "retained exact-SHA complexity evidence"
+_COMPLEXITY_DEFAULT_METHOD_ES = "evidencia de complejidad conservada del SHA exacto"
+_COMPLEXITY_MACHINE_METHOD_RE = re.compile(r"^[A-Za-z0-9_.@/+:-]+$")
 
 # The v85 terminal client-surface localizer calls v87._translate_presentation
 # directly. v87 intentionally splits multiline values before applying full-match
@@ -152,6 +157,18 @@ def _translate_targeted_presentation_literal(value: Any) -> str | None:
     return _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
 
 
+def _translate_complexity_method(method: str) -> str | None:
+    normalized = str(method or "").strip()
+    if normalized == _COMPLEXITY_DEFAULT_METHOD:
+        return _COMPLEXITY_DEFAULT_METHOD_ES
+    # Scanner identifiers such as radon, lizard_cc, or provider/tool atoms are machine
+    # evidence, not prose. Preserve only a deliberately narrow atom grammar. Verbose
+    # unknown method descriptions still fall through to the canonical fail-closed gate.
+    if _COMPLEXITY_MACHINE_METHOD_RE.fullmatch(normalized):
+        return normalized
+    return None
+
+
 def _translate_generated_complexity_contract(value: Any) -> str | None:
     text = str(value or "").strip()
     if not text:
@@ -163,6 +180,26 @@ def _translate_generated_complexity_contract(value: Any) -> str | None:
             "La nueva ejecución sobre el SHA exacto ya no informa una complejidad "
             f"ciclomática superior a {match.group('threshold')} en "
             f"{match.group('location')}."
+        )
+
+    match = _COMPLEXITY_FACT_RE.fullmatch(text)
+    if match is not None:
+        method = _translate_complexity_method(match.group("method"))
+        if method is None:
+            return None
+        return (
+            f"cyclomatic_complexity={match.group('complexity')}; method={method}; "
+            "source=evidencia de arquitectura conservada del SHA exacto"
+        )
+
+    match = _COMPLEXITY_EVIDENCE_RE.fullmatch(text)
+    if match is not None:
+        method = _translate_complexity_method(match.group("method"))
+        if method is None:
+            return None
+        return (
+            f"cyclomatic_complexity={match.group('complexity')}; method={method}; "
+            f"exact_commit_match={match.group('exact')}"
         )
 
     match = _COMPLEXITY_TITLE_RE.fullmatch(text)
@@ -321,7 +358,7 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     generated = _translate_generated_complexity_contract(value)
     if generated is not None:
         # Dynamic generator contracts are accepted only after anchored full-match
-        # recognition. Threshold, path, line, and symbol tokens are preserved.
+        # recognition. Threshold, path, line, symbol, and method tokens are preserved.
         return original(generated, key)
 
     if str(key) == "exit_criteria" and _EXIT_CRITERIA_MARKER in str(value or ""):
@@ -505,6 +542,7 @@ def install_comprehensive_spanish_exit_criteria_v88() -> dict[str, Any]:
         "targeted_rollback_translation": True,
         "generated_complexity_contract_translation": True,
         "parametric_acceptance_criteria_translation": True,
+        "generated_complexity_fact_evidence_translation": True,
         "generated_complexity_machine_tokens_preserved": True,
         "structured_soft_whitespace_repair": True,
         "ci_pdf_control_safety_deferred_to_native_report_boundary": True,
