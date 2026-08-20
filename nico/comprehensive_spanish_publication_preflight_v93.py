@@ -105,6 +105,10 @@ def inspect_spanish_canonical_publication_preflight(
     Dynamic complexity findings do not necessarily exist in retained stage input; they are
     synthesized while canonical truth is built. Inspecting prior-stage state would therefore
     miss the exact family that caused the production incident.
+
+    Restored findings are intentionally projected onto several canonical surfaces. Validate
+    each semantic field/value contract once so duplicate projections cannot consume the
+    bounded failure-detail budget and hide a different untranslated contract later in the run.
     """
 
     if not _spanish_requested(canonical_report):
@@ -115,6 +119,7 @@ def inspect_spanish_canonical_publication_preflight(
             "failure_count": 0,
             "failure_details": [],
             "canonical_restoration_complete": True,
+            "duplicate_contracts_skipped": 0,
             "visited_nodes_bounded": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -125,6 +130,8 @@ def inspect_spanish_canonical_publication_preflight(
     failures: list[dict[str, str]] = []
     failure_count = 0
     checked = 0
+    duplicate_contracts_skipped = 0
+    seen_contracts: set[tuple[str, str]] = set()
     budget = [0]
 
     for path, key, source in _iter_report_bound_strings(
@@ -132,6 +139,11 @@ def inspect_spanish_canonical_publication_preflight(
         path=("canonical_report",),
         budget=budget,
     ):
+        contract_key = (key, source)
+        if contract_key in seen_contracts:
+            duplicate_contracts_skipped += 1
+            continue
+        seen_contracts.add(contract_key)
         checked += 1
         try:
             translated = canonical._translate_presentation_field(source, key)
@@ -159,6 +171,8 @@ def inspect_spanish_canonical_publication_preflight(
         "version": VERSION,
         "spanish_requested": True,
         "checked_presentation_values": checked,
+        "unique_presentation_contracts": len(seen_contracts),
+        "duplicate_contracts_skipped": duplicate_contracts_skipped,
         "failure_count": failure_count,
         "failure_details": failures,
         "failure_details_truncated": failure_count > len(failures),
@@ -168,6 +182,7 @@ def inspect_spanish_canonical_publication_preflight(
         "maximum_failure_details": _MAX_FAILURE_DETAILS,
         "canonical_restoration_complete": True,
         "additional_rich_finding_prose_guarded": True,
+        "duplicate_restoration_surfaces_deduplicated": True,
         "presentation_only": True,
         "canonical_evidence_unchanged": True,
         "human_review_required": True,
