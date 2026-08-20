@@ -1,0 +1,150 @@
+name: Exact Comprehensive Verifier Finalizer
+
+on:
+  workflow_run:
+    workflows:
+      - Verify Comprehensive Recovery 9984
+    types:
+      - completed
+
+permissions:
+  contents: read
+  statuses: write
+  issues: write
+
+concurrency:
+  group: nico-exact-comprehensive-verifier-finalizer-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Finalize exact Comprehensive verifier status
+    if: github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      STATUS_CONTEXT: NICO Exact Comprehensive 9984
+      PROOF_PR_NUMBER: '1237'
+
+    steps:
+      - name: Reconcile terminal status from completed verifier
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.request
+          from typing import Any
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"].strip()
+          token = os.environ["GITHUB_TOKEN"]
+          source_conclusion = os.environ["SOURCE_CONCLUSION"].strip().lower()
+          source_run_id = os.environ["SOURCE_RUN_ID"].strip()
+          status_context = os.environ["STATUS_CONTEXT"]
+          proof_pr = os.environ["PROOF_PR_NUMBER"]
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "nico-exact-comprehensive-verifier-finalizer",
+          }
+
+          def request_json(
+              method: str,
+              url: str,
+              payload: dict[str, Any] | None = None,
+          ) -> dict[str, Any]:
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      **headers,
+                      **({"Content-Type": "application/json"} if data is not None else {}),
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  raw = response.read()
+              if not raw:
+                  return {}
+              value = json.loads(raw.decode("utf-8"))
+              if not isinstance(value, dict):
+                  raise RuntimeError(f"Expected JSON object from {method} {url}")
+              return value
+
+          statuses = request_json(
+              "GET",
+              f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+          )
+          latest: dict[str, str] = {}
+          for item in statuses.get("statuses") or []:
+              if not isinstance(item, dict):
+                  continue
+              context = str(item.get("context") or "").strip()
+              state = str(item.get("state") or "unknown").strip().lower()
+              if context:
+                  latest.setdefault(context, state)
+
+          observed = latest.get(status_context, "missing")
+          print(
+              f"Exact verifier completed with conclusion={source_conclusion}; "
+              f"latest commit context={observed}",
+              flush=True,
+          )
+
+          # The verifier itself owns success/failure truth when it reaches its explicit
+          # terminal logic. Do not overwrite either terminal state. This finalizer exists
+          # only for hard timeout/cancellation/action failures that would otherwise leave
+          # the manually published context pending forever.
+          if observed in {"success", "failure", "error"}:
+              raise SystemExit(0)
+
+          if source_conclusion == "success":
+              # A successful workflow that left no terminal status is internally
+              # contradictory. Fail closed rather than manufacturing success.
+              state = "failure"
+              description = "Verifier completed without publishing an exact-run terminal status"
+          else:
+              state = "failure"
+              description = (
+                  "Exact-run verifier ended before terminal proof: "
+                  f"{source_conclusion or 'unknown'}"
+              )
+
+          target_url = f"https://github.com/{repository}/actions/runs/{source_run_id}"
+          request_json(
+              "POST",
+              f"https://api.github.com/repos/{repository}/statuses/{sha}",
+              {
+                  "state": state,
+                  "context": status_context,
+                  "description": description[:140],
+                  "target_url": target_url,
+              },
+          )
+          request_json(
+              "POST",
+              f"https://api.github.com/repos/{repository}/issues/{proof_pr}/comments",
+              {
+                  "body": (
+                      "### Exact Comprehensive verifier finalizer\n\n"
+                      f"- Release SHA: `{sha}`\n"
+                      f"- Source workflow run: `{source_run_id}`\n"
+                      f"- Source conclusion: `{source_conclusion or 'unknown'}`\n"
+                      f"- Prior exact-verifier status: `{observed}`\n"
+                      "- Finalized status: `failure`\n\n"
+                      "The verifier ended without publishing terminal exact-run proof. "
+                      "This is fail-closed orchestration evidence, not a successful recovery."
+                  )
+              },
+          )
+          PY
