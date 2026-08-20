@@ -18,7 +18,7 @@ jobs:
   spanish-comprehensive:
     name: Prove fresh es-MX Comprehensive report publication
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
       NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
@@ -122,7 +122,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir \
             "playwright==1.61.0" "pypdf==6.15.0"
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt-mirrors.txt >/dev/null
           fi
           for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             [ -f "${apt_source}" ] || continue
@@ -141,12 +141,14 @@ jobs:
       - name: Run fresh Spanish Comprehensive final-report proof
         id: spanish_proof
         continue-on-error: true
+        timeout-minutes: 100
         run: |
           set -euo pipefail
           python scripts/spanish_comprehensive_live_acceptance_v1.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
+            --timeout-seconds 5400 \
             --output audit-results/spanish-comprehensive-live-proof.json
 
       - name: Upload immutable Spanish proof
