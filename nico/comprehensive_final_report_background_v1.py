@@ -7,6 +7,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from nico.comprehensive_blocked_run_recovery_v1 import (
+    rewind_blocked_run_for_final_artifact_recovery,
+)
 from nico.comprehensive_final_report_execution_boundary_v4 import (
     FINAL_REPORT_STAGE_ID,
     execute_final_report_stage,
@@ -14,7 +17,7 @@ from nico.comprehensive_final_report_execution_boundary_v4 import (
 from nico.comprehensive_run_record import apply_comprehensive_stage_result
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
 
-VERSION = "nico.comprehensive_final_report_background.v5"
+VERSION = "nico.comprehensive_final_report_background.v6"
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 DEFAULT_ORPHAN_SECONDS = 30.0
 DEFAULT_MAX_PUBLICATION_SECONDS = 900.0
@@ -218,6 +221,7 @@ def _running_result(
             "max_publication_seconds": _max_publication_seconds(),
             "publication_deadline_scope": "renderer_execution_only",
             "deadline_enforcement_mode": "autonomous_watchdog_and_advance",
+            "automatic_bounded_recovery": True,
             "expired_worker_capacity_reclaim": True,
             "late_result_fencing": "canonical_publication_lease",
             "detached_background_execution": True,
@@ -286,6 +290,7 @@ def _overdue_result(
             "publication_deadline_scope": "renderer_execution_only",
             "deadline_enforced_by": "durable_final_report_coordinator_watchdog_or_advance",
             "deadline_enforcement_mode": "autonomous_watchdog_and_advance",
+            "automatic_bounded_recovery": True,
             "expired_worker_capacity_reclaim": True,
             "late_result_fencing": "canonical_publication_lease",
             "provider_lifetime_owner": "durable_final_report_coordinator",
@@ -327,6 +332,7 @@ def _with_publication_metadata(
             "max_publication_seconds": _max_publication_seconds(),
             "publication_deadline_scope": "renderer_execution_only",
             "deadline_enforcement_mode": "autonomous_watchdog_and_advance",
+            "automatic_bounded_recovery": True,
             "expired_worker_capacity_reclaim": True,
             "late_result_fencing": "canonical_publication_lease",
         }
@@ -372,9 +378,10 @@ class FinalReportPublicationCoordinator:
     the deadline clock. The deadline is enforced both when continuation advances and by
     the worker's own watchdog, so status-only polling cannot leave the canonical run at
     the final-report stage forever. A renderer that exceeds its hard lease is fenced from
-    late publication and its logical capacity is reclaimed for the bounded exact-run
-    recovery attempt. Scoring, artifact validation, human review, and client-delivery
-    gates remain unchanged.
+    late publication, its logical capacity is reclaimed, and the existing bounded exact-
+    run final-artifact recovery generation is consumed automatically. A repeated failure
+    after that single recovery attempt remains terminal and visible. Scoring, artifact
+    validation, human review, and client-delivery gates remain unchanged.
     """
 
     def __init__(self, store: ComprehensiveRunStore) -> None:
@@ -403,9 +410,14 @@ class FinalReportPublicationCoordinator:
             now_epoch = time.time()
             deadline = _job_deadline_state(job, now_epoch=now_epoch)
             if bool(deadline.get("overdue")):
-                return self._expire_publication(
+                expired = self._expire_publication(
                     record,
                     lease_id=lease_id,
+                    context=context,
+                )
+                return self._recover_after_deadline(
+                    expired,
+                    executor=executor,
                     context=context,
                 )
             if _local_task_active(lease_id):
@@ -456,6 +468,39 @@ class FinalReportPublicationCoordinator:
         self._stop_local_task(lease_id)
         self._safe_job_update(lease_id, status="expired")
         return persisted
+
+    def _recover_after_deadline(
+        self,
+        record: dict[str, Any],
+        *,
+        executor,
+        context: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Consume the existing one-attempt recovery budget and relaunch immediately.
+
+        The blocked failure is persisted first so a process crash never erases the hard
+        deadline evidence. Recovery then uses the canonical final-artifact rewind helper,
+        preserving the same exact run, immutable repository snapshot, completed scanner
+        evidence, and bounded recovery history. A concurrent recovery winner is respected.
+        """
+
+        run_id = _text(context.get("run_id"))
+        if record.get("terminal") is not True:
+            return record
+        try:
+            recovered = rewind_blocked_run_for_final_artifact_recovery(record)
+        except Exception:
+            return record
+        if recovered == record:
+            return record
+        try:
+            persisted = self._store.save(
+                recovered,
+                expected_revision=int(record["revision"]),
+            )
+        except ComprehensiveRunConflict:
+            return self._store.load(run_id)
+        return self._claim_and_launch(persisted, executor, context)
 
     def _claim_and_launch(
         self,
@@ -550,8 +595,13 @@ class FinalReportPublicationCoordinator:
                         if _marker_lease(expired) == lease_id:
                             continue
                         release_slot_once()
+                    self._recover_after_deadline(
+                        expired,
+                        executor=executor,
+                        context=context,
+                    )
                 except Exception:
-                    continue
+                    pass
                 stop.set()
                 return
 
@@ -660,7 +710,7 @@ class FinalReportPublicationCoordinator:
 
     def _stop_local_task(self, lease_id: str) -> None:
         with _LOCAL_TASKS_LOCK:
-            state = _LOCAL_TASKS.get(lease_id)
+            state = _LOCAL_TASKS.pop(lease_id, None)
         if not isinstance(state, dict):
             return
         stop = state.get("stop")
