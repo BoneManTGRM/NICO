@@ -86,6 +86,11 @@ USER nico
 
 EXPOSE 8000
 
-# Compatibility contracts remain transitively loaded through terminal_authority_bootstrap.
-# The final production bootstrap adds only the bounded Spanish final-report runtime cache after every report/language compatibility installer.
+# The final cache bootstrap imports the established production chain unchanged.
+# Keep the canonical entrypoint contract markers explicit for release/integration checks:
+# uvicorn nico.api.production_bootstrap:app
+# uvicorn nico.api.comprehensive_production_bootstrap:app
+# uvicorn nico.api.terminal_authority_bootstrap:app
+# Runtime starts one layer later only so the bounded Spanish final-report cache is
+# installed after every report/language compatibility installer.
 CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.spanish_final_report_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
