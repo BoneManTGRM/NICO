@@ -284,7 +284,7 @@ def _overdue_result(
             "max_queue_seconds": _max_queue_seconds(),
             "max_publication_seconds": _max_publication_seconds(),
             "publication_deadline_scope": "renderer_execution_only",
-            "deadline_enforced_by": "durable_final_report_coordinator_watchdog",
+            "deadline_enforced_by": "durable_final_report_coordinator_watchdog_or_advance",
             "deadline_enforcement_mode": "autonomous_watchdog_and_advance",
             "expired_worker_capacity_reclaim": True,
             "late_result_fencing": "canonical_publication_lease",
@@ -342,6 +342,19 @@ def _acquire_publication_slot(stop: threading.Event) -> bool:
         if _PUBLICATION_SLOT.acquire(timeout=0.25):
             return True
     return False
+
+
+def _release_local_task_capacity(state: dict[str, Any]) -> None:
+    state_lock = state.get("state_lock")
+    if state_lock is None:
+        return
+    should_release = False
+    with state_lock:
+        if bool(state.get("slot_acquired")) and not bool(state.get("slot_released")):
+            state["slot_released"] = True
+            should_release = True
+    if should_release:
+        _PUBLICATION_SLOT.release()
 
 
 class FinalReportPublicationCoordinator:
@@ -505,13 +518,7 @@ class FinalReportPublicationCoordinator:
         }
 
         def release_slot_once() -> None:
-            should_release = False
-            with state_lock:
-                if bool(state.get("slot_acquired")) and not bool(state.get("slot_released")):
-                    state["slot_released"] = True
-                    should_release = True
-            if should_release:
-                _PUBLICATION_SLOT.release()
+            _release_local_task_capacity(state)
 
         def heartbeat() -> None:
             interval = _heartbeat_seconds()
@@ -654,11 +661,12 @@ class FinalReportPublicationCoordinator:
     def _stop_local_task(self, lease_id: str) -> None:
         with _LOCAL_TASKS_LOCK:
             state = _LOCAL_TASKS.get(lease_id)
-            if not isinstance(state, Mapping):
-                return
-            stop = state.get("stop")
-            if isinstance(stop, threading.Event):
-                stop.set()
+        if not isinstance(state, dict):
+            return
+        stop = state.get("stop")
+        if isinstance(stop, threading.Event):
+            stop.set()
+        _release_local_task_capacity(state)
 
     def _publish_result(
         self,
@@ -701,7 +709,9 @@ class FinalReportPublicationCoordinator:
         try:
             target = _text(status).casefold()
             current = self._store.load_final_report_job(lease_id)
-            current_status = _text(current.get("status") if isinstance(current, Mapping) else "").casefold()
+            current_status = _text(
+                current.get("status") if isinstance(current, Mapping) else ""
+            ).casefold()
             if current_status in _TERMINAL_JOB_STATUSES and current_status != target:
                 return
             self._store.update_final_report_job(
@@ -717,11 +727,14 @@ class FinalReportPublicationCoordinator:
 
 def reset_final_report_publication_tasks_for_tests() -> None:
     with _LOCAL_TASKS_LOCK:
-        for state in _LOCAL_TASKS.values():
-            stop = state.get("stop") if isinstance(state, Mapping) else None
-            if isinstance(stop, threading.Event):
-                stop.set()
+        states = list(_LOCAL_TASKS.values())
         _LOCAL_TASKS.clear()
+    for state in states:
+        stop = state.get("stop") if isinstance(state, Mapping) else None
+        if isinstance(stop, threading.Event):
+            stop.set()
+        if isinstance(state, dict):
+            _release_local_task_capacity(state)
 
 
 __all__ = [
