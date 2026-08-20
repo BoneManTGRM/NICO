@@ -226,3 +226,4 @@ NICO uses a dual-license model:
 - `docs/commercial-license-order-form.md` — commercial scope and terms template.
 
 <!-- deployment retry: Railway network provisioning failure 2026-08-18 -->
+<!-- deployment retry: exact Railway backend status missing after PR #1248 merge 2026-08-20 -->
