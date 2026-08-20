@@ -1,0 +1,235 @@
+name: Spanish Comprehensive Production Proof
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: nico-spanish-comprehensive-production-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  spanish-comprehensive:
+    name: Prove fresh es-MX Comprehensive report publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
+      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
+      NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.sha }}
+      STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
+
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Publish pending Spanish proof status
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/spanish-status.json
+          import json, os
+          print(json.dumps({
+              "state": "pending",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Running fresh es-MX Comprehensive final-report production proof",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/spanish-status.json
+
+      - name: Wait for exact frontend and backend deployments
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required = {"Vercel", os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]}
+          deadline = time.time() + 30 * 60
+          last = {}
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-spanish-comprehensive-production-proof",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              latest = {}
+              for item in payload.get("statuses") or []:
+                  latest.setdefault(
+                      str(item.get("context") or ""),
+                      str(item.get("state") or "unknown"),
+                  )
+              last = {context: latest.get(context, "missing") for context in required}
+              print(f"Exact-SHA deployment statuses: {last}", flush=True)
+              if all(last[context] == "success" for context in required):
+                  break
+              if any(last[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(f"Exact-SHA deployment failed: {last}")
+              time.sleep(20)
+          else:
+              raise SystemExit(f"Timed out waiting for exact-SHA deployments: {last}")
+          PY
+
+      - name: Verify exact frontend release identity
+        run: |
+          set -euo pipefail
+          mkdir -p audit-results
+          python scripts/production_frontend_release_identity.py \
+            --origin "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --expected-ui-contract "expert-engagement-v2" \
+            --expected-deployment-environment "production" \
+            --timeout-seconds 900 \
+            --interval-seconds 15 \
+            --output audit-results/spanish-comprehensive-frontend-release.json
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned browser proof dependencies
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            "playwright==1.61.0" "pypdf==6.15.0"
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "${apt_source}" ] || continue
+            sudo sed -i \
+              -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              -e 's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              "${apt_source}"
+          done
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "20";' \
+            'Acquire::https::Timeout "20";' \
+            | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
+          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
+
+      - name: Run fresh Spanish Comprehensive final-report proof
+        id: spanish_proof
+        continue-on-error: true
+        timeout-minutes: 100
+        run: |
+          set -euo pipefail
+          python scripts/spanish_comprehensive_live_acceptance_v1.py \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --timeout-seconds 5400 \
+            --output audit-results/spanish-comprehensive-live-proof.json
+
+      - name: Upload immutable Spanish proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spanish-comprehensive-production-proof-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            audit-results/spanish-comprehensive-frontend-release.json
+            audit-results/spanish-comprehensive-live-proof.json
+            audit-results/spanish-comprehensive-live-proof.png
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Require passing Spanish final-report evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test "${{ steps.spanish_proof.outcome }}" = "success"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("audit-results/spanish-comprehensive-live-proof.json").read_text(encoding="utf-8")
+          )
+          assert payload["artifact_schema"] == "nico.spanish_comprehensive_live_acceptance.v1"
+          assert payload["status"] == "passed"
+          assert payload["expected_sha"] == os.environ["RELEASE_SHA"]
+          assert payload["report_language_requested"] == "es-MX"
+          assert payload["spanish_route_verified"] is True
+          assert payload["document_language_verified"] is True
+          assert payload["intake_report_language_verified"] is True
+          assert payload["start_request_count"] == 1
+          assert payload["duplicate_intake_absent"] is True
+          assert payload["terminal"]["phase"] == "Revisión interna requerida"
+          assert payload["spanish_pdf_presentation_verified"] is True
+          assert payload["forbidden_pdf_markers_absent"] is True
+          assert payload["pdf_signature_verified"] is True
+          assert payload["pdf_run_identity_verified"] is True
+          assert payload["human_review_required"] is True
+          assert payload["client_delivery_allowed"] is False
+          PY
+
+      - name: Publish successful Spanish proof status
+        if: success()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/spanish-status.json
+          import json, os
+          print(json.dumps({
+              "state": "success",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Fresh es-MX Comprehensive report reached internal review with a Spanish PDF",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/spanish-status.json
+
+      - name: Publish failed Spanish proof status
+        if: failure()
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/spanish-status.json
+          import json, os
+          print(json.dumps({
+              "state": "failure",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Fresh es-MX Comprehensive final-report production proof failed",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @/tmp/spanish-status.json
