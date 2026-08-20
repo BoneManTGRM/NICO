@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 VERSION = "nico.comprehensive-spanish-publication-preflight.v93"
 _MAX_FAILURE_DETAILS = 50
 _MAX_VISITED_NODES = 75_000
 _MAX_DEPTH = 18
+_MARKER = "__nico_spanish_publication_preflight_v93__"
 
 # The canonical v87 fail-closed set covers most renderer-owned prose. Rich finding cards
 # also publish these narrative fields directly, so validate them even though older v87
@@ -17,6 +18,30 @@ _ADDITIONAL_CLIENT_PROSE_FIELDS = {
     "technical_consequence",
     "technical_impact",
 }
+
+# Deterministic fallback copy emitted when a limited/synthetic assessment reaches
+# report generation without canonical score evidence. The aggregate preflight exposed
+# the first missing literal in an existing authoritative language-persistence test.
+# Patch v88's targeted helper rather than another public renderer alias so future v88
+# rebinds continue to use the same bounded fallback vocabulary.
+_FALLBACK_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    "Canonical scoring evidence was unavailable at report-generation time.": (
+        "La evidencia de puntuación canónica no estaba disponible al momento de generar "
+        "el informe."
+    ),
+    (
+        "A canonical technical score was not available. The report retains stage evidence "
+        "and requires human review."
+    ): (
+        "No estaba disponible una puntuación técnica canónica. El informe conserva la "
+        "evidencia de las etapas y requiere revisión humana."
+    ),
+}
+_FALLBACK_PRESENTATION_TRANSLATIONS_CASEFOLD = {
+    source.casefold(): target
+    for source, target in _FALLBACK_PRESENTATION_TRANSLATIONS.items()
+}
+_ORIGINAL_TARGETED_TRANSLATOR: Callable[[Any], str | None] | None = None
 
 
 def _text(value: Any, limit: int = 600) -> str:
@@ -39,6 +64,61 @@ def _spanish_requested(value: Mapping[str, Any]) -> bool:
     return language.startswith("es")
 
 
+def _translate_fallback_presentation_literal(value: Any) -> str | None:
+    text = str(value or "").strip()
+    translated = _FALLBACK_PRESENTATION_TRANSLATIONS.get(text)
+    if translated is not None:
+        return translated
+    return _FALLBACK_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
+
+
+def install_spanish_publication_preflight_v93() -> dict[str, Any]:
+    """Extend v88's bounded vocabulary without creating another translator alias.
+
+    v88's field/direct/presentation wrappers resolve its targeted helper from module
+    globals at call time. Wrapping that helper keeps this fallback repair active even
+    when a later compatibility installer rebinds the public translator surfaces.
+    """
+
+    global _ORIGINAL_TARGETED_TRANSLATOR
+
+    from nico import comprehensive_spanish_exit_criteria_v88 as v88
+
+    current = v88._translate_targeted_presentation_literal
+    if getattr(current, _MARKER, False):
+        bound = True
+    else:
+        if _ORIGINAL_TARGETED_TRANSLATOR is None:
+            _ORIGINAL_TARGETED_TRANSLATOR = current
+        base = _ORIGINAL_TARGETED_TRANSLATOR
+        if base is None:
+            raise RuntimeError("Spanish publication preflight has no v88 targeted base")
+
+        def targeted(value: Any) -> str | None:
+            translated = _translate_fallback_presentation_literal(value)
+            if translated is not None:
+                return translated
+            return base(value)
+
+        setattr(targeted, _MARKER, True)
+        setattr(targeted, "_nico_previous", base)
+        v88._translate_targeted_presentation_literal = targeted
+        bound = True
+
+    v88_result = v88.install_comprehensive_spanish_exit_criteria_v88()
+    return {
+        "status": "installed",
+        "version": VERSION,
+        "fallback_targeted_helper_bound": bound,
+        "fallback_contract_count": len(_FALLBACK_PRESENTATION_TRANSLATIONS),
+        "v88_bound": v88_result.get("bound") is True,
+        "late_v88_rebind_safe": True,
+        "presentation_only": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 def _iter_report_bound_strings(
     value: Any,
     *,
@@ -57,8 +137,6 @@ def _iter_report_bound_strings(
     if budget[0] > _MAX_VISITED_NODES or depth > _MAX_DEPTH:
         return
 
-    # Match the authoritative v87 localization boundary exactly. Raw scanner/canonical
-    # evidence and protected identifiers remain immutable and are not Spanish prose.
     if any(segment in canonical._RAW_CANONICAL_SUBTREES for segment in path):
         return
     if key in canonical._PROTECTED_FIELDS:
@@ -99,16 +177,13 @@ def _iter_report_bound_strings(
 def inspect_spanish_canonical_publication_preflight(
     canonical_report: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Validate the fully restored canonical report before any client artifact renders.
+    """Validate fully restored canonical truth before any client artifact renders.
 
-    This intentionally runs *after* decision-content restoration and count reconciliation.
-    Dynamic complexity findings do not necessarily exist in retained stage input; they are
-    synthesized while canonical truth is built. Inspecting prior-stage state would therefore
-    miss the exact family that caused the production incident.
-
-    Restored findings are intentionally projected onto several canonical surfaces. Validate
-    each semantic field/value contract once so duplicate projections cannot consume the
-    bounded failure-detail budget and hide a different untranslated contract later in the run.
+    This runs after decision-content restoration and count reconciliation. Dynamic
+    complexity findings do not necessarily exist in retained stage input; inspecting
+    prior-stage state would therefore miss the exact family that caused the production
+    incident. Duplicate restored projections are checked once per field/value contract
+    so they cannot consume the bounded failure-detail budget.
     """
 
     if not _spanish_requested(canonical_report):
@@ -124,6 +199,8 @@ def inspect_spanish_canonical_publication_preflight(
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+
+    install_spanish_publication_preflight_v93()
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
@@ -183,6 +260,7 @@ def inspect_spanish_canonical_publication_preflight(
         "canonical_restoration_complete": True,
         "additional_rich_finding_prose_guarded": True,
         "duplicate_restoration_surfaces_deduplicated": True,
+        "fallback_targeted_contracts_installed": True,
         "presentation_only": True,
         "canonical_evidence_unchanged": True,
         "human_review_required": True,
@@ -210,9 +288,6 @@ def assert_spanish_canonical_publication_preflight(
     )
 
 
-# Compatibility aliases for callers/tests introduced with the first v93 draft. The
-# second argument is ignored intentionally: publication truth is the restored canonical
-# model, never the raw prior-stage input.
 def inspect_spanish_publication_preflight(
     context: Mapping[str, Any],
     canonical_report: Mapping[str, Any],
@@ -235,4 +310,5 @@ __all__ = [
     "assert_spanish_publication_preflight",
     "inspect_spanish_canonical_publication_preflight",
     "inspect_spanish_publication_preflight",
+    "install_spanish_publication_preflight_v93",
 ]
