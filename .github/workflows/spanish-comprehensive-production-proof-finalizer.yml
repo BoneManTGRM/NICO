@@ -1,0 +1,127 @@
+name: Spanish Comprehensive Production Proof Finalizer
+
+on:
+  workflow_run:
+    workflows:
+      - Spanish Comprehensive Production Proof
+    types:
+      - completed
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: nico-spanish-comprehensive-proof-finalizer-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Finalize Spanish Comprehensive production proof status
+    if: github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
+
+    steps:
+      - name: Reconcile terminal Spanish production-proof status
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.request
+          from typing import Any
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"].strip()
+          token = os.environ["GITHUB_TOKEN"]
+          source_conclusion = os.environ["SOURCE_CONCLUSION"].strip().lower()
+          source_run_id = os.environ["SOURCE_RUN_ID"].strip()
+          status_context = os.environ["STATUS_CONTEXT"]
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "nico-spanish-comprehensive-proof-finalizer",
+          }
+
+          def request_json(
+              method: str,
+              url: str,
+              payload: dict[str, Any] | None = None,
+          ) -> dict[str, Any]:
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      **headers,
+                      **({"Content-Type": "application/json"} if data is not None else {}),
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  raw = response.read()
+              if not raw:
+                  return {}
+              parsed = json.loads(raw.decode("utf-8"))
+              if not isinstance(parsed, dict):
+                  raise RuntimeError(f"Expected JSON object from {method} {url}")
+              return parsed
+
+          statuses = request_json(
+              "GET",
+              f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+          )
+          latest: dict[str, str] = {}
+          for item in statuses.get("statuses") or []:
+              if not isinstance(item, dict):
+                  continue
+              context = str(item.get("context") or "").strip()
+              state = str(item.get("state") or "unknown").strip().lower()
+              if context:
+                  latest.setdefault(context, state)
+
+          observed = latest.get(status_context, "missing")
+          print(
+              f"Spanish production proof completed with conclusion={source_conclusion}; "
+              f"latest commit context={observed}",
+              flush=True,
+          )
+
+          # The source workflow owns terminal truth when it reaches its explicit
+          # success/failure publisher. Never overwrite a terminal result. This
+          # finalizer exists for runner shutdown, cancellation, or other hard exits
+          # that skip the source workflow's own always/failure finalization steps.
+          if observed in {"success", "failure", "error"}:
+              raise SystemExit(0)
+
+          if source_conclusion == "success":
+              description = "Spanish proof completed without publishing terminal commit status"
+          else:
+              description = (
+                  "Spanish proof ended before terminal publication: "
+                  f"{source_conclusion or 'unknown'}"
+              )
+
+          target_url = f"https://github.com/{repository}/actions/runs/{source_run_id}"
+          request_json(
+              "POST",
+              f"https://api.github.com/repos/{repository}/statuses/{sha}",
+              {
+                  "state": "failure",
+                  "context": status_context,
+                  "description": description[:140],
+                  "target_url": target_url,
+              },
+          )
+          PY
