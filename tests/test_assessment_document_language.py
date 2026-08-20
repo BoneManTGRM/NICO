@@ -13,13 +13,14 @@ def test_spanish_assessment_route_supplies_es_mx_locale() -> None:
     assert '<AssessmentPage locale="es-MX" />' in source
 
 
-def test_assessment_localizer_binds_html_language_to_runtime_locale() -> None:
+def test_assessment_localizer_binds_html_language_only_after_existing_spanish_guard() -> None:
     source = LOCALIZER.read_text(encoding="utf-8")
 
-    assert 'root.lang = locale === "es-MX" ? "es-MX" : "en";' in source
+    guard = source.index('if (locale !== "es-MX") return;')
+    bind = source.index("const restoreDocumentLanguage = bindDocumentLanguage(locale);")
+    assert guard < bind
+    assert "root.lang = locale;" in source
     assert 'root.dataset.nicoAssessmentDocumentLanguage = root.lang;' in source
-    assert "const restoreDocumentLanguage = bindDocumentLanguage(locale);" in source
-    assert 'if (locale !== "es-MX") return restoreDocumentLanguage;' in source
     assert "restoreDocumentLanguage();" in source
     assert "bindDocumentLanguage," in source
 
