@@ -128,7 +128,7 @@ function repairPrematurePackageBlock(locale: AssessmentLocale): void {
 function bindDocumentLanguage(locale: AssessmentLocale): () => void {
   const root = document.documentElement;
   const previous = root.lang || "en";
-  root.lang = locale === "es-MX" ? "es-MX" : "en";
+  root.lang = locale;
   root.dataset.nicoAssessmentDocumentLanguage = root.lang;
 
   return () => {
@@ -139,9 +139,11 @@ function bindDocumentLanguage(locale: AssessmentLocale): () => void {
 
 export default function AssessmentDynamicSpanishLocalization({locale}: {locale: "en" | "es-MX"}) {
   useEffect(() => {
-    const restoreDocumentLanguage = bindDocumentLanguage(locale);
-    if (locale !== "es-MX") return restoreDocumentLanguage;
+    // Preserve the long-standing English-route contract exactly. Root layout already
+    // declares English, and this client boundary exists only to localize Spanish pages.
+    if (locale !== "es-MX") return;
 
+    const restoreDocumentLanguage = bindDocumentLanguage(locale);
     translateTree(document.body);
     repairPrematurePackageBlock(locale);
     const observer = new MutationObserver((records) => {
