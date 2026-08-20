@@ -2,7 +2,7 @@ import AssessmentPage from "../../assessment/page";
 import SpanishDocumentLanguage from "./SpanishDocumentLanguage";
 
 export const metadata = {
-  title: "NICO Comprehensive",
+  title: "Evaluaciones NICO — Comprehensive",
   description: "NICO Comprehensive en español, vinculado a evidencia.",
 };
 
