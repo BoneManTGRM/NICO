@@ -21,6 +21,21 @@ def test_spanish_canary_starts_a_real_es_mx_comprehensive_run() -> None:
     assert 'recovery._start_count(requests) == 1' in text
 
 
+def test_spanish_canary_waits_for_hydrated_locale_contract_before_interaction() -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'data-assessment-hydrated="true"' in text
+    assert 'data-assessment-client-copy-verified="true"' in text
+    assert "_wait_for_spanish_hydration(page, args.navigation_timeout_ms)" in text
+    assert "document.documentElement.dataset.nicoAssessmentDocumentLanguage === 'es-MX'" in text
+    assert "page.wait_for_function(" in text
+
+    hydration = text.index("_wait_for_spanish_hydration(page, args.navigation_timeout_ms)")
+    language_assertion = text.index('assert page.evaluate("() => document.documentElement.lang") == "es-MX"')
+    repository_fill = text.index("page.get_by_label(SPANISH_REPO_LABEL).fill(args.repository)")
+    assert hydration < language_assertion < repository_fill
+
+
 def test_spanish_canary_proves_final_pdf_language_and_safety_boundaries() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
 
