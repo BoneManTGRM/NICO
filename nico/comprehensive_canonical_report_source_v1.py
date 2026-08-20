@@ -33,6 +33,10 @@ from nico.comprehensive_report_package import (
 from nico.comprehensive_report_semantic_content_gate_v66 import (
     install_comprehensive_report_semantic_content_gate_v66,
 )
+from nico.comprehensive_spanish_publication_preflight_v93 import (
+    assert_spanish_canonical_publication_preflight,
+    install_spanish_publication_preflight_v93,
+)
 from nico.comprehensive_zero_finding_finality_truth_v1 import (
     install_comprehensive_zero_finding_finality_truth_v1,
 )
@@ -76,40 +80,11 @@ def _report_language(context: Mapping[str, Any]) -> str:
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build the exact canonical report model without rendering legacy artifacts.
 
-    The production v2 publisher is the authoritative Markdown, HTML, JSON, and PDF
-    renderer. Building a complete legacy draft first caused the final stage to render,
-    rewrite, parse, and hash large artifacts twice. This source reuses the same native
-    identity, assessment, stage-summary, and decision-summary functions while omitting
-    all pre-v2 artifact rendering.
-
-    Before stage evidence is flattened, one preliminary maturity taxonomy is projected
-    into explicit aliases. Installed post-readiness boundaries then apply the final
-    client-readiness maturity label and remove only superseded internal report-contract
-    diagnostics.
-
-    Retained structured decision findings, exact-SHA production complexity hotspots,
-    review-required candidate counts, and separately unscored CI operational context
-    are restored into canonical truth before hashing. A zero-finding final register is
-    therefore valid only when the retained source package contains neither structured
-    decision findings nor actionable exact-SHA production complexity evidence. Any stale
-    zero-count aliases in retained stage summaries are synchronized to the restored
-    canonical population without modifying scanner or review-candidate counts. The
-    restoration reads only the authoritative finding, complexity, scanner-triage, and CI
-    stages rather than traversing unrelated retained evidence payloads.
-
-    The compact premium renderer is extended with truthful scanner counts, rich finding
-    cards, and separately labeled CI operational health. Duplicate full-page finding
-    copies remain removed. A semantic gate blocks publication if any restored finding,
-    review-candidate count, or CI operational boundary disappears from client formats.
-
-    The report package and its canonical JSON carry the same explicit Comprehensive
-    service and report-language identity so every renderer and release verifier reads
-    one unambiguous artifact contract. Report language is part of immutable run truth,
-    not a mutable renderer default.
-
-    A real final-stage invocation always contains retained prior-stage evidence. Empty
-    stage mappings are compatibility or synthetic calls and must fall back to the
-    delegate instead of being mistaken for a complete production assessment.
+    Retained decision findings and exact-SHA production complexity hotspots are restored
+    into canonical truth before hashing. For Spanish runs, the fully restored model is
+    then preflighted through the same strict presentation translator before any client
+    artifact renders. This ordering is required because generated finding prose can be
+    created during restoration and therefore does not exist in raw prior-stage input.
     """
 
     identity = {
@@ -128,9 +103,6 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     report_language = _report_language(context)
     identity["report_language"] = report_language
-
-    # The final stage must preserve the timestamp established by the run. Only
-    # compatibility calls that do not supply one may create a new timestamp.
     generated_at = _text(context.get("generated_at"), 80) or _now()
     identity["generated_at"] = generated_at
     identity["generation_timestamp"] = generated_at
@@ -184,6 +156,12 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     )
     canonical["assessment"] = assessment
     canonical, finding_count_truth = reconcile_finding_count_truth(canonical)
+
+    # Installation is explicit at the post-restoration canonical boundary so tests can
+    # inspect the scanner independently and later v88 rebinds keep the fallback helper.
+    spanish_preflight_installation = install_spanish_publication_preflight_v93()
+    spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)
+
     assessment = dict(canonical.get("assessment") or {})
     ordered = list(canonical.get("stage_summaries") or [])
     report_content_render = install_comprehensive_report_content_render_v66()
@@ -208,6 +186,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
         "finding_count_truth": deepcopy(finding_count_truth),
+        "spanish_publication_preflight_installation": deepcopy(
+            spanish_preflight_installation
+        ),
+        "spanish_publication_preflight": deepcopy(spanish_preflight),
         "report_content_render": deepcopy(report_content_render),
         "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installed": (
@@ -242,6 +224,10 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "maturity_label_truth": deepcopy(maturity_truth),
         "decision_content_restoration": deepcopy(decision_content_restoration),
         "finding_count_truth": deepcopy(finding_count_truth),
+        "spanish_publication_preflight_installation": deepcopy(
+            spanish_preflight_installation
+        ),
+        "spanish_publication_preflight": deepcopy(spanish_preflight),
         "report_content_render": deepcopy(report_content_render),
         "semantic_content_gate": deepcopy(semantic_content_gate),
         "post_readiness_maturity_truth_installation": deepcopy(
